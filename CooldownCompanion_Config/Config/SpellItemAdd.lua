@@ -850,6 +850,133 @@ local function TryReceiveCursorDrop(opts)
     return added
 end
 
+-- Shared CDM aura catalog for autocomplete and the spellbook.
+------------------------------------------------------------------------
+local function AppendCDMAuraEntries(cache)
+    -- Trackable auras, by their specific aura identity. Procs and applied
+    -- auras (e.g. DoT debuffs) are not spellbook items, so this is the shared
+    -- source for standalone aura entries in search and the spellbook. Uses Blizzard's
+    -- tracked buff/bar data (pure data API): membership there means Blizzard
+    -- can track the aura, which is exactly what makes it addable here.
+    -- Rows are deduped by underlying tracked aura: two data rows whose
+    -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
+    -- DoT) would produce identical tracking entries, so only the first shows.
+    -- Heating Up and Hot Streak share one legacy multi-stage row, but are
+    -- offered as independent auras now that runtime tracking uses AuraContainer.
+    --
+    -- trackedAuraID is the spellID the APPLIED aura carries (shared rule:
+    -- ST.ResolveCDMAppliedAuraSpellID, SpellQueries.lua). Unambiguous applied
+    -- auras keep the row identity and expand to trackedAuraID at bind time.
+    -- The Fire Mage pair stores each aura identity directly so selecting one
+    -- can never inherit its sibling.
+    local seenAuras = {}
+    local auraRows = {}
+    for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
+        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                local id = cdInfo and cdInfo.spellID and ResolveCDMAuraSpellID(cdInfo)
+                if id and IsHeatingUpHotStreakRow(cdInfo) then
+                    local linkedSeen = {}
+                    for _, linkedID in ipairs(cdInfo.linkedSpellIDs or {}) do
+                        local numericLinkedID = tonumber(linkedID)
+                        if numericLinkedID
+                            and (numericLinkedID == 48107 or numericLinkedID == 48108)
+                            and not linkedSeen[numericLinkedID] then
+                            linkedSeen[numericLinkedID] = true
+                            local linkedInfo = not seenAuras[numericLinkedID]
+                                and not IsNeverTrackableSpell(numericLinkedID)
+                                and C_Spell.GetSpellInfo(numericLinkedID)
+                            if linkedInfo and linkedInfo.name then
+                                seenAuras[numericLinkedID] = true
+                                local searchLower = linkedInfo.name:lower()
+                                    .. " " .. numericLinkedID
+                                table.insert(cache, {
+                                    id = numericLinkedID,
+                                    trackedAuraID = numericLinkedID,
+                                    name = linkedInfo.name,
+                                    displayAuraName = linkedInfo.name,
+                                    displayAuraID = numericLinkedID,
+                                    displayName = ("%s |cff999999(%d)|r"):format(
+                                        linkedInfo.name, numericLinkedID),
+                                    nameLower = linkedInfo.name:lower(),
+                                    searchLower = searchLower,
+                                    icon = linkedInfo.iconID or 134400,
+                                    category = "Aura",
+                                    autocompleteKind = "aura",
+                                    isItem = false,
+                                    forceAura = true,
+                                })
+                                auraRows[numericLinkedID] = true
+                            end
+                        end
+                    end
+                    id = nil
+                end
+                if id and not IsNeverTrackableSpell(id) then
+                    local duplicate = seenAuras[id]
+                    if not duplicate and cdInfo.linkedSpellIDs then
+                        for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
+                            if seenAuras[linkedID] then
+                                duplicate = true
+                                break
+                            end
+                        end
+                    end
+                    local spellInfo = not duplicate and C_Spell.GetSpellInfo(id)
+                    if spellInfo and spellInfo.name then
+                        seenAuras[id] = true
+                        if cdInfo.linkedSpellIDs then
+                            for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
+                                seenAuras[linkedID] = true
+                            end
+                        end
+                        -- Display the applied-aura identity (what actually
+                        -- gets tracked); the stored row identity stays `id`
+                        -- for pairing and candidate expansion. When the two
+                        -- differ UNAMBIGUOUSLY (one linked aura), the visible
+                        -- label carries the applied aura's name, and the
+                        -- search key answers to the owner name, the applied
+                        -- name, and the applied ID (Nature's Grace links
+                        -- Dreamstate: both names and 450346 must find the
+                        -- row). Multi-stage rows keep the row's own label —
+                        -- naming one stage would misdescribe the row.
+                        local trackedAuraID, ambiguousAura = ResolveCDMAppliedAuraSpellID(cdInfo, id)
+                        local appliedName, searchLower
+                        if trackedAuraID ~= id and not ambiguousAura then
+                            local appliedInfo = C_Spell.GetSpellInfo(trackedAuraID)
+                            appliedName = appliedInfo and appliedInfo.name
+                            searchLower = spellInfo.name:lower()
+                                .. (appliedName and (" " .. appliedName:lower()) or "")
+                                .. " " .. trackedAuraID
+                        end
+                        local displayAuraID = (not ambiguousAura) and trackedAuraID or id
+                        table.insert(cache, {
+                            id = id,
+                            trackedAuraID = trackedAuraID,
+                            name = spellInfo.name,
+                            displayAuraName = appliedName or spellInfo.name,
+                            displayAuraID = displayAuraID,
+                            displayName = ("%s |cff999999(%d)|r"):format(appliedName or spellInfo.name, displayAuraID),
+                            nameLower = spellInfo.name:lower(),
+                            searchLower = searchLower,
+                            icon = spellInfo.iconID or 134400,
+                            category = "Aura",
+                            autocompleteKind = "aura",
+                            isItem = false,
+                            forceAura = true,
+                        })
+                        auraRows[id] = true
+                    end
+                end
+            end
+        end
+    end
+    return auraRows
+end
+
+------------------------------------------------------------------------
 -- Autocomplete: Build cache of player spells + usable bag items
 ------------------------------------------------------------------------
 local function BuildAutocompleteCache()
@@ -950,122 +1077,7 @@ local function BuildAutocompleteCache()
         end
     end
 
-    -- Trackable auras, by their specific aura identity. Procs and applied
-    -- auras (e.g. DoT debuffs) are not spellbook items, so this is the only
-    -- discovery surface for standalone aura entries. Sourced from Blizzard's
-    -- tracked buff/bar data (pure data API): membership there means Blizzard
-    -- can track the aura, which is exactly what makes it addable here.
-    -- Rows are deduped by underlying tracked aura: two data rows whose
-    -- resolved/linked spellIDs overlap (e.g. an ability row and its applied
-    -- DoT) would produce identical tracking entries, so only the first shows.
-    -- Heating Up and Hot Streak share one legacy multi-stage row, but are
-    -- offered as independent auras now that runtime tracking uses AuraContainer.
-    --
-    -- trackedAuraID is the spellID the APPLIED aura carries (shared rule:
-    -- ST.ResolveCDMAppliedAuraSpellID, SpellQueries.lua). Unambiguous applied
-    -- auras keep the row identity and expand to trackedAuraID at bind time.
-    -- The Fire Mage pair stores each aura identity directly so selecting one
-    -- can never inherit its sibling.
-    local seenAuras = {}
-    local auraRows = {}
-    for _, cat in ipairs({ Enum.CooldownViewerCategory.TrackedBuff, Enum.CooldownViewerCategory.TrackedBar }) do
-        local ids = C_CooldownViewer.GetCooldownViewerCategorySet(cat, true)
-        if ids then
-            for _, cdID in ipairs(ids) do
-                local cdInfo = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                local id = cdInfo and cdInfo.spellID and ResolveCDMAuraSpellID(cdInfo)
-                if id and IsHeatingUpHotStreakRow(cdInfo) then
-                    local linkedSeen = {}
-                    for _, linkedID in ipairs(cdInfo.linkedSpellIDs or {}) do
-                        local numericLinkedID = tonumber(linkedID)
-                        if numericLinkedID
-                            and (numericLinkedID == 48107 or numericLinkedID == 48108)
-                            and not linkedSeen[numericLinkedID] then
-                            linkedSeen[numericLinkedID] = true
-                            local linkedInfo = not seenAuras[numericLinkedID]
-                                and not IsNeverTrackableSpell(numericLinkedID)
-                                and C_Spell.GetSpellInfo(numericLinkedID)
-                            if linkedInfo and linkedInfo.name then
-                                seenAuras[numericLinkedID] = true
-                                local searchLower = linkedInfo.name:lower()
-                                    .. " " .. numericLinkedID
-                                table.insert(cache, {
-                                    id = numericLinkedID,
-                                    trackedAuraID = numericLinkedID,
-                                    name = linkedInfo.name,
-                                    displayName = ("%s |cff999999(%d)|r"):format(
-                                        linkedInfo.name, numericLinkedID),
-                                    nameLower = linkedInfo.name:lower(),
-                                    searchLower = searchLower,
-                                    icon = linkedInfo.iconID or 134400,
-                                    category = "Aura",
-                                    autocompleteKind = "aura",
-                                    isItem = false,
-                                    forceAura = true,
-                                })
-                                auraRows[numericLinkedID] = true
-                            end
-                        end
-                    end
-                    id = nil
-                end
-                if id and not IsNeverTrackableSpell(id) then
-                    local duplicate = seenAuras[id]
-                    if not duplicate and cdInfo.linkedSpellIDs then
-                        for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
-                            if seenAuras[linkedID] then
-                                duplicate = true
-                                break
-                            end
-                        end
-                    end
-                    local spellInfo = not duplicate and C_Spell.GetSpellInfo(id)
-                    if spellInfo and spellInfo.name then
-                        seenAuras[id] = true
-                        if cdInfo.linkedSpellIDs then
-                            for _, linkedID in ipairs(cdInfo.linkedSpellIDs) do
-                                seenAuras[linkedID] = true
-                            end
-                        end
-                        -- Display the applied-aura identity (what actually
-                        -- gets tracked); the stored row identity stays `id`
-                        -- for pairing and candidate expansion. When the two
-                        -- differ UNAMBIGUOUSLY (one linked aura), the visible
-                        -- label carries the applied aura's name, and the
-                        -- search key answers to the owner name, the applied
-                        -- name, and the applied ID (Nature's Grace links
-                        -- Dreamstate: both names and 450346 must find the
-                        -- row). Multi-stage rows keep the row's own label —
-                        -- naming one stage would misdescribe the row.
-                        local trackedAuraID, ambiguousAura = ResolveCDMAppliedAuraSpellID(cdInfo, id)
-                        local appliedName, searchLower
-                        if trackedAuraID ~= id and not ambiguousAura then
-                            local appliedInfo = C_Spell.GetSpellInfo(trackedAuraID)
-                            appliedName = appliedInfo and appliedInfo.name
-                            searchLower = spellInfo.name:lower()
-                                .. (appliedName and (" " .. appliedName:lower()) or "")
-                                .. " " .. trackedAuraID
-                        end
-                        local displayAuraID = (not ambiguousAura) and trackedAuraID or id
-                        table.insert(cache, {
-                            id = id,
-                            trackedAuraID = trackedAuraID,
-                            name = spellInfo.name,
-                            displayName = ("%s |cff999999(%d)|r"):format(appliedName or spellInfo.name, displayAuraID),
-                            nameLower = spellInfo.name:lower(),
-                            searchLower = searchLower,
-                            icon = spellInfo.iconID or 134400,
-                            category = "Aura",
-                            autocompleteKind = "aura",
-                            isItem = false,
-                            forceAura = true,
-                        })
-                        auraRows[id] = true
-                    end
-                end
-            end
-        end
-    end
+    local auraRows = AppendCDMAuraEntries(cache)
 
     for _, suggestion in ipairs(INDIRECT_AURA_AUTOCOMPLETE) do
         local auraID = suggestion.auraSpellID
@@ -1801,6 +1813,8 @@ end
 -- ST._ exports (consumed by later Config/ files)
 ------------------------------------------------------------------------
 ST._TryAdd = TryAdd
+ST._TryAddSpell = TryAddSpell
+ST._AppendCDMAuraEntries = AppendCDMAuraEntries
 ST._TryReceiveCursorDrop = TryReceiveCursorDrop
 ST._BuildAutocompleteCache = BuildAutocompleteCache
 ST._OnAutocompleteSelect = OnAutocompleteSelect
