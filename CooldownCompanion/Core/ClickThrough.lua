@@ -81,13 +81,15 @@ function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
     if not inCombat then
         if clickState and motionState then
             frame:EnableMouse(false)
-            if frame.SetHitRectInsets then
+            -- Clip owners retain their rectangle while mouse input is disabled.
+            -- Collapsing their hit rect also collapses the native child clip.
+            if frame.SetHitRectInsets and not frame._ccPreserveHitRectInsets then
                 frame:SetHitRectInsets(10000, 10000, 10000, 10000)
             end
             frame:EnableKeyboard(false)
         else
             frame:EnableMouse(true)
-            if frame.SetHitRectInsets then
+            if frame.SetHitRectInsets and not frame._ccPreserveHitRectInsets then
                 frame:SetHitRectInsets(0, 0, 0, 0)
             end
         end
