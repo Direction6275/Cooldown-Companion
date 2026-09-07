@@ -522,44 +522,143 @@ local function ResolveEntryTooltipSpellId(buttonData)
     return buttonData.id
 end
 
-local function MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, targetGroupId, entryData)
-    local targetGroup = db and db.groups and db.groups[targetGroupId]
-    if not targetGroup then
+-- Snapshots belong to one profile/panel and never borrow the mutable selection
+-- map. Delayed menus and confirmations must not act on replacement entries.
+local function CaptureEntryActionSelection(groupId, indices)
+    local db = CooldownCompanion.db.profile
+    local group = db.groups[groupId]
+    if not (group and group.buttons) then return nil end
+    local snapshot = { db = db, group = group, groupId = groupId, indices = {}, entries = {} }
+    for _, index in ipairs(indices) do
+        snapshot.indices[#snapshot.indices + 1] = index
+    end
+    table.sort(snapshot.indices)
+    for i, index in ipairs(snapshot.indices) do
+        if not group.buttons[index] or index == snapshot.indices[i - 1] then return nil end
+        snapshot.entries[i] = group.buttons[index]
+    end
+    return #snapshot.indices > 0 and snapshot or nil
+end
+
+local function ValidateEntryActionSelection(snapshot)
+    local db = CooldownCompanion.db.profile
+    local valid = snapshot and snapshot.db == db and db.groups[snapshot.groupId] == snapshot.group
+    if valid then
+        for i, index in ipairs(snapshot.indices) do
+            if snapshot.group.buttons[index] ~= snapshot.entries[i] then
+                valid = false
+                break
+            end
+        end
+    end
+    if not valid then
+        CloseDropDownMenus()
+        CooldownCompanion:Print("The entries changed. Reopen the menu or action and try again.")
         return false
     end
-    if not CanMoveEntryToGroup(sourceGroupId, targetGroupId) then
+    return true
+end
+
+local function SelectEntryActionResults(groupId, indices)
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    SelectConfigPanel(groupId, { containerId = group.parentContainerId })
+    for i, index in ipairs(indices) do
+        SelectConfigButton(groupId, index, { force = i == 1, multi = i > 1 })
+    end
+end
+
+local function SetEntrySelectionEnabled(snapshot, enabled)
+    if not ValidateEntryActionSelection(snapshot) then return end
+    CloseDropDownMenus()
+    for _, entry in ipairs(snapshot.entries) do entry.enabled = enabled end
+    CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function DuplicateEntrySelection(snapshot)
+    if not ValidateEntryActionSelection(snapshot) then return end
+    local group = snapshot.group
+    if group.displayMode == "textures" then return end
+    CloseDropDownMenus()
+    CooldownCompanion:ClearAllConfigPreviews()
+    local previousCount = #group.buttons
+    for i = #snapshot.indices, 1, -1 do
+        local copy = CopyTable(snapshot.entries[i])
+        -- Preserve section membership, but mint the copy its own aura key.
+        CooldownCompanion:AdoptAuraEntryKey(group, copy)
+        table.insert(group.buttons, snapshot.indices[i] + 1, copy)
+    end
+    local results = {}
+    for i, index in ipairs(snapshot.indices) do results[i] = index + i end
+    CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+    SelectEntryActionResults(snapshot.groupId, results)
+    CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function DeleteEntrySelection(snapshot)
+    if not ValidateEntryActionSelection(snapshot) then return end
+    CloseDropDownMenus()
+    CooldownCompanion:ClearAllConfigPreviews()
+    for i = #snapshot.indices, 1, -1 do
+        ST.DetachEntryFromPanelSection(snapshot.group, snapshot.entries[i])
+        table.remove(snapshot.group.buttons, snapshot.indices[i])
+    end
+    ST.SweepEmptyPanelSections(snapshot.group)
+    SelectEntryActionResults(snapshot.groupId, {})
+    CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
+    CooldownCompanion:RefreshConfigPanel()
+end
+
+local function ConfirmDeleteEntrySelection(snapshot)
+    if not ValidateEntryActionSelection(snapshot) then return end
+    CloseDropDownMenus()
+    ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", #snapshot.indices, snapshot)
+end
+
+local function GetManualMoveRejectMessage(group, entries)
+    local message = CooldownCompanion:GetPanelManualEntryRejectMessage(group, entries)
+    if message then return message end
+    if group and group.displayMode == "textures" and #entries > 1 then
+        return "Texture Panels can only hold one entry. Move one entry at a time."
+    end
+end
+
+local function MoveEntrySelection(snapshot, targetGroupId)
+    if not ValidateEntryActionSelection(snapshot) then return false end
+    local targetGroup = snapshot.db.groups[targetGroupId]
+    if not targetGroup or not CanMoveEntryToGroup(snapshot.groupId, targetGroupId) then
+        CloseDropDownMenus()
+        CooldownCompanion:Print("That panel is no longer a valid destination. Reopen the move menu.")
         return false
     end
-    local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, entryData)
+    local rejectMessage = GetManualMoveRejectMessage(targetGroup, snapshot.entries)
     if rejectMessage then
+        CloseDropDownMenus()
         CooldownCompanion:Print(rejectMessage)
         return false
     end
-
-    if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
-        CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entryData)
-    end
-    local previousCount = #targetGroup.buttons
-    -- A section placement belongs to the panel it was made on: an entry landing
-    -- here starts in the base row rather than joining whatever section this
-    -- panel keeps at the anchor it used to name, and the cluster it left goes
-    -- with it when it was the last member there.
-    ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], entryData)
-    -- After the detach, so the key rule reads the membership the entry actually
-    -- lands with. An entry arriving in a panel needs that panel's own key, not
-    -- the one it wore where it came from: an Aura Panel mints it one, and
-    -- anywhere else the stale key comes off rather than waiting to collide
-    -- inside an aura section.
-    CooldownCompanion:AdoptAuraEntryKey(targetGroup, entryData)
-    table.insert(targetGroup.buttons, entryData)
-    table.remove(db.groups[sourceGroupId].buttons, sourceIndex)
-    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
-    CooldownCompanion:RefreshGroupFrame(targetGroupId)
-    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+    CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
-    CS.selectedButton = nil
-    CS.selectedRotationAssistantEntry = nil
-    wipe(CS.selectedButtons)
+    local previousCount = #targetGroup.buttons
+    local results = {}
+    for i, entry in ipairs(snapshot.entries) do
+        if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
+            CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entry)
+        end
+        -- Section placement and aura keys belong to the panel being left.
+        ST.DetachEntryFromPanelSection(snapshot.group, entry)
+        CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
+        table.insert(targetGroup.buttons, entry)
+        results[i] = previousCount + i
+    end
+    for i = #snapshot.indices, 1, -1 do
+        table.remove(snapshot.group.buttons, snapshot.indices[i])
+    end
+    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
+    SelectEntryActionResults(targetGroupId, results)
+    CooldownCompanion:RefreshGroupFrame(targetGroupId)
+    CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
     CooldownCompanion:RefreshConfigPanel()
     return true
 end
@@ -663,9 +762,14 @@ local function ParseEntryMoveContainerId(menuList)
     return idText and tonumber(idText) or nil
 end
 
-local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex, entryData, menuList)
-    local db = CooldownCompanion.db.profile
-    local sections = BuildEntryMoveDestinationSections(db, sourceGroupId, entryData)
+local function BuildSelectionMoveDestinations(snapshot)
+    return BuildEntryMoveDestinationSections(snapshot.db, snapshot.groupId, snapshot.entries, function(_, group)
+        return not GetManualMoveRejectMessage(group, snapshot.entries)
+    end)
+end
+
+local function AddEntryMoveDestinationButtons(level, snapshot, menuList)
+    local sections = BuildSelectionMoveDestinations(snapshot)
 
     local targetContainerId = ParseEntryMoveContainerId(menuList)
     if targetContainerId then
@@ -679,9 +783,7 @@ local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex,
             info.text = panel.name
             info.notCheckable = true
             info.func = function()
-                if MoveEntryBetweenGroups(db, sourceGroupId, sourceIndex, panel.groupId, entryData) then
-                    CloseDropDownMenus()
-                end
+                MoveEntrySelection(snapshot, panel.groupId)
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -707,6 +809,69 @@ local function AddEntryMoveDestinationButtons(level, sourceGroupId, sourceIndex,
             UIDropDownMenu_AddButton(info, level)
         end
     end
+end
+
+local function AddEntrySelectionMoveMenuItem(level, snapshot, label)
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = label
+    info.notCheckable = true
+    info.disabled = #BuildSelectionMoveDestinations(snapshot) == 0
+    info.hasArrow = not info.disabled
+    info.menuList = "MOVE_TO_GROUP"
+    if info.disabled then
+        info.tooltipTitle = label
+        info.tooltipText = "No other panel can accept the entire selection."
+        info.tooltipOnButton = true
+        info.tooltipWhileDisabled = true
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
+
+local function ShowEntrySelectionMoveMenu(snapshot)
+    if not ValidateEntryActionSelection(snapshot) then return end
+    local frame = _G["CDCMoveMenu"]
+    if not frame then
+        frame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+    UIDropDownMenu_Initialize(frame, function(_, level, menuList)
+        if #BuildSelectionMoveDestinations(snapshot) == 0 then
+            AddEntrySelectionMoveMenuItem(level or 1, snapshot, "Move Selected to...")
+        else
+            AddEntryMoveDestinationButtons(level or 1, snapshot, menuList)
+        end
+    end, "MENU")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    ToggleDropDownMenu(1, nil, frame, "cursor", 0, 0)
+end
+
+local function AddEntrySelectionMenuButtons(level, snapshot)
+    local title = UIDropDownMenu_CreateInfo()
+    title.text = #snapshot.entries .. " Entries Selected"
+    title.isTitle = true
+    title.notCheckable = true
+    UIDropDownMenu_AddButton(title, level)
+    local function AddAction(label, action)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = label
+        info.notCheckable = true
+        info.func = action
+        UIDropDownMenu_AddButton(info, level)
+    end
+    local anyEnabled, anyDisabled = false, false
+    for _, entry in ipairs(snapshot.entries) do
+        if entry.enabled == false then anyDisabled = true else anyEnabled = true end
+    end
+    if anyDisabled then
+        AddAction("Enable Selected", function() SetEntrySelectionEnabled(snapshot, true) end)
+    end
+    if anyEnabled then
+        AddAction("Disable Selected", function() SetEntrySelectionEnabled(snapshot, false) end)
+    end
+    if snapshot.group.displayMode ~= "textures" then
+        AddAction("Duplicate Selected", function() DuplicateEntrySelection(snapshot) end)
+    end
+    AddEntrySelectionMoveMenuItem(level, snapshot, "Move Selected to...")
+    AddAction("|cffff4444Delete Selected|r", function() ConfirmDeleteEntrySelection(snapshot) end)
 end
 
 -- The copyable customizations an entry carries, in the same order and
@@ -738,12 +903,13 @@ local function CollectCopyCustomizationItems(entryData)
 end
 
 -- Picking a row arms the click-an-entry copy mode in the panel preview.
-local function AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData)
+local function AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData, snapshot)
     for _, item in ipairs(CollectCopyCustomizationItems(entryData)) do
         local info = UIDropDownMenu_CreateInfo()
         info.text = item.label
         info.notCheckable = true
         info.func = function()
+            if not ValidateEntryActionSelection(snapshot) then return end
             CloseDropDownMenus()
             if ST._ArmCopyCustomization then
                 ST._ArmCopyCustomization(sourceGroupId, sourceIndex, entryData,
@@ -756,6 +922,27 @@ end
 
 -- Shared entry context menu used by preview and workspace list surfaces.
 local function ShowEntryContextMenu(panelId, index, buttonData)
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if not group or group.buttons[index] ~= buttonData then return end
+    local isSelected = CS.selectedGroup == panelId
+        and (CS.selectedButton == index or CS.selectedButtons[index])
+    if not isSelected then
+        if CS.selectedGroup ~= panelId then
+            SelectConfigPanel(panelId, { containerId = group.parentContainerId })
+        end
+        SelectConfigButton(panelId, index, { force = true })
+        CooldownCompanion:RefreshConfigSelection()
+    end
+    local indices = {}
+    if CS.selectedButtons[index] then
+        for selectedIndex in pairs(CS.selectedButtons) do
+            if group.buttons[selectedIndex] then indices[#indices + 1] = selectedIndex end
+        end
+    else
+        indices[1] = index
+    end
+    local snapshot = CaptureEntryActionSelection(panelId, indices)
+    if not snapshot then return end
     if not CS.buttonContextMenu then
         CS.buttonContextMenu = CreateFrame("Frame", "CDCButtonContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
@@ -764,7 +951,9 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
     local entryData = buttonData
     UIDropDownMenu_Initialize(CS.buttonContextMenu, function(self, level, menuList)
         level = level or 1
-        if level == 1 then
+        if level == 1 and #snapshot.entries > 1 then
+            AddEntrySelectionMenuButtons(level, snapshot)
+        elseif level == 1 then
             local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
 
             -- A text panel IS its format string, so the editor that owns it
@@ -777,6 +966,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 formatInfo.text = "Edit Format..."
                 formatInfo.notCheckable = true
                 formatInfo.func = function()
+                    if not ValidateEntryActionSelection(snapshot) then return end
                     CloseDropDownMenus()
                     -- The menu can be opened on a panel that is not the
                     -- selected one; move the selection there first so the
@@ -808,10 +998,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
             toggleInfo.notCheckable = true
             toggleInfo.func = function()
-                CloseDropDownMenus()
-                entryData.enabled = not (entryData.enabled ~= false)
-                CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                CooldownCompanion:RefreshConfigPanel()
+                SetEntrySelectionEnabled(snapshot, entryData.enabled == false)
             end
             UIDropDownMenu_AddButton(toggleInfo, level)
 
@@ -820,21 +1007,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 dupInfo.text = "Duplicate"
                 dupInfo.notCheckable = true
                 dupInfo.func = function()
-                    local liveGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
-                    local copy = CopyTable(entryData)
-                    -- The copy inherits the original's aura key, which would
-                    -- put two entries in the same panel on one aura group. It
-                    -- also inherits the original's SECTION, so on a mixed panel
-                    -- the copy is handed a key of its own rather than merely
-                    -- stripped.
-                    CooldownCompanion:AdoptAuraEntryKey(liveGroup, copy)
-                    table.insert(liveGroup.buttons, sourceIndex + 1, copy)
-                    -- Follow the copy without changing the active panel/entry
-                    -- scope; the shared path also clears stale index state.
-                    SelectConfigButton(sourceGroupId, sourceIndex + 1, { force = true })
-                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                    CooldownCompanion:RefreshConfigPanel()
-                    CloseDropDownMenus()
+                    DuplicateEntrySelection(snapshot)
                 end
                 UIDropDownMenu_AddButton(dupInfo, level)
             end
@@ -846,6 +1019,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
             iconInfo.tooltipOnButton = true
             iconInfo.func = function()
+                if not ValidateEntryActionSelection(snapshot) then return end
                 CloseDropDownMenus()
                 ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
             end
@@ -856,6 +1030,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 resetIconInfo.text = "Reset Icon"
                 resetIconInfo.notCheckable = true
                 resetIconInfo.func = function()
+                    if not ValidateEntryActionSelection(snapshot) then return end
                     CloseDropDownMenus()
                     entryData.manualIcon = nil
                     CooldownCompanion:RefreshGroupFrame(sourceGroupId)
@@ -864,12 +1039,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 UIDropDownMenu_AddButton(resetIconInfo, level)
             end
 
-            local moveInfo = UIDropDownMenu_CreateInfo()
-            moveInfo.text = "Move to..."
-            moveInfo.notCheckable = true
-            moveInfo.hasArrow = true
-            moveInfo.menuList = "MOVE_TO_GROUP"
-            UIDropDownMenu_AddButton(moveInfo, level)
+            AddEntrySelectionMoveMenuItem(level, snapshot, "Move to...")
 
             -- No source-side display-mode gate: even a texture panel's entry
             -- can carry stranded customizations worth copying out, and the
@@ -892,6 +1062,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             deleteInfo.text = "|cffff4444Delete|r"
             deleteInfo.notCheckable = true
             deleteInfo.func = function()
+                if not ValidateEntryActionSelection(snapshot) then return end
                 CloseDropDownMenus()
                 -- The same resolver the entry row uses (customName first,
                 -- then the CDM/override display spell). The confirmation now
@@ -903,19 +1074,18 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                     and ST._GetConfigEntryDisplayName(entryData))
                     or entryData.name
                     or "this entry"
-                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex })
+                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex, snapshot = snapshot })
             end
             UIDropDownMenu_AddButton(deleteInfo, level)
         elseif menuList == "COPY_CUSTOMIZATION" then
-            AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData)
+            if not ValidateEntryActionSelection(snapshot) then return end
+            AddCopyCustomizationButtons(level, sourceGroupId, sourceIndex, entryData, snapshot)
         elseif menuList == "MOVE_TO_GROUP"
             or ParseEntryMoveContainerId(menuList)
         then
             AddEntryMoveDestinationButtons(
                 level,
-                sourceGroupId,
-                sourceIndex,
-                entryData,
+                snapshot,
                 menuList
             )
         end
@@ -929,6 +1099,11 @@ end
 -- ST._ exports
 ------------------------------------------------------------------------
 ST._ShowEntryContextMenu = ShowEntryContextMenu
+ST._CaptureEntryActionSelection = CaptureEntryActionSelection
+ST._DuplicateEntrySelection = DuplicateEntrySelection
+ST._DeleteEntrySelection = DeleteEntrySelection
+ST._ConfirmDeleteEntrySelection = ConfirmDeleteEntrySelection
+ST._ShowEntrySelectionMoveMenu = ShowEntrySelectionMoveMenu
 -- Single- and multi-entry move menus share one Group -> Panel hierarchy. The
 -- optional predicate lets batch moves retain their stricter whole-selection
 -- capacity checks without duplicating destination names or ordering.

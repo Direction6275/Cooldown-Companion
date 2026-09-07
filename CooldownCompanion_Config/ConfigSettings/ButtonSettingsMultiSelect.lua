@@ -4,10 +4,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local ColorHeading = ST._ColorHeading
-local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
-local BuildEntryMoveDestinationSections = ST._BuildEntryMoveDestinationSections
 
 local function IsContainerVisibleInConfig(containerOrContainerId)
     if CooldownCompanion.ResolveContainerClassScope then
@@ -33,61 +31,8 @@ local function CanAllPanelsMoveToContainer(panelIds, containerId)
     return true
 end
 
-local function CanMoveEntryToGroup(sourceGroupId, targetGroupId)
-    if CooldownCompanion.CanMoveEntryToGroup then
-        return CooldownCompanion:CanMoveEntryToGroup(sourceGroupId, targetGroupId) == true
-    end
-    return CooldownCompanion:IsGroupVisibleToCurrentChar(targetGroupId)
-end
-
 local function GroupUsesTriggerPanelEntries(group)
     return group and group.displayMode == "trigger"
-end
-
-local function GetManualMoveRejectMessage(group, count, entries)
-    if CooldownCompanion.GetPanelManualEntryRejectMessage then
-        local message = CooldownCompanion:GetPanelManualEntryRejectMessage(group, entries)
-        if message then
-            return message
-        end
-    end
-    if group and group.displayMode == "textures" and (count or 0) > 1 then
-        return "Texture Panels can only hold one entry. Move one entry at a time."
-    end
-    return nil
-end
-
--- The selected entries' buttonData list, for the centralized move
--- compatibility check (primary aura entries can't leave icon/bar panels).
-local function CollectSelectedEntryData(db, sourceGroupId, indices)
-    local sourceGroup = db and db.groups and db.groups[sourceGroupId]
-    if not (sourceGroup and sourceGroup.buttons) then return nil end
-    local entries = {}
-    for _, idx in ipairs(indices or {}) do
-        entries[#entries + 1] = sourceGroup.buttons[idx]
-    end
-    return entries[1] and entries or nil
-end
-
-local BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX = "BATCH_ENTRY_MOVE_GROUP:"
-
-local function ParseBatchEntryMoveContainerId(menuList)
-    if type(menuList) ~= "string" then
-        return nil
-    end
-    local idText = menuList:match("^" .. BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX .. "(%d+)$")
-    return idText and tonumber(idText) or nil
-end
-
-local function FindBatchEntryMoveContainerEntry(sections, containerId)
-    for _, section in ipairs(sections or {}) do
-        for _, containerEntry in ipairs(section.entries or {}) do
-            if containerEntry.containerId == containerId then
-                return containerEntry
-            end
-        end
-    end
-    return nil
 end
 
 -- Row-grammar action strips: compact buttons on grammar-height lines (the
@@ -175,150 +120,6 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isTriggerPanel = GroupUsesTriggerPanelEntries(group)
-
-    local function DuplicateSelected()
-        local sourceGroupId = CS.selectedGroup
-        local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
-        if not sourceGroup then return end
-        local sorted = {}
-        for _, idx in ipairs(multiIndices) do
-            table.insert(sorted, idx)
-        end
-        table.sort(sorted, function(a, b) return a > b end)
-        local previousCount = #sourceGroup.buttons
-        for _, idx in ipairs(sorted) do
-            local copy = CopyTable(sourceGroup.buttons[idx])
-            -- Each copy inherits its original's aura key, which would put two
-            -- entries in the same panel on one aura group. A copy also inherits
-            -- its original's SECTION, so on a mixed panel it is handed a key of
-            -- its own rather than merely stripped.
-            CooldownCompanion:AdoptAuraEntryKey(sourceGroup, copy)
-            table.insert(sourceGroup.buttons, idx + 1, copy)
-        end
-        CooldownCompanion:KeepPanelSingleLineOnGrowth(sourceGroup, previousCount)
-        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-        ClearConfigButtonSelection()
-        CooldownCompanion:RefreshConfigPanel()
-    end
-
-    local function ShowMoveMenu()
-        local moveMenuFrame = _G["CDCMoveMenu"]
-        if not moveMenuFrame then
-            moveMenuFrame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-        end
-        local sourceGroupId = CS.selectedGroup
-        local indices = multiIndices
-        local db = CooldownCompanion.db.profile
-        local selectedEntries = CollectSelectedEntryData(db, sourceGroupId, indices)
-        UIDropDownMenu_Initialize(moveMenuFrame, function(self, level, menuList)
-            local sections = BuildEntryMoveDestinationSections(
-                db,
-                sourceGroupId,
-                selectedEntries,
-                function(_, groupInfo)
-                    return not GetManualMoveRejectMessage(groupInfo, multiCount, selectedEntries)
-                end
-            )
-
-            local targetContainerId = ParseBatchEntryMoveContainerId(menuList)
-            if not targetContainerId then
-                for _, section in ipairs(sections) do
-                    if section.title then
-                        local header = UIDropDownMenu_CreateInfo()
-                        header.text = section.title
-                        header.isTitle = true
-                        header.notCheckable = true
-                        UIDropDownMenu_AddButton(header, level)
-                    end
-
-                    for _, containerEntry in ipairs(section.entries) do
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = containerEntry.containerName
-                        info.notCheckable = true
-                        info.hasArrow = true
-                        info.menuList = BATCH_ENTRY_MOVE_GROUP_MENU_PREFIX
-                            .. tostring(containerEntry.containerId)
-                        info.leftPadding = section.title and 10 or 0
-                        UIDropDownMenu_AddButton(info, level)
-                    end
-                end
-                return
-            end
-
-            local containerEntry = FindBatchEntryMoveContainerEntry(sections, targetContainerId)
-            if not containerEntry then
-                return
-            end
-
-            for _, panelEntry in ipairs(containerEntry.panels) do
-                local targetGroupId = panelEntry.groupId
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = panelEntry.name
-                info.notCheckable = true
-                info.func = function()
-                    if not CanMoveEntryToGroup(sourceGroupId, targetGroupId) then
-                        return
-                    end
-                    local targetGroup = db.groups[targetGroupId]
-                    local rejectMessage = GetManualMoveRejectMessage(targetGroup, multiCount, selectedEntries)
-                    if rejectMessage then
-                        CooldownCompanion:Print(rejectMessage)
-                        return
-                    end
-                    local previousCount = #targetGroup.buttons
-                    for _, idx in ipairs(indices) do
-                        local moved = db.groups[sourceGroupId].buttons[idx]
-                        -- A section placement belongs to the panel it was made
-                        -- on; an entry landing here starts in the base row, and
-                        -- the source's cluster dissolves behind the last member
-                        -- to leave it.
-                        ST.DetachEntryFromPanelSection(db.groups[sourceGroupId], moved)
-                        -- After the detach, so the key rule reads the membership
-                        -- the entry actually lands with. An Aura Panel mints the
-                        -- arrival its own key; anywhere else the key it wore
-                        -- where it came from comes off rather than waiting to
-                        -- collide inside an aura section.
-                        CooldownCompanion:AdoptAuraEntryKey(targetGroup, moved)
-                        table.insert(targetGroup.buttons, moved)
-                    end
-                    table.sort(indices, function(a, b) return a > b end)
-                    for _, idx in ipairs(indices) do
-                        table.remove(db.groups[sourceGroupId].buttons, idx)
-                    end
-                    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
-                    CooldownCompanion:RefreshGroupFrame(targetGroupId)
-                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                    ClearConfigButtonSelection()
-                    CooldownCompanion:RefreshConfigPanel()
-                    CloseDropDownMenus()
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-        end, "MENU")
-        moveMenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-        ToggleDropDownMenu(1, nil, moveMenuFrame, "cursor", 0, 0)
-    end
-
-    -- Duplicate and Move share a line because both copy or relocate the
-    -- selection. Delete is destructive, so it gets its own line rather than
-    -- sitting a gutter away from the two harmless actions.
-    AddActionStrips(scroll, {
-        {
-            { text = "Duplicate Selected", onClick = DuplicateSelected },
-            { text = "Move Selected", onClick = ShowMoveMenu },
-        },
-        {
-            {
-                text = "Delete Selected",
-                onClick = function()
-                    CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_BUTTONS", multiCount, {
-                        groupId = CS.selectedGroup,
-                        indices = multiIndices,
-                    })
-                end,
-            },
-        },
-    })
 
     if uniformType and group and not isTriggerPanel then
         local repData = group.buttons[multiIndices[1]]
