@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.5.3",
         "2.5.2",
         "2.5.1",
         "2.5",
@@ -38,6 +39,25 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.5.3"] = {
+            markdown = [[
+## New Features
+
+- **Resource sounds:** Optional alerts when supported resources reach maximum or a chosen amount. Off by default, with per-spec settings and a Combat Only option.
+- **Spellbook auras:** Browse Spells, Auras, and Unavailable tabs, search across all three, and double-click auras to add them to a compatible panel.
+- **Autocast Shine:** Now available for Aura Glow, Pandemic Glow, and bar aura effects, with size and frequency controls.
+
+## Polish | QoL
+
+- **Panel copying:** Copy Visibility, Arrangement, or Position separately, or choose All Except Position. Compact Mode now copies with Arrangement.
+- **Better templates:** Save more of your panel setup, including visibility and layout. Applying a template keeps your panel in place.
+- **Cleaner settings:** Menus group related actions, headings share a consistent style, and text toggles sit closer to their labels. Panel conversions are under Panel Type; Visibility and auto-anchoring remain in settings.
+
+## Bug Fixes
+
+- **Multiselect menus:** Enable, disable, duplicate, move, or delete all selected entries from the right-click menu. Moved entries and new copies stay selected.
+]],
+        },
         ["2.5.2"] = {
             markdown = [[
 ## New Features
