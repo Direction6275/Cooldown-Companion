@@ -441,6 +441,7 @@ local function AddSummaryHeading(scroll, text)
     heading:SetText(text)
     heading:SetFullWidth(true)
     scroll:AddChild(heading)
+    ST._ApplyLeftAlignedHeading(heading, nil, true)
     return heading
 end
 
