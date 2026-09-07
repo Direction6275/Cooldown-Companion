@@ -4277,6 +4277,17 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     block:ClearAllPoints()
     block:SetPoint("CENTER", root, "CENTER", 0, 0)
 
+    -- Charge borders use the real physical-pixel inset. The fit is only known
+    -- after building the lanes; repaint those bars at their final scale.
+    for index = 1, (preview.used.slots or 0) do
+        local barInfo = preview.pools.slots[index].previewBarInfo
+        local bar = barInfo and barInfo.frame
+        local charges = bar and bar._chargeSegments
+        if charges and charges._attached and charges._scale ~= bar:GetEffectiveScale() then
+            ApplyPreviewBarState(barInfo, preview.rbSettings)
+        end
+    end
+
     -- Identity marks last: they counter-scale against the fit above, so
     -- they can only be laid out once it is known. A rebuild can happen with
     -- the cursor already resting on a bar (a value change repaints the

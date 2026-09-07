@@ -629,6 +629,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._iconDirty = true
                 button._cooldownDeferred = nil
                 button._durationObj = nil
+                button._chargeRenderCount = nil
                 button._chargeDurationObj = nil
                 -- _totemSwipeStyleActive stays: it owes the swipe-style restore
                 -- and the next pass runs the falling edge (see GroupFrame).

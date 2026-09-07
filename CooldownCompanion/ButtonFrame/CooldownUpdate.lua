@@ -204,6 +204,7 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._cooldownState = COOLDOWN_STATE_READY
     button._chargeState = nil
     button._chargeCooldownVisualActive = nil
+    button._chargeRenderCount = nil
     button._currentReadableCharges = nil
     button._desatCooldownActive = false
     -- Raw (pre-presentation-override) twin of the flag above; see the ready-glow
@@ -787,9 +788,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- When readable, charge count is authoritative for "zero charges" (unusable),
     -- even if the spell also has a per-cast cooldown lockout.
     local charges
+    button._chargeRenderCount = nil
     if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
         button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
+        if charges then button._chargeRenderCount = charges.currentCharges end
         button._chargeCooldownVisualActive = EntryRuntime.DurationObjectShowsCooldown(button._chargeDurationObj)
         button._chargeRecharging = button._chargeCooldownVisualActive
     elseif usesChargeBehavior

@@ -292,6 +292,7 @@ ST._SECTION_HOME.bars = {
     barBgColor = { tab = "appearance" },
     barCooldownColor = { tab = "appearance" },
     barChargeColor = { tab = "appearance" },
+    barCharges = { tab = "appearance" },
     borderSettings = { tab = "appearance", collapseKey = "barappearance_border" },
     -- Icon Tint is drawn only while the icon renders for the current selection
     -- (BuildBarAppearanceTab's `iconVisSec.read.showBarIcon ~= false`).
@@ -636,6 +637,43 @@ local function BuildBarAppearanceTab(container, group, style)
     barSettingsSec:Finish()
     barSettingsSec:FinishBracket(barRightBracket)
     end -- not barSettingsCollapsed
+
+    if CanGroupUseOverrideSection(group, "barCharges") then
+        local chargesLeft = BeginRowGrid(container)
+        local sec = BeginLensSection(lens, group, "barCharges", { column = chargesLeft })
+        local row = AddCheckboxRow(chargesLeft, {
+            label = "Segment Charges",
+            setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.enabled,
+            value = sec.read.barSegmentCharges == true,
+            disabled = sec.disabled,
+            onChange = function(value)
+                if not sec.write then return end
+                sec.write.barSegmentCharges = value
+                refreshStyle()
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        sec:Chrome(row)
+        if sec.read.barSegmentCharges == true then
+            AddSliderRow(chargesLeft, {
+                label = "Segment Gap",
+                setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.gap,
+                min = 0, max = 20, step = 0.1,
+                value = sec.read.barChargeSegmentGap or 4,
+                disabled = sec.disabled,
+                onChange = function(value)
+                    if not sec.write then return end
+                    ST._PreviewScalarSetting(sec.write, "barChargeSegmentGap", value, ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(value)
+                    if not sec.write then return end
+                    sec.write.barChargeSegmentGap = value
+                    refreshStyle()
+                end,
+            })
+        end
+        sec:Finish()
+    end
 
     -- Bar colors have no heading and no collapse state, so they stay on screen
     -- while Bar Settings is folded away. They get a grid of their own, which is
@@ -2407,6 +2445,22 @@ if ST._DefineSettingRoute then
             end,
         },
         texture = { label = "Bar Texture" },
+    })
+
+    BAR_FINDER.appearance.chargeSegments = BarFinderRoute(
+        "panel.bars.appearance.chargeSegments", "appearance", "barCharges",
+        "Charge Segments", nil, nil, nil, "barCharges"):Settings({
+        enabled = {
+            label = "Segment Charges", aliases = {"charge bars", "segmented charges"},
+            applies = function(context) return BarFinderCanUse(context, "barCharges") end,
+        },
+        gap = {
+            label = "Segment Gap", aliases = {"charge spacing"},
+            applies = function(context)
+                local read = BarFinderSectionState(context, "barCharges")
+                return BarFinderCanUse(context, "barCharges") and read and read.barSegmentCharges == true
+            end,
+        },
     })
 
     BAR_FINDER.appearance.colors = BarFinderRoute(

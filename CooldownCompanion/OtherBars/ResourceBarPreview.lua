@@ -499,6 +499,11 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- shared preview fill fraction with the shared remaining time.
         SetStatusBarSmoothRange(bar, 0, 1)
         SetStatusBarImmediateValue(bar, PREVIEW_FILL)
+        local chargeMaximum = cabConfig.maxCharges or 0
+        if chargeMaximum > 1 and cabConfig.hasCharges then
+            RB.PaintCustomChargeSegments(barInfo, nil, PREVIEW_FILL,
+                kind == "recharge" and chargeMaximum - 1 or 0)
+        end
 
         if bar.text and bar.text:IsShown() then
             UnbindDurationText(bar.text)
@@ -878,6 +883,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
             RB.UpdateMaxStackBorder(barInfo.frame, settings, true, barInfo.powerType)
         elseif barInfo.barType == "custom_cooldown" then
+            ST.ChargeBarSegments.End(barInfo.frame)
             -- Spell custom bar, ready: full fill in the bar's own color
             -- (StyleCustomAuraBar already applied it), no cooldown or aura
             -- duration text. A stacks-display spell bar reads the same at
@@ -890,8 +896,14 @@ function RB.CreateResourceBarPreviewModule(deps)
             if ApplyCustomBarCooldownStandIn(barInfo) then
                 return
             end
+            -- Reset aura tint/alpha before the segmented paint hides the
+            -- original fill; doing it afterward reveals a continuous strip.
+            ClearCustomAuraBarIndicatorState(barInfo, true)
             SetStatusBarSmoothRange(barInfo.frame, 0, 1)
             SetStatusBarImmediateValue(barInfo.frame, 1)
+            if cabConfig.hasCharges and (cabConfig.maxCharges or 0) > 1 then
+                RB.PaintCustomChargeSegments(barInfo, nil, nil, cabConfig.maxCharges)
+            end
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 barInfo.frame.text:SetText("")
             end
@@ -903,7 +915,6 @@ function RB.CreateResourceBarPreviewModule(deps)
                     barInfo.frame.stackText:SetText("")
                 end
             end
-            ClearCustomAuraBarIndicatorState(barInfo, true)
         elseif barInfo.barType == "custom_continuous" then
             -- Aura custom bar, aura ABSENT: an empty fill. Stacks-mode bars
             -- get their capacity blocks from the aura host's absent-state

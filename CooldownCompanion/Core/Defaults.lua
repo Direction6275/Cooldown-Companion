@@ -473,6 +473,8 @@ local defaults = {
             barColor = {0.2, 0.6, 1.0, 1.0},
             barCooldownColor = {0.6, 0.13, 0.18, 1.0},
             barChargeColor = {1.0, 0.82, 0.0, 1.0},
+            barSegmentCharges = false,
+            barChargeSegmentGap = 4,
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
             barIconSizeOverride = false,
@@ -1425,6 +1427,12 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"barCooldownColor"},
         modes = {bars = true},
     },
+    barCharges = {
+        label = "Charge Segments",
+        keys = {"barSegmentCharges", "barChargeSegmentGap"},
+        defaults = {barSegmentCharges = false, barChargeSegmentGap = 4},
+        modes = {bars = true},
+    },
     barChargeColor = {
         label = "Bar Recharging Color",
         keys = {"barChargeColor"},
@@ -1476,7 +1484,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
-    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barBgColor", "barNameText", "barReadyText",
+    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
 
@@ -1503,6 +1511,7 @@ do
 end
 
 ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
+    barCharges = true,
     auraText = true,
     auraStackText = true,
     auraDurationSwipe = true,
@@ -1520,6 +1529,7 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
 -- bag items). Entry type is as immutable as add intent, so the prune pass
 -- may drop stored overrides for these sections just as it does above.
 ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    barCharges = true,
     cooldownPressFlash = true,
 }
 
@@ -1546,6 +1556,7 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
 -- whole population can share, and a section only some of its entries can use
 -- is not a panel-wide default worth offering.
 ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    barCharges = true,
     cooldownSwipe = true,
     showGCDSwipe = true,
     desaturation = true,
@@ -1600,6 +1611,7 @@ ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
     barColor = true,
     barCooldownColor = true,
     barChargeColor = true,
+    barCharges = true,
     -- "Ready" is the off-cooldown state a bar falls back to. Without a cooldown
     -- there is no such state to word.
     barReadyText = true,
@@ -1693,7 +1705,7 @@ ST.PANEL_COPY_SCOPES = {
         visibility = PANEL_VISIBILITY_COPY_SCOPE,
         appearance = {
             sections = {
-                "barColor", "barBgColor", "barCooldownColor", "barChargeColor",
+                "barColor", "barBgColor", "barCooldownColor", "barChargeColor", "barCharges",
                 "borderSettings", "iconTint", "barIcon", "barNameText",
                 "cooldownText", "durationLowTime", "chargeText", "barReadyText", "auraText",
                 "auraStackText", "iconZoom", "whileAuraActive",

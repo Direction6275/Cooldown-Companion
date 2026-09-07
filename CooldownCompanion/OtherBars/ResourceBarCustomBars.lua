@@ -129,6 +129,54 @@ function RB.CreateResourceBarCustomBarsModule(deps)
         end
     end
 
+    function RB.PaintCustomChargeSegments(barInfo, result, previewPercent, previewCount)
+        local cab, bar = barInfo.cabConfig, barInfo.frame
+        local renderer = ST.ChargeBarSegments
+        if cab.barSegmentCharges ~= true
+            and not (bar._chargeSegments and bar._chargeSegments._attached) then return false end
+        local maximum, count, duration, recharging, zero
+        if result then
+            if bar._chargeKnownSpell ~= result.chargeSpellID then
+                bar._chargeKnownSpell, bar._chargeKnownMax = result.chargeSpellID, nil
+            end
+            local charges = result.chargeInfo
+            if charges then
+                bar._chargeKnownMax = charges.maxCharges
+                count = charges.currentCharges
+            end
+            -- Keep only the known capacity through missing data, never fills.
+            maximum = bar._chargeKnownMax
+            duration, recharging = result.renderDurationObj, result.chargeRecharging
+            zero = result.chargeState == ST.CooldownLogic.CHARGE_STATE_ZERO
+        else
+            maximum, count = cab.maxCharges, previewCount
+            zero = previewCount == 0
+        end
+        local color = zero and (cab.barCooldownColor or {0.6, 0.13, 0.18, 1})
+            or (cab.barChargeColor or {1, 0.82, 0, 1})
+        local restore = cab.barColor or {0.5, 0.5, 1, 1}
+        if result and result.state == ST.CooldownLogic.STATE_COOLDOWN then
+            restore = result.hasCharges and not zero and (cab.barChargeColor or {1, 0.82, 0, 1})
+                or (cab.barCooldownColor or {0.6, 0.13, 0.18, 1})
+        end
+        if cab.barSegmentCharges ~= true or not RB.IsSpellCustomBarConfig(cab)
+            or not maximum or maximum <= 1 or not bar._chargePaint then
+            renderer.End(bar, restore)
+            return false
+        end
+        local width, height = bar:GetSize()
+        local holder = renderer.Begin(bar, bar, width, height, maximum,
+            cab.barChargeSegmentGap or 4, bar._isVertical == true, bar._reverseFill == true,
+            bar._chargePaint, bar.bg, bar.borders, restore)
+        if not holder then return false end
+        if result then
+            renderer.Update(holder, count, duration, recharging, color)
+        else
+            renderer.Preview(holder, count, previewPercent, color)
+        end
+        return true
+    end
+
     function RB.UpdateCustomCooldownBar(barInfo)
         local cabConfig = barInfo and barInfo.cabConfig
         local bar = barInfo and barInfo.frame
@@ -182,6 +230,7 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             UnbindDurationText(bar.text)
         end
 
+        RB.PaintCustomChargeSegments(barInfo, cooldownResult)
         UpdateSpellCustomBarChargeText(bar, cooldownResult)
 
         -- Show & hide rules ride this same evaluation. Sounds keep running
@@ -542,6 +591,10 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             barInfo._sndPrevChargeRecharging = nil
             barInfo._sndPrevChargeCooldownStart = nil
         end
+        ST.ChargeBarSegments.Invalidate(barInfo.frame)
+        if barInfo.cabConfig ~= cabConfig then
+            barInfo.frame._chargeKnownSpell, barInfo.frame._chargeKnownMax = nil, nil
+        end
         barInfo.cabConfig = cabConfig
         barInfo.powerType = legacyPowerType
         barInfo.customBarId = customBarId
@@ -565,6 +618,14 @@ function RB.CreateResourceBarCustomBarsModule(deps)
             local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
             local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
             local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
+            barInfo.frame._chargePaint = {
+                texture = barTexture, readyColor = cabConfig.barColor or {0.5, 0.5, 1, 1},
+                rechargeInterpolation = Enum.StatusBarInterpolation.Immediate,
+                cooldownColor = cabConfig.barCooldownColor or {0.6, 0.13, 0.18, 1},
+                rechargeColor = cabConfig.barChargeColor or {1, 0.82, 0, 1},
+                backgroundColor = bgc, borderStyle = borderStyle,
+                borderColor = borderColor, borderSize = borderSize, borderRenderMode = borderRenderMode,
+            }
             if borderStyle == "pixel" then
                 ApplyPixelBorders(barInfo.frame.borders, barInfo.frame, borderColor, borderSize, borderRenderMode)
             else

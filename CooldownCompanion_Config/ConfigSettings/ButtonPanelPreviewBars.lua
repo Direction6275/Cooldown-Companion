@@ -99,7 +99,12 @@ local function BarSlotFillOnUpdate(self)
     end
     if frac < 0 then frac = 0 end
     if frac > 1 then frac = 1 end
-    self:SetValue(frac)
+    local holder = self._chargeSegments
+    if holder and holder._attached and slot._chargePreviewCount ~= nil then
+        ST.ChargeBarSegments.Preview(holder, slot._chargePreviewCount, frac, slot._chargePreviewColor)
+    else
+        self:SetValue(frac)
+    end
 end
 
 -- Effective pandemic enable for a mirror entry: the explicit-true style key.
@@ -167,6 +172,8 @@ end
 -- Cleanup runs before StyleBarEntry so its neutral texture tint cannot win
 -- over the final saved or simulated status-bar color.
 local function ResetBarSlotConditionalVisuals(slot)
+    ST.ChargeBarSegments.Invalidate(slot.statusBar)
+    slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     slot._cdcCondAnim = nil
     slot._cdcCondArmedStart = nil
     if slot.statusBar then
@@ -266,6 +273,11 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot.timeText:SetText("")
     end
 
+    if auraPresentationActive then
+        ST.ChargeBarSegments.End(slot.statusBar)
+        slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
+    end
+
     if kind == "aura_duration_bar" then
         local auraTint = style.iconAuraTintEnabled and style.iconAuraTintColor or baseTint
         tintR = auraTint and auraTint[1] or 1
@@ -337,6 +349,10 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                     tintA = iconTint[4] or 1
                 end
             end
+            local color = style.barCooldownColor or DEFAULT_BAR_COLOR
+            if ST.ChargeBarSegments.PaintPanel(slot, 0, buttonData.maxCharges, nil, false, color) then
+                slot._chargePreviewCount, slot._chargePreviewColor = 0, color
+            end
             slot.statusBar._cdcOwner = slot
             slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
             slot._cdcCondAnim = state
@@ -403,6 +419,14 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                     local c = style.barCooldownColor or style.barColor or DEFAULT_BAR_COLOR
                     slot.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
                 end
+            end
+
+            local segmentColor = chargePresentationKind == "charge_zero"
+                and (style.barCooldownColor or DEFAULT_BAR_COLOR)
+                or (style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR)
+            if not auraPresentationActive
+                and ST.ChargeBarSegments.PaintPanel(slot, current, maxCharges, nil, false, segmentColor) then
+                slot._chargePreviewCount, slot._chargePreviewColor = current, segmentColor
             end
 
             if chargePresentationKind ~= "charge_full" and GetConditionalPreviewTiming then
@@ -510,6 +534,9 @@ end
 -- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same
 -- shared area/border helpers, full fill, no runtime state.
 local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
+    ST.ChargeBarSegments.Invalidate(slot.statusBar)
+    slot.buttonData = buttonData
+    slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     local style = effectiveStyle or group.style or {}
     if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
         style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
@@ -596,6 +623,10 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
         slot.borderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
     end
     ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
+    if ST.ChargeBarSegments.PaintPanel(slot, buttonData.maxCharges, buttonData.maxCharges,
+        nil, false, style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR) then
+        slot.textFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 4)
+    end
 end
 
 -- Private helpers consumed by later ButtonPanelPreview files.

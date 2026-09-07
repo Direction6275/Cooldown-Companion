@@ -30,6 +30,7 @@ local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
 -- BuildAppearanceTab's icons path (GroupTabsAppearance.lua); this file conforms to them
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
+local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddColorRow = ST._AddColorRow
@@ -401,6 +402,20 @@ if ST._DefineSettingRoute then
             label = "Bar Width",
             applies = function(context) return FinderCustomBarSizeField(context) == "barWidth" end,
         },
+    })
+
+    local chargeSegments = DefineCustomBarRoute("chargeSegments", "Charge Segments", {
+        applies = function(context)
+            local caps = FinderCustomBarCapabilities(context)
+            return caps and caps.isSpellBar and caps.baseSpellShellConsumer and caps.hasCharges
+        end,
+    })
+    CUSTOM_BAR_FINDER.chargeSegments = chargeSegments:Settings({
+        enabled = {label = "Segment Charges", aliases = {"charge bars", "segmented charges"}},
+        gap = {label = "Segment Gap", applies = function(context)
+            local cab = FinderCustomBar(context)
+            return cab and cab.barSegmentCharges == true
+        end},
     })
 
     local colors = DefineCustomBarRoute("colors", "Colors", { applies = FinderCustomBarHasSpell })
@@ -2393,6 +2408,36 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                 -- reaches the icon panel the lanes wrap.
                 local cabPreviewOnly = RefreshLayoutOrderPreviewForDrag
                 local isAuraTracked = capabilities.auraTracked
+
+                if isSpellCustomBar and capabilities.baseSpellShellConsumer and capabilities.hasCharges then
+                    local _, chargesCollapsed = AddCustomBarSettingsHeading(container,
+                        "Charge Segments", "chargeSegments", capturedKey)
+                    if not chargesCollapsed then
+                        local chargesLeft = BeginRowGrid(container)
+                        AddCheckboxRow(chargesLeft, {
+                            label = "Segment Charges", setting = CUSTOM_BAR_FINDER.chargeSegments.enabled,
+                            value = cab.barSegmentCharges == true,
+                            onChange = function(value)
+                                cab.barSegmentCharges = value
+                                cabApplyBars()
+                                CooldownCompanion:RefreshConfigPanel()
+                            end,
+                        })
+                        if cab.barSegmentCharges then
+                            AddSliderRow(chargesLeft, {
+                                label = "Segment Gap", setting = CUSTOM_BAR_FINDER.chargeSegments.gap,
+                                min = 0, max = 20, step = 0.1, value = cab.barChargeSegmentGap or 4,
+                                onChange = function(value)
+                                    ST._PreviewScalarSetting(cab, "barChargeSegmentGap", value, cabPreviewOnly)
+                                end,
+                                onRelease = function(value)
+                                    cab.barChargeSegmentGap = value
+                                    cabApplyBars()
+                                end,
+                            })
+                        end
+                    end
+                end
 
                 local _, colorsCollapsed = AddCustomBarSettingsHeading(container, "Colors", "colors", capturedKey)
 

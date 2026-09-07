@@ -494,6 +494,7 @@ local function UpdateCustomAuraBarIndicatorVisuals(barInfo, cabConfig)
 end
 local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     if not frame then return end
+    ST.ChargeBarSegments.End(frame)
     UnbindFrameDurationText(frame)
     ClearStatusBarMotion(frame)
     if frame._cdcCustomAuraAlphaModuleId then

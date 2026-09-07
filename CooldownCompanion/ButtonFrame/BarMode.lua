@@ -477,6 +477,11 @@ local function UpdateBarDisplay(button)
         })
     end
 
+    ST.ChargeBarSegments.PaintPanel(button, button._chargeRenderCount,
+        button.buttonData.maxCharges, button._chargeDurationObj, button._chargeRecharging,
+        chargeState == CHARGE_STATE_ZERO and (style.barCooldownColor or DEFAULT_BAR_COLOR)
+            or (style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR))
+
     -- Keep the cooldown widget hidden — SetCooldown auto-shows it
     if button.cooldown:IsShown() then
         button.cooldown:Hide()
@@ -952,6 +957,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
+    ST.ChargeBarSegments.Invalidate(button.statusBar)
     button.style = newStyle
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
@@ -986,6 +992,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._vertexB = nil
     button._vertexA = nil
     button._chargeText = nil
+    button._chargeRenderCount = nil
     button._chargeCountReadable = nil
     button._zeroChargesConfirmed = nil
     button._nilConfirmPending = nil

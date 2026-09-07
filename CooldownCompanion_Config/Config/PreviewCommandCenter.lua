@@ -2086,6 +2086,12 @@ local function PanelMenuControlComesBefore(a, b)
         return aGroup < bGroup
     end
 
+    -- Dynamic custom-bar/resource groups share the fallback rank. Keep each
+    -- object's controls together before ordering its individual previews.
+    if a.group ~= b.group then
+        return (a.group or "") < (b.group or "")
+    end
+
     local aOrder = a.menuOrder or 99
     local bOrder = b.menuOrder or 99
     if aOrder ~= bOrder then
