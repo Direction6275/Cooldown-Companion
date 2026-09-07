@@ -14,27 +14,20 @@
     CooldownCompanion:NormalizePanelTemplateStore (Core/Migrations.lua), run
     every login and on profile change; nothing here normalizes a template.
 
-    THE LINE. A template carries exactly four things:
-      * the look: every key of every ST.PANEL_COPY_SCOPES[mode] scope - the
-        registry Copy Panel Settings writes - plus masqueEnabled and the
-        compact trio where the mode's appearance scope carries them;
-      * the shape: ST.PANEL_TEMPLATE_SHAPE_KEYS[mode], the arrangement the
-        Layout tab edits;
-      * the sections (icon panels only): each anchor's settings, keyed by
-        ST.PANEL_TEMPLATE_SECTION_KEYS, with no members - a placement that
-        waits for entries (owner ruling 2026-09-03);
-      * the panel's offset from its own Group frame (point, relativePoint,
-        x, y) - and only that anchor.
-    It never carries entries, per-entry settings, section membership, alpha
-    or visibility, strata, name-derived data (order, createdBy,
-    cdmPanelSource), the Aura Panel flag, or an anchor to another panel,
-    frame, or the cursor.
+    New snapshots (templateVersion 2) carry Appearance, Indicators, Visibility,
+    Arrangement, Aura subtype, section settings without members, bar fill
+    direction, and relative placement. They exclude eligibility, Alpha
+    inheritance, entries, strata and specific panel/frame anchor targets.
 
-    Owner ruling (2026-09-01): Apply on an existing panel keeps the panel
-    where it is; create-from-template places the new panel at the template's
-    offset. ApplyPanelTemplate exposes the switch (opts.position, default
-    off): CreatePanelFromTemplate below passes it itself, and the config
-    passes position = false for Apply on an existing panel.
+    Apply remains one click and preserves the destination's position and
+    anchor target. Create remains one click: ordinary placement uses the new
+    Group, while cursor templates create a cursor-anchored panel. No picker
+    or scope selection is added.
+
+    Unversioned templates retain their original look/shape/compact contract
+    and Group-relative create offset. They never apply newly captured fields
+    such as Visibility or Aura Collapse Direction. Updating from a panel
+    replaces the snapshot with the current version.
 
     Every apply runs through ST._ApplyPanelSettingsSource
     (Core/GroupManagement.lua), the applier Copy Panel Settings uses, so the
@@ -53,10 +46,36 @@ local tostring = tostring
 local table_sort = table.sort
 local string_lower = string.lower
 
-local CONTAINER_FRAME_PREFIX = "CooldownCompanionContainer"
+-- Legacy snapshots cannot apply settings they never captured.
+local function GetPanelTemplateScopeList(self, mode, template)
+    local scopes = {}
+    if template and template.templateVersion == 2 then
+        for _, scope in ipairs(self:GetPanelCopyScopeList(mode)) do
+            if scope ~= "position" then scopes[#scopes + 1] = scope end
+        end
+    else
+        local modeScopes = ST.PANEL_COPY_SCOPES[mode] or {}
+        if modeScopes.appearance then scopes[#scopes + 1] = "appearance" end
+        if modeScopes.indicators then scopes[#scopes + 1] = "indicators" end
+    end
+    return scopes
+end
 
-local function DefaultTemplateAnchor()
-    return { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+local TEMPLATE_BAR_FILL_KEYS = { "barFillVertical", "barReverseFill" }
+
+function CooldownCompanion:GetPanelTemplateCreationMode(template)
+    if ST.IsAuraPanelGroup(template) then
+        if template.displayMode == "icons" then return "auraIcons" end
+        if template.displayMode == "bars" then return "auraBars" end
+    end
+    return template and template.displayMode
+end
+
+local function TemplateSubtypeMatches(template, group)
+    -- Old templates have no reliable subtype evidence. Preserve their original
+    -- compatibility until the owner updates them from an actual panel.
+    return template.templateVersion ~= 2
+        or ST.IsAuraPanelGroup(template) == ST.IsAuraPanelGroup(group)
 end
 
 -- Trimmed, never empty: a blank name falls back to the template's id.
@@ -94,8 +113,8 @@ local function GetProfileGroup(self, groupId)
     return db and db.groups and groupId and db.groups[groupId] or nil
 end
 
--- The template body for one panel: look, shape, and Group offset, nothing
--- else. Save and update share it; the caller stamps the name.
+-- Save and update capture one complete settings snapshot; the caller stamps
+-- the name. Versioning distinguishes absent legacy scopes from saved defaults.
 local function BuildPanelTemplateSnapshot(self, group, mode)
     local db = self.db.profile
     -- Per key: the panel's value, or the shipped default where it carries
@@ -117,32 +136,30 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     end
 
     local template = {
+        templateVersion = 2,
+        auraPanel = ST.IsAuraPanelGroup(group),
         displayMode = mode,
         buttons = {},
         style = style,
     }
 
     local modeScopes = ST.PANEL_COPY_SCOPES[mode] or {}
-    local isAuraPanel = ST.IsAuraPanelGroup(group)
-    for _, scopeName in ipairs(self:GetPanelCopyScopeList(mode)) do
+    for _, scopeName in ipairs(GetPanelTemplateScopeList(self, mode, template)) do
         local scopeData = modeScopes[scopeName]
         -- The applier's own key walk, one scope at a time as it runs it.
         ST._ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey)
         if scopeData.copiesMasque then
             template.masqueEnabled = group.masqueEnabled and true or false
         end
-        -- An Aura Panel's compact trio is not a look (its compactLayout is
-        -- invariant-forced false and its compactGrowthDirection is the
-        -- Layout-owned Collapse Direction), so the template carries none and
-        -- an apply leaves the target's alone.
-        if scopeData.copiesCompact and not isAuraPanel then
-            template.compactLayout = group.compactLayout == true
-            template.compactGrowthDirection = group.compactGrowthDirection or "center"
-            template.maxVisibleButtons = tonumber(group.maxVisibleButtons) or 0
+        if scopeName == "visibility" then
+            ST._CopyPanelVisibility(self, group, template, scopeData)
+        elseif scopeName == "arrangement" then
+            ST._CopyPanelArrangement(group, template, mode, scopeData)
         end
     end
-    for _, key in ipairs(ST.PANEL_TEMPLATE_SHAPE_KEYS[mode] or {}) do
-        CopyStyleKey(key)
+    -- These existing template extras remain part of the complete setup.
+    if mode == "bars" then
+        for _, key in ipairs(TEMPLATE_BAR_FILL_KEYS) do CopyStyleKey(key) end
     end
 
     -- Sections: settings only, never membership. Only a panel the section
@@ -172,22 +189,10 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
         style.durationFormat = self.GetDurationFormat(sourceStyle)
     end
 
-    -- The one placement fact: the offset from the panel's own Group frame.
-    -- Any other anchor target (another panel, a frame, the cursor) is outside
-    -- the line, so it collapses to the Group's center.
-    local anchor = group.anchor
-    local containerFrameName = group.parentContainerId
-        and (CONTAINER_FRAME_PREFIX .. group.parentContainerId)
-    if type(anchor) == "table" and containerFrameName and anchor.relativeTo == containerFrameName then
-        template.anchor = {
-            point = anchor.point or "CENTER",
-            relativePoint = anchor.relativePoint or "CENTER",
-            x = tonumber(anchor.x) or 0,
-            y = tonumber(anchor.y) or 0,
-        }
-    else
-        template.anchor = DefaultTemplateAnchor()
-    end
+    -- Save offsets without retaining another panel/frame's identity. A new
+    -- non-cursor panel uses its own Group; apply leaves its target untouched.
+    template.positionMode = self:IsCursorAnchor(group.anchor) and "cursor" or "group"
+    ST._CopyPanelPosition(self, group, template)
 
     return template
 end
@@ -298,7 +303,7 @@ function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
     if not mode then
         return false, "missing_group"
     end
-    if mode ~= existing.displayMode then
+    if mode ~= existing.displayMode or not TemplateSubtypeMatches(existing, group) then
         return false, "mode_mismatch"
     end
 
@@ -345,7 +350,7 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
         return false, "missing_group"
     end
     local mode = self:GetPanelCopyMode(group)
-    if not mode or mode ~= template.displayMode then
+    if not mode or mode ~= template.displayMode or not TemplateSubtypeMatches(template, group) then
         return false, "mode_mismatch"
     end
     if self.ResolveContainerClassScope then
@@ -358,8 +363,8 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
     return true
 end
 
--- opts.position (default false): also move the panel to the template's
--- Group-relative offset. Off, the panel keeps its anchor whatever it is.
+-- opts.position (default false, used by creation): also apply saved placement.
+-- Current snapshots preserve the target; old snapshots retain Group placement.
 function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     groupId = tonumber(groupId)
     local canApply, reason = self:CanApplyPanelTemplate(templateId, groupId)
@@ -369,27 +374,45 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     local template = self:GetPanelTemplate(templateId)
     local mode = template.displayMode
     local position = opts and opts.position == true
-    return ST._ApplyPanelSettingsSource(self, groupId, template, self:GetPanelCopyScopeList(mode), {
-        shapeKeys = ST.PANEL_TEMPLATE_SHAPE_KEYS[mode],
-        -- A template saved from an Aura Panel carries no compact trio; the
-        -- applier must then leave the target's alone rather than default it.
+    local currentSnapshot = template.templateVersion == 2
+    local scopes = GetPanelTemplateScopeList(self, mode, template)
+    if currentSnapshot and position then
+        local group = self.db.profile.groups[groupId]
+        if (template.positionMode == "cursor") ~= self:IsCursorAnchor(group.anchor) then
+            return false, "anchor_mode_mismatch"
+        end
+        scopes[#scopes + 1] = "position"
+    end
+    local shapeKeys = ST.PANEL_TEMPLATE_SHAPE_KEYS[mode]
+    if currentSnapshot then
+        shapeKeys = mode == "bars" and TEMPLATE_BAR_FILL_KEYS or nil
+    end
+    return ST._ApplyPanelSettingsSource(self, groupId, template, scopes, {
+        shapeKeys = shapeKeys,
+        copyCompact = not currentSnapshot,
         skipCompact = template.compactLayout == nil,
         sections = template.sections,
-        anchor = position and template.anchor or nil,
+        anchor = not currentSnapshot and position and template.anchor or nil,
     })
 end
 
--- A new panel in `containerId` wearing the template's name, look, shape and
--- Group offset. CreatePanel builds the panel's frame itself, so out of
+-- A new panel in `containerId` with the template's type, settings and placement.
+-- CreatePanel builds the panel's frame itself, so out of
 -- combat the apply runs against a live frame. Returns the new panel id, or
 -- nil with nothing left behind.
 function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
     local template = self:GetPanelTemplate(templateId)
     if not template then return nil end
-    local newGroupId = self:CreatePanel(containerId, template.displayMode)
+    local newGroupId = self:CreatePanel(containerId, self:GetPanelTemplateCreationMode(template))
     if not newGroupId then return nil end
 
-    self.db.profile.groups[newGroupId].name = template.name
+    local group = self.db.profile.groups[newGroupId]
+    group.name = template.name
+    if template.templateVersion == 2 and template.positionMode == "cursor" then
+        -- This is a fresh, empty panel with no anchor dependents. Set its
+        -- saved target before apply; the common applier owns combat deferral.
+        group.anchor = self:GetDefaultCursorPanelAnchor()
+    end
 
     local applied = self:ApplyPanelTemplate(templateId, newGroupId, { position = true })
     if not applied then

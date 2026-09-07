@@ -3502,8 +3502,10 @@ end
 -- saved panel styles, kept PROFILE-SHAPED on purpose: { groups = { [id] =
 -- <panel-shaped table> }, nextGroupId = N }. Each template carries a panel's
 -- name, displayMode, style, Masque/compact/visible-limit flags and a
--- relativeTo-less anchor, with an always-empty buttons list; never an entry,
--- a section, a container parent, an aura-panel flag or a resource store.
+-- relativeTo-less anchor, with an always-empty buttons list. Current snapshots
+-- also carry templateVersion, Aura subtype, Visibility and section settings
+-- without members. Never infer those new scopes for an unversioned template;
+-- only saving/updating from an actual panel upgrades its snapshot.
 --
 -- The shape is the whole point. groupSettingPresets was a second style store
 -- with its own layout, so every pass that rewrote style vocabulary had to

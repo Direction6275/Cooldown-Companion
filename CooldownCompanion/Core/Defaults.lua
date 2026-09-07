@@ -1617,7 +1617,7 @@ end
 ------------------------------------------------------------------------
 -- PANEL COPY SCOPES REGISTRY
 -- Which panel settings "Copy Panel Settings To..." carries, per display
--- mode, per scope tab. A scope is everything the named tab edits: the
+-- mode, per scope tab. Appearance and Indicators carry their tab's
 -- override sections drawn there (their keys come from ST.OVERRIDE_SECTIONS,
 -- never restated here) plus the panel-only style keys that live on that tab
 -- without an override section of their own.
@@ -1627,22 +1627,35 @@ end
 -- membership so the copy primitive can run without the config's predicates.
 -- A new style key added to an Appearance or Indicators tab must be added
 -- here (or to a section's key list) the same day, or it silently never
--- copies. Placement keys (orientation, growth, buttonsPerRow, strata) are
--- deliberately absent: the look copies, the placement does not. Alpha is
--- absent for its own reason - it is transparency behavior, not look, and its
--- rows render on the Visibility tab.
+-- copies. Arrangement owns orientation, growth, wrapping and packing;
+-- Position owns only anchor points and offsets. Anchor targets, strata and
+-- section settings stay out. Visibility excludes eligibility and inheritance.
 --
--- copiesMasque / copiesCompact flag the group-level (non-style) settings the
--- scope carries; CopyPanelSettings owns their special handling (Masque
--- lifecycle sync, maxVisibleButtons clamp).
+-- Visibility uses groupKeys for local Alpha and copiesLoadConditions for the
+-- Where To Hide It keys in ST.LOAD_CONDITION_OPTIONS. Keep both aligned with
+-- the Visibility tab; eligibility and inheritPanelAlpha are excluded.
 --
--- copiesCompact stays on the APPEARANCE scope even though the Compact Mode
--- row now renders on the Layout tab: compact mode is packing behavior, not
--- placement, so it copies with the look. The row's tab is a findability
--- decision; this membership is the behavior contract, and moving one must
--- never silently move the other.
+-- Appearance carries Masque where supported. Arrangement carries the
+-- compact trio on ordinary panels and Collapse Direction on Aura Panels.
+-- Templates preserve their original compact behavior explicitly.
+local PANEL_VISIBILITY_COPY_SCOPE = {
+    copiesLoadConditions = true,
+    groupKeys = {
+        "baselineAlpha", "forceAlphaInCombat", "forceAlphaOutOfCombat",
+        "forceAlphaRegularMounted", "forceAlphaDragonriding",
+        "forceHideInCombat", "forceHideOutOfCombat",
+        "forceHideRegularMounted", "forceHideDragonriding",
+        "treatTravelFormAsMounted", "forceAlphaTargetExists",
+        "forceAlphaTargetEnemyOnly", "forceAlphaFocusExists", "forceAlphaMouseover",
+        "customFade", "fadeDelay", "fadeInDuration", "fadeOutDuration",
+    },
+}
+
 ST.PANEL_COPY_SCOPES = {
     icons = {
+        arrangement = { orientationKey = "orientation" },
+        position = {},
+        visibility = PANEL_VISIBILITY_COPY_SCOPE,
         appearance = {
             sections = {
                 "cooldownText", "durationLowTime", "chargeText", "auraText", "auraStackText",
@@ -1658,7 +1671,6 @@ ST.PANEL_COPY_SCOPES = {
                 "durationFormat",
             },
             copiesMasque = true,
-            copiesCompact = true,
         },
         indicators = {
             sections = {
@@ -1676,6 +1688,9 @@ ST.PANEL_COPY_SCOPES = {
         },
     },
     bars = {
+        arrangement = { orientationKey = "barOrientation" },
+        position = {},
+        visibility = PANEL_VISIBILITY_COPY_SCOPE,
         appearance = {
             sections = {
                 "barColor", "barBgColor", "barCooldownColor", "barChargeColor",
@@ -1686,15 +1701,13 @@ ST.PANEL_COPY_SCOPES = {
             styleKeys = {
                 -- Bar Settings (shape, texture). barFillVertical and
                 -- barReverseFill render in this same section but are
-                -- deliberately absent: they are Layout-tab keys by the rule
-                -- in the header above, and the findability move that put
-                -- their rows here did not change what copies.
+                -- deliberately absent: bar fill direction is outside the
+                -- quick-copy scopes, including Arrangement.
                 "barLength", "barHeight", "buttonSpacing", "barTexture",
                 -- Duration Format is panel-owned; Low Time Threshold is the
                 -- durationLowTime override section above.
                 "durationFormat",
             },
-            copiesCompact = true,
         },
         indicators = {
             -- barActiveAura's home is the Indicators tab (Active Aura
@@ -1713,24 +1726,25 @@ ST.PANEL_COPY_SCOPES = {
     -- Text panels have no Indicators tab; the Format tab is content, not
     -- look, so it stays out of scope.
     text = {
+        arrangement = { orientationKey = "textOrientation" },
+        position = {},
+        visibility = PANEL_VISIBILITY_COPY_SCOPE,
         appearance = {
             sections = { "textFont", "textColors", "textBackground" },
             styleKeys = {
                 "textPadding", "buttonSpacing", "showTextGroupHeader",
                 "textHeaderFontSize", "textHeaderFontColor",
             },
-            copiesCompact = true,
         },
     },
 }
 
 ------------------------------------------------------------------------
 -- PANEL TEMPLATE SHAPE REGISTRY
--- The arrangement keys a Panel Template carries on top of the copy scopes
--- above (Core/PanelTemplates.lua). Shape is the arrangement the Layout tab
--- edits: orientation, growth origin, wrap count, and for bars the fill
--- direction pair. The copy registry deliberately leaves these out - the
--- look copies, the placement does not - and a template carries them by
+-- The original shape keys carried by unversioned Panel Templates, retained
+-- for legacy apply compatibility (Core/PanelTemplates.lua). Current snapshots
+-- use the shared Arrangement scope plus their bar-fill extras. The original
+-- contract included orientation, growth, wrapping and bar fill direction by
 -- owner ruling (2026-09-01): a template is a whole panel minus its entries
 -- and its place on screen, and the arrangement is part of what makes it
 -- that panel. The same-day rule applies here too: a new Layout-tab
