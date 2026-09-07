@@ -596,6 +596,10 @@ StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
+        if data and data.snapshot then
+            ST._DeleteEntrySelection(data.snapshot)
+            return
+        end
         if data and data.groupId and data.buttonIndex then
             CooldownCompanion:RemoveButtonFromGroup(data.groupId, data.buttonIndex)
             ResetConfigSelection(false)
@@ -613,24 +617,8 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_BUTTONS"] = {
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if data and data.groupId and data.indices then
-            local group = CooldownCompanion.db.profile.groups[data.groupId]
-            if group then
-                -- Remove in reverse order so indices stay valid
-                table.sort(data.indices, function(a, b) return a > b end)
-                for _, idx in ipairs(data.indices) do
-                    table.remove(group.buttons, idx)
-                end
-                -- A batch delete can empty several sections at once, so sweep
-                -- the panel once here instead of per entry. Without it every
-                -- emptied anchor stays in the profile as a Layout-tab block for
-                -- a cluster with nothing in it.
-                ST.SweepEmptyPanelSections(group)
-                CooldownCompanion:RefreshGroupFrame(data.groupId)
-            end
-            ResetConfigSelection(false)
-            CooldownCompanion:RefreshConfigPanel()
-        end
+        -- PanelShared loads after this file; resolve the action on acceptance.
+        ST._DeleteEntrySelection(data)
     end,
     timeout = 0,
     whileDead = true,
