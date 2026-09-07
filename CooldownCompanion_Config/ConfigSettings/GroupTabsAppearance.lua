@@ -29,7 +29,6 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
 local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
-local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -1261,7 +1260,7 @@ local function BuildAppearanceTab(container)
     AddSettingsSubheading(container, "Duration Text")
     local durationLeft, durationRight
     if isAuraPanel then
-        durationLeft = BeginFullWidthRowGroup(container)
+        durationLeft = BeginRowGrid(container)
         durationRight = durationLeft
     else
         durationLeft, durationRight = BeginRowGrid(container)
@@ -1269,7 +1268,7 @@ local function BuildAppearanceTab(container)
     -- Column captions, drawn only where both families really appear. LEFT is
     -- the Show Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT
     -- is the aura duration text block, gated on an aura-tracking entry. An Aura
-    -- Panel is a single rail (durationLeft == durationRight), which the helper
+    -- Panel uses the left half (durationLeft == durationRight), which the helper
     -- also refuses on its own. The low-time grid below is NOT captioned: it is
     -- one feature flowing across two columns, not a family split.
     if not isAuraPanel and groupHasAuraEntry then
@@ -1278,7 +1277,7 @@ local function BuildAppearanceTab(container)
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
         if isAuraPanel then
-            lowTimeLeft = BeginFullWidthRowGroup(container)
+            lowTimeLeft = BeginRowGrid(container)
             lowTimeRight = lowTimeLeft
         else
             lowTimeLeft, lowTimeRight = BeginRowGrid(container)
@@ -1288,7 +1287,7 @@ local function BuildAppearanceTab(container)
     AddSettingsSubheading(container, "Other Text")
     local otherLeft, otherRight
     if isAuraPanel then
-        otherLeft = BeginFullWidthRowGroup(container)
+        otherLeft = BeginRowGrid(container)
         otherRight = otherLeft
     else
         otherLeft, otherRight = BeginRowGrid(container)
@@ -1303,8 +1302,8 @@ local function BuildAppearanceTab(container)
     end
 
     -- Ordinary icon panels give cooldown and aura parallel columns. Aura
-    -- Panels have no cooldown consumer, so their duration and other-text rails
-    -- are full width rather than preserving an empty left or right column.
+    -- Panels have no cooldown consumer, so their duration and other-text rows
+    -- share the left half, leaving the right column empty.
     local auraTextHost = isAuraPanel and durationLeft or durationRight
 
     local durationFormatAdded = false

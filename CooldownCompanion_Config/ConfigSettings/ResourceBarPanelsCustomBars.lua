@@ -24,7 +24,6 @@ local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
 local AddSettingsSubheading = ST._AddSettingsSubheading
 local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
-local BeginFullWidthRowGroup = ST._BeginFullWidthRowGroup
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
 -- section follows are stated once, in the recipe comment at the top of
@@ -2513,14 +2512,14 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                         if isSpellCustomBar and isAuraTracked then
                             durationLeft, durationRight = BeginRowGrid(container)
                         else
-                            durationLeft = BeginFullWidthRowGroup(container)
+                            durationLeft = BeginRowGrid(container)
                             durationRight = durationLeft
                         end
                         if showDuration then
                             if isSpellCustomBar and isAuraTracked then
                                 lowTimeLeft, lowTimeRight = BeginRowGrid(container)
                             else
-                                lowTimeLeft = BeginFullWidthRowGroup(container)
+                                lowTimeLeft = BeginRowGrid(container)
                                 lowTimeRight = lowTimeLeft
                             end
                         end
@@ -2529,7 +2528,7 @@ local function BuildCustomAuraBarPanel(container, customBarId)
                     local otherLeft
                     if capabilities.countConsumer then
                         AddSettingsSubheading(container, "Other Text")
-                        otherLeft = BeginFullWidthRowGroup(container)
+                        otherLeft = BeginRowGrid(container)
                     end
 
                     local durationTextRow
