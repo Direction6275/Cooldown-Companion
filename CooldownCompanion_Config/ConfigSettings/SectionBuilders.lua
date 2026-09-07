@@ -2433,19 +2433,19 @@ local function BuildReadyGlowControls(container, styleTable, refreshCallback, op
 end
 
 -- Aura glow styles are limited to what the aura slot kit can render: static
--- textures and AnimationGroup-driven effects. The proc/ready-only styles
--- (pixel/autocast) are not offered here; the kit's dashes style is the
--- pixel equivalent.
+-- textures and AnimationGroup-driven effects. The kit's dashes style is
+-- the pixel equivalent; autocast shares the proc/ready spark animation.
 local AURA_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pulse"] = "Pulsing Border",
     ["colorShift"] = "Color Shift",
     ["dashes"] = "Pixel Dashes",
+    ["autocast"] = "Autocast Shine",
     ["ants"] = "Marching Ants",
     ["proc"] = "Proc Glow",
     ["overlay"] = "Overlay",
 }
-local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay"}
+local AURA_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "autocast", "ants", "proc", "overlay"}
 
 -- The pandemic menu offers the aura-glow vocabulary plus Blizzard's own
 -- Cooldown Manager pandemic look (PTR 8 Phase 2). "cdm" is pandemic-only:
@@ -2458,13 +2458,13 @@ local PANDEMIC_GLOW_STYLE_OPTIONS = {
 for k, v in pairs(AURA_GLOW_STYLE_OPTIONS) do
     PANDEMIC_GLOW_STYLE_OPTIONS[k] = v
 end
-local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "ants", "proc", "overlay", "cdm"}
+local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "autocast", "ants", "proc", "overlay", "cdm"}
 
 -- The size and speed keys change meaning per style (border/dash px vs
 -- overhang %; cycle vs lap seconds), so switching styles resets the sliders
 -- to that style's defaults.
 local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 12 }
-local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2 }
+local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2, autocast = 50 }
 
 local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
     BuildGlowStyleControls(container, styleTable, refreshCallback, {
@@ -2530,8 +2530,9 @@ local BAR_AURA_EFFECT_STYLE_OPTIONS = {
     ["pulse"] = "Pulsing Border",
     ["colorShift"] = "Color Shift",
     ["dashes"] = "Pixel Dashes",
+    ["autocast"] = "Autocast Shine",
 }
-local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes"}
+local BAR_AURA_EFFECT_STYLE_ORDER = {"color", "solid", "pulse", "colorShift", "dashes", "autocast"}
 
 -- "None (bar color only)" runs 21 characters, past what the row grammar's
 -- 140px control column can size a menu from - the case WIDE_PULLOUT_WIDTH at
