@@ -15,9 +15,15 @@ local function GetPlacement(kind)
     return panelId and "attached" or "unplaced", panelId
 end
 
-local function OpenWorkspace(kind)
+local function OpenWorkspace(kind, opts)
     kind = kind or "resources"
     local _, panelId = GetPlacement(kind)
+    -- Explicit module navigation restores Settings for attached bars too.
+    -- A refresh may keep browsing only while a buttons workspace remains.
+    if CS.spellbookPanelDocked
+        and (not panelId or not (opts and opts.preserveSpellbook)) then
+        CS.CloseSpellbookPanel()
+    end
     if panelId then
         local panel = Addon.db.profile.groups[panelId]
         if CS.barsEntrySelected or CS.selectedGroup ~= panelId or CS.otherClassLibraryActive then
@@ -33,9 +39,6 @@ local function OpenWorkspace(kind)
         if kind ~= "resources" then CS.castFramesSelectedItem = kind end
         CS.unifiedRowScope = kind == "resources" and "primary" or "detail"
     else
-        -- Standalone workspaces have no spellbook toggle; restore their
-        -- settings before leaving the buttons workspace that owns the dock.
-        if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
         local switchingFrames = (kind == "player" or kind == "target")
             and (CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target")
         if not CS.barsEntrySelected or (CS.barWorkspaceKind ~= kind and not switchingFrames) then
@@ -129,7 +132,7 @@ ST._NormalizeBarWorkspace = function()
         local selectedKind = CS.unifiedBarKind
         local multi = {}
         for id in pairs(CS.selectedCustomBars) do multi[id] = true end
-        OpenWorkspace(kind)
+        OpenWorkspace(kind, { preserveSpellbook = true })
         if resource then
             ST._SelectConfigResource(resource, { specID = spec })
         elseif custom then

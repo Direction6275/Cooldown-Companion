@@ -4,6 +4,7 @@
 ]]
 
 local ADDON_NAME, ST = ...
+local CS = ST._configState
 
 local AceGUI = LibStub("AceGUI-3.0")
 
@@ -389,6 +390,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         end
     end
     frame.OpenChangelogOverlay = function(version, opts)
+        if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
         local changelog = ST._Changelog
         local targetVersion = version
 

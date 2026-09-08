@@ -2823,12 +2823,13 @@ local function SelectPreviewSlot(slot, modifierMulti)
     if type(slot) ~= "table" then
         return false
     end
+    local allowToggle = not CS.spellbookPanelDocked
 
     -- Unified anchor preview (buttons view): route to the unified bar
     -- selection, which owns the entry-vs-bar exclusivity and cast support.
     if not IsBarsWorkspaceActive() then
         if ST._SelectUnifiedAnchorBar then
-            return ST._SelectUnifiedAnchorBar(slot, { multi = modifierMulti })
+            return ST._SelectUnifiedAnchorBar(slot, { multi = modifierMulti, toggle = allowToggle })
         end
         return false
     end
@@ -2846,7 +2847,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
     end
 
     if slot.kind == "resource" and slot.powerType ~= nil and ST._SelectConfigResource then
-        ST._SelectConfigResource(slot.powerType, { toggle = true })
+        ST._SelectConfigResource(slot.powerType, { toggle = allowToggle })
         return true
     end
 
@@ -2858,7 +2859,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
             ST._ToggleConfigCustomBarMultiSelect(slot.customBarId)
         else
             ST._SelectConfigCustomBar(slot.customBarId, {
-                toggle = true,
+                toggle = allowToggle,
             })
         end
         return true
@@ -3031,6 +3032,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
 
             if SelectPreviewSlot(slotModel, IsControlKeyDown and IsControlKeyDown()) then
+                if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)

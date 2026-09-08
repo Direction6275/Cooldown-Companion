@@ -1229,12 +1229,14 @@ local function BreadcrumbToGroup()
     local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
     local containerId = (group and group.parentContainerId) or CS.selectedContainer
     if not (containerId and ST._SelectConfigContainer) then return end
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     CS.unifiedBarKind = nil
     ST._SelectConfigContainer(containerId)
     CooldownCompanion:RefreshConfigPanel()
 end
 
 local function BreadcrumbToPanel()
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     GameTooltip:Hide()
     CS.unifiedBarKind = nil
     if CS.selectedGroup and ST._SelectConfigPanel then
@@ -1246,6 +1248,7 @@ local function BreadcrumbToPanel()
 end
 
 local function BreadcrumbToResourcesHome()
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     -- Drops the resource, custom bar, or cast/frames item being edited, so
     -- the workspace falls back to its Resources home.
     if ST._ClearConfigBarsHomeSelection then

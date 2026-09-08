@@ -855,6 +855,7 @@ local function CleanupWindow(widget)
     local configFrame = CS.configFrame
     if wasDocked and configFrame and configFrame.frame:IsShown() then
         configFrame.LayoutColumns()
+        ST._UnifiedRowRefresh()
     end
 
     -- The preview command center's toggle is gold while this window is up, and
@@ -903,10 +904,19 @@ local function OpenSpellbookPanel()
     CloseCompetingEditors()
 
     local docked = ST._IsThreeColumnConfigLayout()
+    if docked then
+        -- Keep the panel as the add destination, but leave its entry/bar lens.
+        ST._SelectConfigPanel(CS.selectedGroup)
+        ST._ClearConfigButtonSelection() -- also discard the old lens scroll anchor
+        ST._ClearConfigBarsHomeSelection()
+    end
     window = AceGUI:Create(docked and "InlineGroup" or "Window")
     window:SetTitle("Spellbook")
     window:SetWidth(WINDOW_WIDTH)
     if docked then
+        -- Navigator InlineGroups may enter the shared pool dimmed. AceGUI
+        -- does not reset their alpha; the config parent still owns drag fading.
+        window.frame:SetAlpha(1)
         window:SetAutoAdjustHeight(false)
         window:SetLayout("CDC_MANUAL")
         window.frame:SetParent(configFrame.colParent)
@@ -931,7 +941,10 @@ local function OpenSpellbookPanel()
     CS.spellbookPanelWindow = window
     CS.spellbookPanelDocked = docked
 
-    if docked then configFrame.LayoutColumns() end
+    if docked then
+        configFrame.LayoutColumns()
+        CooldownCompanion:RefreshConfigPanel()
+    end
     AnchorWindow()
     AttachChrome(window.content)
 

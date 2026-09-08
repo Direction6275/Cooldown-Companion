@@ -40,6 +40,7 @@ local pendingConfirm = nil
 
 local function EnterImportMode()
     if CS.importMode then return end
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     if CS.exportMode and ST._ExitExportMode then
         ST._ExitExportMode()
     end

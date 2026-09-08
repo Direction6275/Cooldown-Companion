@@ -31,6 +31,7 @@ local function EnterExportMode()
         CooldownCompanion:Print("Export is unavailable for unsupported profiles.")
         return
     end
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
         CooldownCompanion:CloseTalentPicker()
     end

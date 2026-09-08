@@ -169,6 +169,7 @@ local function UpdateRailDestinations()
             atlas = "BattleBar-SwapPetIcon",
             selected = CS.otherClassLibraryActive == true,
             onClick = function()
+                if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                 if CS.otherClassLibraryActive then
                     if ClearConfigPrimarySelection then
                         ClearConfigPrimarySelection()
@@ -386,6 +387,7 @@ local function ConfigureNestedPanelAccent(groupUnit, header, firstPanel, lastPan
 end
 
 local function OpenContainerLoadConditions(containerId)
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     SelectConfigContainer(containerId)
     CS.selectedContainerTab = "loadconditions"
     CooldownCompanion:RefreshConfigPanel()
@@ -1310,6 +1312,7 @@ local function ClearColumn1ButtonBar()
 end
 
 local function CreateGroupFromRail()
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
     SelectConfigContainer(containerId)
     CooldownCompanion:RefreshConfigPanel()
@@ -2288,6 +2291,7 @@ local function RefreshColumn1(preserveDrag)
 
     local function CollapseContainer(containerId)
         if ContainerHasActivePanelSelection(containerId) then
+            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
             SelectConfigContainer(containerId)
         end
         if CS.expandedContainer == containerId then
@@ -2418,6 +2422,7 @@ local function RefreshColumn1(preserveDrag)
                 return
             end
             if button == "LeftButton" then
+                if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                 if searchResults then
                     if SelectConfigFinderResult then
                         SelectConfigFinderResult(containerId, nil, nil)
@@ -2698,6 +2703,10 @@ local function RefreshColumn1(preserveDrag)
                             CS.selectedGroup = previousPanelId
                             if received then return end
                         end
+                        -- Only an actual navigation click dismisses browsing;
+                        -- the drag/drop and copy actions above keep it open.
+                        local spellbookDocked = CS.spellbookPanelDocked
+                        if spellbookDocked then CS.CloseSpellbookPanel() end
                         if searchResults then
                             if SelectConfigFinderResult then
                                 SelectConfigFinderResult(containerId, panelId, nil)
@@ -2719,7 +2728,7 @@ local function RefreshColumn1(preserveDrag)
                         else
                             SelectConfigPanel(panelId, {
                                 containerId = containerId,
-                                toggle = true,
+                                toggle = not spellbookDocked,
                             })
                             CooldownCompanion:RefreshConfigPanel()
                         end
@@ -2782,7 +2791,6 @@ local function RefreshColumn1(preserveDrag)
                             return
                         end
                         if button == "LeftButton" and SelectConfigFinderResult then
-                            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                             SelectConfigFinderResult(containerId, panelId, buttonIndex)
                         end
                     end)
@@ -3210,6 +3218,7 @@ local function RefreshColumn1(preserveDrag)
                     return
                 end
                 if button == "LeftButton" and options and options.onClick then
+                    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                     options.onClick()
                 end
             end)
@@ -3375,6 +3384,7 @@ local function RefreshColumn1(preserveDrag)
         back:SetFullWidth(true)
         back:SetCallback("OnClick", function(_, _, button)
             if button ~= "LeftButton" then return end
+            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
             ST._ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
         end)

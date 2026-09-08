@@ -17,6 +17,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local CS = ST._configState
 
 local math_ceil = math.ceil
 local math_max = math.max
@@ -305,6 +306,7 @@ local function EnsureTile(overview, index)
         local record = self._cdcOverviewRecord
         if not record then return end
         if button == "LeftButton" and ST._SelectConfigPanel then
+            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
             ST._SelectConfigPanel(record.panelId, { containerId = record.containerId })
             CooldownCompanion:RefreshConfigPanel()
         elseif button == "RightButton" and ST._ShowPanelContextMenu then

@@ -1051,6 +1051,7 @@ local function RestoreOtherClassLibraryForScope(scope)
 end
 
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     CooldownCompanion:ClearAllConfigPreviews()
     local selectedScope = ResolveConfigContainerClassScope(containerId)
     if selectedScope and selectedScope.isOtherClass then
@@ -3379,6 +3380,7 @@ ST._ApplyConfigRoute = function(route)
     else
         return
     end
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     CooldownCompanion:RefreshConfigPanel()
 end
 
