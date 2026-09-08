@@ -464,6 +464,16 @@ function ST.GetEffectiveBorderRenderMode(source, key, size)
     return ST.BORDER_RENDER_MODE_CRISP
 end
 
+-- Temporary effects own their thickness while active. The profile one-pixel
+-- option controls the normal border underneath, not the active effect override.
+-- Effect size 1 still denotes exactly one screen pixel.
+function ST.GetEffectBorderRenderMode(size)
+    if GetBorderSize(size, 1) == 1 then
+        return ST.BORDER_RENDER_MODE_CRISP
+    end
+    return ST.BORDER_RENDER_MODE_CUSTOM
+end
+
 function ST.IsCrispBorderRenderMode(source, key)
     return ST.GetBorderRenderMode(source, key) == ST.BORDER_RENDER_MODE_CRISP
 end
@@ -543,6 +553,8 @@ end
 local borderRescaleRegistry = setmetatable({}, { __mode = "k" })
 
 local function RecordBorderLayout(textures, leftFrame, rightFrame, size, mode)
+    -- Aura descendants are restyled only through the restriction-gated rebind.
+    if textures._cdcAuraOwned then return end
     local entry = borderRescaleRegistry[textures]
     if not entry then
         entry = {}
@@ -561,11 +573,15 @@ function ST.PositionBorderTexturesBetween(textures, leftFrame, rightFrame, size,
 
     local crisp = ST.IsCrispBorderRenderMode(mode)
     local customEdgeSize = GetBorderSize(size, 1)
+    -- Live aura kits inherit this plain root's scale. Never measure a region
+    -- in the registered subtree, including indirectly through PixelUtil.SetPoint.
+    local scaleSource = textures._cdcBorderScaleSource
+    local explicitEdgeSize = crisp and scaleSource and GetOnePhysicalPixelSize(scaleSource)
 
     for index, spec in ipairs(ST.EDGE_ANCHOR_SPEC) do
         local tex = GetEdgeTexture(textures, index)
         if tex then
-            local edgeSize = crisp and GetOnePhysicalPixelSize(tex) or customEdgeSize
+            local edgeSize = explicitEdgeSize or (crisp and GetOnePhysicalPixelSize(tex) or customEdgeSize)
             local firstFrame, secondFrame
             if index == 1 or index == 2 then
                 firstFrame, secondFrame = leftFrame, rightFrame
@@ -576,8 +592,8 @@ function ST.PositionBorderTexturesBetween(textures, leftFrame, rightFrame, size,
             end
 
             tex:ClearAllPoints()
-            ApplyBorderPoint(tex, spec[1], firstFrame, spec[2], spec[5] * edgeSize, spec[6] * edgeSize, crisp)
-            ApplyBorderPoint(tex, spec[3], secondFrame, spec[4], spec[7] * edgeSize, spec[8] * edgeSize, crisp)
+            ApplyBorderPoint(tex, spec[1], firstFrame, spec[2], spec[5] * edgeSize, spec[6] * edgeSize, crisp and not scaleSource)
+            ApplyBorderPoint(tex, spec[3], secondFrame, spec[4], spec[7] * edgeSize, spec[8] * edgeSize, crisp and not scaleSource)
         end
     end
 end
@@ -633,6 +649,15 @@ function ST.CreatePixelBorders(frame, r, g, b, a)
     return textures
 end
 
+-- Preview fit scales can change after their contents have been styled. Refresh
+-- a known CC-owned set without changing visibility or restarting animation.
+function ST.RefreshBorderTextureScale(textures)
+    local entry = textures and borderRescaleRegistry[textures]
+    if entry and ST.IsCrispBorderRenderMode(entry.mode) then
+        ST.PositionBorderTexturesBetween(textures, entry.leftFrame, entry.rightFrame, entry.size, entry.mode)
+    end
+end
+
 -- Only crisp layouts depend on the effective scale; custom-size layouts are in
 -- UI units and survive these events unchanged. PLAYER_ENTERING_WORLD covers
 -- sets created before the login scale settled. In combat the pass defers to
@@ -642,6 +667,9 @@ borderRescaleEventFrame:RegisterEvent("UI_SCALE_CHANGED")
 borderRescaleEventFrame:RegisterEvent("DISPLAY_SIZE_CHANGED")
 borderRescaleEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 borderRescaleEventFrame:SetScript("OnEvent", function(self, event)
+    if event ~= "PLAYER_REGEN_ENABLED" and ST.Addon.RequestAuraRebind then
+        ST.Addon:RequestAuraRebind("border-scale")
+    end
     if event == "PLAYER_REGEN_ENABLED" then
         self:UnregisterEvent("PLAYER_REGEN_ENABLED")
     elseif InCombatLockdown() then

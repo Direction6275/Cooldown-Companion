@@ -593,6 +593,11 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
         slot.barBounds:SetAllPoints()
     end
 
+    slot._barBounds = slot.barBounds
+    local slotWidth, slotHeight = slot:GetSize()
+    slot.barBounds._ccKitRectW = math_max(1, slotWidth - (isVertical and 0 or barAreaLeft))
+    slot.barBounds._ccKitRectH = math_max(1, slotHeight - (isVertical and barAreaTop or 0))
+
     SetBarAreaPoints(slot.statusBar, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
     slot.statusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
     slot.statusBar:SetMinMaxValues(0, 1)

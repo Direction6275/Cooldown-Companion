@@ -472,7 +472,9 @@ local function BuildSlotKit(slotButton)
     -- ordinary entries.
     kit.bg = slotButton:CreateTexture(nil, "BACKGROUND")
     kit.bg:SetAlpha(0)
-    kit.border = {}
+    -- All live kit descendants inherit UIParent scale (no scaled ancestor).
+    -- Scale changes restyle them through RequestAuraRebind, never a region sweep.
+    kit.border = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
     for i = 1, 4 do
         local tex = slotButton:CreateTexture(nil, "OVERLAY")
         tex:SetAlpha(0)
@@ -672,7 +674,7 @@ local function BuildSlotKit(slotButton)
         -- ruling): above the fill and the separator stripes.
         kit.stackBlockBorders = {}
         for i = 1, ST.STACK_SEGMENT_ATLAS_MAX do
-            local set = {}
+            local set = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
             for edge = 1, 4 do
                 local tex = kit.stackFill:CreateTexture(nil, "OVERLAY", nil, 2)
                 tex:SetAlpha(0)
@@ -687,7 +689,7 @@ local function BuildSlotKit(slotButton)
     -- needs a second replica set beside kit.bg/kit.border.
     kit.iconBg = slotButton:CreateTexture(nil, "BACKGROUND", nil, 1)
     kit.iconBg:SetAlpha(0)
-    kit.iconBorder = {}
+    kit.iconBorder = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
     for i = 1, 4 do
         local tex = slotButton:CreateTexture(nil, "OVERLAY")
         tex:SetAlpha(0)
@@ -698,7 +700,7 @@ local function BuildSlotKit(slotButton)
     -- glows exactly while the aura runs. Animated styles are AnimationGroup-
     -- driven (P3: they keep playing on the forbidden subtree in combat).
     -- Above the swipe, below the texts.
-    kit.glow = ST._BuildKitGlowRegions(slotButton)
+    kit.glow = ST._BuildKitGlowRegions(slotButton, false, true)
     kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
 
     -- Pandemic glow (PTR 8, Phase 0-validated): a second glow kit registered
@@ -710,7 +712,7 @@ local function BuildSlotKit(slotButton)
     -- the aura glow, created after it, so the pandemic effect draws above.
     if slotButton.AddPandemicRegion then
         -- withCdm: only pandemic rigs carry the CDM-parity region set.
-        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton, true)
+        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton, true, true)
         kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
         -- The CDM rig is a child FRAME of the host; left at its default
         -- level it would TIE kit.textOverlay at swipe+2. Pin it to swipe+1
@@ -3189,6 +3191,7 @@ local function ApplyBlockHostGeometry(group, host)
     bounds:ClearAllPoints()
     bounds:SetPoint("TOPLEFT", proxy, "TOPLEFT", -inset, inset)
     bounds:SetSize(group.frameWidth, group.frameHeight)
+    bounds._ccKitRectW, bounds._ccKitRectH = group.frameWidth, group.frameHeight
 end
 
 -- One host per pooled group frame. Blizzard pre-creates a batch of frames at
@@ -3866,6 +3869,7 @@ local function ApplyPanelHostGeometry(pgroup, host)
         barArea:SetPoint("TOPLEFT", proxy, "TOPLEFT", 0, 0)
     end
     barArea:SetSize(barW, barH)
+    barArea._ccKitRectW, barArea._ccKitRectH = barW, barH
     if pgroup.isBar then
         proxy._isBar = true
         proxy.statusBar = barArea

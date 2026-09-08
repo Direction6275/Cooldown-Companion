@@ -1687,7 +1687,7 @@ end
 
 -- Apply edge positions to 4 border/highlight textures using the shared spec
 local function ApplyEdgePositions(textures, button, size)
-    ST.PositionBorderTextures(textures, button, size, ST.BORDER_RENDER_MODE_CUSTOM)
+    ST.PositionBorderTextures(textures, button, size, ST.GetEffectBorderRenderMode(size))
 end
 
 local function ApplyBorderEdgePositions(textures, button, size, renderMode)

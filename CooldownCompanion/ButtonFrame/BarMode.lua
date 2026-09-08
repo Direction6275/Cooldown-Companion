@@ -743,6 +743,9 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
         button._barBounds:SetAllPoints()
     end
 
+    button._barBounds._ccKitRectW = isVertical and barHeight or math.max(1, barLength - barAreaLeft)
+    button._barBounds._ccKitRectH = isVertical and math.max(1, barLength - barAreaTop) or barHeight
+
     -- StatusBar
     button.statusBar = CreateFrame("StatusBar", nil, button)
     SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
@@ -1074,6 +1077,11 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         else
             button._barBounds:SetAllPoints()
         end
+    end
+
+    if button._barBounds then
+        button._barBounds._ccKitRectW = isVertical and barHeight or math.max(1, barLength - barAreaLeft)
+        button._barBounds._ccKitRectH = isVertical and math.max(1, barLength - barAreaTop) or barHeight
     end
 
     -- Update status bar
