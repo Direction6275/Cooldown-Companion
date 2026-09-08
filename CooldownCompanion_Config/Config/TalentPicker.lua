@@ -1738,6 +1738,7 @@ end
 function CooldownCompanion:OpenTalentPicker(callback, initialConditions, group)
     local configFrame = CS.configFrame
     if not configFrame then return end
+    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     onAcceptCallback = callback
     ShowTalentPicker(configFrame, initialConditions, group)
 end

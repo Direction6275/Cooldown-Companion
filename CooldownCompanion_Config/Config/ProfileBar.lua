@@ -38,6 +38,7 @@ local function RefreshProfileBar(bar)
     profileDrop:SetValue(currentProfile)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
+        if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
         db:SetProfile(val)
         ResetConfigSelection(true)
         CooldownCompanion:RefreshConfigPanel()

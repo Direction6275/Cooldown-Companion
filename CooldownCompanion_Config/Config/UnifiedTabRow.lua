@@ -472,3 +472,9 @@ ST._UnifiedRowGetScope = GetScope
 ST._UnifiedRowSetScope = SetScope
 ST._UnifiedRowPrimaryOwnsSurface = PrimaryOwnsSurface
 ST._UnifiedRowApply = ApplyUnifiedRow
+-- Hidden hosts rebuild strips independently. Once their parent is visible
+-- again, rebuild the shared row even if its dimensions have not changed.
+ST._UnifiedRowRefresh = function()
+    local strip = GetPrimaryStrip() or GetDetailStrip()
+    if strip then strip:BuildTabs() end
+end
