@@ -2782,6 +2782,7 @@ local function RefreshColumn1(preserveDrag)
                             return
                         end
                         if button == "LeftButton" and SelectConfigFinderResult then
+                            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
                             SelectConfigFinderResult(containerId, panelId, buttonIndex)
                         end
                     end)

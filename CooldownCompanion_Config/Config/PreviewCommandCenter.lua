@@ -2203,8 +2203,8 @@ local function ApplySpellbookTint(bar)
     end
 end
 
--- The spellbook exists to drag entries in, so it only appears where a drop
--- could land. Same rule as the workspace add box (ButtonsWideColumn's
+-- Opening the spellbook requires somewhere a drop could land.
+-- Same rule as the workspace add box (ButtonsWideColumn's
 -- UpdateAddBox): assistant panels never take user entries, and a
 -- texture panel holds exactly one, so once set there is nothing to add.
 local function PanelAcceptsNewEntries(group)
@@ -2218,6 +2218,13 @@ local function PanelAcceptsNewEntries(group)
         return false
     end
     return true
+end
+
+local function ShouldShowSpellbookToggle(group)
+    -- The dock has no close button, so retain its toggle when the last
+    -- available slot is filled while browsing.
+    return PanelAcceptsNewEntries(group)
+        or (CS.spellbookPanelDocked and IsSpellbookWindowShown())
 end
 
 local function EnsureBar(host, surface)
@@ -2455,9 +2462,9 @@ local function ApplyBarState(bar, control, running, gearRoute, group)
 
     -- The buttons workspace only: the Resources / Cast home configures bar
     -- objects, and there is nothing there to drop a spell on. Within the
-    -- workspace, only panels that can still take an entry.
+    -- workspace, panels that can take an entry or still need a dock exit.
     bar.spellbook:SetShown(bar._surface == BUTTONS_SURFACE
-        and PanelAcceptsNewEntries(group))
+        and ShouldShowSpellbookToggle(group))
     ApplySpellbookTint(bar)
 
     if running then
@@ -2542,6 +2549,13 @@ end
 local function RefreshPreviewCommandCenterSpellbook()
     local bar = activeBar
     if bar and bar:IsShown() and bar.spellbook and bar.spellbook:IsShown() then
+        local _, group = ResolveContext()
+        if bar._surface == BUTTONS_SURFACE and not ShouldShowSpellbookToggle(group) then
+            -- Closing a dock-only toggle can remove the entire band. Rebuild
+            -- the preview as well so it reclaims the reserved bottom space.
+            CooldownCompanion:RefreshConfigSelection()
+            return
+        end
         ApplySpellbookTint(bar)
     end
 end
@@ -2653,10 +2667,9 @@ local function UpdatePreviewCommandCenter(host)
     end
 
     if #applicable == 0 then
-        -- Zero controls means a texture panel. Empty, the band still earns
-        -- its keep as a drag target; full, there is nothing to offer at
-        -- all, so the band gives its reserve back to the preview.
-        if PanelAcceptsNewEntries(group) then
+        -- Keep the spellbook-only band for adding an entry or closing the
+        -- dock after filling the panel; otherwise reclaim its space.
+        if ShouldShowSpellbookToggle(group) then
             ShowSpellbookOnlyBar(host)
         else
             HideBar(host)

@@ -1043,7 +1043,14 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
                 if CancelDrag then CancelDrag() else CS.dragState = nil end
             end
             if CopyMode.HandleClick(panelId, index, buttonData) then return end
-            SelectConfigButton(panelId, index, { multi = IsControlKeyDown() })
+            local spellbookDocked = CS.spellbookPanelDocked
+            SelectConfigButton(panelId, index, {
+                multi = IsControlKeyDown(),
+                force = spellbookDocked,
+            })
+            -- Only an explicit entry click exits the spellbook; additions and
+            -- drag/drop also select entries through the shared selection helper.
+            if spellbookDocked then CS.CloseSpellbookPanel() end
             CooldownCompanion:RefreshConfigSelection()
         elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
             if CS.dragState and CS.dragState.phase == "active" then return end

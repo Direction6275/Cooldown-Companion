@@ -748,6 +748,9 @@ local function LayoutEditingActionRow(col3)
     end
     local height = ADD_BOX_HEIGHT
     if hasAdd then
+        -- Anchors alone do not inherit the settings column's visibility.
+        -- Both the normal and alternate add fields belong to this action row.
+        addBox.frame:SetParent(row)
         height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
     local stackFields = IsThreeColumnLayout() and hasAdd and hasFinder

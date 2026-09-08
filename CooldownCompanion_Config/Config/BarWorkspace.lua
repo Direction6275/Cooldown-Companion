@@ -33,6 +33,9 @@ local function OpenWorkspace(kind)
         if kind ~= "resources" then CS.castFramesSelectedItem = kind end
         CS.unifiedRowScope = kind == "resources" and "primary" or "detail"
     else
+        -- Standalone workspaces have no spellbook toggle; restore their
+        -- settings before leaving the buttons workspace that owns the dock.
+        if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
         local switchingFrames = (kind == "player" or kind == "target")
             and (CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target")
         if not CS.barsEntrySelected or (CS.barWorkspaceKind ~= kind and not switchingFrames) then

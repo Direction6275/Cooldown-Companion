@@ -542,15 +542,16 @@ local function ShouldShowSettingsColumn(col3)
     local host = col3._cdcActiveWideHost
     return ST._IsThreeColumnConfigLayout() and not CS.talentPickerMode
         and not CS.exportMode and not CS.importMode
-        and col3._cdcEmptyGroupPreviewTakeover ~= true
-        and host ~= nil and host:IsShown()
+        and (CS.spellbookPanelDocked or (col3._cdcEmptyGroupPreviewTakeover ~= true
+            and host ~= nil and host:IsShown()))
 end
 
 local function ApplyConfigColumnTitles(frame)
     -- Selection changes can add/remove the pinned preview after the initial
     -- window layout pass. Only relayout when the separate column changes.
     if frame.settingsColumn
-        and frame.settingsColumn.frame:IsShown() ~= ShouldShowSettingsColumn(frame.col3)
+        and frame.settingsColumn.frame:IsShown()
+            ~= (ShouldShowSettingsColumn(frame.col3) and not CS.spellbookPanelDocked)
     then
         frame.LayoutColumns()
     end
@@ -1449,6 +1450,7 @@ local function CreateConfigPanel()
             layoutInfo.checked = function() return ST._IsThreeColumnConfigLayout() end
             layoutInfo.isNotRadio = true
             layoutInfo.func = function()
+                if CS.CloseSpellbookPanel then CS.CloseSpellbookPanel() end
                 local divider = frame.col3 and frame.col3.buttonsSplitDivider
                 if divider then divider:CancelDrag() end
                 CooldownCompanion.db.global.configLayout =
@@ -2315,10 +2317,16 @@ local function CreateConfigPanel()
 
     -- Layout columns on size change
     local function LayoutColumns()
+        local function ShowSettingsColumn(shown)
+            settingsColumn.frame:SetShown(shown and not CS.spellbookPanelDocked)
+            if CS.spellbookPanelDocked and CS.spellbookPanelWindow then
+                CS.spellbookPanelWindow.frame:SetShown(shown)
+            end
+        end
         -- Profile controls live outside colParent and remain available here.
         -- Normal refreshes still clean up/rebuild the hidden column contents.
         if CS.configFrame and ST._UpdateProfileWelcome(CS.configFrame) then
-            settingsColumn.frame:Hide()
+            ShowSettingsColumn(false)
             return
         end
         local w = colParent:GetWidth()
@@ -2333,7 +2341,7 @@ local function CreateConfigPanel()
 
         -- Talent picker mode: two equally wide surfaces.
         if CS.talentPickerMode then
-            settingsColumn.frame:Hide()
+            ShowSettingsColumn(false)
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
             end
@@ -2363,7 +2371,7 @@ local function CreateConfigPanel()
         local col3Width = math.max(1, w - col1Width - pad)
         local separateSettings = ShouldShowSettingsColumn(col3)
         settingsColumn:SetHeight(h)
-        settingsColumn.frame:SetShown(separateSettings)
+        ShowSettingsColumn(separateSettings)
         if separateSettings then
             col3Width = math.max(1, col3Width - SETTINGS_COLUMN_WIDTH - pad)
         end
@@ -2417,6 +2425,9 @@ local function CreateConfigPanel()
         col3.frame:SetSize(col3Width, h)
         settingsColumn.frame:ClearAllPoints()
         settingsColumn.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
+        if ST._ReanchorSpellbookPanelWindow then
+            ST._ReanchorSpellbookPanelWindow()
+        end
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()

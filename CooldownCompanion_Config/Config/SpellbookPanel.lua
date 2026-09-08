@@ -1,12 +1,12 @@
 --[[
     CooldownCompanion - SpellbookPanel
-    A side window listing the player's learned spells, attached to the right
-    edge of the config panel, so a spell can be dragged onto a Navigator row or
+    A spellbook that replaces Settings in the three-column layout, or opens
+    beside the stacked config, so a spell can be dragged onto a Navigator row or
     the live preview without leaving the config for Blizzard's spellbook.
 
     The rows are raw pooled frames on a persistent host rather than AceGUI
-    children: the window itself is a stock AceGUI "Window" so UI skins style
-    its chrome, but a released Window frame goes back to the widget pool, so the
+    children: the shell is a stock AceGUI container so UI skins style
+    its chrome, but a released shell goes back to the widget pool, so the
     host is detached on close and re-parented on open.
 
     The list covers everything a panel can hold: the learned spells of the
@@ -800,10 +800,9 @@ end
 -- The window
 ------------------------------------------------------------------------
 
--- Both corners of the anchored side, so the list spans the config's full
--- height and follows a resize of it. The side comes from the shared config
--- side-placement rule (Panel.lua); the config's geometry hooks re-run this
--- whenever the window's side choice could go stale.
+-- The docked shell uses the Settings column's geometry while its original
+-- contents stay hidden. The stacked layout uses the shared side-placement
+-- rule; both placements follow config resizes.
 local function AnchorWindow()
     local configFrame = CS.configFrame
     if not (window and configFrame and configFrame.frame and configFrame.frame:IsShown()) then
@@ -812,6 +811,14 @@ local function AnchorWindow()
     local cf = configFrame.frame
     local wf = window.frame
     wf:ClearAllPoints()
+
+    if CS.spellbookPanelDocked then
+        local settings = configFrame.settingsColumn.frame
+        window:SetWidth(settings:GetWidth())
+        window:SetHeight(settings:GetHeight())
+        wf:SetPoint("TOPLEFT", settings, "TOPLEFT")
+        return
+    end
 
     local side, xOff = "right", WINDOW_GAP
     if ST._ComputeConfigSidePlacement then
@@ -835,15 +842,20 @@ local function CleanupWindow(widget)
     end
     window = nil
     CS.spellbookPanelWindow = nil
+    local wasDocked = CS.spellbookPanelDocked
+    CS.spellbookPanelDocked = nil
 
     SetEventsRegistered(false)
     ReleaseListFrames()
     DetachChrome()
-
-    if CS.UnregisterConfigDragAlphaFrame then
+    if not wasDocked and CS.UnregisterConfigDragAlphaFrame then
         CS.UnregisterConfigDragAlphaFrame(widget.frame)
     end
     AceGUI:Release(widget)
+    local configFrame = CS.configFrame
+    if wasDocked and configFrame and configFrame.frame:IsShown() then
+        configFrame.LayoutColumns()
+    end
 
     -- The preview command center's toggle is gold while this window is up, and
     -- closing it does not rebuild that bar.
@@ -856,7 +868,8 @@ local function CloseSpellbookPanel()
     if not window then
         return false
     end
-    window:Hide()
+    -- InlineGroup has no OnClose event; both shells share explicit cleanup.
+    CleanupWindow(window)
     return true
 end
 
@@ -883,18 +896,25 @@ local function OpenSpellbookPanel()
         return false
     end
     if window then
-        window.frame:Raise()
+        if not CS.spellbookPanelDocked then window.frame:Raise() end
         return true
     end
 
     CloseCompetingEditors()
 
-    window = AceGUI:Create("Window")
+    local docked = ST._IsThreeColumnConfigLayout()
+    window = AceGUI:Create(docked and "InlineGroup" or "Window")
     window:SetTitle("Spellbook")
     window:SetWidth(WINDOW_WIDTH)
-    window:SetLayout(nil) -- raw content, positioned by anchors
-    window:EnableResize(false)
-    window:SetCallback("OnClose", CleanupWindow)
+    if docked then
+        window:SetAutoAdjustHeight(false)
+        window:SetLayout("CDC_MANUAL")
+        window.frame:SetParent(configFrame.colParent)
+    else
+        window:SetLayout(nil) -- raw content, positioned by anchors
+        window:EnableResize(false)
+        window:SetCallback("OnClose", CleanupWindow)
+    end
     -- Modern UIPanelCloseButton art (RedButton-Exit) fills the whole 24x24
     -- button, so AceGUI's legacy (+2, +1) offset leaves the X hanging outside
     -- the corner.
@@ -902,14 +922,16 @@ local function OpenSpellbookPanel()
         window.closebutton:ClearAllPoints()
         window.closebutton:SetPoint("TOPRIGHT", window.frame, "TOPRIGHT", -3, -3)
     end
-    if CS.RegisterConfigDragAlphaFrame then
+    if not docked and CS.RegisterConfigDragAlphaFrame then
         CS.RegisterConfigDragAlphaFrame(window.frame)
     end
     -- AceGUI hands back a recycled frame, which keeps whatever level it last
     -- had; the window that just opened belongs on top.
-    window.frame:Raise()
+    if not docked then window.frame:Raise() end
     CS.spellbookPanelWindow = window
+    CS.spellbookPanelDocked = docked
 
+    if docked then configFrame.LayoutColumns() end
     AnchorWindow()
     AttachChrome(window.content)
 
