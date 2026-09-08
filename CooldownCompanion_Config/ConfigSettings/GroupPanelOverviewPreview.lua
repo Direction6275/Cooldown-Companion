@@ -4,9 +4,10 @@
     the same Panel destination as the Navigator, while runtime-relative
     positioning and entry interaction stay out of scope.
 
-    Creating a Panel happens here too. A populated Group gets an add tile in the
-    grid's last row, wearing the content tiles' own border so it reads as part
-    of the surface. An empty Group instead gets the create surface itself: a
+    Creating a Panel happens here too. A populated Group gets an add tile beside
+    the grid's last row, or below the three-column stack, wearing the content
+    tiles' own border so it reads as part of the surface. An empty Group
+    instead gets the create surface itself: a
     centered block that says why the Group is empty, then a picker of clickable
     panel-type cards -- the two everyday types large, Aura variants compressed
     into one shared band, the specialists quiet below, the account's saved
@@ -46,6 +47,7 @@ local TILE_HOVER_BORDER_COLOR = CREATE_ACCENT.hoverBorder
 -- reads as one of them rather than as separate chrome. Only the glyph tells
 -- them apart.
 local ADD_TILE_WIDTH = 64
+local ADD_ROW_HEIGHT = 40
 -- Below this the grid is too cramped to give up a lane, so the tile steps
 -- aside and the Group context menu carries the create action alone.
 local ADD_TILE_MIN_GRID_WIDTH = 120
@@ -234,6 +236,37 @@ local function BuildRowLayouts(records, columns, layoutWidth, lastRowWidth)
     end
 
     return rows
+end
+
+-- Give each Panel its natural height, then share any spare viewport height
+-- across the cards. Include the renderer's padding so mirrors still fit.
+local function BuildStackedRowLayouts(records, layoutWidth, layoutHeight, showAddTile)
+    local rows = {}
+    local contentHeight = 0
+    local previewPadding = ST._ButtonPanelPreview.PANEL_PREVIEW_PADDING * 2
+    local visualWidth = math_max(1,
+        layoutWidth - (TILE_INSET * 2) - previewPadding)
+    for _, record in ipairs(records) do
+        local scale = math_min(1, visualWidth / record.naturalWidth)
+        local height = math_max(MIN_ROW_HEIGHT, math_ceil(
+            record.naturalHeight * scale + LABEL_HEIGHT
+                + (TILE_INSET * 2) + previewPadding))
+        rows[#rows + 1] = {
+            height = height,
+            items = { { record = record, x = 0, width = layoutWidth } },
+        }
+        contentHeight = contentHeight + height + TILE_GAP
+    end
+    -- The trailing gap separates the add row, or goes away with that row.
+    contentHeight = contentHeight + (showAddTile and ADD_ROW_HEIGHT or -TILE_GAP)
+    if contentHeight < layoutHeight then
+        local extraHeight = (layoutHeight - contentHeight) / #rows
+        for _, row in ipairs(rows) do
+            row.height = row.height + extraHeight
+        end
+        contentHeight = layoutHeight
+    end
+    return rows, contentHeight
 end
 
 local UpdateScrollThumb
@@ -1278,27 +1311,39 @@ local function LayoutPanelTileGrid(overview, host, records, full)
     if hostHeight < 80 then hostHeight = 240 end
     local visibleWidth = math_max(1, hostWidth - (OUTER_PADDING * 2))
     local visibleHeight = math_max(1, hostHeight - (OUTER_PADDING * 2))
-    local columns = GetColumnCount(#records)
-    local rowCount = math_ceil(#records / columns)
-    local idealRowHeight = (visibleHeight - ((rowCount - 1) * TILE_GAP))
-        / rowCount
-    local rowHeight = math_max(MIN_ROW_HEIGHT, idealRowHeight)
-    local contentHeight = (rowCount * rowHeight)
-        + ((rowCount - 1) * TILE_GAP)
-    local overflow = contentHeight > visibleHeight + 0.5
-    local layoutWidth = math_max(1, visibleWidth - (overflow and SCROLL_RESERVE or 0))
-
-    -- The add tile rides in the last row's own band, so it costs the grid a
-    -- lane there and nothing anywhere else: row count, content height, and the
-    -- scroll math all stay exactly what a bare grid would produce. It steps
-    -- aside when the Group cannot take a new Panel, or when giving up the lane
-    -- would leave the Panels themselves too narrow to read.
-    local gridWidth = layoutWidth - ADD_TILE_WIDTH - TILE_GAP
+    local stacked = ST._IsThreeColumnConfigLayout
+        and ST._IsThreeColumnConfigLayout()
     local showAddTile = ST._IsCreateTargetContainer
         and ST._IsCreateTargetContainer(overview.containerId)
-        and gridWidth >= ADD_TILE_MIN_GRID_WIDTH
-    local rows = BuildRowLayouts(records, columns, layoutWidth,
-        showAddTile and gridWidth or nil)
+    local rows, rowHeight, contentHeight, layoutWidth, overflow
+    if stacked then
+        layoutWidth = visibleWidth
+        rows, contentHeight = BuildStackedRowLayouts(records,
+            layoutWidth, visibleHeight, showAddTile)
+        if contentHeight > visibleHeight + 0.5 then
+            layoutWidth = math_max(1, visibleWidth - SCROLL_RESERVE)
+            rows, contentHeight = BuildStackedRowLayouts(records,
+                layoutWidth, visibleHeight, showAddTile)
+        end
+        overflow = contentHeight > visibleHeight + 0.5
+    else
+        local columns = GetColumnCount(#records)
+        local rowCount = math_ceil(#records / columns)
+        local idealRowHeight = (visibleHeight - ((rowCount - 1) * TILE_GAP))
+            / rowCount
+        rowHeight = math_max(MIN_ROW_HEIGHT, idealRowHeight)
+        contentHeight = (rowCount * rowHeight)
+            + ((rowCount - 1) * TILE_GAP)
+        overflow = contentHeight > visibleHeight + 0.5
+        layoutWidth = math_max(1, visibleWidth - (overflow and SCROLL_RESERVE or 0))
+
+        -- The grid's add tile claims a lane in the final row only. Hide it
+        -- when giving up that lane would leave the Panels too narrow to read.
+        local gridWidth = layoutWidth - ADD_TILE_WIDTH - TILE_GAP
+        showAddTile = showAddTile and gridWidth >= ADD_TILE_MIN_GRID_WIDTH
+        rows = BuildRowLayouts(records, columns, layoutWidth,
+            showAddTile and gridWidth or nil)
+    end
 
     overview.visibleHeight = visibleHeight
     overview.contentHeight = contentHeight
@@ -1311,6 +1356,7 @@ local function LayoutPanelTileGrid(overview, host, records, full)
     local tileTop = 0
     local addTileX, addTileTop
     for _, row in ipairs(rows) do
+        local tileHeight = row.height or rowHeight
         for _, item in ipairs(row.items) do
             local record = item.record
             local tile = record.tile
@@ -1321,12 +1367,12 @@ local function LayoutPanelTileGrid(overview, host, records, full)
                 item.x + tileWidth, tileScale)
             local snappedTop = PixelUtil.GetNearestPixelSize(tileTop, tileScale)
             local snappedBottom = PixelUtil.GetNearestPixelSize(
-                tileTop + rowHeight, tileScale)
+                tileTop + tileHeight, tileScale)
             local onePixel = PixelUtil.GetNearestPixelSize(0, tileScale, 1)
             local snappedTileWidth = math_max(onePixel, snappedRight - snappedX)
             local snappedTileHeight = math_max(onePixel,
                 snappedBottom - snappedTop)
-            local labelHeight = #records > 1 and LABEL_HEIGHT or 0
+            local labelHeight = (stacked or #records > 1) and LABEL_HEIGHT or 0
             local visualWidth = math_max(1,
                 snappedTileWidth - (TILE_INSET * 2))
             local visualHeight = math_max(1,
@@ -1372,14 +1418,18 @@ local function LayoutPanelTileGrid(overview, host, records, full)
             addTileX = lastItem.x + lastItem.width + TILE_GAP
             addTileTop = tileTop
         end
-        tileTop = tileTop + rowHeight + TILE_GAP
+        tileTop = tileTop + tileHeight + TILE_GAP
     end
 
+    if stacked then
+        addTileX, addTileTop = 0, tileTop
+    end
     if showAddTile and addTileX then
         local addTile = EnsureAddTile(overview)
         addTile._cdcAddContainerId = overview.containerId
         PlaceAddTile(overview, addTile, addTileX, addTileTop,
-            ADD_TILE_WIDTH, rowHeight)
+            stacked and layoutWidth or ADD_TILE_WIDTH,
+            stacked and ADD_ROW_HEIGHT or rowHeight)
     elseif overview.addTile then
         -- A reflow can flip the lane ineligible (the scroll reserve narrowing
         -- the grid) with no reset having hidden the tile first.
@@ -1422,12 +1472,14 @@ function ST._BuildGroupPanelOverview(host, containerId)
     end
 
     local records = {}
+    local includeSections = ST._IsThreeColumnConfigLayout
+        and ST._IsThreeColumnConfigLayout()
     local browsingOtherClasses = ST._configState
         and ST._configState.otherClassLibraryActive == true
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
         local naturalWidth, naturalHeight =
-            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId)
+            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId, includeSections)
         local record = {
             tile = tile,
             containerId = containerId,
