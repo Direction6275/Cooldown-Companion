@@ -94,17 +94,9 @@ local function GetPanelWorkspaceChips()
             Addon:RefreshConfigPanel()
         end }
     end
-    local panel = Addon.db.profile.groups[panelId]
     local _, resourcePanel = GetPlacement("resources")
     if resourcePanel == panelId then
         AddItem("Resources", "resources", CS.unifiedBarKind == "stack")
-    elseif resourcePanel and not (panel and (panel.displayMode == "textures" or panel.displayMode == "trigger")) then
-        -- Texture and Trigger panels cannot host the stack; a link to another
-        -- panel reads like an unrelated setting in these workspaces.
-        local current = Addon.db.profile.groups[resourcePanel]
-        AddItem("Resources (" .. (current.name or "Panel") .. ")", "resources", false)
-    elseif anchorId and Addon:IsGroupAvailableForAnchoring(panelId) then
-        AddItem("Resources", "resources", false)
     end
     local _, castPanel = GetPlacement("castbar")
     if castPanel == panelId then AddItem("Cast Bar", "castbar", CS.unifiedBarKind == "cast") end
