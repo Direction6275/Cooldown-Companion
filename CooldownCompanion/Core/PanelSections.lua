@@ -907,10 +907,9 @@ end
 --- module's own offsets. Unsectioned panels -- and every non-panel frame this
 --- is handed -- come straight back out, so nothing else changes shape.
 ---
---- The one exception (owner ruling 2026-09-03): the attached resource-bar
---- stack and cast bar anchor to the panel FRAME, the union, so they sit past
---- every section instead of across one -- what the Live Preview's lanes have
---- always shown. They do not call this.
+--- Attached bars choose per destination: Main Icons uses this body; Entire
+--- Panel uses the frame's union. When a side has no configured section, its
+--- destinations combine against this body without changing saved preferences.
 ---
 --- The base anchor is a child of the panel frame and is only ever HIDDEN when
 --- sections go away (its rect goes stale), so callers must re-anchor across a

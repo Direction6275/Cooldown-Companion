@@ -2072,6 +2072,7 @@ RB.CreateResourceBarAuraHostModule({
 ------------------------------------------------------------------------
 
 local function CompareBarOrder(a, b)
+    if a._regionRank ~= b._regionRank then return (a._regionRank or 0) < (b._regionRank or 0) end
     if a._order ~= b._order then return a._order < b._order end
     local aKey = a.powerType or a.customBarId or ""
     local bKey = b.powerType or b.customBarId or ""
@@ -2150,52 +2151,34 @@ RelayoutBars = function()
         containerFrameBelow:SetWidth(rightWidth)
         if #rightBars > 0 or rightHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     else
-        local aboveBars = {}
-        local belowBars = {}
-        for _, barInfo in ipairs(resourceBarFrames) do
-            if barInfo and barInfo.frame and barInfo.frame:IsShown() then
-                if barInfo._side == "above" then
-                    table.insert(aboveBars, barInfo)
-                else
-                    table.insert(belowBars, barInfo)
+        for _, lane in ipairs(RB.ATTACHED_BAR_LANES) do
+            local container = RB._barContainers[lane]
+            local bars = {}
+            for _, barInfo in ipairs(resourceBarFrames) do
+                if barInfo.frame and barInfo.frame:IsShown() and barInfo._side == lane then
+                    bars[#bars + 1] = barInfo
                 end
             end
+            table.sort(bars, CompareBarOrder)
+            local above = RB.GetBarLaneSide(lane) == "above"
+            local point = above and "BOTTOMLEFT" or "TOPLEFT"
+            local farPoint = above and "BOTTOMRIGHT" or "TOPRIGHT"
+            local currentY = 0
+            for _, barInfo in ipairs(bars) do
+                barInfo.frame:ClearAllPoints()
+                barInfo.frame:SetPoint(point, container, point, 0, above and currentY or -currentY)
+                barInfo.frame:SetPoint(farPoint, container, farPoint, 0, above and currentY or -currentY)
+                local h = barInfo._effectiveThickness or globalThickness
+                barInfo.frame:SetHeight(h)
+                currentY = currentY + h + barSpacing
+            end
+            local hasBlock = RecordAuraBlockGeometry(lane, container, currentY)
+            if auraBlocks and auraBlocks[lane] then
+                auraBlocks[lane].width = container:GetWidth()
+            end
+            container:SetHeight(currentY > 0 and currentY - barSpacing or 1)
+            container:SetShown(#bars > 0 or hasBlock)
         end
-        table.sort(aboveBars, CompareBarOrder)
-        table.sort(belowBars, CompareBarOrder)
-
-        containerFrameAbove:SetWidth(primaryLength)
-        containerFrameBelow:SetWidth(primaryLength)
-
-        -- Stack above bars (order ascending = bottom to top; order=1 closest to group)
-        local currentY = 0
-        for _, barInfo in ipairs(aboveBars) do
-            barInfo.frame:ClearAllPoints()
-            barInfo.frame:SetPoint("BOTTOMLEFT", containerFrameAbove, "BOTTOMLEFT", 0, currentY)
-            barInfo.frame:SetPoint("BOTTOMRIGHT", containerFrameAbove, "BOTTOMRIGHT", 0, currentY)
-            local h = barInfo._effectiveThickness or globalThickness
-            barInfo.frame:SetHeight(h)
-            currentY = currentY + h + barSpacing
-        end
-        local aboveHasBlock = RecordAuraBlockGeometry("above", containerFrameAbove, currentY)
-        local aboveHeight = currentY > 0 and (currentY - barSpacing) or 1
-        containerFrameAbove:SetHeight(aboveHeight)
-        if #aboveBars > 0 or aboveHasBlock then containerFrameAbove:Show() else containerFrameAbove:Hide() end
-
-        -- Stack below bars (order ascending = top to bottom; order=1 closest to group)
-        currentY = 0
-        for _, barInfo in ipairs(belowBars) do
-            barInfo.frame:ClearAllPoints()
-            barInfo.frame:SetPoint("TOPLEFT", containerFrameBelow, "TOPLEFT", 0, -currentY)
-            barInfo.frame:SetPoint("TOPRIGHT", containerFrameBelow, "TOPRIGHT", 0, -currentY)
-            local h = barInfo._effectiveThickness or globalThickness
-            barInfo.frame:SetHeight(h)
-            currentY = currentY + h + barSpacing
-        end
-        local belowHasBlock = RecordAuraBlockGeometry("below", containerFrameBelow, currentY)
-        local belowHeight = currentY > 0 and (currentY - barSpacing) or 1
-        containerFrameBelow:SetHeight(belowHeight)
-        if #belowBars > 0 or belowHasBlock then containerFrameBelow:Show() else containerFrameBelow:Hide() end
     end
 end
 
@@ -2739,6 +2722,18 @@ function CooldownCompanion:ApplyResourceBars(opts)
         containerFrameBelow:SetFrameStrata("MEDIUM")
     end
 
+    RB._barContainers = RB._barContainers or {}
+    RB._barContainers.above = containerFrameAbove
+    RB._barContainers.below = containerFrameBelow
+    for _, lane in ipairs({ "aboveMain", "belowMain" }) do
+        if not RB._barContainers[lane] then
+            local container = CreateFrame("Frame", nil, UIParent)
+            container:SetFrameStrata("MEDIUM")
+            RB._barContainers[lane] = container
+        end
+        RB._barContainers[lane]:Hide()
+    end
+
     -- Create or recycle bar frames
     local globalBarThickness = GetResourceGlobalThickness(settings)
     local barSpacing = layout.barSpacing or settings.barSpacing or 3.6
@@ -2753,25 +2748,25 @@ function CooldownCompanion:ApplyResourceBars(opts)
         EnsureIndependentStackConfig(settings, layout)
         totalPrimaryLength = layout.independentWidth
     else
-        -- Measured off the panel FRAME: on a sectioned panel that is the union
-        -- of the base row and its sections, and the stack spans the whole of
-        -- it, exactly as the Live Preview's lanes wrap the mirror (owner
-        -- ruling 2026-09-03; the base-row body stays for unit frames and
-        -- panel-to-panel anchors only).
+        -- Keep the union length for the vertical stack and lifecycle state.
+        -- Horizontal slots and containers resolve their own destination body.
         totalPrimaryLength = GetResourcePrimaryLength(groupFrame, settings)
     end
 
     -- Determine side/order for each bar (per-spec layout)
     local sideList = {}
     local orderList = {}
+    local regionRanks = {}
+    local placementGroup = RB.GetBarAnchorGroup()
     local fallbackOrder = 900
     for idx, entry in ipairs(filtered) do
         local isCustomEntry = type(entry) == "table" and entry.kind == "custom"
         local powerType = isCustomEntry and nil or entry
-        local side, order
+        local side, order, region
         if isCustomEntry then
             local cabConfig = entry.config
             local slotCfg = RB.GetCustomBarLayout(settings, nil, cabConfig, false)
+            region = slotCfg and slotCfg.anchorRegion
             if isVerticalLayout then
                 local storedHorizontalSide = (slotCfg and slotCfg.position) or "below"
                 side = (slotCfg and slotCfg.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -2788,6 +2783,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
             local res = layout and layout.resources
                 and layout.resources[RB.GetCanonicalPowerType(powerType)]
+            region = res and res.anchorRegion
             if isVerticalLayout then
                 local storedHorizontalSide = (res and res.position) or "below"
                 side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
@@ -2808,7 +2804,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 end
             end
         end
+        side = RB.ResolveBarLane(placementGroup, side, region, isIndependentStack)
         sideList[idx] = side
+        regionRanks[idx] = RB.GetBarRegionRank(side, region, placementGroup)
         orderList[idx] = order
     end
 
@@ -2835,8 +2833,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
         auraBlocks.left = NewSideBlock("left")
         auraBlocks.right = NewSideBlock("right")
     else
-        auraBlocks.above = NewSideBlock("above")
-        auraBlocks.below = NewSideBlock("below")
+        for _, lane in ipairs(RB.ATTACHED_BAR_LANES) do
+            auraBlocks[lane] = NewSideBlock(lane)
+        end
     end
 
     if not blockUnlockAssist then
@@ -2846,7 +2845,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         -- candidate therefore joins its side's block; the unit is stamped PER
         -- ENTRY HERE, once, and rides the contract so the bind pass can never
         -- re-derive a different answer.
-        local keptEntries, keptSides, keptOrders = {}, {}, {}
+        local keptEntries, keptSides, keptOrders, keptRanks = {}, {}, {}, {}
         for idx, entry in ipairs(filtered) do
             local block
             if type(entry) == "table" and entry.kind == "custom" and RB.IsAuraBlockEntry(entry.config) then
@@ -2867,6 +2866,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
                     config = entry.config,
                     thickness = blockThickness,
                     order = orderList[idx],
+                    regionRank = regionRanks[idx],
                     unit = RB.GetResolvedCustomAuraBarAuraUnit(entry.config,
                         tonumber(entry.config.spellID)) or "player",
                 }
@@ -2874,9 +2874,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 keptEntries[#keptEntries + 1] = entry
                 keptSides[#keptSides + 1] = sideList[idx]
                 keptOrders[#keptOrders + 1] = orderList[idx]
+                keptRanks[#keptRanks + 1] = regionRanks[idx]
             end
         end
-        filtered, sideList, orderList = keptEntries, keptSides, keptOrders
+        filtered, sideList, orderList, regionRanks = keptEntries, keptSides, keptOrders, keptRanks
 
         -- Same resolution CompareBarOrder applies to the stack, so the block
         -- keeps the order the layout panel shows. Sorted once for the whole
@@ -2884,6 +2885,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         -- which preserves each bucket's relative order for free.
         for _, block in pairs(auraBlocks) do
             table.sort(block.entries, function(a, b)
+                if a.regionRank ~= b.regionRank then return a.regionRank < b.regionRank end
                 if a.order ~= b.order then return a.order < b.order end
                 return tostring(a.customBarId) < tostring(b.customBarId)
             end)
@@ -2916,7 +2918,11 @@ function CooldownCompanion:ApplyResourceBars(opts)
             RB.ClearCompiledResourceBarConfig(barInfo.frame)
         end
         local firstSide = isVerticalLayout and "left" or "above"
-        local targetContainer = sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow
+        local targetContainer = isVerticalLayout
+            and (sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow)
+            or RB._barContainers[sideList[idx]]
+        local totalPrimaryLength = isIndependentStack and totalPrimaryLength
+            or GetResourcePrimaryLength(RB.GetBarLaneBody(groupFrame, sideList[idx]), settings)
 
         -- Resolve per-bar thickness override
         local effectiveThickness = globalBarThickness
@@ -3248,6 +3254,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         end
         barInfo._side = sideList[idx]
         barInfo._order = orderList[idx]
+        barInfo._regionRank = regionRanks[idx]
         barInfo._effectiveThickness = effectiveThickness
         -- Threshold and tick-marker lists for this slot's final identity,
         -- compiled once here so the poll body reads them instead of
@@ -3271,6 +3278,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Layout: per-element positioning using side containers
     local gap = GetResourceAnchorGap(settings, layout)
     lastAppliedPrimaryLength = totalPrimaryLength
+    RB._lastAppliedAnchorGeometry = not isIndependentStack
+        and RB.GetBarAnchorGeometry(groupFrame, placementGroup) or nil
 
     -- Anchor containers to anchor reference (group frame or independent wrapper)
     containerFrameAbove:ClearAllPoints()
@@ -3303,24 +3312,21 @@ function CooldownCompanion:ApplyResourceBars(opts)
     elseif groupFrame then
         -- Group-relative mode (original behavior)
         HideIndependentWrapperFrame()
-        -- The stack hangs off the panel FRAME. A sectioned panel's frame spans
-        -- the union of the base row and every section, so the bars sit past
-        -- the whole footprint instead of across a section on their side -
-        -- what the Live Preview's lanes have always shown (owner ruling
-        -- 2026-09-03). The frame resizes with the footprint, so a section
-        -- appearing or dissolving moves the stack with no re-anchor; the
-        -- RefreshGroupFrame hook re-measures the length.
-        local anchorBody = groupFrame
         if isVerticalLayout then
             containerFrameAbove:SetHeight(totalPrimaryLength)
             containerFrameBelow:SetHeight(totalPrimaryLength)
-            containerFrameAbove:SetPoint("TOPRIGHT", anchorBody, "TOPLEFT", -gap, 0)
-            containerFrameBelow:SetPoint("TOPLEFT", anchorBody, "TOPRIGHT", gap, 0)
+            containerFrameAbove:SetPoint("TOPRIGHT", groupFrame, "TOPLEFT", -gap, 0)
+            containerFrameBelow:SetPoint("TOPLEFT", groupFrame, "TOPRIGHT", gap, 0)
         else
-            containerFrameAbove:SetWidth(totalPrimaryLength)
-            containerFrameBelow:SetWidth(totalPrimaryLength)
-            containerFrameAbove:SetPoint("BOTTOMLEFT", anchorBody, "TOPLEFT", 0, gap)
-            containerFrameBelow:SetPoint("TOPLEFT", anchorBody, "BOTTOMLEFT", 0, -gap)
+            for _, lane in ipairs(RB.ATTACHED_BAR_LANES) do
+                local container = RB._barContainers[lane]
+                local body = RB.GetBarLaneBody(groupFrame, lane)
+                local above = RB.GetBarLaneSide(lane) == "above"
+                container:ClearAllPoints()
+                container:SetWidth(body:GetWidth())
+                container:SetPoint(above and "BOTTOMLEFT" or "TOPLEFT", body,
+                    above and "TOPLEFT" or "BOTTOMLEFT", 0, above and gap or -gap)
+            end
         end
     end
 
@@ -3368,6 +3374,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
         if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = RB._barContainers.aboveMain
+        frames[#frames + 1] = RB._barContainers.belowMain
         frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
@@ -3383,6 +3391,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
         containerFrameBelow:SetAlpha(groupAlpha)
+        RB._barContainers.aboveMain:SetAlpha(groupAlpha)
+        RB._barContainers.belowMain:SetAlpha(groupAlpha)
         -- Aura host root rides the same alpha writes: the kit visuals fade
         -- with the bars they decorate (plain CC frame; alpha propagates
         -- down through the holders into the slot subtrees engine-side).
@@ -3406,6 +3416,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
                 lastAlpha = alpha
                 if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end
                 if containerFrameBelow then containerFrameBelow:SetAlpha(alpha) end
+                RB._barContainers.aboveMain:SetAlpha(alpha)
+                RB._barContainers.belowMain:SetAlpha(alpha)
                 auraHostRoot:SetAlpha(alpha)
             end
         end)
@@ -3419,6 +3431,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local frames = {}
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
+        frames[#frames + 1] = RB._barContainers.aboveMain
+        frames[#frames + 1] = RB._barContainers.belowMain
         frames[#frames + 1] = self:GetCustomBarAuraHostRoot()
         if #frames > 0 then
             CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
@@ -3446,6 +3460,7 @@ function CooldownCompanion:RevertResourceBars()
     isApplied = false
     lastAppliedActiveBarSignature = nil
     lastAppliedPrimaryLength = nil
+    RB._lastAppliedAnchorGeometry = nil
     lastAppliedOrientation = nil
     lastAppliedLayout = nil
     lastAppliedIndependentStack = false
@@ -3490,6 +3505,10 @@ function CooldownCompanion:RevertResourceBars()
         end
     end
 
+    if RB._barContainers then
+        RB._barContainers.aboveMain:Hide()
+        RB._barContainers.belowMain:Hide()
+    end
     -- Hide containers and independent wrapper
     if containerFrameAbove then containerFrameAbove:Hide() end
     if containerFrameBelow then containerFrameBelow:Hide() end
@@ -3782,10 +3801,7 @@ function CooldownCompanion:GetResourceBarPredecessor(side, upToOrder)
             and barInfo._order < upToOrder then
             if not best then
                 best = barInfo
-            elseif barInfo._order > best._order then
-                best = barInfo
-            elseif barInfo._order == best._order
-                and tostring(barInfo.powerType or barInfo.customBarId or "") > tostring(best.powerType or best.customBarId or "") then
+            elseif CompareBarOrder(best, barInfo) then
                 best = barInfo
             end
         end

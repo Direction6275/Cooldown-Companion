@@ -222,7 +222,9 @@ function RB.CreateResourceBarLifecycleModule(deps)
             local lastLength = GetLastAppliedPrimaryLength()
             if not groupFrame or not lastLength then return end
             local newLength = GetResourcePrimaryLength(groupFrame, s)
-            if math_abs(newLength - lastLength) < 0.1 then
+            local geometry = RB.GetBarAnchorGeometry(groupFrame, RB.GetBarAnchorGroup())
+            if math_abs(newLength - lastLength) < 0.1
+                and geometry == RB._lastAppliedAnchorGeometry then
                 return
             end
             CooldownCompanion:ApplyResourceBars()
