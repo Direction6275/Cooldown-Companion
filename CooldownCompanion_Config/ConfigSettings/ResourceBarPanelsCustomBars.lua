@@ -2072,7 +2072,7 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
     AnchorRowBadge(inactiveRow, CreateInfoButton(inactiveRow.frame, inactiveRow.frame, "LEFT", "LEFT", 0, 0, inactiveInfo, infoButtons))
 end
 
-local function BuildCustomBarWorkspaceAddBox(container)
+local function BuildCustomBarWorkspaceAddBox(container, placeholderText)
     if BuildResourceBarConflictGate(container, "Custom Bars", false) then
         return
     end
@@ -2092,7 +2092,7 @@ local function BuildCustomBarWorkspaceAddBox(container)
     addBox:SetLabel("")
     addBox:SetFullWidth(true)
     addBox:DisableButton(true)
-    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, "Add a spell by name or ID…")
+    local updatePlaceholder = ConfigureCustomBarAddInstructions(addBox, placeholderText or "Add a spell by name or ID…")
 
     local function GetCustomBarEntryTypeForAutocomplete(entry)
         if type(entry) ~= "table" then

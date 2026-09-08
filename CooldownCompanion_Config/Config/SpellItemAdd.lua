@@ -1619,9 +1619,13 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     -- Narrow row controls may request a wider centered popup without changing
     -- the edit box or the default sizing used by other autocomplete callers.
     local anchorFrame = anchorWidget.frame or anchorWidget
+    local editingRow = ST._GetEditingAddResultsAnchor and ST._GetEditingAddResultsAnchor(anchorWidget)
     dropdown:ClearAllPoints()
     local widthMultiplier = options and tonumber(options.widthMultiplier)
-    if widthMultiplier and widthMultiplier > 0 then
+    if editingRow then
+        dropdown:SetPoint("TOPLEFT", editingRow, "BOTTOMLEFT", 0, -2)
+        dropdown:SetPoint("TOPRIGHT", editingRow, "BOTTOMRIGHT", 0, -2)
+    elseif widthMultiplier and widthMultiplier > 0 then
         dropdown:SetPoint("TOP", anchorFrame, "BOTTOM", 0, -2)
         dropdown:SetWidth(anchorFrame:GetWidth() * widthMultiplier)
     else

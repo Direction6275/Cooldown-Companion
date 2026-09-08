@@ -24,6 +24,7 @@ local PREVIEW_GAP = 4
 local BARS_HOME_LABEL = "Resource Bars"
 local ADD_BOX_HEIGHT = 26
 local ADD_MODE_WIDTH = 104
+local EDIT_ACTION_COMPACT_GAP = 6
 local EDIT_CONTEXT_ICON_SIZE = 16
 local EDIT_CONTEXT_BADGE_SIZE = 16
 local EDIT_CONTEXT_BADGE_GAP = 3
@@ -316,6 +317,20 @@ local function HideSettingsFinderResults()
     end
 end
 
+-- Resolve at use time rather than storing an anchor on pooled Add widgets.
+-- The active input may be either the persistent panel box or a rebuilt Custom Bar box.
+ST._GetEditingAddResultsAnchor = function(input)
+    local col3 = CS.configFrame and CS.configFrame.col3
+    local row = col3 and col3._cdcEditingActionRow
+    local widget = row and row._cdcAddBox
+    local activeInput = widget and (widget.editbox and widget or widget._cdcAddInput)
+    if IsThreeColumnLayout() and row and row:IsVisible()
+        and input and input == activeInput
+    then
+        return row
+    end
+end
+
 local function ApplyEditingActionPopupHandoff(owner)
     local closeFinder, closeAdd = SettingsFinderActionBehavior.GetPopupHandoff(owner)
     if closeFinder then
@@ -550,6 +565,7 @@ local function ShowSettingsFinderResults(col3, results, truncated, context, cont
 
     local finderWidth = math.max(1, widget.frame:GetWidth() or 1)
     local actionRow = col3._cdcEditingActionRow
+    local fullRowResults = IsThreeColumnLayout() and actionRow and actionRow:IsVisible()
     local maximumDropdownWidth = math.max(
         finderWidth, actionRow and actionRow:GetWidth() or finderWidth)
     local widestName = 0
@@ -595,6 +611,9 @@ local function ShowSettingsFinderResults(col3, results, truncated, context, cont
         dropdown._stableWidth or finderWidth,
         finderWidth,
         desiredDropdownWidth))
+    if fullRowResults then
+        dropdown._stableWidth = math.max(1, actionRow:GetWidth())
+    end
     local dropdownWidth = dropdown._stableWidth
     local breadcrumbWidth = math.min(
         math.ceil(widestBreadcrumb + 1),
@@ -604,8 +623,13 @@ local function ShowSettingsFinderResults(col3, results, truncated, context, cont
     end
 
     dropdown:ClearAllPoints()
-    dropdown:SetPoint("TOPRIGHT", widget.frame, "BOTTOMRIGHT", 0, -2)
-    dropdown:SetWidth(dropdownWidth)
+    if fullRowResults then
+        dropdown:SetPoint("TOPLEFT", actionRow, "BOTTOMLEFT", 0, -2)
+        dropdown:SetPoint("TOPRIGHT", actionRow, "BOTTOMRIGHT", 0, -2)
+    else
+        dropdown:SetPoint("TOPRIGHT", widget.frame, "BOTTOMRIGHT", 0, -2)
+        dropdown:SetWidth(dropdownWidth)
+    end
 
     dropdown.footer:SetShown(truncated == true)
     local footerHeight = truncated and SETTINGS_FINDER_FOOTER_HEIGHT or 0
@@ -741,6 +765,11 @@ local function LayoutEditingActionRow(col3)
 
     local selector = col3._cdcAddModeDropdown
     local modeWidth = selector and selector.frame:IsShown() and (ADD_MODE_WIDTH + 6) or 0
+    local compact = IsThreeColumnLayout()
+    if finder then
+        finder._cdcInstructions:SetText(compact and "Search..."
+            or "Find a setting by name or keyword\226\128\166")
+    end
     if modeWidth > 0 then
         selector.frame:SetParent(row)
         selector.frame:ClearAllPoints()
@@ -753,30 +782,17 @@ local function LayoutEditingActionRow(col3)
         addBox.frame:SetParent(row)
         height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
-    local stackFields = IsThreeColumnLayout() and hasAdd and hasFinder
-    if stackFields then
-        height = height + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
-    end
     row:SetHeight(height)
     row._cdcEditingHeight = height
-    if stackFields then
-        if modeWidth > 0 then
-            selector.frame:ClearAllPoints()
-            selector.frame:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-        end
-        addBox.frame:ClearAllPoints()
-        addBox.frame:SetPoint("TOPLEFT", row, "TOPLEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
-        addBox.frame:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
-        addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
-        finder.frame:ClearAllPoints()
-        finder.frame:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
-        finder.frame:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
-        finder.frame:SetHeight(ADD_BOX_HEIGHT)
-    elseif hasAdd and hasFinder then
+    if hasAdd and hasFinder then
         local rowWidth = math.max(1, row:GetWidth() or 1)
         local finderWidth = math.max(SETTINGS_FINDER_MIN_WIDTH,
             math.min(SETTINGS_FINDER_MAX_WIDTH, rowWidth * SETTINGS_FINDER_WIDTH_FRACTION))
         finderWidth = math.min(math.max(1, rowWidth - 40), finderWidth)
+        local fieldGap = compact and EDIT_ACTION_COMPACT_GAP or 0
+        if compact then
+            finderWidth = math.max(1, (rowWidth - modeWidth - fieldGap) / 2)
+        end
 
         finder.frame:ClearAllPoints()
         finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
@@ -786,7 +802,7 @@ local function LayoutEditingActionRow(col3)
         addBox.frame:ClearAllPoints()
         addBox.frame:SetPoint(
             "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
-        addBox.frame:SetPoint("RIGHT", finder.frame, "LEFT", 0, 0)
+        addBox.frame:SetPoint("RIGHT", finder.frame, "LEFT", -fieldGap, 0)
         addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     elseif hasFinder then
         finder.frame:ClearAllPoints()
@@ -2419,7 +2435,7 @@ local function UpdateAddBox(col3)
     local addBox = EnsureAddBox(col3)
     if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
     CS.panelAddModeQuery = nil
-    addBox._cdcInstructions:SetText(CooldownCompanion:IsAuraPanel(group)
+    addBox._cdcInstructions:SetText(IsThreeColumnLayout() and "Add..." or CooldownCompanion:IsAuraPanel(group)
         and "Add an aura spell or ID\226\128\166"
         or "Add a spell, item, trinket slot, or ID\226\128\166")
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
