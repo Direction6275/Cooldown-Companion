@@ -2747,7 +2747,7 @@ local function RefreshColumn1(preserveDrag)
                 for _, entryInfo in ipairs(searchPanelResult and searchPanelResult.entryMatches or {}) do
                     local buttonData = entryInfo.button
                     local buttonIndex = entryInfo.index
-                    local entryDisabled = isInactive or (buttonData and buttonData.enabled == false)
+                    local entryDisabled = isInactive or (buttonData and not CooldownCompanion:IsButtonEnabled(buttonData, panel))
                     local buttonEntry = AceGUI:Create("InteractiveLabel")
                     CleanRecycledEntry(buttonEntry)
                     buttonEntry:SetText(entryInfo.text or (buttonData and buttonData.name) or "Entry")

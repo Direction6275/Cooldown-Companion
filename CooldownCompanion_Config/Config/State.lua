@@ -1196,7 +1196,7 @@ end
 
 local function ConfigPanelHasWarning(panel)
     for _, buttonData in ipairs(panel and panel.buttons or {}) do
-        if buttonData.enabled ~= false and not IsConfigPanelEntryUsable(panel, buttonData) then
+        if CooldownCompanion:IsButtonEnabled(buttonData, panel) and not IsConfigPanelEntryUsable(panel, buttonData) then
             return true
         end
     end

@@ -1456,9 +1456,15 @@ local function SpellIDsMatchCanonicalForm(storedSpellID, resolvedSpellID)
         and storedBaseSpellID == resolvedBaseSpellID
 end
 
+-- Texture panels have one driver and use the panel's enabled state. Ignore
+-- legacy entry flags here, including entries imported or moved from other modes.
+function CooldownCompanion:IsButtonEnabled(buttonData, group)
+    return (group and group.displayMode == "textures") or buttonData.enabled ~= false
+end
+
 function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
     opts = opts or {}
-    if buttonData.enabled == false then return false end
+    if not self:IsButtonEnabled(buttonData, group) then return false end
 
     if opts.checkLoadConditions ~= false and not self:IsButtonLoadConditionMet(buttonData, group) then return false end
 

@@ -994,47 +994,52 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 UIDropDownMenu_AddButton(formatInfo, level)
             end
 
-            -- Disable / Enable button
-            local toggleInfo = UIDropDownMenu_CreateInfo()
-            toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
-            toggleInfo.notCheckable = true
-            toggleInfo.func = function()
-                SetEntrySelectionEnabled(snapshot, entryData.enabled == false)
-            end
-            UIDropDownMenu_AddButton(toggleInfo, level)
+            local isTexturePanel = sourceGroup and sourceGroup.displayMode == "textures"
+            -- The texture is the display; its lone driver has no separate icon
+            -- or independent enabled state to configure in this menu.
+            if not isTexturePanel then
+                -- Disable / Enable button
+                local toggleInfo = UIDropDownMenu_CreateInfo()
+                toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
+                toggleInfo.notCheckable = true
+                toggleInfo.func = function()
+                    SetEntrySelectionEnabled(snapshot, entryData.enabled == false)
+                end
+                UIDropDownMenu_AddButton(toggleInfo, level)
 
-            UIDropDownMenu_AddSeparator(level)
+                UIDropDownMenu_AddSeparator(level)
 
-            local iconInfo = UIDropDownMenu_CreateInfo()
-            iconInfo.text = "Override Icon..."
-            iconInfo.notCheckable = true
-            iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
-            iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
-            iconInfo.tooltipOnButton = true
-            iconInfo.func = function()
-                if not ValidateEntryActionSelection(snapshot) then return end
-                CloseDropDownMenus()
-                ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
-            end
-            UIDropDownMenu_AddButton(iconInfo, level)
-
-            if ST._IsValidIconTexture(entryData.manualIcon) then
-                local resetIconInfo = UIDropDownMenu_CreateInfo()
-                resetIconInfo.text = "Reset Icon"
-                resetIconInfo.notCheckable = true
-                resetIconInfo.func = function()
+                local iconInfo = UIDropDownMenu_CreateInfo()
+                iconInfo.text = "Override Icon..."
+                iconInfo.notCheckable = true
+                iconInfo.tooltipTitle = "|cffffd100Override Icon|r"
+                iconInfo.tooltipText = "|cffffffffReplaces the default spell or item icon.|r"
+                iconInfo.tooltipOnButton = true
+                iconInfo.func = function()
                     if not ValidateEntryActionSelection(snapshot) then return end
                     CloseDropDownMenus()
-                    entryData.manualIcon = nil
-                    CooldownCompanion:RefreshGroupFrame(sourceGroupId)
-                    CooldownCompanion:RefreshConfigPanel()
+                    ST._OpenButtonIconPicker(sourceGroupId, sourceIndex)
                 end
-                UIDropDownMenu_AddButton(resetIconInfo, level)
+                UIDropDownMenu_AddButton(iconInfo, level)
+
+                if ST._IsValidIconTexture(entryData.manualIcon) then
+                    local resetIconInfo = UIDropDownMenu_CreateInfo()
+                    resetIconInfo.text = "Reset Icon"
+                    resetIconInfo.notCheckable = true
+                    resetIconInfo.func = function()
+                        if not ValidateEntryActionSelection(snapshot) then return end
+                        CloseDropDownMenus()
+                        entryData.manualIcon = nil
+                        CooldownCompanion:RefreshGroupFrame(sourceGroupId)
+                        CooldownCompanion:RefreshConfigPanel()
+                    end
+                    UIDropDownMenu_AddButton(resetIconInfo, level)
+                end
             end
 
-            local canDuplicate = not (sourceGroup and sourceGroup.displayMode == "textures")
+            local canDuplicate = not isTexturePanel
             local hasCustomizations = #CollectCopyCustomizationItems(entryData) > 0
-            if canDuplicate or hasCustomizations then
+            if not isTexturePanel and (canDuplicate or hasCustomizations) then
                 UIDropDownMenu_AddSeparator(level)
             end
 
@@ -1063,7 +1068,9 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 UIDropDownMenu_AddButton(copyInfo, level)
             end
 
-            UIDropDownMenu_AddSeparator(level)
+            if canDuplicate or hasCustomizations then
+                UIDropDownMenu_AddSeparator(level)
+            end
 
             AddEntrySelectionMoveMenuItem(level, snapshot, "Move to...")
 
