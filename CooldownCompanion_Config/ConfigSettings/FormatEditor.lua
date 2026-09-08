@@ -23,6 +23,21 @@ local CreateInfoButton = ST._CreateInfoButton
 -- in ButtonFrame/TextMode.lua); the advisories below say when they cannot
 -- show anything for the format being edited.
 local TOKEN_LIST = {"name", "time", "charges", "maxcharges", "stacks", "aura", "aurastacks", "keybind", "status", "icon", "br"}
+local TOKEN_LABELS = {
+    name = "Name", time = "Cooldown Time", charges = "Charges", maxcharges = "Maximum Charges",
+    stacks = "Item Count", aura = "Aura Duration", aurastacks = "Aura Stacks",
+    keybind = "Keybind", status = "Status", icon = "Icon", br = "Line Break",
+}
+
+local function AddInsertTooltip(widget, title, syntax)
+    widget:SetCallback("OnEnter", function(self)
+        GameTooltip:SetOwner(self.frame, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(title)
+        GameTooltip:AddLine("Inserts " .. syntax, 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    widget:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+end
 
 -- Tokens available as conditional targets.
 local COND_TOKEN_LIST = {}
@@ -641,58 +656,80 @@ local function BuildFormatEditorContent(container, opts)
     -- color section paints its own swatches once it has built them.
     UpdateDisplay()
 
+    -- Rebuild only the toggled tool. The editor, cursor, and pending preview
+    -- remain alive while helpers expand/collapse; no config refresh is needed.
+    local function AddToolSection(title, key, build)
+        local tool = AceGUI:Create("SimpleGroup")
+        tool:SetFullWidth(true)
+        tool:SetLayout("List")
+        tool:SetAutoAdjustHeight(true)
+        container:AddChild(tool)
+        key = "textformat_tools_" .. key
+        if CS.collapsedSections[key] == nil then CS.collapsedSections[key] = true end
+        local function RebuildTool()
+            if controller.released then return end
+            GameTooltip:Hide()
+            tool:PauseLayout()
+            tool:ReleaseChildren()
+            local heading, collapsed = ST._BuildCollapsibleSection(tool, title, key, nil, RebuildTool,
+                { leftAligned = true })
+            if not collapsed then build(tool, heading) end
+            tool:ResumeLayout()
+            tool:DoLayout()
+            container:DoLayout()
+        end
+        RebuildTool()
+    end
+
     -- ================================================================
     -- STARTER TEMPLATES
     -- ================================================================
-    local templateHeading = AceGUI:Create("Heading")
-    templateHeading:SetText("Start From an Example")
-    templateHeading:SetFullWidth(true)
-    container:AddChild(templateHeading)
-    ST._ApplyLeftAlignedHeading(templateHeading, nil, true)
+    AddToolSection("Start From an Example", "examples", function(container, templateHeading)
 
-    local templateGroup = AceGUI:Create("SimpleGroup")
-    templateGroup:SetFullWidth(true)
-    templateGroup:SetLayout("Flow")
-    templateGroup:SetAutoAdjustHeight(true)
-    container:AddChild(templateGroup)
+        local templateGroup = AceGUI:Create("SimpleGroup")
+        templateGroup:SetFullWidth(true)
+        templateGroup:SetLayout("Flow")
+        templateGroup:SetAutoAdjustHeight(true)
+        container:AddChild(templateGroup)
 
-    -- A chip overwrites silently only when there is nothing of the user's to
-    -- lose: empty, still the default for this target, or already an example.
-    local function IsDisposableFormat(text)
-        if not text or text == "" then return true end
-        if text == currentDefaultFormat or text == DEFAULT_TEXT_FORMAT then return true end
-        for _, tpl in ipairs(FORMAT_TEMPLATES) do
-            if text == tpl.format then return true end
-        end
-        return false
-    end
-
-    -- Same path typing takes: raw text, recolorize, validation, swatches.
-    local function ApplyTemplate(formatString)
-        -- The confirmation popup can outlive the editor that opened it.
-        if controller.released then return end
-        currentRawText = formatString
-        ApplyColorized(currentRawText, #currentRawText)
-        UpdateDisplay()
-        eb:SetFocus()
-        NotifyDirty()
-    end
-
-    for _, tpl in ipairs(FORMAT_TEMPLATES) do
-        local chip = AceGUI:Create("Button")
-        chip:SetText(tpl.label)
-        chip:SetAutoWidth(true)
-        chip:SetCallback("OnClick", function()
-            if IsDisposableFormat(currentRawText) then
-                ApplyTemplate(tpl.format)
-            else
-                ShowTemplateConfirm(tpl.label, function()
-                    ApplyTemplate(tpl.format)
-                end)
+        -- A chip overwrites silently only when there is nothing of the user's to
+        -- lose: empty, still the default for this target, or already an example.
+        local function IsDisposableFormat(text)
+            if not text or text == "" then return true end
+            if text == currentDefaultFormat or text == DEFAULT_TEXT_FORMAT then return true end
+            for _, tpl in ipairs(FORMAT_TEMPLATES) do
+                if text == tpl.format then return true end
             end
-        end)
-        templateGroup:AddChild(chip)
-    end
+            return false
+        end
+
+        -- Same path typing takes: raw text, recolorize, validation, swatches.
+        local function ApplyTemplate(formatString)
+            -- The confirmation popup can outlive the editor that opened it.
+            if controller.released then return end
+            currentRawText = formatString
+            ApplyColorized(currentRawText, #currentRawText)
+            UpdateDisplay()
+            eb:SetFocus()
+            NotifyDirty()
+        end
+
+        for _, tpl in ipairs(FORMAT_TEMPLATES) do
+            local chip = AceGUI:Create("Button")
+            chip:SetText(tpl.label)
+            chip:SetAutoWidth(true)
+            chip:SetCallback("OnClick", function()
+                if IsDisposableFormat(currentRawText) then
+                    ApplyTemplate(tpl.format)
+                else
+                    ShowTemplateConfirm(tpl.label, function()
+                        ApplyTemplate(tpl.format)
+                    end)
+                end
+            end)
+            templateGroup:AddChild(chip)
+        end
+    end)
 
     -- ================================================================
     -- INSERT HELPER (shared by token + conditional buttons)
@@ -764,7 +801,8 @@ local function BuildFormatEditorContent(container, opts)
 
     for _, tokenName in ipairs(TOKEN_LIST) do
         local btn = AceGUI:Create("Button")
-        btn:SetText("{" .. tokenName .. "}")
+        btn:SetText(TOKEN_LABELS[tokenName])
+        AddInsertTooltip(btn, TOKEN_LABELS[tokenName], "{" .. tokenName .. "}")
         btn:SetAutoWidth(true)
         btn:SetCallback("OnClick", function()
             InsertAtCursor("{" .. tokenName .. "}")
@@ -775,195 +813,191 @@ local function BuildFormatEditorContent(container, opts)
     -- ================================================================
     -- COLOR A SECTION (color tag inserts)
     -- ================================================================
-    local colorHeading = AceGUI:Create("Heading")
-    colorHeading:SetText("Color a Section")
-    colorHeading:SetFullWidth(true)
-    container:AddChild(colorHeading)
-    ST._ApplyLeftAlignedHeading(colorHeading, nil, true)
+    AddToolSection("Color a Section", "colors", function(container, colorHeading)
 
-    local colorInfo = CreateInfoButton(colorHeading.frame, colorHeading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Color a Section", 1, 0.82, 0, true},
-        " ",
-        {"Wrap tokens or literal text to recolor that span,", 1, 1, 1, true},
-        {"overriding the token's default coloring.", 1, 1, 1, true},
-        " ",
-        {"|cff44bbff{cooldown}|r  Cooldown color", 1, 1, 1, true},
-        {"|cff44bbff{ready}|r  Ready color", 1, 1, 1, true},
-        {"|cff44bbff{active}|r  Aura active color", 1, 1, 1, true},
-        {"|cff44bbff{custom}|r  Custom color", 1, 1, 1, true},
-        " ",
-        {"The swatches show this panel's colors.", 0.7, 0.7, 0.7, true},
-        {"Change them in the Colors section of the Appearance tab.", 0.7, 0.7, 0.7, true},
-        " ",
-        {"Example:", 0.7, 0.7, 0.7, true},
-        {"|cff44bbff{cooldown}|r|cff00ff00{name}|r|cff44bbff{/cooldown}|r", 0.7, 0.7, 0.7, true},
-        {"Shows the spell name in the cooldown color.", 0.7, 0.7, 0.7, true},
-        " ",
-        {"Nestable: inner color overrides outer.", 0.7, 0.7, 0.7, true},
-        {"Composes with conditionals and effects.", 0.7, 0.7, 0.7, true},
-    }, colorHeading)
-    ST._AnchorLeftAlignedHeadingRule(colorHeading, colorInfo)
+        local colorInfo = CreateInfoButton(colorHeading.frame, colorHeading.label, "LEFT", "RIGHT", 4, 0, {
+            {"Color a Section", 1, 0.82, 0, true},
+            " ",
+            {"Wrap tokens or literal text to recolor that span,", 1, 1, 1, true},
+            {"overriding the token's default coloring.", 1, 1, 1, true},
+            " ",
+            {"|cff44bbff{cooldown}|r  Cooldown color", 1, 1, 1, true},
+            {"|cff44bbff{ready}|r  Ready color", 1, 1, 1, true},
+            {"|cff44bbff{active}|r  Aura active color", 1, 1, 1, true},
+            {"|cff44bbff{custom}|r  Custom color", 1, 1, 1, true},
+            " ",
+            {"The swatches show this panel's colors.", 0.7, 0.7, 0.7, true},
+            {"Change them in the Colors section of the Appearance tab.", 0.7, 0.7, 0.7, true},
+            " ",
+            {"Example:", 0.7, 0.7, 0.7, true},
+            {"|cff44bbff{cooldown}|r|cff00ff00{name}|r|cff44bbff{/cooldown}|r", 0.7, 0.7, 0.7, true},
+            {"Shows the spell name in the cooldown color.", 0.7, 0.7, 0.7, true},
+            " ",
+            {"Nestable: inner color overrides outer.", 0.7, 0.7, 0.7, true},
+            {"Composes with conditionals and effects.", 0.7, 0.7, 0.7, true},
+        }, colorHeading)
+        ST._AnchorLeftAlignedHeadingRule(colorHeading, colorInfo)
 
-    local colorGroup = AceGUI:Create("SimpleGroup")
-    colorGroup:SetFullWidth(true)
-    colorGroup:SetLayout("Flow")
-    colorGroup:SetAutoAdjustHeight(true)
-    container:AddChild(colorGroup)
+        local colorGroup = AceGUI:Create("SimpleGroup")
+        colorGroup:SetFullWidth(true)
+        colorGroup:SetLayout("Flow")
+        colorGroup:SetAutoAdjustHeight(true)
+        container:AddChild(colorGroup)
 
-    local colorSwatches = {}
-    for _, colorName in ipairs({"cooldown", "ready", "active", "custom"}) do
-        local colorBtn = AceGUI:Create("Button")
-        colorBtn:SetText("{" .. colorName .. "}")
-        colorBtn:SetCallback("OnClick", function()
-            local open = "{" .. colorName .. "}"
-            local close = "{/" .. colorName .. "}"
-            InsertAtCursor(open .. close, #open)
-        end)
-        -- Attach before AddChild so the first layout already sees the width
-        -- the swatch forces.
-        colorSwatches[#colorSwatches + 1] = {
-            name = colorName,
-            fill = AttachColorSwatch(colorBtn),
-        }
-        colorGroup:AddChild(colorBtn)
-    end
-
-    RefreshColorSwatches = function()
-        for _, entry in ipairs(colorSwatches) do
-            local c = GetStyleTagColor(currentStyle, entry.name)
-            entry.fill:SetColorTexture(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+        local colorSwatches = {}
+        for _, colorName in ipairs({"cooldown", "ready", "active", "custom"}) do
+            local colorBtn = AceGUI:Create("Button")
+            colorBtn:SetText("{" .. colorName .. "}")
+            colorBtn:SetCallback("OnClick", function()
+                local open = "{" .. colorName .. "}"
+                local close = "{/" .. colorName .. "}"
+                InsertAtCursor(open .. close, #open)
+            end)
+            -- Attach before AddChild so the first layout already sees the width
+            -- the swatch forces.
+            colorSwatches[#colorSwatches + 1] = {
+                name = colorName,
+                fill = AttachColorSwatch(colorBtn),
+            }
+            colorGroup:AddChild(colorBtn)
         end
-    end
-    RefreshColorSwatches()
+
+        RefreshColorSwatches = function()
+            for _, entry in ipairs(colorSwatches) do
+                local c = GetStyleTagColor(currentStyle, entry.name)
+                entry.fill:SetColorTexture(c[1] or 1, c[2] or 1, c[3] or 1, 1)
+            end
+        end
+        local refreshSwatches = RefreshColorSwatches
+        colorGroup:SetCallback("OnRelease", function()
+            if RefreshColorSwatches == refreshSwatches then RefreshColorSwatches = nil end
+        end)
+        RefreshColorSwatches()
+    end)
 
     -- ================================================================
     -- SHOW ONLY WHEN (conditional inserts)
     -- ================================================================
-    local condHeading = AceGUI:Create("Heading")
-    condHeading:SetText("Show Only When...")
-    condHeading:SetFullWidth(true)
-    container:AddChild(condHeading)
-    ST._ApplyLeftAlignedHeading(condHeading, nil, true)
+    AddToolSection("Show Only When...", "conditions", function(container, condHeading)
 
-    local condInfo = CreateInfoButton(condHeading.frame, condHeading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Available Conditionals", 1, 0.82, 0, true},
-        " ",
-        {"Show or hide parts of the format string based", 1, 1, 1, true},
-        {"on whether a condition is true.", 1, 1, 1, true},
-        " ",
-        {"|cffffff00{time}|r  Cooldown time remaining", 1, 1, 1, true},
-        {"|cffffff00{aura}|r  Tracked aura is active", 1, 1, 1, true},
-        {"|cffffff00{available}|r  Off cooldown", 1, 1, 1, true},
-        {"|cffffff00{charges}|r  Entry uses charges", 1, 1, 1, true},
-        {"|cffffff00{maxcharges}|r  At max charges", 1, 1, 1, true},
-        {"|cffffff00{missingcharges}|r  Recharging with charges left", 1, 1, 1, true},
-        {"|cffffff00{zerocharges}|r  All charges spent", 1, 1, 1, true},
-        {"|cffffff00{stacks}|r  Has a stack or item count", 1, 1, 1, true},
-        {"|cffffff00{keybind}|r  Keybind text", 1, 1, 1, true},
-        {"|cffffff00{proc}|r  Spell proc overlay active", 1, 1, 1, true},
-        {"|cffffff00{unusable}|r  Spell/item not usable", 1, 1, 1, true},
-        {"|cffffff00{oor}|r  Target out of range", 1, 1, 1, true},
-        {"|cffffff00{incombat}|r  Player is in combat", 1, 1, 1, true},
-        " ",
-        {"Syntax", 1, 0.82, 0, true},
-        " ",
-        {"|cffffff00{?token}|r...|cffffff00{/token}|r  Show when true", 1, 1, 1, true},
-        {"|cffff8844{!token}|r...|cffff8844{/token}|r  Show when false", 1, 1, 1, true},
-        " ",
-        {"|cffff8844{!aura}|r is not available on this game version.", 0.7, 0.7, 0.7, true},
-        " ",
-        {"Example:", 0.7, 0.7, 0.7, true},
-        {"|cffffff00{?time}|rCD: |cff00ff00{time}|r|cffffff00{/time}|r", 0.7, 0.7, 0.7, true},
-        {"Shows 'CD: 1:23' on cooldown, nothing when ready.", 0.7, 0.7, 0.7, true},
-    }, condHeading)
-    ST._AnchorLeftAlignedHeadingRule(condHeading, condInfo)
+        local condInfo = CreateInfoButton(condHeading.frame, condHeading.label, "LEFT", "RIGHT", 4, 0, {
+            {"Available Conditionals", 1, 0.82, 0, true},
+            " ",
+            {"Show or hide parts of the format string based", 1, 1, 1, true},
+            {"on whether a condition is true.", 1, 1, 1, true},
+            " ",
+            {"|cffffff00{time}|r  Cooldown time remaining", 1, 1, 1, true},
+            {"|cffffff00{aura}|r  Tracked aura is active", 1, 1, 1, true},
+            {"|cffffff00{available}|r  Off cooldown", 1, 1, 1, true},
+            {"|cffffff00{charges}|r  Entry uses charges", 1, 1, 1, true},
+            {"|cffffff00{maxcharges}|r  At max charges", 1, 1, 1, true},
+            {"|cffffff00{missingcharges}|r  Recharging with charges left", 1, 1, 1, true},
+            {"|cffffff00{zerocharges}|r  All charges spent", 1, 1, 1, true},
+            {"|cffffff00{stacks}|r  Has a stack or item count", 1, 1, 1, true},
+            {"|cffffff00{keybind}|r  Keybind text", 1, 1, 1, true},
+            {"|cffffff00{proc}|r  Spell proc overlay active", 1, 1, 1, true},
+            {"|cffffff00{unusable}|r  Spell/item not usable", 1, 1, 1, true},
+            {"|cffffff00{oor}|r  Target out of range", 1, 1, 1, true},
+            {"|cffffff00{incombat}|r  Player is in combat", 1, 1, 1, true},
+            " ",
+            {"Syntax", 1, 0.82, 0, true},
+            " ",
+            {"|cffffff00{?token}|r...|cffffff00{/token}|r  Show when true", 1, 1, 1, true},
+            {"|cffff8844{!token}|r...|cffff8844{/token}|r  Show when false", 1, 1, 1, true},
+            " ",
+            {"|cffff8844{!aura}|r is not available on this game version.", 0.7, 0.7, 0.7, true},
+            " ",
+            {"Example:", 0.7, 0.7, 0.7, true},
+            {"|cffffff00{?time}|rCD: |cff00ff00{time}|r|cffffff00{/time}|r", 0.7, 0.7, 0.7, true},
+            {"Shows 'CD: 1:23' on cooldown, nothing when ready.", 0.7, 0.7, 0.7, true},
+        }, condHeading)
+        ST._AnchorLeftAlignedHeadingRule(condHeading, condInfo)
 
-    local condGroup = AceGUI:Create("SimpleGroup")
-    condGroup:SetFullWidth(true)
-    condGroup:SetLayout("Flow")
-    condGroup:SetAutoAdjustHeight(true)
-    container:AddChild(condGroup)
+        local condGroup = AceGUI:Create("SimpleGroup")
+        condGroup:SetFullWidth(true)
+        condGroup:SetLayout("Flow")
+        condGroup:SetAutoAdjustHeight(true)
+        container:AddChild(condGroup)
 
-    local condDropdown = AceGUI:Create("Dropdown")
-    condDropdown:SetLabel("")
-    condDropdown:SetWidth(130)
-    condDropdown:SetList(COND_TOKEN_LIST, COND_TOKEN_ORDER)
-    condDropdown:SetValue("time")
-    condGroup:AddChild(condDropdown)
+        local condDropdown = AceGUI:Create("Dropdown")
+        condDropdown:SetLabel("")
+        condDropdown:SetWidth(130)
+        condDropdown:SetList(COND_TOKEN_LIST, COND_TOKEN_ORDER)
+        condDropdown:SetValue("time")
+        condGroup:AddChild(condDropdown)
 
-    local function InsertConditional(prefix)
-        local token = condDropdown:GetValue()
-        local open = "{" .. prefix .. token .. "}"
-        local close = "{/" .. token .. "}"
-        InsertAtCursor(open .. close, #open)
-    end
+        local function InsertConditional(prefix)
+            local token = condDropdown:GetValue()
+            local open = "{" .. prefix .. token .. "}"
+            local close = "{/" .. token .. "}"
+            InsertAtCursor(open .. close, #open)
+        end
 
-    local showBtn = AceGUI:Create("Button")
-    showBtn:SetText("Show if present")
-    showBtn:SetAutoWidth(true)
-    showBtn:SetCallback("OnClick", function() InsertConditional("?") end)
-    condGroup:AddChild(showBtn)
+        local showBtn = AceGUI:Create("Button")
+        showBtn:SetText("Show if present")
+        showBtn:SetAutoWidth(true)
+        showBtn:SetCallback("OnClick", function() InsertConditional("?") end)
+        condGroup:AddChild(showBtn)
 
-    local hideBtn = AceGUI:Create("Button")
-    hideBtn:SetText("Show if empty")
-    hideBtn:SetAutoWidth(true)
-    hideBtn:SetCallback("OnClick", function() InsertConditional("!") end)
-    condGroup:AddChild(hideBtn)
+        local hideBtn = AceGUI:Create("Button")
+        hideBtn:SetText("Show if empty")
+        hideBtn:SetAutoWidth(true)
+        hideBtn:SetCallback("OnClick", function() InsertConditional("!") end)
+        condGroup:AddChild(hideBtn)
 
-    -- Plain-language readout of whatever the dropdown currently names, so the
-    -- conditions do not all have to be learned from the info button.
-    local condHelp = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(condHelp)
-    condHelp:SetFullWidth(true)
-    condHelp:SetFontObject(GameFontNormalSmall)
-    condHelp:SetColor(0.6, 0.6, 0.6)
-    container:AddChild(condHelp)
+        -- Plain-language readout of whatever the dropdown currently names, so the
+        -- conditions do not all have to be learned from the info button.
+        local condHelp = AceGUI:Create("Label")
+        ST._ConfigureWrappedHelperLabel(condHelp)
+        condHelp:SetFullWidth(true)
+        condHelp:SetFontObject(GameFontNormalSmall)
+        condHelp:SetColor(0.6, 0.6, 0.6)
+        container:AddChild(condHelp)
 
-    local function UpdateCondHelp()
-        condHelp:SetText(COND_TOKEN_HELP[condDropdown:GetValue()] or "")
-        container:DoLayout()
-    end
-    condDropdown:SetCallback("OnValueChanged", UpdateCondHelp)
-    UpdateCondHelp()
+        local function UpdateCondHelp()
+            condHelp:SetText(COND_TOKEN_HELP[condDropdown:GetValue()] or "")
+            container:DoLayout()
+        end
+        condDropdown:SetCallback("OnValueChanged", UpdateCondHelp)
+        UpdateCondHelp()
+    end)
 
     -- ================================================================
     -- EFFECTS
     -- ================================================================
-    local effectHeading = AceGUI:Create("Heading")
-    effectHeading:SetText("Effects")
-    effectHeading:SetFullWidth(true)
-    container:AddChild(effectHeading)
-    ST._ApplyLeftAlignedHeading(effectHeading, nil, true)
+    AddToolSection("Effects", "effects", function(container, effectHeading)
 
-    local effectInfo = CreateInfoButton(effectHeading.frame, effectHeading.label, "LEFT", "RIGHT", 4, 0, {
-        {"Visual Effects", 1, 0.82, 0, true},
-        " ",
-        {"Wrap tokens or text in effect tags to add", 1, 1, 1, true},
-        {"animated visual indicators.", 1, 1, 1, true},
-        " ",
-        {"|cffcc44ff{pulse}|r  Smooth sine alpha oscillation (~1Hz)", 1, 1, 1, true},
-        " ",
-        {"Composes with conditionals:", 0.7, 0.7, 0.7, true},
-        {"|cffffff00{?charges}|r|cffcc44ff{pulse}|r|cff00ff00{charges}|r|cffcc44ff{/pulse}|r|cffffff00{/charges}|r", 0.7, 0.7, 0.7, true},
-        {"Pulse only when charges exist.", 0.7, 0.7, 0.7, true},
-        " ",
-        {"Pulse affects the whole line's alpha.", 0.7, 0.7, 0.7, true},
-    }, effectHeading)
-    ST._AnchorLeftAlignedHeadingRule(effectHeading, effectInfo)
+        local effectInfo = CreateInfoButton(effectHeading.frame, effectHeading.label, "LEFT", "RIGHT", 4, 0, {
+            {"Visual Effects", 1, 0.82, 0, true},
+            " ",
+            {"Wrap tokens or text in effect tags to add", 1, 1, 1, true},
+            {"animated visual indicators.", 1, 1, 1, true},
+            " ",
+            {"|cffcc44ff{pulse}|r  Smooth sine alpha oscillation (~1Hz)", 1, 1, 1, true},
+            " ",
+            {"Composes with conditionals:", 0.7, 0.7, 0.7, true},
+            {"|cffffff00{?charges}|r|cffcc44ff{pulse}|r|cff00ff00{charges}|r|cffcc44ff{/pulse}|r|cffffff00{/charges}|r", 0.7, 0.7, 0.7, true},
+            {"Pulse only when charges exist.", 0.7, 0.7, 0.7, true},
+            " ",
+            {"Pulse affects the whole line's alpha.", 0.7, 0.7, 0.7, true},
+        }, effectHeading)
+        ST._AnchorLeftAlignedHeadingRule(effectHeading, effectInfo)
 
-    local effectGroup = AceGUI:Create("SimpleGroup")
-    effectGroup:SetFullWidth(true)
-    effectGroup:SetLayout("Flow")
-    effectGroup:SetAutoAdjustHeight(true)
-    container:AddChild(effectGroup)
+        local effectGroup = AceGUI:Create("SimpleGroup")
+        effectGroup:SetFullWidth(true)
+        effectGroup:SetLayout("Flow")
+        effectGroup:SetAutoAdjustHeight(true)
+        container:AddChild(effectGroup)
 
-    local pulseBtn = AceGUI:Create("Button")
-    pulseBtn:SetText("{pulse}")
-    pulseBtn:SetAutoWidth(true)
-    pulseBtn:SetCallback("OnClick", function()
-        InsertAtCursor("{pulse}{/pulse}", 7)
+        local pulseBtn = AceGUI:Create("Button")
+        pulseBtn:SetText("Pulse")
+        AddInsertTooltip(pulseBtn, "Pulse", "{pulse}...{/pulse}")
+        pulseBtn:SetAutoWidth(true)
+        pulseBtn:SetCallback("OnClick", function()
+            InsertAtCursor("{pulse}{/pulse}", 7)
+        end)
+        effectGroup:AddChild(pulseBtn)
     end)
-    effectGroup:AddChild(pulseBtn)
 
     -- ================================================================
     -- LIVE EDIT CALLBACK

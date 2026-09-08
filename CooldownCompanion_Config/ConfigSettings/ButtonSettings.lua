@@ -564,7 +564,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Plays when the trigger texture appears. This is a panel alert, not an alert for any one condition.", 1, 1, 1, true},
+        {"Plays when the trigger display appears. This is a panel alert, not an alert for any one condition.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
     }, infoButtons)
@@ -613,17 +613,8 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
     BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
 end
 
--- Row grammar (RowWidgets.lua). A clause is an ITEM, not a setting, so it
--- heads its own CDC-LabelRow carrying the Remove link in the control column -
--- the tracked-aura candidate shape - and its two dropdowns indent under it as
--- the settings that describe it.
---
--- The clause set is FILTERED (each clause's Check list excludes the keys the
--- other clauses already use, and the whole tab only exists for trigger
--- entries), so clauses fill the LEFT column first: ceil(n/2) left, the rest
--- right. The Add block tails the right column, where the shorter side is -
--- except with no clauses at all, where the right column would otherwise be the
--- only populated one.
+-- Conditions stay in one vertical sequence. Each clause uses the shared
+-- half-width grid for Check / State, with a readable summary above it.
 local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
@@ -637,19 +628,26 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
 
     local conditionsKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_triggerconditions"
-    local _, conditionsCollapsed =
+    local heading, conditionsCollapsed =
         BuildCollapsibleSection(scroll, "Conditions", conditionsKey, nil, nil, ROW_SECTION)
+    local help = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+        "Trigger Conditions",
+        { "All conditions on all enabled entries must match for this display to appear.", 1, 1, 1, true },
+        { "Check chooses what to test; State chooses the result required. Add another condition to narrow when the display appears.", 1, 1, 1, true },
+    }, heading)
+    AnchorLeftAlignedHeadingRule(heading, help)
     if conditionsCollapsed then return end
 
-    local conditionLeft, conditionRight = BeginRowGrid(scroll)
-    local splitAt = math.ceil(#clauses / 2)
-
+    local conditionNames = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
     for clauseIndex, clause in ipairs(clauses) do
-        local column = clauseIndex <= splitAt and conditionLeft or conditionRight
-
-        local clauseRow = AddLabelRow(column, {
-            label = "Condition " .. clauseIndex,
+        local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(clause.key)
+        local state = CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex)
+        local conditionName = conditionNames[clause.key]
+            or (clause.key == "auraActive" and "Aura (unavailable)") or "Condition"
+        local clauseRow = AddLabelRow(scroll, {
+            label = clauseIndex .. ". " .. conditionName .. ": " .. (expectedOptions[state] or "Not configured"),
         })
+        local conditionLeft, conditionRight = BeginRowGrid(scroll)
 
         -- Removing the only clause would leave the entry with no condition at
         -- all, so the link is drawn on every clause once there are two or more,
@@ -681,7 +679,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
         end
 
         local checkOptions, checkOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
-        AddDropdownRow(column, {
+        AddDropdownRow(conditionLeft, {
             setting = triggerConditionSettings[clauseIndex]
                 and triggerConditionSettings[clauseIndex].check,
             indent = true,
@@ -696,8 +694,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
             end,
         })
 
-        local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(clause.key)
-        AddDropdownRow(column, {
+        AddDropdownRow(conditionRight, {
             setting = triggerConditionSettings[clauseIndex]
                 and triggerConditionSettings[clauseIndex].state,
             indent = true,
@@ -721,15 +718,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
     end
     local addOptions, addOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, usedKeys)
     if #addOrder > 0 then
-        -- An entry can carry no clauses at all, in which case the loop above
-        -- added nothing and the Add block is the whole tab: it heads the LEFT
-        -- column, because a populated right beside an empty left is the one
-        -- shape the two-column grid must never show.
-        local addColumn = #clauses > 0 and conditionRight or conditionLeft
-
-        -- Read at CLICK time, exactly as before: the dropdown has no onChange
-        -- and the button reads the row's current value, so picking a check and
-        -- then changing your mind before pressing Add costs nothing.
+        local addColumn, actionColumn = BeginRowGrid(scroll)
         local addRow = AddDropdownRow(addColumn, {
             label = "New Condition",
             pulloutWidth = CONDITION_PULLOUT_WIDTH,
@@ -756,7 +745,7 @@ local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
         addStrip:AddChild(addBtn)
 
         -- Added last so the List-layout column measures a populated row.
-        addColumn:AddChild(addStrip)
+        actionColumn:AddChild(addStrip)
     end
 
 end

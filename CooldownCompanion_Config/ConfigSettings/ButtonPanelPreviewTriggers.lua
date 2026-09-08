@@ -31,6 +31,7 @@ local EnsureConditionalTicker = PP.EnsureConditionalTicker
 
 -- ButtonPanelPreviewShared.lua
 local SetPreviewMessage = PP.SetPreviewMessage
+local HidePreviewMessage = PP.HidePreviewMessage
 local FinalizePreviewState = PP.FinalizePreviewState
 local STRIP_ICON_SIZE = PP.STRIP_ICON_SIZE
 local STRIP_PER_ROW = PP.STRIP_PER_ROW
@@ -834,8 +835,8 @@ end
 -- icon, or text) renders large on top, with the entry selection strip in a
 -- band along the bottom keeping all of its picker behavior. Unlike texture
 -- panels, the mirror stays clickable with zero entries: trigger appearance is
--- configurable without entries and the bottom tab has no picker buttons, so
--- the preview click is the only path into the pickers. Drop-to-add is safe
+-- configurable without entries. Appearance also provides content actions.
+-- Drop-to-add is safe
 -- either way - the payload drop overlay sits above the mirror whenever a
 -- spell or item is on the cursor. Read-only Group Overview tiles do not
 -- stack; see the branch below.
@@ -878,7 +879,7 @@ local function BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
         reserve = (stripH * stripScale) + PANEL_PREVIEW_PADDING
         stripLayout = { anchorPoint = "BOTTOM", scaleOverride = stripScale }
     else
-        reserve = EMPTY_ENTRY_GUIDANCE_BAND
+        reserve = 0
     end
 
     ApplyMirrorBand(mirror, preview.root, reserve)
@@ -897,15 +898,7 @@ local function BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
         return BuildSelectionStrip(preview, host, panelId, group, readOnly, stripLayout)
     end
 
-    SetPreviewMessage(preview,
-        "Add entries with the field below, or drag them into this preview.")
-    -- Tuck the message into the reserved bottom band so it never overlaps the
-    -- display visual; SetPreviewMessage restores the default anchors for the
-    -- next build.
-    local label = preview.messageLabel
-    label:ClearAllPoints()
-    label:SetPoint("BOTTOMLEFT", preview.root, "BOTTOMLEFT", 18, PANEL_PREVIEW_PADDING)
-    label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, PANEL_PREVIEW_PADDING)
+    HidePreviewMessage(preview)
     FinalizePreviewState(preview)
 end
 

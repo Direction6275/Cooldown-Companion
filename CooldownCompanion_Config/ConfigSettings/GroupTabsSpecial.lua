@@ -9,6 +9,8 @@ local tonumber = tonumber
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
+local CreateInfoButton = ST._CreateInfoButton
+local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local AddFontControls = ST._AddFontControls
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
@@ -575,23 +577,71 @@ local function RefreshTriggerPreviewMirror(groupId)
     end
 end
 
+-- Display selection and its content actions use the same section / row grid
+-- as the styling controls below. Explanations live in the heading's help.
 local function AddTriggerDisplayTypeDropdown(container, group)
-    local displayDrop = AceGUI:Create("Dropdown")
-    displayDrop:SetLabel("Display Type")
-    if SPECIAL_FINDER.trigger.displayType and ST._BindSettingWidget then
-        ST._BindSettingWidget(displayDrop, SPECIAL_FINDER.trigger.displayType, "Display Type")
-    end
-    displayDrop:SetList(TRIGGER_DISPLAY_TYPE_OPTIONS, TRIGGER_DISPLAY_TYPE_ORDER)
-    displayDrop:SetValue(CooldownCompanion:GetTriggerPanelDisplayType(group, true))
-    displayDrop:SetFullWidth(true)
-    displayDrop:SetCallback("OnValueChanged", function(_, _, value)
-        local triggerSettings = group.triggerSettings or {}
-        group.triggerSettings = triggerSettings
-        triggerSettings.displayType = value or "texture"
-        RefreshStandaloneTriggerDisplay(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+    local groupId = CS.selectedGroup
+    local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
+    local heading, collapsed = BuildCollapsibleSection(container, "Display",
+        "appearance_triggerDisplay", nil, nil, ROW_SECTION)
+    local help = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
+        "Trigger Display",
+        { "Choose a texture, icon, or text to show when the panel's conditions match.", 1, 1, 1, true },
+        { "Use the action beside Display Type to choose or edit the content. You can also click an icon or texture in Live Preview to change it.", 1, 1, 1, true },
+        { "Add entries with the search field or drag them into Live Preview, then configure their Conditions. All conditions on all enabled entries must match.", 1, 1, 1, true },
+    }, heading)
+    AnchorLeftAlignedHeadingRule(heading, help)
+    if collapsed then return end
+
+    local displayLeft, displayRight = BeginRowGrid(container)
+    AddDropdownRow(displayLeft, {
+        label = "Display Type",
+        setting = SPECIAL_FINDER.trigger.displayType,
+        list = TRIGGER_DISPLAY_TYPE_OPTIONS,
+        order = TRIGGER_DISPLAY_TYPE_ORDER,
+        value = displayType,
+        onChange = function(value)
+            if value == displayType then return end
+            local triggerSettings = group.triggerSettings or {}
+            group.triggerSettings = triggerSettings
+            triggerSettings.displayType = value or "texture"
+            RefreshStandaloneTriggerDisplay(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
+
+    local actions = AceGUI:Create("SimpleGroup")
+    actions:SetFullWidth(true)
+    actions:SetLayout("Flow")
+    actions:SetAutoAdjustHeight(true)
+    local edit = AceGUI:Create("Button")
+    edit:SetText(displayType == "icon" and "Choose Icon" or displayType == "text" and "Edit Text" or "Choose Texture")
+    edit:SetAutoWidth(true)
+    edit:SetCallback("OnClick", function()
+        if displayType == "icon" then
+            ST._OpenTriggerPanelIconPicker(groupId)
+        elseif displayType == "text" then
+            ST._NavigateToFinderSetting(SPECIAL_FINDER.trigger.text.value)
+        else
+            ST._OpenStandaloneTexturePicker(groupId)
+        end
     end)
-    container:AddChild(displayDrop)
+    actions:AddChild(edit)
+    if displayType == "icon" then
+        local settings = CooldownCompanion:GetTriggerPanelIconSettings(group)
+        local remove = AceGUI:Create("Button")
+        remove:SetText("Remove Icon")
+        remove:SetAutoWidth(true)
+        remove:SetDisabled(not settings or settings.manualIcon == nil)
+        remove:SetCallback("OnClick", function()
+            settings.manualIcon = nil
+            RefreshStandaloneTriggerDisplay(groupId)
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+        actions:AddChild(remove)
+    end
+    displayRight:AddChild(actions)
+    return edit
 end
 
 -- Row grammar (RowWidgets.lua): one collapsible section. The icon itself is
@@ -611,21 +661,13 @@ local function BuildTriggerIconAppearanceTab(container, group)
         RefreshTriggerPreviewMirror(groupId)
     end
 
-    if not ST._IsValidIconTexture(settings.manualIcon) then
-        local emptyLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(emptyLabel)
-        emptyLabel:SetFullWidth(true)
-        emptyLabel:SetText("|cff888888Click the preview above to choose an icon.|r")
-        container:AddChild(emptyLabel)
-    end
-
     if not iconCollapsed then
     -- LEFT column: the icon itself - its shape, its size, and the two colors
     -- painted on it. RIGHT column: the border drawn around it.
     local iconLeft, iconRight = BeginRowGrid(container)
 
     AddCheckboxRow(iconLeft, {
-        label = "Square Icons",
+        label = "Square Icon",
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.square,
         value = settings.maintainAspectRatio ~= false,
         onChange = function(value)
@@ -642,7 +684,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
 
     if settings.maintainAspectRatio ~= false then
         local sizeRow = AddSliderRow(iconLeft, {
-            label = "Button Size",
+            label = "Icon Size",
             setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.size,
             min = 10, max = 150, step = 0.1,
             value = settings.buttonSize or ST.BUTTON_SIZE,
@@ -697,7 +739,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     -- stock color pickers these rows replace: the callbacks repaint the
     -- canvas, they do not re-read the bound table every tick.
     AddColorRow(iconLeft, {
-        label = "Base Icon Color",
+        label = "Icon Color",
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.baseColor,
         tbl = settings, key = "iconTintColor",
         default = { 1, 1, 1, 1 }, hasAlpha = true,
@@ -765,16 +807,26 @@ local function BuildTriggerTextAppearanceTab(container, group)
     local maxTextLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 120
     local maxTextLines = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LINES or 4
 
-    local _, textCollapsed = BuildCollapsibleSection(container, "Trigger Text",
-        "appearance_triggerText", nil, nil, ROW_SECTION)
-
     local function RefreshTextPreview()
         RefreshStandaloneTriggerDisplay(groupId)
         RefreshTriggerPreviewMirror(groupId)
     end
 
+    local textHeading = AceGUI:Create("Heading")
+    textHeading:SetText("Display Text")
+    textHeading:SetFullWidth(true)
+    container:AddChild(textHeading)
+    ST._ApplyLeftAlignedHeading(textHeading, nil, true)
+    local textHelpLines = {
+        "Display Text",
+        { "Enter the text shown when the panel's conditions match. Edits appear in Live Preview and save when you leave the field.", 1, 1, 1, true },
+        { "Up to " .. maxTextLines .. " lines and " .. maxTextLength .. " total characters. Extra text is removed at the limit.", 1, 1, 1, true },
+    }
+    local textHelp = CreateInfoButton(textHeading.frame, textHeading.label, "LEFT", "RIGHT", 4, 0, textHelpLines, textHeading)
+    AnchorLeftAlignedHeadingRule(textHeading, textHelp)
+
     local textBox = AceGUI:Create("MultiLineEditBox")
-    textBox:SetLabel("Display Text")
+    textBox:SetLabel("")
     if SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.value
         and ST._BindSettingWidget
     then
@@ -784,6 +836,13 @@ local function BuildTriggerTextAppearanceTab(container, group)
     textBox:SetNumLines(maxTextLines)
     textBox.button:Hide()
     textBox:SetText(settings.value or "")
+    local function UpdateTextLimit(value, shortened)
+        local _, breaks = (value or ""):gsub("\n", "")
+        textHelpLines[4] = { ("Current text: %d / %d characters, %d / %d lines."):format(
+            #(value or ""), maxTextLength, breaks + 1, maxTextLines), 0.7, 0.7, 0.7, true }
+        textHelpLines[5] = shortened and { "Limit reached; extra text was removed.", 1, 0.65, 0.2, true } or nil
+    end
+    UpdateTextLimit(settings.value)
     local pendingTextValue = settings.value
     local textDirty = false
     local function CommitTriggerText()
@@ -795,6 +854,8 @@ local function BuildTriggerTextAppearanceTab(container, group)
     end
     local function HandleTextChanged(widget, _, value)
         local sanitized = CooldownCompanion.SanitizeTriggerPanelTextValue and CooldownCompanion.SanitizeTriggerPanelTextValue(value) or (value or "")
+        local normalized = CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
+        UpdateTextLimit(sanitized, sanitized ~= normalized)
         pendingTextValue = sanitized
         textDirty = true
         if widget and widget.SetText and widget:GetText() ~= sanitized and not widget._ccSyncingText then
@@ -812,13 +873,8 @@ local function BuildTriggerTextAppearanceTab(container, group)
     textBox:SetCallback("OnRelease", CommitTriggerText)
     container:AddChild(textBox)
 
-    local limitLabel = AceGUI:Create("Label")
-    ST._ConfigureWrappedHelperLabel(limitLabel)
-    limitLabel:SetFullWidth(true)
-    limitLabel:SetText("Up to " .. maxTextLines .. " lines and " .. maxTextLength .. " total characters.")
-    limitLabel:SetColor(0.7, 0.7, 0.7)
-    container:AddChild(limitLabel)
-
+    local _, textCollapsed = BuildCollapsibleSection(container, "Text Style",
+        "appearance_triggerText", nil, nil, ROW_SECTION)
     if not textCollapsed then
     -- LEFT column: what the text is drawn WITH - size, face, outline.
     -- RIGHT column: what it looks like and where it lands.
@@ -876,6 +932,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
     end -- not textCollapsed
 
     RefreshTriggerPreviewMirror(groupId)
+    return textBox
 end
 
 local function RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
@@ -1388,13 +1445,13 @@ local function BuildTexturePanelAppearanceTab(container, group)
     local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
 
     if not selectionLabel then
-        local emptyStateLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(emptyStateLabel)
-        emptyStateLabel:SetFullWidth(true)
-        emptyStateLabel:SetText(isTriggerPanel
-            and "|cff888888Click the preview above to choose a texture.|r"
-            or "|cff888888Choose a texture in Live Preview to configure its appearance.|r")
-        container:AddChild(emptyStateLabel)
+        if not isTriggerPanel then
+            local emptyStateLabel = AceGUI:Create("Label")
+            ST._ConfigureWrappedHelperLabel(emptyStateLabel)
+            emptyStateLabel:SetFullWidth(true)
+            emptyStateLabel:SetText("|cff888888Choose a texture in Live Preview to configure its appearance.|r")
+            container:AddChild(emptyStateLabel)
+        end
 
         local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
         if shouldOpenPicker then
@@ -1727,6 +1784,7 @@ if ST._DefineSettingRoute then
         tabLabel = "Appearance",
         section = "display",
         sectionLabel = "Trigger Display",
+        collapseKeys = { "appearance_triggerDisplay" },
         rowScope = "primary",
         applies = SpecialFinderTrigger,
     }):Setting({ key = "type", label = "Display Type", aliases = { "trigger type" } })
@@ -1742,12 +1800,12 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
         applies = SpecialFinderTriggerType("icon"),
     }):Settings({
-        square = { label = "Square Icons" },
-        size = { label = "Button Size", applies = SpecialFinderTriggerIconSquare },
+        square = { label = "Square Icon", aliases = { "Square Icons" } },
+        size = { label = "Icon Size", aliases = { "Button Size" }, applies = SpecialFinderTriggerIconSquare },
         width = { label = "Icon Width", applies = SpecialFinderTriggerIconFreeform },
         height = { label = "Icon Height", applies = SpecialFinderTriggerIconFreeform },
         zoom = { label = "Icon Zoom" },
-        baseColor = { label = "Base Icon Color" },
+        baseColor = { label = "Icon Color", aliases = { "Base Icon Color" } },
         background = { label = "Background Color" },
         borderThickness = { label = "Border Thickness" },
         borderSize = { advancedKey = "triggerIconBorder", label = "Border Size", applies = SpecialFinderTriggerIconCustomBorder },
@@ -1760,12 +1818,12 @@ if ST._DefineSettingRoute then
         tab = "appearance",
         tabLabel = "Appearance",
         section = "triggerText",
-        sectionLabel = "Trigger Text",
+        sectionLabel = "Text Style",
         collapseKeys = { "appearance_triggerText" },
         rowScope = "primary",
         applies = SpecialFinderTriggerType("text"),
     }):Settings({
-        value = { label = "Display Text", aliases = { "trigger text" } },
+        value = { label = "Display Text", aliases = { "trigger text" }, collapseKeys = {}, sectionLabel = "Display Text" },
         fontSize = { label = "Font Size" },
         font = { label = "Font" },
         outline = { label = "Font Outline" },
