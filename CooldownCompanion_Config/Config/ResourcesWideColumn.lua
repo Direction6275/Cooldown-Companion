@@ -88,7 +88,8 @@ local function EnsureResourcesAddBox(col3)
     host._cdcAddInput = nil
     host:ReleaseChildren()
     if ST._BuildCustomBarWorkspaceAddBox then
-        local _, input = ST._BuildCustomBarWorkspaceAddBox(host)
+        local compact = CooldownCompanion.db.global.configLayout == "threeColumn"
+        local _, input = ST._BuildCustomBarWorkspaceAddBox(host, compact and "Add..." or nil)
         host._cdcAddInput = input
         if input then
             input.editbox:SetPoint("BOTTOMRIGHT", input.frame, "BOTTOMRIGHT", -18, 0)
