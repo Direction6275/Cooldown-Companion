@@ -921,8 +921,8 @@ local function CollectEntryStatus(buttonData, group)
     local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
     local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     status.usable = usable
-    status.disabled = buttonData.enabled == false
-    status.warn = (not usable) and buttonData.enabled ~= false
+    status.disabled = not CooldownCompanion:IsButtonEnabled(buttonData, group)
+    status.warn = (not usable) and not status.disabled
     status.loadBlocked = not loadAllowed
     status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status

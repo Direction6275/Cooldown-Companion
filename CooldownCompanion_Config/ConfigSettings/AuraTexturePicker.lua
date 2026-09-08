@@ -1,5 +1,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Inline texture browser. The catalog used to live in a floating AceGUI Window
@@ -7,20 +8,20 @@ local CS = ST._configState
 -- column's settings area (ButtonsWideColumn owns the host + the takeover
 -- branch; this file renders the grid + chrome into it via
 -- ST._RenderInlineTextureBrowser). Hover = live preview, click = commit
--- immediately (no Apply button), Clear empties the panel, Cancel returns to
+-- immediately (no Apply button), Remove Texture empties the panel, Back returns to
 -- the settings. Serves both texture panels and trigger panels.
 
 local BASE_THUMB_SIZE = 64
 local THUMB_GAP = 8
-local MIN_COLUMNS = 4
+local MIN_COLUMNS = 1
 local CONTENT_INSET = 6
 local TAB_ROW_HEIGHT = 22
 local TAB_GAP = 4
 local TAB_TEXT_PAD = 12
-local SEARCH_WIDTH = 200
-local SEARCH_HEIGHT = 20
+local SEARCH_HEIGHT = 26
 local ROW_GAP = 8
 local BOTTOM_ROW_HEIGHT = 24
+local FOOTER_TEXT_HEIGHT = 36
 local STAR_SIZE = 16
 local FILTER_SHAREDMEDIA = "sharedMedia"
 local FILTER_FAVORITES = "favorites"
@@ -114,6 +115,21 @@ local function FindEntryForSelection(entries, selection)
     return nil
 end
 
+local function UpdateSelectionLabel(entry)
+    if not chrome then return end
+    local selection = entry or currentSelection
+    if selection then
+        local name = selection.label or tostring(selection.sourceValue or "Texture")
+        chrome.selectionLabel:SetText((entry and "Preview: " or "Current: ") .. name)
+    else
+        chrome.selectionLabel:SetText("No texture selected")
+    end
+end
+
+local function ClearSearchFocus()
+    if chrome then chrome.searchBox:ClearFocus() end
+end
+
 --------------------------------------------------------------------------------
 -- Staging (hover live preview)
 --------------------------------------------------------------------------------
@@ -122,6 +138,7 @@ end
 -- pinned mirror back to the saved texture. Guarded so no-op rebuilds do not
 -- trigger redundant mirror rebuilds.
 local function ClearStagedPreview()
+    UpdateSelectionLabel()
     if CS.textureMirrorStage then
         CS.textureMirrorStage = nil
         if currentGroupId and ST._RefreshButtonsPreviewMirror then
@@ -141,6 +158,7 @@ local function StageEntryPreview(entry)
         return
     end
     local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
+    UpdateSelectionLabel(entry)
     CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
     if ST._RefreshButtonsPreviewMirror then
         ST._RefreshButtonsPreviewMirror(currentGroupId)
@@ -156,6 +174,8 @@ end
 -- settings view (the takeover branch is gated on the flag). The saved texture
 -- is updated by the commit callback, so the mirror repaints to it on rebuild.
 local function CommitSelection(selection)
+    ClearSearchFocus()
+    GameTooltip:Hide()
     CS.inlineTextureBrowserOpen = nil
     CS.textureMirrorStage = nil
     currentSelection = selection
@@ -168,6 +188,8 @@ end
 -- picked immediately. The flag stays set, so the commit's RefreshConfigPanel
 -- re-renders the grid (now with no selected tile and an empty big preview).
 local function ClearPanelTexture()
+    ClearSearchFocus()
+    GameTooltip:Hide()
     CS.textureMirrorStage = nil
     currentSelection = nil
     if currentOnCommit then
@@ -182,6 +204,8 @@ local function CancelPickAuraTexture()
     if not CS.inlineTextureBrowserOpen then
         return
     end
+    ClearSearchFocus()
+    GameTooltip:Hide()
     CS.inlineTextureBrowserOpen = nil
     CS.textureMirrorStage = nil
     local configFrame = CS.configFrame
@@ -207,7 +231,7 @@ local function GetGridMetrics(entryCount)
     local columns = math.max(MIN_COLUMNS,
         math.floor((viewportWidth + THUMB_GAP) / (BASE_THUMB_SIZE + THUMB_GAP)))
     local usable = viewportWidth - ((columns - 1) * THUMB_GAP)
-    local thumbSize = math.max(BASE_THUMB_SIZE, math.floor(usable / columns))
+    local thumbSize = math.max(1, math.floor(usable / columns))
     local contentWidth = math.max(1, (columns * thumbSize) + ((columns - 1) * THUMB_GAP))
     local rows = math.max(1, math.ceil((entryCount or 0) / columns))
     local contentHeight = (rows * thumbSize) + ((rows - 1) * THUMB_GAP)
@@ -338,26 +362,28 @@ local function RebuildGrid()
     -- A rebuild can remove the hovered thumbnail without delivering OnLeave
     -- (for example when its favorite star removes the last filtered result).
     -- Reset the staged selection before recycling the thumbnail frames.
-    if CS.textureMirrorStage then
-        ClearStagedPreview()
-    end
+    ClearStagedPreview()
+    GameTooltip:Hide()
     ReleaseActiveThumbs()
 
     local entries = CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
 
+    local emptyText
     if #entries == 0 then
         if IsFavoritesFilter(currentFilter) and currentSearch == "" then
-            chrome.statusLabel:SetText("No favorites yet. Hover a texture and click its star to add one.")
+            emptyText = "No favorites yet.\nHover a texture in another category and click its star to add one."
         elseif IsFavoritesFilter(currentFilter) then
-            chrome.statusLabel:SetText("No favorite textures match.")
-        elseif IsSharedMediaFilter(currentFilter) then
-            chrome.statusLabel:SetText("No SharedMedia textures found.")
+            emptyText = "No favorite textures match.\nTry another search or choose a different category."
+        elseif IsSharedMediaFilter(currentFilter) and currentSearch == "" then
+            emptyText = "No SharedMedia textures available.\nChoose another category or install a SharedMedia texture collection."
         else
-            chrome.statusLabel:SetText("No textures found.")
+            emptyText = "No textures match.\nTry another search or choose a different category."
         end
-    else
-        chrome.statusLabel:SetText(("%d textures. Hover to preview, click to use."):format(#entries))
     end
+    chrome.emptyLabel:SetText(emptyText or "")
+    chrome.emptyLabel:SetShown(emptyText ~= nil)
+    chrome.statusLabel:SetText(("%d textures. Hover to preview, click to use."):format(#entries))
+    chrome.clearBtn:SetDisabled(currentSelection == nil)
 
     local savedMatch = FindEntryForSelection(entries, currentSelection)
 
@@ -421,6 +447,7 @@ local function RebuildGrid()
         star:SetScript("OnEnter", function(self)
             thumb._hover:Show()
             UpdateThumbStar(thumb, true)
+            StageEntryPreview(thumb._entry)
             GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             if self._mode == "addFavorite" then
                 GameTooltip:AddLine("Add To Favorites")
@@ -498,7 +525,6 @@ end
 local function BuildTabRow(host)
     local filterList, filterOrder = CooldownCompanion:GetAuraTexturePickerFilters()
     chrome.tabs = {}
-    local previous
     -- Iterate the ORDER array (not the options map) so the dormant "Custom"
     -- filter, which is deliberately excluded from the order, never gets a tab.
     for _, key in ipairs(filterOrder) do
@@ -527,73 +553,127 @@ local function BuildTabRow(host)
         label:SetPoint("CENTER")
         label:SetText(filterList[key] or key)
         tab._label = label
-        tab:SetWidth(label:GetStringWidth() + (TAB_TEXT_PAD * 2))
+        tab._naturalWidth = label:GetStringWidth() + (TAB_TEXT_PAD * 2)
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", tab, "LEFT", TAB_TEXT_PAD, 0)
+        label:SetPoint("RIGHT", tab, "RIGHT", -TAB_TEXT_PAD, 0)
+        label:SetJustifyH("CENTER")
+        label:SetWordWrap(false)
 
         tab:SetScript("OnClick", function()
             SelectFilter(key)
         end)
 
-        tab:ClearAllPoints()
-        if previous then
-            tab:SetPoint("LEFT", previous, "RIGHT", TAB_GAP, 0)
-        else
-            tab:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
-        end
         chrome.tabs[#chrome.tabs + 1] = tab
-        previous = tab
     end
+end
+
+-- Persistent chrome owns its AceGUI children for its entire lifetime, just
+-- like the spellbook. It is never released into a recycled settings container.
+local function LayoutChrome()
+    local host = chrome.host
+    local width = math.max(1, host:GetWidth() - CONTENT_INSET * 2)
+    local tabX, tabY = 0, CONTENT_INSET + SEARCH_HEIGHT + ROW_GAP
+    for _, tab in ipairs(chrome.tabs) do
+        local tabWidth = math.min(width, tab._naturalWidth)
+        if tabX > 0 and tabX + tabWidth > width then
+            tabX = 0
+            tabY = tabY + TAB_ROW_HEIGHT + TAB_GAP
+        end
+        tab:ClearAllPoints()
+        tab:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET + tabX, -tabY)
+        tab:SetWidth(tabWidth)
+        tabX = tabX + tabWidth + TAB_GAP
+    end
+
+    local clearFrame, backFrame = chrome.clearBtn.frame, chrome.cancelBtn.frame
+    local actionWidth = clearFrame:GetWidth() + ROW_GAP + backFrame:GetWidth()
+    local stacked = width < actionWidth + 240
+    local footerHeight = stacked and (FOOTER_TEXT_HEIGHT + ROW_GAP + BOTTOM_ROW_HEIGHT) or FOOTER_TEXT_HEIGHT
+    backFrame:ClearAllPoints()
+    backFrame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET)
+    clearFrame:ClearAllPoints()
+    clearFrame:SetPoint("RIGHT", backFrame, "LEFT", -ROW_GAP, 0)
+
+    local textRightInset = CONTENT_INSET + (stacked and 0 or actionWidth + ROW_GAP)
+    local textTop = CONTENT_INSET + footerHeight
+    chrome.selectionLabel:ClearAllPoints()
+    chrome.selectionLabel:SetPoint("TOPLEFT", host, "BOTTOMLEFT", CONTENT_INSET, textTop)
+    chrome.selectionLabel:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", -textRightInset, textTop)
+    chrome.statusLabel:ClearAllPoints()
+    chrome.statusLabel:SetPoint("TOPLEFT", chrome.selectionLabel, "BOTTOMLEFT", 0, -4)
+    chrome.statusLabel:SetPoint("TOPRIGHT", chrome.selectionLabel, "BOTTOMRIGHT", 0, -4)
+
+    local gridTop = tabY + TAB_ROW_HEIGHT + ROW_GAP
+    chrome.scrollFrame:ClearAllPoints()
+    chrome.scrollFrame:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -gridTop)
+    chrome.scrollFrame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -gridTop)
+    chrome.scrollFrame:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET + footerHeight + ROW_GAP)
+    chrome.scrollFrame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET + footerHeight + ROW_GAP)
 end
 
 local function BuildChrome(host)
     chrome = { host = host }
-
     BuildTabRow(host)
 
-    local searchBox = CreateFrame("EditBox", nil, host, "SearchBoxTemplate")
-    searchBox:SetSize(SEARCH_WIDTH, SEARCH_HEIGHT)
-    searchBox:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
-    searchBox:SetAutoFocus(false)
-    -- HookScript (not SetScript) so the template keeps managing its own clear
-    -- button + "Search" instructions; our handler just re-filters the grid.
-    searchBox:HookScript("OnTextChanged", function(self)
-        if suppressSearchChanged then
-            return
-        end
-        currentSearch = self:GetText() or ""
-        RebuildGrid()
-    end)
+    local searchBox = AceGUI:Create("EditBox")
+    searchBox:SetLabel("")
+    searchBox:DisableButton(true)
+    searchBox:SetText("")
+    searchBox.frame:SetParent(host)
+    searchBox.frame:ClearAllPoints()
+    searchBox.frame:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
+    searchBox.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
+    searchBox.frame:Show()
     chrome.searchBox = searchBox
 
-    local cancelBtn = CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-    cancelBtn:SetSize(90, BOTTOM_ROW_HEIGHT)
-    cancelBtn:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET)
-    cancelBtn:SetText("Cancel")
-    cancelBtn:SetScript("OnClick", function()
-        CancelPickAuraTexture()
+    if searchBox.editbox.Instructions then searchBox.editbox.Instructions:Hide() end
+    -- Keep the placeholder above skins' editbox backdrops without attaching
+    -- persistent regions to an AceGUI widget that another owner might recycle.
+    local searchHintHost = CreateFrame("Frame", nil, host)
+    searchHintHost:SetAllPoints(searchBox.editbox)
+    searchHintHost:SetFrameLevel(searchBox.editbox:GetFrameLevel() + 1)
+    local searchHint = searchHintHost:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    searchHint:SetPoint("LEFT", searchBox.editbox, "LEFT", 6, 0)
+    searchHint:SetPoint("RIGHT", searchBox.editbox, "RIGHT", -6, 0)
+    searchHint:SetJustifyH("LEFT")
+    searchHint:SetWordWrap(false)
+    searchHint:SetText("Search textures...")
+    chrome.searchHint = searchHint
+    searchBox:SetCallback("OnTextChanged", function(_, _, text)
+        searchHint:SetShown((text or "") == "")
+        if suppressSearchChanged then return end
+        currentSearch = text or ""
+        RebuildGrid()
     end)
+
+    local cancelBtn = AceGUI:Create("Button")
+    cancelBtn:SetAutoWidth(true)
+    cancelBtn:SetText("Back to Settings")
+    cancelBtn.frame:SetParent(host)
+    cancelBtn.frame:Show()
+    cancelBtn:SetCallback("OnClick", CancelPickAuraTexture)
     chrome.cancelBtn = cancelBtn
 
-    local clearBtn = CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-    clearBtn:SetSize(90, BOTTOM_ROW_HEIGHT)
-    clearBtn:SetPoint("RIGHT", cancelBtn, "LEFT", -6, 0)
-    clearBtn:SetText("Clear")
-    clearBtn:SetScript("OnClick", function()
-        ClearPanelTexture()
-    end)
+    local clearBtn = AceGUI:Create("Button")
+    clearBtn:SetAutoWidth(true)
+    clearBtn:SetText("Remove Texture")
+    clearBtn.frame:SetParent(host)
+    clearBtn.frame:Show()
+    clearBtn:SetCallback("OnClick", ClearPanelTexture)
     chrome.clearBtn = clearBtn
 
-    local statusLabel = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statusLabel:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET + 4)
-    statusLabel:SetPoint("RIGHT", clearBtn, "LEFT", -8, 0)
+    local selectionLabel = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    selectionLabel:SetJustifyH("LEFT")
+    selectionLabel:SetWordWrap(false)
+    chrome.selectionLabel = selectionLabel
+
+    local statusLabel = host:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     statusLabel:SetJustifyH("LEFT")
     statusLabel:SetWordWrap(false)
     chrome.statusLabel = statusLabel
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, host)
-    scrollFrame:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -(CONTENT_INSET + TAB_ROW_HEIGHT + ROW_GAP))
-    scrollFrame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -(CONTENT_INSET + TAB_ROW_HEIGHT + ROW_GAP))
-    scrollFrame:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", CONTENT_INSET, CONTENT_INSET + BOTTOM_ROW_HEIGHT + ROW_GAP)
-    scrollFrame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -CONTENT_INSET, CONTENT_INSET + BOTTOM_ROW_HEIGHT + ROW_GAP)
     scrollFrame:EnableMouseWheel(true)
     chrome.scrollFrame = scrollFrame
 
@@ -601,6 +681,23 @@ local function BuildChrome(host)
     scrollChild:SetSize(1, 1)
     scrollFrame:SetScrollChild(scrollChild)
     chrome.scrollChild = scrollChild
+
+    local emptyLabel = scrollFrame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    emptyLabel:SetPoint("TOPLEFT", scrollFrame, "TOPLEFT", 12, -24)
+    emptyLabel:SetPoint("TOPRIGHT", scrollFrame, "TOPRIGHT", -12, -24)
+    emptyLabel:SetJustifyH("CENTER")
+    emptyLabel:SetWordWrap(true)
+    emptyLabel:Hide()
+    chrome.emptyLabel = emptyLabel
+
+    -- This host is addon-owned; unlike the AceGUI children it is not pooled.
+    host:HookScript("OnHide", function()
+        ClearSearchFocus()
+        CS.textureMirrorStage = nil
+        GameTooltip:Hide()
+        UpdateSelectionLabel()
+    end)
+    host:HookScript("OnSizeChanged", LayoutChrome)
 
     scrollFrame:SetScript("OnMouseWheel", function(_, delta)
         ScrollGridByWheel(delta)
@@ -629,11 +726,13 @@ local function RenderInlineTextureBrowser(host)
     if not chrome then
         BuildChrome(host)
     end
+    LayoutChrome()
     UpdateTabSelection()
     -- Sync the search box to the current filter reset without re-triggering the
     -- filter handler.
     suppressSearchChanged = true
     chrome.searchBox:SetText(currentSearch)
+    chrome.searchHint:SetShown(currentSearch == "")
     suppressSearchChanged = false
     RebuildGrid()
 end
@@ -647,6 +746,8 @@ end
 -- refresh (a Browse click, a big-preview click, or a deferred pending-open
 -- timer), so RefreshConfigPanel here is never re-entrant.
 local function OpenBrowser(opts)
+    ClearSearchFocus()
+    ClearStagedPreview()
     opts = opts or {}
 
     -- Match the retired picker window's mutual-exclusion contract before the

@@ -9,9 +9,7 @@ local tonumber = tonumber
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
-local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local CreateInfoButton = ST._CreateInfoButton
 local AddFontControls = ST._AddFontControls
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
@@ -1256,7 +1254,7 @@ local function BuildTextureEffectsTab(container, group)
     end
 end
 
--- Row grammar (RowWidgets.lua): one collapsible section of display rows. The
+-- Row grammar (RowWidgets.lua): shape and color sections of display rows. The
 -- texture itself is shown and picked in the Live Preview above for both panel
 -- kinds, so the tab holds no preview canvas or picker buttons.
 --
@@ -1374,27 +1372,11 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end, textureValueChanged, confirmValue, cancelValue)
     end
 
-    local heading, textureCollapsed = BuildCollapsibleSection(container,
-        isTriggerPanel and "Trigger Texture" or "Texture Panel",
-        "appearance_texture", nil, nil, ROW_SECTION)
-
-    if not isTriggerPanel then
-        -- The "?" chains off the end of the heading's label and the fading
-        -- rule restarts after it.
-        local textureInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-            "Texture Panel",
-            {"This panel shows one standalone texture on your screen.", 1, 1, 1, true},
-            " ",
-            {"Its single entry decides when that texture appears.", 1, 1, 1, true},
-        }, tabInfoButtons)
-        AnchorLeftAlignedHeadingRule(heading, textureInfoBtn)
-    end
-
     if not buttonData and not isTriggerPanel then
         local emptyLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(emptyLabel)
         emptyLabel:SetFullWidth(true)
-        emptyLabel:SetText("|cff888888Add one entry to this panel first. The texture browser will open after that.|r")
+        emptyLabel:SetText("|cff888888Add one entry to control when this texture appears. Use the add field or drag an entry into Live Preview.|r")
         container:AddChild(emptyLabel)
 
         if CS.pendingTexturePickerOpen == CS.selectedGroup then
@@ -1411,7 +1393,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         emptyStateLabel:SetFullWidth(true)
         emptyStateLabel:SetText(isTriggerPanel
             and "|cff888888Click the preview above to choose a texture.|r"
-            or "|cff888888Select a texture from the Live Preview to show the display controls.|r")
+            or "|cff888888Choose a texture in Live Preview to configure its appearance.|r")
         container:AddChild(emptyStateLabel)
 
         local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
@@ -1430,16 +1412,16 @@ local function BuildTexturePanelAppearanceTab(container, group)
         return
     end
 
-    if not textureCollapsed then
-    -- LEFT column: what is drawn and how it is painted. RIGHT column: the
-    -- geometry applied to it. Every slider on both sides is staged - the
-    -- value is previewed during the drag and written for real on release.
+    local _, shapeCollapsed = BuildCollapsibleSection(container,
+        "Shape & Arrangement", "appearance_textureShape", nil, nil, ROW_SECTION)
+    if not shapeCollapsed then
+    -- Geometry keeps the same staged values and commit boundaries as before.
     local textureLeft, textureRight = BeginRowGrid(container)
 
     local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
     local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
-    local textureLayoutRow = AddDropdownRow(textureLeft, {
-        label = "Texture Layout",
+    AddDropdownRow(textureLeft, {
+        label = "Arrangement",
         setting = SPECIAL_FINDER.texture.layout,
         list = locationOptions,
         order = locationOrder,
@@ -1453,39 +1435,19 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end,
     })
 
-    ST._AddAdvancedToggle(textureLayoutRow, "texturePairLayout", {},
-        selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM, {
-        build = function(panel)
-            -- Only the paired layouts have a gap to set, so it reads as a child
-            -- of the layout above it.
-            local spacingRow = AddSliderRow(panel, {
-                label = "Pair Spacing",
-                setting = SPECIAL_FINDER.texture.spacing,
-                indent = false,
-                min = MIN_TEXTURE_PAIR_SPACING, max = MAX_TEXTURE_PAIR_SPACING, step = 0.01,
-                value = settings.pairSpacing or 0,
-            })
-            AttachTextureValueSlider(spacingRow, "pairSpacing")
-        end,
-    })
+    if selectedLayoutValue == PREVIEW_LOCATION_LEFTRIGHT or selectedLayoutValue == PREVIEW_LOCATION_TOPBOTTOM then
+        local spacingRow = AddSliderRow(textureLeft, {
+            label = "Pair Spacing",
+            setting = SPECIAL_FINDER.texture.spacing,
+            indent = true,
+            min = MIN_TEXTURE_PAIR_SPACING, max = MAX_TEXTURE_PAIR_SPACING, step = 0.01,
+            value = settings.pairSpacing or 0,
+        })
+        AttachTextureValueSlider(spacingRow, "pairSpacing")
+    end
 
-    AddDropdownRow(textureLeft, {
-        label = "Texture Look",
-        setting = SPECIAL_FINDER.texture.look,
-        pulloutWidth = WIDE_PULLOUT_WIDTH,
-        list = TEXTURE_BLEND_OPTIONS,
-        order = TEXTURE_BLEND_ORDER,
-        value = settings.blendMode or "BLEND",
-        onChange = function(value)
-            value = value or "BLEND"
-            settings.blendMode = value
-            previewSettings.blendMode = value
-            RefreshTextureVisual()
-        end,
-    })
-
-    local scaleRow = AddSliderRow(textureRight, {
-        label = "Texture Scale",
+    local scaleRow = AddSliderRow(textureLeft, {
+        label = "Scale",
         setting = SPECIAL_FINDER.texture.scale,
         min = 0.25, max = 4, step = 0.05,
         value = settings.scale or 1,
@@ -1501,7 +1463,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
     AttachTextureValueSlider(rotationRow, "rotation")
 
     local stretchXRow = AddSliderRow(textureRight, {
-        label = "Horizontal Stretch / Compress",
+        label = "Horizontal Stretch",
+        tooltip = { "Horizontal Stretch", { "Stretch or compress the texture horizontally. Zero keeps its original proportions.", 1, 1, 1, true } },
         setting = SPECIAL_FINDER.texture.stretchX,
         min = MIN_TEXTURE_STRETCH, max = MAX_TEXTURE_STRETCH, step = 0.05,
         value = settings.stretchX or 0,
@@ -1509,15 +1472,39 @@ local function BuildTexturePanelAppearanceTab(container, group)
     AttachTextureValueSlider(stretchXRow, "stretchX")
 
     local stretchYRow = AddSliderRow(textureRight, {
-        label = "Vertical Stretch / Compress",
+        label = "Vertical Stretch",
+        tooltip = { "Vertical Stretch", { "Stretch or compress the texture vertically. Zero keeps its original proportions.", 1, 1, 1, true } },
         setting = SPECIAL_FINDER.texture.stretchY,
         min = MIN_TEXTURE_STRETCH, max = MAX_TEXTURE_STRETCH, step = 0.05,
         value = settings.stretchY or 0,
     })
     AttachTextureValueSlider(stretchYRow, "stretchY")
 
+    end -- not shapeCollapsed
+
+    local _, colorCollapsed = BuildCollapsibleSection(container,
+        "Color & Blending", "appearance_textureColor", nil, nil, ROW_SECTION)
+    if not colorCollapsed then
+    local textureLeft, textureRight = BeginRowGrid(container)
+
+    AddDropdownRow(textureRight, {
+        label = "Blend Mode",
+        tooltip = { "Blend Mode", { "Choose how the texture blends with the scene behind it. Normal / Original preserves its original appearance.", 1, 1, 1, true } },
+        setting = SPECIAL_FINDER.texture.look,
+        pulloutWidth = WIDE_PULLOUT_WIDTH,
+        list = TEXTURE_BLEND_OPTIONS,
+        order = TEXTURE_BLEND_ORDER,
+        value = settings.blendMode or "BLEND",
+        onChange = function(value)
+            value = value or "BLEND"
+            settings.blendMode = value
+            previewSettings.blendMode = value
+            RefreshTextureVisual()
+        end,
+    })
+
     local alphaRow = AddSliderRow(textureLeft, {
-        label = "Texture Alpha",
+        label = "Opacity",
         setting = SPECIAL_FINDER.texture.alpha,
         min = 0.05, max = 1, step = 0.05,
         value = settings.alpha or 1,
@@ -1536,7 +1523,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
     -- reason it was absent before - the staging copy already keeps the live
     -- renderers off the uncommitted value.
     local colorRow = AddColorRow(textureLeft, {
-        label = "Texture Color",
+        label = "Color",
         setting = SPECIAL_FINDER.texture.color,
         tbl = previewSettings,
         key = "color",
@@ -1580,7 +1567,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
                 end
             end)
         end
-    end -- not textureCollapsed
+    end -- not colorCollapsed
 
     local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
     if shouldOpenPicker then
@@ -1891,27 +1878,45 @@ if ST._DefineSettingRoute then
         SPECIAL_FINDER.textureEffects[key] = finder
     end
 
-    SPECIAL_FINDER.texture = ST._DefineSettingRoute({
+    -- Stable IDs keep saved finder destinations valid; each control now reveals
+    -- its own section, and paired spacing no longer opens a separate editor.
+    local textureShape = ST._DefineSettingRoute({
         idPrefix = "panel.texture.appearance",
         scope = SPECIAL_FINDER_SCOPE,
         tab = "appearance",
         tabLabel = "Appearance",
-        section = "texture",
-        sectionLabel = "Texture",
-        collapseKeys = { "appearance_texture" },
+        section = "textureShape",
+        sectionLabel = "Shape & Arrangement",
+        collapseKeys = { "appearance_textureShape" },
+        rowScope = "primary",
+        applies = SpecialFinderTextureAppearance,
+    })
+    SPECIAL_FINDER.texture = textureShape:Settings({
+        layout = { label = "Arrangement", aliases = { "Texture Layout" } },
+        spacing = { label = "Pair Spacing", applies = SpecialFinderTexturePair },
+        scale = { label = "Scale", aliases = { "Texture Scale" } },
+        rotation = { label = "Rotation" },
+        stretchX = { label = "Horizontal Stretch", aliases = { "Horizontal Stretch / Compress" } },
+        stretchY = { label = "Vertical Stretch", aliases = { "Vertical Stretch / Compress" } },
+    })
+    local textureColor = ST._DefineSettingRoute({
+        idPrefix = "panel.texture.appearance",
+        scope = SPECIAL_FINDER_SCOPE,
+        tab = "appearance",
+        tabLabel = "Appearance",
+        section = "textureColor",
+        sectionLabel = "Color & Blending",
+        collapseKeys = { "appearance_textureColor" },
         rowScope = "primary",
         applies = SpecialFinderTextureAppearance,
     }):Settings({
-        layout = { label = "Texture Layout" },
-        spacing = { advancedKey = "texturePairLayout", label = "Pair Spacing", applies = SpecialFinderTexturePair },
-        look = { label = "Texture Look", aliases = { "blend mode" } },
-        scale = { label = "Texture Scale" },
-        rotation = { label = "Rotation" },
-        stretchX = { label = "Horizontal Stretch / Compress", aliases = { "horizontal stretch" } },
-        stretchY = { label = "Vertical Stretch / Compress", aliases = { "vertical stretch" } },
-        alpha = { label = "Texture Alpha", aliases = { "opacity" } },
-        color = { label = "Texture Color" },
+        look = { label = "Blend Mode", aliases = { "Texture Look" } },
+        alpha = { label = "Opacity", aliases = { "Texture Alpha" } },
+        color = { label = "Color", aliases = { "Texture Color" } },
     })
+    for key, descriptor in pairs(textureColor) do
+        SPECIAL_FINDER.texture[key] = descriptor
+    end
 end
 
 ST._AddTriggerDisplayTypeDropdown = AddTriggerDisplayTypeDropdown

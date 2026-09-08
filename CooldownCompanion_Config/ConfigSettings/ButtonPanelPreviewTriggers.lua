@@ -745,7 +745,7 @@ local function RenderTriggerDisplayVisual(mirror, group, panelId, boxWidth, boxH
         settings = CooldownCompanion:GetTriggerPanelTextSettings(group)
         RenderTriggerTextMirror(mirror, settings, boxWidth, boxHeight)
     else
-        mirror.placeholder:SetText("No texture selected")
+        mirror.placeholder:SetText(readOnly and "No texture selected" or "Choose a texture")
         -- Same staged-selection precedence as BuildTextureMirror: picker
         -- selection first, then the config-only continuous-edit copy, then the
         -- saved trigger texture.
@@ -776,7 +776,6 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     -- The mirror is shared with the trigger preview on this host, so restore
     -- the texture-panel presentation before rendering.
     mirror.clickMode = "texture"
-    mirror.placeholder:SetText("No texture selected")
     if mirror.iconVisual then mirror.iconVisual.holder:Hide() end
     if mirror.textVisual then mirror.textVisual.holder:Hide() end
 
@@ -784,6 +783,7 @@ local function BuildTextureMirror(preview, host, panelId, group, readOnly)
     -- An empty texture panel still offers drop-to-add on the preview host, and
     -- an interactive mirror would swallow the drop.
     local hasEntry = group and group.buttons and group.buttons[1] ~= nil
+    mirror.placeholder:SetText(not readOnly and hasEntry and "Choose a texture" or "No texture selected")
     local guidanceReserve = not readOnly and not hasEntry and EMPTY_ENTRY_GUIDANCE_BAND or 0
     ApplyMirrorBand(mirror, preview.root, guidanceReserve)
     mirror.root:EnableMouse(not readOnly and hasEntry and true or false)

@@ -2361,76 +2361,84 @@ local function UpdateAddBox(col3)
     end
 end
 
--- Build the quiet entry row once, using raw frames on col3.content (like the
--- add box) so it stays off recycled AceGUI frames. Left-click selects the
--- entry, right/middle-click opens its shared context menu, and the x removes it
--- via the shared delete confirmation.
+-- A full-width layout host contains only a compact interactive entry chip.
+-- The unused space remains inert; all actions use the shared entry menu.
+local function LayoutQuietRow(row)
+    local tracksWidth = row.tracksLabel:GetUnboundedStringWidth()
+    row.tracksLabel:SetWidth(tracksWidth)
+    -- Icon/padding + name + 8px gap + 12px chevron + end padding.
+    local fixedWidth = 6 + 18 + 6 + 8 + 12 + 6
+    local available = math.max(fixedWidth + 1, row:GetWidth() - EDIT_INSET * 2 - tracksWidth - 8)
+    row.entry:SetWidth(math.min(fixedWidth + row.nameText:GetUnboundedStringWidth(), available))
+end
+
 local function EnsureQuietRow(col3)
     local row = col3.buttonsQuietRow
     if row then return row end
 
-    row = CreateFrame("Button", nil, col3.content)
+    row = CreateFrame("Frame", nil, col3.content)
     row:SetHeight(ADD_BOX_HEIGHT)
-    row:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
 
-    -- HIGHLIGHT layer on a Button is mouse-gated automatically.
-    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    local tracks = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    tracks:SetPoint("LEFT", row, "LEFT", EDIT_INSET, 0)
+    tracks:SetText("Tracks:")
+    row.tracksLabel = tracks
+
+    local entry = CreateFrame("Button", nil, row)
+    entry:SetPoint("LEFT", tracks, "RIGHT", 8, 0)
+    entry:SetHeight(ADD_BOX_HEIGHT)
+    entry:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+    row.entry = entry
+
+    local hover = entry:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints()
     hover:SetColorTexture(1, 1, 1, 0.06)
 
-    local icon = row:CreateTexture(nil, "ARTWORK")
+    local icon = entry:CreateTexture(nil, "ARTWORK")
     icon:SetSize(18, 18)
-    icon:SetPoint("LEFT", row, "LEFT", EDIT_INSET, 0)
+    icon:SetPoint("LEFT", entry, "LEFT", 6, 0)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     row.icon = icon
 
-    local remove = CreateFrame("Button", nil, row)
-    remove:SetSize(16, 16)
-    remove:SetPoint("RIGHT", row, "RIGHT", -EDIT_INSET, 0)
-    remove:RegisterForClicks("LeftButtonUp")
-    local rx = remove:CreateTexture(nil, "ARTWORK")
-    rx:SetAllPoints()
-    rx:SetAtlas("common-icon-redx", false)
-    rx:SetAlpha(0.65)
-    remove:SetScript("OnEnter", function() rx:SetAlpha(1) end)
-    remove:SetScript("OnLeave", function() rx:SetAlpha(0.65) end)
-    row.remove = remove
+    -- The chevron is artwork on the entry's single menu target.
+    local chevron = entry:CreateTexture(nil, "ARTWORK")
+    chevron:SetSize(12, 12)
+    chevron:SetPoint("RIGHT", entry, "RIGHT", -6, 0)
+    chevron:SetAtlas("uitools-icon-chevron-down", false)
+    chevron:SetAlpha(0.65)
+    row.chevron = chevron
 
-    local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    local name = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-    name:SetPoint("RIGHT", remove, "LEFT", -6, 0)
+    name:SetPoint("RIGHT", chevron, "LEFT", -8, 0)
     name:SetJustifyH("LEFT")
     name:SetWordWrap(false)
     row.nameText = name
 
-    row:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton == "LeftButton" and ST._SelectConfigButton and CS.selectedGroup then
-            -- force: the lone texture entry stays selected, so a repeat
-            -- click must not run the deselect half of the toggle.
-            ST._SelectConfigButton(CS.selectedGroup, 1, { force = true })
-            CooldownCompanion:RefreshConfigSelection()
-        elseif (mouseButton == "RightButton" or mouseButton == "MiddleButton")
-            and ST._ShowEntryContextMenu and CS.selectedGroup
-        then
-            local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-            local buttonData = group and group.buttons and group.buttons[1]
-            if buttonData then
-                ST._ShowEntryContextMenu(CS.selectedGroup, 1, buttonData)
-            end
-        end
-    end)
-    remove:SetScript("OnClick", function()
+    local function OpenEntryActions()
         local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
         local buttonData = group and group.buttons and group.buttons[1]
-        if not buttonData then return end
-        local entryName = (ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
-            or buttonData.name or "this entry"
-        if ST._ShowPopupAboveConfig then
-            ST._ShowPopupAboveConfig("CDC_DELETE_BUTTON", entryName, {
-                groupId = CS.selectedGroup,
-                buttonIndex = 1,
-            })
+        if buttonData and ST._ShowEntryContextMenu then
+            GameTooltip:Hide()
+            ST._ShowEntryContextMenu(CS.selectedGroup, 1, buttonData)
         end
+    end
+    entry:SetScript("OnClick", OpenEntryActions)
+    entry:SetScript("OnEnter", function(self)
+        chevron:SetAlpha(1)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(name:GetText())
+        GameTooltip:AddLine("Click for entry actions.", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    entry:SetScript("OnLeave", function()
+        chevron:SetAlpha(0.65)
+        GameTooltip:Hide()
+    end)
+    row:SetScript("OnSizeChanged", LayoutQuietRow)
+    row:SetScript("OnHide", function()
+        chevron:SetAlpha(0.65)
+        if GameTooltip:IsOwned(entry) then GameTooltip:Hide() end
     end)
 
     col3.buttonsQuietRow = row
@@ -2461,6 +2469,7 @@ local function UpdateQuietRow(col3)
     row:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
     row:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
     row:SetHeight(ADD_BOX_HEIGHT)
+    LayoutQuietRow(row)
     row:Show()
 end
 
