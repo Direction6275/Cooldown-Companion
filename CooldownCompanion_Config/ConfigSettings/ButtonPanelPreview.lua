@@ -128,6 +128,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     DropGhost.Reset(preview)
     preview.dropGhostMode = nil
     preview.root:SetScript("OnUpdate", nil)
+    preview.barBaseRect = nil
     if preview.gapFrame then
         preview.gapFrame:Hide()
     end
@@ -385,6 +386,12 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local content = preview.content
     content:SetScale(scale) -- border styling below needs the final effective scale
     content:SetSize(contentWidth, contentHeight)
+    preview.barBaseRect = {
+        x = sectionLayout and sectionLayout.baseOffsetX or 0,
+        y = sectionLayout and sectionLayout.baseOffsetY or 0,
+        width = sectionLayout and sectionLayout.baseWidth or contentWidth,
+        height = sectionLayout and sectionLayout.baseHeight or contentHeight,
+    }
     content:Show()
     UpdateTextGroupHeader(preview, group, style, headerHeight)
 

@@ -1168,6 +1168,25 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         })
     end
 
+    for _, slots in ipairs({ primarySlots, castSlots }) do
+        for _, slot in ipairs(slots) do
+            local independent = slot.kind == "cast" and cbSettings.independentAnchorEnabled
+                or slot.kind ~= "cast" and layout.independentAnchorEnabled
+            if not independent and (slot.kind == "cast" or not isVerticalLayout) then
+                ST._ConfigureAttachedBarPreviewSlot(slot, function()
+                    if slot.kind == "cast" then
+                        layout.castBar = layout.castBar or { position = "below", order = 2000 }
+                        return layout.castBar
+                    elseif slot.kind == "custom" then
+                        return EnsureCustomBarLayout(rbSettings, nil, slot.customBarId, 1000 + slot.customAuraIndex)
+                    end
+                    local pt = RB.GetCanonicalPowerType(slot.powerType)
+                    layout.resources[pt] = layout.resources[pt] or {}
+                    return layout.resources[pt]
+                end)
+            end
+        end
+    end
     return primarySlots, castSlots
 end
 
@@ -1227,21 +1246,20 @@ end
 -- ORDER, not identity. The two bucket ranks trade places when the side is
 -- flipped (auraBlockTargetFirst), which is what makes the sort, the seam
 -- runs and the drag containment agree with the live bind order.
-local function GetSlotStackRank(slot, targetFirst)
+local function GetSlotStackRank(slot, targetFirst, regionOverride)
     local bucket = GetSlotBucketId(slot)
+    local rank = STACK_RANK_FIXED
+    if slot.kind == "cast" then return STACK_RANK_CAST end
     if bucket then
-        if not targetFirst then
-            return bucket
+        rank = bucket
+        if targetFirst then
+            rank = bucket == STACK_RANK_AURA_BLOCK_PLAYER
+                and STACK_RANK_AURA_BLOCK_TARGET or STACK_RANK_AURA_BLOCK_PLAYER
         end
-        if bucket == STACK_RANK_AURA_BLOCK_TARGET then
-            return STACK_RANK_AURA_BLOCK_PLAYER
-        end
-        return STACK_RANK_AURA_BLOCK_TARGET
     end
-    if slot.kind == "cast" then
-        return STACK_RANK_CAST
-    end
-    return STACK_RANK_FIXED
+    local region = regionOverride
+    if region == nil then region = slot.getRegionRank and slot.getRegionRank() or 0 end
+    return rank + region * 0.25
 end
 
 -- Resolved ONCE per sort or layout pass and carried on the lane, never
@@ -2713,7 +2731,10 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
     -- Sections run the lane's own direction: on a reversed lane index 1 is
     -- the slot furthest from the panel, so ranks descend there.
     local reversed = lane.reversed == true
-    local rank = GetSlotStackRank(slotData, targetFirst)
+    -- Every new attached placement has destination region rank zero: main
+    -- placements save main, and split panel destinations have no region tie.
+    -- The source's collapsed-stack rank must not constrain the landing.
+    local rank = GetSlotStackRank(slotData, targetFirst, 0)
 
     local lower = 1
     for index = 1, count do
@@ -3047,6 +3068,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
+            if lane.placementLabel then GameTooltip:AddLine(lane.placementLabel, 0.8, 0.8, 0.8) end
             local dragHelp = preview.standaloneCast and "Click to edit."
                 or preview.independentResources
                 and "Click to edit. Drag to reorder this independent bar."
@@ -3134,38 +3156,39 @@ local function GetLaneExtent(preview, slots, slotSize)
         slotSize)
 end
 
-local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight)
-    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
-    local panelWidth = panelFrame:GetWidth()
-    local panelHeight = panelFrame:GetHeight()
-    local aboveSlots = SortSlotsForSide(slots, "above", true, GetPreviewTargetFirst(preview, "above"))
-    local belowSlots = SortSlotsForSide(slots, "below", false, GetPreviewTargetFirst(preview, "below"))
-    local slotFrameHeight = math_max(8, slotHeight)
-    local aboveHeight = GetLaneExtent(preview, aboveSlots, slotFrameHeight)
-    local belowHeight = GetLaneExtent(preview, belowSlots, slotFrameHeight)
-    -- Live attached bars stretch to the anchor frame's width, so slots
-    -- follow the acquired panel frame's measured width rather than any
-    -- size this canvas precomputed for itself.
-    local slotWidth = panelWidth
-
-    local aboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, aboveHeight, "y", "above", true, aboveSlots, slotWidth, slotFrameHeight, nil)
-    aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-
-    aboveLane.setPreviewOverflow = function(extra)
-        aboveLane.frame:ClearAllPoints()
-        aboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
-        aboveLane.frame:SetSize(aboveLane.baseWidth or panelWidth, (aboveLane.baseHeight or aboveHeight) + extra)
+local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight, panelIndex, acceptedCategory)
+    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, panelIndex or 1)
+    local panelWidth, panelHeight = panelFrame:GetWidth(), panelFrame:GetHeight()
+    local group = CooldownCompanion.db.profile.groups[sourcePanel.groupId]
+    for _, slot in ipairs(slots) do slot.anchorGroup = group end
+    local labels, destinations = RB.GetBarPlacementOptions(group)
+    local gap = RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
+    local boxes, top, bottom = {}, 0, panelHeight
+    for _, destination in ipairs(destinations) do
+        local above = RB.GetBarLaneSide(destination) == "above"
+        local members = SortSlotsForSide(slots, destination, above, GetPreviewTargetFirst(preview, destination))
+        local x, y, width, height = ST._GetAttachedBarPreviewRect(panelFrame, destination)
+        local extent = GetLaneExtent(preview, members, slotHeight)
+        local laneY = above and (y - gap - extent) or (y + height + gap)
+        boxes[#boxes + 1] = { side = destination, above = above, members = members,
+            x = x, y = laneY, width = width, extent = extent }
+        top, bottom = math_min(top, laneY), math_max(bottom, laneY + extent)
     end
-    aboveLane.setPreviewOverflow(0)
-
     panelFrame:ClearAllPoints()
-    panelFrame:SetPoint("TOPLEFT", aboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-    local belowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, belowHeight, "y", "below", false, belowSlots, slotWidth, slotFrameHeight, nil)
-    belowLane.frame:SetPoint("TOPLEFT", panelFrame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-    local iconCenterOffsetY = aboveHeight + LAYOUT_PREVIEW_GAP + (panelHeight / 2)
-    return panelWidth, aboveHeight + panelHeight + belowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
+    panelFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, top)
+    for _, box in ipairs(boxes) do
+        local lane = BuildLane(preview, content, layoutDrag, nil, box.width, box.extent,
+            "y", box.side, box.above, box.members, box.width, slotHeight, acceptedCategory)
+        lane.placementLabel = labels[box.side]
+        lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", box.x, -(box.y - top))
+        lane.setPreviewOverflow = function(extra)
+            lane.frame:ClearAllPoints()
+            lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", box.x,
+                -(box.y - top) + (box.above and extra or 0))
+            lane.frame:SetSize(box.width, box.extent + extra)
+        end
+    end
+    return panelWidth, bottom - top, panelHeight / 2 - top
 end
 
 local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
@@ -3219,35 +3242,8 @@ end
 
 local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
     if #primarySlots == 0 and #castSlots > 0 then
-        -- The cast section is the ONLY section here, so it takes the primary
-        -- instance rather than the second copy.
-        local castPanel = AcquirePanelFrame(preview, content, sourcePanel, 1)
-        local panelWidth = castPanel:GetWidth()
-        local panelHeight = castPanel:GetHeight()
-        local castSlotFrameHeight = math_max(8, horizontalBarHeight)
-        local castAbove = SortSlotsForSide(castSlots, "above", true, GetPreviewTargetFirst(preview, "above"))
-        local castBelow = SortSlotsForSide(castSlots, "below", false, GetPreviewTargetFirst(preview, "below"))
-        local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
-        local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
-
-        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
-        castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-
-        castAboveLane.setPreviewOverflow = function(extra)
-            castAboveLane.frame:ClearAllPoints()
-            castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, extra)
-            castAboveLane.frame:SetSize(castAboveLane.baseWidth or panelWidth, (castAboveLane.baseHeight or castAboveHeight) + extra)
-        end
-        castAboveLane.setPreviewOverflow(0)
-
-        castPanel:ClearAllPoints()
-        castPanel:SetPoint("TOPLEFT", castAboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, panelWidth, castSlotFrameHeight, "cast")
-        castBelowLane.frame:SetPoint("TOPLEFT", castPanel, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-        local iconCenterOffsetY = castAboveHeight + LAYOUT_PREVIEW_GAP + (panelHeight / 2)
-        return panelWidth, castAboveHeight + panelHeight + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2), iconCenterOffsetY
+        return RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
+            castSlots, horizontalBarHeight, 1, "cast")
     end
 
     local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
@@ -3279,33 +3275,14 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local totalHeight = panelHeight
 
     if #castSlots > 0 then
-        -- The vertical layout draws the cast lane around its own copy of the
-        -- panel below the primary section, so this is instance 2.
-        local castPanel = AcquirePanelFrame(preview, content, sourcePanel, 2)
-        local castSlotFrameHeight = math_max(8, horizontalBarHeight)
-        local castAbove = SortSlotsForSide(castSlots, "above", true, GetPreviewTargetFirst(preview, "above"))
-        local castBelow = SortSlotsForSide(castSlots, "below", false, GetPreviewTargetFirst(preview, "below"))
-        local castAboveHeight = GetLaneExtent(preview, castAbove, castSlotFrameHeight)
-        local castBelowHeight = GetLaneExtent(preview, castBelow, castSlotFrameHeight)
-
-        local castAboveLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castAboveHeight, "y", "above", true, castAbove, panelWidth, castSlotFrameHeight, "cast")
-        castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP, -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP))
-
-        castAboveLane.setPreviewOverflow = function(extra)
-            castAboveLane.frame:ClearAllPoints()
-            castAboveLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP, -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP) + extra)
-            castAboveLane.frame:SetSize(castAboveLane.baseWidth or panelWidth, (castAboveLane.baseHeight or castAboveHeight) + extra)
-        end
-        castAboveLane.setPreviewOverflow(0)
-
-        castPanel:ClearAllPoints()
-        castPanel:SetPoint("TOPLEFT", castAboveLane.frame, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-        local castBelowLane = BuildLane(preview, content, layoutDrag, nil, panelWidth, castBelowHeight, "y", "below", false, castBelow, panelWidth, castSlotFrameHeight, "cast")
-        castBelowLane.frame:SetPoint("TOPLEFT", castPanel, "BOTTOMLEFT", 0, -LAYOUT_PREVIEW_GAP)
-
-        totalHeight = panelHeight + LAYOUT_PREVIEW_SECTION_GAP + castAboveHeight + castPanel:GetHeight() + castBelowHeight + (LAYOUT_PREVIEW_GAP * 2)
-        totalWidth = math_max(totalWidth, leftWidth + LAYOUT_PREVIEW_GAP + panelWidth)
+        local castContent = AcquireContainer(preview, content)
+        local width, height = RenderHorizontalLayout(preview, castContent, layoutDrag,
+            sourcePanel, castSlots, horizontalBarHeight, 2, "cast")
+        castContent:SetSize(width, height)
+        castContent:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP,
+            -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP))
+        totalHeight = panelHeight + LAYOUT_PREVIEW_SECTION_GAP + height
+        totalWidth = math_max(totalWidth, leftWidth + LAYOUT_PREVIEW_GAP + width)
     end
 
     local iconCenterOffsetY = panelHeight / 2
@@ -3977,7 +3954,7 @@ local function CreateLayoutDragModel(preview)
             local peerIndex = adjustedIndex
             do
                 local targetFirst = lane.targetFirst == true
-                local rank = GetSlotStackRank(slotData, targetFirst)
+                local rank = GetSlotStackRank(slotData, targetFirst, 0)
                 local section = {}
                 local sectionIndex = 0
                 for index, slot in ipairs(filtered) do
@@ -3988,17 +3965,15 @@ local function CreateLayoutDragModel(preview)
                         end
                     end
                 end
-                if #section > 0 then
-                    peers = section
-                    peerIndex = sectionIndex + 1
-                end
+                peers = section
+                peerIndex = sectionIndex + 1
             end
             local newOrder = (#peers == 0 and oldPos == lane.side)
                 and oldOrder
                 or GetLayoutOrderForInsertion(peers, lane.reversed, peerIndex)
-            slotData.setPos(lane.side)
+            local placementChanged = slotData.setPos(lane.side)
             slotData.setOrder(newOrder)
-            changed = oldPos ~= lane.side or oldOrder ~= newOrder
+            changed = placementChanged or oldPos ~= lane.side or oldOrder ~= newOrder
         end
 
         if changed then
@@ -4058,9 +4033,8 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     BuildBarsEnableCluster(preview)
     ApplyHostBottomReserve(container, preview.root)
     preview.layout = layout
-    -- The real spacing between stacked bars, not a fixed 4px. (The gap
-    -- between the icon panel and the lanes is a different setting,
-    -- GetResourceAnchorGap, and still renders as the fixed chrome gap.)
+    -- The real spacing between stacked bars. Horizontal attached destinations
+    -- also use GetResourceAnchorGap for the distance from their icon body.
     preview.slotGap = math_max(0, tonumber(layout and layout.barSpacing)
         or tonumber(preview.rbSettings and preview.rbSettings.barSpacing)
         or LAYOUT_PREVIEW_GAP)

@@ -762,3 +762,41 @@ ST._RBP = {
 ST._RefreshResourcesCanvas = RefreshResourcesCanvas
 ST._RefreshResourcesCanvasForDrag = RefreshResourcesCanvasForDrag
 ST._AddMirrorFirstSliderRow = AddMirrorFirstSliderRow
+
+-- Adapt the existing per-slot order/editor contract without changing saved
+-- above/below values. Vertical and independent slots do not use this adapter.
+function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
+    local getSide = slot.getPos
+    slot.getPos = function()
+        local saved = ensureLayout()
+        return RB.ResolveBarLane(slot.anchorGroup or RB.GetBarAnchorGroup(),
+            getSide(), saved.anchorRegion)
+    end
+    slot.getRegionRank = function()
+        local saved = ensureLayout()
+        return RB.GetBarRegionRank(slot.getPos(), saved.anchorRegion,
+            slot.anchorGroup or RB.GetBarAnchorGroup())
+    end
+    slot.setPos = function(lane)
+        local saved = ensureLayout()
+        local oldRegion, oldSide = saved.anchorRegion, saved.position
+        RB.SetBarLane(saved, lane)
+        return oldRegion ~= saved.anchorRegion or oldSide ~= saved.position
+    end
+end
+
+function ST._GetAttachedBarPreviewRect(panelFrame, lane)
+    local w, h = panelFrame:GetWidth(), panelFrame:GetHeight()
+    if lane ~= "aboveMain" and lane ~= "belowMain" then return 0, 0, w, h end
+    local mirror = panelFrame._cdcPanelPreview
+    local rect = mirror and mirror.barBaseRect
+    if not rect then return 0, 0, w, h end
+    local scale = mirror.content:GetScale()
+    -- The measuring host is sized before the composition anchors it. Its
+    -- two-point mirror root may not have a resolved rect on the first build;
+    -- derive that root's height from the host and its reserved bottom band.
+    local rootHeight = h - (panelFrame._cdcPreviewReserveBottom or 0)
+    return (w - mirror.content:GetWidth() * scale) / 2 + rect.x * scale,
+        (rootHeight - mirror.content:GetHeight() * scale) / 2 + rect.y * scale,
+        rect.width * scale, rect.height * scale
+end

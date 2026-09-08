@@ -160,9 +160,11 @@ local function GetResourceGlobalThickness(settings)
         or 12
 end
 
-local function GetResourceAnchorGap(settings, layout)
+local function GetResourceAnchorGap(settings, layout, orientation)
     layout = layout or GetResourceLayout(settings)
-    if IsVerticalResourceLayout(settings) then
+    -- Attached cast bars and horizontal preview lanes keep their Y gap even
+    -- when the resource stack uses the vertical orientation.
+    if orientation == "vertical" or (orientation == nil and IsVerticalResourceLayout(settings)) then
         return (layout and (layout.verticalXOffset or layout.yOffset))
             or settings.verticalXOffset
             or settings.yOffset
@@ -181,6 +183,99 @@ end
 local function GetEffectiveAnchorGroupId(settings)
     if not settings then return nil end
     return CooldownCompanion:GetFirstAvailableAnchorGroup()
+end
+
+-- Attached horizontal stacks have two possible bodies on each side. Keep
+-- their identity separate from direction: aura containers, cast predecessors
+-- and the preview must all partition the same way. Old side keys remain the
+-- outer stacks (and retain their saved aura-bucket order).
+RB.ATTACHED_BAR_LANES = { "above", "below", "aboveMain", "belowMain" }
+
+function RB.GetBarLaneSide(lane)
+    if lane == "aboveMain" then return "above" end
+    if lane == "belowMain" then return "below" end
+    return lane
+end
+
+function RB.GetBarAnchorGroup()
+    local id = CooldownCompanion:GetFirstAvailableAnchorGroup()
+    return id and CooldownCompanion.db.profile.groups[id], id
+end
+
+function RB.HasBarSectionOnSide(group, side)
+    if not ST.GetSectionsForLayout(group) then return false end
+    for _, entry in ipairs(group.buttons or {}) do
+        local anchor = ST.GetPanelSectionForEntry(group, entry)
+        if anchor then
+            local _, sectionSide = ST.GetPanelSectionPlacement(group, anchor)
+            if sectionSide == side then return true end
+        end
+    end
+    return false
+end
+
+function RB.ResolveBarLane(group, side, region, independent)
+    if independent or (side ~= "above" and side ~= "below") then return side end
+    if region == "main" or not RB.HasBarSectionOnSide(group, side) then
+        return side .. "Main"
+    end
+    return side
+end
+
+function RB.GetBarLaneBody(frame, lane)
+    if lane == "aboveMain" or lane == "belowMain" then
+        return ST.GetPanelAnchorBodyFrame(frame)
+    end
+    return frame
+end
+
+function RB.SetBarLane(slot, lane)
+    slot.position = RB.GetBarLaneSide(lane)
+    slot.anchorRegion = (lane == "aboveMain" or lane == "belowMain") and "main" or "panel"
+end
+
+function RB.GetBarPlacementOptions(group)
+    local list, order = {}, {}
+    for _, side in ipairs({ "above", "below" }) do
+        local label = side == "above" and "Above" or "Below"
+        list[side .. "Main"] = label .. " Main Icons"
+        order[#order + 1] = side .. "Main"
+        if RB.HasBarSectionOnSide(group, side) then
+            list[side] = label .. " Entire Panel"
+            order[#order + 1] = side
+        end
+    end
+    return list, order
+end
+
+-- Only the collapsed destination needs this tie-break. It follows the fixed /
+-- player aura / target aura rank and precedes the saved order within that rank.
+function RB.GetBarRegionRank(lane, region, group)
+    local side = RB.GetBarLaneSide(lane)
+    if (lane == "aboveMain" or lane == "belowMain")
+        and not RB.HasBarSectionOnSide(group, side) and region ~= "main" then
+        return 1
+    end
+    return 0
+end
+
+-- Both rectangles can change independently under compact layout. Identity is
+-- part of the snapshot because a sectioned-state flip replaces the body.
+function RB.GetBarAnchorGeometry(frame, group)
+    local body = ST.GetPanelAnchorBodyFrame(frame)
+    if not body then return nil end
+    return table.concat({ tostring(frame), tostring(body), frame:GetWidth(), frame:GetHeight(),
+        body:GetWidth(), body:GetHeight(),
+        tostring(RB.HasBarSectionOnSide(group, "above")),
+        tostring(RB.HasBarSectionOnSide(group, "below")) }, ":")
+end
+
+function RB.GetAuraBlockFlagKey(lane, group)
+    local side = RB.GetBarLaneSide(lane)
+    if side ~= lane and not RB.HasBarSectionOnSide(group or RB.GetBarAnchorGroup(), side) then
+        return side
+    end
+    return lane
 end
 
 -- The addon already keeps this id and refreshes it on the exact spec-change
@@ -400,12 +495,13 @@ end
 local function IsAuraBlockTargetFirst(settings, side)
     local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
     local map = layout and layout.auraBlockTargetFirst
-    return type(map) == "table" and map[side] == true
+    return type(map) == "table" and map[RB.GetAuraBlockFlagKey(side)] == true
 end
 
 local function SetAuraBlockTargetFirst(settings, side, targetFirst)
     local layout = GetSpecLayoutOrder and GetSpecLayoutOrder(settings)
     if type(layout) ~= "table" or type(side) ~= "string" then return end
+    side = RB.GetAuraBlockFlagKey(side)
     local map = layout.auraBlockTargetFirst
     if targetFirst then
         if type(map) ~= "table" then

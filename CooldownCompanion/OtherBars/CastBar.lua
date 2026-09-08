@@ -1138,12 +1138,10 @@ local function ResolveCastBarWidth(s)
     end
     local groupFrame = GetAnchorGroupFrame(s)
     if not groupFrame then return nil end
-    -- The bar matches the panel's WHOLE footprint: on a sectioned panel the
-    -- frame spans the union of the base row and its sections, and the bar
-    -- wraps all of it, exactly as the Live Preview's lanes wrap the mirror
-    -- (owner ruling 2026-09-03, reversing the base-row rule for the attached
-    -- bars only; unit frames and panel anchors still use the base row).
-    local width = groupFrame:GetWidth()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    local slot = layout and layout.castBar or {}
+    local lane = RB.ResolveBarLane(RB.GetBarAnchorGroup(), slot.position or "below", slot.anchorRegion)
+    local width = RB.GetBarLaneBody(groupFrame, lane):GetWidth()
     if not width or width <= 0 then return nil end
     return width
 end
@@ -1193,10 +1191,9 @@ local function ApplyCastBarPosition(s, width, height)
     -- orientation. Under a vertical stack the left/right-keyed predecessor
     -- and block lookups simply miss, and the bar anchors to the panel.
     local side = cbPosition
+    local lane = RB.ResolveBarLane(RB.GetBarAnchorGroup(), side, cbLayout and cbLayout.anchorRegion)
 
-    local gap = specLayout and (specLayout.yOffset or specLayout.verticalXOffset)
-        or (rbSettings and (rbSettings.yOffset or rbSettings.verticalXOffset))
-        or 3
+    local gap = RB.GetResourceAnchorGap(rbSettings or {}, specLayout, "horizontal")
     local barSpacing = specLayout and specLayout.barSpacing
         or (rbSettings and rbSettings.barSpacing)
         or 3.6
@@ -1210,7 +1207,7 @@ local function ApplyCastBarPosition(s, width, height)
         -- chain TAIL, so it is already nil for a parked side and already the
         -- right container in either bucket order. No IsShown read here.
         local blockContainer = RB.GetCustomBarAuraBlockContainer
-            and RB.GetCustomBarAuraBlockContainer(side)
+            and RB.GetCustomBarAuraBlockContainer(lane)
             or nil
         if blockContainer then
             AnchorBySide(frame, side, blockContainer, barSpacing + panelYOffset)
@@ -1221,20 +1218,14 @@ local function ApplyCastBarPosition(s, width, height)
         -- 2026-08-09): the stack reserves no space for an interleaved cast
         -- bar, so a stored order between two bars double-books the next
         -- bar's slot. The stored order is ignored for anchoring.
-        local predecessor = CooldownCompanion:GetResourceBarPredecessor(side, math.huge)
+        local predecessor = CooldownCompanion:GetResourceBarPredecessor(lane, math.huge)
         if predecessor then
             AnchorBySide(frame, side, predecessor, barSpacing + panelYOffset)
             return true
         end
     end
 
-    -- Straight onto the panel FRAME, for the same reason the resource stack
-    -- uses it: a sectioned panel's frame is the union of the base row and
-    -- its sections, and the bar sits past the whole of it rather than across
-    -- a section on its side (owner ruling 2026-09-03, matching the Live
-    -- Preview). The frame follows the footprint on its own, so a section
-    -- appearing or dissolving needs no re-anchor here.
-    AnchorBySide(frame, side, groupFrame, gap + panelYOffset)
+    AnchorBySide(frame, side, RB.GetBarLaneBody(groupFrame, lane), gap + panelYOffset)
     return true
 end
 

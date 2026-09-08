@@ -940,7 +940,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- and direct geometry remain restricted to the rebind pass.
     ------------------------------------------------------------------------
 
-    local BLOCK_SIDES = { "above", "below", "left", "right" }
+    local BLOCK_SIDES = { "above", "below", "aboveMain", "belowMain", "left", "right" }
 
     -- Where a side's block container pins to that side's stack container,
     -- and which way its mount offset runs. Mirrors RelayoutBars' own
@@ -957,6 +957,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         left = { point = "TOPRIGHT", far = "TOPLEFT", dx = -1, dy = 0 },
         right = { point = "TOPLEFT", far = "TOPRIGHT", dx = 1, dy = 0 },
     }
+
+    BLOCK_MOUNTS.aboveMain = BLOCK_MOUNTS.above
+    BLOCK_MOUNTS.belowMain = BLOCK_MOUNTS.below
 
     local blockState = {}      -- side -> recorded block contract
     local blockSignatures = {} -- side -> last bind-relevant signature

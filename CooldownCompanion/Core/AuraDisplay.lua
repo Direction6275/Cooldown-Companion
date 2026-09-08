@@ -3116,7 +3116,7 @@ local function EnsureBlockContainer(side, unit)
     local key = side .. "\031" .. unit
     local record = blockContainers[key]
     if record then return record end
-    local flow = BLOCK_FLOW[side]
+    local flow = BLOCK_FLOW[ST._RB.GetBarLaneSide(side)]
     if not flow then return nil end
     -- Parented through a plain CC visibility root beneath the custom-bar aura
     -- host. The host still carries resource-stack state and alpha; the extra
