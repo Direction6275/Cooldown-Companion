@@ -5,8 +5,8 @@
     the panel batch actions, and the group-side settings surfaces (via
     GroupSettingsHost) in one unified surface. It frames two labeled areas:
     the pinned Live Preview above the split divider (the column title names
-    it) and the editing surface
-    below it (the "Editing:" path and selected-entry context on one line,
+    it) and the editing surface, either below or to its right
+    (the "Editing:" path and selected-entry context on one line,
     followed by the add box and settings).
     Other Class browsing uses the same pinned preview cluster, so it never
     needs to surface browsed panels in the live world.
@@ -78,6 +78,22 @@ local function SetPreviewSplit(fraction)
     end
 end
 
+-- The layout preference follows the account-wide window geometry.
+local function IsThreeColumnLayout()
+    local db = CooldownCompanion.db
+    return db and db.global and db.global.configLayout == "threeColumn"
+end
+
+local function AnchorWidePreviewHost(col3, host)
+    host:ClearAllPoints()
+    if col3._cdcEmptyGroupPreviewTakeover then
+        host:SetAllPoints(col3.content)
+    else
+        host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
+        host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
+    end
+end
+
 local function HideEntrySurfaces(col3)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
@@ -91,6 +107,7 @@ end
 -- `refit` is optional: a cheap geometry-only pass the divider drag can
 -- afford every frame, where the full rebuild only runs on its throttle.
 local function SetActiveWidePreview(col3, host, rebuild, refit)
+    AnchorWidePreviewHost(col3, host)
     col3._cdcActiveWideHost = host
     col3._cdcActiveWideRebuild = rebuild
     col3._cdcActiveWideRefit = refit
@@ -733,9 +750,26 @@ local function LayoutEditingActionRow(col3)
     if hasAdd then
         height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
+    local stackFields = IsThreeColumnLayout() and hasAdd and hasFinder
+    if stackFields then
+        height = height + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
+    end
     row:SetHeight(height)
     row._cdcEditingHeight = height
-    if hasAdd and hasFinder then
+    if stackFields then
+        if modeWidth > 0 then
+            selector.frame:ClearAllPoints()
+            selector.frame:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        end
+        addBox.frame:ClearAllPoints()
+        addBox.frame:SetPoint("TOPLEFT", row, "TOPLEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
+        addBox.frame:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+        addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
+        finder.frame:ClearAllPoints()
+        finder.frame:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
+        finder.frame:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+        finder.frame:SetHeight(ADD_BOX_HEIGHT)
+    elseif hasAdd and hasFinder then
         local rowWidth = math.max(1, row:GetWidth() or 1)
         local finderWidth = math.max(SETTINGS_FINDER_MIN_WIDTH,
             math.min(SETTINGS_FINDER_MAX_WIDTH, rowWidth * SETTINGS_FINDER_WIDTH_FRACTION))
@@ -925,6 +959,42 @@ local function LayoutWideEditingChips(frame)
     content:SetSize(math.max(1, contentWidth), EDIT_CHIPS_HEIGHT)
     previous:SetEnabled(frame._cdcScrollOffset > 0)
     next:SetEnabled(frame._cdcScrollOffset < maxOffset)
+    previous._cdcRefreshArrow()
+    next._cdcRefreshArrow()
+end
+
+local function CreateEditingChipScrollButton(parent, rotation)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
+    local arrow = button:CreateTexture(nil, "ARTWORK")
+    arrow:SetSize(12, 12)
+    arrow:SetPoint("CENTER")
+    arrow:SetAtlas("uitools-icon-chevron-down", false)
+    arrow:SetRotation(rotation)
+
+    local hovered = false
+    local function RefreshArrow()
+        if not button:IsEnabled() then
+            arrow:SetVertexColor(0.70, 0.68, 0.64, 0.25)
+        elseif hovered then
+            arrow:SetVertexColor(1, 0.82, 0, 1)
+        else
+            arrow:SetVertexColor(0.70, 0.68, 0.64, 0.85)
+        end
+    end
+    button._cdcRefreshArrow = RefreshArrow
+    button:SetScript("OnEnter", function()
+        hovered = true
+        RefreshArrow()
+    end)
+    local function ClearHover()
+        hovered = false
+        RefreshArrow()
+    end
+    button:SetScript("OnLeave", ClearHover)
+    button:SetScript("OnHide", ClearHover)
+    RefreshArrow()
+    return button
 end
 
 local function SetWideEditingChips(col3, prefix, items)
@@ -940,17 +1010,13 @@ local function SetWideEditingChips(col3, prefix, items)
         frame._cdcClip:SetClipsChildren(true)
         frame._cdcContent = CreateFrame("Frame", nil, frame._cdcClip)
         frame._cdcContent:SetHeight(EDIT_CHIPS_HEIGHT)
-        frame._cdcPrevious = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        frame._cdcPrevious:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
-        frame._cdcPrevious:SetText("<")
+        frame._cdcPrevious = CreateEditingChipScrollButton(frame, -math.pi / 2)
         frame._cdcPrevious:SetScript("OnClick", function()
             frame._cdcScrollOffset = math.max(0,
                 (frame._cdcScrollOffset or 0) - EDIT_CHIPS_SCROLL_STEP)
             LayoutWideEditingChips(frame)
         end)
-        frame._cdcNext = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        frame._cdcNext:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
-        frame._cdcNext:SetText(">")
+        frame._cdcNext = CreateEditingChipScrollButton(frame, math.pi / 2)
         frame._cdcNext:SetScript("OnClick", function()
             frame._cdcScrollOffset = (frame._cdcScrollOffset or 0) + EDIT_CHIPS_SCROLL_STEP
             LayoutWideEditingChips(frame)
@@ -1351,6 +1417,7 @@ end
 -- divider keeps its own minimum — the same clamp the divider drag applies.
 local function ComputePreviewHostHeight(col3)
     local columnHeight = col3.content:GetHeight() or 0
+    if IsThreeColumnLayout() then return math.max(1, columnHeight) end
     local fraction, custom = GetPreviewSplit()
     local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
     local desired = math.max(minHeight, math.floor(columnHeight * fraction))
@@ -1665,6 +1732,28 @@ local function EnsurePreviewDivider(col3)
     return divider
 end
 
+local function AnchorEditingSurface(col3, previewHost, surface)
+    surface:ClearAllPoints()
+    if IsThreeColumnLayout() then
+        if col3.buttonsSplitDivider then
+            col3.buttonsSplitDivider:CancelDrag()
+            col3.buttonsSplitDivider:Hide()
+        end
+        local settingsContent = col3._cdcSettingsColumn.content
+        surface:SetParent(settingsContent)
+        surface:SetAllPoints(settingsContent)
+    else
+        surface:SetParent(col3.content)
+        local divider = EnsurePreviewDivider(col3)
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, 0)
+        divider:SetPoint("TOPRIGHT", previewHost, "BOTTOMRIGHT", 0, 0)
+        divider:Show()
+        surface:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
+        surface:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
 -- Settings surfaces anchor inside the editing surface below the split
 -- divider (which sits directly under the pinned preview), beneath the
 -- editing header and add box; they fill the whole column when no preview
@@ -1674,16 +1763,9 @@ local function AnchorButtonsContentFrame(col3, frame)
     local actionRow = UpdateEditingActionRow(col3)
     local previewHost = col3._cdcActiveWideHost
     if previewHost and previewHost:IsShown() then
-        local divider = EnsurePreviewDivider(col3)
-        divider:ClearAllPoints()
-        divider:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, 0)
-        divider:SetPoint("TOPRIGHT", previewHost, "BOTTOMRIGHT", 0, 0)
-        divider:Show()
-
         local surface = EnsureEditingSurface(col3)
-        surface:ClearAllPoints()
-        surface:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
-        surface:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
+        AnchorEditingSurface(col3, previewHost, surface)
+        frame:SetParent(surface)
         surface:Show()
         UpdateEditingHeader(col3)
 
@@ -1698,6 +1780,7 @@ local function AnchorButtonsContentFrame(col3, frame)
         end
         local quietRow = GetActiveEditingRow(col3)
         if quietRow then
+            quietRow:SetParent(surface)
             quietRow:ClearAllPoints()
             quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
             quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
@@ -1716,6 +1799,7 @@ local function AnchorButtonsContentFrame(col3, frame)
         frame:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -PREVIEW_GAP)
         frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
     else
+        frame:SetParent(col3.content)
         local quietRow = GetActiveEditingRow(col3)
         local chips = col3._cdcEditingChips
         local hasChips = chips and chips:IsShown()
@@ -1725,6 +1809,7 @@ local function AnchorButtonsContentFrame(col3, frame)
                 col3.buttonsSplitDivider:Hide()
             end
             local surface = EnsureEditingSurface(col3)
+            surface:SetParent(col3.content)
             surface:ClearAllPoints()
             surface:SetAllPoints(col3.content)
             surface:Show()
@@ -2098,13 +2183,7 @@ local function UpdatePanelPreview(col3, selectionOnly)
     local emptyGroupTakeover = ShouldEmptyGroupPreviewTakeOver(
         containerId, container)
     col3._cdcEmptyGroupPreviewTakeover = emptyGroupTakeover
-    host:ClearAllPoints()
-    if emptyGroupTakeover then
-        host:SetAllPoints(col3.content)
-    else
-        host:SetPoint("TOPLEFT", col3.content, "TOPLEFT", 0, 0)
-        host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
-    end
+    AnchorWidePreviewHost(col3, host)
     local function BuildPreview(hostFrame)
         -- Owns the host's bottom reserve, so it must settle before either
         -- renderer measures itself. Sits inside the build closure so every
@@ -2947,6 +3026,7 @@ ST._ComputeWidePreviewHostHeight = ComputePreviewHostHeight
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
+ST._IsThreeColumnConfigLayout = IsThreeColumnLayout
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
 ST._SetWideEditingAddBox = SetWideEditingAddBox
 ST._SetWideEditingChips = SetWideEditingChips

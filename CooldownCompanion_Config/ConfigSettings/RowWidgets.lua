@@ -1932,7 +1932,12 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
             return
         end
 
-        local columnWidth = floor((width - ROW_GRID_COLUMN_GAP) / 2)
+        -- The three-column workspace uses one continuous settings lane.
+        -- Former grid columns flow directly into each other; their horizontal
+        -- gutter must not become a blank row in the single-lane layout.
+        local stacked = ST._IsThreeColumnConfigLayout
+            and ST._IsThreeColumnConfigLayout()
+        local columnWidth = stacked and width or floor((width - ROW_GRID_COLUMN_GAP) / 2)
         local height = 0
 
         for i = 1, #children do
@@ -1944,7 +1949,9 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
             frame:ClearAllPoints()
             if i <= 2 then
                 frame:Show()
-                if i == 1 then
+                if stacked then
+                    frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -height)
+                elseif i == 1 then
                     frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
                 else
                     frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
@@ -1955,7 +1962,12 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
                     child:DoLayout()
                 end
 
-                height = max(height, frame.height or frame:GetHeight() or 0)
+                local childHeight = frame.height or frame:GetHeight() or 0
+                if stacked then
+                    height = height + childHeight
+                else
+                    height = max(height, childHeight)
+                end
             else
                 -- Exactly two columns by construction. A third child has no
                 -- home, so hide it rather than leave it floating on whatever

@@ -48,6 +48,7 @@ local CONFIG_FINDER_RESERVED_HEIGHT = CONFIG_FINDER_BOX_HEIGHT + CONFIG_FINDER_B
 local NAVIGATOR_DESTINATIONS_HEIGHT = 33
 local CONFIG_COMPACT_ROW_MIN_WIDTH = 236
 local NAVIGATOR_WIDTH = 300
+local SETTINGS_COLUMN_WIDTH = 400
 local CONFIG_DRAG_ALPHA = 0.40
 local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
@@ -80,7 +81,10 @@ local function GetProfileWideSideWindowWidth()
     local configFrame = CS.configFrame
     local narrowestWidth
 
-    for _, columnKey in ipairs({ "col1", "col3" }) do
+    local columnKeys = configFrame and configFrame.settingsColumn
+        and configFrame.settingsColumn.frame:IsShown()
+        and { "col1", "settingsColumn" } or { "col1", "col3" }
+    for _, columnKey in ipairs(columnKeys) do
         local column = configFrame and configFrame[columnKey]
         local frame = column and column.frame
         local visible = frame and (frame:IsVisible() or frame:IsShown())
@@ -534,7 +538,22 @@ local function GetColumn3HeaderTitle(selection)
     return GetGroupSideHeaderTitle(selection)
 end
 
+local function ShouldShowSettingsColumn(col3)
+    local host = col3._cdcActiveWideHost
+    return ST._IsThreeColumnConfigLayout() and not CS.talentPickerMode
+        and not CS.exportMode and not CS.importMode
+        and col3._cdcEmptyGroupPreviewTakeover ~= true
+        and host ~= nil and host:IsShown()
+end
+
 local function ApplyConfigColumnTitles(frame)
+    -- Selection changes can add/remove the pinned preview after the initial
+    -- window layout pass. Only relayout when the separate column changes.
+    if frame.settingsColumn
+        and frame.settingsColumn.frame:IsShown() ~= ShouldShowSettingsColumn(frame.col3)
+    then
+        frame.LayoutColumns()
+    end
     if CS.exportMode then
         frame.col1:SetTitle("|cffffd100Export Mode|r")
         frame.col3:SetTitle("|cffffd100Export Summary|r")
@@ -1425,6 +1444,20 @@ local function CreateConfigPanel()
             end
             UIDropDownMenu_AddButton(info2, level)
 
+            local layoutInfo = UIDropDownMenu_CreateInfo()
+            layoutInfo.text = "  Three-column Layout"
+            layoutInfo.checked = function() return ST._IsThreeColumnConfigLayout() end
+            layoutInfo.isNotRadio = true
+            layoutInfo.func = function()
+                local divider = frame.col3 and frame.col3.buttonsSplitDivider
+                if divider then divider:CancelDrag() end
+                CooldownCompanion.db.global.configLayout =
+                    ST._IsThreeColumnConfigLayout() and "stacked" or "threeColumn"
+                CloseDropDownMenus()
+                CooldownCompanion:RefreshConfigPanel()
+            end
+            UIDropDownMenu_AddButton(layoutInfo, level)
+
             UIDropDownMenu_AddSeparator(level)
 
             local info3 = UIDropDownMenu_CreateInfo()
@@ -1914,6 +1947,17 @@ local function CreateConfigPanel()
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
+    -- Separate settings shell for the optional three-column workspace.
+    -- Its width stays fixed; the existing workspace becomes the center preview.
+    local settingsColumn = AceGUI:Create("InlineGroup")
+    settingsColumn:SetTitle("Settings")
+    settingsColumn:SetAutoAdjustHeight(false)
+    settingsColumn:SetLayout(MANUAL_COLUMN_LAYOUT)
+    settingsColumn:SetWidth(SETTINGS_COLUMN_WIDTH)
+    settingsColumn.frame:SetParent(colParent)
+    settingsColumn.frame:Hide()
+    col3._cdcSettingsColumn = settingsColumn
+
     -- Info button next to the workspace title
     local bsInfoBtn = CreateFrame("Button", nil, col3.frame)
     bsInfoBtn:SetSize(16, 16)
@@ -1965,7 +2009,7 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("Select a single panel to configure it here instead.", 1, 1, 1, true)
             else
                 GameTooltip:AddLine("Settings")
-                GameTooltip:AddLine("Settings for the selected group, panel, or entry, with a live preview of the panel above them.", 1, 1, 1, true)
+                GameTooltip:AddLine("Settings for the selected group, panel, or entry, alongside its live preview.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting an entry shows that entry's effective settings and customizations immediately.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
@@ -1979,7 +2023,11 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("The Visibility tab shows the selected button's conditions. Deselect to see the panel's own.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset.", 1, 1, 1, true)
+                if ST._IsThreeColumnConfigLayout() then
+                    GameTooltip:AddLine("Settings have their own full-height column. Turn off Three-column Layout in the window's gear menu to place the preview above settings.", 1, 1, 1, true)
+                else
+                    GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset. Choose Three-column Layout in the window's gear menu to give settings their own full-height column.", 1, 1, 1, true)
+                end
             end
         end
         GameTooltip:Show()
@@ -2270,6 +2318,7 @@ local function CreateConfigPanel()
         -- Profile controls live outside colParent and remain available here.
         -- Normal refreshes still clean up/rebuild the hidden column contents.
         if CS.configFrame and ST._UpdateProfileWelcome(CS.configFrame) then
+            settingsColumn.frame:Hide()
             return
         end
         local w = colParent:GetWidth()
@@ -2284,6 +2333,7 @@ local function CreateConfigPanel()
 
         -- Talent picker mode: two equally wide surfaces.
         if CS.talentPickerMode then
+            settingsColumn.frame:Hide()
             if CS.configFinderBox then
                 CS.configFinderBox.frame:Hide()
             end
@@ -2307,9 +2357,16 @@ local function CreateConfigPanel()
             return
         end
 
-        -- Final cutover layout: one fixed Navigator rail and one workspace.
+        -- Fixed Navigator and optional Settings rails; the preview takes
+        -- the remaining width when Settings has its own column.
         local col1Width = math.min(NAVIGATOR_WIDTH, math.max(260, w - 600 - pad))
         local col3Width = math.max(1, w - col1Width - pad)
+        local separateSettings = ShouldShowSettingsColumn(col3)
+        settingsColumn:SetHeight(h)
+        settingsColumn.frame:SetShown(separateSettings)
+        if separateSettings then
+            col3Width = math.max(1, col3Width - SETTINGS_COLUMN_WIDTH - pad)
+        end
         local finderAvailable = IsConfigFinderAvailable and IsConfigFinderAvailable()
             and not CS.exportMode and not CS.importMode
         local destinationBottomInset = finderAvailable and (30 + CONFIG_FINDER_RESERVED_HEIGHT) or 30
@@ -2358,6 +2415,8 @@ local function CreateConfigPanel()
         col3.frame:ClearAllPoints()
         col3.frame:SetPoint("TOPLEFT", col1.frame, "TOPRIGHT", pad, 0)
         col3.frame:SetSize(col3Width, h)
+        settingsColumn.frame:ClearAllPoints()
+        settingsColumn.frame:SetPoint("TOPLEFT", col3.frame, "TOPRIGHT", pad, 0)
 
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
@@ -2395,6 +2454,7 @@ local function CreateConfigPanel()
     frame.changelogOverlay = changelogOverlay
     frame.col1 = col1
     frame.col3 = col3
+    frame.settingsColumn = settingsColumn
     frame.colParent = colParent
     frame.LayoutColumns = LayoutColumns
     frame.UpdateCompactConfigRows = UpdateCompactConfigRows
