@@ -1444,7 +1444,7 @@ local function GetTriggerDisplayNaturalSize(group)
     return 0, 0
 end
 
-local function GetPanelPreviewNaturalSize(group)
+local function GetPanelPreviewNaturalSize(group, includeSections)
     if type(group) ~= "table" then
         return 220, 90
     end
@@ -1505,6 +1505,19 @@ local function GetPanelPreviewNaturalSize(group)
             and (((group.style or {}).textHeaderFontSize
                 or (group.style or {}).textFontSize or 12) + 4)
             or 0
+        -- Content-sized overview cards need the complete footprint, matching
+        -- the read-only renderer's section layout rather than the base grid.
+        local sections = includeSections and ST.GetSectionsForLayout(group)
+        if sections then
+            local entries = {}
+            for index, buttonData in ipairs(group.buttons) do
+                entries[index] = { buttonData = buttonData }
+            end
+            local lists = ST.PartitionPanelSectionMembers(group, entries)
+            local layout = ST.BuildPanelSectionLayout(group, sections, lists,
+                geo.entryWidth, geo.entryHeight, geo.spacing, headerHeight)
+            return math_max(1, layout.totalWidth), math_max(1, layout.totalHeight)
+        end
         return (cols - 1) * (geo.entryWidth + geo.spacing) + geo.entryWidth,
             (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight + headerHeight
     end
