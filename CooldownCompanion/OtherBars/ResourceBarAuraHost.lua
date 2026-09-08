@@ -158,6 +158,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         -- holder reports last frame's rect (the lane lesson). Read by the
         -- kit glow's dashes leg via _ccKitRectW/H.
         local fw, fh = frame:GetSize()
+        bounds._ccKitRectW, bounds._ccKitRectH = fw, fh
         local w = (fw or 0) - inset * 2
         local h = (fh or 0) - inset * 2
         holder._ccKitRectW = w > 1 and w or 1

@@ -628,14 +628,9 @@ function RB.CreateResourceBarPreviewModule(deps)
             if not layer.glow then
                 layer.glow = ST._BuildKitGlowRegions(layer.host)
             end
-            -- Same stale-rect rule as the lane below: dims off the BAR
-            -- minus the inset, never off the freshly-anchored host.
-            local fw, fh = frame:GetSize()
-            local rw = (fw or 0) - inset * 2
-            local rh = (fh or 0) - inset * 2
-            layer.host._ccKitRectW = rw > 1 and rw or 1
-            layer.host._ccKitRectH = rh > 1 and rh or 1
-            ST._StyleKitBarGlowRegions(layer.glow, borderStyle, layer.host, true)
+            -- Effects follow the real border. The inset host remains the fill
+            -- mount; the bar itself has explicit, current dimensions.
+            ST._StyleKitBarGlowRegions(layer.glow, borderStyle, frame, true)
 
             -- Fill recolor stand-in (continuous shapes only, matching the
             -- runtime gate): the tint overlay anchors onto the canvas

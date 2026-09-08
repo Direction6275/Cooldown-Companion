@@ -106,6 +106,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                     else
                         def.setter(slot, active, false)
                     end
+                    ST.RefreshBorderTextureScale(slot[def.containerKey].solidTextures)
                 end
             end
         end
@@ -126,6 +127,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
         end
         if slot.barAuraEffect then
             SetBarAuraEffect(slot, active)
+            ST.RefreshBorderTextureScale(slot.barAuraEffect.solidTextures)
         end
     end
 end

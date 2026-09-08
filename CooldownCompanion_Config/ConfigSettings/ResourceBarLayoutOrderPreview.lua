@@ -4286,6 +4286,14 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         if charges and charges._attached and charges._scale ~= bar:GetEffectiveScale() then
             ApplyPreviewBarState(barInfo, preview.rbSettings)
         end
+        if bar then
+            local auraEffect = bar.barAuraEffect
+            local auraOverlay = bar._ccResourceAuraPreview
+            local maxBorder = bar._ccMWMaxBorder
+            ST.RefreshBorderTextureScale(auraEffect and auraEffect.solidTextures)
+            ST.RefreshBorderTextureScale(auraOverlay and auraOverlay.glow and auraOverlay.glow.edges)
+            ST.RefreshBorderTextureScale(maxBorder and maxBorder.glow and maxBorder.glow.edges)
+        end
     end
 
     -- Identity marks last: they counter-scale against the fit above, so

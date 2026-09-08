@@ -243,7 +243,7 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
     -- Explicit dims when the anchor is a freshly-anchored frame (aura-host
     -- holders, per-segment bounds): its own GetSize would report last
     -- frame's geometry. CC buttons carry explicit sizes and pass nothing.
-    local w, h = width, height
+    local w, h = width or anchorFrame._ccKitRectW, height or anchorFrame._ccKitRectH
     if not w or not h then
         w, h = anchorFrame:GetSize()
     end
@@ -1103,6 +1103,10 @@ local function MakeGlowSetter(cfg)
             return
         end
 
+        -- Bar effects share the structural border bounds, never the inset fill
+        -- or the separate icon. Explicit dimensions also invalidate dash paths.
+        local effectAnchor = containerKey == "barAuraEffect" and (button._barBounds or button) or button
+        local borderMode = ST.GetEffectBorderRenderMode(sz)
         -- On path: compare individual cached fields
         local ca = color[4] or defaultAlpha
         local c2set, c2r, c2g, c2b, c2a = false
@@ -1110,6 +1114,10 @@ local function MakeGlowSetter(cfg)
             c2set, c2r, c2g, c2b, c2a = true, color2[1], color2[2], color2[3], color2[4] or 1
         end
         if button[cActive]
+           and container._effectAnchor == effectAnchor
+           and container._effectWidth == effectAnchor._ccKitRectW
+           and container._effectHeight == effectAnchor._ccKitRectH
+           and container._effectBorderMode == borderMode
            and button[cStyle] == glowStyle
            and button[cR] == color[1] and button[cG] == color[2]
            and button[cB] == color[3] and button[cA] == ca
@@ -1143,6 +1151,10 @@ local function MakeGlowSetter(cfg)
             and button[cStyle] == glowStyle
             and IsGlowAnimationAlive(container)
 
+        container._effectAnchor = effectAnchor
+        container._effectWidth = effectAnchor._ccKitRectW
+        container._effectHeight = effectAnchor._ccKitRectH
+        container._effectBorderMode = borderMode
         -- Update cache
         button[cActive] = true
         button[cStyle] = glowStyle
@@ -1161,12 +1173,12 @@ local function MakeGlowSetter(cfg)
         end
         if cPandemic then button[cPandemic] = pandemicOverride end
 
-        if updateInPlace and TryUpdateGlowStyleInPlace(container, glowStyle, button, color, opts) then
+        if updateInPlace and TryUpdateGlowStyleInPlace(container, glowStyle, effectAnchor, color, opts) then
             return
         end
 
         HideGlowStyles(container)
-        ShowGlowStyle(container, glowStyle, button, color, opts)
+        ShowGlowStyle(container, glowStyle, effectAnchor, color, opts)
     end
 end
 
@@ -1566,12 +1578,15 @@ local function NormalizeKitGlowStyle(style)
     return "pulse"
 end
 
-local function BuildKitGlowRegions(parent, withCdm)
+local function BuildKitGlowRegions(parent, withCdm, auraOwned)
     local host = CreateFrame("Frame", nil, parent)
     host:EnableMouse(false)
     host:SetAlpha(0)
 
-    local glowKit = { host = host, edges = {} }
+    local glowKit = { host = host, edges = {
+        _cdcAuraOwned = auraOwned,
+        _cdcBorderScaleSource = auraOwned and UIParent or nil,
+    } }
     for i = 1, 4 do
         glowKit.edges[i] = host:CreateTexture(nil, "OVERLAY")
     end
@@ -1848,7 +1863,7 @@ local function NormalizeKitBarEffectStyle(style)
 end
 
 -- Resolve the bar-mode barAura* keys and style the kit. Same core renderer;
--- the effect anchors to the whole bar rect (the anchor host button).
+-- the effect follows the outer bar border, independently of the fill mount.
 local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     local kitStyle = "none"
     if enabled and IsBarAuraIndicatorEnabled(styleTable) then
@@ -1859,7 +1874,7 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
-    StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
+    StyleKitGlowCore(glowKit, anchorFrame._barBounds or anchorFrame, kitStyle,
         (styleTable and styleTable.barAuraEffectColor) or DEFAULT_AURA_GLOW_COLOR,
         (styleTable and styleTable.barAuraColorShiftColor) or DEFAULT_WHITE,
         styleTable and styleTable.barAuraEffectSize,

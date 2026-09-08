@@ -386,6 +386,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
 
     local content = preview.content
+    content:SetScale(scale) -- border styling below needs the final effective scale
     content:SetSize(contentWidth, contentHeight)
     content:Show()
     UpdateTextGroupHeader(preview, group, style, headerHeight)
@@ -617,7 +618,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         StopConditionalTicker(preview)
     end
 
-    content:SetScale(scale)
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
