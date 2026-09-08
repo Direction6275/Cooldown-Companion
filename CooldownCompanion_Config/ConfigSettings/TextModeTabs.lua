@@ -307,7 +307,7 @@ local function BuildTextFormatTab(container)
             note:SetText(formatScopeCustomText)
             note:SetColor(FORMAT_SCOPE_GOLD[1], FORMAT_SCOPE_GOLD[2], FORMAT_SCOPE_GOLD[3])
         else
-            note:SetText("Panel setting")
+            note:SetText("Using panel format")
             note:SetColor(FORMAT_SCOPE_GREY[1], FORMAT_SCOPE_GREY[2], FORMAT_SCOPE_GREY[3])
         end
         -- Second half of the reference's lifecycle, same shape as the revert
@@ -327,17 +327,8 @@ local function BuildTextFormatTab(container)
         container:AddChild(note)
     end
 
-    formatTabController = ST._BuildFormatEditorContent(container, {
-        setting = TEXTMODE_FINDER.format and TEXTMODE_FINDER.format.string,
-        target = MakeEditorTarget(),
-        onDirty = function()
-            ScheduleTextFormatTabCommit(style, groupId, entryData)
-        end,
-        onCommit = FlushTextFormatTabCommit,
-    })
-
-    -- The way back to the panel's format sits below the content it replaces,
-    -- compact and flush left on one grammar-height line.
+    -- Keep recovery beside the scope note, immediately above the editor.
+    -- It stays on a compact action line rather than below the insertion tools.
     --
     -- Built ALWAYS under an entry lens, disabled while the entry has no format
     -- of its own, rather than built with the field: the debounced commit that
@@ -387,6 +378,15 @@ local function BuildTextFormatTab(container)
         -- Added last so the List-layout parent measures a populated row.
         container:AddChild(btnRow)
     end
+
+    formatTabController = ST._BuildFormatEditorContent(container, {
+        setting = TEXTMODE_FINDER.format and TEXTMODE_FINDER.format.string,
+        target = MakeEditorTarget(),
+        onDirty = function()
+            ScheduleTextFormatTabCommit(style, groupId, entryData)
+        end,
+        onCommit = FlushTextFormatTabCommit,
+    })
 
     -- Repaints the editor's preview and swatches from the style that just
     -- changed. The flush comes FIRST, before both of the reads below.

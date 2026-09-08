@@ -115,11 +115,39 @@ local function FindEntryForSelection(entries, selection)
     return nil
 end
 
+-- Keep authored names intact; make raw atlas identifiers readable only in
+-- the browser. Saved selections and texture lookup still use the original ID.
+local function GetEntryDisplayName(entry)
+    local name = entry.label or tostring(entry.sourceValue or "Texture")
+    if entry.sourceType ~= "atlas" or strtrim(name) ~= strtrim(tostring(entry.sourceValue)) then
+        return name
+    end
+    name = strtrim(name):gsub("Questturnin", "Quest Turn In")
+        :gsub("(%l)(%u)", "%1 %2"):gsub("[_%-]+", " "):gsub("%s+", " ")
+    return (name:gsub("%S+", function(word)
+        return word:sub(1, 1):upper() .. word:sub(2)
+    end))
+end
+
+local function GetBrowserEntries()
+    local entries = CooldownCompanion:GetAuraTexturePickerEntries("", currentFilter)
+    local query = strtrim(currentSearch):lower()
+    if query == "" then return entries end
+    local matches = {}
+    for _, entry in ipairs(entries) do
+        local searchText = (entry.searchText or entry.label or ""):lower()
+        if searchText:find(query, 1, true) or GetEntryDisplayName(entry):lower():find(query, 1, true) then
+            matches[#matches + 1] = entry
+        end
+    end
+    return matches
+end
+
 local function UpdateSelectionLabel(entry)
     if not chrome then return end
     local selection = entry or currentSelection
     if selection then
-        local name = selection.label or tostring(selection.sourceValue or "Texture")
+        local name = GetEntryDisplayName(selection)
         chrome.selectionLabel:SetText((entry and "Preview: " or "Current: ") .. name)
     else
         chrome.selectionLabel:SetText("No texture selected")
@@ -366,23 +394,23 @@ local function RebuildGrid()
     GameTooltip:Hide()
     ReleaseActiveThumbs()
 
-    local entries = CooldownCompanion:GetAuraTexturePickerEntries(currentSearch, currentFilter)
+    local entries = GetBrowserEntries()
 
     local emptyText
     if #entries == 0 then
         if IsFavoritesFilter(currentFilter) and currentSearch == "" then
-            emptyText = "No favorites yet.\nHover a texture in another category and click its star to add one."
+            emptyText = "No favorites yet."
         elseif IsFavoritesFilter(currentFilter) then
-            emptyText = "No favorite textures match.\nTry another search or choose a different category."
+            emptyText = "No favorite textures match."
         elseif IsSharedMediaFilter(currentFilter) and currentSearch == "" then
-            emptyText = "No SharedMedia textures available.\nChoose another category or install a SharedMedia texture collection."
+            emptyText = "No SharedMedia textures available."
         else
-            emptyText = "No textures match.\nTry another search or choose a different category."
+            emptyText = "No textures match."
         end
     end
     chrome.emptyLabel:SetText(emptyText or "")
     chrome.emptyLabel:SetShown(emptyText ~= nil)
-    chrome.statusLabel:SetText(("%d textures. Hover to preview, click to use."):format(#entries))
+    chrome.statusLabel:SetText((#entries == 1 and "%d texture" or "%d textures"):format(#entries))
     chrome.clearBtn:SetDisabled(currentSelection == nil)
 
     local savedMatch = FindEntryForSelection(entries, currentSelection)
@@ -418,7 +446,11 @@ local function RebuildGrid()
             self._hover:Show()
             UpdateThumbStar(self, true)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(entry.label or "Texture")
+            local name = GetEntryDisplayName(entry)
+            GameTooltip:AddLine(name)
+            if entry.sourceType == "atlas" and name ~= entry.sourceValue then
+                GameTooltip:AddLine(entry.sourceValue, 0.7, 0.7, 0.7, true)
+            end
             if entry.subtitle and entry.subtitle ~= "" then
                 GameTooltip:AddLine(entry.subtitle, 1, 1, 1, true)
             elseif entry.category and entry.category ~= "" then
@@ -472,7 +504,7 @@ local function RebuildGrid()
             if self._mode == "addFavorite" then
                 local saved = CooldownCompanion:SaveFavoriteAuraTexture(thumb._entry)
                 if saved then
-                    chrome.statusLabel:SetText((saved.label or "Texture") .. " added to Favorites.")
+                    chrome.statusLabel:SetText(GetEntryDisplayName(saved) .. " added to Favorites.")
                 end
             elseif self._mode == "removeFavorite" then
                 CooldownCompanion:RemoveFavoriteAuraTexture(thumb._entry)
@@ -623,9 +655,17 @@ local function BuildChrome(host)
     searchBox.frame:SetParent(host)
     searchBox.frame:ClearAllPoints()
     searchBox.frame:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
-    searchBox.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
+    searchBox.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET - 22, -CONTENT_INSET)
     searchBox.frame:Show()
     chrome.searchBox = searchBox
+
+    chrome.help = ST._CreateInfoButton(host, searchBox.frame, "LEFT", "RIGHT", 4, 0, {
+        "Texture Browser",
+        { "Hover a texture to preview it. Click to use it and return to settings. Back to Settings keeps your current texture.", 1, 1, 1, true },
+        { "Click a texture's star to add or remove it from Favorites.", 1, 1, 1, true },
+        { "Search by name or texture identifier. If no textures match, try another search or category.", 1, 1, 1, true },
+        { "SharedMedia textures come from installed SharedMedia texture collections.", 1, 1, 1, true },
+    })
 
     if searchBox.editbox.Instructions then searchBox.editbox.Instructions:Hide() end
     -- Keep the placeholder above skins' editbox backdrops without attaching

@@ -784,13 +784,16 @@ local function BuildAppearanceTab(container)
     end
 
     if group.displayMode == "trigger" then
-        AddTriggerDisplayTypeDropdown(container, group)
+        local displayAction = AddTriggerDisplayTypeDropdown(container, group)
         local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
         if displayType == "icon" then
             BuildTriggerIconAppearanceTab(container, group)
             return
         elseif displayType == "text" then
-            BuildTriggerTextAppearanceTab(container, group)
+            local textEditor = BuildTriggerTextAppearanceTab(container, group)
+            if displayAction then
+                displayAction:SetCallback("OnClick", function() textEditor:SetFocus() end)
+            end
             return
         end
     end
