@@ -825,42 +825,25 @@ local function IsEntrySelected(index)
     return CS.selectedButton == index or CS.selectedButtons[index] == true
 end
 
--- Glow-family previews draw at the slot's edge, exactly where the blue
--- selection ring lives, so the two fight for the same pixels. While one
--- is running on an entry its ring stands down for the duration - the
--- breadcrumb, the tab row and the preview chooser all still say which
--- entry is being edited. Conditional state previews (swipes, texts,
--- tints) draw on the icon face and are left alone.
-local SELECTION_YIELDING_PREVIEW_FLAGS = {
-    "_procGlowPreview",
-    "_auraGlowPreview",
-    "_pandemicPreview",
-    "_readyGlowPreview",
-    "_barAuraEffectPreview",
-    "_keyPressHighlightPreview",
-}
-
-local function IsGlowPreviewActiveOnEntry(panelId, index)
-    if not (panelId and index and CooldownCompanion.IsPreviewFlagActive) then
-        return false
-    end
-    for _, flag in ipairs(SELECTION_YIELDING_PREVIEW_FLAGS) do
-        if CooldownCompanion:IsPreviewFlagActive(panelId, index, flag) then
-            return true
-        end
-    end
-    return false
-end
-
-local function ApplySelectionVisuals(slot, index, suppress)
-    local isSelected = IsEntrySelected(index)
-    if suppress or not isSelected then
+-- Selection stays visible independently of the effect being previewed.
+local function ApplySelectionVisuals(slot, index, isSelected)
+    if isSelected == nil then isSelected = IsEntrySelected(index) end
+    if not isSelected then
         slot.selectedHighlight:Hide()
         return
     end
     slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-    ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
-        PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+    -- The glow setters describe what this mirror slot actually renders.
+    -- Yield only the outline; the selection wash remains visible underneath.
+    local borderPreviewActive = slot._procGlowActive or slot._auraGlowActive
+        or slot._readyGlowActive or slot._barAuraEffectActive
+        or (slot._keyPressHighlightActive and slot._kphStyle ~= "overlay")
+    if borderPreviewActive then
+        ST.HideBorderTextures(slot.selectedHighlight.ringTextures)
+    else
+        ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
+            PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
+    end
     slot.selectedHighlight:Show()
 end
 
@@ -1575,7 +1558,6 @@ PP.STRIP_ICON_SIZE = STRIP_ICON_SIZE
 PP.STRIP_PER_ROW = STRIP_PER_ROW
 PP.STRIP_SPACING = STRIP_SPACING
 PP.AcquireSlot = AcquireSlot
-PP.IsGlowPreviewActiveOnEntry = IsGlowPreviewActiveOnEntry
 PP.PANEL_PREVIEW_DISABLED_ALPHA = PANEL_PREVIEW_DISABLED_ALPHA
 PP.ApplySlotBadges = ApplySlotBadges
 PP.ApplySelectionVisuals = ApplySelectionVisuals

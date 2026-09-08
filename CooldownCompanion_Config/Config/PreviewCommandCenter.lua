@@ -100,23 +100,6 @@ local function FlagPreview(flag, buttonSetter, groupSetter)
     }
 end
 
--- Previews with no per-entry setter (key press highlight is driven by the
--- idle enrollment driver, panel-wide only). Selection does not narrow
--- these; they always run on the whole panel.
-local function GroupOnlyFlagPreview(flag, groupSetter)
-    return {
-        -- Panel-wide by nature, so it never follows the selection.
-        groupScoped = true,
-        IsActive = function(panelId)
-            return CooldownCompanion:IsPreviewFlagActive(panelId, nil, flag) == true
-        end,
-        SetActive = function(panelId, _, show)
-            local setter = CooldownCompanion[groupSetter]
-            if setter then setter(CooldownCompanion, panelId, show) end
-        end,
-    }
-end
-
 local function ConditionalPreview(kind)
     return {
         IsActive = function(panelId, buttonIndex)
@@ -665,7 +648,7 @@ local CONTROLS = {
         section = "keyPressHighlight",
         glowStyleKey = "keyPressHighlightStyle",
         settings = { tab = "effects", key = "keyPressHighlight" },
-        preview = GroupOnlyFlagPreview("_keyPressHighlightPreview", "SetGroupKeyPressHighlightPreview"),
+        preview = FlagPreview("_keyPressHighlightPreview", "SetButtonKeyPressHighlightPreview", "SetGroupKeyPressHighlightPreview"),
     },
     {
         id = "barActiveAura",
@@ -1973,9 +1956,8 @@ end
 -- same rule read the other way. If the preview cannot apply to the new
 -- target (aura glow, and the new entry tracks no aura) it simply stops.
 --
--- Safe to re-scope from here: this runs at the top of the mirror's build
--- closure, so the slots are laid out after it and read the new state -
--- no extra refresh, no re-entrancy.
+-- Runs before either a full build or a selection-only mirror refresh.
+-- Re-scoping must invalidate the slot visuals for the latter path too.
 ------------------------------------------------------------------------
 
 local function FindControlById(controlId)
@@ -2030,6 +2012,7 @@ local function MigrateRunningPreview(panelId, buttonIndex, applicable)
     if IsControlApplicable(control, applicable) then
         control.preview.SetActive(panelId, buttonIndex, true)
     end
+    CS.panelPreviewVisualsNeedReconcile = true
 end
 
 ------------------------------------------------------------------------

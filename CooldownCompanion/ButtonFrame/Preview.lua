@@ -460,6 +460,10 @@ end
 -- Key Press Highlight Preview
 --------------------------------------------------------------------------------
 
+function CooldownCompanion:SetButtonKeyPressHighlightPreview(groupId, buttonIndex, show)
+    SetButtonPreview(self, groupId, buttonIndex, show, "_keyPressHighlightPreview")
+end
+
 function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
     SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview")
 end

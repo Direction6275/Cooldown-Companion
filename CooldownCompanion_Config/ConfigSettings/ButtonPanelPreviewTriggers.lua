@@ -40,9 +40,7 @@ local GetHostFitScale = PP.GetHostFitScale
 local AcquireSlot = PP.AcquireSlot
 local ApplyPreviewSlotGeometry = PP.ApplyPreviewSlotGeometry
 local DisableReadOnlySlotInteraction = PP.DisableReadOnlySlotInteraction
-local IsGlowPreviewActiveOnEntry = PP.IsGlowPreviewActiveOnEntry
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
-local PANEL_PREVIEW_RING_COLOR = PP.PANEL_PREVIEW_RING_COLOR
 local CollectEntryStatus = ST._CollectEntryStatus
 local PANEL_PREVIEW_DISABLED_ALPHA = PP.PANEL_PREVIEW_DISABLED_ALPHA
 local ApplySlotBadges = PP.ApplySlotBadges
@@ -158,13 +156,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
             -- Recycled slots may carry a drag handler from a grid render
             slot:SetScript("OnMouseDown", nil)
-            if CS.selectedRotationAssistantEntry == true
-                and not IsGlowPreviewActiveOnEntry(panelId, 1) then
-                slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-                ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
-                    PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
-                slot.selectedHighlight:Show()
-            end
+            ApplySelectionVisuals(slot, 1, CS.selectedRotationAssistantEntry == true)
             slot:SetScript("OnMouseUp", function(self, mouseButton)
                 if CS.dragState and CS.dragState.phase == "active" then return end
                 if GetCursorInfo() then return end

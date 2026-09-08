@@ -45,10 +45,7 @@ local ApplyBarSlotPreviewVisibility = PP.ApplyBarSlotPreviewVisibility
 local ApplySlotBadges = PP.ApplySlotBadges
 local DisableReadOnlySlotInteraction = PP.DisableReadOnlySlotInteraction
 local ApplySelectionVisuals = PP.ApplySelectionVisuals
-local IsGlowPreviewActiveOnEntry = PP.IsGlowPreviewActiveOnEntry
 local CopyMode = PP.CopyMode
-local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
-local PANEL_PREVIEW_RING_COLOR = PP.PANEL_PREVIEW_RING_COLOR
 local RefreshBarSlotWorkspacePresentation = PP.RefreshBarSlotWorkspacePresentation
 local GetPanelPreviewNaturalSize = PP.GetPanelPreviewNaturalSize
 local ResetBarSlotWorkspaceState = PP.ResetBarSlotWorkspaceState
@@ -582,9 +579,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         else
             ApplySlotBadges(slot, status, scale,
                 isBarMode and barVisibility.exactPreview == true)
-            ApplySelectionVisuals(slot, index,
-                (isBarMode and barVisibility.exactPreview == true)
-                    or IsGlowPreviewActiveOnEntry(panelId, index))
+            ApplySelectionVisuals(slot, index)
             CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
             -- Pooled slots: written every build so a slot leaving a filtered
             -- build does not keep advertising the pause.
@@ -625,18 +620,15 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
 end
 
 -- Entry selection normally does not change saved panel geometry or mirrored
--- visuals. The session filter is the exception: selection determines whether
--- a filtered entry remains in the visible subset, so that path
--- falls back to a full mirror rebuild. Otherwise update the existing selection
--- rings (and bar ghost exposure) in place.
+-- visuals. Filtering and bar preview state can change the presentation, so
+-- those paths fall back to a full mirror rebuild. Otherwise update selection
+-- rings and reconcile any migrated icon/text previews in place.
 function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     local preview = host and host._cdcPanelPreview
-    if not (preview and preview.panelId == panelId and preview.readOnly ~= true) then
+    if not (preview and preview.panelId == panelId and preview.readOnly ~= true
+        and preview.root:IsShown()) then
         return false
     end
-
-    local reconcileVisuals = CS.panelPreviewVisualsNeedReconcile == true
-    CS.panelPreviewVisualsNeedReconcile = nil
 
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
     if not group then
@@ -658,11 +650,22 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
         return false
     end
 
+    -- Bar previews also change visibility, badges, and tooltip state. Let
+    -- the build recompute that presentation when a running preview moves.
+    if group.displayMode == "bars" and CS.panelPreviewVisualsNeedReconcile then
+        return false
+    end
+
+    -- Only the visible mirror may consume this ticket. The plain host can
+    -- retain a released mirror while the unified host owns the visible slots.
+    local reconcileVisuals = CS.panelPreviewVisualsNeedReconcile == true
+
     if CooldownCompanion:IsRotationAssistantGroup(group) then
         local slot = slots[1]
         if not slot then
             return false
         end
+        CS.panelPreviewVisualsNeedReconcile = nil
         local buttonData = slot._cdcPreviewButtonData
         if buttonData and reconcileVisuals then
             local status = CollectEntryStatus(buttonData, group)
@@ -675,21 +678,13 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
                 EnsureConditionalTicker(preview)
             end
         end
-        if CS.selectedRotationAssistantEntry == true
-            and not IsGlowPreviewActiveOnEntry(panelId, 1) then
-            slot.selectedHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-            ST.ApplyBorderTextures(slot.selectedHighlight.ringTextures, slot.selectedHighlight,
-                PANEL_PREVIEW_RING_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
-            slot.selectedHighlight:Show()
-        else
-            slot.selectedHighlight:Hide()
-        end
+        ApplySelectionVisuals(slot, 1, CS.selectedRotationAssistantEntry == true)
         return true
     end
 
-    local isBarMode = group.displayMode == "bars"
     local isTextMode = group.displayMode == "text"
-    local isGridPanel = isBarMode or isTextMode or IsIconModePanel(group)
+    local isGridPanel = isTextMode or IsIconModePanel(group)
+    CS.panelPreviewVisualsNeedReconcile = nil
     if reconcileVisuals then
         StopConditionalTicker(preview)
     end
@@ -697,23 +692,11 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     for index, slot in pairs(slots) do
         local buttonData = group.buttons and group.buttons[index]
         if reconcileVisuals and isGridPanel and buttonData then
-            local status = isBarMode and CollectBarEntryStatus(buttonData, group)
-                or CollectEntryStatus(buttonData, group)
+            local status = CollectEntryStatus(buttonData, group)
             if slot.icon then
                 slot.icon:SetDesaturated(not status.usable)
             end
-            if isBarMode then
-                local effectiveStyle = group.style or {}
-                if CooldownCompanion.GetEffectiveStyle then
-                    effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData)
-                        or effectiveStyle
-                end
-                local barPreviewState = GetStoredBarPreviewState(panelId, index)
-                ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, true,
-                    effectiveStyle, barPreviewState)
-                ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
-                    effectiveStyle, barPreviewState)
-            elseif isTextMode then
+            if isTextMode then
                 ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
             else
                 ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
@@ -724,10 +707,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
         if slot._cdcBarPreviewVisibility then
             RefreshBarSlotWorkspacePresentation(slot)
         end
-        local exactBarPreview = slot._cdcBarPreviewVisibility
-            and slot._cdcBarPreviewVisibility.exactPreview == true
-        ApplySelectionVisuals(slot, index,
-            exactBarPreview or IsGlowPreviewActiveOnEntry(panelId, index))
+        ApplySelectionVisuals(slot, index)
         CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
     end
     if reconcileVisuals and anyAnimated then
