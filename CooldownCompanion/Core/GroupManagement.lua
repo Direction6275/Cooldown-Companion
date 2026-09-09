@@ -2213,19 +2213,6 @@ function CooldownCompanion:CanPlayerEverCastSpell(spellID)
     end) == true, true
 end
 
--- Group-scoped aura tracking is owned by the spell entry's castable identity.
--- Standalone aura entries have no separate castable identity, so their primary
--- aura remains the ownership probe. The castability primitive normalizes both.
-function CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-    if type(buttonData) ~= "table" then return false, false end
-
-    if buttonData.type == "spell" and buttonData.addedAs ~= "aura" then
-        return self:CanPlayerEverCastSpell(buttonData.id)
-    end
-    if not primaryAuraSpellID then return false, false end
-    return self:CanPlayerEverCastSpell(primaryAuraSpellID)
-end
-
 -- Pet scope can follow a pet self-buff, so a standalone Aura entry does not
 -- need a separate castable identity. Spell entries still use their castable
 -- spell as the ownership proof that keeps their Aura override meaningful.
@@ -2234,7 +2221,9 @@ function CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellI
     if buttonData.type == "spell" and buttonData.addedAs == "aura" then
         return true
     end
-    return self:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) == true
+    local spellID = buttonData.type == "spell" and buttonData.id or primaryAuraSpellID
+    if not spellID then return false end
+    return self:CanPlayerEverCastSpell(spellID) == true
 end
 
 -- Search the off-spec spellbook for a spell by name or ID.

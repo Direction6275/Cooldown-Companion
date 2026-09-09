@@ -2004,20 +2004,10 @@ local function MigrateAuraTrackingRebuild(self, profile)
     end
 end
 
--- Clear group scope only when the primary aura proves target polarity or the
--- corrected castable identity proves the aura foreign. The second predicate
--- result distinguishes a known foreign spell from spell data that is not
--- available yet; indeterminate entries remain untouched.
+-- Clear group scope only for confirmed target auras. Castability is not
+-- required: the runtime independently filters group auras to the player's casts.
 local function MigrateAuraGroupScopeIdentity(self, profile)
     if type(profile) ~= "table" or profile._cdcAuraGroupScopeMigrated then return end
-
-    -- Castability clears additionally require a readable talent config:
-    -- WalkTalentTree matches nothing when the active config is unavailable
-    -- (early login), which would read as determinately foreign and wrongly
-    -- clear a valid flag on an unlearned-talent entry. Polarity clears do not
-    -- depend on talents; the sentinel only stamps once talents were readable
-    -- so a too-early run retries on a later login.
-    local talentDataReady = C_ClassTalents.GetActiveConfigID() ~= nil
 
     local groups = profile.groups
     if type(groups) == "table" then
@@ -2029,20 +2019,13 @@ local function MigrateAuraGroupScopeIdentity(self, profile)
                         local primaryAuraSpellID = self:ResolveAuraSpellID(buttonData)
                         -- A valid user unit override IS the effective unit
                         -- (it exists for misclassified auras); the classifier
-                        -- is the fallback, and the ownership checks below run
-                        -- against the effective unit either way.
+                        -- is the fallback for the effective unit.
                         local unitOverride = buttonData.auraUnitOverride
                         local unit = (unitOverride == "player" or unitOverride == "target")
                             and unitOverride
                             or ClassifyAuraSpellUnit(primaryAuraSpellID)
                         if unit == "target" then
                             buttonData.auraTrackGroup = nil
-                        elseif unit == "player" and talentDataReady then
-                            local ownsAura, ownershipKnown =
-                                self:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-                            if ownershipKnown and not ownsAura then
-                                buttonData.auraTrackGroup = nil
-                            end
                         end
                     end
                 end
@@ -2050,9 +2033,7 @@ local function MigrateAuraGroupScopeIdentity(self, profile)
         end
     end
 
-    if talentDataReady then
-        profile._cdcAuraGroupScopeMigrated = true
-    end
+    profile._cdcAuraGroupScopeMigrated = true
 end
 
 -- Aura glow rebuild migration (Phase 4): the aura glow renders on the aura
