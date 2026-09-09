@@ -1502,6 +1502,7 @@ local function AddDropdownItemTooltips(dropdown, tooltipByValue)
         end
     end
 end
+ST._AddDropdownItemTooltips = AddDropdownItemTooltips
 
 -- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
 -- pre-redesign full-width stock Dropdown had no call sites left after the
@@ -1851,3 +1852,15 @@ ST._AddBorderRenderModeDropdown = AddBorderRenderModeDropdown
 SH.ADVANCED_TOGGLE_ATLAS = ADVANCED_TOGGLE_ATLAS
 SH.ADVANCED_TOGGLE_IDLE_COLOR = ADVANCED_TOGGLE_IDLE_COLOR
 SH.ADVANCED_TOGGLE_OPEN_TOOLTIP = ADVANCED_TOGGLE_OPEN_TOOLTIP
+
+-- Shared help for entry and custom-bar Tracked on menus.
+ST._AuraScopeTooltips = {
+    automatic = { "Automatic", "Uses the detected aura type: buffs on you, debuffs on your target." },
+    player = { "You", "Tracks the aura on you. Use this when detection incorrectly treats your buff as a debuff." },
+    target = { "Target", "Tracks your debuff on your current target. Use this when detection picks the wrong unit." },
+    group = {
+        "You and your group",
+        "Only follows auras sourced from you, on you and your party or raid members. Other players' casts are excluded.\n\nBest for one recipient at a time; multiple recipients can overlap. Aura sounds are disabled while grouped. Members joining during combat are included after combat.",
+    },
+    pet = { "Your pet", "Tracks buffs on your summoned pet, including buffs you apply and buffs the pet gains on its own." },
+}

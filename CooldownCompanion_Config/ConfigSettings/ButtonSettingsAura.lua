@@ -322,28 +322,6 @@ local AURA_ID_OVERRIDE_TOOLTIP = {
     {"Use when detection picks the wrong aura for this entry. Leave empty for automatic.", 1, 1, 1, true},
 }
 
--- The Tracked on row's "?" is assembled per entry: the unit sentence always,
--- then these blocks for whichever of the two wider scopes the entry offers.
-local GROUP_SCOPE_TOOLTIP_LINES = {
-    {" ", 1, 1, 1, true},
-    {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Group members only. The game gives the addon no way to track buffs on friendly players outside your group.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays, one per person.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Aura sounds only work while you're ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Group size is read out of combat, so someone joining mid-fight is picked up at the next quiet moment.", 1, 1, 1, true},
-}
-
-local PET_SCOPE_TOOLTIP_LINES = {
-    {" ", 1, 1, 1, true},
-    {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Covers buffs you cast on the pet and buffs the pet gains on its own.", 1, 1, 1, true},
-}
-
 local BAR_SHOWS_STACKS_TOOLTIP = {
     "Bar Shows Stacks",
     {"The bar fills by stack count instead of draining with time. Blizzard drives the fill, and the maximum comes from the game's spell data.", 1, 1, 1, true},
@@ -734,21 +712,11 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             RefreshAuraConfig()
         end,
     })
-    local scopeInfo = {
+    ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
+    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracked On",
-        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
-    }
-    if offerGroup then
-        for _, line in ipairs(GROUP_SCOPE_TOOLTIP_LINES) do
-            scopeInfo[#scopeInfo + 1] = line
-        end
-    end
-    if offerPet then
-        for _, line in ipairs(PET_SCOPE_TOOLTIP_LINES) do
-            scopeInfo[#scopeInfo + 1] = line
-        end
-    end
-    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, scopeInfo, infoButtons))
+        { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
+    }, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind
     -- (owner ruling 2026-08-28): automatic detection resolves the entry's

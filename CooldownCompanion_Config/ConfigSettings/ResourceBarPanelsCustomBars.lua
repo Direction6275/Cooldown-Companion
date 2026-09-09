@@ -1647,17 +1647,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
+    ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
     AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracked On",
-        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Aura sounds only play while you are ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+        { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
     }, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind
