@@ -1494,29 +1494,15 @@ local function SyncCustomBarDerivedAuraUnit(cab)
         cab.auraUnitExplicit = nil
         -- Drop scope flags the runtime would ignore (panel parity:
         -- SyncDerivedAuraUnit). Debuffs resolve to your target and ignore both.
-        -- Group scope still requires ownership through the bar's castable spell;
-        -- pet scope also accepts standalone Aura bars because they may describe
+        -- Pet scope also accepts standalone Aura bars because they may describe
         -- a pet self-buff with no separate cast entry.
         local barSpellID = tonumber(cab.spellID)
         if unit == "target" then
             cab.auraTrackGroup = nil
             cab.auraTrackPet = nil
         else
-            if CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) ~= true then
-                cab.auraTrackGroup = nil
-            end
             if not CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID) then
                 cab.auraTrackPet = nil
-            end
-            -- Same classifier-polarity veto as the section's groupVetoed:
-            -- inert under a valid unit override.
-            if cab.auraTrackGroup == true and IsSpellCustomBarConfig(cab)
-                and not GetCustomBarAuraUnitOverride(cab)
-                and #GetAuraCandidateList(cab) > 0 then
-                local baseUnit = ClassifyAuraSpellUnit(barSpellID)
-                if baseUnit and baseUnit ~= unit then
-                    cab.auraTrackGroup = nil
-                end
             end
         end
     end
@@ -1597,27 +1583,12 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
         cab.auraTrackPet = nil
     end
 
-    -- Scope eligibility, panel parity (ButtonSettingsAura): group requires a
-    -- confirmed owned buff and additionally loses to an opposite-polarity Aura
-    -- list on spell bars. Pet requires a confirmed buff plus the CORE pet rule,
-    -- which admits standalone Aura bars, and sticky pet-class capability. A
-    -- stored flag always keeps its clearing path regardless of gates.
-    local coreOwnsForGroupScope = confirmedUnit ~= nil and isBuff
-        and CooldownCompanion:EntryOwnsAuraForGroupScope(probe, barSpellID) == true
+    -- Group scope accepts any confirmed helpful aura. Pet eligibility retains
+    -- its separate ownership and character-capability requirements.
     local coreAllowsPetScope = confirmedUnit ~= nil and isBuff
         and CooldownCompanion:EntryCanUsePetAuraScope(probe, barSpellID)
-    -- The opposite-polarity veto judges by classifier polarity, which a
-    -- valid unit override overrules by fiat — skip only the veto under an
-    -- override; castability/ownership checks above still apply.
-    local groupVetoed = false
-    if isSpellBar and not unitOverride and #GetAuraCandidateList(cab) > 0 then
-        local baseUnit = ClassifyAuraSpellUnit(tonumber(cab.spellID))
-        if baseUnit and confirmedUnit and baseUnit ~= confirmedUnit then
-            groupVetoed = true
-        end
-    end
     local canPets = ST._CharacterCanCommandPets
-    local canTrackGroup = (coreOwnsForGroupScope and not groupVetoed)
+    local canTrackGroup = (confirmedUnit ~= nil and isBuff)
         or cab.auraTrackGroup == true
     local canTrackPet = (coreAllowsPetScope and canPets and canPets() == true)
         or cab.auraTrackPet == true
@@ -1676,17 +1647,10 @@ local function BuildCustomBarAuraTrackingSection(container, cab, infoButtons, se
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
+    ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
     AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracked On",
-        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Aura sounds only play while you are ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
+        { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
     }, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind

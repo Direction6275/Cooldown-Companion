@@ -450,21 +450,6 @@ function CooldownCompanion:GetLinkedTotemSpellID(spellID)
     return partner
 end
 
--- Read-only, for config surfaces: would this spell's active phase be a
--- summon duration read from the totem slot? True on a learned link or a
--- Cooldown Manager Tracked BAR row -- the same evidence the combat gate
--- accepts, minus buff rows, which also hold ordinary self-buffs that never
--- occupy a slot (Demonic Core) and must not be explained as summons.
-function CooldownCompanion:IsTotemLaneSummonDisplaySpell(spellID)
-    if type(spellID) ~= "number" then
-        return false
-    end
-    if self:GetLinkedTotemSpellID(spellID) then
-        return true
-    end
-    return GetSummonCandidateKind(self, spellID) == "bar"
-end
-
 -- Totem phase eligibility (one owner, shared by the render lane and tests).
 -- The phase is opt-in through the entry's own "Track an Aura" toggle. Aura-
 -- added entries are stamped isPassive by the add path, and that flag gates

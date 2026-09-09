@@ -170,26 +170,6 @@ local function GetOverrideSurfaceRejectMessage(group, buttonData)
     return "This section tracks target debuffs. Your own buff auras need a section of their own."
 end
 
-local function EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-    -- The opposite-polarity veto below judges by classifier polarity, which
-    -- a valid unit override overrules by fiat — skip only that veto under
-    -- an override; the core castability/ownership checks still apply.
-    if type(buttonData) == "table"
-        and buttonData.addedAs ~= "aura"
-        and not GetAuraUnitOverride(buttonData)
-        and #GetAuraCandidateList(buttonData) > 0 then
-        local baseUnit = ClassifyAuraSpellUnit(buttonData.id)
-        local explicitUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
-        if baseUnit and explicitUnit and baseUnit ~= explicitUnit then
-            -- The base spell remains the ownership proof for same-polarity
-            -- applied Aura IDs. An opposite-polarity Aura is an independent
-            -- override, so the base spell cannot make it group-trackable.
-            return false, true
-        end
-    end
-    return CooldownCompanion:EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
-end
-
 -- Store the derived unit whenever tracking config changes, so the runtime's
 -- fallback (uncached spells at login) starts from the right value.
 local function SyncDerivedAuraUnit(buttonData)
@@ -199,17 +179,13 @@ local function SyncDerivedAuraUnit(buttonData)
     local unit = GetAuraUnitOverride(buttonData) or ClassifyAuraSpellUnit(primaryAuraSpellID)
     if unit then
         buttonData.auraUnit = unit
-        -- Group scope is limited to buffs the player can cast: debuffs resolve
-        -- to your target and ignore the flag, while foreign buffs are own-cast
-        -- filtered on every unit, including you. Drop a stored setting that
-        -- would silently do nothing or make the entry match nowhere.
-        if unit == "target" or not EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID) then
+        -- Only helpful auras support group scope; source filtering happens at bind time.
+        if unit == "target" then
             buttonData.auraTrackGroup = nil
         end
         -- Pet scope has its own CORE eligibility rule, not the wrapper above:
         -- standalone Aura entries may follow pet self-buffs without a separate
-        -- castable spell, while the wrapper's opposite-polarity veto remains
-        -- group-only. Spell entries still retain their castable-identity proof.
+        -- castable spell. Spell entries retain their castable-identity proof.
         if unit == "target"
             or not CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID) then
             buttonData.auraTrackPet = nil
@@ -310,7 +286,7 @@ local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. A buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
+    {"Buffs are tracked on you. Group tracking follows only buffs applied by you across you and your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically. If the game's data gets one wrong, set Tracked on yourself.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
@@ -332,7 +308,7 @@ local TEXT_AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
     {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. A buff tied to a helpful spell you can cast can also follow your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. A buff overriding a harmful spell stays on you. Your own debuffs are tracked on your target.", 1, 1, 1, true},
+    {"Buffs are tracked on you. Group tracking follows only buffs applied by you across you and your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"The format decides what shows: {aura} for remaining time, {aurastacks} for the count, and text inside {?aura}...{/aura} while the aura is active. See the Format tab.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
@@ -344,28 +320,6 @@ local AURA_ID_OVERRIDE_TOOLTIP = {
     {"Replaces the automatically detected aura with exactly this ID. Auras added below still track alongside it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Use when detection picks the wrong aura for this entry. Leave empty for automatic.", 1, 1, 1, true},
-}
-
--- The Tracked on row's "?" is assembled per entry: the unit sentence always,
--- then these blocks for whichever of the two wider scopes the entry offers.
-local GROUP_SCOPE_TOOLTIP_LINES = {
-    {" ", 1, 1, 1, true},
-    {"You and your group follows the buff onto anyone in your party or raid, like a healer's Lifebloom on a tank.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Group members only. The game gives the addon no way to track buffs on friendly players outside your group.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Best for buffs that sit on one person at a time. The addon is never told who holds the aura, so a buff on several people draws overlapping displays, one per person.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Aura sounds only work while you're ungrouped. In a group they fire per person, so moving the buff would sound like it dropped.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Group size is read out of combat, so someone joining mid-fight is picked up at the next quiet moment.", 1, 1, 1, true},
-}
-
-local PET_SCOPE_TOOLTIP_LINES = {
-    {" ", 1, 1, 1, true},
-    {"Your pet tracks the buff on your summoned pet instead of on you, like Dark Transformation on a ghoul.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Covers buffs you cast on the pet and buffs the pet gains on its own.", 1, 1, 1, true},
 }
 
 local BAR_SHOWS_STACKS_TOOLTIP = {
@@ -672,12 +626,9 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- resolves to the target unconditionally and the setting does nothing.
     -- A user override IS confirmation: it decides the bind unit outright.
     local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
-    -- Castable buffs only. Blizzard permits spell-ID matching for helpful auras
-    -- across the group, but group scope applies its own-cast filter on every
-    -- unit, including you. A foreign buff would never match anywhere; debuffs
-    -- resolve to your target and ignore the flag, so offering either would lie.
+    -- Any confirmed helpful aura may use group scope. The runtime matches
+    -- only auras applied by the player, including on the player themselves.
     local canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
-        and EntryOwnsAuraForGroupScope(buttonData, primaryAuraSpellID)
     -- A stored flag offers the choice regardless of the gate (same escape the
     -- pet side and the custom bar twin have): the runtime binds group tokens
     -- off the flag alone, so the row has to state it and give it a way out.
@@ -761,21 +712,11 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             RefreshAuraConfig()
         end,
     })
-    local scopeInfo = {
+    ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
+    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
         "Tracked On",
-        {"Automatic follows the detected buff or debuff. You and Target force it when the game's data gets one wrong.", 1, 1, 1, true},
-    }
-    if offerGroup then
-        for _, line in ipairs(GROUP_SCOPE_TOOLTIP_LINES) do
-            scopeInfo[#scopeInfo + 1] = line
-        end
-    end
-    if offerPet then
-        for _, line in ipairs(PET_SCOPE_TOOLTIP_LINES) do
-            scopeInfo[#scopeInfo + 1] = line
-        end
-    end
-    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, scopeInfo, infoButtons))
+        { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
+    }, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind
     -- (owner ruling 2026-08-28): automatic detection resolves the entry's
@@ -944,29 +885,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         controlText = #trackedAuraIDParts > 0
             and table.concat(trackedAuraIDParts, ", ") or "None",
     })
-    -- A guardian summon (Call Dreadstalkers and similar) applies no aura:
-    -- the ID the automatic machinery names for it is the totem-slot identity,
-    -- and the entry's active phase is the summon's remaining duration read
-    -- from that slot. Say so, because the ID above never shows up in the
-    -- buff frame and looks like a miss. Same evidence the lane itself
-    -- accepts, so a summon only ever cast in combat is explained too.
-    if not isTexturePanel then
-        local isSummonDisplay = CooldownCompanion:IsTotemLaneSummonDisplaySpell(buttonData.id)
-            or (primaryAuraSpellID
-                and CooldownCompanion:IsTotemLaneSummonDisplaySpell(primaryAuraSpellID))
-        if isSummonDisplay then
-            -- Text panels sit outside the totem lane (CooldownUpdate.lua,
-            -- owner scope ruling): the summon's duration is never read
-            -- there, so the row says so instead of promising it.
-            AddLabelRow(auraLeft, {
-                label = "Shown As",
-                indent = not isStandalone,
-                controlText = isTextPanel and "Not available on text panels"
-                    or "Summon duration from the totem slot",
-            })
-        end
-    end
-
     -- Text panels stop here. Every row below configures a shell, bar fill,
     -- stack text or icon the entry does not have; what the aura shows is
     -- decided by the format's tokens (the heading's "?" points there).
