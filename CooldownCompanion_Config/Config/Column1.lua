@@ -280,7 +280,7 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
         meta:SetSize(TREE.PANEL_META_WIDTH, 18)
         meta.status = CreateFrame("Button", nil, meta)
         meta.status:SetSize(14, 14)
-        meta.status:SetPoint("RIGHT", meta, "RIGHT", -22, 0)
+        meta.status:SetPoint("CENTER", meta, "RIGHT", -29, 0)
         meta.status:SetPropagateMouseMotion(false)
         meta.status.icon = meta.status:CreateTexture(nil, "OVERLAY")
         meta.status.icon:SetAllPoints()
@@ -305,6 +305,7 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
     meta.count:SetText(tostring(entryCount or 0))
     meta.count:SetTextColor(0.52, 0.49, 0.43, 1)
     meta.status:SetScript("OnEnter", nil)
+    meta.status:SetSize(panelDisabled and 24 or 14, panelDisabled and 24 or 14)
     if panelDisabled then
         meta.status.icon:SetAtlas("GM-icon-visibleDis-pressed", false)
         meta.status.icon:SetVertexColor(0.65, 0.65, 0.65, 1)
@@ -327,8 +328,8 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
         meta.status:Hide()
     end
     meta:Show()
-    -- Reserve the warning slot only while its badge is visible.
-    return (panelDisabled or hasWarning) and 36 or 18
+    -- Reserve the status slot only while its badge is visible.
+    return panelDisabled and 41 or (hasWarning and 36 or 18)
 end
 
 local function ConfigureGroupHeaderLayout(entry, rightReserve, groupName, countLabel)

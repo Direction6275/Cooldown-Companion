@@ -29,6 +29,9 @@ local OUTER_PADDING = 8
 local TILE_GAP = 8
 local TILE_INSET = 4
 local LABEL_HEIGHT = 18
+local STATUS_BADGE_SIZE = 24
+local STATUS_BADGE_GAP = 4
+local STATUS_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
 local MIN_ROW_HEIGHT = 84
 local SCROLL_STEP = 64
 local SCROLL_RESERVE = 8
@@ -238,6 +241,41 @@ local function BuildRowLayouts(records, columns, layoutWidth, lastRowWidth)
     return rows
 end
 
+local function LayoutTileHeader(record, showLabel)
+    local tile = record.tile
+    local label = tile.label
+    local disabled = record.disabledReason ~= nil
+    local statusReserve = disabled and (STATUS_BADGE_SIZE + STATUS_BADGE_GAP) or 0
+    tile.statusBadge:SetShown(disabled)
+    tile.statusBadge:ClearAllPoints()
+    tile.statusBadge:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -RESOURCE_BADGE_INSET,
+        -(RESOURCE_BADGE_INSET + (record.hasAttachedResources
+            and (RESOURCE_BADGE_SIZE - STATUS_BADGE_SIZE) / 2 or 0)))
+    tile.resourceBadge:ClearAllPoints()
+    tile.resourceBadge:SetPoint("TOPRIGHT", tile, "TOPRIGHT",
+        -(RESOURCE_BADGE_INSET + statusReserve), -RESOURCE_BADGE_INSET)
+
+    local height = (showLabel or disabled) and LABEL_HEIGHT or 0
+    if disabled then
+        height = math_max(height, STATUS_BADGE_SIZE + RESOURCE_BADGE_INSET)
+    end
+    if height == 0 then
+        label:Hide()
+        return 0
+    end
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
+    label:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -1, -1)
+    label.text:ClearAllPoints()
+    label.text:SetPoint("LEFT", label, "LEFT", 5, 0)
+    local rightInset = record.hasAttachedResources
+        and (RESOURCE_BADGE_SIZE + RESOURCE_BADGE_INSET + 2) or 5
+    label.text:SetPoint("RIGHT", label, "RIGHT", -(rightInset + statusReserve), 0)
+    label:SetHeight(height)
+    label:Show()
+    return height
+end
+
 -- Give each Panel its natural height, then share any spare viewport height
 -- across the cards. Include the renderer's padding so mirrors still fit.
 local function BuildStackedRowLayouts(records, layoutWidth, layoutHeight, showAddTile)
@@ -290,6 +328,61 @@ local function SetScrollOffset(overview, offset)
     end
 end
 
+local function RestoreOverviewColors(tile)
+    for _, saved in ipairs(tile.disabledVisuals or {}) do
+        local region = saved.region
+        if saved.texture then
+            region:SetDesaturation(saved.desaturation)
+            if saved.color[1] then region:SetVertexColor(unpack(saved.color)) end
+        else
+            if saved.color[1] then region:SetTextColor(unpack(saved.color)) end
+            region:SetText(saved.text)
+        end
+    end
+    tile.disabledVisuals = nil
+end
+
+-- Only walk the saved-design mirror, never live frames or the tile's chrome.
+-- Restore before renderer reuse: some pooled regions retain their last tint.
+local function GrayOverviewContents(tile)
+    local savedRegions = {}
+    -- Keep restoration available even if a later region interrupts the pass.
+    tile.disabledVisuals = savedRegions
+    local seen = {}
+    local function GrayRegion(region)
+        if seen[region] then return end
+        seen[region] = true
+        if region:IsObjectType("Texture") then
+            local color = { region:GetVertexColor() }
+            savedRegions[#savedRegions + 1] = {
+                region = region, texture = true, color = color,
+                desaturation = region:GetDesaturation(),
+            }
+            region:SetDesaturation(1)
+            if color[1] then
+                local gray = (color[1] + color[2] + color[3]) / 3
+                region:SetVertexColor(gray, gray, gray, color[4])
+            end
+        elseif region:IsObjectType("FontString") then
+            local text = region:GetText()
+            -- Unused pooled labels can have no text at all.
+            if text then
+                local color = { region:GetTextColor() }
+                savedRegions[#savedRegions + 1] = { region = region, color = color, text = text }
+                region:SetTextColor(0.65, 0.65, 0.65, color[4])
+                -- Formatted timers can carry inline colors that override SetTextColor.
+                region:SetText((text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")))
+            end
+        end
+    end
+    local function GrayFrame(frame)
+        for _, region in ipairs({ frame:GetRegions() }) do GrayRegion(region) end
+        if frame:IsObjectType("StatusBar") then GrayRegion(frame:GetStatusBarTexture()) end
+        for _, child in ipairs({ frame:GetChildren() }) do GrayFrame(child) end
+    end
+    GrayFrame(tile.visualHost)
+end
+
 local function EnsureTile(overview, index)
     local tile = overview.tiles[index]
     if tile then return tile end
@@ -321,7 +414,19 @@ local function EnsureTile(overview, index)
     label.text:SetPoint("LEFT", label, "LEFT", 5, 0)
     label.text:SetPoint("RIGHT", label, "RIGHT", -5, 0)
     label.text:SetJustifyH("LEFT")
+    label.text:SetJustifyV("MIDDLE")
     label.text:SetWordWrap(false)
+
+    local statusBadge = CreateFrame("Frame", nil, tile)
+    statusBadge:SetSize(STATUS_BADGE_SIZE, STATUS_BADGE_SIZE)
+    statusBadge:SetFrameLevel(tile:GetFrameLevel() + 4)
+    statusBadge:EnableMouse(false)
+    statusBadge.icon = statusBadge:CreateTexture(nil, "OVERLAY")
+    statusBadge.icon:SetAllPoints()
+    statusBadge.icon:SetAtlas(STATUS_BADGE_ATLAS, false)
+    statusBadge.icon:SetVertexColor(0.65, 0.65, 0.65, 1)
+    statusBadge:Hide()
+    tile.statusBadge = statusBadge
 
     local resourceBadge = CreateFrame("Frame", nil, tile)
     resourceBadge:SetSize(RESOURCE_BADGE_SIZE, RESOURCE_BADGE_SIZE)
@@ -358,6 +463,9 @@ local function EnsureTile(overview, index)
         ApplyTileBorder(self, TILE_HOVER_BORDER_COLOR)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(record.name, 1, 1, 1)
+        if record.disabledReason then
+            GameTooltip:AddLine(record.disabledReason, 0.85, 0.84, 0.81)
+        end
         GameTooltip:AddLine("Click to configure", 0.72, 0.82, 0.92)
         GameTooltip:AddLine("Right-click for options", 0.62, 0.72, 0.82)
         if record.canToggleAnchorLock then
@@ -1280,10 +1388,13 @@ local function ResetOverview(overview)
     end
     for index = 1, overview.usedTiles do
         local tile = overview.tiles[index]
+        RestoreOverviewColors(tile)
         if ST._ReleaseReadOnlyPanelPreview then
             ST._ReleaseReadOnlyPanelPreview(tile.visualHost)
         end
         tile._cdcOverviewRecord = nil
+        tile.visualHost:SetAlpha(1)
+        tile.statusBadge:Hide()
         tile.resourceBadge:Hide()
         tile:Hide()
     end
@@ -1372,7 +1483,7 @@ local function LayoutPanelTileGrid(overview, host, records, full)
             local snappedTileWidth = math_max(onePixel, snappedRight - snappedX)
             local snappedTileHeight = math_max(onePixel,
                 snappedBottom - snappedTop)
-            local labelHeight = (stacked or #records > 1) and LABEL_HEIGHT or 0
+            local labelHeight = LayoutTileHeader(record, stacked or #records > 1)
             local visualWidth = math_max(1,
                 snappedTileWidth - (TILE_INSET * 2))
             local visualHeight = math_max(1,
@@ -1383,31 +1494,16 @@ local function LayoutPanelTileGrid(overview, host, records, full)
                 snappedX, -snappedTop)
             PixelUtil.SetSize(tile, snappedTileWidth, snappedTileHeight, 1, 1)
 
-            tile.label:ClearAllPoints()
-            if labelHeight > 0 then
-                tile.label:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
-                tile.label:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -1, -1)
-                tile.label:SetHeight(labelHeight)
-                tile.label.text:ClearAllPoints()
-                tile.label.text:SetPoint("LEFT", tile.label, "LEFT", 5, 0)
-                local labelRightInset = record.hasAttachedResources
-                    and (RESOURCE_BADGE_SIZE + RESOURCE_BADGE_INSET + 2)
-                    or 5
-                tile.label.text:SetPoint("RIGHT", tile.label, "RIGHT",
-                    -labelRightInset, 0)
-                tile.label.text:SetText(record.name)
-                tile.label:Show()
-            else
-                tile.label:Hide()
-            end
-
             tile.resourceBadge:SetShown(record.hasAttachedResources)
+            tile.visualHost:SetAlpha(1)
             tile.visualHost:ClearAllPoints()
             tile.visualHost:SetPoint("CENTER", tile, "CENTER", 0, -(labelHeight / 2))
             tile.visualHost:SetSize(visualWidth, visualHeight)
             tile:Show()
             if full then
+                RestoreOverviewColors(tile)
                 ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId)
+                if record.disabledReason then GrayOverviewContents(tile) end
             end
         end
         -- Overwritten each pass, so after the loop these describe the last
@@ -1490,6 +1586,16 @@ function ST._BuildGroupPanelOverview(host, containerId)
             hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
             canToggleAnchorLock = not browsingOtherClasses,
         }
+        local panelDisabled = panelInfo.group.enabled == false
+        local groupDisabled = container.enabled == false
+        if panelDisabled and groupDisabled then
+            record.disabledReason = "Panel and Group disabled"
+        elseif groupDisabled then
+            record.disabledReason = "Group disabled"
+        elseif panelDisabled then
+            record.disabledReason = "Disabled"
+        end
+        tile.label.text:SetText(record.name)
         -- Row height is intentionally standardized by the overview. Horizontal
         -- allocation should therefore follow the Panel's saved-design width,
         -- not its area (which over-rewards tall, narrow Panels).
