@@ -220,6 +220,9 @@ local function EndLensAnchorBuild()
     local registry = CS.lensAnchorRegistry
     if registry then
         registry.building = false
+        if CS.pendingLensAnchor then
+            CS.pendingLensAnchor.registry = registry
+        end
     end
 end
 
@@ -246,13 +249,15 @@ end
 
 local function CaptureLensAnchor()
     CS.pendingLensAnchor = nil
-    if CS.pendingSettingHighlight then
+    if CS.pendingSettingHighlight or not ST._UnifiedRowPrimaryOwnsSurface() then
         return nil
     end
 
     local registry = CS.lensAnchorRegistry
     local scroll = CS.col4Scroll
-    if not (registry and registry.scroll == scroll and scroll and scroll.scrollframe) then
+    if not (registry and not registry.building and registry.scroll == scroll
+        and registry.panelId == CS.selectedGroup and registry.tab == CS.selectedTab
+        and scroll and scroll.scrollframe) then
         return nil
     end
 
@@ -317,16 +322,19 @@ local function FindLensAnchorDestination(registry, pending)
     return nil
 end
 
+-- Consumed by FinishConfigRefresh after both strips, the inline editor, and
+-- ordinary scroll restores. No intermediate position survives this refresh.
 local function RestoreLensAnchor()
     local pending = CS.pendingLensAnchor
     CS.pendingLensAnchor = nil
-    if not pending or CS.pendingSettingHighlight then
+    if not pending or CS.pendingSettingHighlight or not ST._UnifiedRowPrimaryOwnsSurface() then
         return
     end
 
     local registry = CS.lensAnchorRegistry
     local scroll = registry and registry.scroll
-    if not (registry and scroll and scroll.scrollframe and scroll.content
+    if not (registry and registry == pending.registry and not registry.building
+        and scroll and scroll == CS.col4Scroll and scroll.scrollframe and scroll.content
         and registry.panelId == pending.panelId
         and registry.tab == pending.tab
         and CS.selectedGroup == pending.panelId
@@ -334,6 +342,10 @@ local function RestoreLensAnchor()
         return
     end
 
+    -- The entry strip can change the viewport after the settings builder ran.
+    -- Settle wrapping and scrollbar width against that final viewport first.
+    scroll:DoLayout()
+    scroll:FixScroll()
     local viewHeight = scroll.scrollframe:GetHeight() or 0
     local maxOffset = math.max(0, (scroll.content:GetHeight() or 0) - viewHeight)
     local desired = pending.rawOffset or 0
@@ -345,20 +357,14 @@ local function RestoreLensAnchor()
     end
     desired = math.max(0, math.min(desired, maxOffset))
 
-    local value = maxOffset > 0 and (desired / maxOffset * 1000) or 0
-    scroll:SetScroll(value)
-    if scroll.scrollBarShown and scroll.scrollbar then
-        scroll.scrollbar:SetValue(value)
+    -- FixScroll preserves exact pixel offsets while synchronizing the thumb;
+    -- SetScroll alone floors the percentage conversion and can drift a pixel.
+    local status = scroll.status or scroll.localstatus
+    status.offset = desired
+    scroll:FixScroll()
+    if not scroll.scrollBarShown then
+        scroll:SetScroll(0)
     end
-end
-
-local function ScheduleLensAnchorRestore()
-    local pending = CS.pendingLensAnchor
-    if not pending or pending.scheduled then
-        return
-    end
-    pending.scheduled = true
-    C_Timer.After(0, RestoreLensAnchor)
 end
 
 local function FireNavSettingHighlight()
@@ -432,7 +438,7 @@ ST._RecordSettingHighlightWidget = RecordSettingHighlightWidget
 ST._BeginLensAnchorBuild = BeginLensAnchorBuild
 ST._EndLensAnchorBuild = EndLensAnchorBuild
 ST._CaptureLensAnchor = CaptureLensAnchor
-ST._ScheduleLensAnchorRestore = ScheduleLensAnchorRestore
+ST._RestoreLensAnchor = RestoreLensAnchor
 
 -- Private helpers consumed by later Helpers files.
 SH.RegisterLensAnchorHeading = RegisterLensAnchorHeading
