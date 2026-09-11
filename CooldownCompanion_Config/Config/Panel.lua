@@ -599,6 +599,11 @@ end
 CS.FixConfigScroll = FixConfigScroll
 
 local function FinishConfigRefresh()
+    -- Both strips now have their final tabs and visibility. Resolve their
+    -- shared viewport before inserting the editor and restoring a lens anchor.
+    if CS.pendingLensAnchor and ST._UnifiedRowRefresh then
+        ST._UnifiedRowRefresh()
+    end
     CS.configRefreshInProgress = false
     if CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
@@ -606,6 +611,9 @@ local function FinishConfigRefresh()
     for widget in pairs(pendingScrollFixes) do
         pendingScrollFixes[widget] = nil
         widget:FixScroll()
+    end
+    if ST._RestoreLensAnchor then
+        ST._RestoreLensAnchor()
     end
 end
 

@@ -239,10 +239,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             if ST._EndLensAnchorBuild then
                 ST._EndLensAnchorBuild()
             end
-            if ST._ScheduleLensAnchorRestore then
-                ST._ScheduleLensAnchorRestore()
-            end
-
         end)
 
         -- Parent the AceGUI widget frame to the raw host frame
