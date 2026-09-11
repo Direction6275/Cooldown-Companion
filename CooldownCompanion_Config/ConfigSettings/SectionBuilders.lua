@@ -2466,23 +2466,70 @@ local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "au
 local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 12 }
 local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2, autocast = 50 }
 
-local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "auraGlowStyle", colorKey = "auraGlowColor", colorLabel = "Glow Color",
-        color2Key = "auraGlowColor2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
-        sizeKey = "auraGlowSize", speedKey = "auraGlowSpeed", linesKey = "auraGlowDashCount",
-        thicknessKey = "auraGlowDashThickness",
-        defaultStyle = "pulse", defaultColor = {1, 0.84, 0, 0.9},
+-- Aura and missing-aura controls share the vocabulary, defaults, and resets.
+-- Only their saved-key prefix and primary color differ.
+local function AuraGlowControlConfig(prefix, defaultColor)
+    return {
+        styleKey = prefix .. "Style", colorKey = prefix .. "Color", colorLabel = "Glow Color",
+        color2Key = prefix .. "Color2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
+        sizeKey = prefix .. "Size", speedKey = prefix .. "Speed", linesKey = prefix .. "DashCount",
+        thicknessKey = prefix .. "DashThickness",
+        defaultStyle = "pulse", defaultColor = defaultColor,
         styleOptions = AURA_GLOW_STYLE_OPTIONS,
         styleOrder = AURA_GLOW_STYLE_ORDER,
         solidSizeDefault = 2,
         onStyleChanged = function(targetStyle, val)
-            targetStyle.auraGlowSize = AURA_GLOW_SIZE_RESETS[val] or 2
-            targetStyle.auraGlowSpeed = AURA_GLOW_SPEED_RESETS[val] or 0.5
-            targetStyle.auraGlowDashCount = 5
-            targetStyle.auraGlowDashThickness = 3
+            targetStyle[prefix .. "Size"] = AURA_GLOW_SIZE_RESETS[val] or 2
+            targetStyle[prefix .. "Speed"] = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle[prefix .. "DashCount"] = 5
+            targetStyle[prefix .. "DashThickness"] = 3
         end,
-    }, opts)
+    }
+end
+
+local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback,
+        AuraGlowControlConfig("auraGlow", {1, 0.84, 0, 0.9}), opts)
+end
+
+local MISSING_AURA_GLOW_CFG = AuraGlowControlConfig("missingAuraGlow", {1, 0.15, 0.1, 1})
+
+-- Search draws from the same style vocabulary and slider spec as the controls.
+local function DefineGlowStyleSettings(route, resolveStyle, cfg)
+    local function GlowShown(context)
+        local style = resolveStyle(context)
+        return style and style[cfg.styleKey] ~= nil and style[cfg.styleKey] ~= "none"
+    end
+    local function UsesStyle(context, wanted)
+        local style = resolveStyle(context)
+        return style and style[cfg.styleKey] ~= nil and style[cfg.styleKey] ~= "none"
+            and NormalizeGlowStyleForDisplay(style[cfg.styleKey], cfg.defaultStyle) == wanted
+    end
+    local settings = {
+        style = route:Setting({ key = "glowStyle", label = "Glow Style", applies = GlowShown }),
+        color = route:Setting({ key = "glowColor", label = cfg.colorLabel, applies = GlowShown }),
+        color2 = route:Setting({ key = "glowColor2", label = cfg.color2Label,
+            applies = function(context) return UsesStyle(context, "colorShift") end }),
+    }
+    local fields = {}
+    for _, style in ipairs(cfg.styleOrder) do
+        for _, spec in ipairs(GLOW_SLIDER_SPEC[style] or {}) do
+            local field = spec.settingField
+            if not fields[field] then fields[field] = { label = spec.label, styles = {} } end
+            fields[field].styles[style] = true
+        end
+    end
+    for field, spec in pairs(fields) do
+        local styles = spec.styles
+        settings[field] = route:Setting({ key = field, label = spec.label,
+            applies = function(context)
+                for style in pairs(styles) do
+                    if UsesStyle(context, style) then return true end
+                end
+                return false
+            end })
+    end
+    return settings
 end
 
 -- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit
@@ -2969,3 +3016,131 @@ ST._AddAuraCandidateRow = AddAuraCandidateRow
 ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel
 ST._AddStackBlockGapRow = AddStackBlockGapRow
 ST._BuildStackThresholdColorRows = BuildStackThresholdColorRows
+
+-- Shared icon/bar control: placement, inheritance, and preview use the same
+-- section on both surfaces. The indicator never changes entry visibility.
+local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
+    opts = opts or {}
+    if not container or not ST.CanGroupUseOverrideSection(group, "missingAuraIndicator") then return end
+    local sec = ST._BeginLensSection(lens, group, "missingAuraIndicator", { column = container })
+    local enabled = sec.read.missingAuraIndicatorEnabled == true
+    local settings = opts.settings or {}
+    local function Refresh()
+        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        CooldownCompanion:RefreshConfigPanel()
+    end
+    local row = AddCheckboxRow(container, {
+        label = "Missing Aura Indicator", setting = opts.setting,
+        value = enabled, disabled = sec.disabled,
+        onChange = function(value)
+            if not sec.write then return end
+            sec.write.missingAuraIndicatorEnabled = sec:BoolValue(value)
+            Refresh()
+        end,
+    })
+    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+        "Missing Aura Indicator",
+        {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
+        " ",
+        {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
+        {"Group tracking checks only buffs applied by you. The reminder clears when your buff is active on any tracked member.", 1, 1, 1, true},
+        " ",
+        {"Harmful auras require a hostile target, with an optional combat requirement.", 1, 1, 1, true},
+        {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
+        " ",
+        {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
+        " ",
+        {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
+    }, opts.infoButtons))
+    local function BuildAdvanced(panel)
+        local style = sec.tbl
+        local hasHarmful, hasHelpful = false, false
+        local entries = lens and lens.mode == "entry" and {lens.buttonData} or group.buttons or {}
+        for _, entry in ipairs(entries) do
+            if ST._CanButtonUseConfigOverrideSection(entry, "missingAuraIndicator", group) then
+                if CooldownCompanion:IsAuraTrackedOnTarget(entry) then
+                    hasHarmful = true
+                else
+                    hasHelpful = true
+                end
+            end
+        end
+        if hasHarmful then
+            local when = style.missingAuraIndicatorWhen
+            AddDropdownRow(panel, { label = "Show Indicator When", setting = settings.when,
+                list = { target = "Hostile Target Exists", target_combat = "Hostile Target Exists + In Combat" },
+                order = { "target", "target_combat" }, pulloutWidth = WIDE_PULLOUT_WIDTH,
+                value = (when == "target_combat" or when == "combat") and "target_combat" or "target",
+                onChange = function(value) style.missingAuraIndicatorWhen = value; Refresh() end })
+            if hasHelpful then
+                AddLabelRow(panel, { label = "Helpful Auras", controlText = "In Combat" })
+            end
+        else
+            AddLabelRow(panel, { label = "Show Indicator When", setting = settings.when, controlText = "In Combat" })
+        end
+        AddCheckboxRow(panel, { label = "Show Marker", setting = settings.marker,
+            value = style.missingAuraMarkerEnabled ~= false,
+            onChange = function(value) style.missingAuraMarkerEnabled = value; Refresh() end })
+        if style.missingAuraMarkerEnabled ~= false then
+            AddEditBoxRow(panel, { label = "Marker Text", setting = settings.text,
+                value = style.missingAuraMarkerText or "!",
+                onEnterPressed = function(text, widget)
+                    text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 8)
+                    style.missingAuraMarkerText = text
+                    widget:SetText(text)
+                    Refresh()
+                end })
+            AddColorRow(panel, { label = "Marker Color", setting = settings.markerColor,
+                tbl = style, key = "missingAuraMarkerColor", default = {1, 0.15, 0.1, 1}, hasAlpha = true,
+                onChange = ST._RefreshSelectedButtonsPreview, onConfirm = Refresh })
+            AddSliderRow(panel, { label = "Marker Size (%)", setting = settings.markerSize,
+                value = style.missingAuraMarkerSize or 65, min = 10, max = 100, step = 1,
+                onChange = function(value)
+                    ST._PreviewScalarSetting(style, "missingAuraMarkerSize", value, ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(value) style.missingAuraMarkerSize = value; Refresh() end })
+        end
+        local glowEnabled = style.missingAuraGlowStyle ~= nil and style.missingAuraGlowStyle ~= "none"
+        AddCheckboxRow(panel, { label = "Show Glow", setting = settings.glowEnabled,
+            value = glowEnabled,
+            onChange = function(value)
+                style.missingAuraGlowStyle = value and "pulse" or "none"
+                if value then MISSING_AURA_GLOW_CFG.onStyleChanged(style, "pulse") end
+                Refresh()
+            end })
+        if glowEnabled then
+            BuildGlowStyleControls(panel, style, Refresh, MISSING_AURA_GLOW_CFG, {
+                settings = settings.glow,
+                previewRefresh = ST._RefreshSelectedButtonsPreview,
+            })
+        end
+    end
+    if sec.scope ~= "denied" then
+        AddAdvancedToggle(row, "missingAuraIndicator", opts.infoButtons or {}, true, {
+            title = "Missing Aura Indicator", build = BuildAdvanced,
+            unlock = { sec = sec, enable = not enabled and {
+                label = "Enable Missing Aura Indicator", key = "missingAuraIndicatorEnabled" } or nil },
+        })
+    end
+    sec:Chrome(row)
+    sec:Finish()
+end
+ST._BuildMissingAuraIndicatorControls = BuildMissingAuraIndicatorControls
+
+-- Finder descriptors are shared by the icon and bar advanced panels.
+function ST._DefineMissingAuraIndicatorSettings(route, resolveStyle)
+    local function MarkerShown(context)
+        local style = resolveStyle(context)
+        return style and style.missingAuraMarkerEnabled ~= false
+    end
+    local settings = route:Settings({
+        when = { label = "Show Indicator When", aliases = {"hostile target exists", "target exists", "combat"} },
+        marker = { label = "Show Marker" },
+        text = { label = "Marker Text", applies = MarkerShown },
+        markerColor = { label = "Marker Color", applies = MarkerShown },
+        markerSize = { label = "Marker Size (%)", applies = MarkerShown },
+        glowEnabled = { label = "Show Glow" },
+    })
+    settings.glow = DefineGlowStyleSettings(route, resolveStyle, MISSING_AURA_GLOW_CFG)
+    return settings
+end

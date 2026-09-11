@@ -81,7 +81,8 @@ local BAR_PREVIEW_REASON_DEFS = {
     { key = "disabled", label = "Disabled", rule = "Enabled is off" },
     { key = "aura-inactive", label = "Aura inactive",
         rule = function(buttonData)
-            return StateRule("While Aura Inactive", buttonData, "auraShellDim")
+            return "Aura Visibility: " .. (buttonData.auraShellDim
+                and "Dim While Inactive" or "Show Only While Active")
         end,
         fallback = "auraShellDim" },
     -- The cooldown labels are the dropdown's own (ST._COOLDOWN_VISIBILITY,
@@ -194,6 +195,30 @@ ST._UsesConfigOnlyBarChargeBehavior = UsesConfigOnlyBarChargeBehavior
 -- Pure Bar-mirror visibility projection. Inputs are saved entry/group data and
 -- a stored config-preview snapshot only. It deliberately does not accept live
 -- status, button frames, aura state, item counts, usability, or equipment data.
+local function IsMissingReminderPreview(buttonData, group, previewState)
+    return CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group)
+        and previewState and previewState.conditional
+        and previewState.conditional.kind == "aura_missing"
+end
+
+local function RestoreMissingReminderPreview(slot)
+    if slot.missingReminder then slot.missingReminder:Hide() end
+end
+
+-- Add the cue over the existing mirror icon so its normal color rules remain.
+local function ApplyMissingReminderPreview(slot, buttonData, group, previewState)
+    if not IsMissingReminderPreview(buttonData, group, previewState) then return end
+    if not slot.missingReminder then
+        slot.missingReminder = CreateFrame("Frame", nil, slot)
+        slot.missingReminder:SetFrameLevel(slot:GetFrameLevel() + 10)
+        slot.missingReminder:EnableMouse(false)
+    end
+    local style = slot.style or CooldownCompanion:GetEffectiveStyle(group.style or {}, buttonData)
+    ST._StyleMissingAuraReminder(slot.missingReminder, slot.icon, style)
+    slot.missingReminder:SetAlpha(1)
+    slot.missingReminder:SetShown((group.displayMode or "icons") ~= "bars" or style.showBarIcon ~= false)
+end
+
 local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     buttonData = type(buttonData) == "table" and buttonData or {}
     group = type(group) == "table" and group or {}
@@ -671,6 +696,7 @@ local function ApplyBarSlotVisualAlpha(slot, alpha)
     for _, texture in ipairs(slot.borderTextures or {}) do
         texture:SetAlpha(alpha)
     end
+    SetAlpha(slot.missingReminder)
 end
 
 ResetBarSlotWorkspaceState = function(frame)
@@ -728,6 +754,7 @@ local function AcquireSlot(preview, parent, poolName)
         pool[index] = frame
     end
     frame:SetParent(parent)
+    RestoreMissingReminderPreview(frame)
     ResetBarSlotWorkspaceState(frame)
     frame:Show()
     frame:SetAlpha(1)
@@ -1586,6 +1613,9 @@ PP.IsIconModePanel = IsIconModePanel
 PP.IsEntrySelected = IsEntrySelected
 PP.CollectBarEntryStatus = CollectBarEntryStatus
 PP.ResolveBarPreviewVisibility = ResolveBarPreviewVisibility
+PP.IsMissingReminderPreview = IsMissingReminderPreview
+PP.RestoreMissingReminderPreview = RestoreMissingReminderPreview
+PP.ApplyMissingReminderPreview = ApplyMissingReminderPreview
 PP.ApplyBarSlotPreviewVisibility = ApplyBarSlotPreviewVisibility
 PP.GetPanelPreviewNaturalSize = GetPanelPreviewNaturalSize
 PP.ResetBarSlotWorkspaceState = ResetBarSlotWorkspaceState

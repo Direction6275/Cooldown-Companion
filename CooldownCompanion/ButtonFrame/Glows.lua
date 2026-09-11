@@ -1548,10 +1548,10 @@ end
 -- route ShowGlowStyle at a kit: its containers are CC-button frames, and
 -- creating or reparenting frames into the target is forbidden (V9b).
 --
--- These builders are pure: no stored refs, no CC-button coupling. The SOLE
--- caller is AuraDisplay.lua's bind path (single-writer rule). The config
--- preview does NOT use them: it renders equivalent visuals through the
--- CC-side legacy renderers via NormalizeAuraGlowPreviewStyle above.
+-- These builders are pure: no stored refs, no CC-button coupling.
+-- AuraDisplay.lua owns live kit binds. Its missing-aura reminder also uses
+-- this renderer on ordinary CC frames, including the matching config mirror.
+-- Other config glows use the CC-side renderers above.
 ------------------------------------------------------------------------
 
 -- Proc-swirl flipbook parameters from ActionButtonSpellAlertTemplate
@@ -1823,24 +1823,26 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     end
 end
 
--- Resolve the icon-mode auraGlow* keys and style the kit.
-local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+-- Resolve the icon aura-glow vocabulary. Missing reminders use the same
+-- renderer with their own key prefix and primary color.
+local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled, keyPrefix, defaultColor)
+    keyPrefix = keyPrefix or "auraGlow"
     local kitStyle = enabled
-        and NormalizeKitGlowStyle((styleTable and styleTable.auraGlowStyle) or "pulse")
+        and NormalizeKitGlowStyle((styleTable and styleTable[keyPrefix .. "Style"]) or "pulse")
         or "none"
-    local speed = styleTable and styleTable.auraGlowSpeed
+    local speed = styleTable and styleTable[keyPrefix .. "Speed"]
     -- Duration styles reject legacy pixel-scale speeds; autocast uses
     -- the 10..200 frequency scale directly.
     if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
         speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
     end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
-        (styleTable and styleTable.auraGlowColor) or DEFAULT_AURA_GLOW_COLOR,
-        (styleTable and styleTable.auraGlowColor2) or DEFAULT_AURA_GLOW_COLOR2,
-        styleTable and styleTable.auraGlowSize,
+        (styleTable and styleTable[keyPrefix .. "Color"]) or defaultColor or DEFAULT_AURA_GLOW_COLOR,
+        (styleTable and styleTable[keyPrefix .. "Color2"]) or DEFAULT_AURA_GLOW_COLOR2,
+        styleTable and styleTable[keyPrefix .. "Size"],
         speed,
-        styleTable and styleTable.auraGlowDashCount,
-        styleTable and styleTable.auraGlowDashThickness)
+        styleTable and styleTable[keyPrefix .. "DashCount"],
+        styleTable and styleTable[keyPrefix .. "DashThickness"])
 end
 
 -- Map a stored bar aura effect to a kit-renderable style. "color" is the

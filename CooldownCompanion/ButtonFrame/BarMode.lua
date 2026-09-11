@@ -533,6 +533,7 @@ end
 -- exposure rules live in Core/Aura.lua.
 local function ApplyBarAuraShellVisuals(button, buttonData)
     local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
     -- While per-stack blocks are up, UpdateBarStackBlocks owns bg and the
     -- whole-bar ring (both suppressed to 0) and is the only thing that
     -- restores them; the preview and per-tick paths that reach here never

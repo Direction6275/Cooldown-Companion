@@ -47,6 +47,7 @@ local AURA_SECTION_TOOLTIP = {
     {"Only Aura entries can live here.", 1, 1, 1, true},
     " ",
     {"Active auras appear and pack together. Inactive auras take no space.", 1, 1, 1, true},
+    {"Missing-aura indicators are unavailable here because inactive auras have no reserved space.", 1, 1, 1, true},
     " ",
     {"Buffs on you and debuffs on your target can't share one section.", 1, 1, 1, true},
 }

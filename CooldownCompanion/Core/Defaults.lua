@@ -166,6 +166,7 @@ local defaults = {
                         tooltipHideInCombat = false,
                         allowPings = false, -- Entries answer the ping keybind like Cooldown Manager items
                         desaturateOnCooldown = true, -- Desaturate icon while on cooldown
+                        missingAuraIndicatorEnabled = false,
                         desaturateWhileAuraNotActive = false, -- Desaturate icon while the tracked aura is missing
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
@@ -349,6 +350,7 @@ local defaults = {
             tooltipHideInCombat = false,
             allowPings = false,
             desaturateOnCooldown = true,
+            missingAuraIndicatorEnabled = false,
             desaturateWhileAuraNotActive = false,
             showCooldownSwipe = true,
             showAuraDurationSwipe = true,
@@ -1368,6 +1370,11 @@ ST.OVERRIDE_SECTIONS = {
             "pandemicMarkerMode", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
         modes = {icons = true, bars = true},
     },
+    missingAuraIndicator = {
+        label = "Missing Aura Indicator",
+        keys = {"missingAuraIndicatorEnabled", "missingAuraIndicatorWhen", "missingAuraMarkerEnabled", "missingAuraMarkerText", "missingAuraMarkerColor", "missingAuraMarkerSize", "missingAuraGlowStyle", "missingAuraGlowColor", "missingAuraGlowColor2", "missingAuraGlowSize", "missingAuraGlowSpeed", "missingAuraGlowDashCount", "missingAuraGlowDashThickness"},
+        modes = {icons = true, bars = true},
+    },
     auraIndicator = {
         label = "Show Aura Glow",
         keys = {"auraGlowStyle", "auraGlowColor", "auraGlowColor2", "auraGlowSize", "auraGlowSpeed", "auraGlowDashCount", "auraGlowDashThickness"},
@@ -1483,7 +1490,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     "iconFillTimer", "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe", "keybindText", "chargeText", "desaturation", "auraMissingDesaturation", "showOutOfRange", "showTooltips",
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
-    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
+    "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
     "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
@@ -1511,6 +1518,7 @@ do
 end
 
 ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
+    missingAuraIndicator = true,
     barCharges = true,
     auraText = true,
     auraStackText = true,
@@ -1529,6 +1537,7 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
 -- bag items). Entry type is as immutable as add intent, so the prune pass
 -- may drop stored overrides for these sections just as it does above.
 ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS = {
+    missingAuraIndicator = true,
     barCharges = true,
     cooldownPressFlash = true,
 }
@@ -1607,6 +1616,7 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 -- only fill is the aura kit's. Aura Panels expose no barColor override
 -- section, so ResolveBarAuraFillColor stays on their barAuraColor.
 ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
+    missingAuraIndicator = true,
     keybindText = true,
     barColor = true,
     barCooldownColor = true,
@@ -1689,7 +1699,7 @@ ST.PANEL_COPY_SCOPES = {
                 "procGlow", "auraIndicator", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
                 "assistedHighlight", "pandemic", "iconFillTimer",
                 "cooldownSwipe", "auraDurationSwipe", "showGCDSwipe",
-                "desaturation", "auraMissingDesaturation", "unusableDimming",
+                "desaturation", "auraMissingDesaturation", "missingAuraIndicator", "unusableDimming",
                 "showOutOfRange", "lossOfControl", "showTooltips",
             },
             styleKeys = {
@@ -1727,7 +1737,7 @@ ST.PANEL_COPY_SCOPES = {
             -- as part of the one section.
             sections = {
                 "barActiveAura", "pandemic", "showGCDSwipe", "desaturation",
-                "auraMissingDesaturation", "unusableDimming", "showOutOfRange",
+                "auraMissingDesaturation", "missingAuraIndicator", "unusableDimming", "showOutOfRange",
                 "lossOfControl", "showTooltips",
             },
             styleKeys = {

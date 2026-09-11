@@ -1136,13 +1136,12 @@ end
 
 -- Aura shell (12.1 compositing): an aura entry that yields its resting
 -- appearance so the native aura display renders the active visual on top.
--- Two forms, mutually exclusive in config:
+-- Two visibility presentations, mutually exclusive in config:
 --   hideWhileAuraNotActive -> hidden shell, alpha 0
 --   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
--- Both compose the same full active visual, so every consumer that asks
--- "is this a shell entry" must accept either. Owned here because four
--- callers across Core and ButtonFrame need the same answer and drifted
--- when they each kept their own copy.
+-- Both compose a full aura visual. Missing indicators are separate effects
+-- and preserve the entry's ordinary resting presentation. Owned here because
+-- four callers across Core and ButtonFrame need the same answer.
 --
 -- auraShellDim is 12.1-native and deliberately NOT the main-era
 -- useBaselineAlphaFallback key it replaces. That key's presence was
@@ -1151,6 +1150,40 @@ end
 -- distinguishes them. Migrating onto a distinct key makes the pass
 -- idempotent by construction: it converts the legacy pair, clears legacy
 -- orphans, and never has cause to touch this key at all.
+-- Group scope is supplied by collectors/config. Other shell consumers already
+-- operate on ordinary icon/bar entries and only need the entry predicate.
+function CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)
+    if not (buttonData and buttonData.type == "spell"
+        and (buttonData.auraTracking or buttonData.addedAs == "aura")) then return false end
+    if group then
+        local mode = group.displayMode or "icons"
+        if (mode ~= "icons" and mode ~= "bars") or ST.IsAuraPanelGroup(group)
+            or ST.IsAuraSectionEntry(group, buttonData) then return false end
+        style = style or self:GetEffectiveStyle(group.style or {}, buttonData)
+    end
+    return style ~= nil and style.missingAuraIndicatorEnabled == true
+end
+
+-- Shared by native tracking and reminder settings; manual unit overrides win.
+function CooldownCompanion:IsAuraTrackedOnTarget(buttonData, texturePanel)
+    local unitOverride = GetEntryAuraUnitOverride(buttonData)
+    if unitOverride then return unitOverride == "target" end
+    local first = texturePanel and self:ResolveTexturePanelAuraSpellID(buttonData)
+        or self:ResolveAuraSpellID(buttonData)
+    local unit = ClassifyAuraSpellUnit(first)
+    if unit then return unit == "target" end
+    return buttonData.auraUnit == "target"
+end
+
+-- Ordinary player context only; aura presence is never queried here.
+function CooldownCompanion:ShouldShowMissingAuraCue(style, tracksTarget, inCombat)
+    if inCombat == nil then inCombat = InCombatLockdown() end
+    if not tracksTarget then return inCombat end
+    local when = style.missingAuraIndicatorWhen
+    return UnitExists("target") == true and UnitCanAttack("player", "target") == true
+        and ((when ~= "target_combat" and when ~= "combat") or inCombat)
+end
+
 function CooldownCompanion:IsAuraShellEntry(buttonData)
     if not buttonData then return false end
     if not (buttonData.auraTracking or buttonData.addedAs == "aura") then
