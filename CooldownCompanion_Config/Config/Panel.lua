@@ -554,6 +554,10 @@ local function ApplyConfigColumnTitles(frame)
             ~= (ShouldShowSettingsColumn(frame.col3) and not CS.spellbookPanelDocked)
     then
         frame.LayoutColumns()
+        -- Tabs rebuilt under a hidden Settings column have independent anchors.
+        -- Its fixed width can survive reopening, so visibility alone will not
+        -- trigger AceGUI to arrange the panel and entry strips together again.
+        ST._UnifiedRowRefresh()
     end
     if CS.exportMode then
         frame.col1:SetTitle("|cffffd100Export Mode|r")
