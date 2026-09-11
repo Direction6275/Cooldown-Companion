@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.6.1",
         "2.5.3",
         "2.5.2",
         "2.5.1",
@@ -39,6 +40,23 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.6.1"] = {
+            markdown = [[
+## New Features
+
+- **Missing aura reminders:** Optional custom markers and glows highlight missing buffs in combat and missing debuffs on hostile targets. Available on icon and bar panels, with a visible icon required for bars; Aura Panels and Aura Only Sections are not supported.
+
+## Polish | QoL
+
+- **Group buff tracking:** More buffs support “You and your group” tracking on compatible displays. Tracking still follows only buffs you apply.
+- **Disabled panels:** Disabled panels appear gray in the Group overview, with clearer badges and tooltips. Disabled badges are also easier to read in Navigator.
+- **Clearer aura settings:** Aura Visibility uses simpler choices, and misleading summon-duration descriptions have been removed.
+
+## Bug Fixes
+
+- **Config stability:** Reopening the optional three-column layout no longer overlaps entry tabs. Switching between panel and entry settings keeps your scroll position steady.
+]],
+        },
         ["2.5.3"] = {
             markdown = [[
 ## New Features
