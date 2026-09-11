@@ -21,6 +21,7 @@ local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
 local PP = ST._ButtonPanelPreview
 
 local function StyleIconEntry(slot, buttonData, group)
+    PP.RestoreMissingReminderPreview(slot)
     StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
 
     -- Keybind label: live icon buttons pin this above every layer so it stays
@@ -280,6 +281,7 @@ end
 -- previews may force desaturation on, never off. Each branch follows the
 -- corresponding runtime presentation rules and shared style helpers.
 local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
+    PP.RestoreMissingReminderPreview(slot)
     ResetSlotConditionalVisuals(slot)
     -- Read by ApplyIconCountTextStyle and StyleSlotCooldownText
     slot.buttonData = buttonData
@@ -499,6 +501,8 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     if forceDesat then
         slot.icon:SetDesaturated(true)
     end
+    local previewState = PP.GetStoredBarPreviewState(panelId, index)
+    PP.ApplyMissingReminderPreview(slot, buttonData, group, previewState)
 end
 
 -- Private helpers consumed by later ButtonPanelPreview files.

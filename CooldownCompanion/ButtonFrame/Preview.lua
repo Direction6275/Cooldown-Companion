@@ -145,6 +145,7 @@ local function ClearAllPreviews(self, previewFlag)
 end
 
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
+    aura_missing = { kind = "aura_missing", auraActive = false },
     cooldown = { kind = "cooldown", duration = 12, remaining = 8, loop = true },
     -- The icons/bars split of the cooldown state (owner ruling 2026-08-08):
     -- _text renders the countdown text alone on an otherwise resting button;

@@ -404,6 +404,40 @@ local function EnsureTargetWatcher()
     end)
 end
 
+local function UpdateMissingReminderVisibility(button, inCombat)
+    local reminder = button._missingAuraReminder
+    if not reminder then return end
+    local style = reminder.style
+    reminder:SetAlpha(CooldownCompanion:GetAuraShellAlpha(button, button.buttonData))
+    reminder:SetShown(style ~= nil and reminder.boundEntry == button.buttonData
+        and (not button._isBar or style.showBarIcon ~= false)
+        and CooldownCompanion:ShouldShowMissingAuraCue(style, reminder.tracksTarget, inCombat))
+end
+
+local missingCueWatcher
+local function EnsureMissingCueWatcher()
+    if missingCueWatcher then return end
+    missingCueWatcher = CreateFrame("Frame")
+    missingCueWatcher:RegisterEvent("PLAYER_TARGET_CHANGED")
+    missingCueWatcher:RegisterEvent("PLAYER_REGEN_DISABLED")
+    missingCueWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    missingCueWatcher:RegisterEvent("UNIT_FACTION")
+    missingCueWatcher:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_FACTION" and unit ~= "target" and unit ~= "player" then return end
+        -- Regen events announce the transition synchronously. Use that state
+        -- directly rather than relying on the lockdown query during dispatch.
+        local inCombat
+        if event == "PLAYER_REGEN_DISABLED" then
+            inCombat = true
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            inCombat = false
+        end
+        for button in pairs(displays) do
+            UpdateMissingReminderVisibility(button, inCombat)
+        end
+    end)
+end
+
 -- The pet token has the target token's same-token problem ("pet" can start
 -- meaning a different creature without the token changing) plus a lifecycle
 -- one: a dismissed pet fires no UNIT_AURA, so without this the last-applied
@@ -488,6 +522,12 @@ local function BuildSlotKit(slotButton)
     kit.iconCover = slotButton:CreateTexture(nil, "ARTWORK", nil, 1)
     kit.iconCover:SetAllPoints(slotButton)
     kit.iconCover:SetAlpha(0)
+
+    -- Prebuilt with every kit so toggling the missing cue reuses its slot.
+    -- Visible only when needed, below the active icon and above the reminder.
+    kit.missingCover = slotButton:CreateTexture(nil, "ARTWORK", nil, 0)
+    kit.missingCover:SetColorTexture(0, 0, 0, 1)
+    kit.missingCover:SetAlpha(0)
 
     kit.auraIcon = slotButton:CreateTexture(nil, "ARTWORK", nil, 2)
     kit.auraIcon:SetAllPoints(slotButton)
@@ -1630,6 +1670,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.iconCover:ClearAllPoints()
     kit.iconCover:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", 0, 0)
     kit.iconCover:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", 0, 0)
+    kit.missingCover:ClearAllPoints()
+    kit.missingCover:SetAllPoints(iconAnchor)
+    kit.missingCover:SetAlpha(slot.missingIndicator and (not isBar or barIconShown) and 1 or 0)
 
     -- Resource overlays never swap in an aura icon: live's overlay has no
     -- icon of any kind.
@@ -1644,8 +1687,14 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local coverWanted = (not isBar)
         or (barIconShown and (showAuraIcon or shellEntry or kitDesat))
     if keepSwipeActive then
-        -- Keep-swipe entries skip the takeover; the CC icon stays visible.
+        -- Keep-swipe entries normally leave the CC icon visible.
         coverWanted = false
+    end
+    if slot.missingIndicator then
+        -- Every active slot must cover the shared missing cue with an icon,
+        -- including bars without an aura-icon swap and keep-swipe entries.
+        -- ResolveStrataLevels keeps the opted-in spell swipe above this cover.
+        coverWanted = not isBar or barIconShown
     end
     local coverShown = false
 
@@ -2413,6 +2462,64 @@ end
 -- now gains a second record rather than mutating its first. The first is parked
 -- (hidden, deregistered, rendering nothing), so this is invisible; the cost is
 -- at most one extra container per polarity that button has ever hosted.
+-- Shared with the config mirror. Only ordinary CC frames enter this helper.
+local function StyleMissingAuraReminder(host, anchor, style)
+    style = style or {}
+    host:SetAllPoints(anchor)
+    -- The original icon owns its color/desaturation. This host adds only cues.
+    if not host.marker then
+        host.marker = host:CreateFontString(nil, "OVERLAY")
+        host.marker:SetPoint("CENTER", host, "CENTER", 0, 0)
+        -- Keep every shared glow style inside the rectangle the active aura
+        -- covers. This host is an ordinary CC frame, never a native aura slot.
+        host:SetClipsChildren(true)
+        host.glow = ST._BuildKitGlowRegions(host, false, false)
+    end
+    local width, height = host:GetWidth(), host:GetHeight()
+    local size = math.max(1, math.min(width, height) * (style.missingAuraMarkerSize or 65) / 100)
+    host.marker:SetFont(STANDARD_TEXT_FONT, size, "THICKOUTLINE")
+    host.marker:SetText(style.missingAuraMarkerText or "!")
+    local textWidth = host.marker:GetStringWidth()
+    if textWidth > width and width > 0 then
+        host.marker:SetFont(STANDARD_TEXT_FONT, math.max(1, size * width / textWidth), "THICKOUTLINE")
+    end
+    local color = style.missingAuraMarkerColor or {1, 0.15, 0.1, 1}
+    host.marker:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+    host.marker:SetShown(style.missingAuraMarkerEnabled ~= false)
+    -- All glow art stays below the native slot, including its child frame.
+    host.glow.host:SetFrameLevel(host:GetFrameLevel())
+    ST._StyleKitGlowRegions(host.glow, style, host,
+        style.missingAuraGlowStyle ~= nil and style.missingAuraGlowStyle ~= "none",
+        "missingAuraGlow", {1, 0.15, 0.1, 1})
+end
+ST._StyleMissingAuraReminder = StyleMissingAuraReminder
+
+local function BindMissingAuraReminder(button, buttonData, style, tracksTarget)
+    local reminder = button._missingAuraReminder
+    if not style then
+        if reminder then
+            reminder.style = nil
+            reminder.boundEntry = nil
+            reminder:Hide()
+        end
+        return
+    end
+    local layer = EnsureAuraLayer(button)
+    if not reminder then
+        -- One cue per button, below ALL of its per-unit native aura slots.
+        reminder = CreateFrame("Frame", nil, layer)
+        reminder:EnableMouse(false)
+        button._missingAuraReminder = reminder
+    end
+    EnsureMissingCueWatcher()
+    reminder:SetFrameLevel(layer:GetFrameLevel())
+    reminder.style = style
+    reminder.boundEntry = buttonData
+    reminder.tracksTarget = tracksTarget
+    StyleMissingAuraReminder(reminder, button.icon, style)
+    UpdateMissingReminderVisibility(button)
+end
+
 local function EnsureDisplay(button, unit, groupScoped, hostKind)
     hostKind = hostKind or "button"
     local recordKey = hostKind .. "\031" .. unit
@@ -2455,6 +2562,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
+            if hostKind == "button" then frame:SetFrameLevel(layer:GetFrameLevel() + 1) end
             if hostKind == "texturePanel" then
                 record.kit = BuildTexturePanelSlotKit(frame)
             elseif hostKind == "text" then
@@ -2880,26 +2988,7 @@ end
 -- the gate would silently refuse to filter — unrepresentable at runtime even if
 -- stored config drifts.
 local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
-    -- A user unit override is absolute (owner ruling 2026-08-28): the
-    -- classifier exists to guess polarity from spell data, and the override
-    -- exists for the entries where that data lies. "player" continues into
-    -- the buff scope rows below; "target" resolves like any harmful entry.
-    local unitOverride = ST.GetEntryAuraUnitOverride(buttonData)
-    local harmful
-    if unitOverride then
-        harmful = unitOverride == "target"
-    else
-        local first = allowGroupScope == false
-            and self:ResolveTexturePanelAuraSpellID(buttonData)
-            or self:ResolveAuraSpellID(buttonData)
-        local classifiedUnit = ST.ClassifyAuraSpellUnit(first)
-        if classifiedUnit then
-            harmful = classifiedUnit == "target"
-        else
-            harmful = buttonData.auraUnit == "target"
-        end
-    end
-    if harmful then return { "target" } end
+    if self:IsAuraTrackedOnTarget(buttonData, allowGroupScope == false) then return { "target" } end
     -- Pet scope is EXCLUSIVE (owner ruling 2026-08-21): a pet-tracked buff
     -- lives only on the pet, so binding a player record beside it would waste
     -- a container and forfeit aura sounds (the single-unit rule below). The
@@ -4546,6 +4635,7 @@ function RunAuraRebind()
                             style = style,
                             stackBarMax = stackBarMax,
                             hostKind = textureAura and "texturePanel" or textAura and "text" or "button",
+                            missingIndicator = self:IsMissingAuraIndicatorEntry(buttonData, group, style),
                             textureSettings = textureSettings,
                             textureIndicator = textureIndicators and textureIndicators.aura or nil,
                         }
@@ -4588,6 +4678,9 @@ function RunAuraRebind()
     -- config-change frequency, never per tick. The mutation-boundary guard
     -- above has established that combat lockdown and aura secrecy are both
     -- clear before any binding is hidden or rewritten.
+    for button in pairs(displays) do
+        BindMissingAuraReminder(button)
+    end
     for _, record in ipairs(records) do
         ParkDisplay(record)
     end
@@ -4600,10 +4693,14 @@ function RunAuraRebind()
         for _, unit in ipairs(want.units) do
             local record = EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
             if record then
+                record.missingIndicator = want.missingIndicator
                 BindDisplay(record, want.buttonData, want.spellSet, unit,
                     want.style, want.stackBarMax, soundsAllowed, want.groupScoped,
                     want.textureSettings, want.textureIndicator)
             end
+        end
+        if want.missingIndicator and #want.units > 0 then
+            BindMissingAuraReminder(want.button, want.buttonData, want.style, want.units[1] == "target")
         end
     end
 

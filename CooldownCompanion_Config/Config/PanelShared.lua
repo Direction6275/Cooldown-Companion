@@ -74,7 +74,7 @@ local PANEL_TYPES = {
         parentMode = "icons",
         label = "Aura Icon Panel",
         pickerLabel = "Aura Icons",
-        description = "Holds only aura entries, and shows each icon while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
+        description = "Holds only aura entries, and shows each icon while its aura is up. Inactive auras take no space, so missing-aura indicators are unavailable. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
     },
     {
         mode = "bars",
@@ -88,7 +88,7 @@ local PANEL_TYPES = {
         parentMode = "bars",
         label = "Aura Bar Panel",
         pickerLabel = "Aura Bars",
-        description = "Holds only aura entries, and shows each bar while its aura is up. Inactive auras take no space. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
+        description = "Holds only aura entries, and shows each bar while its aura is up. Inactive auras take no space, so missing-aura indicators are unavailable. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
     },
     {
         mode = "text",

@@ -2002,6 +2002,12 @@ local function BuildBarEffectsTab(container, group, style)
     }, tabInfoButtons))
     missingSec:Chrome(missingRow)
     end -- CanGroupUseOverrideSection auraMissingDesaturation
+    if barIconShown then
+        ST._BuildMissingAuraIndicatorControls(auraRight, group, lens, {
+            setting = BAR_FINDER.effects.aura.missingIndicator,
+            settings = BAR_FINDER.advanced.missingIndicator, infoButtons = tabInfoButtons,
+        })
+    end
 
     -- ---------------------------------------------------------------
     -- Pandemic
@@ -2715,10 +2721,22 @@ if ST._DefineSettingRoute then
         yOffset = { label = "Y Offset" },
     })
 
+    BAR_FINDER.advanced.missingIndicator = ST._DefineMissingAuraIndicatorSettings(BarFinderRoute(
+        "panel.bars.effects.missingIndicator", "effects", EFFECTS_AURA_SECTION, "Missing Aura Indicator", EFFECTS_AURA_SECTION,
+        function(context)
+            return BarFinderTracksAura(context) and BarFinderIconShown(context)
+                and BarFinderCanUse(context, "missingAuraIndicator")
+        end, "missingAuraIndicator", "missingAuraIndicator"), BarFinderStyle)
+
     local auraEffects = BarFinderEffectRoute(
         "panel.bars.effects.aura", EFFECTS_AURA_SECTION, "Aura Indicators",
         BarFinderTracksAura)
     BAR_FINDER.effects.aura = auraEffects:Settings({
+        missingIndicator = { label = "Missing Aura Indicator", sectionId = "missingAuraIndicator",
+            aliases = { "show missing indicator", "missing aura glow", "missing marker" },
+            applies = function(context)
+                return BarFinderIconShown(context) and BarFinderCanUse(context, "missingAuraIndicator")
+            end },
         active = { label = "Show Active Aura Indicator", sectionId = "barActiveAura" },
         missing = {
             label = "Desaturate While Aura Missing", sectionId = "auraMissingDesaturation",

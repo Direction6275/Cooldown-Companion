@@ -217,6 +217,7 @@ end
 
 local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
         style, previewState)
+    PP.RestoreMissingReminderPreview(slot)
     -- Read by ApplyBarCountTextStyle
     slot.buttonData = buttonData
 
@@ -529,11 +530,13 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             slot.icon:SetDesaturated(true)
         end
     end
+    PP.ApplyMissingReminderPreview(slot, buttonData, group, previewState)
 end
 
 -- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same
 -- shared area/border helpers, full fill, no runtime state.
 local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
+    PP.RestoreMissingReminderPreview(slot)
     ST.ChargeBarSegments.Invalidate(slot.statusBar)
     slot.buttonData = buttonData
     slot._chargePreviewCount, slot._chargePreviewColor = nil, nil

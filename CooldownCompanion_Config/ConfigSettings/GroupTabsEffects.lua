@@ -1561,6 +1561,10 @@ local function BuildEffectsTab(container)
     }, tabInfoButtons))
     missingSec:Chrome(missingCb)
     end -- CanGroupUseOverrideSection auraMissingDesaturation
+    ST._BuildMissingAuraIndicatorControls(auraRight, group, lens, {
+        setting = EFFECTS_FINDER.icons.aura.missingIndicator,
+        settings = EFFECTS_FINDER.advanced.missingIndicator, infoButtons = tabInfoButtons,
+    })
     end -- Aura Indicators section open
 
     -- ---------------------------------------------------------------
@@ -1878,6 +1882,9 @@ if ST._DefineSettingRoute then
             return EffectsFinderIcons(context) and EffectsFinderTracksAura(context)
         end)
     EFFECTS_FINDER.icons.aura = aura:Settings({
+        missingIndicator = { label = "Missing Aura Indicator", sectionId = "missingAuraIndicator",
+            aliases = { "show missing indicator", "missing aura glow", "missing marker" },
+            applies = EffectsFinderIconsRow("missingAuraIndicator", true) },
         auraGlow = { label = "Show Aura Glow" },
         auraSwipe = { label = "Show Aura Duration Swipe" },
         missing = { label = "Desaturate While Aura Missing", applies = EffectsFinderIconsRow("auraMissingDesaturation", true) },
@@ -1998,6 +2005,10 @@ if ST._DefineSettingRoute then
         color = { label = "Flash Color" },
         duration = { label = "Flash Duration" },
     })
+
+    EFFECTS_FINDER.advanced.missingIndicator = ST._DefineMissingAuraIndicatorSettings(EffectsFinderRoute(
+        "panel.icons.effects.missingIndicator", EFFECTS_AURA_SECTION, "Missing Aura Indicator",
+        EffectsFinderIconsAdvanced("missingAuraIndicator", true), "missingAuraIndicator", "missingAuraIndicator"), EffectsFinderEffectiveStyle)
 
     local auraGlow = DefineGlowAdvanced(
         "panel.icons.effects.auraGlow", "auraIndicator", "auraGlow", true, {

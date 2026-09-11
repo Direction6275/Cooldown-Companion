@@ -601,6 +601,7 @@ end
 
 local function ApplyAuraShellVisuals(button, buttonData)
     local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
     button.bg:SetAlpha(alpha)
     -- The icon must be hidden by shown-state, not alpha: the per-tick tint
     -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
@@ -832,13 +833,13 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
     end
 
-    -- Every configurable level, plus the pinned elements above them.
-    ApplyStrataOrder(button, style.strataOrder)
-
-    -- Store button data
+    -- Store button data before resolving style-dependent layer positions.
     button.index = index
     button.style = style
     button._groupId = parent.groupId
+
+    -- Every configurable level, plus the pinned elements above them.
+    ApplyStrataOrder(button, style.strataOrder)
 
     -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
     if buttonData.type == "spell" then

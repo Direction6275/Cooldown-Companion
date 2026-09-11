@@ -1625,6 +1625,15 @@ local function ResolveStrataLevels(button, order)
         levels[key] = cursor
         cursor = cursor + (ST.STRATA_SLOT_SPANS[key] or 1) - 1
     end
+    -- Missing cues require an opaque active icon even for keep-swipe entries.
+    -- Preserve that opt-in above the icon replica (auraDisplay + 1), but
+    -- below aura glows (+3) and text (+4), unless the user already put it higher.
+    local style = button.style
+    if style and CooldownCompanion:IsMissingAuraIndicatorEntry(button.buttonData, nil, style)
+        and CooldownCompanion:IsKeepSpellCooldownSwipeEntry(button.buttonData, style) then
+        levels.cooldown = math.max(levels.cooldown,
+            levels.auraDisplay + 2)
+    end
     return levels, cursor
 end
 

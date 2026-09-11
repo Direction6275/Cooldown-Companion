@@ -77,6 +77,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     pandemic = true,
     whileAuraActive = true,
     auraMissingDesaturation = true,
+    missingAuraIndicator = true,
 }
 
 -- Keybind and custom text never reach a packed aura cell: the renderer draws
@@ -105,7 +106,7 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
         return false, "auraTracking"
     end
 
-    if sectionId == "keybindText" and group and buttonData
+    if (sectionId == "keybindText" or sectionId == "missingAuraIndicator") and group and buttonData
         and ST.IsAuraSectionEntry and ST.IsAuraSectionEntry(group, buttonData) then
         return false, "auraSection"
     end

@@ -431,6 +431,18 @@ local function PandemicEffectEnabled(group, buttonIndex)
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
 end
 
+local function MissingAuraPreviewEnabled(group, buttonIndex)
+    local buttons = group.buttons or {}
+    local predicate = CooldownCompanion.IsMissingAuraIndicatorEntry
+    if buttonIndex then
+        return predicate(CooldownCompanion, buttons[buttonIndex], group)
+    end
+    for _, buttonData in ipairs(buttons) do
+        if predicate(CooldownCompanion, buttonData, group) then return true end
+    end
+    return false
+end
+
 -- Effective marker enable, the same resolution the live bind gate performs
 -- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
 -- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
@@ -595,6 +607,15 @@ local function ResolveCooldownVisualOwner(group, buttonIndex)
 end
 
 local CONTROLS = {
+    {
+        id = "auraMissing",
+        label = "Preview Missing Aura",
+        group = GROUP_AURAS,
+        menuOrder = 44,
+        modes = { icons = true, bars = true },
+        requiresMissingIndicator = true,
+        preview = ConditionalPreview("aura_missing"),
+    },
     {
         id = "procGlow",
         label = "Preview Proc Glow",
@@ -929,6 +950,9 @@ local CONTROLS = {
 
 local function ControlApplies(control, group, displayMode, buttonIndex)
     if not control.modes[displayMode] then
+        return false
+    end
+    if control.requiresMissingIndicator and not MissingAuraPreviewEnabled(group, buttonIndex) then
         return false
     end
     if displayMode == "text" and control.textAuraPieces then

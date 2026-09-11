@@ -1896,8 +1896,8 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
     -- checkbox labels so a search typed from memory of the old rows still
     -- lands on the row that replaced them.
     auraInactive = {
-        label = "While Aura Inactive",
-        aliases = { "show only while aura active", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
+        label = "Aura Visibility",
+        aliases = { "while aura inactive", "show only while aura active", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
         applies = EntryVisibilityApplies(function(state) return state.auraPair end),
     },
     cooldownVisibility = {
@@ -2573,32 +2573,28 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- pair as well as the row families below.
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel then
-        -- Two mutually exclusive inactive-state presentations, stored as
-        -- independent single keys and stated as one dropdown. The dim key is
-        -- auraShellDim, new in 12.1 and deliberately not main's
-        -- useBaselineAlphaFallback: that key's presence could not be told
-        -- apart from residue, so the migration had to guess and guessed away
-        -- live settings. Icons and bars only, so Dim is always offered.
+        -- Visibility is independent of missing-aura effects.
         AddFamily(1, function(column)
             AddVisibilityDropdown(column, {
                 setting = entryVisibilitySettings.auraInactive,
                 filter = FilterAuraEntry,
-                list = { show = "Show", dim = "Dim", hide = "Hide" },
+                list = { show = "Normal", dim = "Dim While Inactive", hide = "Show Only While Active" },
                 order = { "show", "dim", "hide" },
                 read = function(bd)
-                    if bd.hideWhileAuraNotActive then return "hide" end
-                    if bd.auraShellDim then return "dim" end
+                    if bd.hideWhileAuraNotActive == true then return "hide" end
+                    if bd.auraShellDim == true then return "dim" end
                     return "show"
                 end,
-                tooltip = BuildVisibilityModeTooltip("While Aura Inactive", {
-                    {"What this entry does until its tracked aura is active. It returns to full strength while the aura runs.", 1, 1, 1, true},
+                tooltip = BuildVisibilityModeTooltip("Aura Visibility", {
+                    {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show Only While Active hides it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
-                    {"In Compact Mode panels a hidden aura still reserves its space. The game hides whether auras are active from addons, so other entries cannot close the gap.", 1, 1, 1, true},
+                    {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
                 }, true),
                 write = function(value)
                     ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
                     ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
                     CooldownCompanion:RefreshAllGroups()
+                    CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
