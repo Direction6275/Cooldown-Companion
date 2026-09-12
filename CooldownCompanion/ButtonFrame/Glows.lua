@@ -1637,6 +1637,26 @@ local function BuildKitGlowRegions(parent, withCdm, auraOwned)
     return glowKit
 end
 
+-- CC-owned editing samples keep the styled glow visible while its native
+-- animations are paused. Only resume paused groups: the other styles' groups
+-- are stopped and must stay that way. Live aura-owned kits never call this.
+local function SetKitGlowPaused(glowKit, paused)
+    local function UpdateAnimation(group)
+        if paused then
+            if group:IsPlaying() then group:Pause() end
+        elseif group:IsPaused() then
+            group:Play()
+        end
+    end
+    UpdateAnimation(glowKit.pulseAG)
+    UpdateAnimation(glowKit.flipAG)
+    UpdateAnimation(glowKit.antsAG)
+    for _, group in ipairs(glowKit.csAGs) do UpdateAnimation(group) end
+    UpdateAnimation(glowKit.dashes.ag)
+    for _, spark in ipairs(glowKit.sparks) do UpdateAnimation(spark.ag) end
+    if glowKit.cdm then UpdateAnimation(glowKit.cdm.ag) end
+end
+
 -- Style a kit glow from the effective style. anchorFrame is the CC host
 -- button: anchoring kit regions TO an outside frame is the validated
 -- direction (kit.bg precedent). Live kits call this at OOC bind time only.
@@ -1938,6 +1958,7 @@ ST._SetupTooltipScripts = SetupTooltipScripts
 ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
+ST._SetKitGlowPaused = SetKitGlowPaused
 ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions

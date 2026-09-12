@@ -249,6 +249,7 @@ RefreshSurface = function(surface)
     surface._refreshing = true
     wipe(surface.active)
     local preview = surface.preview or (surface.arrangePreview and not InCombatLockdown())
+    local paused = preview and not (surface.preview and Addon:IsTotemPanelPreviewPlaying(surface.groupId))
     local previousCapacity = surface.geo and surface.geo.capacity
     surface.geo = ST.GetTotemPanelGeometry(group, preview and PREVIEW_SLOT_COUNT or surface.capacity)
     local frame = not surface.preview and Addon.groupFrames[surface.groupId]
@@ -265,6 +266,7 @@ RefreshSurface = function(surface)
         if issecretvalue(active) then active = false end
         if preview and slot > PREVIEW_SLOT_COUNT then active = false end
         if active then
+            if button._totemGlow then ST._SetKitGlowPaused(button._totemGlow, paused) end
             button._totemSlotActive = true
             if preview then
                 RenderSample(surface, button, slot)
