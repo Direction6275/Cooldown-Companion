@@ -222,23 +222,15 @@ local function StartColorShift(container, colorA, colorB, speed)
     end
 end
 
--- Dashes: LibCustomGlow-style pixel glow, including the corner WRAP. Each
--- dash is four line pieces, one per border edge, each clipped by a static
--- WHITE8X8 MaskTexture strip along its edge (mask + translation clipping is
--- P13-validated in combat). A piece travels its edge's line extended by the
--- dash length, so as one piece's tail slides out through its strip boundary
--- at a corner, the next edge's piece slides in through its own boundary at
--- the same speed: the visible total stays one dash length and the dash
--- appears to bend around the corner, exactly like LCG's two-texture crop
--- trick. Between passes a piece detours outside the button (invisible,
--- beyond every strip) back to its start, so each piece is a fixed
--- five-Translation loop: delay/travel/out/back/in, or the straddled variant
--- when a dash's phase puts a piece mid-edge at the loop boundary. All
--- durations are distance-proportional against one shared lap time, keeping
--- the four pieces of a dash in permanent sync. The horizontal strips own the
--- corner squares (strips never overlap), so the pieces never double-draw.
--- Shared by the live kit renderer and its CC-side preview twin: both store
--- dashes as { pieces = { {tex, ag, trs} x4 } } plus a shared 4-mask set.
+-- Dashes share one AnimationGroup and one linear translation per texture.
+-- Every translation covers a full perimeter in one lap, with no timed
+-- detours or per-edge loop boundaries. Copies one perimeter apart exchange
+-- places at the shared loop boundary, so clipping stays continuous there too.
+-- The horizontal strips own the corner squares. Their full widths and the
+-- remaining vertical lengths form one continuous, non-overlapping ribbon:
+-- every unit disappearing from an edge appears on the next at the same time.
+-- Shared by the live kit and preview; all regions/targets are built before
+-- aura ownership. AnimationGroups then run without scripts or combat writes.
 local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thickness, lap, count, r, g, b, a, width, height)
     -- Explicit dims when the anchor is a freshly-anchored frame (aura-host
     -- holders, per-segment bounds): its own GetSize would report last
@@ -247,8 +239,22 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
     if not w or not h then
         w, h = anchorFrame:GetSize()
     end
-    local T = math_max(1, thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS)
-    local L = math_max(2, length or BAR_AURA_GLOW_SIZES.dashes)
+    dashList.ag:Stop()
+    if w <= 0 or h <= 0 then
+        for _, dash in ipairs(dashList) do
+            for _, piece in ipairs(dash.pieces) do
+                piece.tex:Hide()
+            end
+        end
+        return
+    end
+    local T = math_min(math_max(1, thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS), w / 2, h / 2)
+    local P = 2 * (w + h - 2 * T)
+    count = math_max(1, math.floor(count))
+    -- Honor the pixel style's 1-unit minimum. At full spacing adjacent dashes
+    -- meet as a solid ribbon instead of overlapping and multiplying alpha.
+    local L = math_min(math_max(1, length or BAR_AURA_GLOW_SIZES.dashes), P / count)
+    if not lap or lap <= 0 then lap = AURA_GLOW_SPEED_DEFAULTS.dashes end
 
     -- Clip strips, one per border; verticals sit between the horizontals.
     masks[1]:ClearAllPoints()
@@ -264,16 +270,12 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
     masks[4]:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, -T)
     masks[4]:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMLEFT", T, T)
 
-    -- Dash-center path: inset by half the thickness, clockwise from the
-    -- top-left path corner. Coordinates are relative to the anchor TOPLEFT.
-    local spanW = math_max(w - T, 1)
-    local spanH = math_max(h - T, 1)
-    local P = 2 * (spanW + spanH)
+    -- Coordinates follow the clip strips clockwise from the top-left.
     local edges = {
-        { sx = T / 2,     sy = -T / 2,       dx = 1,  dy = 0,  len = spanW, ox = 0,  oy = 1,  horizontal = true },
-        { sx = w - T / 2, sy = -T / 2,       dx = 0,  dy = -1, len = spanH, ox = 1,  oy = 0 },
-        { sx = w - T / 2, sy = -(h - T / 2), dx = -1, dy = 0,  len = spanW, ox = 0,  oy = -1, horizontal = true },
-        { sx = T / 2,     sy = -(h - T / 2), dx = 0,  dy = 1,  len = spanH, ox = -1, oy = 0 },
+        { sx = 0,         sy = -T / 2,       dx = 1,  dy = 0,  len = w, horizontal = true },
+        { sx = w - T / 2, sy = -T,           dx = 0,  dy = -1, len = h - 2 * T },
+        { sx = w,         sy = -(h - T / 2), dx = -1, dy = 0,  len = w, horizontal = true },
+        { sx = T / 2,     sy = -(h - T),     dx = 0,  dy = 1,  len = h - 2 * T },
     }
     local arc = 0
     for j = 1, 4 do
@@ -289,21 +291,19 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
     -- origin.
     local clockPhase = (GetTime() % lap) / lap * P
     for i, dash in ipairs(dashList) do
-        if i <= count then
-            local s0 = ((i - 1) * P / count + clockPhase) % P
-            for j = 1, 4 do
-                local e = edges[j]
-                local piece = dash.pieces[j]
-                -- Engagement window: the piece is on its extended line while
-                -- any part of the dash overlaps this edge (or its corners).
-                local winLen = math_min(e.len + L + T, P)
-                local d0 = ((e.c - (L + T) / 2) - s0) % P
-                local wx = e.sx - e.dx * (L + T) / 2
-                local wy = e.sy - e.dy * (L + T) / 2
-                local out = 2 * T + 2
-                local trs = piece.trs
-
-                piece.ag:Stop()
+        local s0 = ((i - 1) * P / count + clockPhase) % P
+        for j, piece in ipairs(dash.pieces) do
+            local e = edges[(j - 1) % 4 + 1]
+            local copy = math.floor((j - 1) / 4)
+            -- Hidden pooled animations must also use the new lap; otherwise
+            -- their old duration would lengthen the shared group's loop.
+            piece.tr:SetDuration(lap)
+            if i <= count and e.len > 0 and (copy < 2 or e.len + L > P) then
+                -- The leading copy ends fully beyond its strip. The trailing
+                -- copy begins fully before it. A third copy is needed only
+                -- for a single long dash whose engagement window exceeds P.
+                local finish = e.len + L / 2
+                local q = (s0 - e.c - finish) % P + finish - P - copy * P
                 piece.tex:SetColorTexture(r, g, b, a)
                 if e.horizontal then
                     piece.tex:SetSize(L, T)
@@ -311,51 +311,17 @@ local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thicknes
                     piece.tex:SetSize(T, L)
                 end
                 piece.tex:ClearAllPoints()
-                if d0 + winLen <= P then
-                    -- delay at window start, travel, detour home
-                    piece.tex:SetPoint("CENTER", anchorFrame, "TOPLEFT", wx, wy)
-                    local rest = math_max(lap * (P - d0 - winLen) / P, 0)
-                    trs[1]:SetOffset(0, 0)
-                    trs[1]:SetDuration(lap * d0 / P)
-                    trs[2]:SetOffset(e.dx * winLen, e.dy * winLen)
-                    trs[2]:SetDuration(lap * winLen / P)
-                    trs[3]:SetOffset(e.ox * out, e.oy * out)
-                    trs[3]:SetDuration(rest * 0.1)
-                    trs[4]:SetOffset(-e.dx * winLen, -e.dy * winLen)
-                    trs[4]:SetDuration(rest * 0.8)
-                    trs[5]:SetOffset(-e.ox * out, -e.oy * out)
-                    trs[5]:SetDuration(rest * 0.1)
-                else
-                    -- window straddles the loop boundary: finish the pass,
-                    -- detour home, start the next pass's first part
-                    local q = P - d0
-                    local rem = winLen - q
-                    piece.tex:SetPoint("CENTER", anchorFrame, "TOPLEFT", wx + e.dx * q, wy + e.dy * q)
-                    local rest = math_max(lap * (P - winLen) / P, 0)
-                    trs[1]:SetOffset(e.dx * rem, e.dy * rem)
-                    trs[1]:SetDuration(lap * rem / P)
-                    trs[2]:SetOffset(e.ox * out, e.oy * out)
-                    trs[2]:SetDuration(rest * 0.1)
-                    trs[3]:SetOffset(-e.dx * winLen, -e.dy * winLen)
-                    trs[3]:SetDuration(rest * 0.8)
-                    trs[4]:SetOffset(-e.ox * out, -e.oy * out)
-                    trs[4]:SetDuration(rest * 0.1)
-                    trs[5]:SetOffset(e.dx * q, e.dy * q)
-                    trs[5]:SetDuration(lap * q / P)
-                end
+                piece.tex:SetPoint("CENTER", anchorFrame, "TOPLEFT", e.sx + e.dx * q, e.sy + e.dy * q)
+                piece.tr:SetOffset(e.dx * P, e.dy * P)
                 piece.tex:SetAlpha(1)
                 piece.tex:Show()
-                piece.ag:Play()
-            end
-        else
-            for j = 1, 4 do
-                local piece = dash.pieces[j]
-                piece.ag:Stop()
+            else
                 piece.tex:SetAlpha(0)
                 piece.tex:Hide()
             end
         end
     end
+    dashList.ag:Play()
 end
 
 local function CreateDashMasks(parent)
@@ -369,21 +335,23 @@ local function CreateDashMasks(parent)
 end
 
 local function CreateDashRegions(parent, dashList, masks, count)
+    if not dashList.ag then
+        dashList.ag = parent:CreateAnimationGroup()
+        dashList.ag:SetLooping("REPEAT")
+    end
     for i = #dashList + 1, count do
         local pieces = {}
-        for j = 1, 4 do
+        -- With two or more dashes L <= P/2 and every strip <= P/2, so two
+        -- copies cover a full lap. Only dash 1 can need a third copy.
+        for j = 1, (i == 1 and 12 or 8) do
             local tex = parent:CreateTexture(nil, "OVERLAY", nil, 2)
             tex:SetAlpha(0)
-            tex:AddMaskTexture(masks[j])
-            local ag = tex:CreateAnimationGroup()
-            ag:SetLooping("REPEAT")
-            local trs = {}
-            for o = 1, 5 do
-                local tr = ag:CreateAnimation("Translation")
-                tr:SetOrder(o)
-                trs[o] = tr
-            end
-            pieces[j] = { tex = tex, ag = ag, trs = trs }
+            tex:AddMaskTexture(masks[(j - 1) % 4 + 1])
+            local tr = dashList.ag:CreateAnimation("Translation")
+            tr:SetTarget(tex)
+            tr:SetOrder(1)
+            tr:SetSmoothing("NONE")
+            pieces[j] = { tex = tex, tr = tr }
         end
         dashList[i] = { pieces = pieces }
     end
@@ -649,9 +617,9 @@ local function HideGlowStyles(container)
         container.antsFlip:Hide()
     end
     if container.dashes then
+        container.dashes.ag:Stop()
         for _, d in ipairs(container.dashes) do
             for _, piece in ipairs(d.pieces) do
-                piece.ag:Stop()
                 piece.tex:Hide()
             end
         end
@@ -824,7 +792,7 @@ local function IsGlowAnimationAlive(container)
         and container.dashes[1].pieces[1].tex:IsShown() then
         local piece = container.dashes[1].pieces[1]
         if not piece.tex:IsVisible() then return true end
-        return piece.ag:IsPlaying()
+        return container.dashes.ag:IsPlaying()
     end
     -- Autocast sparks: same shared-lifecycle rule as the dashes
     if container.sparks and container.sparks[1]
@@ -1716,9 +1684,9 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
         spark.ag:Stop()
         spark.tex:SetAlpha(0)
     end
+    glowKit.dashes.ag:Stop()
     for _, d in ipairs(glowKit.dashes) do
         for _, piece in ipairs(d.pieces) do
-            piece.ag:Stop()
             piece.tex:SetAlpha(0)
         end
     end
@@ -1782,6 +1750,9 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
 
     if kitStyle == "dashes" then
         count = math_min(math_max(count or 5, 1), MAX_AURA_GLOW_DASHES)
+        if not speed or speed <= 0 or speed > 3 then
+            speed = AURA_GLOW_SPEED_DEFAULTS.dashes
+        end
         -- _ccKitRectW/H: rect dims stamped by the aura-host anchor pass for
         -- holder-anchored kits (fresh anchors report stale sizes); nil on CC
         -- buttons, which fall back to their own explicit size.
