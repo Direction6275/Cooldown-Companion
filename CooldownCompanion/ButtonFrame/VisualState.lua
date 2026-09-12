@@ -281,16 +281,7 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     -- Live aura and pandemic glows are owned by the aura slot kit. The config
     -- mirror renders its own replicas, so live buttons have no CC aura intent.
-    -- The totem active phase is the one exception: a totem has no aura instance
-    -- and no slot, so CC drives the same kit glow on its own button from the
-    -- auraGlow* keys (IconMode's _totemGlowStyleActive latch). Reported active
-    -- so the row matches what is on screen; this is REPORTING only -- the
-    -- display stays latch-driven, nothing here writes a style.
-    if button._totemActive == true and (style.auraGlowStyle or "pulse") ~= "none" then
-        SetGlowIntent(aura, true, "totem-active", snapshots)
-    else
-        SetGlowIntent(aura, false, "no-container", snapshots)
-    end
+    SetGlowIntent(aura, false, "no-container", snapshots)
 
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
     local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
@@ -306,19 +297,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(ready, false, "combat-only", snapshots)
         if snapshots then
             ready.combatSuppressed = true
-        end
-    elseif button._totemActive == true then
-        -- Totem active phase reads as aura-active (owner ruling): the summon's
-        -- remaining time is still on screen, so the ready glow must not light --
-        -- neither the continuous form nor a finite window that the underlying
-        -- cooldown opened mid-phase. Ranked above the cooldown branch for the
-        -- same reason the fill intent ranks it first: the phase outranks the
-        -- spell cooldown, so it should be the reported reason. Suppression is
-        -- DISPLAY-only; the window's start stamp is owned by CooldownUpdate,
-        -- which re-stamps it at the falling edge.
-        SetGlowIntent(ready, false, "totem-active", snapshots)
-        if snapshots then
-            ready.auraSuppressed = true
         end
     elseif button._desatCooldownActive ~= false or button._cooldownState == STATE_COOLDOWN then
         SetGlowIntent(ready, false, "cooldown", snapshots)
@@ -408,11 +386,7 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
     end
 
     local cooldownReason
-    if button._totemActive == true then
-        -- Totem active phase outranks the spell cooldown and the recharge; the
-        -- value itself already flows from _durationObj.
-        cooldownReason = "totem"
-    elseif button._cooldownState == STATE_COOLDOWN then
+    if button._cooldownState == STATE_COOLDOWN then
         cooldownReason = "cooldown"
     elseif UsesIconFillChargeBehavior(buttonData)
         and button._chargeRecharging == true
@@ -618,11 +592,7 @@ local function RefreshButtonVisualState(button, context)
         glows.readyDurationWindow = nil
     end
     glows.procActive = IsTrue(button._procGlowActive)
-    -- _auraGlowActive is the legacy SetAuraGlow container cache (never written
-    -- on live buttons now that the aura glow is kit-owned). The totem phase's
-    -- indicator is CC-owned kit regions instead, so its latch is the applied
-    -- truth for that case.
-    glows.auraActive = IsTrue(button._auraGlowActive) or IsTrue(button._totemGlowStyleActive)
+    glows.auraActive = IsTrue(button._auraGlowActive)
     glows.auraPandemic = IsTrue(button._auraGlowPandemic)
     glows.readyActive = IsTrue(button._readyGlowActive)
 

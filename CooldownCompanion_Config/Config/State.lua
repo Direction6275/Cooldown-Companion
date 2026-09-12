@@ -1087,6 +1087,7 @@ end
 -- Helper: Get icon for a group (from its first button)
 ------------------------------------------------------------------------
 local function GetGroupIcon(group)
+    if ST.IsTotemPanelGroup(group) then return 136098 end
     if group and group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         return CooldownCompanion:GetRotationAssistantFallbackIcon()
     end
@@ -1152,6 +1153,10 @@ end
 ------------------------------------------------------------------------
 -- Shared compact panel-row presentation helpers
 ------------------------------------------------------------------------
+-- Totem Panels keep the same icon/bar glyphs as other panels, with a distinct
+-- cyan tint applied to desaturated artwork like the Aura Panel badges.
+ST.TOTEM_PANEL_BADGE_TINT = { 0.3, 0.8, 1, 1 }
+
 local function GetConfigPanelTypeBadgeAtlas(displayMode)
     if displayMode == "bars" then
         return "CreditsScreen-Assets-Buttons-Pause"
@@ -1185,6 +1190,7 @@ local function GetConfigAuraPanelBadgeTint(panel)
 end
 
 local function GetConfigPanelEntryCount(panel)
+    if ST.IsTotemPanelGroup(panel) then return GetNumTotemSlots() end
     if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         return 1
     end

@@ -1009,6 +1009,9 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         and (shown == true or containerPreviewActive)
         or false
     CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
+    CooldownCompanion:SetTotemPanelPreviewShown(frame,
+        ST.IsTotemPanelGroup(group) and not CooldownCompanion._combatForcedLock
+            and (shown == true or containerPreviewActive))
 
     -- Section click targets ride the same wide gate the aura placeholder
     -- preview does: every member of an active container preview shows its

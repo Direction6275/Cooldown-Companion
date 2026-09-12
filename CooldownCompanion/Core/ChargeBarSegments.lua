@@ -294,7 +294,7 @@ function ChargeBarSegments.PaintPanel(owner, count, maximum, duration, rechargin
         and not (host._chargeSegments and host._chargeSegments._attached) then return false end
     local restore = owner._barCdColor or style.barColor or {0.2, 0.6, 1, 1}
     if style.barSegmentCharges ~= true or not data or data.type ~= "spell"
-        or data.addedAs == "aura" or data.hasCharges ~= true or owner._totemActive
+        or data.addedAs == "aura" or data.hasCharges ~= true
         or not maximum or maximum <= 1 then
         ChargeBarSegments.End(host, restore)
         return false

@@ -52,13 +52,13 @@ local CREATE_ACCENT = {
 -- The empty-Group picker may use an optional shorter `pickerLabel` or
 -- `pickerDescription`; the full label and description remain the create menus'
 -- richer explanation. Every create surface still reads this one descriptor.
--- Descriptor order is the menu order, and a `parentMode` type is a SUBTYPE of
--- the type it names: it sits directly under its parent and the menus indent it.
+-- Descriptor order is the menu order; `startsMenuSection` inserts a separator.
+-- A `parentMode` type is a SUBTYPE of the type it names.
 -- Its `mode` is a pseudo-mode CreatePanel resolves into a real displayMode plus
 -- the subtype flag, so it never reaches group.displayMode.
 -- `primary` marks the everyday types. The empty-Group picker sizes its tiers by
--- this flag alone, and the menus' separator split covers the primaries plus
--- their subtypes, so one edit here moves a type on every create surface at once.
+-- this flag alone. Standard panels, Aura/Totem variants, and other specialist
+-- types each occupy their own section in the create menus.
 local PANEL_TYPES = {
     {
         mode = "icons",
@@ -70,13 +70,6 @@ local PANEL_TYPES = {
         notifyTutorial = true,
     },
     {
-        mode = "auraIcons",
-        parentMode = "icons",
-        label = "Aura Icon Panel",
-        pickerLabel = "Aura Icons",
-        description = "Holds only aura entries, and shows each icon while its aura is up. Inactive auras take no space, so missing-aura indicators are unavailable. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
-    },
-    {
         mode = "bars",
         label = "Bar Panel",
         description = "Shows spells or items as timer bars with names and durations.",
@@ -84,14 +77,37 @@ local PANEL_TYPES = {
         primary = true,
     },
     {
+        mode = "auraIcons",
+        startsMenuSection = true,
+        parentMode = "icons",
+        label = "Aura Icon Panel",
+        pickerLabel = "Aura Icons",
+        description = "Shows your tracked buffs or target debuffs as icons while active. Inactive auras collapse.",
+    },
+    {
+        mode = "totemIcons",
+        parentMode = "icons",
+        label = "Totem Icon Panel",
+        pickerLabel = "Totem Icons",
+        description = "Automatically shows active totems and summons as icons, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
+    },
+    {
         mode = "auraBars",
         parentMode = "bars",
         label = "Aura Bar Panel",
         pickerLabel = "Aura Bars",
-        description = "Holds only aura entries, and shows each bar while its aura is up. Inactive auras take no space, so missing-aura indicators are unavailable. The first entry you add sets whether the panel tracks your buffs or your target's debuffs.",
+        description = "Shows your tracked buffs or target debuffs as bars while active. Inactive auras collapse.",
+    },
+    {
+        mode = "totemBars",
+        parentMode = "bars",
+        label = "Totem Bar Panel",
+        pickerLabel = "Totem Bars",
+        description = "Automatically shows active totems and summons as timer bars, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
     },
     {
         mode = "text",
+        startsMenuSection = true,
         label = "Text Panel",
         description = "Shows text-only entries for compact readouts and status lists.",
     },
@@ -117,31 +133,10 @@ for _, panelType in ipairs(PANEL_TYPES) do
     PANEL_TYPE_BY_MODE[panelType.mode] = panelType
 end
 
--- A subtype leads the menu with its parent, so the everyday block covers the
--- primaries AND anything hanging off one. Derived from the descriptor rather
--- than hand-counted, so inserting or promoting a type cannot leave a stale
--- index behind on the create surfaces.
-local FIRST_SPECIALIST_PANEL_TYPE = #PANEL_TYPES + 1
-for index, panelType in ipairs(PANEL_TYPES) do
-    local parent = panelType.parentMode and PANEL_TYPE_BY_MODE[panelType.parentMode]
-    if not (panelType.primary or (parent and parent.primary)) then
-        FIRST_SPECIALIST_PANEL_TYPE = index
-        break
-    end
-end
-
 local function GetPanelTypeInfo(displayMode)
     return PANEL_TYPE_BY_MODE[displayMode] or PANEL_TYPE_BY_MODE.icons
 end
 
--- Menu indent for a subtype row, in the same pixels the entry-move menu already
--- indents its nested rows by, so the two menus read alike.
-local PANEL_TYPE_SUBTYPE_INDENT = 10
-
-local function ApplyPanelTypeMenuIndent(info, panelType)
-    info.leftPadding = panelType and panelType.parentMode
-        and PANEL_TYPE_SUBTYPE_INDENT or nil
-end
 local function AddPanelTypeMenuTooltip(info, displayMode)
     local panelType = GetPanelTypeInfo(displayMode)
     if not panelType then
@@ -173,13 +168,14 @@ local function GetPanelModeLabel(mode)
     local panelType = mode and PANEL_TYPE_BY_MODE[mode]
     return panelType and panelType.label or "Panel"
 end
-local function GetPanelTemplateModeLabel(template)
-    return GetPanelModeLabel(CooldownCompanion:GetPanelTemplateCreationMode(template))
+-- Panels and saved templates carry the same display mode and subtype flags.
+local function GetPanelTypeLabel(panel)
+    return GetPanelModeLabel(CooldownCompanion:GetPanelTemplateCreationMode(panel))
 end
 -- One sentence for every surface that offers to build from a template, the
 -- article following the label: "an Icon Panel", "a Bar Panel".
 local function GetPanelTemplateTooltipText(template)
-    local modeLabel = GetPanelTemplateModeLabel(template)
+    local modeLabel = GetPanelTypeLabel(template)
     local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
     return "Creates " .. article .. " " .. modeLabel .. " with this template's saved settings and placement."
 end
@@ -1129,13 +1125,9 @@ ST._ShowEntrySelectionMoveMenu = ShowEntrySelectionMoveMenu
 -- capacity checks without duplicating destination names or ordering.
 ST._BuildEntryMoveDestinationSections = BuildEntryMoveDestinationSections
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
-ST._ApplyPanelTypeMenuIndent = ApplyPanelTypeMenuIndent
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
 -- Ordered creatable panel types, shared by every panel-create surface.
 ST._PANEL_TYPES = PANEL_TYPES
--- Where the specialist block starts, so every create menu draws its separator
--- in the same place without re-deriving the split.
-ST._FIRST_SPECIALIST_PANEL_TYPE = FIRST_SPECIALIST_PANEL_TYPE
 -- Shared create accent, so no surface hand-writes its own cyan.
 ST._CREATE_ACCENT = CREATE_ACCENT
 ST._BuildPanelCreateOptions = BuildPanelCreateOptions
@@ -1145,7 +1137,8 @@ ST._CreateMissingCDMPanelsInSelectedContainer = CreateMissingCDMPanelsInSelected
 -- tooltip every surface that names a template shares.
 ST._CreatePanelFromTemplateInContainer = CreatePanelFromTemplateInContainer
 ST._GetPanelModeLabel = GetPanelModeLabel
-ST._GetPanelTemplateModeLabel = GetPanelTemplateModeLabel
+ST._GetPanelTypeLabel = GetPanelTypeLabel
+ST._GetPanelTemplateModeLabel = GetPanelTypeLabel
 ST._GetPanelTemplateTooltipText = GetPanelTemplateTooltipText
 ST._AddPanelTemplateMenuTooltip = AddPanelTemplateMenuTooltip
 -- Shared with the panel preview mirror: entry tooltips resolve the

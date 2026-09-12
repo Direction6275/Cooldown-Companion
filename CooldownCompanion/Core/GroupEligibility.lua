@@ -267,6 +267,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     -- reserved one-cell footprint for exactly this), so "no saved entry" must
     -- not mean "not on screen to arrange".
     local skipEntryChecks = self:IsRotationAssistantGroup(group) or ST.IsAuraPanelGroup(group)
+        or ST.IsTotemPanelGroup(group)
     if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
         return false
     end
@@ -610,6 +611,7 @@ function CooldownCompanion:IsHeroTalentAllowed(group)
 end
 
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
+    if ST.IsTotemPanelGroup(group) then return true end
     opts = opts or {}
     if self:IsRotationAssistantGroup(group) then
         if opts.checkLoadConditions == false then
@@ -630,6 +632,7 @@ function CooldownCompanion:GroupHasUsableButtons(group, opts)
 end
 
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
+    if ST.IsTotemPanelGroup(group) then return GetNumTotemSlots() end
     opts = opts or {}
     if self:IsRotationAssistantGroup(group) then
         return 1

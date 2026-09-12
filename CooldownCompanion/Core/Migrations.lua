@@ -1719,6 +1719,10 @@ end
 -- key harms nothing, and stripping it would break a panel re-imported as an
 -- Aura Panel later.
 function ST._NormalizeAuraPanelEntries(group)
+    if type(group) == "table" and ST.IsTotemPanelGroup(group) then
+        CooldownCompanion:EnforceTotemPanelInvariants(group)
+        return
+    end
     if type(group) ~= "table" or group.auraPanel ~= true then return end
 
     if group.displayMode ~= "icons" and group.displayMode ~= "bars" then
@@ -3554,6 +3558,12 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
 end
 
 function CooldownCompanion:RunAllMigrations()
+    -- Retired summon tracking learned spell associations from cast timing.
+    -- Discard those unverified links for every character.
+    if self.db and self.db.global then
+        self.db.global.totemSpellLinks = nil
+    end
+
     local checkpointState = self._savedProfileCheckpointState
     local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce
         or (checkpointState and (

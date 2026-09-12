@@ -216,11 +216,15 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 if tab == "format" then
                     ST._BuildTextFormatTab(scroll)
                 elseif tab == "appearance" then
-                    ST._BuildAppearanceTab(scroll)
+                    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+                    if ST.IsTotemPanelGroup(group) then ST._BuildTotemAppearanceTab(scroll, group)
+                    else ST._BuildAppearanceTab(scroll) end
                 elseif tab == "layout" then
                     ST._BuildLayoutTab(scroll)
                 elseif tab == "effects" then
-                    ST._BuildEffectsTab(scroll)
+                    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+                    if ST.IsTotemPanelGroup(group) then ST._BuildTotemEffectsTab(scroll, group)
+                    else ST._BuildEffectsTab(scroll) end
                 elseif tab == "loadconditions" then
                     -- One Visibility tab for both scopes: the dispatcher
                     -- edits the selected entry's rules when there is one

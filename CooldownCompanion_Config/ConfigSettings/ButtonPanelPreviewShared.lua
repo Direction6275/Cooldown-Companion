@@ -1472,6 +1472,10 @@ local function GetTriggerDisplayNaturalSize(group)
 end
 
 local function GetPanelPreviewNaturalSize(group, includeSections)
+    if ST.IsTotemPanelGroup(group) then
+        local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
+        return geo.panelWidth, geo.panelHeight
+    end
     if type(group) ~= "table" then
         return 220, 90
     end

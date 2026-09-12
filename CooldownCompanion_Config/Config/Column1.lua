@@ -1126,14 +1126,6 @@ end
 -- path as the Group context menu.
 ST._CreatePanelInContainer = CreatePanelInContainer
 
--- The everyday panel types and their subtypes lead each create menu; the
--- specialists start at this index. PanelShared owns the descriptor, so it owns
--- the split too, and it loads after this file: the lookup stays at call time.
-local FALLBACK_FIRST_SPECIALIST_PANEL_TYPE = 3
-local function FirstSpecialistPanelTypeIndex()
-    return ST._FIRST_SPECIALIST_PANEL_TYPE or FALLBACK_FIRST_SPECIALIST_PANEL_TYPE
-end
-
 -- Every create menu offers the account's templates after the specialists,
 -- and offers nothing, not even the separator, while there are none. The
 -- create path itself lives in PanelShared, which loads after this file.
@@ -1273,16 +1265,15 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then
-            local firstSpecialist = FirstSpecialistPanelTypeIndex()
-            for index, panelType in ipairs(ST._PANEL_TYPES or {}) do
-                if index == firstSpecialist then
+            for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
+                if panelType.startsMenuSection then
                     UIDropDownMenu_AddSeparator(level)
                 end
                 local info = UIDropDownMenu_CreateInfo()
                 info.text = panelType.label
                 info.notCheckable = true
-                if ST._ApplyPanelTypeMenuIndent then
-                    ST._ApplyPanelTypeMenuIndent(info, panelType)
+                if ST._AddPanelTypeMenuTooltip then
+                    ST._AddPanelTypeMenuTooltip(info, panelType.mode)
                 end
                 local targetMode = panelType.mode
                 info.func = function()
@@ -1332,30 +1323,25 @@ local function EnsurePanelTypeMenu()
 end
 
 -- The menu can outlive the Group that opened it, so every item re-answers the
--- create gate before acting. `lastIndex` defaults to the end of the descriptor,
--- so a caller can ask for "everything from here on".
-local function AddPanelTypeCreateItems(level, containerId, firstIndex, lastIndex)
-    local panelTypes = ST._PANEL_TYPES or {}
-    for index = firstIndex, math.min(lastIndex or #panelTypes, #panelTypes) do
-        local panelType = panelTypes[index]
-        if panelType then
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = "New " .. panelType.label
-            info.notCheckable = true
-            local displayMode = panelType.mode
-            if ST._AddPanelTypeMenuTooltip then
-                ST._AddPanelTypeMenuTooltip(info, displayMode)
-            end
-            if ST._ApplyPanelTypeMenuIndent then
-                ST._ApplyPanelTypeMenuIndent(info, panelType)
-            end
-            info.func = function()
-                CloseDropDownMenus()
-                if not IsCreateTargetContainer(containerId) then return end
-                CreatePanelInContainer(containerId, displayMode)
-            end
-            UIDropDownMenu_AddButton(info, level)
+-- create gate before acting. PanelShared owns both the order and section breaks.
+local function AddPanelTypeCreateItems(level, containerId)
+    for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
+        if panelType.startsMenuSection then
+            UIDropDownMenu_AddSeparator(level)
         end
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "New " .. panelType.label
+        info.notCheckable = true
+        local displayMode = panelType.mode
+        if ST._AddPanelTypeMenuTooltip then
+            ST._AddPanelTypeMenuTooltip(info, displayMode)
+        end
+        info.func = function()
+            CloseDropDownMenus()
+            if not IsCreateTargetContainer(containerId) then return end
+            CreatePanelInContainer(containerId, displayMode)
+        end
+        UIDropDownMenu_AddButton(info, level)
     end
 end
 
@@ -1390,10 +1376,7 @@ local function ShowPanelTypeMenuForContainer(containerId)
     UIDropDownMenu_Initialize(menu, function(_, level)
         level = level or 1
         if level == 1 then
-            local firstSpecialist = FirstSpecialistPanelTypeIndex()
-            AddPanelTypeCreateItems(level, containerId, 1, firstSpecialist - 1)
-            UIDropDownMenu_AddSeparator(level)
-            AddPanelTypeCreateItems(level, containerId, firstSpecialist)
+            AddPanelTypeCreateItems(level, containerId)
             AddPanelTemplateCreateItems(level, containerId)
             UIDropDownMenu_AddSeparator(level)
             AddCDMStarterCreateItem(level, containerId)
@@ -1683,7 +1666,7 @@ local function PopulateExportModeButtonBar()
     CS.col1ButtonBar:Show()
 end
 
-local function SetExportRowTooltip(entry, title, body)
+local function SetNavigatorRowTooltip(entry, title, body)
     entry:SetCallback("OnEnter", function(widget)
         GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
         GameTooltip:AddLine(title)
@@ -1816,7 +1799,11 @@ local function RenderExportModeGroups(db, selection, mode)
                 local iconVertexColor
                 local iconDesaturated = false
                 local iconTexCoord
-                if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                if ST.IsTotemPanelGroup(panel) then
+                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    iconVertexColor = ST.TOTEM_PANEL_BADGE_TINT
+                    iconDesaturated = true
+                elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
                     iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
                     iconTexCoord = { 0.08, 0.92, 0.08, 0.92 }
                 else
@@ -1841,6 +1828,8 @@ local function RenderExportModeGroups(db, selection, mode)
                     texCoord = iconTexCoord,
                     vertexColor = iconVertexColor,
                 })
+                SetNavigatorRowTooltip(panelEntry,
+                    panel.name or ("Panel " .. tostring(panelId)), ST._GetPanelTypeLabel(panel))
                 if selection.panels[panelId] then
                     panelEntry:SetColor(0.4, 0.7, 1.0)
                 end
@@ -1891,7 +1880,7 @@ local function RenderExportModeResources(selection, isFirstSection)
     if selection.resources then
         entry:SetColor(0.4, 0.7, 1.0)
     end
-    SetExportRowTooltip(entry, "Resources",
+    SetNavigatorRowTooltip(entry, "Resources",
         "Your whole Resources setup: resources, styling, layout order, and Custom Bars.")
     entry:SetCallback("OnClick", function(_, _, mouseButton)
         if mouseButton ~= "LeftButton" then return end
@@ -1953,7 +1942,7 @@ local function RenderExportModeCustomBars(selection, mode, isFirstSection)
     end)
 
     if includedByResources then
-        SetExportRowTooltip(entry, "Custom Bars", "Included in the Resources setup.")
+        SetNavigatorRowTooltip(entry, "Custom Bars", "Included in the Resources setup.")
     else
         entry:SetCallback("OnClick", function(_, _, mouseButton)
             if mouseButton ~= "LeftButton" then return end
@@ -1980,7 +1969,7 @@ local function RenderExportModeCustomBars(selection, mode, isFirstSection)
                 barEntry:SetColor(0.4, 0.7, 1.0)
             end
             if includedByResources then
-                SetExportRowTooltip(barEntry, info.label, "Included in the Resources setup.")
+                SetNavigatorRowTooltip(barEntry, info.label, "Included in the Resources setup.")
             else
                 local customBarId = info.customBarId
                 barEntry:SetCallback("OnClick", function(_, _, mouseButton)
@@ -2523,7 +2512,11 @@ local function RefreshColumn1(preserveDrag)
                 local vertexColor
                 local texCoord
                 local desaturated = isInactive or panel.enabled == false
-                if panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+                if ST.IsTotemPanelGroup(panel) then
+                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+                    vertexColor = ST.TOTEM_PANEL_BADGE_TINT
+                    desaturated = true
+                elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
                     iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
                     texCoord = { 0.08, 0.92, 0.08, 0.92 }
                 else
@@ -2568,6 +2561,8 @@ local function RefreshColumn1(preserveDrag)
                     rightPad = metaReserve + 4 + resourceReserve + renameReserve,
                 })
                 panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+                SetNavigatorRowTooltip(panelEntry,
+                    panel.name or ("Panel " .. tostring(panelId)), ST._GetPanelTypeLabel(panel))
 
                 if CS.selectedPanels[panelId] then
                     panelEntry:SetColor(0.4, 0.7, 1.0)

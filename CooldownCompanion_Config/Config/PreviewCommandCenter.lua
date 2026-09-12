@@ -949,6 +949,7 @@ local CONTROLS = {
 }
 
 local function ControlApplies(control, group, displayMode, buttonIndex)
+    if ST.IsTotemPanelGroup(group) then return false end
     if not control.modes[displayMode] then
         return false
     end
@@ -2327,7 +2328,11 @@ local function EnsureBar(host, surface)
 
     play:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(self._running and "Stop preview" or "Start preview")
+        if bar._selected and bar._selected.id == "totemActive" then
+            GameTooltip:AddLine(self._running and "Pause preview" or "Play preview")
+        else
+            GameTooltip:AddLine(self._running and "Stop preview" or "Start preview")
+        end
         GameTooltip:Show()
     end)
     play:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -2472,8 +2477,11 @@ local function ApplyBarState(bar, control, running, gearRoute, group)
 
     bar.chooser:Show()
     bar.play:Show()
+    local totemOnly = control.id == "totemActive"
+    bar.chooser:EnableMouse(not totemOnly)
+    bar.chooser.chevron:SetShown(not totemOnly)
     bar.chooser.label:SetText(control.label)
-    bar.chooser:SetWidth(bar.chooser.label:GetStringWidth() + LABEL_GAP + CHEVRON_SIZE)
+    bar.chooser:SetWidth(bar.chooser.label:GetStringWidth() + (totemOnly and 0 or LABEL_GAP + CHEVRON_SIZE))
 
     bar.chooser._refreshColors = function()
         if running then
@@ -2487,7 +2495,7 @@ local function ApplyBarState(bar, control, running, gearRoute, group)
     -- The buttons workspace only: the Resources / Cast home configures bar
     -- objects, and there is nothing there to drop a spell on. Within the
     -- workspace, panels that can take an entry or still need a dock exit.
-    bar.spellbook:SetShown(bar._surface == BUTTONS_SURFACE
+    bar.spellbook:SetShown(not totemOnly and bar._surface == BUTTONS_SURFACE
         and ShouldShowSpellbookToggle(group))
     ApplySpellbookTint(bar)
 
@@ -2641,6 +2649,15 @@ end
 -- reserve.
 ------------------------------------------------------------------------
 
+local TOTEM_ACTIVE_CONTROL = {
+    id = "totemActive", label = "Preview Active Totems",
+    preview = {
+        groupScoped = true,
+        IsActive = function(panelId) return CooldownCompanion:IsTotemPanelPreviewPlaying(panelId) end,
+        SetActive = function(panelId, _, show) CooldownCompanion:SetTotemPanelPreviewPlaying(panelId, show) end,
+    },
+}
+
 local function UpdatePreviewCommandCenter(host)
     if not host then
         return
@@ -2657,6 +2674,11 @@ local function UpdatePreviewCommandCenter(host)
     end
 
     local displayMode = group.displayMode or "icons"
+    if ST.IsTotemPanelGroup(group) then
+        UpdateBar(host, BUTTONS_SURFACE, {TOTEM_ACTIVE_CONTROL}, group, displayMode)
+        CS.previewCommandCenterWasRunning = false
+        return
+    end
     local applicable = {}
     for _, control in ipairs(CONTROLS) do
         local applies = ControlApplies(control, group, displayMode, buttonIndex)

@@ -618,6 +618,7 @@ end
 --   sec          optional lens section for Customize / Turn On restrictions
 --   advancedKey  stable editor identity; defaults to durationLowTime
 --   auraOnly     label the policy as aura-owned and omit the scope toggle
+--   summaryTarget optional duration owner label for other timed displays
 --   auraToggle   draw the "Also Apply to Aura Text" opt-in row; passed only on
 --                surfaces with both cooldown and aura text (aura-only
 --                surfaces apply unconditionally and never draw it)
@@ -684,7 +685,9 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     local threshold = tonumber(settings.durationLowTimeThreshold)
     local active = threshold ~= nil and threshold > 0
     local summaryTarget
-    if opts.auraOnly then
+    if opts.summaryTarget then
+        summaryTarget = opts.summaryTarget
+    elseif opts.auraOnly then
         summaryTarget = "Aura"
     elseif opts.auraToggle and settings.durationLowTimeAuras == true then
         summaryTarget = "Cooldown + Aura"
@@ -2487,9 +2490,10 @@ local function AuraGlowControlConfig(prefix, defaultColor)
     }
 end
 
+local AURA_GLOW_CFG = AuraGlowControlConfig("auraGlow", {1, 0.84, 0, 0.9})
+AURA_GLOW_CFG.defaultEnabled = true
 local function BuildAuraGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback,
-        AuraGlowControlConfig("auraGlow", {1, 0.84, 0, 0.9}), opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, AURA_GLOW_CFG, opts)
 end
 
 local MISSING_AURA_GLOW_CFG = AuraGlowControlConfig("missingAuraGlow", {1, 0.15, 0.1, 1})
@@ -2498,11 +2502,11 @@ local MISSING_AURA_GLOW_CFG = AuraGlowControlConfig("missingAuraGlow", {1, 0.15,
 local function DefineGlowStyleSettings(route, resolveStyle, cfg)
     local function GlowShown(context)
         local style = resolveStyle(context)
-        return style and style[cfg.styleKey] ~= nil and style[cfg.styleKey] ~= "none"
+        return style and (style[cfg.styleKey] ~= nil or cfg.defaultEnabled == true) and style[cfg.styleKey] ~= "none"
     end
     local function UsesStyle(context, wanted)
         local style = resolveStyle(context)
-        return style and style[cfg.styleKey] ~= nil and style[cfg.styleKey] ~= "none"
+        return style and (style[cfg.styleKey] ~= nil or cfg.defaultEnabled == true) and style[cfg.styleKey] ~= "none"
             and NormalizeGlowStyleForDisplay(style[cfg.styleKey], cfg.defaultStyle) == wanted
     end
     local settings = {
@@ -2530,6 +2534,15 @@ local function DefineGlowStyleSettings(route, resolveStyle, cfg)
             end })
     end
     return settings
+end
+
+function ST._DefineAuraGlowSettings(route, resolveStyle)
+    return DefineGlowStyleSettings(route, resolveStyle, AURA_GLOW_CFG)
+end
+
+function ST._EnableAuraGlow(style)
+    style.auraGlowStyle = "pulse"
+    AURA_GLOW_CFG.onStyleChanged(style, "pulse")
 end
 
 -- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit

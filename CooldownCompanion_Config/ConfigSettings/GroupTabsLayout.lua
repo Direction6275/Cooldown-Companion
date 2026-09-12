@@ -156,7 +156,7 @@ local function GetLayoutFinderState(context)
     end
 
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
-    local buttonCount = #(group.buttons or {})
+    local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
     local isIconsMode = displayMode == "icons"
     local isBarMode = displayMode == "bars"
     local isTextMode = displayMode == "text"
@@ -183,10 +183,10 @@ local function GetLayoutFinderState(context)
     state.horizontalBars = not standalone and isBarMode and buttonCount > 1 and not auraBarPanel
     state.orientation = not standalone and not isBarMode
     state.growth = not standalone and buttonCount > 1
-    state.collapse = not standalone and isAuraPanel
+    state.collapse = not standalone and (isAuraPanel or ST.IsTotemPanelGroup(group))
     state.buttonsPerLine = not standalone and not auraBarPanel and not isTextMode
     state.entriesPerLine = not standalone and isTextMode and buttonCount > 1
-    state.compact = not standalone and not isAuraPanel
+    state.compact = not standalone and not isAuraPanel and not ST.IsTotemPanelGroup(group)
         and (isIconsMode or isBarMode or isTextMode)
     -- Structural, not compactLayout state: the gear now builds with Compact
     -- Mode off too, opening its panel read-only behind the Turn On footer, so
@@ -200,7 +200,7 @@ local function GetLayoutFinderState(context)
             ST.GetPanelLayoutOrientation(group.displayMode, style)
         ) == nil
 
-    state.customStrata = not standalone and isIconsMode and not isAuraPanel
+    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group)
     state.customStrataLayers = state.customStrata
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
@@ -414,6 +414,7 @@ local function BuildLayoutTab(container)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
     local style = group.style
+    local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
         CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
@@ -1217,7 +1218,7 @@ local function BuildLayoutTab(container)
         -- Which way a single bar's own FILL runs is a different question - it
         -- is what the bar looks like, not where the bars sit - so those two
         -- rows live with the bar's shape on the Appearance tab (Bar Settings).
-        if #group.buttons > 1 and not auraBarPanel then
+        if layoutCount > 1 and not auraBarPanel then
             AddCheckboxRow(arrangeLeft, {
                 label = "Horizontal Bar Layout",
                 setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
@@ -1253,12 +1254,12 @@ local function BuildLayoutTab(container)
         })
     end
 
-    if #group.buttons > 1 then
+    if layoutCount > 1 then
         local labels, order
         -- Aura panels delegate intra-line placement to Blizzard's flow
         -- container, so they fold centered values to TOPLEFT at runtime and
         -- this dropdown displays the same fold.
-        local allowCentered = not CooldownCompanion:IsAuraPanel(group)
+        local allowCentered = not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
         -- Same override the Collapse Direction row below applies: an Aura BAR
         -- Panel is one vertical column by construction, so its labels must not
         -- follow the barOrientation key (hidden for this subtype, still
@@ -1306,11 +1307,11 @@ local function BuildLayoutTab(container)
     -- helpers - but here it is simply how the panel arranges itself, so it sits
     -- under Growth Direction rather than behind a compact toggle this panel
     -- subtype does not have (owner ruling 2026-08-15).
-    if CooldownCompanion:IsAuraPanel(group) then
+    if CooldownCompanion:IsAuraPanel(group) or ST.IsTotemPanelGroup(group) then
         -- PanelFlowSpec hard-codes the Vertical axis for an Aura BAR Panel, so
         -- the labels follow that rather than the (gated-away, possibly stale)
         -- barOrientation key the row above still reads.
-        local collapseOrientation = isBarMode and "vertical" or nil
+        local collapseOrientation = auraBarPanel and "vertical" or nil
         local collapseRow = AddDropdownRow(arrangeLeft, {
             label = "Collapse Direction",
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.collapse,
@@ -1331,16 +1332,18 @@ local function BuildLayoutTab(container)
         -- onto the end of the row's label.
         AnchorRowBadge(collapseRow, CreateInfoButton(collapseRow.frame, collapseRow.frame, "LEFT", "LEFT", 0, 0, {
             "Collapse Direction",
-            {"Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
+            {ST.IsTotemPanelGroup(group) and "Occupied slots pack from the start of the panel, from its center, or from its end."
+                or "Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
             {" ", 1, 1, 1},
-            {"Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
+            {ST.IsTotemPanelGroup(group) and "Empty slots take no space. Slots retain their numeric order."
+                or "Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 
     -- Text mode calls its entries entries, and offers the wrap count only
     -- once there is something to wrap.
     if not auraBarPanel and (not isTextMode or #group.buttons > 1) then
-        local numButtons = math.max(1, #group.buttons)
+        local numButtons = math.max(1, layoutCount)
         local wrapRow = AddSliderRow(arrangeRight, {
             label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
             setting = LAYOUT_FINDER.arrangement and (
@@ -1379,7 +1382,7 @@ local function BuildLayoutTab(container)
     --
     -- Compact Mode copies with the Arrangement scope of
     -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua).
-    if isIconsMode or isBarMode or isTextMode then
+    if not ST.IsTotemPanelGroup(group) and (isIconsMode or isBarMode or isTextMode) then
         BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,
             settings = LAYOUT_FINDER.compact,
@@ -1540,7 +1543,7 @@ local function BuildLayoutTab(container)
     -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
     -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
     -- Display) IS the panel. There is no stack left to reorder.
-    local showCustomStrata = isIconsMode and not CooldownCompanion:IsAuraPanel(group)
+    local showCustomStrata = isIconsMode and not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole

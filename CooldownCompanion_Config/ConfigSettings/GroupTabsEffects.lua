@@ -82,9 +82,7 @@ local TURNON_PROC_GLOW = {
 -- keys so a leftover proc-scale size can't render as a 30px border, and
 -- the two entrances of one feature must never drift.
 local function EnableAuraGlow(write)
-    write.auraGlowStyle = "pulse"
-    write.auraGlowSize = 2
-    write.auraGlowSpeed = 0.5
+    ST._EnableAuraGlow(write)
 end
 
 local TURNON_AURA_GLOW = { label = "Enable Aura Glow", apply = EnableAuraGlow }
@@ -1670,6 +1668,7 @@ end
 local EFFECTS_FINDER_SCOPE = { "panel", "entry" }
 
 local function EffectsFinderIcons(context)
+    if context and ST.IsTotemPanelGroup(context.group) then return false end
     return context and context.group and context.displayMode == "icons"
 end
 

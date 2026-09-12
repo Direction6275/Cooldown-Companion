@@ -561,6 +561,7 @@ function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
 end
 
 function CooldownCompanion:ClearAllConfigPreviews()
+    if self.ClearAllTotemPanelPreviews then self:ClearAllTotemPanelPreviews() end
     -- The editable mirror only needs to walk and reconcile every slot when
     -- this clear actually removed a panel visual. Preserve an already-issued
     -- ticket across duplicate clears until the config mirror consumes it.

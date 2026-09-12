@@ -968,10 +968,7 @@ local function BindDurationText(fontString, durationObj, source, allowLowTime, v
 end
 CooldownCompanion.BindDurationText = BindDurationText
 
--- allowLowTime: nil/true keeps the unconditional cooldown-lane policy every
--- existing caller relies on; false is the aura-phase opt-out — the totem/
--- summon active phase re-installs per phase edge with the aura gate resolved
--- (AllowAuraDurationLowTime), because that countdown is aura text by contract.
+-- allowLowTime: nil/true applies cooldown Low Time formatting; false disables it.
 local function ApplyDurationFormatToCooldown(cooldown, source, allowLowTime, visibilityKind)
     if not cooldown then return end
 

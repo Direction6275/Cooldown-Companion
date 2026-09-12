@@ -152,6 +152,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     if preview.textureMirror then
         preview.textureMirror.root:Hide()
     end
+    if preview.totemSurface then preview.totemSurface:Hide() end
+    if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
     HidePreviewMessage(preview)
     preview.content:Hide()
@@ -170,6 +172,38 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
     if not group then
         SetPreviewMessage(preview, "Select a panel to preview it here.")
+        FinalizePreviewState(preview)
+        return
+    end
+
+    if ST.IsTotemPanelGroup(group) then
+        local content = preview.content
+        local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
+        content:SetScale(GetHostFitScale(host, geo.panelWidth, geo.panelHeight + 24, readOnly))
+        content:SetSize(geo.panelWidth, geo.panelHeight)
+        content:ClearAllPoints()
+        content:SetPoint("CENTER", preview.root, "CENTER", 0, 8)
+        content:Show()
+        local surface = preview.totemSurface
+        if not surface then
+            surface = ST.CreateTotemPanelSurface(content, nil, true)
+            surface:SetAllPoints(content)
+            preview.totemSurface = surface
+        end
+        surface.groupId = not readOnly and panelId or nil
+        ST.UpdateTotemPanelSurface(surface, group)
+        surface:Show()
+        preview.barBaseRect = {x = 0, y = 0, width = geo.panelWidth, height = geo.panelHeight}
+        if not readOnly then
+            local caption = preview.totemCaption
+            if not caption then
+                caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                caption:SetPoint("TOP", content, "BOTTOM", 0, -5)
+                caption:SetText("Sample totems")
+                preview.totemCaption = caption
+            end
+            caption:Show()
+        end
         FinalizePreviewState(preview)
         return
     end
@@ -797,6 +831,7 @@ ST._HidePreviewDropGhost = DropGhost.Hide
 -- the filter never applies to, so the badge must not offer it there.
 function ST._PanelPreviewUnavailableEntryState(group)
     if not group then return nil end
+    if ST.IsTotemPanelGroup(group) then return nil end
     if group.displayMode ~= "text" and not IsIconModePanel(group) then
         return nil
     end

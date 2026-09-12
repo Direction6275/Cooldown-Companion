@@ -86,8 +86,8 @@ local CARD_BODY_FONT = "GameFontHighlight"
 -- Aura variants are choices, not a second prose tier. They share one compact
 -- band: a family label, two title-only buttons, and one sentence describing
 -- the behavior both variants have in common.
-local AURA_BAND_LABEL = "Aura Panels"
-local AURA_BAND_NOTE = "Show active auras only; inactive auras collapse."
+local AURA_BAND_LABEL = "Aura and Totem Panels"
+local AURA_BAND_NOTE = "Active auras or occupied totem slots; empty space collapses."
 local AURA_BAND_MIN_HEIGHT = 54
 local AURA_BAND_PADDING = 8
 local AURA_BAND_GAP = 8
@@ -254,7 +254,6 @@ local function LayoutTileHeader(record, showLabel)
     tile.resourceBadge:ClearAllPoints()
     tile.resourceBadge:SetPoint("TOPRIGHT", tile, "TOPRIGHT",
         -(RESOURCE_BADGE_INSET + statusReserve), -RESOURCE_BADGE_INSET)
-
     local height = (showLabel or disabled) and LABEL_HEIGHT or 0
     if disabled then
         height = math_max(height, STATUS_BADGE_SIZE + RESOURCE_BADGE_INSET)
@@ -463,6 +462,7 @@ local function EnsureTile(overview, index)
         ApplyTileBorder(self, TILE_HOVER_BORDER_COLOR)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(record.name, 1, 1, 1)
+        GameTooltip:AddLine(record.typeLabel, 0.72, 0.82, 0.92)
         if record.disabledReason then
             GameTooltip:AddLine(record.disabledReason, 0.85, 0.84, 0.81)
         end
@@ -961,9 +961,8 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
     return (y - top) - CARD_GAP
 end
 
--- The Aura choices share one visual explanation. At normal config widths the
--- label, two compact buttons, and note sit on one line. Narrow surfaces stack
--- those three pieces but keep the two choices paired whenever they still fit.
+-- Aura and Totem choices share one band. Narrow surfaces stack its label,
+-- compact buttons, and note, keeping two button columns whenever they fit.
 local function LayoutAuraBand(overview, block, firstIndex, entries,
     bandWidth, containerId, top)
     local band = block.auraBand
@@ -1118,7 +1117,7 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
 
     -- The descriptor remains the source of truth for rank and relationships.
     -- Primary types keep the large first row; subtypes of a primary join the
-    -- shared Aura band; everything else becomes a title-only specialist card.
+    -- shared Aura/Totem band; everything else becomes a title-only specialist card.
     local panelTypeByMode = {}
     for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
         panelTypeByMode[panelType.mode] = panelType
@@ -1129,18 +1128,16 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
             title = panelType.pickerLabel or panelType.label,
             body = panelType.pickerDescription or panelType.description,
             mode = panelType.mode,
+            tooltipTitle = panelType.label,
+            tooltipText = panelType.description,
         }
         local parent = panelType.parentMode
             and panelTypeByMode[panelType.parentMode]
         if panelType.primary then
-            entry.tooltipTitle = panelType.label
-            entry.tooltipText = panelType.description
             primaryEntries[#primaryEntries + 1] = entry
         elseif parent and parent.primary then
             auraEntries[#auraEntries + 1] = entry
         else
-            entry.tooltipTitle = panelType.label
-            entry.tooltipText = panelType.description
             secondaryEntries[#secondaryEntries + 1] = entry
         end
     end
@@ -1580,6 +1577,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
             tile = tile,
             containerId = containerId,
             panelId = panelInfo.groupId,
+            typeLabel = ST._GetPanelTypeLabel(panelInfo.group),
             name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),

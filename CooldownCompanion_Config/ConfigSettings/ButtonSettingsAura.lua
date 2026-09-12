@@ -198,8 +198,8 @@ end
 -- (owner-observed 2026-08-21: a DK with no ghoul out gets nothing back), so
 -- gating on the live value alone hides the pet-scope row exactly when a pet
 -- class is between summons. Once the character has ever shown pet spells the
--- answer sticks (db.global keyed by AceDB char key, the totem-links
--- convention); a fresh character self-heals the first time this row is built
+-- answer sticks (db.global keyed by AceDB char key); a fresh character
+-- self-heals the first time this row is built
 -- while a pet is out.
 local function CharacterCanCommandPets()
     local db = CooldownCompanion.db
