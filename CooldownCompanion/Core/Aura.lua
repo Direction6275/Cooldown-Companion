@@ -1293,18 +1293,9 @@ end
 -- 0 = full shell (the aura display is the entire visible button),
 -- fractional = the dim shell under the full-strength aura display. Static
 -- for aura state by design -- resolved at style time, never from aura state,
--- which is unreadable. The one dynamic input is the totem active phase:
--- summon state IS readable (the lane renders it in combat through duration
--- objects), and for an aura-added summon entry the phase is the whole
--- active visual, so the shell opens while it runs (CooldownUpdate re-applies
--- the shell on the phase edges). Icon and bar mode each kept a private copy
--- of this chain and the copies drifted (the bar one cloned the icon
--- preview-kind list), so it lives with the shell predicate now.
+-- which is unreadable.
 function CooldownCompanion:GetAuraShellAlpha(button, buttonData)
     if not self:IsAuraShellEntry(buttonData) then
-        return 1
-    end
-    if button and button._totemActive == true then
         return 1
     end
     local frame = button and button:GetParent()

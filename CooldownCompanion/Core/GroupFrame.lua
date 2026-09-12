@@ -307,6 +307,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- before its first aura is added.
     local hasDragEntry = self:IsRotationAssistantGroup(group)
         or ST.IsAuraPanelGroup(group)
+        or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
 
@@ -622,6 +623,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     -- the owner arranges before adding auras.
     local hasButtons = self:IsRotationAssistantGroup(group)
         or ST.IsAuraPanelGroup(group)
+        or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
@@ -762,6 +764,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- reserved cell, so the wheel has a real cell to scale.
     local hasResizeEntry = self:IsRotationAssistantGroup(group)
         or ST.IsAuraPanelGroup(group)
+        or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     local resizeWheelEnabled = hasResizeEntry
         and not independentPanelSoloHidden

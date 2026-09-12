@@ -581,6 +581,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
+    if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then
+        frame._totemPanelSurface:Hide()
+    end
 
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
@@ -600,7 +603,10 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local isTextMode = group.displayMode == "text"
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
 
-    if ST.IsAuraPanelGroup(group) then
+    if ST.IsTotemPanelGroup(group) then
+        self:ReleaseGroupButtonPools(frame)
+        self:PopulateTotemPanel(groupId)
+    elseif ST.IsAuraPanelGroup(group) then
         -- An Aura Panel renders every entry through ONE Blizzard aura container
         -- mounted on this frame, so CC creates no buttons for it at all. Drain
         -- the pools instead of leaving the released buttons parked in them:
@@ -735,7 +741,10 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     -- the two branches agree by construction (nothing materialized means every
     -- section line measures nothing, which is layout.isEmpty, whose footprint IS
     -- this one-button rectangle), so nothing else changes shape.
-    if numButtons == 0 and not sectionLayout then
+    if ST.IsTotemPanelGroup(group) then
+        local geo = ST.GetTotemPanelGeometry(group, frame.visibleButtonCount)
+        targetWidth, targetHeight = geo.panelWidth, geo.panelHeight
+    elseif numButtons == 0 and not sectionLayout then
         targetWidth, targetHeight = buttonWidth, buttonHeight
     elseif sectionLayout then
         -- A sectioned panel spans the union of its base cluster and every
@@ -980,6 +989,17 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     local group = self.db.profile.groups[groupId]
 
     if not frame or not group then return end
+    if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then
+        frame._totemPanelSurface:Hide()
+    end
+
+    if ST.IsTotemPanelGroup(group) then
+        self:PopulateTotemPanel(groupId)
+        self:ResizeGroupFrame(groupId)
+        ST.UpdateGroupSizeLabel(frame)
+        UpdateResizedPanelContainerWrapper(groupId)
+        return
+    end
 
     if InCombatLockdown() and frame:IsProtected() then
         self._pendingFullRefresh = true

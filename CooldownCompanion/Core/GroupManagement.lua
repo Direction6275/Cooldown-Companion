@@ -447,7 +447,7 @@ end
 -- its own styleKeys. The settings applier below and the template snapshot
 -- (Core/PanelTemplates.lua) both walk it, so the two can never disagree
 -- about which keys make up the look.
-local function ForEachPanelCopyStyleKey(mode, scopes, fn)
+local function ForEachPanelCopyStyleKey(mode, scopes, fn, totemPanel)
     local modeScopes = ST.PANEL_COPY_SCOPES[mode]
     if not modeScopes then return end
     for _, scopeName in ipairs(scopes) do
@@ -463,6 +463,13 @@ local function ForEachPanelCopyStyleKey(mode, scopes, fn)
             end
             for _, key in ipairs(scopeData.styleKeys or {}) do
                 fn(key)
+            end
+            -- Totem Bars use the shared aura glow family instead of the
+            -- ordinary bar indicator. Keep its copy scope subtype-specific.
+            if totemPanel and mode == "bars" and scopeName == "indicators" then
+                for _, key in ipairs(ST.OVERRIDE_SECTIONS.auraIndicator.keys) do
+                    fn(key)
+                end
             end
         end
     end
@@ -496,7 +503,12 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
     end
 
     if (scope == "arrangement" or scope == "all")
-        and ST.IsAuraPanelGroup(sourceGroup) ~= ST.IsAuraPanelGroup(targetGroup) then
+        and (ST.IsAuraPanelGroup(sourceGroup) ~= ST.IsAuraPanelGroup(targetGroup)
+            or ST.IsTotemPanelGroup(sourceGroup) ~= ST.IsTotemPanelGroup(targetGroup)) then
+        return false, "subtype_mismatch"
+    end
+    if scope == "indicators" and mode == "bars"
+        and ST.IsTotemPanelGroup(sourceGroup) ~= ST.IsTotemPanelGroup(targetGroup) then
         return false, "subtype_mismatch"
     end
     if scope == "position"
@@ -712,13 +724,14 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
 
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
     local copiedMasque = false
+    local copyTotemGlow = ST.IsTotemPanelGroup(source) and ST.IsTotemPanelGroup(targetGroup)
 
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
         if scopeData then
             -- Appearance and Indicators carry style keys; the other scopes
             -- wrote their own fields above.
-            ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey)
+            ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey, copyTotemGlow)
             if scopeData.copiesMasque then
                 targetGroup.masqueEnabled = source.masqueEnabled and true or false
                 copiedMasque = true
@@ -794,6 +807,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     -- clear it), so the invariants are re-established here — before the Masque
     -- comparison below, and before the combat-deferred return.
     self:EnforceAuraPanelInvariants(targetGroup)
+    self:EnforceTotemPanelInvariants(targetGroup)
 
     local newMasqueEnabled = targetGroup.masqueEnabled and true or false
 
@@ -1283,6 +1297,8 @@ local AURA_PANEL_PSEUDO_MODES = {
 }
 
 local function ResolvePanelCreationMode(displayMode)
+    if displayMode == "totemIcons" then return "icons", false, true end
+    if displayMode == "totemBars" then return "bars", false, true end
     local baseMode = AURA_PANEL_PSEUDO_MODES[displayMode]
     if baseMode then
         return baseMode, true
@@ -1295,8 +1311,8 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local container = db.groupContainers[containerId]
     if not container then return nil end
     displayMode = displayMode or "icons"
-    local isAuraPanel
-    displayMode, isAuraPanel = ResolvePanelCreationMode(displayMode)
+    local isAuraPanel, isTotemPanel
+    displayMode, isAuraPanel, isTotemPanel = ResolvePanelCreationMode(displayMode)
     local isRotationAssistant = ST.IsRotationAssistantDisplayMode
         and ST.IsRotationAssistantDisplayMode(displayMode)
 
@@ -1342,6 +1358,10 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         db.groups[groupId].nextAuraKey = 1
         self:EnforceAuraPanelInvariants(db.groups[groupId])
     end
+    if isTotemPanel then
+        db.groups[groupId].totemPanel = true
+        self:EnforceTotemPanelInvariants(db.groups[groupId])
+    end
 
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
@@ -1358,6 +1378,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     style.growthOrigin = "TOPLEFT"
     style.buttonsPerRow = 12
     style.showCooldownText = true
+    if isTotemPanel then
+        style.cooldownSwipeReverse = true
+    end
     if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
     if style.showOutOfRange == nil then style.showOutOfRange = true end
     if style.showGCDSwipe == nil then style.showGCDSwipe = false end
@@ -1545,6 +1568,8 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 end
 
 local DISPLAY_MODE_CHANGE_REFUSALS = {
+    ["totem-panel-modes"] = "Totem Panels can only switch between icons and bars.",
+    ["totem-panel-create-only"] = "Create a new Totem Panel to display totem slots.",
     assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
     trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
     ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
@@ -1560,8 +1585,15 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     -- The Aura Panel subtype is fixed at creation: an Aura Panel may only swap
     -- between its icon and bar forms (the flag survives), and no ordinary panel
     -- may gain or lose the flag by converting.
-    local requestedAuraPanel
-    newMode, requestedAuraPanel = ResolvePanelCreationMode(newMode)
+    local requestedAuraPanel, requestedTotemPanel
+    newMode, requestedAuraPanel, requestedTotemPanel = ResolvePanelCreationMode(newMode)
+    if ST.IsTotemPanelGroup(group) then
+        if requestedAuraPanel or (newMode ~= "icons" and newMode ~= "bars") then
+            return false, "totem-panel-modes"
+        end
+    elseif requestedTotemPanel then
+        return false, "totem-panel-create-only"
+    end
     if ST.IsAuraPanelGroup(group) then
         if newMode ~= "icons" and newMode ~= "bars" then
             return false, "aura-panel-modes"

@@ -58,7 +58,6 @@ Core\RefreshTelemetry.lua
 Core\SpellButtonIndex.lua
 Core\CooldownRouting.lua
 Core\CooldownRefresh.lua
-Core\TotemTracking.lua
 Core\Lifecycle.lua
 Core\Aura.lua
 Core\StackSegmentBoundaries.lua
@@ -90,6 +89,7 @@ ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 # Panel frames: shared helpers and providers before lifecycle consumers
 Core\GroupFrameShared.lua
+Core\TotemPanel.lua
 Core\GroupFrameButtonPool.lua
 Core\GroupFrameDragSnap.lua
 Core\GroupFrameMovers.lua

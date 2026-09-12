@@ -364,6 +364,7 @@ ST._SECTION_HOME.icons = {
 local APPEARANCE_FINDER = { sections = {} }
 
 local function AppearanceFinderIcons(context)
+    if context and ST.IsTotemPanelGroup(context.group) then return false end
     local mode = context and context.displayMode
     return mode == nil or mode == "icons"
 end

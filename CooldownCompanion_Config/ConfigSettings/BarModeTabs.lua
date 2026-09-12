@@ -2256,6 +2256,7 @@ end
 local BAR_FINDER_SCOPE = { "panel", "entry" }
 
 local function BarFinderUsesBars(context)
+    if context and ST.IsTotemPanelGroup(context.group) then return false end
     return context and context.group and context.displayMode == "bars"
 end
 

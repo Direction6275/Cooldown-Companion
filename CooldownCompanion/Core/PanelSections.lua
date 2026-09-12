@@ -128,6 +128,7 @@ function ST.PanelSupportsSections(group)
     return type(group) == "table"
         and group.displayMode == "icons"
         and not ST.IsAuraPanelGroup(group)
+        and not ST.IsTotemPanelGroup(group)
 end
 
 --- The anchor an entry belongs to, or nil for the base grid.

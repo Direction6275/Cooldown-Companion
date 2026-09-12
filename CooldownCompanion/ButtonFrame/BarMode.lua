@@ -26,7 +26,6 @@ local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
-local ResolveBarAuraFillColor = ST.ResolveBarAuraFillColor
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
@@ -41,11 +40,6 @@ local DEFAULT_READY_TEXT_COLOR = {0.2, 1.0, 0.2, 1.0}
 -- Imports from Glows
 local ShowButtonTooltip = ST._ShowButtonTooltip
 local PrepareButtonTooltip = ST._PrepareButtonTooltip
--- Pure kit builders/stylers (no CC-button coupling); the totem active phase is
--- the only CC-side caller, see SetTotemPhaseBarGlow below.
-local BuildKitGlowRegions = ST._BuildKitGlowRegions
-local StyleKitBarGlowRegions = ST._StyleKitBarGlowRegions
-local IsBarAuraIndicatorEnabled = ST.IsBarAuraIndicatorEnabled
 
 -- Imports from Visibility
 local UpdateLossOfControl = ST._UpdateLossOfControl
@@ -61,8 +55,6 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
-local SetStatusBarTimerDuration = ST.SetStatusBarTimerDuration
-local STATUS_BAR_TIMER_DIRECTION_REMAINING = ST.STATUS_BAR_TIMER_DIRECTION_REMAINING
 
 local BAR_TEXT_UPDATE_INTERVAL = 0.1
 
@@ -169,13 +161,7 @@ local function UpdateBarFill(button)
     if button._durationObj and not button._barGCDSuppressed then
         onCooldown = true
         SetStatusBarSmoothRange(button.statusBar, 0, 1)
-        if button._totemActive then
-            -- Totem active phase drains like an aura duration (owner ruling),
-            -- the opposite of the cooldown fill's elapsed 0->1 direction.
-            if not SetStatusBarTimerDuration(button.statusBar, button._durationObj, STATUS_BAR_TIMER_DIRECTION_REMAINING) then
-                SetStatusBarSmoothValue(button.statusBar, button._durationObj:GetRemainingPercent()) -- drain: 1->0
-            end
-        elseif not SetStatusBarElapsedDuration(button.statusBar, button._durationObj) then
+        if not SetStatusBarElapsedDuration(button.statusBar, button._durationObj) then
             SetStatusBarSmoothValue(button.statusBar, button._durationObj:GetElapsedPercent())     -- fill: 0->1
         end
     elseif button._cooldownDeferred then
@@ -201,40 +187,19 @@ local function UpdateBarFill(button)
         end
     end
 
-    -- Reposition only at the existing text-mode transition. Hidden totem
-    -- text still changes the name's layout, and leaving the phase restores
-    -- the shared Cooldown/Ready position even when no timer is shown.
-    local textMode = onCooldown and (button._totemActive == true and "totemAura" or "cd") or "ready"
+    -- Reposition only when the cooldown/ready text mode changes.
+    local textMode = onCooldown and "cd" or "ready"
     local textModeChanged = button._barTextMode ~= textMode
     if textModeChanged then
         button._barTextMode = textMode
         button._barTextColorDirty = true
-        ApplyBarTextPlacement(button, button.style, textMode == "totemAura" and "aura" or "time")
+        ApplyBarTextPlacement(button, button.style, "time")
     end
 
     if onCooldown then
-        -- The totem active phase is aura-side by owner ruling: its timer text
-        -- follows the AURA visibility toggle and the aura font/size/outline/
-        -- color keys, not the cooldown ones. Everything else on this branch
-        -- (native duration binding, allowLowTime) is unchanged.
-        local totemPhase = button._totemActive == true
-        local showTimeText
-        if totemPhase then
-            showTimeText = button.style.showAuraText ~= false
-        else
-            showTimeText = button.style.showCooldownText and true or false
-        end
-        if showTimeText then
-            -- Switch font/color when mode changes
-            if totemPhase then
-                if textModeChanged then
-                    local f = CooldownCompanion:FetchFont(button.style.auraTextFont or "Friz Quadrata TT")
-                    local s = button.style.auraTextFontSize or 12
-                    local o = ST.GetEffectiveFontOutline(button.style.auraTextFontOutline or "OUTLINE")
-                    button.timeText:SetFont(f, s, o)
-                    ST.ApplyFontShadowForOutline(button.timeText, o)
-                end
-            elseif textModeChanged then
+        if button.style.showCooldownText then
+            -- Switch font/color when mode changes.
+            if textModeChanged then
                 local f = CooldownCompanion:FetchFont(button.style.cooldownFont or "Friz Quadrata TT")
                 local s = button.style.cooldownFontSize or 12
                 local o = ST.GetEffectiveFontOutline(button.style.cooldownFontOutline or "OUTLINE")
@@ -243,32 +208,18 @@ local function UpdateBarFill(button)
             end
             if button._barTextColorDirty then
                 button._barTextColorDirty = nil
-                local cc
-                if totemPhase then
-                    cc = button.style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
-                else
-                    cc = button.style.cooldownFontColor or DEFAULT_WHITE
-                end
+                local cc = button.style.cooldownFontColor or DEFAULT_WHITE
                 button.timeText:SetTextColor(cc[1], cc[2], cc[3], cc[4])
             end
             -- Eligible DurationObjects use native text binding; other timer sources stay on the manual path.
             local durationStyle = button.style
-            -- Active totem/summon duration is AURA text by contract (like its
-            -- font and color above), so its Low Time application follows the
-            -- aura opt-in; the cooldown phase stays unconditional. Safe per
-            -- tick: BindDurationText memoizes by formatter cache key, so the
-            -- formatter only re-applies on the phase edge.
-            local allowLowTime = not totemPhase
-                or CooldownCompanion.AllowAuraDurationLowTime(durationStyle, false)
-            local visibilityKind = totemPhase and "aura" or "cooldown"
             if button._durationObj then
                 button._lastBarTimeText = nil
-                BindDurationText(button.timeText, button._durationObj, durationStyle, allowLowTime,
-                    visibilityKind)
+                BindDurationText(button.timeText, button._durationObj, durationStyle, true, "cooldown")
             else
                 if itemRemaining > 0 then
                     SetBarTimeText(button, CooldownCompanion.FormatDurationText(
-                        itemRemaining, durationStyle, allowLowTime, visibilityKind))
+                        itemRemaining, durationStyle, true, "cooldown"))
                 else
                     SetBarTimeText(button, "")
                 end
@@ -326,47 +277,6 @@ local function ApplyBarCountTextStyle(button, style)
     button._countTextLaneStyled = useChargeTextLane or false
 end
 
--- Totem active phase aura indicator (owner ruling: the phase renders aura-side,
--- and that includes the barActiveAura INDICATOR, not just the fill color). For
--- a real aura the indicator is kit regions under the Blizzard aura slot button;
--- a totem has no aura instance and no slot, so the SAME pure kit builder and
--- styler run on the CC bar, from the same barAuraEffect* keys.
---
--- Contract: built lazily on the first rising edge and kept for the button's
--- life; style writes happen on the phase edges only, never per tick.
-local function TotemBarGlowWanted(style)
-    if not IsBarAuraIndicatorEnabled(style) then
-        return false
-    end
-    -- Mirrors Glows.lua NormalizeKitBarEffectStyle: nil/"none"/"color" render
-    -- nothing (the "color" mode is the fill tint, which is handled below).
-    local effect = style.barAuraEffect
-    return effect ~= nil and effect ~= "none" and effect ~= "color"
-end
-
-local function SetTotemPhaseBarGlow(button, style, enabled)
-    local kit = button._totemGlowKit
-    if enabled then
-        if not kit then
-            kit = BuildKitGlowRegions(button)
-            button._totemGlowKit = kit
-        end
-        -- Bar-side level parity with the aura display layer, which sits one
-        -- level above barTextFrame (statusBar+20) so the indicator draws over
-        -- the bar and its texts. Re-set on every rising edge because
-        -- UpdateBarStyle re-levels barTextFrame on restyles.
-        local base = button.barTextFrame or button.statusBar
-        if base then
-            kit.host:SetFrameLevel(base:GetFrameLevel() + 1)
-        end
-        StyleKitBarGlowRegions(kit, style, button, true)
-    elseif kit then
-        -- enabled=false resolves to kit style "none" (full reset + host alpha
-        -- 0), so the style table is not read and nil is the honest argument.
-        StyleKitBarGlowRegions(kit, nil, button, false)
-    end
-end
-
 -- Update bar-specific display elements (colors, desaturation, aura effects).
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
 local function UpdateBarDisplay(button)
@@ -382,11 +292,7 @@ local function UpdateBarDisplay(button)
     local isChargeButton = UsesChargeBehavior(button.buttonData)
     local chargeState = button._chargeState
     local onCooldown
-    if button._totemActive == true then
-        -- Totem active phase outranks charges and the spell cooldown (mirrors
-        -- Blizzard's CDM); the bar is active for as long as the summon stands.
-        onCooldown = true
-    elseif itemUsesResolvedCooldownState then
+    if itemUsesResolvedCooldownState then
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     elseif isChargeButton then
         onCooldown = chargeState == CHARGE_STATE_MISSING
@@ -395,16 +301,10 @@ local function UpdateBarDisplay(button)
         onCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
     end
 
-    -- Time text color: switch between ready, totem-phase (aura) and cooldown
-    -- colors. A MODE rather than a bool because the totem phase is a third
-    -- state: this block co-owns the color with UpdateBarFill's
-    -- _barTextColorDirty write, and a two-valued latch here repainted the
-    -- cooldown color over the phase's aura color on the way into the phase.
+    -- Time text color follows the cooldown/ready mode.
     local wantTextColorMode
     if not onCooldown and style.showBarReadyText then
         wantTextColorMode = "ready"
-    elseif button._totemActive == true then
-        wantTextColorMode = "totem"
     else
         wantTextColorMode = "cd"
     end
@@ -413,8 +313,6 @@ local function UpdateBarDisplay(button)
         local c
         if wantTextColorMode == "ready" then
             c = style.barReadyTextColor or DEFAULT_READY_TEXT_COLOR
-        elseif wantTextColorMode == "totem" then
-            c = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
         else
             c = style.cooldownFontColor or DEFAULT_WHITE
         end
@@ -425,13 +323,8 @@ local function UpdateBarDisplay(button)
     -- Aura-tracked buttons always use the base bar color (aura color override handles active state).
     local wantCdColor
     local cdColorReason
-    -- The totem phase paints for aura-added (passive-stamped) entries too:
-    -- it is the whole active visual of a standalone summon entry.
-    if onCooldown and (button._totemActive == true or not button.buttonData.isPassive) then
-        if button._totemActive == true then
-            wantCdColor = ResolveBarAuraFillColor(style, button.buttonData)
-            cdColorReason = "totem"
-        elseif isChargeButton and chargeState == CHARGE_STATE_MISSING then
+    if onCooldown and not button.buttonData.isPassive then
+        if isChargeButton and chargeState == CHARGE_STATE_MISSING then
             wantCdColor = style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR
             cdColorReason = "charge"
         else
@@ -443,19 +336,6 @@ local function UpdateBarDisplay(button)
         button._barCdColor = wantCdColor
         local c = wantCdColor or style.barColor or DEFAULT_BAR_COLOR
         button.statusBar:SetStatusBarColor(c[1], c[2], c[3], c[4])
-    end
-
-    -- Totem active phase aura indicator. Latched: the style writes run on the
-    -- phase edges only. The barAuraColor fill tint above is the phase's other
-    -- half and stays independent of this gate.
-    if button._totemActive == true and TotemBarGlowWanted(style) then
-        if button._totemGlowStyleActive ~= true then
-            button._totemGlowStyleActive = true
-            SetTotemPhaseBarGlow(button, style, true)
-        end
-    elseif button._totemGlowStyleActive == true then
-        button._totemGlowStyleActive = nil
-        SetTotemPhaseBarGlow(button, style, false)
     end
 
     EvaluateDesaturation(button, button.buttonData, style)
@@ -781,7 +661,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     -- Time text
     button.timeText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
     ApplyFontStyle(button.timeText, style, "cooldown")
-    ApplyBarTextPlacement(button, style, button._totemActive == true and "aura" or "time")
+    ApplyBarTextPlacement(button, style, "time")
 
     -- Border textures (around bar area, not full button)
     button.borderTextures = {}
@@ -977,9 +857,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._desaturated = nil
     button._iconTintIntent = nil
     button._desatCooldownActive = nil
-    button._rawDesatCooldownActive = nil
     button._readyGlowStartTime = nil
-    button._readyGlowTotemDeferred = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
@@ -1011,14 +889,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._chargeRecharging = nil
     button._chargesSpent = nil
     button._barReadyTextColor = nil
-    -- Totem aura-indicator latch. Every input moved (effect, color, size, speed
-    -- and the barTextFrame level the host rides), so drop the latch and hide
-    -- the kit: a phase still running re-applies from the new style on the next
-    -- pass, and a bar restyled out of a phase cannot strand a lit indicator.
-    if button._totemGlowKit then
-        button._totemGlowStyleActive = nil
-        StyleKitBarGlowRegions(button._totemGlowKit, nil, button, false)
-    end
     button.statusBar:SetAlpha(1.0)
 
     if isVertical then
@@ -1140,7 +1010,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._barTextMode = nil
     button._barTextColorDirty = true
 
-    ApplyBarTextPlacement(button, newStyle, button._totemActive == true and "aura" or "time")
+    ApplyBarTextPlacement(button, newStyle, "time")
 
     -- Update charge/item count font and anchor to icon or bar area
     ApplyBarCountTextStyle(button, newStyle)

@@ -370,6 +370,7 @@ end
 
 function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
     group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
+    if ST.IsTotemPanelGroup(group) then return false end
     if not group or group.compactLayout ~= true then
         return false
     end
@@ -507,6 +508,7 @@ local function GetFrameForButtonSetComparison(addon, groupId)
 end
 
 function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
+    if ST.IsTotemPanelGroup(group) then return false end
     opts = opts or {}
     local frame = GetFrameForButtonSetComparison(self, groupId)
     if not frame or not frame.buttons then
@@ -631,9 +633,6 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._durationObj = nil
                 button._chargeRenderCount = nil
                 button._chargeDurationObj = nil
-                -- _totemSwipeStyleActive stays: it owes the swipe-style restore
-                -- and the next pass runs the falling edge (see GroupFrame).
-                button._totemActive = nil
                 button._chargeRecharging = nil
                 button._chargeState = nil
                 button._currentReadableCharges = nil
@@ -716,7 +715,8 @@ function CooldownCompanion:FinalizePanelAnchors()
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
-            if not self:IsGroupCompactLayoutActive(groupId, group) then
+            -- Totem surfaces own their live or three-slot editing footprint.
+            if not ST.IsTotemPanelGroup(group) and not self:IsGroupCompactLayoutActive(groupId, group) then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
             else
                 frame.layoutButtonCount = nil

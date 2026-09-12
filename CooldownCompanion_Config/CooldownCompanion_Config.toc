@@ -87,6 +87,7 @@ ConfigSettings\BarModeTabs.lua
 ConfigSettings\FormatEditor.lua
 ConfigSettings\TextModeTabs.lua
 ConfigSettings\GroupTabsShared.lua
+ConfigSettings\TotemPanelTabs.lua
 ConfigSettings\GroupTabsSpecial.lua
 ConfigSettings\GroupTabsLayout.lua
 ConfigSettings\GroupTabsEffects.lua

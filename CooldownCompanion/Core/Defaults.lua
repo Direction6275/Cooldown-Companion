@@ -22,9 +22,6 @@ CooldownCompanion.DIM_FALLBACK_ALPHA = 0.4
 local defaults = {
     global = {
         characterInfo = {},  -- [charKey] = { classFilename, classID }
-        -- [charKey] = { [castSpellID] = totemSpellID, [totemSpellID] = castSpellID }
-        -- Learned out of combat, where the totem API still names its slots.
-        totemSpellLinks = {},
         -- [charKey] = true once HasPetSpells has ever returned pet spells:
         -- the live value empties while the pet is dismissed, so capability
         -- sticks after the first observation.
@@ -753,6 +750,21 @@ function CooldownCompanion:IsAuraPanel(group)
     return ST.IsAuraPanelGroup(group)
 end
 
+-- Automatic slot displays have no saved entries and never join aura tracking.
+function ST.IsTotemPanelGroup(group)
+    return group and group.totemPanel == true or false
+end
+
+function CooldownCompanion:EnforceTotemPanelInvariants(group)
+    if not ST.IsTotemPanelGroup(group) then return end
+    group.buttons = {}
+    group.auraPanel = nil
+    group.sections = nil
+    group.compactLayout = false
+    group.masqueEnabled = false
+    if group.displayMode ~= "bars" then group.displayMode = "icons" end
+end
+
 -- Every entry sitting in an Aura Panel needs a key that is unique WITHIN that
 -- panel: Blizzard identifies aura groups per container, and the display engine
 -- skips an entry that carries none (BindAuraPanel, AuraDisplay.lua), so a
@@ -949,6 +961,9 @@ function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entry
 end
 
 function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
+    if ST.IsTotemPanelGroup(group) then
+        return "Totem Panels automatically display occupied totem slots."
+    end
     if self:IsRotationAssistantGroup(group) then
         return "Assistant Panels are populated automatically."
     end

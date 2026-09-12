@@ -64,6 +64,9 @@ end
 local TEMPLATE_BAR_FILL_KEYS = { "barFillVertical", "barReverseFill" }
 
 function CooldownCompanion:GetPanelTemplateCreationMode(template)
+    if ST.IsTotemPanelGroup(template) then
+        return template.displayMode == "bars" and "totemBars" or "totemIcons"
+    end
     if ST.IsAuraPanelGroup(template) then
         if template.displayMode == "icons" then return "auraIcons" end
         if template.displayMode == "bars" then return "auraBars" end
@@ -75,7 +78,8 @@ local function TemplateSubtypeMatches(template, group)
     -- Old templates have no reliable subtype evidence. Preserve their original
     -- compatibility until the owner updates them from an actual panel.
     return template.templateVersion ~= 2
-        or ST.IsAuraPanelGroup(template) == ST.IsAuraPanelGroup(group)
+        or (ST.IsAuraPanelGroup(template) == ST.IsAuraPanelGroup(group)
+            and ST.IsTotemPanelGroup(template) == ST.IsTotemPanelGroup(group))
 end
 
 -- Trimmed, never empty: a blank name falls back to the template's id.
@@ -138,6 +142,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     local template = {
         templateVersion = 2,
         auraPanel = ST.IsAuraPanelGroup(group),
+        totemPanel = ST.IsTotemPanelGroup(group),
         displayMode = mode,
         buttons = {},
         style = style,
@@ -147,7 +152,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     for _, scopeName in ipairs(GetPanelTemplateScopeList(self, mode, template)) do
         local scopeData = modeScopes[scopeName]
         -- The applier's own key walk, one scope at a time as it runs it.
-        ST._ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey)
+        ST._ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey, template.totemPanel)
         if scopeData.copiesMasque then
             template.masqueEnabled = group.masqueEnabled and true or false
         end
