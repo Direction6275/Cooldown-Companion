@@ -215,6 +215,8 @@ local function RenderSample(surface, button, slot, playing)
         -- Match ordinary panel mirrors: idle samples show only their saved
         -- appearance, with no glow, duration text, swipe, or timed bar fill.
         button.cooldown:Hide()
+        -- Icon countdown text lives outside the cooldown widget.
+        if button._cdTextRegion then button._cdTextRegion:SetText("") end
         if button._isBar then
             Addon.UnbindDurationText(button.timeText, true)
             ST.SetStatusBarImmediateRange(button.statusBar, 0, 1)
