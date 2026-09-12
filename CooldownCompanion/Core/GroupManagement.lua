@@ -1380,6 +1380,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     style.showCooldownText = true
     if isTotemPanel then
         style.cooldownSwipeReverse = true
+        style.auraGlowStyle = "none"
     end
     if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
     if style.showOutOfRange == nil then style.showOutOfRange = true end
