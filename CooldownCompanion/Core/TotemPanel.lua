@@ -205,39 +205,40 @@ end
 -- Static examples are only used in explicitly labelled editing surfaces.
 -- No sample has a spell id and none is saved as a tracked entry.
 local PREVIEW_ICONS = { 136098, 136102, 136114 }
-local function RenderSample(surface, button, slot)
+local function RenderSample(surface, button, slot, playing)
     Addon:UpdateButtonIcon(button, PREVIEW_ICONS[slot])
-    local playing = surface.preview and Addon:IsTotemPanelPreviewPlaying(surface.groupId)
-    local elapsed = surface.preview and PreviewElapsed(surface.groupId) or PREVIEW_INITIAL_ELAPSED
-    elapsed = (elapsed + (slot - 1) * 4) % PREVIEW_DURATION
-    local remaining = PREVIEW_DURATION - elapsed
-    local start = GetTime() - elapsed
     button.cooldown._totemClearing = true
     button.cooldown:Clear()
     button.cooldown._totemClearing = nil
+    if button._isBar then button.nameText:SetText("Totem " .. slot) end
+    if not playing then
+        -- Match ordinary panel mirrors: idle samples show only their saved
+        -- appearance, with no glow, duration text, swipe, or timed bar fill.
+        button.cooldown:Hide()
+        if button._isBar then
+            Addon.UnbindDurationText(button.timeText, true)
+            ST.SetStatusBarImmediateRange(button.statusBar, 0, 1)
+            ST.SetStatusBarImmediateValue(button.statusBar, 1)
+        end
+        return
+    end
+    local elapsed = (PreviewElapsed(surface.groupId) + (slot - 1) * 4) % PREVIEW_DURATION
+    local start = GetTime() - elapsed
     button.cooldown:Resume()
     button.cooldown:SetCooldown(start, PREVIEW_DURATION)
-    if not playing then button.cooldown:Pause() end
+    button.cooldown:Show()
     if button._isBar then
-        button.nameText:SetText("Totem " .. slot)
-        if playing then
-            local duration = button._totemPreviewDuration
-            if not duration then
-                duration = C_DurationUtil.CreateDuration()
-                button._totemPreviewDuration = duration
-            end
-            duration:SetTimeFromStart(start, PREVIEW_DURATION, 1)
-            ST.SetStatusBarTimerDuration(button.statusBar, duration, ST.STATUS_BAR_TIMER_DIRECTION_REMAINING)
-            if surface.style.showCooldownText ~= false then
-                Addon.BindDurationText(button.timeText, duration, surface.style, true)
-            else
-                Addon.UnbindDurationText(button.timeText, true)
-            end
+        local duration = button._totemPreviewDuration
+        if not duration then
+            duration = C_DurationUtil.CreateDuration()
+            button._totemPreviewDuration = duration
+        end
+        duration:SetTimeFromStart(start, PREVIEW_DURATION, 1)
+        ST.SetStatusBarTimerDuration(button.statusBar, duration, ST.STATUS_BAR_TIMER_DIRECTION_REMAINING)
+        if surface.style.showCooldownText ~= false then
+            Addon.BindDurationText(button.timeText, duration, surface.style, true)
         else
             Addon.UnbindDurationText(button.timeText, true)
-            button.timeText:SetText(Addon.FormatDurationText(remaining, surface.style, true))
-            ST.SetStatusBarImmediateRange(button.statusBar, 0, 1)
-            ST.SetStatusBarImmediateValue(button.statusBar, remaining / PREVIEW_DURATION)
         end
     end
 end
@@ -249,6 +250,7 @@ RefreshSurface = function(surface)
     surface._refreshing = true
     wipe(surface.active)
     local preview = surface.preview or (surface.arrangePreview and not InCombatLockdown())
+    local playing = surface.preview and Addon:IsTotemPanelPreviewPlaying(surface.groupId)
     local previousCapacity = surface.geo and surface.geo.capacity
     surface.geo = ST.GetTotemPanelGeometry(group, preview and PREVIEW_SLOT_COUNT or surface.capacity)
     local frame = not surface.preview and Addon.groupFrames[surface.groupId]
@@ -265,14 +267,16 @@ RefreshSurface = function(surface)
         if issecretvalue(active) then active = false end
         if preview and slot > PREVIEW_SLOT_COUNT then active = false end
         if active then
+            if button._totemGlow then button._totemGlow.host:SetShown(not preview or playing) end
             button._totemSlotActive = true
             if preview then
-                RenderSample(surface, button, slot)
+                RenderSample(surface, button, slot, playing)
             else
                 local _, name, _, _, texture = GetTotemInfo(slot)
                 Addon:UpdateButtonIcon(button, texture)
                 button.cooldown:Resume()
                 button.cooldown:SetCooldownFromDurationObject(duration)
+                button.cooldown:Show()
                 if button._isBar then
                     -- Name and texture stay paired with this exact slot's
                     -- duration; both are secret-safe display pass-throughs.
