@@ -7,7 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
-        "Unreleased",
+        "2.6.2",
         "2.6.1",
         "2.5.3",
         "2.5.2",
@@ -41,15 +41,19 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
-        ["Unreleased"] = {
+        ["2.6.2"] = {
             markdown = [[
 ## New Features
 
-- **Totem Panels:** Track active totems and summons with customizable icons or timer bars. In a Group's right-click menu, choose New Totem Icon Panel or New Totem Bar Panel; no entries need to be added.
+- **Totem Panels:** Track active totems and summons with new Totem Icon and Totem Bar Panels. Create one from a Group's right-click menu; it fills automatically, with no entries to add.
 
 ## Tracking Changes
 
-- **Summon tracking:** Aura tracking now follows only actual auras, avoiding incorrect summon timers. For Tyrant, Dreadstalkers, Chi-Ji, and similar summons, create a Totem Panel; your existing entries are kept.
+- **Totem aura tracking retired:** Totem and summon durations can no longer be tracked as auras; aura tracking now follows actual buffs and debuffs only. Existing spell entries are kept, but use a Totem Panel for summon timers such as Tyrant, Dreadstalkers, and Chi-Ji.
+
+## Bug Fixes
+
+- **Pixel glows:** Glow dashes stay aligned around corners, with more consistent sizing and spacing and fewer overlapping bright spots.
 ]],
         },
         ["2.6.1"] = {
