@@ -161,10 +161,8 @@ local function TextControls(left, right, style, prefix, settings, isBar, isName)
             isName and "barNameTextOffsetY" or "barCdTextOffsetY", Refresh,
             { automatic = true, settings = settings })
     else
-        ST._AddAnchorDropdown(right, style, "cooldownTextAnchor", "CENTER", Refresh,
-            nil, { row = true, setting = settings.anchor })
-        ST._AddOffsetSliders(right, style, "cooldownTextXOffset", "cooldownTextYOffset",
-            {x = 0, y = 0}, Refresh, { row = true, settings = {x = settings.xOffset, y = settings.yOffset} })
+        ST._AddTextPositionControls(right, style, "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", Refresh,
+            {defaults = {anchor = "CENTER", range = 20}, settings = settings})
     end
 end
 

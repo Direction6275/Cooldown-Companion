@@ -16,10 +16,9 @@ local CanGroupUseOverrideSection = ST.CanGroupUseOverrideSection
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddTextPositionControls = ST._AddTextPositionControls
 local AddBarTextPositionControls = ST._AddBarTextPositionControls
 local AddFontControls = ST._AddFontControls
-local AddOffsetSliders = ST._AddOffsetSliders
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 
@@ -1268,16 +1267,9 @@ local function BuildBarAppearanceTab(container, group, style)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing")
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero")
 
-        AddAnchorDropdown(panel, chargeSec.tbl, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
-            row = true,
-            setting = BAR_FINDER.advanced.charge and BAR_FINDER.advanced.charge.anchor,
-        })
-        AddOffsetSliders(panel, chargeSec.tbl, "chargeXOffset", "chargeYOffset", {x = -2, y = 2}, refreshStyle, {
-            row = true,
-            settings = BAR_FINDER.advanced.charge and {
-                x = BAR_FINDER.advanced.charge.xOffset,
-                y = BAR_FINDER.advanced.charge.yOffset,
-            },
+        AddTextPositionControls(panel, chargeSec.tbl, "chargeAnchor", "chargeXOffset", "chargeYOffset", refreshStyle, {
+            defaults = {anchor = "BOTTOMRIGHT", x = -2, y = 2, range = 20},
+            settings = BAR_FINDER.advanced.charge,
         })
     end
 
@@ -1447,6 +1439,7 @@ local function BuildBarAppearanceTab(container, group, style)
                             return ST.BarTextLayout.Resolve(auraTextSec.read, "aura", group.style.barFillVertical)
                         end,
                         prepareKey = "barAuraTextIndependent",
+                        selfPointKey = "barAuraTextSelfPoint",
                         prepare = function()
                             ST.BarTextLayout.SetAuraIndependent(auraTextSec.tbl,
                                 auraTextSec.read, group.style.barFillVertical, true)
@@ -1535,16 +1528,9 @@ local function BuildBarAppearanceTab(container, group, style)
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.tbl, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
-                row = true,
-                setting = BAR_FINDER.advanced.auraStack and BAR_FINDER.advanced.auraStack.anchor,
-            })
-            AddOffsetSliders(panel, auraStackSec.tbl, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
-                row = true,
-                settings = BAR_FINDER.advanced.auraStack and {
-                    x = BAR_FINDER.advanced.auraStack.xOffset,
-                    y = BAR_FINDER.advanced.auraStack.yOffset,
-                },
+            AddTextPositionControls(panel, auraStackSec.tbl, "auraStackAnchor", "auraStackXOffset", "auraStackYOffset", refreshStyle, {
+                defaults = {anchor = "BOTTOMLEFT", x = 2, y = 2, range = 20},
+                settings = BAR_FINDER.advanced.auraStack,
             })
         end
 

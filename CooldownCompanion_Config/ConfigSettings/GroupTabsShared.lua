@@ -3,9 +3,8 @@ local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 -- Imports from Helpers.lua
-local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddTextPositionControls = ST._AddTextPositionControls
 local AddFontControls = ST._AddFontControls
-local AddOffsetSliders = ST._AddOffsetSliders
 
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
@@ -152,17 +151,9 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
                 onChange = RefreshSelectedGroupStyle,
             })
 
-            AddAnchorDropdown(panel, style, "cooldownTextAnchor", "CENTER", RefreshSelectedGroupStyle, nil, {
-                row = true,
-                setting = finderSettings and finderSettings.anchor,
-            })
-
-            AddOffsetSliders(panel, style, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, RefreshSelectedGroupStyle, {
-                row = true,
-                settings = finderSettings and {
-                    x = finderSettings.xOffset,
-                    y = finderSettings.yOffset,
-                },
+            AddTextPositionControls(panel, style, "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", RefreshSelectedGroupStyle, {
+                defaults = {anchor = "CENTER", range = 20},
+                settings = finderSettings,
             })
         end,
     }

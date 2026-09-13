@@ -1795,16 +1795,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local stackAnchorTo = barIconShown and button.icon or innerHost
-        kit.stackText:SetPoint(asAnchor, stackAnchorTo, asAnchor,
+        ST.TextAnchorLayout.Apply(kit.stackText, stackAnchorTo, asAnchor,
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
     else
         local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
-        kit.durationText:SetPoint(durAnchor, button, durAnchor, durX, durY)
+        ST.TextAnchorLayout.Apply(kit.durationText, button, durAnchor, durX, durY)
         kit.durationText:SetJustifyH("CENTER")
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
-        kit.stackText:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
-            button, style.auraStackAnchor or "BOTTOMLEFT",
+        ST.TextAnchorLayout.Apply(kit.stackText, button, style.auraStackAnchor or "BOTTOMLEFT",
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
     end
@@ -2274,9 +2273,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         if ApplyFontStyle then
             ApplyFontStyle(kit.keybindText, style, "keybind", 10)
         end
-        kit.keybindText:ClearAllPoints()
         local kbAnchor = style.keybindAnchor or "TOPRIGHT"
-        kit.keybindText:SetPoint(kbAnchor, button, kbAnchor,
+        ST.TextAnchorLayout.Apply(kit.keybindText, button, kbAnchor,
             style.keybindXOffset or -2, style.keybindYOffset or -2)
         kit.keybindText:SetText(keybindText)
         kit.keybindText:SetAlpha(1)

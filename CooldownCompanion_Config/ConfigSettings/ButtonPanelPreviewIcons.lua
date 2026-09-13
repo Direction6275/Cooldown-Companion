@@ -73,8 +73,7 @@ local function StyleIconEntry(slot, buttonData, group)
         host:SetFrameLevel(slot.cooldown:GetFrameLevel() + 3)
         local kb = slot.keybindText
         CooldownCompanion.ApplyFontStyle(kb, style, "keybind", 10)
-        kb:ClearAllPoints()
-        kb:SetPoint(style.keybindAnchor or "TOPRIGHT",
+        ST.TextAnchorLayout.Apply(kb, host, style.keybindAnchor or "TOPRIGHT",
             style.keybindXOffset or -2, style.keybindYOffset or -2)
         kb:SetText(text)
         kb:Show()
@@ -267,8 +266,7 @@ local function StyleSlotCooldownText(slot, style)
             CooldownCompanion.ApplyDurationFormatToCooldown(slot.cooldown, style)
         end
         CooldownCompanion.ApplyFontStyle(region, style, "cooldown")
-        region:ClearAllPoints()
-        region:SetPoint(style.cooldownTextAnchor or "CENTER",
+        ST.TextAnchorLayout.Apply(region, slot.cooldown, style.cooldownTextAnchor or "CENTER",
             style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
     else
         slot.cooldown:SetHideCountdownNumbers(true)
@@ -446,8 +444,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 CooldownCompanion.ApplyFontStyle(fs, style, "auraText", nil,
                     CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
                 local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
-                fs:ClearAllPoints()
-                fs:SetPoint(anchor, slot, anchor, xOff, yOff)
+                ST.TextAnchorLayout.Apply(fs, slot, anchor, xOff, yOff)
                 fs:SetText(FormatAuraDurationPreviewText(remaining, kind, style, buttonData,
                     slot._cdcAuraLowTime))
                 fs:Show()
@@ -458,8 +455,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         if style.showAuraStackText ~= false then
             local fs = EnsureSlotAuraStackText(slot)
             CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
-            fs:ClearAllPoints()
-            fs:SetPoint(style.auraStackAnchor or "BOTTOMLEFT",
+            ST.TextAnchorLayout.Apply(fs, fs:GetParent(), style.auraStackAnchor or "BOTTOMLEFT",
                 style.auraStackXOffset or 2, style.auraStackYOffset or 2)
             -- Threshold-aware stand-in (2026-08-15 program); helper lives in
             -- ButtonFrame/Helpers.lua.

@@ -606,41 +606,16 @@ local function BuildResourceTextControls(container, settings, powerType, display
             onChange = RefreshLayoutOrderPreviewForDrag,
         })
 
-        -- CS.anchorDropdownList is built from CS.anchorPointLabels over exactly
-        -- CS.anchorPoints (State.lua), which is the table this call site used to
-        -- rebuild by hand on every render.
-        AddDropdownRow(panel, {
-            label = "Text Anchor",
-            setting = finderText and finderText.advanced and finderText.advanced.anchor,
-            list = CS.anchorDropdownList,
-            order = CS.anchorPoints,
-            value = ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
-            onChange = function(val)
-                resSettings.textAnchor = val
-                applyBars()
+        local textSettings = finderText and finderText.advanced
+        ST._AddTextPositionControls(panel, resSettings, "textAnchor", "textXOffset", "textYOffset", applyBars, {
+            anchorLabel = "Text Anchor", xLabel = "Text X Offset", yLabel = "Text Y Offset",
+            settings = textSettings and {anchor = textSettings.anchor, xOffset = textSettings.x, yOffset = textSettings.y},
+            resolve = function()
+                return ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
+                    ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
+                    ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET)
             end,
-        })
-
-        AddMirrorFirstSliderRow(panel, {
-            label = "Text X Offset",
-            setting = finderText and finderText.advanced and finderText.advanced.x,
-            min = -50, max = 50, step = 0.1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "textXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
-            set = function(val) resSettings.textXOffset = val end,
-            apply = applyBars,
-            stateOwner = resSettings,
-            stateKeys = "textXOffset",
-        })
-
-        AddMirrorFirstSliderRow(panel, {
-            label = "Text Y Offset",
-            setting = finderText and finderText.advanced and finderText.advanced.y,
-            min = -50, max = 50, step = 0.1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "textYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
-            set = function(val) resSettings.textYOffset = val end,
-            apply = applyBars,
-            stateOwner = resSettings,
-            stateKeys = "textYOffset",
+            previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
 
         if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
@@ -788,47 +763,18 @@ local function BuildResourceTextControls(container, settings, powerType, display
             onConfirm = applyBars,
         })
 
-        AddDropdownRow(panel, {
-            label = "Text Anchor",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.anchor,
-            list = CS.anchorDropdownList,
-            order = CS.anchorPoints,
-            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR),
-            onChange = function(val)
-                resSettings.rechargeTextAnchor = val
-                CooldownCompanion:ApplyResourceBars()
+        local rechargeSettings = finderText and finderText.rechargeAdvanced
+        ST._AddTextPositionControls(panel, resSettings,
+            "rechargeTextAnchor", "rechargeTextXOffset", "rechargeTextYOffset", applyBars, {
+            anchorLabel = "Text Anchor", xLabel = "Text X Offset", yLabel = "Text Y Offset",
+            settings = rechargeSettings and {anchor = rechargeSettings.anchor, xOffset = rechargeSettings.x, yOffset = rechargeSettings.y},
+            resolve = function()
+                local valueAnchor = ReadDisplaySetting(baseSettings, resSettings, "textAnchor", DEFAULT_RESOURCE_TEXT_ANCHOR)
+                return ReadDisplaySetting(baseSettings, resSettings, "rechargeTextAnchor", valueAnchor),
+                    ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
+                    ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET)
             end,
-        })
-
-        AddSliderRow(panel, {
-            label = "Text X Offset",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.x,
-            min = -50, max = 50, step = 0.1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextXOffset", DEFAULT_RESOURCE_TEXT_X_OFFSET),
-            onChange = function(val)
-                ST._PreviewScalarSetting(resSettings, "rechargeTextXOffset", val, RefreshLayoutOrderPreviewForDrag)
-            end,
-            onRelease = function(val)
-                resSettings.rechargeTextXOffset = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
-        })
-
-        AddSliderRow(panel, {
-            label = "Text Y Offset",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.y,
-            min = -50, max = 50, step = 0.1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextYOffset", DEFAULT_RESOURCE_TEXT_Y_OFFSET),
-            onChange = function(val)
-                ST._PreviewScalarSetting(resSettings, "rechargeTextYOffset", val, RefreshLayoutOrderPreviewForDrag)
-            end,
-            onRelease = function(val)
-                resSettings.rechargeTextYOffset = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
+            previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
     end
 
