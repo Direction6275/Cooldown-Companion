@@ -950,6 +950,11 @@ local CONTROLS = {
 
 local function ControlApplies(control, group, displayMode, buttonIndex)
     if ST.IsTotemPanelGroup(group) then return false end
+    -- Aura Panels only render aura states, even when their entries also
+    -- name spells with cooldowns, charges, or cast feedback.
+    if ST.IsAuraPanelGroup(group) and control.group ~= GROUP_AURAS then
+        return false
+    end
     if not control.modes[displayMode] then
         return false
     end
