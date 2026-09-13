@@ -11,9 +11,8 @@ local CS = ST._configState
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddTextPositionControls = ST._AddTextPositionControls
 local AddFontControls = ST._AddFontControls
-local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
@@ -1500,13 +1499,9 @@ local function BuildAppearanceTab(container)
         ChargeColorRow("Font Color (Missing Charges)", "chargeFontColorMissing", APPEARANCE_FINDER.count.missingColor)
         ChargeColorRow("Font Color (Zero Charges)", "chargeFontColorZero", APPEARANCE_FINDER.count.zeroColor)
 
-        AddAnchorDropdown(panel, chargeSec.tbl, "chargeAnchor", "BOTTOMRIGHT", refreshStyle, nil, {
-            row = true,
-            setting = APPEARANCE_FINDER.count.anchor,
-        })
-        AddOffsetSliders(panel, chargeSec.tbl, "chargeXOffset", "chargeYOffset", { x = -2, y = 2 }, refreshStyle, {
-            row = true,
-            settings = { x = APPEARANCE_FINDER.count.xOffset, y = APPEARANCE_FINDER.count.yOffset },
+        AddTextPositionControls(panel, chargeSec.tbl, "chargeAnchor", "chargeXOffset", "chargeYOffset", refreshStyle, {
+            defaults = {anchor = "BOTTOMRIGHT", x = -2, y = 2, range = 20},
+            settings = APPEARANCE_FINDER.count,
         })
     end
 
@@ -1608,13 +1603,9 @@ local function BuildAppearanceTab(container)
             -- otherwise a keep-swipe entry's live position keys would have no
             -- rows to edit them.
             if SeparatePositionsOn() or WhileAuraFlagOn(whileAuraSec, "auraKeepSpellCooldownSwipe") then
-                AddAnchorDropdown(panel, auraTextSec.tbl, "auraTextAnchor", "TOPLEFT", refreshStyle, nil, {
-                    row = true,
-                    setting = APPEARANCE_FINDER.auraText.anchor,
-                })
-                AddOffsetSliders(panel, auraTextSec.tbl, "auraTextXOffset", "auraTextYOffset", { x = 2, y = -2 }, refreshStyle, {
-                    row = true,
-                    settings = { x = APPEARANCE_FINDER.auraText.xOffset, y = APPEARANCE_FINDER.auraText.yOffset },
+                AddTextPositionControls(panel, auraTextSec.tbl, "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", refreshStyle, {
+                    defaults = {anchor = "TOPLEFT", x = 2, y = -2, range = 20},
+                    settings = APPEARANCE_FINDER.auraText,
                 })
             elseif isAuraPanel then
                 -- The re-homed shared-position rows. Same STORAGE KEYS as before
@@ -1629,13 +1620,10 @@ local function BuildAppearanceTab(container)
                 -- and Duration Format both follow). So they are openly
                 -- PANEL-OWNED and wear the grey "Panel setting" label.
                 local panelStyle = group.style
-                local anchorRow = AddAnchorDropdown(panel, panelStyle, "cooldownTextAnchor", "CENTER", refreshStyle, nil, {
-                    row = true,
-                    setting = APPEARANCE_FINDER.auraText.anchor,
-                })
-                local offsetXRow, offsetYRow = AddOffsetSliders(panel, panelStyle, "cooldownTextXOffset", "cooldownTextYOffset", { x = 0, y = 0 }, refreshStyle, {
-                    row = true,
-                    settings = { x = APPEARANCE_FINDER.auraText.xOffset, y = APPEARANCE_FINDER.auraText.yOffset },
+                local anchorRow, offsetXRow, offsetYRow = AddTextPositionControls(panel, panelStyle,
+                    "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", refreshStyle, {
+                    defaults = {anchor = "CENTER", range = 20},
+                    settings = APPEARANCE_FINDER.auraText,
                 })
                 auraTextSec:PanelRowChrome(anchorRow)
                 auraTextSec:PanelRowChrome(offsetXRow)
@@ -1724,13 +1712,9 @@ local function BuildAppearanceTab(container)
                 onConfirm = refreshStyle,
                 onChange = refreshStyle,
             })
-            AddAnchorDropdown(panel, auraStackSec.tbl, "auraStackAnchor", "BOTTOMLEFT", refreshStyle, nil, {
-                row = true,
-                setting = APPEARANCE_FINDER.auraStacks.anchor,
-            })
-            AddOffsetSliders(panel, auraStackSec.tbl, "auraStackXOffset", "auraStackYOffset", { x = 2, y = 2 }, refreshStyle, {
-                row = true,
-                settings = { x = APPEARANCE_FINDER.auraStacks.xOffset, y = APPEARANCE_FINDER.auraStacks.yOffset },
+            AddTextPositionControls(panel, auraStackSec.tbl, "auraStackAnchor", "auraStackXOffset", "auraStackYOffset", refreshStyle, {
+                defaults = {anchor = "BOTTOMLEFT", x = 2, y = 2, range = 20},
+                settings = APPEARANCE_FINDER.auraStacks,
             })
         end
 
@@ -1769,27 +1753,10 @@ local function BuildAppearanceTab(container)
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildKeybindTextAdvanced(panel)
-        -- Keybind uses a hardcoded 4-point anchor (not the full 9-point list),
-        -- so this is a dropdown row of its own rather than AddAnchorDropdown.
-        AddDropdownRow(panel, {
-            label = "Anchor",
-            setting = APPEARANCE_FINDER.keybind.anchor,
-            list = {
-                TOPRIGHT = "Top Right",
-                TOPLEFT = "Top Left",
-                BOTTOMRIGHT = "Bottom Right",
-                BOTTOMLEFT = "Bottom Left",
-            },
-            value = kbSec.tbl.keybindAnchor or "TOPRIGHT",
-            onChange = function(val)
-                kbSec.write.keybindAnchor = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end,
-        })
-
-        AddOffsetSliders(panel, kbSec.tbl, "keybindXOffset", "keybindYOffset", { x = -2, y = -2 }, refreshStyle, {
-            row = true,
-            settings = { x = APPEARANCE_FINDER.keybind.xOffset, y = APPEARANCE_FINDER.keybind.yOffset },
+        AddTextPositionControls(panel, kbSec.tbl, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshStyle, {
+            defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
+            disabled = kbSec.disabled,
+            settings = APPEARANCE_FINDER.keybind,
         })
         AddFontControls(panel, kbSec.tbl, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
             row = true,

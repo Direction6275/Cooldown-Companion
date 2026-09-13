@@ -493,14 +493,13 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         if style.showAuraStackText ~= false then
             local fs = EnsureBarSlotAuraStackText(slot)
             CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
-            fs:ClearAllPoints()
             local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
             local asX = style.auraStackXOffset or 2
             local asY = style.auraStackYOffset or 2
             if style.showBarIcon ~= false then
-                fs:SetPoint(asAnchor, slot.icon, asAnchor, asX, asY)
+                ST.TextAnchorLayout.Apply(fs, slot.icon, asAnchor, asX, asY)
             else
-                fs:SetPoint(asAnchor, slot, asAnchor, asX, asY)
+                ST.TextAnchorLayout.Apply(fs, slot.textFrame, asAnchor, asX, asY)
             end
             -- Threshold-aware stand-in (2026-08-15 program); helper lives in
             -- ButtonFrame/Helpers.lua.

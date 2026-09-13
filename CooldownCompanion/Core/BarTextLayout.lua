@@ -4,6 +4,7 @@ local ADDON_NAME, ST = ...
 
 local Layout = {}
 ST.BarTextLayout = Layout
+local TextLayout = ST.TextAnchorLayout
 
 local points = {
     TOPLEFT = "LEFT", TOP = "CENTER", TOPRIGHT = "RIGHT",
@@ -15,12 +16,22 @@ function Layout.IsAnchor(point)
     return points[point] ~= nil
 end
 
+local function GetAuraSelfPoint(style)
+    -- Old entry overrides can own an anchor without the newer snapshot field.
+    -- Inherit the attachment only when the anchor itself is inherited too.
+    if rawget(style, "barAuraTextAnchor") ~= nil then
+        return rawget(style, "barAuraTextSelfPoint")
+    end
+    return style.barAuraTextSelfPoint
+end
+
 function Layout.Resolve(style, lane, vertical)
     if lane == "aura" then
         if style.barAuraTextIndependent == true then
             local point = style.barAuraTextAnchor
             if points[point] then
-                return point, style.barAuraTextOffsetX or 0, style.barAuraTextOffsetY or 0
+                return point, style.barAuraTextOffsetX or 0, style.barAuraTextOffsetY or 0,
+                    GetAuraSelfPoint(style) or TextLayout.GetSelfPoint(point)
             end
         end
         return Layout.Resolve(style, "time", vertical)
@@ -33,42 +44,48 @@ function Layout.Resolve(style, lane, vertical)
         point, x, y = style.barTimeTextAnchor, style.barCdTextOffsetX, style.barCdTextOffsetY
     end
     x, y = x or 0, y or 0
-    if points[point] then return point, x, y end
+    if points[point] then return point, x, y, TextLayout.GetSelfPoint(point) end
     local reverse
     if isName then reverse = style.barNameTextReverse else reverse = style.barTimeTextReverse end
     if vertical then
         local top = isName and reverse or (not isName and not reverse)
-        return top and "TOP" or "BOTTOM", x, y + (top and -3 or 3)
+        point = top and "TOP" or "BOTTOM"
+        return point, x, y + (top and -3 or 3), point
     end
     local left = isName and not reverse or (not isName and reverse)
-    return left and "LEFT" or "RIGHT", x + (left and 3 or -3), y
+    point = left and "LEFT" or "RIGHT"
+    return point, x + (left and 3 or -3), y, point
 end
 
 function Layout.ResolveCustom(style, lane, vertical, otherShown)
     local point = style[lane .. "Anchor"]
     local x = style[lane .. "XOffset"] or 0
     local y = style[lane .. "YOffset"] or 0
-    if points[point] then return point, x, y end
-    if not otherShown then return "CENTER", x, y end
+    if points[point] then return point, x, y, TextLayout.GetSelfPoint(point) end
+    if not otherShown then return "CENTER", x, y, "CENTER" end
     local duration = lane == "durationText"
     if vertical then
-        return duration and "BOTTOM" or "TOP", x, y + (duration and 2 or -2)
+        point = duration and "BOTTOM" or "TOP"
+        return point, x, y + (duration and 2 or -2), point
     end
-    return duration and "LEFT" or "RIGHT", x + (duration and 4 or -4), y
+    point = duration and "LEFT" or "RIGHT"
+    return point, x + (duration and 4 or -4), y, point
 end
 
-function Layout.Apply(text, target, point, x, y)
-    text:ClearAllPoints()
-    text:SetPoint(point, target, point, x, y)
-    text:SetJustifyH(points[point] or "CENTER")
+function Layout.Apply(text, target, point, x, y, selfPoint)
+    selfPoint = selfPoint or TextLayout.GetSelfPoint(point)
+    TextLayout.Apply(text, target, point, x, y, selfPoint)
+    text:SetJustifyH(points[selfPoint] or "CENTER")
 end
 
 -- A second name anchor lets the renderer truncate even secret spell names.
 -- Custom placements only opt into this conventional single-row edge layout.
 function Layout.ApplyName(nameText, target, timerText, style, vertical, timerLane, timerShown)
-    local point, x, y = Layout.Resolve(style, "name", vertical)
-    Layout.Apply(nameText, target, point, x, y)
+    local point, x, y, selfPoint = Layout.Resolve(style, "name", vertical)
+    Layout.Apply(nameText, target, point, x, y, selfPoint)
     if vertical or not timerText or not timerShown then return end
+    -- Centered text must keep its natural width; a second anchor would resize it.
+    if selfPoint ~= "LEFT" and selfPoint ~= "RIGHT" then return end
     local timerPoint, _, timerY = Layout.Resolve(style, timerLane or "time", vertical)
     local legacy = style.barNameTextAnchor == nil and style.barTimeTextAnchor == nil
         and (timerLane ~= "aura" or style.barAuraTextIndependent ~= true)
@@ -89,10 +106,11 @@ end
 -- Snapshot once, then retain the independent position while following Time.
 function Layout.SetAuraIndependent(store, effectiveStyle, vertical, enabled)
     if enabled and not Layout.IsAnchor(rawget(store, "barAuraTextAnchor")) then
-        local point, x, y = Layout.Resolve(effectiveStyle, "aura", vertical)
+        local point, x, y, selfPoint = Layout.Resolve(effectiveStyle, "aura", vertical)
         store.barAuraTextAnchor = point
         store.barAuraTextOffsetX = x
         store.barAuraTextOffsetY = y
+        store.barAuraTextSelfPoint = selfPoint
     end
     store.barAuraTextIndependent = enabled == true
 end
@@ -115,5 +133,6 @@ function Layout.SnapshotSection(store, source, sectionId)
         store.barAuraTextAnchor = source.barAuraTextAnchor or false
         store.barAuraTextOffsetX = source.barAuraTextOffsetX or 0
         store.barAuraTextOffsetY = source.barAuraTextOffsetY or 0
+        store.barAuraTextSelfPoint = GetAuraSelfPoint(source) or false
     end
 end

@@ -1228,7 +1228,7 @@ ST.OVERRIDE_SECTIONS = {
     -- RevertSection stops clearing a key it no longer owns.
     auraText = {
         label = "Aura Duration Text",
-        keys = {"showAuraText", "auraTextVisibilityThreshold", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", "barAuraTextIndependent", "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY"},
+        keys = {"showAuraText", "auraTextVisibilityThreshold", "auraTextFont", "auraTextFontSize", "auraTextFontOutline", "auraTextFontColor", "auraTextAnchor", "auraTextXOffset", "auraTextYOffset", "barAuraTextIndependent", "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY", "barAuraTextSelfPoint"},
         defaults = { auraTextVisibilityThreshold = false },
         modes = {icons = true, bars = true},
     },

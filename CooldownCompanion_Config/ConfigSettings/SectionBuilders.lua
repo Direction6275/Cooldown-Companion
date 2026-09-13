@@ -6,9 +6,8 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddTextPositionControls = ST._AddTextPositionControls
 local AddFontControls = ST._AddFontControls
-local AddOffsetSliders = ST._AddOffsetSliders
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local ColorHeading = ST._ColorHeading
 local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
@@ -1144,16 +1143,10 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
                 onConfirm = refreshCallback,
                 onChange = refreshCallback,
             })
-            AddAnchorDropdown(panel, styleTable, "keybindAnchor", "TOPRIGHT", refreshCallback,
-                nil, { row = true, setting = opts.settings and opts.settings.anchor })
-            AddOffsetSliders(panel, styleTable, "keybindXOffset", "keybindYOffset", {x = -2, y = -2},
-                refreshCallback, {
-                    row = true,
-                    settings = opts.settings and {
-                        x = opts.settings.xOffset,
-                        y = opts.settings.yOffset,
-                    },
-                })
+            AddTextPositionControls(panel, styleTable, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshCallback, {
+                defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
+                settings = opts.settings,
+            })
         end,
     })
 end

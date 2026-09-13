@@ -1450,12 +1450,11 @@ end
 
 -- Anchor charge/item count text on bar buttons: relative to icon when visible, relative to bar otherwise.
 local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
-    button.count:ClearAllPoints()
     if showIcon then
-        button.count:SetPoint(anchor, button.icon, anchor, xOff, yOff)
+        ST.TextAnchorLayout.Apply(button.count, button.icon, anchor, xOff, yOff)
     else
         local barArea = button.barTextFrame or button.textFrame or button
-        button.count:SetPoint(anchor, barArea, anchor, xOff, yOff)
+        ST.TextAnchorLayout.Apply(button.count, barArea, anchor, xOff, yOff)
     end
 end
 

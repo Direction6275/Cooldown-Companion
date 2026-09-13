@@ -8,7 +8,7 @@ local math_pi = math.pi
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
+local AddTextPositionControls = ST._AddTextPositionControls
 local CleanRecycledEntry = ST._CleanRecycledEntry
 local ApplyConfigRowIcon = ST._ApplyConfigRowIcon
 local BindConfigShiftTooltip = ST._BindConfigShiftTooltip
@@ -838,33 +838,10 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local defItemX = barNoIcon and 0 or -2
     local defItemY = 2
 
-    AddAnchorDropdown(itemRight, buttonData, "itemCountAnchor", defItemAnchor, refreshGroup,
-        "Anchor Point", { row = true, setting = itemSettings.anchor })
-
-    AddSliderRow(itemRight, {
-        setting = itemSettings.xOffset,
-        min = -20, max = 20, step = 0.1,
-        value = buttonData.itemCountXOffset or defItemX,
-        onChange = function(val)
-            ST._PreviewScalarSetting(buttonData, "itemCountXOffset", val, ST._RefreshSelectedButtonsPreview)
-        end,
-        onRelease = function(val)
-            buttonData.itemCountXOffset = val
-            refreshGroup()
-        end,
-    })
-
-    AddSliderRow(itemRight, {
-        setting = itemSettings.yOffset,
-        min = -20, max = 20, step = 0.1,
-        value = buttonData.itemCountYOffset or defItemY,
-        onChange = function(val)
-            ST._PreviewScalarSetting(buttonData, "itemCountYOffset", val, ST._RefreshSelectedButtonsPreview)
-        end,
-        onRelease = function(val)
-            buttonData.itemCountYOffset = val
-            refreshGroup()
-        end,
+    AddTextPositionControls(itemRight, buttonData, "itemCountAnchor", "itemCountXOffset", "itemCountYOffset", refreshGroup, {
+        anchorLabel = "Anchor Point",
+        defaults = {anchor = defItemAnchor, x = defItemX, y = defItemY, range = 20},
+        settings = itemSettings,
     })
 end
 

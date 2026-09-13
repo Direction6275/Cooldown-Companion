@@ -478,14 +478,13 @@ end
 local function ApplyCountTextStyle(button, style)
     if not button or not button.count then return end
     local buttonData = button.buttonData
-    button.count:ClearAllPoints()
     if buttonData and UsesChargeTextLane(buttonData) then
         ApplyFontStyle(button.count, style, "charge")
 
         local chargeAnchor = style.chargeAnchor or "BOTTOMRIGHT"
         local chargeXOffset = style.chargeXOffset or -2
         local chargeYOffset = style.chargeYOffset or 2
-        button.count:SetPoint(chargeAnchor, chargeXOffset, chargeYOffset)
+        ST.TextAnchorLayout.Apply(button.count, button.count:GetParent(), chargeAnchor, chargeXOffset, chargeYOffset)
     elseif buttonData and buttonData.type == "item"
        and not IsItemEquippable(buttonData) then
         ApplyFontStyle(button.count, buttonData, "itemCount")
@@ -493,9 +492,9 @@ local function ApplyCountTextStyle(button, style)
         local itemAnchor = buttonData.itemCountAnchor or "BOTTOMRIGHT"
         local itemXOffset = buttonData.itemCountXOffset or -2
         local itemYOffset = buttonData.itemCountYOffset or 2
-        button.count:SetPoint(itemAnchor, itemXOffset, itemYOffset)
+        ST.TextAnchorLayout.Apply(button.count, button.count:GetParent(), itemAnchor, itemXOffset, itemYOffset)
     else
-        button.count:SetPoint("BOTTOMRIGHT", -2, 2)
+        ST.TextAnchorLayout.Apply(button.count, button.count:GetParent(), "BOTTOMRIGHT", -2, 2)
     end
     button._countTextLaneStyled = buttonData and UsesChargeTextLane(buttonData) or false
 end
@@ -584,9 +583,8 @@ local function ApplyCooldownTextHost(button, buttonData, style)
     if region:GetParent() ~= host then
         region:SetParent(host)
     end
-    region:ClearAllPoints()
     local cdAnchor = style.cooldownTextAnchor or "CENTER"
-    region:SetPoint(cdAnchor, host, cdAnchor,
+    ST.TextAnchorLayout.Apply(region, host, cdAnchor,
         style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
 end
 
@@ -695,11 +693,10 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
         ApplyFontStyle(region, style, "cooldown")
-        region:ClearAllPoints()
         local cdAnchor = style.cooldownTextAnchor or "CENTER"
         local cdXOff = style.cooldownTextXOffset or 0
         local cdYOff = style.cooldownTextYOffset or 0
-        region:SetPoint(cdAnchor, cdXOff, cdYOff)
+        ST.TextAnchorLayout.Apply(region, button.cooldown, cdAnchor, cdXOff, cdYOff)
         button._cdTextRegion = region
     end
 
@@ -746,7 +743,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         local anchor = style.keybindAnchor or "TOPRIGHT"
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
-        button.keybindText:SetPoint(anchor, xOff, yOff)
+        ST.TextAnchorLayout.Apply(button.keybindText, button.pinnedTextFrame, anchor, xOff, yOff)
         local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)
@@ -1374,11 +1371,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     -- Update keybind text overlay
     if button.keybindText then
         ApplyFontStyle(button.keybindText, style, "keybind", 10)
-        button.keybindText:ClearAllPoints()
         local anchor = style.keybindAnchor or "TOPRIGHT"
         local xOff = style.keybindXOffset or -2
         local yOff = style.keybindYOffset or -2
-        button.keybindText:SetPoint(anchor, xOff, yOff)
+        ST.TextAnchorLayout.Apply(button.keybindText, button.pinnedTextFrame, anchor, xOff, yOff)
         local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId, button)
         button.keybindText:SetText(text or "")
         button.keybindText:SetShown(style.showKeybindText and text ~= nil)

@@ -1280,12 +1280,13 @@ local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label,
     })
 end
 
--- One compact positioning group for bar-panel and custom-bar text. Optional
--- preparation materializes an aura-only panel's first independent edit. Drag
+-- Text-only positioning controls. Frame/panel anchors use AddAnchorDropdown.
+-- Optional preparation materializes an aura-only panel's first independent edit. Drag
 -- previews restore raw saved values, including absent override keys.
-local function AddBarTextPositionControls(container, tbl, anchorKey, xKey, yKey, refreshFn, opts)
+local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, refreshFn, opts)
     opts = opts or {}
     local settings = opts.settings or {}
+    local defaults = opts.defaults or {}
     local list, order = {}, {}
     if opts.automatic then
         list.AUTO = "Automatic"
@@ -1299,8 +1300,8 @@ local function AddBarTextPositionControls(container, tbl, anchorKey, xKey, yKey,
     if opts.resolve then
         point, x, y = opts.resolve()
     else
-        point = tbl[anchorKey] or (opts.automatic and "AUTO" or "CENTER")
-        x, y = tbl[xKey] or 0, tbl[yKey] or 0
+        point = tbl[anchorKey] or defaults.anchor or (opts.automatic and "AUTO" or "CENTER")
+        x, y = tbl[xKey] or defaults.x or 0, tbl[yKey] or defaults.y or 0
     end
     local function Set(key, value)
         if opts.prepare then opts.prepare() end
@@ -1315,6 +1316,7 @@ local function AddBarTextPositionControls(container, tbl, anchorKey, xKey, yKey,
         if opts.disabled then return end
         local keys = { anchorKey, xKey, yKey }
         if opts.prepareKey then keys[#keys + 1] = opts.prepareKey end
+        if opts.selfPointKey then keys[#keys + 1] = opts.selfPointKey end
         local saved = {}
         for _, field in ipairs(keys) do saved[field] = rawget(tbl, field) end
         Set(key, value)
@@ -1322,26 +1324,40 @@ local function AddBarTextPositionControls(container, tbl, anchorKey, xKey, yKey,
         previewRefresh()
         for _, field in ipairs(keys) do tbl[field] = saved[field] end
     end
+    local xRow, yRow
     local anchorRow = ST._AddDropdownRow(container, {
-        label = "Anchor", setting = settings.anchor,
+        label = opts.anchorLabel or "Anchor", setting = settings.anchor,
+        indent = opts.indent,
+        tooltip = {"Text Anchor", "Corners keep text inside. Edge anchors center text on the border. Choosing a different anchor resets X and Y offsets."},
         list = list, order = order, value = point, disabled = opts.disabled,
-        onChange = function(value) Commit(anchorKey, value) end,
+        onChange = function(value)
+            if opts.disabled or value == point then return end
+            Set(anchorKey, value)
+            tbl[xKey], tbl[yKey] = ST.TextAnchorLayout.GetOffsets(value)
+            -- Explicit false also blocks inherited snapshot alignment.
+            if opts.selfPointKey then tbl[opts.selfPointKey] = false end
+            point = value
+            xRow:SetValue(tbl[xKey])
+            yRow:SetValue(tbl[yKey])
+            refreshFn()
+        end,
     })
-    local xRow = ST._AddSliderRow(container, {
-        label = "X Offset", setting = settings.xOffset,
-        min = -50, max = 50, step = 0.1, value = x, disabled = opts.disabled,
+    xRow = ST._AddSliderRow(container, {
+        label = opts.xLabel or "X Offset", setting = settings.xOffset, indent = opts.indent,
+        min = -(defaults.range or 50), max = defaults.range or 50, step = 0.1, value = x, disabled = opts.disabled,
         onChange = function(value) Preview(xKey, value) end,
         onRelease = function(value) Commit(xKey, value) end,
     })
-    local yRow = ST._AddSliderRow(container, {
-        label = "Y Offset", setting = settings.yOffset,
-        min = -50, max = 50, step = 0.1, value = y, disabled = opts.disabled,
+    yRow = ST._AddSliderRow(container, {
+        label = opts.yLabel or "Y Offset", setting = settings.yOffset, indent = opts.indent,
+        min = -(defaults.range or 50), max = defaults.range or 50, step = 0.1, value = y, disabled = opts.disabled,
         onChange = function(value) Preview(yKey, value) end,
         onRelease = function(value) Commit(yKey, value) end,
     })
     return anchorRow, xRow, yRow
 end
-ST._AddBarTextPositionControls = AddBarTextPositionControls
+ST._AddTextPositionControls = AddTextPositionControls
+ST._AddBarTextPositionControls = AddTextPositionControls
 
 -- LibSharedMedia font names run well past the 140px control column, and a
 -- dropdown sizes its menu from the control it hangs under.

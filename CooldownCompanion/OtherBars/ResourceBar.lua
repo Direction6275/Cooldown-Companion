@@ -1334,8 +1334,7 @@ local function StyleRechargeTexts(holder, powerType, settings)
         text:SetFont(font, fontSize, outline)
         ST.ApplyFontShadowForOutline(text, outline)
         text:SetTextColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
-        text:ClearAllPoints()
-        text:SetPoint(anchor, holder.segments[i], anchor, xOffset, yOffset)
+        ST.TextAnchorLayout.Apply(text, holder.segments[i], anchor, xOffset, yOffset)
     end
 
     local mode = resourceConfig.rechargeTextMode
@@ -2408,8 +2407,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     ST.ApplyFontShadowForOutline(bar.text, textOutline)
     bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
-    bar.text:ClearAllPoints()
-    bar.text:SetPoint(
+    ST.TextAnchorLayout.Apply(bar.text, bar,
         resourceConfig and resourceConfig.textAnchor or "CENTER",
         resourceConfig and resourceConfig.textXOffset or 0,
         resourceConfig and resourceConfig.textYOffset or 0
@@ -2483,8 +2481,7 @@ local function StyleSegmentedText(holder, powerType, settings)
     ST.ApplyFontShadowForOutline(holder.text, textOutline)
     holder.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
 
-    holder.text:ClearAllPoints()
-    holder.text:SetPoint(
+    ST.TextAnchorLayout.Apply(holder.text, holder,
         resourceConfig and resourceConfig.textAnchor or "CENTER",
         resourceConfig and resourceConfig.textXOffset or 0,
         resourceConfig and resourceConfig.textYOffset or 0
