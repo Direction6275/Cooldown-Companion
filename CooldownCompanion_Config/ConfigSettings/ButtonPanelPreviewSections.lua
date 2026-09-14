@@ -61,7 +61,8 @@ do
 
     -- ONE ACCENT LANGUAGE. Every target in this gesture wears exactly two
     -- looks: ring blue = a target that exists, gold = the target the drop is
-    -- committed to. Nothing stacks the two, so the eye never has to work out
+    -- committed to. Red is reserved for a refused drop, with its reason.
+    -- Nothing stacks these, so the eye never has to work out
     -- which of two lit things wins.
     --
     -- Gold is this addon's "aligned" signal already (Core/GroupFrameDragSnap.lua's
@@ -372,6 +373,7 @@ do
                 end
             else
                 model.free[anchor] = {
+                    auraOnly = ST.IsAuraOnlyPanelSection(group, anchor) or nil,
                     x = info.originX + dx,
                     y = info.originY + dy,
                     width = info.width,
@@ -555,14 +557,19 @@ do
     --- past the last member), unless the lane is the one the entry in hand
     --- (`sourceIndex`) already belongs to: near its own section an entry is
     --- home, and its own position is a no-op drop, not a move to the end.
-    --- The gesture's state function is the one place it says which anchors
-    --- it will take (CursorAnchorState, EntryAnchorState, HandleAnchorState).
-    function SectionDrag.AnchorTarget(preview, model, anchor, sourceIndex)
+    --- Entry/cursor callers pass laneBlocked to check Aura eligibility AFTER
+    --- choosing the destination. Without it, the gesture's state function
+    --- retains the whole-section handle's free-anchor-only behavior.
+    function SectionDrag.AnchorTarget(preview, model, anchor, sourceIndex, laneBlocked)
         local stateFn = preview.gestureState
         if not (anchor and stateFn and preview.gestureModel == model) then return nil end
         local lane = model.lanes[anchor]
         local rect = lane or model.free[anchor]
-        if not rect or stateFn(anchor, lane, rect, preview.gestureContext) == "refused" then
+        if not rect then return nil end
+        if laneBlocked then
+            local message = rect.auraOnly and laneBlocked(anchor)
+            if message then return { section = anchor, rejectMessage = message } end
+        elseif stateFn(anchor, lane, rect, preview.gestureContext) == "refused" then
             return nil
         end
         if lane then
@@ -587,12 +594,13 @@ do
     --- The target for the landing the cursor is nearest, within the model's
     --- reach (one cell from the landing's edge), or nil when no landing is
     --- that near. A landing is the cluster for an occupied anchor and the
-    --- free cell for a free one; an anchor the gesture refuses is not a
-    --- landing at all, so the next nearest one can still take the drop.
+    --- free cell for a free one. Entry/cursor callers pass laneBlocked so
+    --- eligibility cannot redirect the drop to a different landing. Handle
+    --- drags still exclude occupied anchors through their gesture state.
     --- Equally near landings (which only happens when they coincide) go to
     --- the one whose direction best matches the cursor's bearing from the
     --- row. Pure geometry, no hysteresis: the ghost follows the cursor.
-    function SectionDrag.ResolveLanding(preview, model, view, cursorX, cursorY, sourceIndex)
+    function SectionDrag.ResolveLanding(preview, model, view, cursorX, cursorY, sourceIndex, laneBlocked)
         local stateFn = preview.gestureState
         if not (stateFn and preview.gestureModel == model) then return nil end
         local reach = (model.landingReach or 0) * view.factor
@@ -605,7 +613,8 @@ do
         for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
             local lane = model.lanes[anchor]
             local landing = lane and lane.rect or model.free[anchor]
-            if landing and stateFn(anchor, lane, landing, preview.gestureContext) ~= "refused" then
+            if landing and (laneBlocked
+                or stateFn(anchor, lane, landing, preview.gestureContext) ~= "refused") then
                 local dist = RectDistances(view, landing, cursorX, cursorY)
                 if dist <= reachSq then
                     local dir = LANDING_BEARING[anchor]
@@ -617,7 +626,7 @@ do
                 end
             end
         end
-        return SectionDrag.AnchorTarget(preview, model, best, sourceIndex)
+        return SectionDrag.AnchorTarget(preview, model, best, sourceIndex, laneBlocked)
     end
 
     --- Is the cursor within `margin` screen pixels of the box the preview
@@ -670,8 +679,9 @@ do
         local blocker
         if group and ST.PanelHasAuraSection(group) then
             blocker = function(anchor)
-                return CooldownCompanion:GetAuraSectionEntryRejectMessage(
-                    group, anchor, buttonData) ~= nil
+                if ST.IsAuraOnlyPanelSection(group, anchor) then
+                    return CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, buttonData)
+                end
             end
         end
         model.blockerEntry = buttonData
@@ -684,16 +694,15 @@ do
     --- is ResolveLanding's (and appends), so nothing here pulls the cursor
     --- in. Two clusters sharing pixels tie-break on the nearer centre.
     ---
-    --- laneBlocked (optional) drops AURA lanes the dragged entry cannot join out
-    --- of the contest entirely. It is asked HERE rather than at the drop because
-    --- everything downstream is a promise: an excluded lane opens no gap and
-    --- lights no gold edge, so the gesture never offers a landing
-    --- SetPanelSectionForEntry would refuse.
+    --- Only populated clusters compete here. Callers check the main row
+    --- next, then empty placements through ResolveLanding. Aura eligibility
+    --- is checked only for the chosen cluster, so a refusal cannot redirect
+    --- the drop and an invisible placement cannot intercept visible content.
     function SectionDrag.ResolveLane(model, view, cursorX, cursorY, laneBlocked)
         local bestAnchor, bestLane, bestCenter
         for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
             local lane = model.lanes[anchor]
-            if lane and not (lane.auraOnly and laneBlocked and laneBlocked(anchor)) then
+            if lane then
                 local dist, center = RectDistances(view, lane.rect, cursorX, cursorY)
                 if dist == 0 and (not bestCenter or center < bestCenter) then
                     bestAnchor, bestLane, bestCenter = anchor, lane, center
@@ -701,6 +710,8 @@ do
             end
         end
         if not bestLane then return nil end
+        local reject = bestLane.auraOnly and laneBlocked and laneBlocked(bestAnchor)
+        if reject then return { section = bestAnchor, rejectMessage = reject } end
         return {
             section = bestAnchor,
             memberPos = LaneInsertPosition(bestLane, view, cursorX, cursorY),
@@ -872,7 +883,7 @@ do
 
     --- Ring one lane's cluster. The rect is the engine's; the inset is chrome
     --- and counter-scales; the colour is the caller's, because the ring answers
-    --- two different questions (see the two callers).
+    --- hover, valid-drop, and refused-drop feedback.
     --- Redrawn only when the ask changes: the cursor gesture rings the same
     --- lane on every frame it hovers there, and one ring is one border set.
     local function OutlineLane(preview, lane, scale, color)
@@ -883,7 +894,7 @@ do
             return
         end
         local inset = OUTLINE_SCREEN_INSET / scale
-        local rect = lane.rect
+        local rect = lane.rect or lane
         outline:SetSize(math_max(1, rect.width + inset * 2),
             math_max(1, rect.height + inset * 2))
         outline:ClearAllPoints()
@@ -892,6 +903,38 @@ do
         ApplyChromeBorder(outline.border, outline, color, OUTLINE_ALPHA)
         outline:Show()
         outline._lane, outline._scale, outline._color = lane, scale, color
+    end
+
+    local REJECT_COLOR = { 1, 0.25, 0.25 }
+
+    function SectionDrag.HideDropRejection(preview)
+        if not preview.sectionDropRejectMessage then return end
+        if GameTooltip:IsOwned(preview.root) then GameTooltip:Hide() end
+        preview.sectionDropRejectMessage, preview.sectionDropRejectAnchor = nil, nil
+        SectionDrag.HideSectionOutline(preview)
+    end
+
+    -- Shared by existing-entry drags and spellbook/item cursor drops. The
+    -- gesture's normal update and cleanup own the warning; no timer is needed.
+    function SectionDrag.UpdateDropRejection(preview, model, target)
+        local message = target and target.rejectMessage
+        local anchor = target and target.section
+        local lane = anchor and model and (model.lanes[anchor] or model.free[anchor])
+        if not (message and lane) then
+            SectionDrag.HideDropRejection(preview)
+            return false
+        end
+        OutlineLane(preview, lane, preview.layoutDrag and preview.layoutDrag.scale, REJECT_COLOR)
+        if preview.sectionDropRejectMessage ~= message or preview.sectionDropRejectAnchor ~= anchor
+            or not GameTooltip:IsOwned(preview.root) or not GameTooltip:IsShown() then
+            local label = ST.PANEL_SECTION_ANCHOR_LABELS[anchor] or anchor
+            GameTooltip:SetOwner(preview.root, "ANCHOR_CURSOR")
+            GameTooltip:AddLine(label .. " section: Aura Only")
+            GameTooltip:AddLine(message, 1, 0.35, 0.35, true)
+            GameTooltip:Show()
+            preview.sectionDropRejectMessage, preview.sectionDropRejectAnchor = message, anchor
+        end
+        return true
     end
 
     --- Ring the cluster at `anchor`. Ring blue, not gold: this is not a drop
@@ -1261,12 +1304,11 @@ do
         return ST.IsAuraOnlyPanelSection(group, anchor) and "refused" or "free"
     end
 
-    --- Entry drag: the aura-lane blocker (EntryLaneBlocker, memoized on the
-    --- model for the entry in hand) decides which lanes refuse it; every
-    --- free anchor becomes an ordinary section, whatever lands on it.
+    --- Entry drag: the blocker decides which aura sections refuse the entry,
+    --- including empty saved sections. Other free anchors accept any entry.
     function SectionDrag.EntryAnchorState(anchor, lane, rect, blocker)
+        if (lane or rect).auraOnly and blocker and blocker(anchor) then return "refused" end
         if lane then
-            if lane.auraOnly and blocker and blocker(anchor) then return "refused" end
             return "join"
         end
         return "free"
@@ -1313,6 +1355,7 @@ do
     --- and handle drags' cancel does, and so does the overlay's hide. The
     --- section outline and the trail are the caller's to settle.
     function SectionDrag.EndGesture(preview)
+        SectionDrag.HideDropRejection(preview)
         preview.gestureModel = nil
         preview.gestureKey = nil
         preview.gestureState = nil
@@ -1499,12 +1542,13 @@ do
     --- Always: what the cursor carries is not an entry yet
     --- (CursorAnchorState).
     local function CursorLaneBlocked()
-        return true
+        return "Add an Aura entry first, then move it here."
     end
 
     --- What a release means: { create = anchor } starts a section there,
     --- { section = anchor } joins that one (a cursor join always appends),
-    --- nil is a plain add. The answer is the one the last TrackCursorDrop
+    --- { section = anchor, rejectMessage } refuses the add; nil is a plain
+    --- add. The answer is the one the last TrackCursorDrop
     --- resolved and showed (the ghost stood on it): what was seen is what
     --- lands. With no gesture open for this model (none tracked, or a
     --- rebuild since) it is a plain add.
@@ -1533,18 +1577,20 @@ do
             local onLane = view and SectionDrag.ResolveLane(model, view, cursorX, cursorY,
                 CursorLaneBlocked)
             if onLane then
-                target = { section = onLane.section }
+                target = onLane
             elseif view and not SectionDrag.InRow(model, view, cursorX, cursorY) then
-                target = SectionDrag.ResolveLanding(preview, model, view, cursorX, cursorY)
+                target = SectionDrag.ResolveLanding(preview, model, view, cursorX, cursorY,
+                    nil, CursorLaneBlocked)
             end
         end
         preview.cursorTarget = target
-        local lane = target and target.section and model.lanes[target.section]
-        if lane then
-            OutlineLane(preview, lane, preview.layoutDrag and preview.layoutDrag.scale,
-                SNAP_COLOR)
-        else
-            SectionDrag.HideSectionOutline(preview)
+        if not SectionDrag.UpdateDropRejection(preview, model, target) then
+            local lane = target and target.section and model.lanes[target.section]
+            if lane then
+                OutlineLane(preview, lane, preview.layoutDrag and preview.layoutDrag.scale, SNAP_COLOR)
+            else
+                SectionDrag.HideSectionOutline(preview)
+            end
         end
         return target, true, preview.gestureHasFree
     end

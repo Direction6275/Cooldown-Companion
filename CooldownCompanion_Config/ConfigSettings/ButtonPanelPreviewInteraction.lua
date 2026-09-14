@@ -420,6 +420,8 @@ end
 -- drop: the lifted entry's slot goes invisible, the others compact in
 -- order with a gap held open at the insertion cell.
 local function UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget, sourceIndex)
+    local rejectedTarget = dropTarget and dropTarget.rejectMessage and dropTarget
+    if rejectedTarget then dropTarget = nil end
     local insertIndex = dropTarget and dropTarget.insertIndex
     local gapPos
     if insertIndex then
@@ -465,6 +467,7 @@ local function UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget
     if layoutDrag.sectionDrag then
         SectionDrag.UpdateLanes(preview, layoutDrag, sourceIndex, dropTarget)
         SectionDrag.UpdateLanding(preview, layoutDrag, sourceIndex, sourceCell, dropTarget)
+        SectionDrag.UpdateDropRejection(preview, layoutDrag.sectionDrag, rejectedTarget)
     end
 end
 
@@ -543,12 +546,12 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         if sectionDrag then
             local view = SectionDrag.View(preview.content)
             if not view then return nil end
-            local onLane = SectionDrag.ResolveLane(sectionDrag, view, cursorX, cursorY,
-                SectionDrag.EntryLaneBlocker(sectionDrag, panelId, state))
+            local blocker = SectionDrag.EntryLaneBlocker(sectionDrag, panelId, state)
+            local onLane = SectionDrag.ResolveLane(sectionDrag, view, cursorX, cursorY, blocker)
             if onLane then return onLane end
             if not SectionDrag.InBaseMargin(sectionDrag, view, cursorX, cursorY) then
                 return SectionDrag.ResolveLanding(preview, sectionDrag, view, cursorX, cursorY,
-                    state and state.slotData and state.slotData.index)
+                    state and state.slotData and state.slotData.index, blocker)
             end
             -- An all-sectioned panel has no cells to measure an insertion
             -- against; the base grid can still be rejoined at its one position.
@@ -750,6 +753,14 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         if not (PerformButtonReorder and sourceIndex and dropTarget) then return end
         local group = panelId and CooldownCompanion.db.profile.groups[panelId]
         local buttonData = state.slotData.buttonData
+        local anchor = dropTarget.section or dropTarget.create
+        local rejectMessage = dropTarget.rejectMessage
+            or (anchor and ST.IsAuraOnlyPanelSection(group, anchor)
+                and CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, buttonData))
+        if rejectMessage then
+            CooldownCompanion:Print(rejectMessage)
+            return
+        end
         local model = layoutDrag.sectionDrag
         local sourceCell = LayoutDragIndexCell(layoutDrag, sourceIndex)
         local changed, insertIndex = false, nil

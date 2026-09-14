@@ -191,13 +191,14 @@ end
 ST._GetPanelTemplateFailureText = GetPanelTemplateFailureText
 
 local function GetPanelTemplateApplyTooltipText(template)
+    local sectionNote = " Aura Only stays off in sections containing non-Aura entries."
     if template.templateVersion == 3 then
-        return "Applies all saved panel settings, including Alpha mode, layers, and panel text format. Entries and their customizations, eligibility, connections, and position stay unchanged."
+        return "Applies all saved panel settings, including Alpha mode, layers, and panel text format. Entries and their customizations, eligibility, connections, and position stay unchanged." .. sectionNote
     end
     local scope = template.templateVersion == 2
         and "This older template applies its original saved settings."
         or "This older template applies its saved look and arrangement; visibility stays unchanged."
-    return scope .. " Update it from a panel to capture all panel settings. Existing entry customizations remain."
+    return scope .. " Update it from a panel to capture all panel settings. Existing entry customizations remain." .. sectionNote
 end
 ST._GetPanelTemplateApplyTooltipText = GetPanelTemplateApplyTooltipText
 -- One sentence for every surface that offers to build from a template, the

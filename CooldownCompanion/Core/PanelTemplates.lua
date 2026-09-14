@@ -382,6 +382,28 @@ end
 -- Apply / create
 ------------------------------------------------------------------------
 
+-- Aura Only is conditional on the destination's entries. Adapt a detached
+-- section snapshot so checking or applying never changes the saved template.
+-- Match raw membership too: applying can recreate a missing section table.
+local function GetApplicableTemplateSections(template, group)
+    local sections = template.sections
+    local capturesAuraOnly = template.templateVersion ~= 3
+        or template.capturedFields.section.auraOnly == true
+    if not capturesAuraOnly or type(sections) ~= "table" or not ST.PanelSupportsSections(group) then
+        return sections
+    end
+    sections = ST._CopyPresetValue(sections)
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.type ~= "spell" or entry.addedAs ~= "aura" then
+            local section = sections[entry.section]
+            if type(section) == "table" then
+                section.auraOnly = false
+            end
+        end
+    end
+    return sections
+end
+
 -- Mirrors CanCopyPanelSettings' target side: the modes must match, and the
 -- target's Group must resolve to a valid class scope.
 function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
@@ -403,17 +425,18 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
             return false, "invalid_class_scope"
         end
     end
-    -- Check the proposed sections on a detached view before ANY settings are
-    -- written. Adding an empty section must also account for existing members
-    -- naming that anchor. The ordinary setter remains the only mutation owner.
+    -- Non-aura members keep their section ordinary. Check any remaining Aura
+    -- Only sections before writing settings: mixed buff/debuff units still
+    -- cannot share one aura surface. The setter remains the mutation owner.
+    local sections = GetApplicableTemplateSections(template, group)
     local capturesAuraOnly = template.templateVersion ~= 3
         or template.capturedFields.section.auraOnly == true
-    if capturesAuraOnly and type(template.sections) == "table" and ST.PanelSupportsSections(group) then
+    if capturesAuraOnly and type(sections) == "table" and ST.PanelSupportsSections(group) then
         local proposed = {}
         for key, value in pairs(group) do proposed[key] = value end
         proposed.sections = ST._CopyPresetValue(group.sections or {})
         for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
-            local section = template.sections[anchor]
+            local section = sections[anchor]
             if type(section) == "table" and section.auraOnly == true then
                 proposed.sections[anchor] = proposed.sections[anchor] or {}
                 local blocker = ST.GetAuraSectionToggleBlocker(proposed, anchor)
@@ -468,7 +491,7 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
         shapeKeys = shapeKeys,
         copyCompact = not currentSnapshot,
         skipCompact = template.compactLayout == nil,
-        sections = template.sections,
+        sections = GetApplicableTemplateSections(template, GetProfileGroup(self, groupId)),
         anchor = not currentSnapshot and position and template.anchor or nil,
     })
 end
