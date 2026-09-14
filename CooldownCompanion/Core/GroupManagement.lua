@@ -1532,6 +1532,12 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     return newGroupId
 end
 
+local function RetargetMovedPanelAnchor(anchor, sourceFrameName, targetFrameName)
+    if type(anchor) == "table" and anchor.relativeTo == sourceFrameName then
+        anchor.relativeTo = targetFrameName
+    end
+end
+
 function CooldownCompanion:MovePanel(groupId, targetContainerId)
     local db = self.db.profile
     local group
@@ -1556,21 +1562,20 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 
     local sourceContainerId = group.parentContainerId
     local wasCursorAnchored = self:IsGroupCursorAnchored(group)
+    local preview = self._cursorAnchorLayoutPreview
+    local restoreCursorSelection = wasCursorAnchored
+        and (self._arrangeSelectedPanelId == groupId or (preview and preview.selectedGroupId == groupId))
     ClearCursorPanelMoverBeforeMutation(self, groupId)
 
     -- Reassign to target container
     group.parentContainerId = targetContainerId
 
-    -- Reset anchor to center of new container frame
+    -- Only the owning Group changes. Explicit targets and relative placement
+    -- belong to the panel, including the separate Texture/Trigger display.
+    local sourceFrameName = "CooldownCompanionContainer" .. sourceContainerId
     local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
-    group.anchor = {
-        point = "CENTER",
-        relativeTo = containerFrameName,
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
-    ResetCopiedStandalonePanelAnchor(group, db.groups, groupId, sourceContainerId, targetContainerId)
+    RetargetMovedPanelAnchor(group.anchor, sourceFrameName, containerFrameName)
+    RetargetMovedPanelAnchor(GetStandalonePanelAnchorSettings(group), sourceFrameName, containerFrameName)
 
     -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
     group.order = self:GetPanelCount(targetContainerId)
@@ -1580,10 +1585,6 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
         self.alphaState[groupId] = nil
     end
 
-    local frame = self.groupFrames[groupId]
-    if wasCursorAnchored and frame then
-        ST._FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
-    end
     self:RefreshGroupFrame(groupId)
 
     -- If source container is now empty, delete it
@@ -1596,6 +1597,15 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     end
 
     RefreshPanelAlphaDependencyTargets(self)
+    if self.RefreshContainerWrapper then
+        if not sourceDeleted then
+            self:RefreshContainerWrapper(sourceContainerId)
+        end
+        self:RefreshContainerWrapper(targetContainerId)
+    end
+    if restoreCursorSelection then
+        self:ActivateArrangePanel(targetContainerId, groupId, false)
+    end
     return true, sourceDeleted
 end
 
