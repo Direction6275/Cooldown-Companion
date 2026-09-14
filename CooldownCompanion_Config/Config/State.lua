@@ -2943,7 +2943,8 @@ local function GetResourcesEntryPlacement()
         and CooldownCompanion:IsResourceBarAnchorIndependent() then
         return "independent"
     end
-    return "attached", CooldownCompanion:GetFirstAvailableAnchorGroup()
+    local target = CooldownCompanion:ResolveModulePanel("resources")
+    return "attached", target.group and target.panelId
 end
 
 -- A disabled standalone feature introduces itself before exposing its editor.

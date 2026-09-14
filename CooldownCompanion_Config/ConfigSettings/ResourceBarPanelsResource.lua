@@ -1277,7 +1277,7 @@ local function BuildResourceBarAnchoringPanel(container)
         return
     end
 
-    local isIndependentStack = layout.independentAnchorEnabled == true
+    local isIndependentStack = CooldownCompanion:IsResourceBarAnchorIndependent()
 
     -- ============ Alpha Section ============
     local group = db.groups[CS.selectedGroup]
@@ -1323,7 +1323,7 @@ local function BuildResourceBarPositioningPanel(container)
 
     local isVerticalLayout = IsResourceBarVerticalConfig(settings, layout)
     local gapField, gapLabel = GetResourceGapFieldConfig(settings, layout)
-    local isIndependentStack = layout.independentAnchorEnabled == true
+    local isIndependentStack = CooldownCompanion:IsResourceBarAnchorIndependent()
 
     -- ============================================================
     -- Placement (what the stack hangs off, and which way it runs)
@@ -1339,16 +1339,9 @@ local function BuildResourceBarPositioningPanel(container)
         -- have no panel to inherit from, so that side ends early.
         local placementLeft, placementRight = BeginRowGrid(container)
 
-        local attachmentList, attachmentOrder = ST._GetBarAttachmentOptions()
-        AddDropdownRow(placementLeft, {
-            label = "Anchoring Mode",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
-                and RESOURCE_FINDER.primary.placement.anchoring,
-            tooltip = { "Attached to Panel", "Uses the existing automatic anchoring rules for the active specialization." },
-            list = attachmentList,
-            order = attachmentOrder,
-            value = ST._GetBarAttachmentValue("resources"),
-            onChange = function(val) ST._SetBarAttachment("resources", val) end,
+        local placementFinder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement or {}
+        ST._BuildModuleAnchoringControls(placementLeft, "resources", {
+            mode = placementFinder.anchoring, panel = placementFinder.anchorPanel,
         })
 
         AddDropdownRow(placementLeft, {
@@ -1393,7 +1386,7 @@ local function BuildResourceBarPositioningPanel(container)
             end,
         })
 
-        if layout.independentAnchorEnabled ~= true then
+        if not CooldownCompanion:IsResourceBarAnchorIndependent() then
             AddCheckboxRow(placementRight, {
                 label = "Inherit panel alpha",
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
@@ -3799,6 +3792,9 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         anchoring = { label = "Anchoring Mode", aliases = { "attach to", "attach independent" } },
+        anchorPanel = { label = "Anchor Panel", applies = function()
+            return CooldownCompanion:GetModuleAttachment("resources").mode == "panel"
+        end },
         orientation = { label = "Bar Orientation", aliases = { "horizontal vertical" } },
         verticalFill = {
             label = "Vertical Fill Direction",
@@ -3814,7 +3810,7 @@ if ST._DefineSettingRoute then
             aliases = { "panel opacity" },
             applies = function(context)
                 local layout = RESOURCE_FINDER.Layout(context)
-                return not (layout and layout.independentAnchorEnabled == true)
+                return not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
             end,
         },
     })
@@ -3919,7 +3915,7 @@ if ST._DefineSettingRoute then
         applies = function(context)
             local layout = RESOURCE_FINDER.Layout(context)
             return RESOURCE_FINDER.BarsEnabled(context)
-                and layout and layout.independentAnchorEnabled == true
+                and layout and CooldownCompanion:IsResourceBarAnchorIndependent()
         end,
     }):Settings({
         frame = { label = "Anchor to Frame", aliases = { "relative frame", "frame name" } },
@@ -3944,7 +3940,7 @@ if ST._DefineSettingRoute then
         applies = function(context)
             local layout = RESOURCE_FINDER.Layout(context)
             return RESOURCE_FINDER.BarsEnabled(context)
-                and not (layout and layout.independentAnchorEnabled == true)
+                and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
         end,
     }):Settings({
         x = {

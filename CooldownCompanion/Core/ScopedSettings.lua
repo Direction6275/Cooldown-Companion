@@ -898,6 +898,7 @@ local function SanitizeResourceBarAnchors(settings, classKey)
         return
     end
 
+    CooldownCompanion:NormalizeModuleAttachments(settings, "resources")
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId, classKey)
 
     if settings.independentAnchor ~= nil and type(settings.independentAnchor) ~= "table" then
@@ -951,6 +952,7 @@ local function SanitizeCastBarAnchors(settings)
     if type(settings) ~= "table" then
         return
     end
+    CooldownCompanion:NormalizeModuleAttachments(settings, "castbar")
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 
     if settings.independentAnchor ~= nil and type(settings.independentAnchor) ~= "table" then
@@ -962,6 +964,8 @@ local function SanitizeFrameAnchoringAnchors(settings)
     if type(settings) ~= "table" then
         return
     end
+    CooldownCompanion:NormalizeModuleAttachments(settings, "player")
+    CooldownCompanion:NormalizeModuleAttachments(settings, "target")
     settings.anchorGroupId = SanitizeAnchorGroupID(settings.anchorGroupId)
 end
 

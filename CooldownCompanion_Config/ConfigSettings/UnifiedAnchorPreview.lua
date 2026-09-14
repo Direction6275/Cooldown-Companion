@@ -39,10 +39,6 @@ local function IsUnifiedAnchorPreviewEligible(groupId)
         and CooldownCompanion:GetCurrentResourceBarConflict() then
         return false
     end
-    if not (CooldownCompanion.GetFirstAvailableAnchorGroup
-        and groupId == CooldownCompanion:GetFirstAvailableAnchorGroup()) then
-        return false
-    end
     -- The composition needs a renderable mirror to wrap: an empty panel's
     -- mirror is a guidance message, which should keep the plain preview
     -- rather than the bar lanes around a placeholder rect.
@@ -58,7 +54,7 @@ local function IsUnifiedAnchorPreviewEligible(groupId)
         return false
     end
     return ST._HasAttachedBarLanesToRender
-        and ST._HasAttachedBarLanesToRender() == true
+        and ST._HasAttachedBarLanesToRender(groupId) == true
 end
 
 -- The command center uses the same visibility gate as the composition.
@@ -317,6 +313,7 @@ local function BuildUnifiedAnchorPreview(host, groupId)
     local castMirrorUsed = false
     ST._BuildLayoutOrderPanel(host, {
         externalPanel = inner,
+        anchorPanelId = groupId,
         panelFrameProvider = function(index)
             if index ~= 2 then
                 return nil

@@ -796,7 +796,7 @@ function CooldownCompanion:IsSpecialMoverUnlockEligible(id)
         local settings = self.GetCastBarSettings and self:GetCastBarSettings()
         if not (settings
             and settings.enabled == true
-            and settings.independentAnchorEnabled == true
+            and self:IsModuleAnchorIndependent("castbar")
             and not settings.independentAnchorLocked) then
             return false
         end
@@ -808,7 +808,7 @@ function CooldownCompanion:IsSpecialMoverUnlockEligible(id)
         if not (settings
             and settings.enabled == true
             and layout
-            and layout.independentAnchorEnabled == true
+            and CooldownCompanion:IsResourceBarAnchorIndependent()
             and not layout.independentAnchorLocked) then
             return false
         end
@@ -1234,7 +1234,7 @@ function CooldownCompanion:EndCombatForcedLock()
     local restoreCastMover = arrangeModeActive
         or (castSettings
             and castSettings.enabled == true
-            and castSettings.independentAnchorEnabled == true
+            and self:IsModuleAnchorIndependent("castbar")
             and not castSettings.independentAnchorLocked)
     if restoreCastMover and self.ApplyCastBarSettings then
         self:ApplyCastBarSettings()
@@ -1248,7 +1248,7 @@ function CooldownCompanion:EndCombatForcedLock()
         or (resourceSettings
             and resourceSettings.enabled == true
             and resourceLayout
-            and resourceLayout.independentAnchorEnabled == true
+            and CooldownCompanion:IsResourceBarAnchorIndependent()
             and not resourceLayout.independentAnchorLocked)
     if restoreResourceMover and self.ApplyResourceBars then
         self:ApplyResourceBars()

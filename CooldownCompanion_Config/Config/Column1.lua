@@ -3347,6 +3347,12 @@ local function RefreshColumn1(preserveDrag)
             { kind = "player", label = "Unit Frame Anchoring", atlas = "ui_adv_health" },
         }) do
             local placement, anchorId = ST._GetBarWorkspacePlacement(item.kind)
+            -- The shared unit-frame entry must remain reachable when only
+            -- Target is unplaced, and open Target's editor in that case.
+            if item.kind == "player" and anchorId then
+                placement, anchorId = ST._GetBarWorkspacePlacement("target")
+                item.kind = "target"
+            end
             local matches = not searchResults
                 or item.label:lower():find(searchResults.query, 1, true)
                 or ("optional modules"):find(searchResults.query, 1, true)

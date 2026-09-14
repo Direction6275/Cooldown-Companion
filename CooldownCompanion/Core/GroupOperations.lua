@@ -180,7 +180,7 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
     end
 end
 
-function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
+function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
@@ -207,6 +207,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId)
     if container and not container.isGlobal and container.anchorEligible == false then return false end
     if not self:IsGroupActive(groupId, {
         group = group,
+        specId = specId,
         checkCharVisibility = true,
         checkLoadConditions = true,
     }) then
@@ -242,13 +243,13 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     return true
 end
 
-function CooldownCompanion:GetFirstAvailableAnchorGroup()
+function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
     local db = self.db.profile
     local groups = db.groups
     if not groups then return nil end
     local containers = db.groupContainers
     if not containers then return nil end
-    local specId = self._currentSpecId
+    specId = specId or self._currentSpecId
 
     -- One walk over the panels, bucketed by container, in place of one
     -- GetPanels walk-and-sort per container: this runs on the bars-and-frames
@@ -291,81 +292,55 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup()
         local panels = panelsByContainer[containerInfo.id]
         table.sort(panels, ST.ComparePanelOrder)
         for _, panelInfo in ipairs(panels) do
-            if self:IsGroupAvailableForAnchoring(panelInfo.groupId) then
-                return panelInfo.groupId
+            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId) then
+                local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
+                if not (options and options.requireShown) or (frame and frame:IsShown()) then
+                    return panelInfo.groupId
+                end
             end
         end
     end
     return nil
 end
 
-local function IsResourceBarIndependentAnchor(settings, specId)
-    local independent = settings and settings.independentAnchorEnabled == true
-    local layouts = settings and settings.layoutOrder
-    local layoutKey = specId and (tonumber(specId) or specId)
-    local layout = nil
-    if layoutKey and type(layouts) == "table" then
-        layout = layouts[layoutKey] or layouts[tostring(layoutKey)]
-    end
-    if type(layout) == "table" and layout.independentAnchorEnabled ~= nil then
-        independent = layout.independentAnchorEnabled == true
-    end
-    return independent
-end
-
 function CooldownCompanion:IsResourceBarAnchorIndependent()
-    local settings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
-    return IsResourceBarIndependentAnchor(settings, self._currentSpecId)
+    return self:IsModuleAnchorIndependent("resources")
 end
 
--- anchorGroupId: the already-resolved GetFirstAvailableAnchorGroup result,
--- when the caller has it. That resolution walks and sorts every panel, and
--- the suppression refresh below is on the bars-and-frames gate path.
-local function CollectStableExternalAnchorCompactReasons(self, groupId, anchorGroupId)
-    groupId = tonumber(groupId)
-    if not groupId then return nil end
-
-    if anchorGroupId == nil then
-        anchorGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
-    end
-    if anchorGroupId ~= groupId then return nil end
-
-    local reasons = nil
-    local function AddReason(reason)
-        reasons = reasons or {}
+local function CollectStableExternalAnchorCompactReasons(self)
+    local byPanel = {}
+    local function AddReason(panelId, reason)
+        local reasons = byPanel[panelId] or {}
+        byPanel[panelId] = reasons
+        for _, existing in ipairs(reasons) do if existing == reason then return end end
         reasons[#reasons + 1] = reason
     end
-
-    local frameSettings = self.GetFrameAnchoringSettings and self:GetFrameAnchoringSettings() or nil
-    if frameSettings and frameSettings.enabled == true then
-        AddReason("frameAnchoring")
+    local frameSettings = self:GetFrameAnchoringSettings()
+    for _, kind in ipairs({ "resources", "castbar", "player", "target" }) do
+        local settings = kind == "resources" and self:GetResourceBarSettings()
+            or kind == "castbar" and self:GetCastBarSettings() or frameSettings
+        if settings and settings.enabled == true then
+            local target = self:ResolveModulePanel(kind)
+            local reason = (kind == "player" or kind == "target") and "frameAnchoring"
+                or kind == "resources" and "resourceBars" or "castBar"
+            -- Protect the intended eligible panel before layout/frame creation,
+            -- even while a visible Automatic panel temporarily hosts the module.
+            -- Otherwise hiding the selected panel could oscillate its geometry.
+            if target.selectedEligible then AddReason(target.selectedPanelId, reason) end
+            if target.eligible then
+                AddReason(target.panelId, reason)
+            end
+        end
     end
-
-    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings() or nil
-    if resourceSettings
-        and resourceSettings.enabled == true
-        and not IsResourceBarIndependentAnchor(resourceSettings, self._currentSpecId) then
-        AddReason("resourceBars")
-    end
-
-    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings() or nil
-    if castSettings and castSettings.enabled == true and castSettings.independentAnchorEnabled ~= true then
-        AddReason("castBar")
-    end
-
-    return reasons
+    return byPanel
 end
 
 function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
-    return CollectStableExternalAnchorCompactReasons(self, groupId) ~= nil
+    return CollectStableExternalAnchorCompactReasons(self)[tonumber(groupId)] ~= nil
 end
 
 function CooldownCompanion:GetGroupCompactLayoutSuppressionReasons(groupId)
-    groupId = tonumber(groupId)
-    if groupId and groupId == self._compactLayoutSuppressedGroupId then
-        return self._compactLayoutSuppressionReasons
-    end
-    return nil
+    return self._compactLayoutSuppressionByPanel and self._compactLayoutSuppressionByPanel[tonumber(groupId)]
 end
 
 function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
@@ -374,7 +349,7 @@ function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
     if not group or group.compactLayout ~= true then
         return false
     end
-    return tonumber(groupId) ~= self._compactLayoutSuppressedGroupId
+    return self:GetGroupCompactLayoutSuppressionReasons(groupId) == nil
 end
 
 local function AreCompactSuppressionReasonsEqual(left, right)
@@ -412,28 +387,22 @@ end
 function CooldownCompanion:RefreshStableExternalAnchorCompactSuppression(options)
     options = options or {}
 
-    local oldGroupId = self._compactLayoutSuppressedGroupId
-    local oldReasons = self._compactLayoutSuppressionReasons
-    local newGroupId = self.GetFirstAvailableAnchorGroup and tonumber(self:GetFirstAvailableAnchorGroup()) or nil
-    local newReasons = newGroupId and CollectStableExternalAnchorCompactReasons(self, newGroupId, newGroupId) or nil
-    if not newReasons then
-        newGroupId = nil
+    local old = self._compactLayoutSuppressionByPanel or {}
+    local new = CollectStableExternalAnchorCompactReasons(self)
+    local affected = {}
+    for id, reasons in pairs(old) do
+        if not AreCompactSuppressionReasonsEqual(reasons, new[id]) then affected[id] = true end
     end
-
-    local targetChanged = oldGroupId ~= newGroupId
-    local reasonsChanged = not AreCompactSuppressionReasonsEqual(oldReasons, newReasons)
-    if not targetChanged and not reasonsChanged then
-        return false
+    for id, reasons in pairs(new) do
+        if not AreCompactSuppressionReasonsEqual(reasons, old[id]) then affected[id] = true end
     end
-
-    self._compactLayoutSuppressedGroupId = newGroupId
-    self._compactLayoutSuppressionReasons = newReasons
-
-    if targetChanged and options.refreshAffected ~= false then
-        RefreshCompactSuppressionAffectedGroup(self, oldGroupId)
-        RefreshCompactSuppressionAffectedGroup(self, newGroupId)
+    if not next(affected) then return false end
+    self._compactLayoutSuppressionByPanel = new
+    if options.refreshAffected ~= false then
+        for id in pairs(affected) do
+            if (old[id] == nil) ~= (new[id] == nil) then RefreshCompactSuppressionAffectedGroup(self, id) end
+        end
     end
-
     return true
 end
 

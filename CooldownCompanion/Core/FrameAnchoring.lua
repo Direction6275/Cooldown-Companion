@@ -20,14 +20,7 @@ local issecretvalue = issecretvalue
 
 local isApplied = false
 local hooksInstalled = false
-local savedPlayerAnchors = nil   -- array of {point, relativeTo, relativePoint, x, y}
-local savedTargetAnchors = nil
-local savedPlayerAlpha = nil
-local savedTargetAlpha = nil
-local savedPlayerAlphaAttempted = false
-local savedTargetAlphaAttempted = false
-local playerFrameRef = nil
-local targetFrameRef = nil
+local frames = { player = {}, target = {} }
 local alphaSyncFrame = nil
 local pendingReevaluate = false
 local rapidAlphaSyncUntil = 0
@@ -37,10 +30,9 @@ local anchorWriteGuards = setmetatable({}, { __mode = "k" })
 local anchorWriteHooksInstalled = setmetatable({}, { __mode = "k" })
 local externalAnchorRepairQueued = false
 local externalAnchorRepairCount = 0
-local lastAppliedPlayerAnchor = nil   -- {point, body, relativePoint, x, y} as last applied
-local lastAppliedTargetAnchor = nil
 local lastResolvedProvider = nil
-local lastAnchorGroupId = nil
+local lastPlayerPanelId, lastTargetPanelId
+local lastEvaluationSpecId
 local lastPlayerFrameName = nil
 local lastTargetFrameName = nil
 local InstallHooks
@@ -99,17 +91,6 @@ local function GetFrameAnchoringSettings()
     return CooldownCompanion:GetFrameAnchoringSettings()
 end
 
-local function GetEffectiveAnchorGroupId(settings)
-    if not settings then return nil end
-    return CooldownCompanion:GetFirstAvailableAnchorGroup()
-end
-
-local function GetAnchorGroupFrame(settings)
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then return nil end
-    return CooldownCompanion.groupFrames[groupId]
-end
-
 local function GetInheritedUnitFrameAlpha(groupFrame)
     if not groupFrame or not groupFrame:IsShown() then return nil end
 
@@ -133,19 +114,18 @@ local function SetUnitFrameAlphaGuarded(frame, alpha)
     alphaHookGuards[frame] = nil
 end
 
-local function SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
-    local alpha = GetInheritedUnitFrameAlpha(groupFrame)
-    if alpha == nil then return nil end
-    if playerFrame then SetUnitFrameAlphaGuarded(playerFrame, alpha) end
-    if targetFrame then SetUnitFrameAlphaGuarded(targetFrame, alpha) end
-    return alpha
-end
-
-local function ResyncInheritedUnitFrameAlpha()
-    local latest = GetFrameAnchoringSettings()
-    if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return nil end
-    local groupFrame = GetAnchorGroupFrame(latest)
-    return SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef)
+local function ResyncInheritedUnitFrameAlpha(force, latest)
+    latest = latest or GetFrameAnchoringSettings()
+    if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return end
+    for _, state in pairs(frames) do
+        if state.frame and state.anchor then
+            local alpha = GetInheritedUnitFrameAlpha(state.panel)
+            if alpha ~= nil and (force or alpha ~= state.lastAlpha) then
+                SetUnitFrameAlphaGuarded(state.frame, alpha)
+                state.lastAlpha = alpha
+            end
+        end
+    end
 end
 
 local function QueueInheritedUnitFrameAlphaResync()
@@ -159,10 +139,10 @@ local function QueueInheritedUnitFrameAlphaResync()
 
     if wasRapidSyncActive then return end
 
-    ResyncInheritedUnitFrameAlpha()
+    ResyncInheritedUnitFrameAlpha(true)
     C_Timer.After(0, function()
         if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-        ResyncInheritedUnitFrameAlpha()
+        ResyncInheritedUnitFrameAlpha(true)
     end)
 end
 
@@ -187,7 +167,7 @@ local function InstallInheritedAlphaSetHook(frame)
 
         local settings = GetFrameAnchoringSettings()
         if not (isApplied and settings and settings.enabled and settings.inheritAlpha) then return end
-        if self ~= playerFrameRef and self ~= targetFrameRef then return end
+        if self ~= frames.player.frame and self ~= frames.target.frame then return end
 
         QueueInheritedUnitFrameAlphaResync()
     end)
@@ -338,7 +318,7 @@ local function SaveFrameAnchors(frame)
 end
 
 local function RestoreFrameAnchors(frame, anchors)
-    if not frame or not anchors or #anchors == 0 then return end
+    if not frame or not anchors then return end
     anchorWriteGuards[frame] = true
     frame:ClearAllPoints()
     for _, a in ipairs(anchors) do
@@ -367,7 +347,7 @@ end
 
 local function QueueExternalAnchorRepair(frame)
     if anchorWriteGuards[frame] then return end
-    if not isApplied or (frame ~= playerFrameRef and frame ~= targetFrameRef) then return end
+    if not isApplied or (frame ~= frames.player.frame and frame ~= frames.target.frame) then return end
     if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
 
     local settings = GetFrameAnchoringSettings()
@@ -390,10 +370,10 @@ local function QueueExternalAnchorRepair(frame)
         and editModeManager.layoutApplyInProgress == true
     if not editModeLayoutApplyInProgress and not InCombatLockdown() then
         local spec
-        if frame == playerFrameRef then
-            spec = lastAppliedPlayerAnchor
+        if frame == frames.player.frame then
+            spec = frames.player.anchor
         else
-            spec = lastAppliedTargetAnchor
+            spec = frames.target.anchor
         end
         if spec then
             SetManagedFrameAnchor(frame, spec.point, spec.body, spec.relativePoint, spec.x, spec.y)
@@ -433,20 +413,28 @@ local function InstallAnchorWriteHooks(frame)
     anchorWriteHooksInstalled[frame] = true
 end
 
-local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth)
+local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth, proposed)
     if not sourceFrame or not dependencyFrame then return false end
     if sourceFrame == dependencyFrame then return true end
 
     depth = depth or 0
-    if depth > 24 then return false end
+    if depth > 24 then return true end
 
     visited = visited or {}
     if visited[sourceFrame] then return false end
     visited[sourceFrame] = true
+    if proposed and proposed[sourceFrame] then
+        for _, relative in ipairs(proposed[sourceFrame]) do
+            if issecretvalue(relative)
+                or WouldFrameDependOn(relative, dependencyFrame, visited, depth + 1, proposed) then return true end
+        end
+        return false
+    end
 
     local pointIndex = 1
     while true do
         local point, relativeFrame = sourceFrame:GetPoint(pointIndex)
+        if issecretvalue(point) or issecretvalue(relativeFrame) then return true end
         if not point then break end
         if relativeFrame == dependencyFrame then
             return true
@@ -454,13 +442,71 @@ local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth)
         if relativeFrame
             and relativeFrame ~= sourceFrame
             and relativeFrame.GetPoint
-            and WouldFrameDependOn(relativeFrame, dependencyFrame, visited, depth + 1) then
+            and WouldFrameDependOn(relativeFrame, dependencyFrame, visited, depth + 1, proposed) then
             return true
         end
         pointIndex = pointIndex + 1
     end
 
     return false
+end
+
+local function RestoreManagedFrame(state)
+    if state.frame then
+        if state.savedAlpha ~= nil then SetUnitFrameAlphaGuarded(state.frame, state.savedAlpha) end
+        RestoreFrameAnchors(state.frame, state.savedAnchors)
+    end
+    for key in pairs(state) do state[key] = nil end
+end
+
+local function ConfigureManagedFrame(state, frame, target, position, mirror, inheritAlpha)
+    if state.frame and (state.frame ~= frame or not target.available) then RestoreManagedFrame(state) end
+    state.reason = target.reason
+    if not frame or not target.available then
+        if not frame then state.reason = "provider-unavailable" end
+        return
+    end
+    if not state.frame then
+        state.savedAnchors = SaveFrameAnchors(frame)
+        state.frame = frame
+    end
+    state.panel = target.frame
+    state.panelId = target.panelId
+    local point, relativePoint = position.anchorPoint, position.relativePoint
+    local x, y = position.xOffset or 0, position.yOffset or 0
+    if mirror then
+        point, relativePoint = MIRROR_POINTS[point] or point, MIRROR_POINTS[relativePoint] or relativePoint
+        x = -x
+    end
+    state.anchor = { point = point, body = ST.GetPanelAnchorBodyFrame(target.frame),
+        relativePoint = relativePoint, x = x, y = y }
+    InstallAnchorWriteHooks(frame)
+    InstallInheritedAlphaSetHook(frame)
+    if inheritAlpha then
+        if not state.savedAlphaAttempted then
+            state.savedAlpha = CaptureRestorableAlpha(frame)
+            state.savedAlphaAttempted = true
+        end
+    else
+        if state.savedAlpha ~= nil then SetUnitFrameAlphaGuarded(frame, state.savedAlpha) end
+        state.savedAlpha, state.savedAlphaAttempted, state.lastAlpha = nil, nil, nil
+    end
+end
+
+local function ProposedFrameDependencies(playerFrame, playerTarget, targetFrame, targetTarget)
+    local proposed = {}
+    -- Losing a target restores provider anchors. Include those edges too:
+    -- the surviving attachment must not form a cycle through the restoration.
+    for _, state in pairs(frames) do
+        if state.frame then
+            local edges = {}
+            for _, anchor in ipairs(state.savedAnchors or {}) do edges[#edges + 1] = anchor.relativeTo end
+            proposed[state.frame] = edges
+        end
+    end
+    if playerFrame and playerTarget.available then proposed[playerFrame] = { playerTarget.frame } end
+    if targetFrame and targetTarget.available then proposed[targetFrame] = { targetTarget.frame } end
+    return proposed
 end
 
 ------------------------------------------------------------------------
@@ -491,170 +537,83 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     end
     InstallHooks()
 
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then
-        self:RevertFrameAnchoring()
-        return
-    end
-
-    local group = self.db.profile.groups[groupId]
-    if not group or not self:IsIconLikeDisplayMode(group.displayMode) then
-        self:RevertFrameAnchoring()
-        return
-    end
-
-    local groupFrame = self.groupFrames[groupId]
-    if not groupFrame or not groupFrame:IsShown() then
-        self:RevertFrameAnchoring()
-        return
-    end
-
     local playerFrame, targetFrame, provider = GetUnitFrames(settings)
-    if not playerFrame and not targetFrame then
-        self:RevertFrameAnchoring()
-        return
+    local playerTarget, targetTarget = self:ResolveModulePanel("player"), self:ResolveModulePanel("target")
+    for _ = 1, 2 do
+        local proposed = ProposedFrameDependencies(playerFrame, playerTarget, targetFrame, targetTarget)
+        local playerCycle = playerFrame and playerTarget.available
+            and WouldFrameDependOn(playerTarget.frame, playerFrame, nil, nil, proposed)
+        local targetCycle = targetFrame and targetTarget.available
+            and WouldFrameDependOn(targetTarget.frame, targetFrame, nil, nil, proposed)
+        if playerFrame and playerFrame == targetFrame then playerCycle, targetCycle = true, true end
+        if playerCycle then playerTarget.available, playerTarget.reason = false, "anchor-dependency" end
+        if targetCycle then targetTarget.available, targetTarget.reason = false, "anchor-dependency" end
+        if not playerCycle and not targetCycle then break end
     end
 
-    if isApplied and (playerFrameRef ~= playerFrame or targetFrameRef ~= targetFrame) then
-        self:RevertFrameAnchoring()
+    -- Clear old managed edges before restoring either provider or installing
+    -- new edges. A provider change may even exchange the player/target frames.
+    local cleared = {}
+    for _, state in pairs(frames) do
+        if state.frame then
+            anchorWriteGuards[state.frame] = true
+            state.frame:ClearAllPoints()
+            anchorWriteGuards[state.frame] = nil
+            cleared[state.frame] = true
+        end
+    end
+    if frames.player.frame and (frames.player.frame ~= playerFrame or not playerTarget.available) then
+        local restored = frames.player.frame
+        RestoreManagedFrame(frames.player)
+        cleared[restored] = nil
+    end
+    if frames.target.frame and (frames.target.frame ~= targetFrame or not targetTarget.available) then
+        local restored = frames.target.frame
+        RestoreManagedFrame(frames.target)
+        cleared[restored] = nil
     end
 
-    if (playerFrame and WouldFrameDependOn(groupFrame, playerFrame))
-        or (targetFrame and WouldFrameDependOn(groupFrame, targetFrame)) then
-        self:RevertFrameAnchoring()
-        return
-    end
+    ConfigureManagedFrame(frames.player, playerFrame, playerTarget, settings.player, false, settings.inheritAlpha)
+    ConfigureManagedFrame(frames.target, targetFrame, targetTarget,
+        settings.mirroring and settings.player or settings.target, settings.mirroring, settings.inheritAlpha)
 
-    -- Save original positions (only if not already saved)
-    if playerFrame and not savedPlayerAnchors then
-        savedPlayerAnchors = SaveFrameAnchors(playerFrame)
+    for _, state in pairs(frames) do
+        if state.frame and state.anchor and not cleared[state.frame] then
+            anchorWriteGuards[state.frame] = true
+            state.frame:ClearAllPoints()
+            anchorWriteGuards[state.frame] = nil
+        end
     end
-    if targetFrame and not savedTargetAnchors then
-        savedTargetAnchors = SaveFrameAnchors(targetFrame)
+    for _, state in pairs(frames) do
+        local a = state.anchor
+        if state.frame and a then
+            anchorWriteGuards[state.frame] = true
+            state.frame:SetPoint(a.point, a.body, a.relativePoint, a.x, a.y)
+            anchorWriteGuards[state.frame] = nil
+        end
     end
-
-    -- Store refs for revert
-    playerFrameRef = playerFrame
-    targetFrameRef = targetFrame
-    InstallInheritedAlphaSetHook(playerFrameRef)
-    InstallInheritedAlphaSetHook(targetFrameRef)
-    InstallAnchorWriteHooks(playerFrameRef)
-    InstallAnchorWriteHooks(targetFrameRef)
+    isApplied = frames.player.frame ~= nil or frames.target.frame ~= nil
     lastResolvedProvider = provider
-    lastAnchorGroupId = groupId
+    lastEvaluationSpecId = self._currentSpecId
+    lastPlayerPanelId, lastTargetPanelId = playerTarget.panelId, targetTarget.panelId
     lastPlayerFrameName = GetFrameDebugName(playerFrame, settings.customPlayerFrame)
     lastTargetFrameName = GetFrameDebugName(targetFrame, settings.customTargetFrame)
 
-    -- Unit frames glue to the panel's BASE ROW, not to its outer rectangle: a
-    -- sectioned panel's frame spans the union of the base cluster and every
-    -- section, so anchoring to the frame would drag the unit frames up the
-    -- moment a Top section appeared. Placement away from the base row is what
-    -- the offsets below are for. Identity, alpha inheritance, and the
-    -- dependency check all stay on `groupFrame` itself.
-    local anchorBody = ST.GetPanelAnchorBodyFrame(groupFrame)
-
-    -- Apply player frame anchoring. Each applied spec is also cached so the
-    -- anchor-write hooks can replay it same-frame when a provider takes the
-    -- points back (see QueueExternalAnchorRepair).
-    local ps = settings.player
-    lastAppliedPlayerAnchor = nil
-    lastAppliedTargetAnchor = nil
-    if playerFrame and ps then
-        SetManagedFrameAnchor(playerFrame, ps.anchorPoint, anchorBody, ps.relativePoint,
-                              ps.xOffset or 0, ps.yOffset or 0)
-        lastAppliedPlayerAnchor = { point = ps.anchorPoint, body = anchorBody,
-                                    relativePoint = ps.relativePoint,
-                                    x = ps.xOffset or 0, y = ps.yOffset or 0 }
-    end
-
-    -- Apply target frame anchoring
-    if targetFrame then
-        if settings.mirroring and ps then
-            -- Mirror from player settings
-            local mAnchor = MIRROR_POINTS[ps.anchorPoint] or ps.anchorPoint
-            local mRelative = MIRROR_POINTS[ps.relativePoint] or ps.relativePoint
-            SetManagedFrameAnchor(targetFrame, mAnchor, anchorBody, mRelative,
-                                  -(ps.xOffset or 0), ps.yOffset or 0)
-            lastAppliedTargetAnchor = { point = mAnchor, body = anchorBody,
-                                        relativePoint = mRelative,
-                                        x = -(ps.xOffset or 0), y = ps.yOffset or 0 }
-        else
-            -- Independent target settings
-            local ts = settings.target
-            if ts then
-                SetManagedFrameAnchor(targetFrame, ts.anchorPoint, anchorBody, ts.relativePoint,
-                                      ts.xOffset or 0, ts.yOffset or 0)
-                lastAppliedTargetAnchor = { point = ts.anchorPoint, body = anchorBody,
-                                            relativePoint = ts.relativePoint,
-                                            x = ts.xOffset or 0, y = ts.yOffset or 0 }
-            end
-        end
-    end
-
-    isApplied = true
-
-    -- Alpha inheritance
-    if settings.inheritAlpha then
-        -- Save original alpha (only if not already saved)
-        if playerFrame and not savedPlayerAlphaAttempted then
-            savedPlayerAlpha = CaptureRestorableAlpha(playerFrame)
-            savedPlayerAlphaAttempted = true
-        end
-        if targetFrame and not savedTargetAlphaAttempted then
-            savedTargetAlpha = CaptureRestorableAlpha(targetFrame)
-            savedTargetAlphaAttempted = true
-        end
-
-        -- Apply alpha immediately — use natural alpha to avoid config override cascade
-        local groupAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrame, targetFrame)
-
-        -- Start alpha sync OnUpdate (~30Hz polling)
-        if not alphaSyncFrame then
-            alphaSyncFrame = CreateFrame("Frame")
-        end
-        local lastAlpha = groupAlpha
+    if settings.inheritAlpha and isApplied then
+        ResyncInheritedUnitFrameAlpha(true)
+        if not alphaSyncFrame then alphaSyncFrame = CreateFrame("Frame") end
         local accumulator = 0
-        local SYNC_INTERVAL = 1 / 30
-        alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-            -- Steady state is an expired window, so clear it once observed and
-            -- keep the per-frame test to one comparison. Single-threaded: the
-            -- only writer that opens a window (QueueInheritedUnitFrameAlphaResync)
-            -- cannot run between this read and this clear.
-            local rapidSyncActive = false
-            if rapidAlphaSyncUntil ~= 0 then
-                if GetTime() < rapidAlphaSyncUntil then
-                    rapidSyncActive = true
-                else
-                    rapidAlphaSyncUntil = 0
-                end
-            end
+        alphaSyncFrame:SetScript("OnUpdate", function(_, dt)
+            local rapid = rapidAlphaSyncUntil ~= 0 and GetTime() < rapidAlphaSyncUntil
+            if not rapid then rapidAlphaSyncUntil = 0 end
             accumulator = accumulator + dt
-            if not rapidSyncActive then
-                if accumulator < SYNC_INTERVAL then return end
-                accumulator = 0
-            end
-            local alpha = GetInheritedUnitFrameAlpha(groupFrame)
-            if alpha == nil then return end
-            if rapidSyncActive or alpha ~= lastAlpha then
-                lastAlpha = SyncInheritedUnitFrameAlpha(groupFrame, playerFrameRef, targetFrameRef) or lastAlpha
-            end
+            if not rapid and accumulator < 1 / 30 then return end
+            accumulator = 0
+            ResyncInheritedUnitFrameAlpha(rapid, settings)
         end)
-    else
-        -- inheritAlpha is off — stop sync and restore originals if we had them
-        if alphaSyncFrame then
-            alphaSyncFrame:SetScript("OnUpdate", nil)
-        end
+    elseif alphaSyncFrame then
+        alphaSyncFrame:SetScript("OnUpdate", nil)
         rapidAlphaSyncUntil = 0
-        if savedPlayerAlpha ~= nil and playerFrameRef then
-            SetUnitFrameAlphaGuarded(playerFrameRef, savedPlayerAlpha)
-        end
-        if savedTargetAlpha ~= nil and targetFrameRef then
-            SetUnitFrameAlphaGuarded(targetFrameRef, savedTargetAlpha)
-        end
-        savedPlayerAlpha = nil
-        savedTargetAlpha = nil
-        savedPlayerAlphaAttempted = false
-        savedTargetAlphaAttempted = false
     end
 end
 
@@ -671,39 +630,17 @@ function CooldownCompanion:RevertFrameAnchoring()
     end
 
     isApplied = false
-
-    -- Stop alpha sync and restore alpha
-    if alphaSyncFrame then
-        alphaSyncFrame:SetScript("OnUpdate", nil)
-    end
+    if alphaSyncFrame then alphaSyncFrame:SetScript("OnUpdate", nil) end
     rapidAlphaSyncUntil = 0
-    if savedPlayerAlpha ~= nil and playerFrameRef then
-        SetUnitFrameAlphaGuarded(playerFrameRef, savedPlayerAlpha)
+    for _, state in pairs(frames) do
+        if state.frame then
+            anchorWriteGuards[state.frame] = true
+            state.frame:ClearAllPoints()
+            anchorWriteGuards[state.frame] = nil
+        end
     end
-    if savedTargetAlpha ~= nil and targetFrameRef then
-        SetUnitFrameAlphaGuarded(targetFrameRef, savedTargetAlpha)
-    end
-    savedPlayerAlpha = nil
-    savedTargetAlpha = nil
-    savedPlayerAlphaAttempted = false
-    savedTargetAlphaAttempted = false
-
-    -- Restore player frame
-    if playerFrameRef and savedPlayerAnchors then
-        RestoreFrameAnchors(playerFrameRef, savedPlayerAnchors)
-    end
-
-    -- Restore target frame
-    if targetFrameRef and savedTargetAnchors then
-        RestoreFrameAnchors(targetFrameRef, savedTargetAnchors)
-    end
-
-    savedPlayerAnchors = nil
-    savedTargetAnchors = nil
-    playerFrameRef = nil
-    targetFrameRef = nil
-    lastAppliedPlayerAnchor = nil
-    lastAppliedTargetAnchor = nil
+    RestoreManagedFrame(frames.player)
+    RestoreManagedFrame(frames.target)
 end
 
 ------------------------------------------------------------------------
@@ -753,7 +690,14 @@ function CooldownCompanion:GetFrameAnchoringRuntimeDebugInfo()
         pendingExternalAnchorRepair = externalAnchorRepairQueued == true,
         externalAnchorRepairCount = externalAnchorRepairCount,
         resolvedProvider = lastResolvedProvider,
-        anchorGroupId = lastAnchorGroupId,
+        specId = lastEvaluationSpecId,
+        anchorGroupId = lastPlayerPanelId,
+        playerPanelId = lastPlayerPanelId,
+        targetPanelId = lastTargetPanelId,
+        playerReason = frames.player.reason,
+        targetReason = frames.target.reason,
+        playerApplied = frames.player.anchor ~= nil,
+        targetApplied = frames.target.anchor ~= nil,
         playerFrameName = lastPlayerFrameName,
         targetFrameName = lastTargetFrameName,
     }

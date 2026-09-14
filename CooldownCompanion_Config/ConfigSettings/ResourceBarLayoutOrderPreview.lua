@@ -853,37 +853,40 @@ local function GetFirstConfiguredAnchorGroup()
     return nil
 end
 
-local function ResolveLayoutPreviewSourcePanel()
-    local liveGroupId = CooldownCompanion:GetFirstAvailableAnchorGroup()
-    if liveGroupId then
-        local liveGroup = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[liveGroupId]
-        local liveFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[liveGroupId]
-        if liveGroup and liveFrame and liveFrame:IsShown() then
-            local liveButtons = {}
-            for _, button in ipairs(liveFrame.buttons or {}) do
-                if button and button:IsShown() and button.buttonData then
-                    table_insert(liveButtons, button)
-                end
-            end
-            if #liveButtons > 0 then
-                return BuildSourcePanelData(liveGroupId, liveGroup, liveButtons)
-            end
-        end
-    end
-
-    local groupId = liveGroupId or GetFirstConfiguredAnchorGroup()
-    if not groupId then
-        return nil, "No attached icon panel is configured to mirror. Enable or create an icon-mode panel first."
-    end
-
-    local group = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[groupId]
-    local savedButtons = group and GetSavedPreviewButtons(group) or nil
-    if not savedButtons or #savedButtons == 0 then
-        return nil, "The current attached anchor panel has no saved icon buttons to mirror."
-    end
-
-    return BuildSourcePanelData(groupId, group, savedButtons)
+local function GetPreviewPanelId()
+    if not IsBarsWorkspaceActive() and CS.selectedGroup then return CS.selectedGroup end
+    local kind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or "resources"
+    return CooldownCompanion:ResolveModulePanel(kind or "resources").panelId
 end
+
+local function ModuleBelongsToPreview(kind, panelId)
+    local target = CooldownCompanion:ResolveModulePanel(kind)
+    return target.group ~= nil and target.panelId == panelId and target.mode ~= "independent"
+end
+
+local function ResolveLayoutPreviewSourcePanel(panelId)
+    panelId = panelId or GetPreviewPanelId()
+    if not panelId then
+        local kind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or "resources"
+        local selected = CooldownCompanion:GetModuleAttachment(kind)
+        if selected.mode == "auto" then panelId = GetFirstConfiguredAnchorGroup() end
+    end
+    if not panelId or not CooldownCompanion:CanModuleAnchorToPanel(panelId) then
+        return nil, "No supported anchor panel is selected. Choose a panel in Anchoring Mode."
+    end
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    local liveFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[panelId]
+    if liveFrame and liveFrame:IsShown() then
+        local buttons = {}
+        for _, button in ipairs(liveFrame.buttons or {}) do
+            if button and button:IsShown() and button.buttonData then table_insert(buttons, button) end
+        end
+        if #buttons > 0 then return BuildSourcePanelData(panelId, group, buttons) end
+    end
+    local savedButtons = GetSavedPreviewButtons(group)
+    return BuildSourcePanelData(panelId, group, savedButtons or {})
+end
+
 
 local function GetShortLabel(label)
     if not label or label == "" then
@@ -1137,7 +1140,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         end
     end
 
-    if cbSettings and cbSettings.enabled and (not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+    if cbSettings and cbSettings.enabled and (not CooldownCompanion:IsModuleAnchorIndependent("castbar")
         or (IsBarsWorkspaceActive() and CS.barWorkspaceKind == "castbar")) then
         table_insert(castSlots, {
             id = "cast",
@@ -1170,8 +1173,9 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
 
     for _, slots in ipairs({ primarySlots, castSlots }) do
         for _, slot in ipairs(slots) do
-            local independent = slot.kind == "cast" and cbSettings.independentAnchorEnabled
-                or slot.kind ~= "cast" and layout.independentAnchorEnabled
+            local independent = slot.kind == "cast" and CooldownCompanion:IsModuleAnchorIndependent("castbar")
+                or slot.kind ~= "cast" and CooldownCompanion:IsResourceBarAnchorIndependent()
+            slot.anchorGroup = CooldownCompanion:ResolveModulePanel(slot.kind == "cast" and "castbar" or "resources").group
             if not independent and (slot.kind == "cast" or not isVerticalLayout) then
                 ST._ConfigureAttachedBarPreviewSlot(slot, function()
                     if slot.kind == "cast" then
@@ -4006,6 +4010,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     -- one per instance the render path asks for. Everything lent is hidden
     -- up front and re-shown only by the render path that uses it, so
     -- message-only builds don't leave a mirror floating.
+    preview.anchorPanelId = opts and opts.anchorPanelId or GetPreviewPanelId()
     preview.externalPanelFrame = opts and opts.externalPanel or nil
     preview.panelFrameProvider = opts and opts.panelFrameProvider or nil
     ReleaseLentPanelFrames(preview)
@@ -4019,7 +4024,9 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     local standaloneResources = workspaceKind == "resources"
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     if standaloneCast and not layout then layout = {} end
-    preview.isVerticalLayout = not standaloneCast and preview.rbSettings
+    preview.isVerticalLayout = not standaloneCast
+        and (standaloneResources or (not workspaceKind and ModuleBelongsToPreview("resources", preview.anchorPanelId)))
+        and preview.rbSettings
         and preview.rbSettings.enabled == true
         and IsResourceBarVerticalConfig(preview.rbSettings, layout)
         or false
@@ -4040,11 +4047,20 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         or LAYOUT_PREVIEW_GAP)
     preview.draggedSlotExtent = nil
     HidePreviewMessage(preview)
+    if not preview.anchorStatus then
+        preview.anchorStatus = preview.root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        preview.anchorStatus:SetPoint("TOP", preview.root, "TOP", 0, -4)
+    end
+    local anchorFrame = preview.anchorPanelId and CooldownCompanion.groupFrames[preview.anchorPanelId]
+    preview.anchorUnavailable = preview.anchorPanelId ~= nil
+        and (not anchorFrame or not anchorFrame:IsShown()
+            or not CooldownCompanion:IsGroupActive(preview.anchorPanelId))
+    preview.anchorStatus:SetText(preview.anchorUnavailable and "Panel unavailable - showing saved layout" or "")
 
     local rbSettings = preview.rbSettings
     local cbSettings = preview.cbSettings
-    local resourceBarsEnabled = (not workspaceKind or standaloneResources) and rbSettings and rbSettings.enabled == true
-    local castBarEnabled = (not workspaceKind or standaloneCast) and cbSettings and cbSettings.enabled == true
+    local resourceBarsEnabled = (standaloneResources or (not workspaceKind and ModuleBelongsToPreview("resources", preview.anchorPanelId))) and rbSettings and rbSettings.enabled == true
+    local castBarEnabled = (standaloneCast or (not workspaceKind and ModuleBelongsToPreview("castbar", preview.anchorPanelId))) and cbSettings and cbSettings.enabled == true
     local frameAnchoringSettings = CooldownCompanion.GetFrameAnchoringSettings
         and CooldownCompanion:GetFrameAnchoringSettings()
     local hasUnitFrameBadges = (workspaceKind == "player" or workspaceKind == "target")
@@ -4060,12 +4076,9 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     -- A virtual destination can also be an attached module awaiting an
     -- eligible panel. Never portray that missing attachment as independent.
-    if (standaloneResources or standaloneCast)
-        and ST._GetBarWorkspacePlacement(workspaceKind) == "unplaced" then
-        FinishPreviewWithMessage(preview,
-            standaloneCast
-                and "No eligible panel to attach to. Enable an eligible panel, or choose Independent in General."
-                or "No eligible panel to attach to. Enable an eligible panel, or choose Independent in Layout.")
+    if workspaceKind and ST._GetBarWorkspacePlacement(workspaceKind) == "unplaced" then
+        FinishPreviewWithMessage(preview, CooldownCompanion:GetModuleAnchorStatusText(
+            CooldownCompanion:ResolveModulePanel(workspaceKind)))
         return
     end
 
@@ -4075,8 +4088,8 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     preview.standaloneCast = standaloneCast
     preview.independentResources = independentResourcesPreview == true
     local supportsAttachedResourceBars = resourceBarsEnabled
-        and not (layout and IsTruthyConfigFlag(layout.independentAnchorEnabled))
-    local hasAttachedCastBar = castBarEnabled and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+        and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
+    local hasAttachedCastBar = castBarEnabled and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
     local includeResourceSlots = supportsAttachedResourceBars or independentResourcesPreview
     local includeCastSlots = castBarEnabled and not independentResourcesPreview
     local hasAttachedBarContext = not standalonePreview
@@ -4113,7 +4126,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         end
 
         if hasAttachedBarContext and (#primarySlots > 0 or #castSlots > 0) then
-            sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel()
+            sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel(preview.anchorPanelId)
             if not sourcePanel and not hasUnitFrameBadges then
                 FinishPreviewWithMessage(preview, sourceMessage)
                 return
@@ -4219,7 +4232,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 520 end
     local maxWidth = math_max(120, hostWidth - (LAYOUT_PREVIEW_PADDING * 2))
-    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
+    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2) - (preview.anchorUnavailable and 20 or 0))
 
     content:SetSize(contentWidth, contentHeight)
     content:ClearAllPoints()
@@ -4295,19 +4308,20 @@ end
 -- anchored panel: something enabled and attached, spec layout loaded, and
 -- at least one active slot. The unified anchor preview gates on this so it
 -- never trades the real mirror for a message-only pane.
-function ST._HasAttachedBarLanesToRender()
+function ST._HasAttachedBarLanesToRender(panelId)
+    panelId = panelId or GetPreviewPanelId()
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     if not layout then
         return false
     end
-    local resourceBarsEnabled = rbSettings and rbSettings.enabled == true
-    local castBarEnabled = cbSettings and cbSettings.enabled == true
+    local resourceBarsEnabled = rbSettings and rbSettings.enabled == true and ModuleBelongsToPreview("resources", panelId)
+    local castBarEnabled = cbSettings and cbSettings.enabled == true and ModuleBelongsToPreview("castbar", panelId)
     local supportsAttachedResourceBars = resourceBarsEnabled
-        and not IsTruthyConfigFlag(layout.independentAnchorEnabled)
+        and not CooldownCompanion:IsResourceBarAnchorIndependent()
     local hasAttachedCastBar = castBarEnabled
-        and not IsTruthyConfigFlag(cbSettings.independentAnchorEnabled)
+        and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
     if not supportsAttachedResourceBars and not hasAttachedCastBar then
         return false
     end
@@ -4316,7 +4330,7 @@ function ST._HasAttachedBarLanesToRender()
         or false
     local primarySlots, castSlots = CollectPreviewSlots(
         rbSettings,
-        cbSettings,
+        castBarEnabled and cbSettings or nil,
         layout,
         isVertical,
         supportsAttachedResourceBars
@@ -4352,7 +4366,7 @@ function ST._ResourcesPreviewRendersCastSlot()
     if not (cbSettings and cbSettings.enabled == true) then
         return false
     end
-    if IsTruthyConfigFlag(cbSettings.independentAnchorEnabled) then
+    if CooldownCompanion:IsModuleAnchorIndependent("castbar") then
         return false
     end
     local layout = CooldownCompanion:GetSpecLayoutOrder()
@@ -4363,14 +4377,14 @@ function ST._ResourcesPreviewRendersCastSlot()
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local independentResourcesPreview = IsBarsWorkspaceActive()
         and rbSettings and rbSettings.enabled == true
-        and IsTruthyConfigFlag(layout.independentAnchorEnabled)
+        and CooldownCompanion:IsResourceBarAnchorIndependent()
     if independentResourcesPreview then
         return false
     end
     -- An attached cast lane is drawn around the mirrored icon panel, so no
     -- resolvable panel means no lane: either the canvas is a message, or the
     -- unit-frame-proxy path wiped the slots and rendered proxies alone.
-    return ResolveLayoutPreviewSourcePanel() ~= nil
+    return ModuleBelongsToPreview("castbar", GetPreviewPanelId()) and ResolveLayoutPreviewSourcePanel() ~= nil
 end
 
 -- Which resource power types the canvas draws lanes for right now: the SAME
@@ -4391,6 +4405,7 @@ end
 function ST._ResourcesPreviewResourceLanePowerTypes()
     if IsBarsWorkspaceActive() and (CS.barWorkspaceKind ~= "resources"
         or ST._GetBarWorkspacePlacement("resources") == "unplaced") then return {} end
+    if not IsBarsWorkspaceActive() and not ModuleBelongsToPreview("resources", GetPreviewPanelId()) then return {} end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     if not (rbSettings and rbSettings.enabled == true) then
         return {}
@@ -4401,7 +4416,7 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
         return {}
     end
     local powerTypes
-    if IsBarsWorkspaceActive() or IsTruthyConfigFlag(layout.independentAnchorEnabled) then
+    if IsBarsWorkspaceActive() or CooldownCompanion:IsResourceBarAnchorIndependent() then
         -- An independent stack is drawn on the bars workspace alone, and
         -- from the runtime-eligible list; anywhere else it has no lanes.
         if not IsBarsWorkspaceActive() then
