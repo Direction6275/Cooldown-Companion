@@ -55,13 +55,13 @@ end
 local function CastBarFinderAttached(context)
     local cache = context and context._ccCastBarFinderCache
     local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.independentAnchorEnabled ~= true
+    return settings and settings.enabled == true and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
 end
 
 local function CastBarFinderIndependent(context)
     local cache = context and context._ccCastBarFinderCache
     local settings = cache and cache.settings
-    return settings and settings.enabled == true and settings.independentAnchorEnabled == true
+    return settings and settings.enabled == true and CooldownCompanion:IsModuleAnchorIndependent("castbar")
 end
 
 local function CastBarFinderCacheFlag(key)
@@ -86,6 +86,9 @@ if ST._DefineSettingRoute then
     CASTBAR_FINDER.general = general:Settings({
         enabled = { label = "Enable Cast Bar", aliases = { "enable cast bar anchoring" } },
         anchoringMode = { label = "Anchoring Mode", aliases = { "attach to" }, applies = CastBarFinderEnabled },
+        anchorPanel = { label = "Anchor Panel", applies = function(context)
+            return CastBarFinderEnabled(context) and CooldownCompanion:GetModuleAttachment("castbar").mode == "panel"
+        end },
     })
 
     local attached = ST._DefineSettingRoute({
@@ -336,10 +339,10 @@ end
 local function CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings, layout)
     return rbSettings
         and rbSettings.enabled
-        and (not layout or layout.independentAnchorEnabled ~= true)
+        and (not layout or not CooldownCompanion:IsResourceBarAnchorIndependent())
         and cbSettings
         and cbSettings.enabled
-        and cbSettings.independentAnchorEnabled ~= true
+        and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
 end
 
 -- Built once for the active Cast Bar Finder context. Applicability reads the
@@ -473,16 +476,9 @@ local function BuildCastBarAnchoringPanel(container)
         end)
 
         if settings.enabled then
-            local attachmentList, attachmentOrder = ST._GetBarAttachmentOptions()
-            AddDropdownRow(generalLeft, {
-                label = "Anchoring Mode",
-                setting = CASTBAR_FINDER.general and CASTBAR_FINDER.general.anchoringMode,
-                pulloutWidth = WIDE_PULLOUT_WIDTH,
-                tooltip = { "Attached to Panel", "Uses the existing automatic anchoring rules for the active specialization." },
-                list = attachmentList,
-                order = attachmentOrder,
-                value = ST._GetBarAttachmentValue("castbar"),
-                onChange = function(val) ST._SetBarAttachment("castbar", val) end,
+            ST._BuildModuleAnchoringControls(generalLeft, "castbar", {
+                mode = CASTBAR_FINDER.general and CASTBAR_FINDER.general.anchoringMode,
+                panel = CASTBAR_FINDER.general and CASTBAR_FINDER.general.anchorPanel,
             })
 
         end
@@ -502,7 +498,7 @@ local function BuildCastBarPositioningPanel(container)
         return
     end
 
-    if not settings.independentAnchorEnabled then
+    if not CooldownCompanion:IsModuleAnchorIndependent("castbar") then
         local _, layoutCollapsed = BuildCollapsibleSection(container, "Layout",
             "castbar_layout", nil, nil, ROW_SECTION)
 

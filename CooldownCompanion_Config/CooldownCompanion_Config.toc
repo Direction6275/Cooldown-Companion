@@ -55,6 +55,7 @@ ConfigSettings\Helpers.lua
 ConfigSettings\StyleLens.lua
 ConfigSettings\EntryCustomizations.lua
 ConfigSettings\RowWidgets.lua
+ConfigSettings\ModuleAnchoringPanels.lua
 ConfigSettings\SettingsFinder.lua
 ConfigSettings\AdvancedSettingsPanel.lua
 ConfigSettings\SectionBuilders.lua

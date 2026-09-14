@@ -340,14 +340,14 @@ local BAR_WORKSPACE_INTROS = {
     resources = {
         title = "Resource Bars",
         body = "Display your class resources as customizable bars. Add Custom Bars to track spell cooldowns or auras."
-            .. "\n\nKeep the stack alongside your panels with automatic anchoring, or position it independently.",
+            .. "\n\nChoose an anchor panel, let Automatic select one, or position the stack independently.",
         buttonText = "Enable Resource Bars",
         onEnable = EnableResourceBarsModule,
     },
     castbar = {
         title = "Cast Bar",
         body = "Display your casts and channels in a customizable bar."
-            .. "\n\nKeep it alongside your panels with automatic anchoring, or position it independently.",
+            .. "\n\nChoose an anchor panel, let Automatic select one, or position it independently.",
         buttonText = "Enable Cast Bar",
         onEnable = EnableCastBarModule,
     },

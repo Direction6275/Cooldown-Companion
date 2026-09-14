@@ -1925,6 +1925,7 @@ local function ApplySetupImportData(data)
 
     if resourcesSection then
         local settings = CopyTable(resourcesSection.settings)
+        CooldownCompanion:RemapModuleAttachmentPanels(settings, "resources", importState and importState.groupIdMap)
         local anchorId = tonumber(settings.anchorGroupId)
         if anchorId then
             -- The exporter's group ids mean nothing here; keep the anchor only

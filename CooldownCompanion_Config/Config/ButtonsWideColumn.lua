@@ -2723,7 +2723,7 @@ local function GetValidatedUnifiedBarKind()
         end
     elseif kind == "cast" then
         local cb = CooldownCompanion:GetCastBarSettings()
-        local independent = cb and (cb.independentAnchorEnabled == true or cb.independentAnchorEnabled == 1)
+        local independent = cb and CooldownCompanion:IsModuleAnchorIndependent("castbar")
         if not (cb and cb.enabled == true and not independent) then
             CS.unifiedBarKind = nil
             return nil

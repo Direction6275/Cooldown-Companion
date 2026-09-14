@@ -215,7 +215,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
             local s = GetResourceBarSettings()
             if not s or not s.enabled then return end
             local layout = GetSpecLayoutOrder(s)
-            if layout and layout.independentAnchorEnabled then return end  -- independent stack: width not tied to group
+            if layout and CooldownCompanion:IsResourceBarAnchorIndependent() then return end  -- independent stack: width not tied to group
             local anchorGroupId = GetEffectiveAnchorGroupId(s)
             if anchorGroupId ~= groupId then return end
             local groupFrame = CooldownCompanion.groupFrames[groupId]

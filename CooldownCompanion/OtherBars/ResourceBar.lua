@@ -904,7 +904,7 @@ local function CreateIndependentWrapperFrame()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)
             return placementSettings ~= nil
-                and placementSettings.independentAnchorEnabled == true
+                and CooldownCompanion:IsResourceBarAnchorIndependent()
                 and not placementSettings.independentAnchorLocked
                 and not CooldownCompanion._combatForcedLock
         end,
@@ -976,7 +976,7 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     local frame = independentWrapperFrame
     placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
     local unlocked = placementSettings
-        and placementSettings.independentAnchorEnabled == true
+        and CooldownCompanion:IsResourceBarAnchorIndependent()
         and not placementSettings.independentAnchorLocked
         and not CooldownCompanion._combatForcedLock
     if not unlocked and frame._dragInProgress then
@@ -2660,7 +2660,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         return
     end
 
-    local isIndependentStack = layout.independentAnchorEnabled == true
+    local isIndependentStack = CooldownCompanion:IsResourceBarAnchorIndependent()
     local groupId, groupFrame
 
     if isIndependentStack then

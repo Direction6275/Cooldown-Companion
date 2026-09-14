@@ -777,7 +777,7 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     -- Spec and hero talent filtering (GetEffectiveSpecs already delegates to container)
     local effectiveSpecs, _, hasSpecFilter = self:GetEffectiveSpecs(group)
     if hasSpecFilter then
-        if not (self._currentSpecId and effectiveSpecs[self._currentSpecId]) then
+        if not ((opts.specId or self._currentSpecId) and effectiveSpecs[opts.specId or self._currentSpecId]) then
             return false
         end
     end

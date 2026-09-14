@@ -50,6 +50,7 @@ Core\AuraTexturesDisplay.lua
 Core\ChangelogData.lua
 Core\Changelog.lua
 Core\ScopedSettings.lua
+Core\ModuleAnchoring.lua
 Core\BarsAndFramesRuntime.lua
 Core\SoundAlerts.lua
 Core\TextAnchorLayout.lua

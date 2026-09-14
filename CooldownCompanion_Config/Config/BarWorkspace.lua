@@ -8,11 +8,9 @@ local function GetPlacement(kind)
         or kind == "castbar" and Addon:GetCastBarSettings()
         or Addon:GetFrameAnchoringSettings()
     if not settings or settings.enabled ~= true then return "disabled" end
-    local independent = kind == "resources" and Addon:IsResourceBarAnchorIndependent()
-        or kind == "castbar" and settings.independentAnchorEnabled == true
-    if independent then return "independent" end
-    local panelId = Addon:GetFirstAvailableAnchorGroup()
-    return panelId and "attached" or "unplaced", panelId
+    local target = Addon:ResolveModulePanel(kind)
+    if target.mode == "independent" then return "independent", nil, target end
+    return target.group and "attached" or "unplaced", target.group and target.panelId, target
 end
 
 local function OpenWorkspace(kind, opts)
@@ -53,30 +51,26 @@ local function OpenWorkspace(kind, opts)
     end
 end
 
-local function GetAttachmentOptions()
-    return { attached = "Attached to Panel", independent = "Independent" },
-        { "attached", "independent" }
+local function GetAttachmentOptions(kind)
+    local list = { auto = "Automatic", panel = "Choose Panel" }
+    local order = { "auto", "panel" }
+    if kind == "target" then
+        list.player = "Same as Player"
+        table.insert(order, 1, "player")
+    elseif kind ~= "player" then
+        list.independent = "Independent"
+        order[#order + 1] = "independent"
+    end
+    return list, order
 end
 
 local function GetAttachmentValue(kind)
-    local independent = kind == "resources" and Addon:IsResourceBarAnchorIndependent()
-        or kind == "castbar" and Addon:GetCastBarSettings().independentAnchorEnabled == true
-    return independent and "independent" or "attached"
+    return Addon:GetModuleAttachment(kind).mode
 end
 
-local function SetAttachment(kind, value)
-    local independent = value == "independent"
-    if not independent and value ~= "attached" then return false end
-    local resources = Addon:GetResourceBarSettings()
-    if kind == "resources" then
-        local layout = Addon:GetSpecLayoutOrder()
-        if not (resources and layout) then return false end
-        layout.independentAnchorEnabled = independent
-    elseif kind == "castbar" then
-        Addon:GetCastBarSettings().independentAnchorEnabled = independent
-    else
-        return false
-    end
+local function SetAttachment(kind, value, panelId)
+    if not Addon:SetModuleAttachment(kind, value, panelId) then return false end
+    Addon:RefreshStableExternalAnchorCompactSuppression()
     Addon:EvaluateResourceBars()
     Addon:EvaluateCastBar()
     Addon:EvaluateFrameAnchoring()
@@ -90,7 +84,6 @@ local function GetPanelWorkspaceChips()
     local items = {}
     local panelId = CS.selectedGroup
     if not panelId or CS.otherClassLibraryActive then return items end
-    local anchorId = Addon:GetFirstAvailableAnchorGroup()
     local function AddItem(label, kind, selected)
         items[#items + 1] = { label = label, selected = selected, onClick = function()
             OpenWorkspace(kind)
@@ -103,10 +96,10 @@ local function GetPanelWorkspaceChips()
     end
     local _, castPanel = GetPlacement("castbar")
     if castPanel == panelId then AddItem("Cast Bar", "castbar", CS.unifiedBarKind == "cast") end
-    if anchorId == panelId then
-        AddItem("Player Frame", "player", CS.unifiedBarKind == "player")
-        AddItem("Target Frame", "target", CS.unifiedBarKind == "target")
-    end
+    local _, playerPanel = GetPlacement("player")
+    local _, targetPanel = GetPlacement("target")
+    if playerPanel == panelId then AddItem("Player Frame", "player", CS.unifiedBarKind == "player") end
+    if targetPanel == panelId then AddItem("Target Frame", "target", CS.unifiedBarKind == "target") end
     return items
 end
 
@@ -145,11 +138,9 @@ ST._NormalizeBarWorkspace = function()
 end
 
 ST._PrepareBarWorkspaceEnable = function(kind)
+    -- Keep an explicit missing selection repairable; only the legacy first-use
+    -- Automatic mode chooses Independent when there is no available panel.
+    if Addon:GetModuleAttachment(kind).mode ~= "auto" then return end
     if Addon:GetFirstAvailableAnchorGroup() then return end
-    if kind == "resources" then
-        local layout = Addon:GetSpecLayoutOrder()
-        if layout then layout.independentAnchorEnabled = true end
-    elseif kind == "castbar" then
-        Addon:GetCastBarSettings().independentAnchorEnabled = true
-    end
+    if kind == "resources" or kind == "castbar" then Addon:SetModuleAttachment(kind, "independent") end
 end

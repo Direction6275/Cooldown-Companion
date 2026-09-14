@@ -182,7 +182,7 @@ end
 
 local function GetEffectiveAnchorGroupId(settings)
     if not settings then return nil end
-    return CooldownCompanion:GetFirstAvailableAnchorGroup()
+    return CooldownCompanion:GetModuleAnchorPanelId("resources")
 end
 
 -- Attached horizontal stacks have two possible bodies on each side. Keep
@@ -198,7 +198,8 @@ function RB.GetBarLaneSide(lane)
 end
 
 function RB.GetBarAnchorGroup()
-    local id = CooldownCompanion:GetFirstAvailableAnchorGroup()
+    local resolved = CooldownCompanion:ResolveModulePanel("resources")
+    local id = resolved.group and resolved.panelId
     return id and CooldownCompanion.db.profile.groups[id], id
 end
 

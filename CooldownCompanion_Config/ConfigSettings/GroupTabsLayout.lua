@@ -977,7 +977,7 @@ local function BuildLayoutTab(container)
     --
     -- It reads as anchoring rather than arrangement: it decides whether the
     -- Resource Bars, the Cast Bar and the Unit Frames may hang off this panel,
-    -- which is the same question the rows above answer in the other direction.
+    -- in Automatic mode; explicit module selections ignore this preference.
     if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
         and not CooldownCompanion:IsAuraPanel(group) then
         local anchorEligibleRow = AddCheckboxRow(anchorRight, {
@@ -1006,7 +1006,7 @@ local function BuildLayoutTab(container)
             {" ", 1, 1, 1},
             {"They scan your groups in list order, then the panels inside each group, and attach to the first eligible icon panel that is currently shown.", 1, 1, 1, true},
             {" ", 1, 1, 1},
-            {"Uncheck this to skip this panel, so they attach to the next eligible panel instead.", 1, 1, 1, true},
+            {"Uncheck this to skip this panel in Automatic mode. Modules using Choose Panel can still attach here.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 

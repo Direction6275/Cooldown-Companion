@@ -82,8 +82,12 @@ if ST._DefineSettingRoute then
     })
     FRAME_ANCHORING_FINDER.player.anchoring = playerAnchoring:Settings({
         enabled = { label = "Enable Unit Frame Anchoring" },
+        mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled },
+        panel = { label = "Anchor Panel", applies = function()
+            return FrameAnchoringFinderEnabled() and CooldownCompanion:GetModuleAttachment("player").mode == "panel"
+        end },
         unitFrames = { label = "Unit Frames", applies = FrameAnchoringFinderEnabled },
-        mirrorTarget = { label = "Mirror target from player", applies = FrameAnchoringFinderEnabled },
+        mirrorTarget = { label = "Mirror target position", applies = FrameAnchoringFinderEnabled },
         inheritAlpha = { label = "Inherit group alpha", applies = FrameAnchoringFinderEnabled },
         playerFrameName = { label = "Player Frame Name", aliases = { "custom player frame" }, applies = PlayerFrameFinderCustom },
         targetFrameName = { label = "Target Frame Name", aliases = { "custom target frame" }, applies = PlayerFrameFinderCustom },
@@ -117,6 +121,10 @@ if ST._DefineSettingRoute then
         rowScope = "detail",
     }):Settings({
         enabled = { label = "Enable Unit Frame Anchoring" },
+        mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled },
+        panel = { label = "Anchor Panel", applies = function()
+            return FrameAnchoringFinderEnabled() and CooldownCompanion:GetModuleAttachment("target").mode == "panel"
+        end },
     })
 
     FRAME_ANCHORING_FINDER.target.position = ST._DefineSettingRoute({
@@ -302,6 +310,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
         end)
 
         if settings.enabled then
+            ST._BuildModuleAnchoringControls(generalLeft, "player", FRAME_ANCHORING_FINDER.player.anchoring)
             -- Unit-frame addon names run past the control column, so the menu
             -- is widened - a 140px control would otherwise open a 140px menu.
             AddDropdownRow(generalLeft, {
@@ -320,7 +329,7 @@ local function BuildFrameAnchoringPlayerPanel(container)
             })
 
             AddCheckboxRow(generalRight, {
-                label = "Mirror target from player",
+                label = "Mirror target position",
                 setting = FRAME_ANCHORING_FINDER.player.anchoring
                     and FRAME_ANCHORING_FINDER.player.anchoring.mirrorTarget,
                 value = settings.mirroring,
@@ -401,6 +410,9 @@ local function BuildFrameAnchoringTargetPanel(container)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
+        if settings.enabled then
+            ST._BuildModuleAnchoringControls(generalLeft, "target", FRAME_ANCHORING_FINDER.target.anchoring)
+        end
     end
 
     if not settings.enabled then return end
@@ -410,7 +422,7 @@ local function BuildFrameAnchoringTargetPanel(container)
         -- takes the place of the position section rather than sitting in it.
         local infoLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(infoLabel)
-        infoLabel:SetText("Target frame is mirrored from player frame settings.")
+        infoLabel:SetText("Target position is mirrored from player settings around its selected panel.")
         infoLabel:SetFullWidth(true)
         container:AddChild(infoLabel)
         return

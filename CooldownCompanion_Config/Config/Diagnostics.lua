@@ -681,6 +681,15 @@ local function AddBarsAndFramesRuntimeLines(add, barsAndFramesRuntime)
         FormatBool(cb.castEventsActive),
         FormatBool(cb.hooksInstalled)
     ))
+    for _, kind in ipairs({ "resources", "castbar", "player", "target" }) do
+        local binding = baf.moduleAnchoring and baf.moduleAnchoring[kind]
+        if binding then
+            add(("  %s attachment: mode=%s panel=%s selected=%s fallback=%s selectedReason=%s available=%s reason=%s binding=%s"):format(kind,
+                tostring(binding.mode), tostring(binding.panelId or "none"), tostring(binding.selectedPanelId or "none"),
+                FormatBool(binding.fallback), tostring(binding.selectedReason or "none"), FormatBool(binding.available),
+                tostring(binding.reason), tostring(binding.bindingReason or binding.reason)))
+        end
+    end
     local fa = baf.frameAnchoring or {}
     add(("  Frame Anchoring: applied=%s alphaSync=%s pendingCombat=%s pendingRepair=%s repairs=%s hooks=%s"):format(
         FormatBool(fa.applied),
@@ -690,9 +699,10 @@ local function AddBarsAndFramesRuntimeLines(add, barsAndFramesRuntime)
         tostring(fa.externalAnchorRepairCount or 0),
         FormatBool(fa.hooksInstalled)
     ))
-    add(("    provider=%s panel=%s player=%s target=%s"):format(
+    add(("    provider=%s playerPanel=%s targetPanel=%s player=%s target=%s"):format(
         tostring(fa.resolvedProvider or "none"),
-        tostring(fa.anchorGroupId or "none"),
+        tostring(fa.playerPanelId or fa.anchorGroupId or "none"),
+        tostring(fa.targetPanelId or "none"),
         tostring(fa.playerFrameName or "none"),
         tostring(fa.targetFrameName or "none")
     ))

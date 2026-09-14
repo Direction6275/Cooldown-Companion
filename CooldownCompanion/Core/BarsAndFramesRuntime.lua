@@ -207,5 +207,6 @@ function CooldownCompanion:GetBarsAndFramesRuntimeDebugInfo()
         resourceBars = CallIfAvailable("GetResourceBarRuntimeState"),
         castBar = CallIfAvailable("GetCastBarRuntimeDebugInfo"),
         frameAnchoring = CallIfAvailable("GetFrameAnchoringRuntimeDebugInfo"),
+        moduleAnchoring = CallIfAvailable("GetModuleAnchoringDebugInfo"),
     }
 end
