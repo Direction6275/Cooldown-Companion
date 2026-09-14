@@ -1928,7 +1928,9 @@ local function SetPreviewDropOverlayMode(overlay, host, landings, hasFree, ghost
     local anchor = target and (target.create or target.section)
     local label = anchor and ST.PANEL_SECTION_ANCHOR_LABELS
         and ST.PANEL_SECTION_ANCHOR_LABELS[anchor] or anchor
-    if target and target.create then
+    if target and target.rejectMessage then
+        line = "|cffff6666" .. label .. " section: " .. target.rejectMessage .. "|r"
+    elseif target and target.create then
         line = "|cffFFD100Release to start a section on the " .. label .. " edge|r"
     elseif target and target.section then
         line = "|cffFFD100Release to join the " .. label .. " section|r"
@@ -2026,6 +2028,10 @@ local function EnsurePreviewDropOverlay(host)
             -- rebuild ends the gesture the answer belongs to.
             local target = ST._ResolvePreviewCursorDrop
                 and ST._ResolvePreviewCursorDrop(host)
+            if target and target.rejectMessage then
+                CooldownCompanion:Print(target.rejectMessage)
+                return
+            end
             ST._TryReceiveCursorDrop({
                 section = target and (target.create or target.section) or nil,
             })
@@ -2048,7 +2054,7 @@ local function EnsurePreviewDropOverlay(host)
             -- there is no landing to show. It lands where the preview's
             -- answer says the release will.
             local ghostShown = false
-            if self:IsMouseOver() and ST._ShowPreviewDropGhost then
+            if self:IsMouseOver() and not (target and target.rejectMessage) and ST._ShowPreviewDropGhost then
                 local spec = CursorGhostSpec()
                 ghostShown = spec ~= nil
                     and ST._ShowPreviewDropGhost(host, spec, target, "cursor")
