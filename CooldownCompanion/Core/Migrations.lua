@@ -3525,6 +3525,28 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     if type(store) ~= "table" or type(store.groups) ~= "table" then return end
     local quiet = setmetatable({ Print = function() end }, { __index = self })
 
+    -- V3 snapshots are born in the current vocabulary. Their capturedFields
+    -- maps deliberately include nil resets: legacy backfills must not invent
+    -- values for those keys, nor extend a snapshot's captured coverage. Future
+    -- vocabulary migrations must update both values and coverage explicitly.
+    -- Unknown versions stay untouched until a compatible addon can read them.
+    local legacyGroups, currentGroups = {}, {}
+    for id, template in pairs(store.groups) do
+        if type(template) == "table" then
+            if template.templateVersion == 3 then
+                currentGroups[id] = template
+            elseif template.templateVersion == nil or template.templateVersion == 1 or template.templateVersion == 2 then
+                legacyGroups[id] = template
+            end
+        end
+    end
+    ClearInvalidStrataOrders({ groups = currentGroups })
+    local originalStore = store
+    store = setmetatable({ groups = legacyGroups }, {
+        __index = originalStore,
+        __newindex = function(_, key, value) originalStore[key] = value end,
+    })
+
     ClearInvalidStrataOrders(store)
     -- Aura swipe keys are icons-only vocabulary: the backfill walks just the
     -- icons templates (a throwaway map of references; the pass mutates in

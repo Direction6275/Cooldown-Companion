@@ -557,9 +557,7 @@ StaticPopupDialogs["CDC_UPDATE_PANEL_TEMPLATE"] = {
         if not (data and CooldownCompanion.UpdatePanelTemplate) then return end
         local updated, reason = CooldownCompanion:UpdatePanelTemplate(data.templateId, data.panelId)
         if not updated then
-            CooldownCompanion:Print(reason == "mode_mismatch"
-                and "That template is for a different panel type."
-                or "Could not update the template.")
+            CooldownCompanion:Print(ST._GetPanelTemplateFailureText(reason))
             return
         end
         local template = CooldownCompanion:GetPanelTemplate(data.templateId)

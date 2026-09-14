@@ -587,18 +587,11 @@ local function AddNoTemplatesItem(level, modeLabel)
     UIDropDownMenu_AddButton(info, level)
 end
 
-local PANEL_TEMPLATE_APPLY_FAILURE_TEXT = {
-    missing_template = "That template no longer exists.",
-    missing_group = "That panel no longer exists.",
-    mode_mismatch = "That template is for a different panel type.",
-    invalid_class_scope = "This panel's Group is not valid for this class.",
-}
-
 -- Owner ruling: applying a template to an existing panel never moves it.
 local function ApplyPanelTemplateToPanel(templateId, panelId)
-    local applied, reason = CooldownCompanion:ApplyPanelTemplate(templateId, panelId, { position = false })
+    local applied, reason, details = CooldownCompanion:ApplyPanelTemplate(templateId, panelId, { position = false })
     if not applied then
-        CooldownCompanion:Print(PANEL_TEMPLATE_APPLY_FAILURE_TEXT[reason] or "Could not apply the template.")
+        CooldownCompanion:Print(ST._GetPanelTemplateFailureText(reason, details))
         return
     end
     CooldownCompanion:RefreshConfigPanel()
@@ -738,7 +731,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.hasArrow = true
                 info.menuList = "PANEL_TEMPLATES"
                 info.tooltipTitle = "Templates"
-                info.tooltipText = "Save this panel's settings, or apply a saved setup without moving the panel."
+                info.tooltipText = "Save all panel settings, or apply a saved setup. Entries and their customizations, eligibility, and connections stay local; applying keeps the panel's position."
                 info.tooltipOnButton = 1
                 UIDropDownMenu_AddButton(info, level)
             end
@@ -901,16 +894,20 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.text = FormatPanelTemplateMenuText(template)
                 info.notCheckable = true
                 if not deleting then
-                    info.disabled = not CooldownCompanion:CanApplyPanelTemplate(templateId, panelId)
+                    local allowed, reason, details
+                    if menuList == "UPDATE_PANEL_TEMPLATE" then
+                        allowed, reason = CooldownCompanion:CanUpdatePanelTemplate(templateId, panelId)
+                    else
+                        allowed, reason, details = CooldownCompanion:CanApplyPanelTemplate(templateId, panelId)
+                    end
+                    info.disabled = not allowed
                     info.tooltipTitle = template.name
-                    info.tooltipText = template.templateVersion == 2
-                        and "Applies saved appearance, indicators, visibility, arrangement, and template extras. Position, anchor targets, eligibility, and Alpha inheritance stay unchanged."
-                        or "This older template applies its saved look and arrangement. Visibility stays unchanged; update it from a panel to capture the complete setup."
+                    info.tooltipText = ST._GetPanelTemplateApplyTooltipText(template)
                     if menuList == "UPDATE_PANEL_TEMPLATE" then
                         info.tooltipText = "Replaces this template's saved setup with this panel's current settings."
                     end
                     if info.disabled then
-                        info.tooltipText = "This template requires a matching panel type."
+                        info.tooltipText = ST._GetPanelTemplateFailureText(reason, details)
                     end
                     info.tooltipOnButton = 1
                 end

@@ -14,10 +14,11 @@
     CooldownCompanion:NormalizePanelTemplateStore (Core/Migrations.lua), run
     every login and on profile change; nothing here normalizes a template.
 
-    New snapshots (templateVersion 2) carry Appearance, Indicators, Visibility,
-    Arrangement, Aura subtype, section settings without members, bar fill
-    direction, and relative placement. They exclude eligibility, Alpha
-    inheritance, entries, strata and specific panel/frame anchor targets.
+    Version 3 snapshots carry every supported panel setting, including Alpha
+    inheritance, strata and panel Text Format. capturedFields records presence
+    even for nil-valued settings: absent values inside that coverage RESET a
+    target, while fields outside it were never saved. No profile baseline is
+    substituted. Entries, eligibility, identity and anchor connections stay local.
 
     Apply remains one click and preserves the destination's position and
     anchor target. Create remains one click: ordinary placement uses the new
@@ -31,7 +32,7 @@
 
     Every apply runs through ST._ApplyPanelSettingsSource
     (Core/GroupManagement.lua), the applier Copy Panel Settings uses, so the
-    baseline rule, the durationFormat rewrite, the Aura Panel invariants, the
+    durationFormat rewrite, the Aura Panel invariants, the
     Masque lifecycle and the combat deferral stay one implementation.
 ]]
 
@@ -45,6 +46,60 @@ local tonumber = tonumber
 local tostring = tostring
 local table_sort = table.sort
 local string_lower = string.lower
+
+-- Also used by the create menus. Unknown versions must never fall through to
+-- the old-template path, which would apply a different scope silently.
+function CooldownCompanion:CanUsePanelTemplate(template)
+    if type(template) ~= "table" then return false, "missing_template" end
+    local version = template.templateVersion
+    if version ~= nil and version ~= 1 and version ~= 2 and version ~= 3 then
+        return false, "unsupported_template_version"
+    end
+    if not ST.PANEL_TEMPLATE_STYLE_KEYS[template.displayMode] then
+        return false, "mode_mismatch"
+    end
+    if version == 3 then
+        local fields = template.capturedFields
+        if type(template.style) ~= "table" or type(fields) ~= "table"
+            or type(fields.style) ~= "table" or type(fields.group) ~= "table"
+            or type(fields.loadConditions) ~= "table" or type(fields.section) ~= "table" then
+            return false, "invalid_template"
+        end
+    end
+    return true
+end
+
+-- A fresh coverage map is saved with each snapshot. Intersecting it with the
+-- current contract on apply keeps unknown fields out without inventing values
+-- for controls added after this particular snapshot was made.
+local function GetPanelTemplateFields(group, mode)
+    local fields = { style = {}, group = {}, loadConditions = {}, section = {} }
+    for sectionId, section in pairs(ST.OVERRIDE_SECTIONS) do
+        if section.modes and (section.modes[mode]
+            or (mode == "bars" and ST.IsTotemPanelGroup(group) and sectionId == "auraIndicator")) then
+            for _, key in ipairs(section.keys) do fields.style[key] = true end
+        end
+    end
+    for _, key in ipairs(ST.PANEL_TEMPLATE_STYLE_KEYS[mode]) do fields.style[key] = true end
+    if mode == "bars" and ST.IsAuraPanelGroup(group) then
+        fields.style.barOrientation = nil
+        fields.style.buttonsPerRow = nil
+    end
+    for _, key in ipairs(ST.PANEL_TEMPLATE_GROUP_KEYS) do fields.group[key] = true end
+    if mode == "icons" then fields.group.masqueEnabled = true end
+    for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do fields.loadConditions[option.key] = true end
+    if ST.PanelSupportsSections(group) then
+        for _, key in ipairs(ST.PANEL_TEMPLATE_SECTION_KEYS) do fields.section[key] = true end
+    end
+    return fields
+end
+ST._GetPanelTemplateFields = GetPanelTemplateFields
+
+local function FlushTemplateEditor()
+    -- The config module publishes its existing commit owner only when loaded.
+    -- Flush without releasing the editor: a rejected apply keeps it usable.
+    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
+end
 
 -- Legacy snapshots cannot apply settings they never captured.
 local function GetPanelTemplateScopeList(self, mode, template)
@@ -77,7 +132,7 @@ end
 local function TemplateSubtypeMatches(template, group)
     -- Old templates have no reliable subtype evidence. Preserve their original
     -- compatibility until the owner updates them from an actual panel.
-    return template.templateVersion ~= 2
+    return (template.templateVersion == nil or template.templateVersion == 1)
         or (ST.IsAuraPanelGroup(template) == ST.IsAuraPanelGroup(group)
             and ST.IsTotemPanelGroup(template) == ST.IsTotemPanelGroup(group))
 end
@@ -120,27 +175,13 @@ end
 -- Save and update capture one complete settings snapshot; the caller stamps
 -- the name. Versioning distinguishes absent legacy scopes from saved defaults.
 local function BuildPanelTemplateSnapshot(self, group, mode)
-    local db = self.db.profile
-    -- Per key: the panel's value, or the shipped default where it carries
-    -- none - the baseline rule the settings applier writes with - so the
-    -- template reproduces the panel exactly, including keys left at default.
-    local baseline = db.globalStyle or {}
     local sourceStyle = group.style or {}
     local style = {}
-    local copiedDurationFormat = false
-    local function CopyStyleKey(key)
-        local value = sourceStyle[key]
-        if value == nil then
-            value = baseline[key]
-        end
-        style[key] = ST._CopyPresetValue(value)
-        if key == "durationFormat" then
-            copiedDurationFormat = true
-        end
-    end
+    local fields = GetPanelTemplateFields(group, mode)
 
     local template = {
-        templateVersion = 2,
+        templateVersion = 3,
+        capturedFields = fields,
         auraPanel = ST.IsAuraPanelGroup(group),
         totemPanel = ST.IsTotemPanelGroup(group),
         displayMode = mode,
@@ -148,24 +189,11 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
         style = style,
     }
 
-    local modeScopes = ST.PANEL_COPY_SCOPES[mode] or {}
-    for _, scopeName in ipairs(GetPanelTemplateScopeList(self, mode, template)) do
-        local scopeData = modeScopes[scopeName]
-        -- The applier's own key walk, one scope at a time as it runs it.
-        ST._ForEachPanelCopyStyleKey(mode, { scopeName }, CopyStyleKey, template.totemPanel)
-        if scopeData.copiesMasque then
-            template.masqueEnabled = group.masqueEnabled and true or false
-        end
-        if scopeName == "visibility" then
-            ST._CopyPanelVisibility(self, group, template, scopeData)
-        elseif scopeName == "arrangement" then
-            ST._CopyPanelArrangement(group, template, mode, scopeData)
-        end
-    end
-    -- These existing template extras remain part of the complete setup.
-    if mode == "bars" then
-        for _, key in ipairs(TEMPLATE_BAR_FILL_KEYS) do CopyStyleKey(key) end
-    end
+    for key in pairs(fields.style) do style[key] = ST._CopyPresetValue(sourceStyle[key]) end
+    -- Reuse the hide-rule reader's missing-table versus empty-table semantics.
+    ST._CopyPanelVisibility(self, group, template, ST.PANEL_COPY_SCOPES[mode].visibility)
+    for key in pairs(fields.group) do template[key] = ST._CopyPresetValue(group[key]) end
+    template.inheritPanelAlpha = group.inheritPanelAlpha ~= false
 
     -- Sections: settings only, never membership. Only a panel the section
     -- model covers (icons, not an Aura Panel) can have any, and a section
@@ -190,7 +218,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     -- hand a target that panel's "clock" baseline while the panel itself
     -- renders decimals (the applier's rule). decimalTimers is in no key list,
     -- so the fresh style never carries it.
-    if copiedDurationFormat and self.GetDurationFormat then
+    if fields.style.durationFormat and self.GetDurationFormat then
         style.durationFormat = self.GetDurationFormat(sourceStyle)
     end
 
@@ -281,6 +309,7 @@ end
 
 -- Returns the new template id, or nil when the panel cannot be a template.
 function CooldownCompanion:SavePanelTemplate(groupId, name)
+    FlushTemplateEditor()
     local group = GetProfileGroup(self, groupId)
     local mode = self:GetPanelCopyMode(group)
     local store = mode and self:GetPanelTemplateStore()
@@ -297,12 +326,12 @@ end
 
 -- Re-snapshots an existing template from a panel, keeping its id and name.
 -- A template never changes mode: the panel must share the template's.
-function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
-    templateId = tonumber(templateId)
+function CooldownCompanion:CanUpdatePanelTemplate(templateId, groupId)
     local existing = self:GetPanelTemplate(templateId)
-    if not existing then
-        return false, "missing_template"
-    end
+    local usable, reason = self:CanUsePanelTemplate(existing)
+    -- A supported but incomplete snapshot can be repaired by updating it from
+    -- a real panel; only applying/creating requires captured-field metadata.
+    if not usable and reason ~= "invalid_template" then return false, reason end
     local group = GetProfileGroup(self, groupId)
     local mode = self:GetPanelCopyMode(group)
     if not mode then
@@ -311,7 +340,17 @@ function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
     if mode ~= existing.displayMode or not TemplateSubtypeMatches(existing, group) then
         return false, "mode_mismatch"
     end
+    return true
+end
 
+function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
+    local canUpdate, reason = self:CanUpdatePanelTemplate(templateId, groupId)
+    if not canUpdate then return false, reason end
+    FlushTemplateEditor()
+    templateId = tonumber(templateId)
+    local existing = self:GetPanelTemplate(templateId)
+    local group = GetProfileGroup(self, groupId)
+    local mode = self:GetPanelCopyMode(group)
     local template = BuildPanelTemplateSnapshot(self, group, mode)
     template.name = existing.name
     self:GetPanelTemplateStore().groups[templateId] = template
@@ -347,9 +386,8 @@ end
 -- target's Group must resolve to a valid class scope.
 function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
     local template = self:GetPanelTemplate(templateId)
-    if not template then
-        return false, "missing_template"
-    end
+    local usable, reason = self:CanUsePanelTemplate(template)
+    if not usable then return false, reason end
     local group = GetProfileGroup(self, groupId)
     if not group then
         return false, "missing_group"
@@ -365,6 +403,26 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
             return false, "invalid_class_scope"
         end
     end
+    -- Check the proposed sections on a detached view before ANY settings are
+    -- written. Adding an empty section must also account for existing members
+    -- naming that anchor. The ordinary setter remains the only mutation owner.
+    local capturesAuraOnly = template.templateVersion ~= 3
+        or template.capturedFields.section.auraOnly == true
+    if capturesAuraOnly and type(template.sections) == "table" and ST.PanelSupportsSections(group) then
+        local proposed = {}
+        for key, value in pairs(group) do proposed[key] = value end
+        proposed.sections = ST._CopyPresetValue(group.sections or {})
+        for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
+            local section = template.sections[anchor]
+            if type(section) == "table" and section.auraOnly == true then
+                proposed.sections[anchor] = proposed.sections[anchor] or {}
+                local blocker = ST.GetAuraSectionToggleBlocker(proposed, anchor)
+                if blocker then
+                    return false, "section_conflict", { section = anchor, reason = blocker }
+                end
+            end
+        end
+    end
     return true
 end
 
@@ -372,15 +430,17 @@ end
 -- Current snapshots preserve the target; old snapshots retain Group placement.
 function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     groupId = tonumber(groupId)
-    local canApply, reason = self:CanApplyPanelTemplate(templateId, groupId)
+    FlushTemplateEditor()
+    local canApply, reason, details = self:CanApplyPanelTemplate(templateId, groupId)
     if not canApply then
-        return false, reason
+        return false, reason, details
     end
     local template = self:GetPanelTemplate(templateId)
     local mode = template.displayMode
     local position = opts and opts.position == true
-    local currentSnapshot = template.templateVersion == 2
-    local scopes = GetPanelTemplateScopeList(self, mode, template)
+    local completeSnapshot = template.templateVersion == 3
+    local currentSnapshot = completeSnapshot or template.templateVersion == 2
+    local scopes = completeSnapshot and {} or GetPanelTemplateScopeList(self, mode, template)
     if currentSnapshot and position then
         local group = self.db.profile.groups[groupId]
         if (template.positionMode == "cursor") ~= self:IsCursorAnchor(group.anchor) then
@@ -392,7 +452,19 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     if currentSnapshot then
         shapeKeys = mode == "bars" and TEMPLATE_BAR_FILL_KEYS or nil
     end
+    local fields
+    if completeSnapshot then
+        fields = GetPanelTemplateFields(template, mode)
+        for scope, keys in pairs(fields) do
+            for key in pairs(keys) do
+                if template.capturedFields[scope][key] ~= true then keys[key] = nil end
+            end
+        end
+        shapeKeys = nil
+    end
     return ST._ApplyPanelSettingsSource(self, groupId, template, scopes, {
+        templateFields = fields,
+        preserveCompactLimit = true,
         shapeKeys = shapeKeys,
         copyCompact = not currentSnapshot,
         skipCompact = template.compactLayout == nil,
@@ -407,13 +479,14 @@ end
 -- nil with nothing left behind.
 function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
     local template = self:GetPanelTemplate(templateId)
-    if not template then return nil end
+    local usable, reason = self:CanUsePanelTemplate(template)
+    if not usable then return nil, reason end
     local newGroupId = self:CreatePanel(containerId, self:GetPanelTemplateCreationMode(template))
     if not newGroupId then return nil end
 
     local group = self.db.profile.groups[newGroupId]
     group.name = template.name
-    if template.templateVersion == 2 and template.positionMode == "cursor" then
+    if (template.templateVersion == 2 or template.templateVersion == 3) and template.positionMode == "cursor" then
         -- This is a fresh, empty panel with no anchor dependents. Set its
         -- saved target before apply; the common applier owns combat deferral.
         group.anchor = self:GetDefaultCursorPanelAnchor()

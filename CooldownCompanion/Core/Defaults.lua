@@ -1779,22 +1779,10 @@ ST.PANEL_COPY_SCOPES = {
 ------------------------------------------------------------------------
 -- PANEL TEMPLATE SHAPE REGISTRY
 -- The original shape keys carried by unversioned Panel Templates, retained
--- for legacy apply compatibility (Core/PanelTemplates.lua). Current snapshots
--- use the shared Arrangement scope plus their bar-fill extras. The original
--- contract included orientation, growth, wrapping and bar fill direction by
--- owner ruling (2026-09-01): a template is a whole panel minus its entries
--- and its place on screen, and the arrangement is part of what makes it
--- that panel. The same-day rule applies here too: a new Layout-tab
--- arrangement key must be added to its mode's list the day it lands, or
--- templates silently stop carrying it.
---
--- Deliberately NOT included: strata (frameStrata, strataOrder), Collapse
--- Direction (an Aura Panel Layout key, living on the group as
--- compactGrowthDirection), and any anchor to another panel, frame, or the
--- cursor. A template's one placement fact is its offset from its own Group
--- frame, and that rides the template's anchor field, not this list. Sections
--- are not style keys either: they ride the template's own `sections` table,
--- keyed by ST.PANEL_TEMPLATE_SECTION_KEYS below.
+-- for legacy apply compatibility (Core/PanelTemplates.lua). Version 2 used
+-- the shared Arrangement scope plus bar-fill extras. Keep this historical
+-- coverage fixed; new settings belong in the complete template contract below.
+-- Strata and Aura Collapse Direction were outside this original coverage.
 ST.PANEL_TEMPLATE_SHAPE_KEYS = {
     icons = { "orientation", "growthOrigin", "buttonsPerRow" },
     bars = { "barOrientation", "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill" },
@@ -1815,6 +1803,36 @@ ST.PANEL_TEMPLATE_SHAPE_KEYS = {
 ST.PANEL_TEMPLATE_SECTION_KEYS = {
     "offsetX", "offsetY", "iconWidth", "iconHeight", "spacing", "maxPerLine", "auraOnly",
 }
+
+-- Complete templates have their own contract. Every mode-supported override
+-- section participates; these are the additional PANEL-owned style fields.
+-- Selective quick-copy scopes above intentionally remain narrower.
+ST.PANEL_TEMPLATE_STYLE_KEYS = {
+    icons = {
+        "maintainAspectRatio", "buttonSize", "iconWidth", "iconHeight", "buttonSpacing",
+        "durationFormat", "allowPings", "tooltipAnchor", "tooltipHideInCombat",
+        "orientation", "growthOrigin", "buttonsPerRow", "strataOrder",
+    },
+    bars = {
+        "barLength", "barHeight", "buttonSpacing", "barTexture", "durationFormat",
+        "allowPings", "tooltipAnchor", "tooltipHideInCombat", "barOrientation",
+        "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill", "strataOrder",
+    },
+    text = {
+        "textPadding", "buttonSpacing", "showTextGroupHeader", "textHeaderFontSize",
+        "textHeaderFontColor", "textFormat", "durationFormat", "textOrientation", "growthOrigin",
+        "buttonsPerRow", "strataOrder",
+    },
+}
+
+-- Eligibility, identity, entries, anchor connections and placement are never
+-- ordinary field writes. Placement has a separate create-only path.
+ST.PANEL_TEMPLATE_GROUP_KEYS = {
+    "inheritPanelAlpha", "frameStrata", "compactLayout", "compactGrowthDirection", "maxVisibleButtons",
+}
+for _, key in ipairs(PANEL_VISIBILITY_COPY_SCOPE.groupKeys) do
+    ST.PANEL_TEMPLATE_GROUP_KEYS[#ST.PANEL_TEMPLATE_GROUP_KEYS + 1] = key
+end
 
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
     if buttonData and buttonData.type == "equipmentSlot" then

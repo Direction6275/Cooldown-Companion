@@ -380,13 +380,13 @@ function ST.GetPanelLayoutOrientation(displayMode, style)
     return style.orientation or "horizontal"
 end
 
-local function CopyCompactLayoutSettings(sourceGroup, targetGroup)
+local function CopyCompactLayoutSettings(sourceGroup, targetGroup, preserveLimit)
     targetGroup.compactLayout = sourceGroup.compactLayout == true
     targetGroup.compactGrowthDirection = sourceGroup.compactGrowthDirection or "center"
 
     local sourceMaxVisible = tonumber(sourceGroup.maxVisibleButtons) or 0
     local targetButtonCount = targetGroup.buttons and #targetGroup.buttons or 0
-    if targetButtonCount == 0 then
+    if preserveLimit or targetButtonCount == 0 then
         -- An empty target has nothing to clamp against, and a template must
         -- reproduce the panel's limit as entries arrive.
         targetGroup.maxVisibleButtons = sourceMaxVisible
@@ -565,7 +565,7 @@ local function CopyPanelVisibility(self, source, target, scopeData)
     end
 end
 
-local function CopyPanelArrangement(source, target, mode, scopeData)
+local function CopyPanelArrangement(source, target, mode, scopeData, preserveLimit)
     local sourceStyle = source.style or {}
     local style = target.style
     if type(style) ~= "table" then
@@ -583,7 +583,7 @@ local function CopyPanelArrangement(source, target, mode, scopeData)
     if auraPanel then
         target.compactGrowthDirection = source.compactGrowthDirection or "center"
     else
-        CopyCompactLayoutSettings(source, target)
+        CopyCompactLayoutSettings(source, target, preserveLimit)
     end
 end
 
@@ -641,6 +641,10 @@ end
 -- `scopes` is the list of ST.PANEL_COPY_SCOPES[mode] scope names to write.
 --
 -- opts, every one optional and template-only (the copy feature passes none):
+--   templateFields  v3 captured coverage intersected with the current template
+--                   contract. Writes raw values, including nil, without a
+--                   profile baseline. All validation precedes this writer.
+--   preserveCompactLimit  retain a template's limit as future entries arrive
 --   shapeKeys    style keys copied after the look scopes, each by the same
 --                source-value-else-baseline rule (ST.PANEL_TEMPLATE_SHAPE_KEYS)
 --   copyCompact  copy the original template compact trio independently of
@@ -660,6 +664,7 @@ end
 -- was combat-deferred, exactly as the copy feature always has.
 local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opts)
     opts = opts or {}
+    local templateFields = opts.templateFields
     local db = self.db.profile
     local targetGroup = db.groups[targetGroupId]
     local mode = self:GetPanelCopyMode(targetGroup)
@@ -673,7 +678,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             CopyPanelVisibility(self, source, targetGroup, scopeData)
             copiedVisibility = true
         elseif scopeData and scopeName == "arrangement" then
-            CopyPanelArrangement(source, targetGroup, mode, scopeData)
+            CopyPanelArrangement(source, targetGroup, mode, scopeData, opts.preserveCompactLimit)
             copiedArrangement = true
         elseif scopeData and scopeName == "position" then
             CopyPanelPosition(self, source, targetGroup)
@@ -681,7 +686,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         end
     end
 
-    if #scopes == 1 and (copiedArrangement or copiedPosition) then
+    if not templateFields and #scopes == 1 and (copiedArrangement or copiedPosition) then
         RefreshCopiedPanelLayout(self, targetGroupId, copiedPosition)
         return true
     end
@@ -697,11 +702,9 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         return true
     end
 
-    -- Per key: the source's value, or the shipped default where the source
-    -- carries none - so the target's scope comes out exactly matching the
-    -- source's, including keys the source left at default. globalStyle is the
-    -- baseline the panel style itself was seeded from; a key absent there too
-    -- is nil-defaulted at its read sites, and nil is the faithful copy.
+    -- Quick-copy and legacy templates retain their seeded baseline behavior.
+    -- V3 templates instead treat a captured nil as an authoritative reset to
+    -- the runtime default; another profile's baseline must not fill the hole.
     local baseline = db.globalStyle or {}
     local sourceStyle = source.style or {}
     local targetStyle = targetGroup.style
@@ -713,7 +716,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local copiedDurationFormat = false
     local function CopyStyleKey(key)
         local value = sourceStyle[key]
-        if value == nil then
+        if value == nil and not templateFields then
             value = baseline[key]
         end
         targetStyle[key] = CopyPresetValue(value)
@@ -725,6 +728,21 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local oldMasqueEnabled = targetGroup.masqueEnabled and true or false
     local copiedMasque = false
     local copyTotemGlow = ST.IsTotemPanelGroup(source) and ST.IsTotemPanelGroup(targetGroup)
+
+    if templateFields then
+        for key in pairs(templateFields.style) do CopyStyleKey(key) end
+        for key in pairs(templateFields.group) do
+            targetGroup[key] = CopyPresetValue(source[key])
+        end
+        copiedMasque = templateFields.group.masqueEnabled == true
+        if next(templateFields.loadConditions) then
+            targetGroup.loadConditions = targetGroup.loadConditions or {}
+            for key in pairs(templateFields.loadConditions) do
+                targetGroup.loadConditions[key] = source.loadConditions and source.loadConditions[key]
+            end
+        end
+        copiedVisibility = true
+    end
 
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
@@ -745,10 +763,10 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     if opts.copyCompact and not opts.skipCompact
         and not ST.IsAuraPanelGroup(source)
         and not ST.IsAuraPanelGroup(targetGroup) then
-        CopyCompactLayoutSettings(source, targetGroup)
+        CopyCompactLayoutSettings(source, targetGroup, opts.preserveCompactLimit)
     end
 
-    -- Templates retain their original shape registry and baseline rule.
+    -- Legacy templates retain their original shape registry and baseline rule.
     for _, key in ipairs(opts.shapeKeys or {}) do
         CopyStyleKey(key)
     end
@@ -776,15 +794,18 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
                     targetSections[anchor] = section
                 end
                 for _, key in ipairs(ST.PANEL_TEMPLATE_SECTION_KEYS) do
-                    if key ~= "auraOnly" then
+                    if key ~= "auraOnly" and (not templateFields or templateFields.section[key]) then
                         section[key] = CopyPresetValue(sourceSection[key])
                     end
                 end
                 -- The aura-only flag goes through its own setter: turning it
                 -- on is refused when a current member cannot live in an aura
                 -- section, and turning it on stamps the members' aura keys.
-                -- A refusal leaves the flag off rather than failing the apply.
-                ST.SetPanelSectionAuraOnly(targetGroup, anchor, sourceSection.auraOnly == true)
+                -- CanApplyPanelTemplate already checked every proposed section
+                -- before this writer touched any settings.
+                if not templateFields or templateFields.section.auraOnly then
+                    ST.SetPanelSectionAuraOnly(targetGroup, anchor, sourceSection.auraOnly == true)
+                end
             end
         end
     end
@@ -798,6 +819,10 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     if copiedDurationFormat and self.GetDurationFormat then
         targetStyle.durationFormat = self.GetDurationFormat(sourceStyle)
         targetStyle.decimalTimers = nil
+    end
+
+    if templateFields and templateFields.style.strataOrder and ST._InvalidatePanelStrataEditor then
+        ST._InvalidatePanelStrataEditor(targetGroupId)
     end
 
     -- Copy eligibility compares the base displayMode only, so an ordinary icon
@@ -843,7 +868,13 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         if not self:IsGroupVisibleToCurrentChar(targetGroupId) then return true end
         -- Arm before the combat-deferred return too: Alpha owns its runtime
         -- updates independently of the protected frame's pending layout work.
-        self:RefreshAlphaUpdateDriver()
+        if templateFields and templateFields.group.inheritPanelAlpha and self.RebuildPanelAlphaDependencyTargets then
+            -- This owner also refreshes the Alpha driver. RefreshGroupFrame
+            -- rebinds the frame's Alpha source through the existing anchor.
+            self:RebuildPanelAlphaDependencyTargets()
+        else
+            self:RefreshAlphaUpdateDriver()
+        end
     end
 
     local frame = self.groupFrames and self.groupFrames[targetGroupId]
