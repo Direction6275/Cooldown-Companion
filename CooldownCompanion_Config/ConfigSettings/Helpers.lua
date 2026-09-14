@@ -984,9 +984,13 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         end
 
         local totalButtons = #group.buttons
+        -- A template can save a finite limit above the current entry count.
+        -- Keep that number visible and reserve the top stop for no limit.
+        local savedLimit = tonumber(group.maxVisibleButtons) or 0
+        local sliderMax = math.max(totalButtons, savedLimit + 1, 1)
         local function SetMaxVisibleButtons(val)
             val = math.floor(val + 0.5)
-            if val >= totalButtons then
+            if val >= sliderMax then
                 group.maxVisibleButtons = 0
             else
                 group.maxVisibleButtons = val
@@ -995,8 +999,8 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         local maxVisRow = ST._AddSliderRow(panel, {
             label = "Max Visible Buttons",
             setting = opts and opts.settings and opts.settings.maxVisible,
-            min = 1, max = math.max(totalButtons, 1), step = 1,
-            value = group.maxVisibleButtons == 0 and totalButtons or group.maxVisibleButtons,
+            min = 1, max = sliderMax, step = 1,
+            value = savedLimit == 0 and sliderMax or savedLimit,
             onChange = function(val)
                 local committed = group.maxVisibleButtons
                 SetMaxVisibleButtons(val)
@@ -1014,6 +1018,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         local maxVisTooltip = {
             "Max Visible Buttons",
             {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
+            {"The highest slider value removes the limit. A saved limit also applies as entries are added.", 1, 1, 1, true},
         }
         if ST.PanelHasAuraSection and ST.PanelHasAuraSection(group) then
             maxVisTooltip[#maxVisTooltip + 1] = {" ", 1, 1, 1, true}

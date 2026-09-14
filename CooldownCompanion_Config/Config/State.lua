@@ -417,6 +417,15 @@ end
 CS.IsStrataOrderComplete = IsStrataOrderComplete
 CS.InitPendingStrataOrder = InitPendingStrataOrder
 
+-- Templates replace the saved order without editing these dropdowns. Their
+-- next build must start from that new order, even on the same selected panel.
+function ST._InvalidatePanelStrataEditor(groupId)
+    if CS.pendingStrataGroup == groupId then
+        CS.pendingStrataGroup = nil
+        CS.pendingStrataOrder = nil
+    end
+end
+
 ------------------------------------------------------------------------
 -- Helper: Show a StaticPopup above the config panel
 ------------------------------------------------------------------------

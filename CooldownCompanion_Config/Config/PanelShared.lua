@@ -172,17 +172,52 @@ end
 local function GetPanelTypeLabel(panel)
     return GetPanelModeLabel(CooldownCompanion:GetPanelTemplateCreationMode(panel))
 end
+local PANEL_TEMPLATE_FAILURE_TEXT = {
+    missing_template = "That template no longer exists.",
+    missing_group = "That panel no longer exists.",
+    mode_mismatch = "That template requires a matching panel type.",
+    invalid_class_scope = "This panel's Group is not valid for this class.",
+    anchor_mode_mismatch = "That placement requires a matching cursor anchor mode.",
+    unsupported_template_version = "This template requires a newer addon version.",
+    invalid_template = "This template is incomplete. Update it from a panel or save a new template.",
+}
+local function GetPanelTemplateFailureText(reason, details)
+    if reason == "section_conflict" and details then
+        local label = ST.PANEL_SECTION_ANCHOR_LABELS[details.section] or details.section
+        return "Cannot apply template: " .. label .. " section. " .. details.reason
+    end
+    return PANEL_TEMPLATE_FAILURE_TEXT[reason] or "Could not use the template."
+end
+ST._GetPanelTemplateFailureText = GetPanelTemplateFailureText
+
+local function GetPanelTemplateApplyTooltipText(template)
+    if template.templateVersion == 3 then
+        return "Applies all saved panel settings, including Alpha mode, layers, and panel text format. Entries and their customizations, eligibility, connections, and position stay unchanged."
+    end
+    local scope = template.templateVersion == 2
+        and "This older template applies its original saved settings."
+        or "This older template applies its saved look and arrangement; visibility stays unchanged."
+    return scope .. " Update it from a panel to capture all panel settings. Existing entry customizations remain."
+end
+ST._GetPanelTemplateApplyTooltipText = GetPanelTemplateApplyTooltipText
 -- One sentence for every surface that offers to build from a template, the
 -- article following the label: "an Icon Panel", "a Bar Panel".
 local function GetPanelTemplateTooltipText(template)
+    local usable, reason = CooldownCompanion:CanUsePanelTemplate(template)
+    if not usable then return GetPanelTemplateFailureText(reason) end
     local modeLabel = GetPanelTypeLabel(template)
     local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
-    return "Creates " .. article .. " " .. modeLabel .. " with this template's saved settings and placement."
+    local text = "Creates " .. article .. " " .. modeLabel .. " with the saved panel settings and placement. Entries and their customizations are not copied."
+    if template.templateVersion ~= 3 then
+        text = text .. " Older template: update it from a panel to capture all panel settings."
+    end
+    return text
 end
 local function AddPanelTemplateMenuTooltip(info, template)
     info.tooltipTitle = template.name
     info.tooltipText = GetPanelTemplateTooltipText(template)
     info.tooltipOnButton = true
+    if not CooldownCompanion:CanUsePanelTemplate(template) then info.disabled = true end
 end
 
 local function IsActiveCDMPanelSource(panel)
@@ -250,10 +285,19 @@ local function CreatePanelFromTemplateInContainer(containerId, templateId)
     if not template then
         return
     end
+    local usable, reason = CooldownCompanion:CanUsePanelTemplate(template)
+    if not usable then
+        CooldownCompanion:Print(GetPanelTemplateFailureText(reason))
+        return
+    end
     local creationMode = CooldownCompanion:GetPanelTemplateCreationMode(template)
     local opts = BuildPanelCreateOptions(creationMode)
     opts.containerId = containerId
-    local newPanelId = CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
+    local newPanelId, failure = CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
+    if not newPanelId then
+        CooldownCompanion:Print(GetPanelTemplateFailureText(failure))
+        return
+    end
     FinalizeCreatedPanel(newPanelId, creationMode, opts)
 end
 
@@ -603,7 +647,8 @@ local function DeleteEntrySelection(snapshot)
         ST.DetachEntryFromPanelSection(snapshot.group, snapshot.entries[i])
         table.remove(snapshot.group.buttons, snapshot.indices[i])
     end
-    ST.SweepEmptyPanelSections(snapshot.group)
+    -- Detach already dissolves the sections these entries vacated. Leave
+    -- unrelated empty template sections waiting for their first members.
     SelectEntryActionResults(snapshot.groupId, {})
     CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
     CooldownCompanion:RefreshConfigPanel()
