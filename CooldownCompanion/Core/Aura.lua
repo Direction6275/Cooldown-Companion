@@ -1159,7 +1159,7 @@ function CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)
         local mode = group.displayMode or "icons"
         if (mode ~= "icons" and mode ~= "bars") or ST.IsAuraPanelGroup(group)
             or ST.IsAuraSectionEntry(group, buttonData) then return false end
-        style = style or self:GetEffectiveStyle(group.style or {}, buttonData)
+        style = style or self:GetEntryEffectiveStyle(group, buttonData)
     end
     return style ~= nil and style.missingAuraIndicatorEnabled == true
 end

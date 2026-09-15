@@ -602,9 +602,6 @@ function CooldownCompanion:ClearAllConfigPreviews()
     if self.ClearAllTriggerPanelEffectPreviews then
         self:ClearAllTriggerPanelEffectPreviews()
     end
-    if self.ClearAllCustomAuraBarPreviews then
-        self:ClearAllCustomAuraBarPreviews()
-    end
     if self.ClearAllResourceAuraPreviews then
         self:ClearAllResourceAuraPreviews()
     end

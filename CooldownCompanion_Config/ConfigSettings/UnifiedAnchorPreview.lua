@@ -46,7 +46,7 @@ local function IsUnifiedAnchorPreviewEligible(groupId)
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
         and CooldownCompanion.db.profile.groups[groupId]
-    if not group then
+    if not group or ST.PanelSupportsAttachedBars(group) then
         return false
     end
     if group.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT
@@ -60,6 +60,10 @@ end
 -- The command center uses the same visibility gate as the composition.
 -- Hidden bars remain editable through the workspace's selection links.
 local function ShouldUseUnifiedAnchorPreview(groupId)
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if ST.PanelSupportsAttachedBars(group) then
+        return not CS.unifiedAnchorBarsHidden and ST._HasAttachedBarLanesToRender(groupId) == true
+    end
     return IsUnifiedAnchorPreviewEligible(groupId)
         and not CS.unifiedAnchorBarsHidden
 end
@@ -336,8 +340,10 @@ local function BuildAnchorAwarePanelPreview(host, groupId)
     -- Resolved once: the eligibility chain ends in a full lane-slot collect,
     -- so the badge and the render branch share one answer per build.
     local eligible = IsUnifiedAnchorPreviewEligible(groupId)
-    UpdateAttachedBarsBadge(host, eligible)
-    UpdateUnavailableEntriesBadge(host, groupId, eligible)
+    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local hasModules = ST.PanelSupportsAttachedBars(group) and ST._HasAttachedBarLanesToRender(groupId) == true
+    UpdateAttachedBarsBadge(host, eligible or hasModules)
+    UpdateUnavailableEntriesBadge(host, groupId, eligible or hasModules)
     if eligible and not CS.unifiedAnchorBarsHidden then
         local plain = host._cdcPanelPreview
         if plain and plain.root and plain.root:IsShown() then

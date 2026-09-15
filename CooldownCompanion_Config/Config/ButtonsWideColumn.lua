@@ -238,7 +238,6 @@ function SettingsFinderActionBehavior.IsSuppressed(state)
         or HasMultipleSelections(state.selectedGroups)
         or HasMultipleSelections(state.selectedPanels)
         or HasMultipleSelections(state.selectedButtons)
-        or HasMultipleSelections(state.selectedCustomBars)
 end
 
 function SettingsFinderActionBehavior.IsQueuedSearchCurrent(serial, currentSerial)
@@ -299,7 +298,6 @@ local function IsEditingActionRowSuppressed(col3)
         selectedGroups = CS.selectedGroups,
         selectedPanels = CS.selectedPanels,
         selectedButtons = CS.selectedButtons,
-        selectedCustomBars = CS.selectedCustomBars,
     })
 end
 
@@ -1158,11 +1156,6 @@ local function GetEditingHeaderPath()
         return nil, "Cast Bar"
     end
     if CS.barsEntrySelected then
-        local multiCount = 0
-        for _ in pairs(CS.selectedCustomBars) do multiCount = multiCount + 1 end
-        if multiCount >= 2 then
-            return BARS_HOME_LABEL, "Custom Bars"
-        end
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
         if CS.selectedResourcePowerType and ST._RBP
@@ -1171,12 +1164,6 @@ local function GetEditingHeaderPath()
             local powerNames = ST._RB and ST._RB.POWER_NAMES
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
             return BARS_HOME_LABEL, resourceName or "Resource"
-        end
-        if CS.selectedCustomBarId then
-            local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
-            if entry then
-                return BARS_HOME_LABEL, entry.label or "Custom Bar"
-            end
         end
         return nil, "Resources"
     end
@@ -2384,22 +2371,13 @@ local function EnsureAddModeDropdown(col3)
         HideSettingsFinderResults()
     end)
     selector:SetCallback("OnValueChanged", function(widget, _, mode)
-        if mode ~= "entry" and mode ~= "custom" then return end
-        if CS.panelAddMode == mode then return end
-        local current = CS.panelAddMode == "custom"
-            and col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
-            or col3.buttonsAddBox
-        CS.panelAddModeQuery = current and current:GetText() or ""
-        CS.panelAddMode = mode
+        if mode ~= "icons" and mode ~= "bars" then return end
+        CS.panelAddPresentation = mode
         widget:ClearFocus()
         CS.HideAutocomplete()
-        CooldownCompanion:RefreshConfigPanel()
-        local input = mode == "custom"
-            and col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
-            or col3.buttonsAddBox
-        if input then
-            input:SetFocus()
-            input:Fire("OnTextChanged", input:GetText())
+        if col3.buttonsAddBox then
+            col3.buttonsAddBox:SetFocus()
+            col3.buttonsAddBox:Fire("OnTextChanged", col3.buttonsAddBox:GetText())
         end
     end)
     col3._cdcAddModeDropdown = selector
@@ -2409,38 +2387,21 @@ end
 local function UpdateAddBox(col3)
     local host = col3.buttonsPreviewHost
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local _, resourcePanel = ST._GetBarWorkspacePlacement("resources")
-    local hasStack = resourcePanel ~= nil and resourcePanel == CS.selectedGroup
     local canAddEntry = CanManuallyAddToPanel(group)
-    if not (host and host:IsShown() and (canAddEntry or hasStack)) then
-        if col3.buttonsAddBox then
-            col3.buttonsAddBox.frame:Hide()
-        end
+    if not (host and host:IsShown() and canAddEntry) then
+        if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
+        if col3._cdcAddModeDropdown then col3._cdcAddModeDropdown.frame:Hide() end
         UpdateEditingActionRow(col3)
         return
     end
-
     if CS.panelAddModePanelId ~= CS.selectedGroup then
         CS.panelAddModePanelId = CS.selectedGroup
-        CS.panelAddMode = "entry"
-        CS.panelAddModeQuery = nil
+        CS.panelAddPresentation = "icons"
     end
     local selector = EnsureAddModeDropdown(col3)
-    selector.frame:SetShown(hasStack and canAddEntry)
-    if not hasStack then CS.panelAddMode = "entry"
-    elseif not canAddEntry then CS.panelAddMode = "custom" end
-    local iconLabel = CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) and "Icon" or "Entry"
-    selector:SetList({ entry = iconLabel, custom = "Custom Bar" }, { "entry", "custom" })
-    selector:SetValue(CS.panelAddMode)
-    if hasStack and CS.panelAddMode == "custom" then
-        if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
-        ST._EnsureCustomBarAddBox(col3)
-        local input = col3._resourcesAddBoxHost and col3._resourcesAddBoxHost._cdcAddInput
-        if input and CS.panelAddModeQuery ~= nil then input:SetText(CS.panelAddModeQuery) end
-        CS.panelAddModeQuery = nil
-        UpdateEditingActionRow(col3)
-        return
-    end
+    selector.frame:SetShown(ST.PanelSupportsAttachedBars(group))
+    selector:SetList({ icons = "Add Icon", bars = "Add Bar" }, { "icons", "bars" })
+    selector:SetValue(CS.panelAddPresentation or "icons")
     local addBox = EnsureAddBox(col3)
     if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
     CS.panelAddModeQuery = nil
@@ -2631,10 +2592,6 @@ local function UpdateEditingContext(col3)
                 name = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
                     or "Resource"
                 kindText = "Resource"
-            elseif CS.unifiedBarKind == "custom" then
-                local entry = ST._FindSelectedConfigCustomBar and ST._FindSelectedConfigCustomBar()
-                name = (entry and entry.label) or "Custom Bar"
-                kindText = "Custom Bar"
             elseif CS.unifiedBarKind == "stack" then
                 name = "Resources"
             elseif CS.unifiedBarKind == "player" then
@@ -2718,12 +2675,6 @@ local function GetValidatedUnifiedBarKind()
         local RBP = ST._RBP
         if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
             and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true)) then
-            CS.unifiedBarKind = nil
-            return nil
-        end
-    elseif kind == "custom" then
-        if not (CS.selectedCustomBarId and ST._FindSelectedConfigCustomBar
-            and ST._FindSelectedConfigCustomBar()) then
             CS.unifiedBarKind = nil
             return nil
         end
@@ -2904,27 +2855,10 @@ local function RefreshButtonsWideColumn(selectionOnly)
         UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
 
-        if unifiedBarKind == "custom" then
-            local ids, entries = {}, {}
-            local settings = CooldownCompanion:GetResourceBarSettings()
-            local all = ST._RB.GetAllCustomBars(settings)
-            for _, entry in ipairs(all or {}) do
-                if CS.selectedCustomBars[entry.customBarId] then
-                    ids[#ids + 1] = entry.customBarId
-                    entries[#entries + 1] = entry
-                end
-            end
-            if #entries >= 2 then
-                if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-                ST._ShowCustomBarMultiSelectSurface(col3, ids, entries)
-                return
-            end
-        end
-
         -- The selected object owns the settings area. Reuse exactly the
         -- standalone resource/cast surfaces, with the panel preview retained.
         if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-        if unifiedBarKind == "stack" or unifiedBarKind == "resource" or unifiedBarKind == "custom" then
+        if unifiedBarKind == "stack" or unifiedBarKind == "resource" then
             ST._ShowResourceWorkspaceSurfaces(col3)
             return
         elseif unifiedBarKind == "player" or unifiedBarKind == "target" then

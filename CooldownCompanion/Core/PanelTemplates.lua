@@ -52,17 +52,24 @@ local string_lower = string.lower
 function CooldownCompanion:CanUsePanelTemplate(template)
     if type(template) ~= "table" then return false, "missing_template" end
     local version = template.templateVersion
-    if version ~= nil and version ~= 1 and version ~= 2 and version ~= 3 then
+    if version ~= nil and version ~= 1 and version ~= 2 and version ~= 3 and version ~= 4 then
         return false, "unsupported_template_version"
     end
     if not ST.PANEL_TEMPLATE_STYLE_KEYS[template.displayMode] then
         return false, "mode_mismatch"
     end
-    if version == 3 then
+    if version == 3 or version == 4 then
         local fields = template.capturedFields
         if type(template.style) ~= "table" or type(fields) ~= "table"
             or type(fields.style) ~= "table" or type(fields.group) ~= "table"
             or type(fields.loadConditions) ~= "table" or type(fields.section) ~= "table" then
+            return false, "invalid_template"
+        end
+    end
+    if version == 4 and ST.PanelSupportsAttachedBars(template) then
+        local fields = template.capturedFields
+        if type(template.attachedBarStyle) ~= "table" or type(template.attachedBarLayout) ~= "table"
+            or type(fields.attachedBarStyle) ~= "table" or type(fields.attachedBarLayout) ~= "table" then
             return false, "invalid_template"
         end
     end
@@ -90,6 +97,18 @@ local function GetPanelTemplateFields(group, mode)
     for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do fields.loadConditions[option.key] = true end
     if ST.PanelSupportsSections(group) then
         for _, key in ipairs(ST.PANEL_TEMPLATE_SECTION_KEYS) do fields.section[key] = true end
+    end
+    if ST.PanelSupportsAttachedBars(group) then
+        fields.attachedBarStyle, fields.attachedBarLayout = {}, {}
+        for _, section in pairs(ST.OVERRIDE_SECTIONS) do
+            if section.modes and section.modes.bars then
+                for _, key in ipairs(section.keys) do fields.attachedBarStyle[key] = true end
+            end
+        end
+        for _, key in ipairs(ST.PANEL_TEMPLATE_STYLE_KEYS.bars) do fields.attachedBarStyle[key] = true end
+        for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do fields.attachedBarLayout[key] = true end
+        fields.barOnlyLayout = {}
+        for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do fields.barOnlyLayout[key] = true end
     end
     return fields
 end
@@ -126,8 +145,69 @@ function CooldownCompanion:GetPanelTemplateCreationMode(template)
         if template.displayMode == "icons" then return "auraIcons" end
         if template.displayMode == "bars" then return "auraBars" end
     end
+    if template and template.displayMode == "bars" then return "icons" end
     return template and template.displayMode
 end
+
+local function IsOrdinaryBarTemplate(template)
+    return template and template.displayMode == "bars"
+        and not ST.IsAuraPanelGroup(template) and not ST.IsTotemPanelGroup(template)
+end
+
+-- Read-only adapter: an old Bar template supplies the unified panel's bar
+-- settings. The stored snapshot keeps its original version and coverage.
+local function AdaptOrdinaryBarTemplate(self, template)
+    if not IsOrdinaryBarTemplate(template) then return template end
+    local adapted = ST._CopyPresetValue(template)
+    local complete = template.templateVersion == 3 or template.templateVersion == 4
+    local fields = complete and ST._CopyPresetValue(template.capturedFields)
+        or { style = {}, group = {}, loadConditions = {}, section = {} }
+    if not complete then
+        local scopes = GetPanelTemplateScopeList(self, "bars", template)
+        ST._ForEachPanelCopyStyleKey("bars", scopes, function(key) fields.style[key] = true end)
+        for _, key in ipairs(ST.PANEL_TEMPLATE_SHAPE_KEYS.bars) do fields.style[key] = true end
+        if template.templateVersion == 2 then
+            ST._CopyPanelVisibility(self, template, adapted, ST.PANEL_COPY_SCOPES.bars.visibility)
+            for _, key in ipairs(ST.PANEL_COPY_SCOPES.bars.visibility.groupKeys) do fields.group[key] = true end
+            for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do fields.loadConditions[option.key] = true end
+        end
+        if template.compactLayout ~= nil then
+            for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do fields.group[key] = true end
+        end
+    end
+    adapted.attachedBarStyle = {}
+    local sourceStyle, baseline = template.style or {}, self.db.profile.globalStyle or {}
+    -- These defaults changed with compact ordinary entries. An old complete
+    -- snapshot's captured nil meant the old renderer's default, never compact.
+    local legacyDefaults = { barHeight = 20, showBarIcon = true, showBarNameText = true }
+    for key in pairs(fields.style) do
+        local value = sourceStyle[key]
+        if value == nil and not complete then value = baseline[key] end
+        if value == nil then value = legacyDefaults[key] end
+        adapted.attachedBarStyle[key] = ST._CopyPresetValue(value)
+    end
+    if not complete and template.templateVersion == 2 then
+        adapted.attachedBarStyle.barOrientation = ST.GetPanelLayoutOrientation("bars", sourceStyle)
+        adapted.attachedBarStyle.growthOrigin = sourceStyle.growthOrigin or "TOPLEFT"
+        adapted.attachedBarStyle.buttonsPerRow = sourceStyle.buttonsPerRow or 12
+    end
+    if fields.style.durationFormat and self.GetDurationFormat then
+        adapted.attachedBarStyle.durationFormat = self.GetDurationFormat(sourceStyle)
+    end
+    adapted.barOnlyLayout, fields.barOnlyLayout = { mode = "grid" }, { mode = true }
+    for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do
+        if fields.group[key] then
+            adapted.barOnlyLayout[key] = ST._CopyPresetValue(template[key])
+            fields.barOnlyLayout[key], fields.group[key] = true, nil
+        end
+    end
+    fields.attachedBarStyle, fields.style = fields.style, {}
+    fields.attachedBarLayout, adapted.attachedBarLayout = {}, {}
+    adapted.style, adapted.displayMode, adapted.templateVersion = {}, "icons", 4
+    adapted.capturedFields = fields
+    return adapted
+end
+ST._AdaptOrdinaryBarTemplate = AdaptOrdinaryBarTemplate
 
 local function TemplateSubtypeMatches(template, group)
     -- Old templates have no reliable subtype evidence. Preserve their original
@@ -180,7 +260,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     local fields = GetPanelTemplateFields(group, mode)
 
     local template = {
-        templateVersion = 3,
+        templateVersion = 4,
         capturedFields = fields,
         auraPanel = ST.IsAuraPanelGroup(group),
         totemPanel = ST.IsTotemPanelGroup(group),
@@ -190,6 +270,24 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     }
 
     for key in pairs(fields.style) do style[key] = ST._CopyPresetValue(sourceStyle[key]) end
+    if fields.attachedBarStyle then
+        template.attachedBarStyle, template.attachedBarLayout = {}, {}
+        local attachedStyle = ST.GetAttachedBarStyle(group)
+        for key in pairs(fields.attachedBarStyle) do
+            template.attachedBarStyle[key] = ST._CopyPresetValue(attachedStyle[key])
+        end
+        if fields.attachedBarStyle.durationFormat and self.GetDurationFormat then
+            template.attachedBarStyle.durationFormat = self.GetDurationFormat(attachedStyle)
+        end
+        for key in pairs(fields.attachedBarLayout) do
+            template.attachedBarLayout[key] = ST._CopyPresetValue((group.attachedBarLayout or {})[key])
+        end
+        template.barOnlyLayout = {}
+        for key in pairs(fields.barOnlyLayout) do
+            template.barOnlyLayout[key] = ST._CopyPresetValue((group.barOnlyLayout or {})[key])
+        end
+        template.barOnlyLayout.mode = ST.GetBarOnlyLayoutMode(group)
+    end
     -- Reuse the hide-rule reader's missing-table versus empty-table semantics.
     ST._CopyPanelVisibility(self, group, template, ST.PANEL_COPY_SCOPES[mode].visibility)
     for key in pairs(fields.group) do template[key] = ST._CopyPresetValue(group[key]) end
@@ -282,7 +380,7 @@ function CooldownCompanion:GetPanelTemplates(mode)
         -- entry point tonumber()s its id), so it is not listed.
         if type(id) == "number"
             and type(template) == "table"
-            and (mode == nil or template.displayMode == mode) then
+            and (mode == nil or template.displayMode == mode or (mode == "icons" and IsOrdinaryBarTemplate(template))) then
             list[#list + 1] = { id = id, template = template }
         end
     end
@@ -337,7 +435,9 @@ function CooldownCompanion:CanUpdatePanelTemplate(templateId, groupId)
     if not mode then
         return false, "missing_group"
     end
-    if mode ~= existing.displayMode or not TemplateSubtypeMatches(existing, group) then
+    local existingMode = IsOrdinaryBarTemplate(existing) and ST.PanelSupportsAttachedBars(group) and "icons"
+        or existing.displayMode
+    if mode ~= existingMode or not TemplateSubtypeMatches(existing, group) then
         return false, "mode_mismatch"
     end
     return true
@@ -387,7 +487,7 @@ end
 -- Match raw membership too: applying can recreate a missing section table.
 local function GetApplicableTemplateSections(template, group)
     local sections = template.sections
-    local capturesAuraOnly = template.templateVersion ~= 3
+    local capturesAuraOnly = (template.templateVersion ~= 3 and template.templateVersion ~= 4)
         or template.capturedFields.section.auraOnly == true
     if not capturesAuraOnly or type(sections) ~= "table" or not ST.PanelSupportsSections(group) then
         return sections
@@ -415,7 +515,9 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
         return false, "missing_group"
     end
     local mode = self:GetPanelCopyMode(group)
-    if not mode or mode ~= template.displayMode or not TemplateSubtypeMatches(template, group) then
+    local templateMode = IsOrdinaryBarTemplate(template) and ST.PanelSupportsAttachedBars(group) and "icons"
+        or template.displayMode
+    if not mode or mode ~= templateMode or not TemplateSubtypeMatches(template, group) then
         return false, "mode_mismatch"
     end
     if self.ResolveContainerClassScope then
@@ -429,7 +531,7 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
     -- Only sections before writing settings: mixed buff/debuff units still
     -- cannot share one aura surface. The setter remains the mutation owner.
     local sections = GetApplicableTemplateSections(template, group)
-    local capturesAuraOnly = template.templateVersion ~= 3
+    local capturesAuraOnly = (template.templateVersion ~= 3 and template.templateVersion ~= 4)
         or template.capturedFields.section.auraOnly == true
     if capturesAuraOnly and type(sections) == "table" and ST.PanelSupportsSections(group) then
         local proposed = {}
@@ -459,9 +561,12 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
         return false, reason, details
     end
     local template = self:GetPanelTemplate(templateId)
+    if ST.PanelSupportsAttachedBars(GetProfileGroup(self, groupId)) then
+        template = AdaptOrdinaryBarTemplate(self, template)
+    end
     local mode = template.displayMode
     local position = opts and opts.position == true
-    local completeSnapshot = template.templateVersion == 3
+    local completeSnapshot = template.templateVersion == 3 or template.templateVersion == 4
     local currentSnapshot = completeSnapshot or template.templateVersion == 2
     local scopes = completeSnapshot and {} or GetPanelTemplateScopeList(self, mode, template)
     if currentSnapshot and position then
@@ -480,13 +585,14 @@ function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
         fields = GetPanelTemplateFields(template, mode)
         for scope, keys in pairs(fields) do
             for key in pairs(keys) do
-                if template.capturedFields[scope][key] ~= true then keys[key] = nil end
+                if not template.capturedFields[scope] or template.capturedFields[scope][key] ~= true then keys[key] = nil end
             end
         end
         shapeKeys = nil
     end
     return ST._ApplyPanelSettingsSource(self, groupId, template, scopes, {
         templateFields = fields,
+        skipAttachedBars = template.templateVersion ~= 4,
         preserveCompactLimit = true,
         shapeKeys = shapeKeys,
         copyCompact = not currentSnapshot,
@@ -509,7 +615,8 @@ function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
 
     local group = self.db.profile.groups[newGroupId]
     group.name = template.name
-    if (template.templateVersion == 2 or template.templateVersion == 3) and template.positionMode == "cursor" then
+    if (template.templateVersion == 2 or template.templateVersion == 3 or template.templateVersion == 4)
+        and template.positionMode == "cursor" then
         -- This is a fresh, empty panel with no anchor dependents. Set its
         -- saved target before apply; the common applier owns combat deferral.
         group.anchor = self:GetDefaultCursorPanelAnchor()

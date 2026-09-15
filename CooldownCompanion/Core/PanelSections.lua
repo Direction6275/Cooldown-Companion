@@ -137,6 +137,7 @@ end
 --- is a base member, exactly like an entry that never joined one.
 function ST.GetPanelSectionForEntry(group, buttonData)
     if type(buttonData) ~= "table" then return nil end
+    if ST.IsPanelBarEntry(group, buttonData) then return nil end
     local anchor = buttonData.section
     if not (anchor and ANCHOR_SET[anchor]) then return nil end
     local sections = group and group.sections
@@ -184,7 +185,7 @@ function ST.PartitionPanelSectionMembers(group, buttons, lists)
             local list = members[anchor]
             if not list then list = {}; members[anchor] = list end
             list[#list + 1] = button
-        else
+        elseif not ST.IsPanelBarEntry(group, button.buttonData) then
             base[#base + 1] = button
         end
     end
@@ -1146,7 +1147,7 @@ function ST.UpdateAuraSectionPlaceholders(addon, groupId, frame, group)
                         position and position.x or info.originX,
                         position and position.y or info.originY)
 
-                    local effectiveStyle = addon:GetEffectiveStyle(style, buttonData) or style
+                    local effectiveStyle = addon:GetEffectiveStyle(style, buttonData, group) or style
                     local borderSize = effectiveStyle.borderSize or ST.DEFAULT_BORDER_SIZE
                     local borderRenderMode = ST.GetBorderRenderMode(effectiveStyle)
                     local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(

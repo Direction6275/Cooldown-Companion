@@ -3055,9 +3055,14 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
         {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
         " ",
         {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
+        {"Show Only While Active also hides the reminder. Choose Normal or Dim While Inactive to show it when the aura is missing.", 1, 1, 1, true},
         " ",
         {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
     }, opts.infoButtons))
+    if enabled and lens and lens.mode == "entry" and lens.buttonData
+        and lens.buttonData.hideWhileAuraNotActive == true then
+        AddLabelRow(container, { label = "Inactive Reminder", controlText = "Hidden by Show Only While Active" })
+    end
     local function BuildAdvanced(panel)
         local style = sec.tbl
         local hasHarmful, hasHelpful = false, false

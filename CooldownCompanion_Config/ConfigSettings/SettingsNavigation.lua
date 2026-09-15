@@ -209,6 +209,7 @@ end
 local function BeginLensAnchorBuild(scroll)
     CS.lensAnchorRegistry = {
         scroll = scroll,
+        presentation = scroll._cdcStylePresentation,
         panelId = CS.selectedGroup,
         tab = CS.selectedTab,
         headings = {},
@@ -285,6 +286,7 @@ local function CaptureLensAnchor()
     end
 
     CS.pendingLensAnchor = {
+        presentation = registry.presentation,
         panelId = registry.panelId,
         tab = registry.tab,
         semanticKey = orderKeys[anchorIndex],
@@ -337,6 +339,7 @@ local function RestoreLensAnchor()
         and scroll and scroll == CS.col4Scroll and scroll.scrollframe and scroll.content
         and registry.panelId == pending.panelId
         and registry.tab == pending.tab
+        and registry.presentation == pending.presentation
         and CS.selectedGroup == pending.panelId
         and CS.selectedTab == pending.tab) then
         return

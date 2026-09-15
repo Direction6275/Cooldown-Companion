@@ -1054,10 +1054,10 @@ local function MaybeSelectInitialConfigContainer()
     if CooldownCompanion._unsupportedLegacyProfile
         or CS.selectedContainer or CS.selectedGroup or CS.selectedButton
         or CS.selectedRotationAssistantEntry or CS.barsEntrySelected
-        or CS.selectedResourcePowerType or CS.selectedCustomBarId
+        or CS.selectedResourcePowerType
         or CS.castFramesSelectedItem or CS.unifiedBarKind
         or next(CS.selectedGroups) or next(CS.selectedPanels)
-        or next(CS.selectedButtons) or next(CS.selectedCustomBars)
+        or next(CS.selectedButtons)
         or CS.importMode or CS.exportMode or CS.talentPickerMode
         or CS.copyPanelSettings or CS.otherClassLibraryActive
         or CS.inlineTextureBrowserOpen or CS.addingToPanelId or CS.dragState
@@ -1878,7 +1878,7 @@ local function RenderExportModeResources(selection, isFirstSection)
         entry:SetColor(0.4, 0.7, 1.0)
     end
     SetNavigatorRowTooltip(entry, "Resources",
-        "Your whole Resources setup: resources, styling, layout order, and Custom Bars.")
+        "Your whole Resources setup: resources, styling, and layout order.")
     entry:SetCallback("OnClick", function(_, _, mouseButton)
         if mouseButton ~= "LeftButton" then return end
         selection.resources = not selection.resources
@@ -1886,103 +1886,6 @@ local function RenderExportModeResources(selection, isFirstSection)
     end)
 end
 
-local function RenderExportModeCustomBars(selection, mode, isFirstSection)
-    local bars = ST._GetExportableCustomBars and ST._GetExportableCustomBars() or {}
-    if #bars == 0 then
-        return
-    end
-
-    local includedByResources = selection.resources == true
-    local checkedCount = 0
-    for _, info in ipairs(bars) do
-        if selection.customBars[info.customBarId] then
-            checkedCount = checkedCount + 1
-        end
-    end
-
-    AddColumn1SectionHeading("Custom Bars", nil, isFirstSection)
-    local shell = AddExportModeRowShell()
-    if includedByResources then
-        shell.frame:SetAlpha(0.58)
-    end
-
-    local countText
-    if includedByResources then
-        countText = "with Resources"
-    elseif checkedCount > 0 and checkedCount < #bars then
-        countText = checkedCount .. " of " .. #bars
-    else
-        countText = tostring(#bars)
-    end
-    local entry = AcquireExportModeRow("Custom Bars  |cff777777(" .. countText .. ")|r")
-    ApplyConfigRowIcon(entry, bars[1].icon, {
-        indent = 2,
-        iconSize = TREE.GROUP_ICON_SIZE,
-        iconGap = TREE.ICON_GAP,
-        rowHeight = TREE.GROUP_ROW_HEIGHT,
-        compactRowHeight = 30,
-        texCoord = { 0.08, 0.92, 0.08, 0.92 },
-        rightPad = 30,
-    })
-    shell:AddChild(entry)
-    if includedByResources or checkedCount > 0 then
-        entry:SetColor(0.4, 0.7, 1.0)
-    end
-
-    ConfigureTreeExpandButton(entry, mode.expanded.customBars == true, false, function()
-        if mode.expanded.customBars then
-            mode.expanded.customBars = nil
-        else
-            mode.expanded.customBars = true
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    if includedByResources then
-        SetNavigatorRowTooltip(entry, "Custom Bars", "Included in the Resources setup.")
-    else
-        entry:SetCallback("OnClick", function(_, _, mouseButton)
-            if mouseButton ~= "LeftButton" then return end
-            local allChecked = checkedCount == #bars
-            for _, info in ipairs(bars) do
-                selection.customBars[info.customBarId] = (not allChecked) and true or nil
-            end
-            CooldownCompanion:RefreshConfigPanel()
-        end)
-    end
-
-    if mode.expanded.customBars then
-        for _, info in ipairs(bars) do
-            local barEntry = AcquireExportModeRow(info.label)
-            ApplyConfigRowIcon(barEntry, info.icon, {
-                indent = TREE.PANEL_INDENT,
-                iconSize = TREE.PANEL_ICON_SIZE,
-                iconGap = TREE.ICON_GAP,
-                rowHeight = TREE.PANEL_ROW_HEIGHT,
-                compactRowHeight = 24,
-                texCoord = { 0.08, 0.92, 0.08, 0.92 },
-            })
-            if includedByResources or selection.customBars[info.customBarId] then
-                barEntry:SetColor(0.4, 0.7, 1.0)
-            end
-            if includedByResources then
-                SetNavigatorRowTooltip(barEntry, info.label, "Included in the Resources setup.")
-            else
-                local customBarId = info.customBarId
-                barEntry:SetCallback("OnClick", function(_, _, mouseButton)
-                    if mouseButton ~= "LeftButton" then return end
-                    if selection.customBars[customBarId] then
-                        selection.customBars[customBarId] = nil
-                    else
-                        selection.customBars[customBarId] = true
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end)
-            end
-            shell:AddChild(barEntry)
-        end
-    end
-end
 
 local function RenderExportModeNavigator(db)
     if CS.col1DestinationBar then
@@ -1994,7 +1897,6 @@ local function RenderExportModeNavigator(db)
 
     local groupCount = RenderExportModeGroups(db, selection, mode)
     RenderExportModeResources(selection, groupCount == 0)
-    RenderExportModeCustomBars(selection, mode, false)
 
     AddColumn1BottomSpacer()
     PopulateExportModeButtonBar()

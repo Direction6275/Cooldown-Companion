@@ -54,7 +54,7 @@ end
 
 local STEP_DATA = {
     welcome = {
-        title = "First Icon Panel",
+        title = "First Panel",
         text = "This tutorial will walk you through adding a single spell to track and explain some basics about the add-on along the way.",
         placement = "center",
     },
@@ -77,8 +77,8 @@ local STEP_DATA = {
         placement = "right",
     },
     create_panel = {
-        title = "Create an Icon Panel",
-        text = "Click Icon Panel to create your first panel.",
+        title = "Create a Panel",
+        text = "Click Panel to create your first panel.",
         anchor = "empty_state_icon_button",
         placement = "above",
     },
@@ -102,7 +102,7 @@ local STEP_DATA = {
     },
     view_modes_intro = {
         title = "Resources and Cast Bar",
-        text = "Edit attached resources and the cast bar in their panel's workspace. Select Resources for shared settings, or click a bar to edit it.\n\nUse Icon / Custom Bar beside Add to choose what to create. Independent displays have their own items in the panel list.",
+        text = "Edit attached resources and the cast bar in their panel's workspace. Select Resources for shared settings, or click a bar to edit it.\n\nUse Add Icon or Add Bar in a panel to create entries. Resources and the cast bar retain their own settings.",
         anchor = "panels_column_area",
         placement = "above",
     },
@@ -241,7 +241,7 @@ local function EnsureTutorialFrame()
     local titleText = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     titleText:SetPoint("TOP", frame, "TOP", 0, -11)
     titleText:SetTextColor(1, 0.82, 0)
-    titleText:SetText("First Icon Panel")
+    titleText:SetText("First Panel")
     frame.titleText = titleText
 
     local stepLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")

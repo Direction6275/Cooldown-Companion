@@ -1518,9 +1518,12 @@ do
     local function CursorPadModel(host)
         local preview = CursorMirror(host)
         if not (preview and preview.panelId == CS.selectedGroup
-            and preview.root:IsVisible() and preview.content:IsShown()) then
+            and preview.root:IsVisible() and (preview.content:IsShown()
+                or (preview.dropGhostLayoutActive and preview.dropGhostLayoutActive.content))) then
             return nil
         end
+        -- A layout-transition ghost hides the old visuals while retaining
+        -- their stable cursor targets until release or cancellation.
         local model = preview.cursorPadModel
         if not model then
             local inputs = preview.cursorPadInputs

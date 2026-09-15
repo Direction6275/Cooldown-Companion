@@ -545,7 +545,7 @@ local function UpdateBarStackBlocks(button, style)
     end
 end
 
-function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
+function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, attached)
     local barLength = style.barLength or 180
     local barHeight = style.barHeight or 20
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
@@ -560,7 +560,8 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style)
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
     -- Main bar frame
-    local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent)
+    local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent,
+        attached and "DisableUntrustedLayoutScriptsTemplate" or nil)
     if isVertical then
         button:SetSize(barHeight, barLength)
     else

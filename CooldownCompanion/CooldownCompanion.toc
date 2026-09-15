@@ -40,6 +40,7 @@ Core\ConfigLoader.lua
 Core\AnchorPolicy.lua
 Core\EntryRuntime.lua
 Core\Defaults.lua
+Core\EntryPresentation.lua
 Core\PanelSections.lua
 Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
@@ -67,6 +68,7 @@ Core\AuraDisplay.lua
 Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua
+Core\UnifiedPanelMigration.lua
 Core\Migrations.lua
 Core\AlphaFade.lua
 Core\Keybinds.lua
@@ -98,6 +100,7 @@ Core\GroupFrameMovers.lua
 Core\GroupFrameCursorAnchor.lua
 Core\GroupFrameAnchoring.lua
 Core\GroupFrameLayout.lua
+Core\AttachedBarLayout.lua
 Core\ContainerFrame.lua
 Core\GroupFrame.lua
 OtherBars\ResourceBarConstants.lua
@@ -106,7 +109,6 @@ OtherBars\ResourceBarSoundAlerts.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBarHealth.lua
-OtherBars\ResourceBarCustomBars.lua
 OtherBars\ResourceBarAuraHost.lua
 OtherBars\ResourceBarPreview.lua
 OtherBars\ResourceBarLifecycle.lua

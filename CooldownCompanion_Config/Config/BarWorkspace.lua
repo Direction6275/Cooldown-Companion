@@ -121,19 +121,14 @@ ST._NormalizeBarWorkspace = function()
     local _, panelId = GetPlacement(kind)
     if (CS.barsEntrySelected and panelId) or (not CS.barsEntrySelected and panelId ~= CS.selectedGroup) then
         local resource, spec = CS.selectedResourcePowerType, CS.resourceSettingsSpecID
-        local custom, scope = CS.selectedCustomBarId, CS.unifiedRowScope
+        local scope = CS.unifiedRowScope
         local selectedKind = CS.unifiedBarKind
-        local multi = {}
-        for id in pairs(CS.selectedCustomBars) do multi[id] = true end
         OpenWorkspace(kind, { preserveSpellbook = true })
         if resource then
             ST._SelectConfigResource(resource, { specID = spec })
-        elseif custom then
-            ST._SelectConfigCustomBar(custom)
-            for id in pairs(multi) do CS.selectedCustomBars[id] = true end
         end
         if not CS.barsEntrySelected and selectedKind then CS.unifiedBarKind = selectedKind end
-        if resource or custom then CS.unifiedRowScope = scope end
+        if resource then CS.unifiedRowScope = scope end
     end
 end
 

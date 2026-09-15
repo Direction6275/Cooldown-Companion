@@ -45,7 +45,7 @@ end
 
 --- Compute the effective style for a button, merging per-button overrides
 --- with group defaults via metatable __index fallback.
-function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
+function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData, group)
     PruneDisallowedOverrideSections(buttonData)
 
     if buttonData and buttonData.styleOverrides
@@ -54,6 +54,15 @@ function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData)
         if not cache then
             cache = {}
             effectiveStyleCache[buttonData] = cache
+        end
+        if group and buttonData.overrideSections.barShape and not ST.IsPanelBarEntry(group, buttonData) then
+            local filtered = cache.inactiveBarShape or {}
+            cache.inactiveBarShape = filtered
+            wipe(filtered)
+            for key, value in pairs(buttonData.styleOverrides) do filtered[key] = value end
+            for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do filtered[key] = nil end
+            setmetatable(filtered, { __index = groupStyle })
+            return filtered
         end
         if cache.groupStyle ~= groupStyle or cache.overrides ~= buttonData.styleOverrides then
             setmetatable(buttonData.styleOverrides, { __index = groupStyle })

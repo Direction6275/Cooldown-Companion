@@ -146,7 +146,7 @@ end
 local function CanCopySectionToEntry(targetGroup, targetButtonData, sectionId)
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     if not sectionDef then return false end
-    if sectionDef.modes[targetGroup.displayMode or "icons"] ~= true then return false end
+    if sectionDef.modes[ST.GetEntryPresentation(targetGroup, targetButtonData)] ~= true then return false end
     -- == true drops the reason the helper returns alongside its verdict.
     return CanUseConfigOverrideSection(targetButtonData, sectionId, targetGroup) == true
 end
@@ -204,7 +204,7 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         return true
     end
 
-    local sourceStyle = sourceGroup.style or {}
+    local sourceStyle = ST.GetEntryBaseStyle(sourceGroup, sourceData)
     local applied, skipped, formatCopied = 0, 0, false
     if state.scope == "section" then
         if CooldownCompanion:CopySectionOverride(sourceData, sourceStyle, buttonData, state.sectionId) then
@@ -883,7 +883,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     if status.override then
         local group = panelId and CooldownCompanion.db
             and CooldownCompanion.db.profile.groups[panelId] or nil
-        local displayMode = group and (group.displayMode or "icons") or "icons"
+        local displayMode = ST.GetEntryPresentation(group, buttonData)
         -- Same order and activity gates the styling tabs use for these
         -- sections: ST.OVERRIDE_SECTION_ORDER, then the per-entry gate.
         local canUse = ST._CanButtonUseConfigOverrideSection
@@ -1225,10 +1225,13 @@ end
 -- and DisableReadOnlySlotInteraction resets it, so the dim comes last.
 function DropGhost.StyleCell(cell, stub, group, mode, panelId)
     if mode == "barSlots" then
-        local effectiveStyle = group.style or {}
-        if CooldownCompanion.GetEffectiveStyle then
-            effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, stub)
-                or effectiveStyle
+        local effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, stub)
+        if stub._previewAttachedVertical ~= nil then
+            local copy = CopyTable(ST.GetEntryBaseStyle(group, stub))
+            for key, value in pairs(effectiveStyle) do copy[key] = value end
+            copy.barFillVertical = stub._previewAttachedVertical
+            copy.barLength = copy.barFillVertical and cell:GetHeight() or cell:GetWidth()
+            effectiveStyle = copy
         end
         ResetBarSlotConditionalVisuals(cell)
         StyleBarEntry(cell, stub, group, effectiveStyle)
@@ -1270,6 +1273,15 @@ end
 --- ({ create = anchor }, { section = anchor }, or nil for a plain add).
 function DropGhost.ResolveRect(preview, group, mode, stub, target)
     local layoutDrag = preview.layoutDrag
+    if ST.IsAttachedBarEntry(group, stub) and preview.attachmentBody then
+        local body = preview.attachmentBody
+        local positions = ST.GetAttachedBarPreviewLayout(group, body.width, body.height, body.base, nil, body.modules)
+        local position = positions[#group.buttons]
+        if position then
+            stub._previewAttachedVertical = position.vertical
+            return "TOPLEFT", position.x + body.padX, position.y - body.padY, position.width, position.height
+        end
+    end
     local model = preview.cursorPadModel
     if target and model then
         local cell = target.create and model.free[target.create]
@@ -1386,10 +1398,48 @@ function DropGhost.RestoreEmptyMessage(preview)
     if hid.note and preview.messageNote then preview.messageNote:Show() end
 end
 
---- Put the ghost away without touching the message or the content frame:
---- the rebuild prologue and the release own those, and both call here.
+-- A first Icon/Bar can replace the layout body, so the old grid cannot place
+-- its ghost. Borrow the normal detached renderer for that whole composition.
+-- The original mirror and its drop targets stay intact beneath this inert one.
+function DropGhost.ShowLayoutTransition(preview, group)
+    local host = preview.dropGhostLayoutHost
+    if not host then
+        host = CreateFrame("Frame", nil, preview.root)
+        host:SetAllPoints(preview.root)
+        preview.dropGhostLayoutHost = host
+    end
+    ST._BuildButtonPanelPreview(host, preview.panelId, {
+        readOnly = true, groupData = group, dropGhostIndex = #group.buttons,
+        applySessionFilter = true, fitHost = preview.root:GetParent(),
+        previewModules = preview.attachmentBody and preview.attachmentBody.modules,
+    })
+    local hidden = { content = preview.content:IsShown() }
+    for _, key in ipairs({ "messageTitle", "messageLabel", "messageNote" }) do
+        hidden[key] = preview[key] and preview[key]:IsShown() or false
+    end
+    preview.dropGhostLayoutActive = hidden
+    HidePreviewMessage(preview)
+    preview.content:Hide()
+    host:Show()
+end
+
+function DropGhost.RestoreLayoutTransition(preview)
+    local hidden = preview.dropGhostLayoutActive
+    if not hidden then return end
+    preview.dropGhostLayoutActive = nil
+    ST._ReleaseButtonPanelPreview(preview.dropGhostLayoutHost)
+    preview.dropGhostLayoutHost:Hide()
+    if hidden.content then preview.content:Show() end
+    for _, key in ipairs({ "messageTitle", "messageLabel", "messageNote" }) do
+        if hidden[key] then preview[key]:Show() end
+    end
+end
+
+--- Restore a borrowed composition and put every ghost away. The rebuild
+--- prologue and release call here before replacing or hiding the original.
 --- Every other hider goes through DropGhost.Hide.
 function DropGhost.Reset(preview)
+    DropGhost.RestoreLayoutTransition(preview)
     preview.dropGhostKey = nil
     preview.dropGhostOwner = nil
     preview.dropGhostHidMessage = nil
@@ -1421,6 +1471,10 @@ end
 function DropGhost.Show(host, spec, target, owner)
     local preview, mode, group = DropGhost.Preview(host)
     if not preview then return false end
+    local saved = group._unifiedPanelOwner or group
+    if ST.PanelSupportsAttachedBars(saved) then
+        mode = ST.GetEntryPresentation(saved, spec) == "bars" and "barSlots" or "iconSlots"
+    end
     local targetKey = target and (target.create and ("create:" .. tostring(target.create))
         or target.section and ("lane:" .. tostring(target.section))) or "base"
     -- The name is in the key for the rows that are nothing but a name: two
@@ -1431,8 +1485,25 @@ function DropGhost.Show(host, spec, target, owner)
         preview.dropGhostOwner = owner
         return true
     end
-    local cell = DropGhost.EnsureCell(preview, mode)
+    DropGhost.RestoreLayoutTransition(preview)
     local stub = DropGhost.FillStub(preview, spec)
+    if ST.PanelSupportsAttachedBars(saved) then
+        group = CopyTable(saved)
+        group.buttons = group.buttons or {}
+        group.buttons[#group.buttons + 1] = stub
+        if target then
+            ST.SetPanelSectionForEntry(group, stub, target.create or target.section)
+        end
+        group = ST.GetPanelLayoutGroup(group)
+    end
+    if preview.layoutDrag and ST.GetPanelLayoutKind(saved) ~= ST.GetPanelLayoutKind(group) then
+        for _, cell in pairs(preview.dropGhostCells or {}) do cell:Hide() end
+        SectionDrag.HideLandingTrail(preview)
+        DropGhost.ShowLayoutTransition(preview, group)
+        preview.dropGhostKey, preview.dropGhostOwner = key, owner
+        return true
+    end
+    local cell = DropGhost.EnsureCell(preview, mode)
     if preview.layoutDrag then
         local anchor, x, y, w, h = DropGhost.ResolveRect(preview, group, mode, stub, target)
         -- Sized before the styler: the mirrored icon crops its texture from

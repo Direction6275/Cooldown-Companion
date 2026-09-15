@@ -14,7 +14,6 @@ local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
 local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
-local ClearConfigCustomBarSelection = ST._ClearConfigCustomBarSelection
 local EncodeSharedPayload = ST._EncodeSharedPayload
 local StripCharacterEligibilityFromPayload = ST._StripCharacterEligibilityFromPayload
 local StripLocalPanelMetadataFromEntity = ST._StripLocalPanelMetadataFromEntity
@@ -934,44 +933,6 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DELETE_SELECTED_CUSTOM_BARS"] = {
-    text = "Delete %d selected Custom Bars?",
-    button1 = "Delete",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        local rb = ST._RB
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        if data and type(data.ids) == "table" and rb and rb.DeleteCustomBar then
-            for _, customBarId in ipairs(data.ids) do
-                rb.DeleteCustomBar(settings, customBarId)
-            end
-            ClearConfigCustomBarSelection({ clearExpanded = true })
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:UpdateAnchorStacking()
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_DELETE_CUSTOM_BAR"] = {
-    text = "Are you sure you want to delete Custom Bar '%s'?",
-    button1 = "Delete",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.customBarId and ST._DeleteConfigCustomBar then
-            ST._DeleteConfigCustomBar(data.customBarId)
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     text = "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
     button1 = "Continue",
@@ -1561,6 +1522,7 @@ local function ApplyGroupImportData(data, options)
     end
     local batchToken = activeGroupImportPayloads[data]
     activeGroupImportPayloads[data] = nil
+    if ST._FilterConvertedPanelImport then data = ST._FilterConvertedPanelImport(data) end
     if RejectUnsupportedImportPayload(data, "group import") then
         return false
     end
@@ -1787,49 +1749,9 @@ local function ApplyCustomBarsImportData(data, options)
     if RejectUnsupportedImportPayload(data, "custom bars import") then
         return false
     end
-    local targetClassKey = options and options.targetClassKey or nil
-    if BlockCustomBarsImportForResourceBarConflict(targetClassKey) then
-        return false
-    end
-    local importState = options and options.importState or NewGroupImportState()
-    StripImportCharacterEligibility(data, importState)
-
-    local rb = ST._RB
-    local settings
-    if targetClassKey and CooldownCompanion.EnsureResourceBarSettingsForClass then
-        settings = CooldownCompanion:EnsureResourceBarSettingsForClass(targetClassKey)
-    else
-        settings = CooldownCompanion:GetResourceBarSettings()
-    end
-    local ok, message
-    if rb and rb.ImportCustomBarsPayload then
-        ok, message = rb.ImportCustomBarsPayload(settings, data, targetClassKey and {
-            targetClassKey = targetClassKey,
-        } or nil)
-    end
-    if not ok then
-        CooldownCompanion:Print(message or "Import failed.")
-        return false
-    end
-
-    if not (options and options.silentSuccess) then
-        CooldownCompanion:Print(message)
-    end
-    PrintImportSanitizerNotes(importState)
-    local migrationOk = true
-    if not (options and options.deferMigrations) then
-        migrationOk = RunPostImportMigrations()
-    end
-
-    -- Apply and refresh even when the migration failed: the bars are already
-    -- written into the live settings table with no rollback, and the success
-    -- message above has already gone out. Returning before this left the
-    -- caller parked in Import mode with bars in the profile and none on
-    -- screen until a reload.
-    CooldownCompanion:ApplyResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
-    CooldownCompanion:RefreshConfigPanel()
-    return migrationOk
+    local converted, report = ST._ConvertUnifiedPanelImport(data)
+    if not converted then CooldownCompanion:Print(report); return false end
+    return ApplyGroupImportData(ST._FilterConvertedPanelImport(converted), options)
 end
 
 local function GetSetupSectionClassKey(section)
@@ -1851,7 +1773,7 @@ end
 -- a whole-bucket replace for its class, then any Custom Bars section
 -- additively. Order matters: groups first so the Resources anchor can remap
 -- onto the groups imported from the same string.
-local function ApplySetupImportData(data)
+local function ApplySetupImportData(data, existingPanelIds)
     if type(data) ~= "table" or data.type ~= "setup" then
         CooldownCompanion:Print("Import failed: this is not a setup export.")
         return false
@@ -1859,6 +1781,11 @@ local function ApplySetupImportData(data)
     if RejectUnsupportedImportPayload(data, "setup import") then
         return false
     end
+
+    local converted, conversionError = ST._ConvertUnifiedPanelImport(data)
+    if not converted then CooldownCompanion:Print(conversionError); return false end
+    local replayPanelIds
+    data, replayPanelIds = ST._FilterConvertedPanelImport(converted)
 
     local hasContainers = type(data.containers) == "table" and #data.containers > 0
     local customBarsSection = type(data.customBars) == "table"
@@ -1920,18 +1847,25 @@ local function ApplySetupImportData(data)
     end
 
     local importState = activeGroupImportBatches[batchToken]
+    local attachmentPanelIds = {}
+    for sourceId, targetId in pairs(existingPanelIds or {}) do
+        if CooldownCompanion.db.profile.groups[targetId] then attachmentPanelIds[sourceId] = targetId end
+    end
+    for sourceId, targetId in pairs(replayPanelIds or {}) do attachmentPanelIds[sourceId] = targetId end
+    -- A partially deduplicated panel is still newly imported. Its new ID
+    -- takes precedence over any earlier review-time match.
+    for sourceId, targetId in pairs(importState and importState.groupIdMap or {}) do
+        attachmentPanelIds[sourceId] = targetId
+    end
 
     if resourcesSection then
         local settings = CopyTable(resourcesSection.settings)
-        CooldownCompanion:RemapModuleAttachmentPanels(settings, "resources", importState and importState.groupIdMap)
+        CooldownCompanion:RemapModuleAttachmentPanels(settings, "resources", attachmentPanelIds)
         local anchorId = tonumber(settings.anchorGroupId)
         if anchorId then
             -- The exporter's group ids mean nothing here; keep the anchor only
             -- when it remaps onto a group imported from this same string.
-            settings.anchorGroupId = importState
-                and importState.groupIdMap
-                and importState.groupIdMap[anchorId]
-                or nil
+            settings.anchorGroupId = attachmentPanelIds[anchorId]
         end
         local replaced = CooldownCompanion.ReplaceResourceBarClassSettings
             and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
@@ -2059,7 +1993,7 @@ local function AcceptResourceSpecCopy(self, data)
 end
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings and Custom Bars are not copied.",
+    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = AcceptResourceSpecCopy,

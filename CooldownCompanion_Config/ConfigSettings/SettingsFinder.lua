@@ -34,7 +34,6 @@ local VALID_SCOPES = {
     entry = true,
     resources = true,
     resource = true,
-    customBar = true,
     castBar = true,
     playerFrame = true,
     targetFrame = true,
@@ -278,23 +277,13 @@ local function DefineSettingRoute(defaults)
     return route
 end
 
-local function GetSelectedCustomBar(settings)
-    if settings and ST._RB and ST._RB.FindCustomBarById then
-        return ST._RB.FindCustomBarById(settings, CS.selectedCustomBarId)
-    end
-    if ST._FindSelectedConfigCustomBar then
-        return ST._FindSelectedConfigCustomBar()
-    end
-    return nil
-end
-
 -- Captured once when the editing action row is rebuilt. Typing compares this
 -- lightweight state instead of reconstructing a full context (which can
 -- resolve class-scoped Resources settings).
 local CONTEXT_STATE_FIELDS = {
     "selectedContainer", "selectedGroup", "selectedButton",
     "selectedRotationAssistantEntry", "selectedResourcePowerType",
-    "resourceSettingsSpecID", "selectedCustomBarId", "castFramesSelectedItem",
+    "resourceSettingsSpecID", "castFramesSelectedItem",
     "barsEntrySelected", "barWorkspaceKind", "unifiedBarKind",
 }
 
@@ -315,15 +304,13 @@ local function BuildContextIdentity(context)
         tostring(context.containerId or ""),
         tostring(context.container or ""),
         tostring(context.groupId or ""),
-        tostring(context.group or ""),
+        tostring(context.group and (context.group._attachedBarOwner or context.group) or ""),
         tostring(context.displayMode or ""),
         tostring(context.buttonIndex or ""),
         tostring(context.buttonData or ""),
         tostring(context.rotationAssistant == true),
         tostring(context.resourcePowerType or ""),
         tostring(context.resourceSpecID or ""),
-        tostring(context.customBarId or ""),
-        tostring(context.customBar or ""),
         tostring(context.castFramesItem or ""),
     }
     return table.concat(parts, "|")
@@ -341,7 +328,6 @@ local function GetSettingsFinderContext()
         buttonIndex = CS.selectedButton,
         resourcePowerType = CS.selectedResourcePowerType,
         resourceSpecID = CS.resourceSettingsSpecID,
-        customBarId = CS.selectedCustomBarId,
         castFramesItem = CS.castFramesSelectedItem,
         rowScope = CS.unifiedRowScope,
     }
@@ -352,6 +338,10 @@ local function GetSettingsFinderContext()
     context.buttonData = context.group and context.buttonIndex and context.group.buttons
         and context.group.buttons[context.buttonIndex] or nil
     context.button = context.buttonData
+    if context.group and ST.PanelSupportsAttachedBars(context.group) then
+        context.group = ST._ResolveStylingGroup(context.group)
+        context.displayMode = context.group.displayMode or "icons"
+    end
     if CS.barsEntrySelected then
         -- The selected detail object remains the Finder scope while Primary
         -- and Detail merely choose which row of tabs is visible. A result is
@@ -362,8 +352,6 @@ local function GetSettingsFinderContext()
             context.scope = "playerFrame"
         elseif context.castFramesItem == "target" then
             context.scope = "targetFrame"
-        elseif context.customBarId then
-            context.scope = "customBar"
         elseif context.resourcePowerType ~= nil then
             context.scope = "resource"
         else
@@ -381,8 +369,6 @@ local function GetSettingsFinderContext()
             context.scope = "targetFrame"
         elseif CS.unifiedBarKind == "resource" and context.resourcePowerType ~= nil then
             context.scope = "resource"
-        elseif CS.unifiedBarKind == "custom" and context.customBarId then
-            context.scope = "customBar"
         elseif CS.unifiedBarKind == "cast" then
             context.scope = "castBar"
         elseif context.buttonData then
@@ -410,19 +396,12 @@ local function GetSettingsFinderContext()
     -- reason to touch them. Bar and frame surfaces already own that settings
     -- domain, so resolve it exactly once after their scope is known.
     if context.scope == "resources" or context.scope == "resource"
-        or context.scope == "customBar" or context.scope == "castBar"
+        or context.scope == "castBar"
         or context.scope == "playerFrame" or context.scope == "targetFrame"
     then
         context.resourceSettings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings() or nil
     end
-    if context.scope == "customBar" then
-        context.customBar = GetSelectedCustomBar(context.resourceSettings)
-        if not context.customBar then
-            return nil
-        end
-    end
-
     context._selectionState = CaptureContextState()
     context.identity = BuildContextIdentity(context)
     return context
@@ -450,9 +429,9 @@ local function SettingsFinderContextIsCurrent(context)
     local buttonData = group and context.buttonIndex and group.buttons
         and group.buttons[context.buttonIndex] or nil
     return container == context.container
-        and group == context.group
+        and group == (context.group and (context.group._attachedBarOwner or context.group))
         and buttonData == context.buttonData
-        and (group and (group.displayMode or "icons") or nil) == context.displayMode
+        and (group and (ST._ResolveStylingGroup(group).displayMode or "icons") or nil) == context.displayMode
 end
 
 local function ScopeMatches(scope, contextScope)

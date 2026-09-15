@@ -19,10 +19,12 @@ Bootstrap.lua
 Config\State.lua
 Config\BarWorkspace.lua
 Config\Tutorial.lua
+Config\Compact5Defaults.lua
 Config\ExportCodec.lua
 Config\ProfileImport.lua
 Config\Popups.lua
 Config\ProfileImportPieces.lua
+Config\UnifiedPanelImport.lua
 Config\ImportReview.lua
 Config\DiagnosticScope.lua
 Config\Diagnostics.lua
@@ -57,6 +59,7 @@ ConfigSettings\EntryCustomizations.lua
 ConfigSettings\RowWidgets.lua
 ConfigSettings\ModuleAnchoringPanels.lua
 ConfigSettings\SettingsFinder.lua
+ConfigSettings\EntryPresentation.lua
 ConfigSettings\AdvancedSettingsPanel.lua
 ConfigSettings\SectionBuilders.lua
 ConfigSettings\CastBarPanels.lua
@@ -71,11 +74,11 @@ ConfigSettings\ButtonPanelPreviewText.lua
 ConfigSettings\ButtonPanelPreviewEffects.lua
 ConfigSettings\ButtonPanelPreviewInteraction.lua
 ConfigSettings\ButtonPanelPreviewTriggers.lua
+ConfigSettings\PanelAttachmentDrag.lua
 ConfigSettings\ButtonPanelPreview.lua
 ConfigSettings\GroupPanelOverviewPreview.lua
 ConfigSettings\UnifiedAnchorPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
-ConfigSettings\ResourceBarPanelsCustomBars.lua
 ConfigSettings\ResourceBarPanelsLayoutOrder.lua
 ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua

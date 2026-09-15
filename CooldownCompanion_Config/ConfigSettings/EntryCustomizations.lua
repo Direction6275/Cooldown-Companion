@@ -310,6 +310,7 @@ local function RevertAllEntryCustomizations(groupId, buttonIndex)
 end
 
 local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons)
+    group = ST._ResolveStylingGroup(group)
     if not (group and buttonData) then
         return
     end
@@ -317,7 +318,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     -- Collect first, build second: the heading only exists when a row does.
     -- Same order and gates the entry-slot hover tooltip uses for these
     -- sections, so the two surfaces can never list them differently.
-    local displayMode = group.displayMode or "icons"
+    local displayMode = ST.GetEntryPresentation(group, buttonData)
     local sections = buttonData.overrideSections
     local items = {}
 

@@ -315,13 +315,11 @@ function ChargeBarSegments.PaintPanel(owner, count, maximum, duration, rechargin
         host._chargePaint = paint
     end
     local vertical = style.barFillVertical == true
-    local width, height = owner:GetSize()
-    if style.showBarIcon ~= false then
-        local iconSize = (style.barIconSizeOverride and style.barIconSize) or style.barHeight or 20
-        local reserved = iconSize + (style.barIconOffset or 0)
-        if vertical then height = height - reserved else width = width - reserved end
-    end
-    local holder = ChargeBarSegments.Begin(host, owner._barBounds or owner.barBounds,
+    -- Native aura anchors can make frame dimensions secret. Runtime and
+    -- preview both record these explicit bar bounds, excluding the icon.
+    local bounds = owner._barBounds or owner.barBounds
+    local width, height = bounds._ccKitRectW, bounds._ccKitRectH
+    local holder = ChargeBarSegments.Begin(host, bounds,
         width, height, maximum, style.barChargeSegmentGap or 4, vertical,
         style.barReverseFill == true, paint, owner.bg, owner.borderTextures, restore)
     if not holder then return false end

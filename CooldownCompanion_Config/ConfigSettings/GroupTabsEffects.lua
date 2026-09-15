@@ -913,6 +913,7 @@ local function BuildEffectsTab(container)
     if not CS.selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
+    group = ST._ResolveStylingGroup(group)
     local style = group.style
 
     local displayMode = group.displayMode

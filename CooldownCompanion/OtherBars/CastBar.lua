@@ -1141,7 +1141,9 @@ local function ResolveCastBarWidth(s)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local slot = layout and layout.castBar or {}
     local lane = RB.ResolveBarLane(CooldownCompanion:ResolveModulePanel("castbar").group, slot.position or "below", slot.anchorRegion)
-    local width = RB.GetBarLaneBody(groupFrame, lane):GetWidth()
+    local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
+    local group = CooldownCompanion:ResolveModulePanel("castbar").group
+    local width = ST.GetPanelAttachmentDimensions(groupFrame, group, region)
     if not width or width <= 0 then return nil end
     return width
 end
@@ -1199,21 +1201,17 @@ local function ApplyCastBarPosition(s, width, height)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
 
-    if not stackDetached and CooldownCompanion:ModulesShareAnchorPanel("resources", "castbar") then
-        -- The aura block container packs itself at the end of its side, so
-        -- when the cast bar's side has one it, not the last fixed bar, is the
-        -- element the cast bar follows.
-        -- The accessor answers from the CC-side shown flag and returns the
-        -- chain TAIL, so it is already nil for a parked side and already the
-        -- right container in either bucket order. No IsShown read here.
-        local blockContainer = RB.GetCustomBarAuraBlockContainer
-            and RB.GetCustomBarAuraBlockContainer(lane)
-            or nil
-        if blockContainer then
-            AnchorBySide(frame, side, blockContainer, barSpacing + panelYOffset)
-            return true
-        end
+    local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
+    local panelTail = ST.GetPanelAttachmentTail and ST.GetPanelAttachmentTail(groupFrame, side, region)
+    if panelTail then
+        local anchor = side == "above" and "BOTTOM" or "TOP"
+        local far = side == "above" and "TOP" or "BOTTOM"
+        frame:SetPoint(anchor, panelTail, far, 0,
+            (side == "above" and 1 or -1) * (barSpacing + panelYOffset))
+        return true
+    end
 
+    if not stackDetached and CooldownCompanion:ModulesShareAnchorPanel("resources", "castbar") then
         -- The cast bar is ALWAYS the last element of its side (owner ruling
         -- 2026-08-09): the stack reserves no space for an interleaved cast
         -- bar, so a stored order between two bars double-books the next

@@ -646,7 +646,8 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
 
     local count = 0
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+        if not ST.IsAttachedBarEntry(group, buttonData)
+            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             count = count + 1
         end
     end
@@ -1417,20 +1418,6 @@ end
 function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForEntry(buttonData, group))
 end
-
-function CooldownCompanion:IsCustomBarLoadConditionMet(customBar)
-    local sources = {}
-    AddLoadConditionSource(sources, "Custom Bar", customBar, LOCAL_LOAD_CONDITION_DEFAULTS, true)
-    return self:EvaluateLoadConditionSources(sources)
-end
-
-function CooldownCompanion:IsCustomBarRuntimeEligible(customBar)
-    if type(customBar) ~= "table" then return false end
-    if customBar.enabled ~= true or not customBar.spellID then return false end
-    if not self:IsTalentConditionMet(customBar) then return false end
-    return self:IsCustomBarLoadConditionMet(customBar)
-end
-
 
 -- ToggleGroupGlobal is defined in GroupManagement.lua (container-aware version)
 

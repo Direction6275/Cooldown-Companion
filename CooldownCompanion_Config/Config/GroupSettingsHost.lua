@@ -203,6 +203,21 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             scroll:SetLayout("List")
             widget:AddChild(scroll)
             CS.col4Scroll = scroll
+            scroll._cdcStylePresentation = nil
+            local styleGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            if styleGroup and tab ~= "loadconditions" then
+                local presentation = ST._ResolveStylingGroup(styleGroup).displayMode or "icons"
+                scroll._cdcStylePresentation = presentation
+                if ST.PanelSupportsAttachedBars(styleGroup) then
+                    CS.panelStyleScrolls = CS.panelStyleScrolls or setmetatable({}, { __mode = "k" })
+                    local views = CS.panelStyleScrolls[styleGroup] or {}
+                    CS.panelStyleScrolls[styleGroup] = views
+                    local key = presentation .. ":" .. tab
+                    views[key] = views[key] or {}
+                    scroll:SetStatusTable(views[key])
+                end
+                ST._BuildPanelStyleView(scroll, styleGroup)
+            end
             if ST._BeginLensAnchorBuild then
                 ST._BeginLensAnchorBuild(scroll)
             end

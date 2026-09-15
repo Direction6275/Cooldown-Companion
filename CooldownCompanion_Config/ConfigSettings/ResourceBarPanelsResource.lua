@@ -1095,7 +1095,6 @@ local function AddResourceSpecCopyButton(enableCb)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
         GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
-        GameTooltip:AddLine("- Custom Bars", 1, 1, 1, true)
         GameTooltip:AddLine("- Aura Tracking", 1, 1, 1, true)
         GameTooltip:Show()
     end)
@@ -3080,9 +3079,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- the end of the row's label.
     AnchorRowBadge(smoothingRow, CreateInfoButton(smoothingRow.frame, smoothingRow.frame, "LEFT", "LEFT", 0, 0, {
         "Segmented Smoothing",
-        {"Controls whether segmented resource bars and segmented or overlay custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
+        {"Controls whether segmented resource bars animate smoothly or snap between segment values.", 1, 1, 1, true},
         " ",
-        {"Continuous resources and continuous custom bars are not affected.", 1, 1, 1, true},
+        {"Continuous resources are not affected.", 1, 1, 1, true},
     }, smoothingRow))
 
     -- Resource Background Color

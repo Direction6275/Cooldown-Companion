@@ -541,7 +541,7 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     local style = effectiveStyle or group.style or {}
     if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
     end
     slot.style = style
 

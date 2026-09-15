@@ -287,6 +287,7 @@ end
 -- style) agree about that section's own keys: promotion copies them across.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
 ST._SECTION_HOME.bars = {
+    barShape = { tab = "appearance", collapseKey = "barappearance_settings" },
     barColor = { tab = "appearance" },
     barBgColor = { tab = "appearance" },
     barCooldownColor = { tab = "appearance" },
@@ -503,26 +504,18 @@ local function BuildBarAppearanceTab(container, group, style)
     -- in every other lens mode.
     AddLensPanelScopeNote(container, lens)
 
-    -- Sections with NO override identity of their own (bar geometry, the bar
-    -- texture): an entry cannot own them, so under an entry lens they say
-    -- "Applies to all entries" and go read-only rather than quietly letting a
-    -- panel-wide edit be made from an entry's page. They keep reading and
-    -- writing the PANEL style, which is the value they claim to apply to; the
-    -- rows are disabled, so no callback of theirs can run. They begin a lens
-    -- section with a nil sectionId, which resolves to no write table exactly
-    -- under an entry lens.
-
     -- ================================================================
     -- Bar Settings (length, height, fill direction, spacing, texture)
     -- ================================================================
     -- Panel-only under an entry lens, so the collapse key is lens-scoped and
     -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
     local barSettingsHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings",
-        ResolveLensCollapseKey(lens, group, nil, "barappearance_settings"), nil, nil, ROW_SECTION)
-    -- Panel-only (sectionId nil). Safe with no entry selected: panel and multi
-    -- scope attach no chrome at all.
-    local barSettingsSec = BeginLensSection(lens, group, nil)
+        ResolveLensCollapseKey(lens, group, group._attachedBarOwner and "barShape" or nil, "barappearance_settings"), nil, nil, ROW_SECTION)
+    -- Ordinary bars share the standard Customize/Revert section contract.
+    -- Specialized panels retain their panel-owned geometry controls.
+    local barSettingsSec = BeginLensSection(lens, group, group._attachedBarOwner and "barShape" or nil)
     barSettingsSec:HeadingChrome(barSettingsHeading)
+    local shapeStyle = barSettingsSec.tbl
 
     if not barSettingsCollapsed then
     -- LEFT column: how one bar is shaped, and which way its own fill runs.
@@ -534,32 +527,35 @@ local function BuildBarAppearanceTab(container, group, style)
     barSettingsSec:Mark(barLeft)
     local barRightBracket = barSettingsSec:Bracket(barRight)
 
+    if not group._fittedBarLayout then
     AddSliderRow(barLeft, {
         label = "Bar Length",
         setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.length,
         min = 10, max = 500, step = 0.1,
-        value = style.barLength or 180,
+        value = shapeStyle.barLength or 180,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
-            ST._PreviewScalarSetting(style, "barLength", val, ST._RefreshSelectedButtonsPreview)
+            ST._PreviewScalarSetting(shapeStyle, "barLength", val, ST._RefreshSelectedButtonsPreview)
         end,
         onRelease = function(val)
-            style.barLength = val
+            shapeStyle.barLength = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
 
+    end
     AddSliderRow(barLeft, {
-        label = "Bar Height",
-        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.height,
+        label = group._attachedBarOwner and "Bar Thickness" or "Bar Height",
+        setting = BAR_FINDER.appearance.barSettings
+            and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "thickness" or "height"],
         min = 5, max = 100, step = 0.1,
-        value = style.barHeight or 20,
+        value = shapeStyle.barHeight or 20,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
-            ST._PreviewScalarSetting(style, "barHeight", val, ST._RefreshSelectedButtonsPreview)
+            ST._PreviewScalarSetting(shapeStyle, "barHeight", val, ST._RefreshSelectedButtonsPreview)
         end,
         onRelease = function(val)
-            style.barHeight = val
+            shapeStyle.barHeight = val
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
@@ -568,36 +564,39 @@ local function BuildBarAppearanceTab(container, group, style)
     -- where the bars sit, so it belongs with the bar's shape rather than with
     -- the Layout tab's arrangement rows. Panel-only like the sliders above:
     -- plain rows carrying the section's `disabled`, inside its bracket.
+    if not group._fittedBarLayout then
     AddCheckboxRow(barLeft, {
         label = "Vertical Bar Fill",
         setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.vertical,
-        value = style.barFillVertical or false,
+        value = shapeStyle.barFillVertical or false,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
-            style.barFillVertical = val or nil
+            shapeStyle.barFillVertical = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
 
+    end
     AddCheckboxRow(barLeft, {
         label = "Flip Fill/Drain Direction",
         setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.reverse,
-        value = style.barReverseFill or false,
+        value = shapeStyle.barReverseFill or false,
         disabled = barSettingsSec.disabled,
         onChange = function(val)
-            style.barReverseFill = val or nil
+            shapeStyle.barReverseFill = val
             CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
         end,
     })
 
-    if group.buttons and #group.buttons > 1 then
+    if (not group._attachedBarOwner or (not group._fittedBarLayout
+        and ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid")) and group.buttons and #group.buttons > 1 then
         AddSliderRow(barRight, {
             label = "Bar Spacing",
             setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.spacing,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
-            disabled = barSettingsSec.disabled,
+            disabled = lens.mode == "entry",
             onChange = function(val)
                 ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
             end,
@@ -627,11 +626,18 @@ local function BuildBarAppearanceTab(container, group, style)
         pulloutWidth = BAR_TEXTURE_PULLOUT_WIDTH,
     })
     CS.SetupBarTextureDropdown(barTexRow)
-    barTexRow:SetValue(style.barTexture or "Solid")
+    barTexRow:SetValue(shapeStyle.barTexture or "Solid")
     CS.SetBarTextureDropdownCallback(barTexRow, function(widget, event, val)
-        style.barTexture = val
+        shapeStyle.barTexture = val
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     end)
+
+    if group._attachedBarOwner then
+        AddDurationFormatDropdown(barRight, shapeStyle, refreshStyle, {
+            row = true, infoButtons = tabInfoButtons,
+            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.durationFormat,
+        })
+    end
 
     barSettingsSec:Finish()
     barSettingsSec:FinishBracket(barRightBracket)
@@ -1196,7 +1202,7 @@ local function BuildBarAppearanceTab(container, group, style)
     cdTextSec:Chrome(showTimeRow)
 
     cdTextSec:Finish()
-    if drawsCooldownFormat then
+    if drawsCooldownFormat and not group._attachedBarOwner then
         local durationFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
             row = true,
             sharedHelp = true,
@@ -1473,7 +1479,7 @@ local function BuildBarAppearanceTab(container, group, style)
         auraTextSec:Chrome(auraTextRow)
 
         auraTextSec:Finish()
-        if drawsAuraFormat and not drawsCooldownFormat then
+        if drawsAuraFormat and not drawsCooldownFormat and not group._attachedBarOwner then
             local auraFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
                 row = true,
                 sharedHelp = true,
@@ -2425,19 +2431,25 @@ end
 if ST._DefineSettingRoute then
     BAR_FINDER.appearance.barSettings = BarFinderRoute(
         "panel.bars.appearance.settings", "appearance", "barSettings",
-        "Bar Settings", "barappearance_settings"):Settings({
-        length = { label = "Bar Length" },
-        height = { label = "Bar Height" },
-        vertical = { label = "Vertical Bar Fill", aliases = { "orientation" } },
+        "Bar Settings", "barappearance_settings", nil, nil, "barShape"):Settings({
+        length = { label = "Bar Length", applies = function(context) return not context.group._fittedBarLayout end },
+        height = { label = "Bar Height", aliases = { "bar thickness" },
+            applies = function(context) return context.group._attachedBarOwner == nil end },
+        thickness = { label = "Bar Thickness", aliases = { "bar height" },
+            applies = function(context) return context.group._attachedBarOwner ~= nil end },
+        vertical = { label = "Vertical Bar Fill", aliases = { "orientation" },
+            applies = function(context) return not context.group._fittedBarLayout end },
         reverse = { label = "Flip Fill/Drain Direction", aliases = { "reverse fill" } },
         spacing = {
-            label = "Bar Spacing",
+            label = "Bar Spacing", sectionId = "barSettings",
             applies = function(context)
                 local buttons = context and context.group and context.group.buttons
                 return buttons and #buttons > 1 or false
             end,
         },
         texture = { label = "Bar Texture" },
+        durationFormat = { label = "Duration Format", aliases = { "timer format" },
+            applies = function(context) return context.group._attachedBarOwner ~= nil end },
     })
 
     BAR_FINDER.appearance.chargeSegments = BarFinderRoute(
@@ -2548,7 +2560,7 @@ if ST._DefineSettingRoute then
         },
         durationFormat = {
             label = "Duration Format", aliases = { "timer format" },
-            applies = BarFinderDurationFormat,
+            applies = function(context) return not context.group._attachedBarOwner and BarFinderDurationFormat(context) end,
         },
     })
 

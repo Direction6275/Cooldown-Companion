@@ -672,6 +672,44 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local copiedVisibility = false
     local copiedArrangement = false
     local copiedPosition = false
+    if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
+        and ST.PanelSupportsAttachedBars(targetGroup) then
+        local function CopyAttachedStyle(key)
+            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
+            targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
+            local sourceStyle = templateFields and (source.attachedBarStyle or {})
+                or ST.GetAttachedBarStyle(source)
+            targetGroup.attachedBarStyle[key] = CopyPresetValue(sourceStyle[key])
+            if key == "durationFormat" and not templateFields and self.GetDurationFormat then
+                targetGroup.attachedBarStyle[key] = self.GetDurationFormat(sourceStyle)
+                targetGroup.attachedBarStyle.decimalTimers = nil
+            end
+        end
+        local function CopyAttachedLayout(key)
+            targetGroup.attachedBarLayout = targetGroup.attachedBarLayout or {}
+            targetGroup.attachedBarLayout[key] = CopyPresetValue((source.attachedBarLayout or {})[key])
+        end
+        local function CopyBarOnlyLayout(key)
+            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
+            local value = (source.barOnlyLayout or {})[key]
+            if key == "mode" and not templateFields then value = ST.GetBarOnlyLayoutMode(source) end
+            targetGroup.barOnlyLayout[key] = CopyPresetValue(value)
+        end
+        if templateFields then
+            for key in pairs(templateFields.attachedBarStyle or {}) do CopyAttachedStyle(key) end
+            for key in pairs(templateFields.attachedBarLayout or {}) do CopyAttachedLayout(key) end
+            for key in pairs(templateFields.barOnlyLayout or {}) do CopyBarOnlyLayout(key) end
+        else
+            ForEachPanelCopyStyleKey("bars", scopes, CopyAttachedStyle, false)
+            for _, scope in ipairs(scopes) do
+                if scope == "arrangement" then
+                    for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do CopyAttachedLayout(key) end
+                    for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do CopyBarOnlyLayout(key) end
+                    for _, key in ipairs({ "barOrientation", "growthOrigin", "buttonsPerRow" }) do CopyAttachedStyle(key) end
+                end
+            end
+        end
+    end
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
         if scopeData and scopeData.copiesLoadConditions then
@@ -1334,7 +1372,7 @@ local function ResolvePanelCreationMode(displayMode)
     if baseMode then
         return baseMode, true
     end
-    return displayMode, false
+    return displayMode == "bars" and "icons" or displayMode, false
 end
 
 function CooldownCompanion:CreatePanel(containerId, displayMode)
@@ -1900,7 +1938,7 @@ end
 -- `section` (optional): the anchor name of a section the new entry joins on
 -- a panel that supports sections. An aura-only section or a bad anchor is
 -- refused by the membership writer, and the entry stays in the base grid.
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section, presentation)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1989,6 +2027,11 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- carries a stable key that is unique within its own panel (Defaults.lua
     -- owns the stamp; the config insert paths call the same one).
     self:StampAuraPanelEntryKey(group, group.buttons[buttonIndex])
+    if ST.PanelSupportsAttachedBars(group) and presentation == "bars" then
+        group.buttons[buttonIndex].displayAs = "bars"
+        ST.GetAttachedBarStyle(group, true)
+        self:StampAuraSectionEntryKey(group, group.buttons[buttonIndex])
+    end
 
     -- Auto-detect charges for castable and passive-cooldown spells.
     -- Treat as charge-based only when max charges is greater than 1.

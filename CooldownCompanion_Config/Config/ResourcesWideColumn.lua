@@ -13,7 +13,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 local RB = ST._RB
 
 -- Imports from earlier Config/ files
-local PruneConfigCustomBarSelection = ST._PruneConfigCustomBarSelection
 local SetConfigResourceSettingsSpecID = ST._SetConfigResourceSettingsSpecID
 local PruneConfigResourceSelection = ST._PruneConfigResourceSelection
 
@@ -36,81 +35,6 @@ local function HideWidgetFrame(widget)
     end
 end
 
-local function FindCustomBarById(settings, customBarId)
-    if not customBarId then
-        return nil
-    end
-
-    if ST._RB and ST._RB.FindCustomBarById then
-        return ST._RB.FindCustomBarById(settings, customBarId)
-    end
-
-    if not CooldownCompanion.GetSpecCustomAuraBars then
-        return nil
-    end
-
-    for _, entry in ipairs(CooldownCompanion:GetSpecCustomAuraBars() or {}) do
-        if type(entry) == "table" and entry.customBarId == customBarId then
-            return entry
-        end
-    end
-    return nil
-end
-
-local function FindSelectedCustomBar()
-    return FindCustomBarById(CooldownCompanion:GetResourceBarSettings(), CS.selectedCustomBarId)
-end
-
-local function EnsureResourcesAddBox(col3)
-    local host = col3._resourcesAddBoxHost
-    if not host then
-        host = AceGUI:Create("SimpleGroup")
-        host:SetLayout("Fill")
-        host:SetHeight(26)
-        host.noAutoHeight = true
-        host.frame:SetParent(col3.content)
-        host.frame._cdcEditingHeight = 26
-        host.frame:SetScript("OnSizeChanged", function(_, width, height)
-            host.content.width = width
-            host.content.height = height
-            host:DoLayout()
-        end)
-        col3._resourcesAddBoxHost = host
-    end
-    local settings = CooldownCompanion:GetResourceBarSettings()
-    local specID = CooldownCompanion._currentSpecId
-    local sameContext = host._cdcAddContextRevision == CS.customBarAddContextRevision
-        and host._cdcAddSettings == settings and host._cdcAddSpecID == specID
-    local query = sameContext and host._cdcAddInput and host._cdcAddInput:GetText() or ""
-    host._cdcAddContextRevision = CS.customBarAddContextRevision
-    host._cdcAddSettings = settings
-    host._cdcAddSpecID = specID
-    host._cdcAddInput = nil
-    host:ReleaseChildren()
-    if ST._BuildCustomBarWorkspaceAddBox then
-        local compact = CooldownCompanion.db.global.configLayout == "threeColumn"
-        local _, input = ST._BuildCustomBarWorkspaceAddBox(host, compact and "Add..." or nil)
-        host._cdcAddInput = input
-        if input then
-            input.editbox:SetPoint("BOTTOMRIGHT", input.frame, "BOTTOMRIGHT", -18, 0)
-            ST._CreateAddBoxInfoButton(input.frame, input.frame, input, true)
-            if query ~= "" then input:SetText(query) end
-        end
-    end
-    host.frame:Show()
-    if ST._SetWideEditingAddBox then
-        ST._SetWideEditingAddBox(col3, host)
-    end
-end
-
-------------------------------------------------------------------------
--- Module enable, shared by the introduction buttons and the canvas's
--- enable pills. Either route leaves exactly the state the module checkbox
--- on the settings surface leaves, then lands on that module's own
--- settings: the cast bar and the unit frames select their object, while
--- Resource Bars clears the selection because the Resources home tabs ARE
--- its settings surface.
-------------------------------------------------------------------------
 local function SelectBarsCastFramesItem(item)
     if ST._SelectConfigCastFramesItem then
         ST._SelectConfigCastFramesItem(item)
@@ -259,48 +183,6 @@ local function CollectBarsOffCanvasChipItems(rendered)
         end
     end
 
-    -- Custom bars ride on the Resource Bars module: with it disabled none of
-    -- them can render and selecting one lands on the disabled intro pane, so
-    -- they are not offered as destinations. (The resource loop above already
-    -- self-gates the same way, inside GetConfigEditableResources.)
-    local customBars
-    if settings and settings.enabled == true then
-        customBars = RB and RB.GetAllCustomBars and RB.GetAllCustomBars(settings)
-            or CooldownCompanion:GetSpecCustomAuraBars()
-    end
-    for index, entry in ipairs(customBars or {}) do
-        local customBarId = RB and RB.EnsureCustomBarId and RB.EnsureCustomBarId(settings, entry)
-            or entry.customBarId
-        local capturedCustomBarId = customBarId
-        local key = customBarId and ("custom:" .. tostring(customBarId)) or nil
-        if customBarId and not rendered[key] then
-            local label = entry.label
-                or (entry.spellID and C_Spell.GetSpellName(entry.spellID))
-                or ("Custom Bar " .. tostring(index))
-            items[#items + 1] = {
-                label = label,
-                selected = (CS.barsEntrySelected or CS.unifiedBarKind == "custom")
-                    and (tostring(CS.selectedCustomBarId) == tostring(customBarId)
-                        or CS.selectedCustomBars[customBarId] == true),
-                onClick = function()
-                    ST._SelectConfigCustomBar(capturedCustomBarId, { toggle = true })
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-                -- Same select-then-menu gesture the canvas slot answers to, so
-                -- a Custom Bar the canvas is not drawing is still reachable by
-                -- right-click. Resources and the cast bar carry no context menu
-                -- on the canvas either, so their chips stay left-click only.
-                onRightClick = function()
-                    ST._SelectConfigCustomBar(capturedCustomBarId)
-                    CooldownCompanion:RefreshConfigPanel()
-                    if ST._OpenConfigCustomBarMenu then
-                        ST._OpenConfigCustomBarMenu(capturedCustomBarId)
-                    end
-                end,
-            }
-        end
-    end
-
     return items
 end
 
@@ -318,7 +200,7 @@ local function SetBarsOffCanvasChips(col3)
     if CS.barWorkspaceKind == "resources" then
         table.insert(items, 1, {
             label = "Resources",
-            selected = not CS.selectedResourcePowerType and not CS.selectedCustomBarId,
+            selected = not CS.selectedResourcePowerType,
             onClick = function()
                 ST._OpenBarWorkspace("resources")
                 CooldownCompanion:RefreshConfigPanel()
@@ -329,7 +211,6 @@ local function SetBarsOffCanvasChips(col3)
 end
 
 local function PrepareResourcesEditingChrome(col3)
-    EnsureResourcesAddBox(col3)
 end
 
 ------------------------------------------------------------------------
@@ -339,7 +220,7 @@ end
 local BAR_WORKSPACE_INTROS = {
     resources = {
         title = "Resource Bars",
-        body = "Display your class resources as customizable bars. Add Custom Bars to track spell cooldowns or auras."
+        body = "Display your class resources as customizable bars. Attach them to a panel or position them independently."
             .. "\n\nChoose an anchor panel, let Automatic select one, or position the stack independently.",
         buttonText = "Enable Resource Bars",
         onEnable = EnableResourceBarsModule,
@@ -474,24 +355,6 @@ end
 -- same way an entry's does (DecorateEntryTabs, read at call time -
 -- ButtonSettings.lua loads after this file). Bars without a tracked spell
 -- get the accent-only label, same as today's iconless tabs.
-local function GetCustomBarEntryTabs(entry)
-    local tabs = {
-        { value = "settings", text = "Settings" },
-    }
-
-    local decorate = ST._DecorateEntryTabs
-    if decorate then
-        local spellID = type(entry) == "table" and tonumber(entry.spellID) or nil
-        return decorate(tabs, spellID and C_Spell.GetSpellTexture(spellID) or nil)
-    end
-    return AddTabAccent(tabs)
-end
-
-local function GetCustomBarDetailScrollKey()
-    if not CS.selectedCustomBarId then return nil end
-    return tostring(CS.selectedCustomBarId)
-end
-
 local function GetResourceSettingsDetailScrollKey()
     if not CS.selectedResourcePowerType or not CS.resourceSettingsSpecID then return nil end
     return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
@@ -659,8 +522,6 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState)
     HideWidgetFrame(col3._resourcesConflictScroll)
     HideWidgetFrame(col3._resourcesTabGroup)
     HideWidgetFrame(col3._resourceSettingsTabGroup)
-    HideWidgetFrame(col3._customBarEntryTabGroup)
-    HideWidgetFrame(col3._customBarsMultiSelectScroll)
     HideWidgetFrame(col3._castBarHomeTabGroup)
     HideWidgetFrame(col3._castFramesSettingsScroll)
     HideWidgetFrame(col3._resourcesAddBoxHost)
@@ -796,68 +657,6 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
     end
 end
 
-local function ShowCustomBarMultiSelect(col3, selectedIds, selectedEntries)
-    if not col3._customBarsMultiSelectScroll then
-        local scroll = AceGUI:Create("ScrollFrame")
-        scroll:SetLayout("List")
-        scroll.frame:SetParent(col3.content)
-        col3._customBarsMultiSelectScroll = scroll
-    end
-    local scroll = col3._customBarsMultiSelectScroll
-    ST._AnchorButtonsContentFrame(col3, scroll.frame)
-    scroll:ReleaseChildren()
-    scroll.frame:Show()
-
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(#selectedEntries .. " Custom Bars Selected")
-    heading:SetFullWidth(true)
-    scroll:AddChild(heading)
-    ST._ApplyLeftAlignedHeading(heading, nil, true)
-
-    local function AddSpacer()
-        local sp = AceGUI:Create("Label")
-        sp:SetText(" ")
-        sp:SetFullWidth(true)
-        local f, _, fl = sp.label:GetFont()
-        sp:SetFont(f, 3, fl or "")
-        scroll:AddChild(sp)
-    end
-
-    local anyDisabled = false
-    for _, entry in ipairs(selectedEntries) do
-        if entry.enabled ~= true then
-            anyDisabled = true
-            break
-        end
-    end
-
-    local enableBtn = AceGUI:Create("Button")
-    enableBtn:SetText(anyDisabled and "Enable Selected" or "Disable Selected")
-    enableBtn:SetFullWidth(true)
-    enableBtn:SetCallback("OnClick", function()
-        for _, entry in ipairs(selectedEntries) do
-            entry.enabled = anyDisabled and true or false
-            if entry.enabled and not entry.trackingMode then
-                entry.trackingMode = "active"
-            end
-        end
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-    scroll:AddChild(enableBtn)
-
-    AddSpacer()
-
-    local deleteBtn = AceGUI:Create("Button")
-    deleteBtn:SetText("Delete Selected")
-    deleteBtn:SetFullWidth(true)
-    deleteBtn:SetCallback("OnClick", function()
-        CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_CUSTOM_BARS", #selectedIds, { ids = selectedIds })
-    end)
-    scroll:AddChild(deleteBtn)
-end
-
 local function ShowResourceSettingsPanel(col3)
     local tabs = GetResourceSettingsSpecTabs(CS.selectedResourcePowerType)
     if #tabs == 0 then
@@ -923,75 +722,6 @@ local function ShowResourceSettingsPanel(col3)
     return true
 end
 
-local function ShowCustomBarDetail(col3, selectedEntry)
-    if not col3._customBarEntryTabGroup then
-        local tabGroup = AceGUI:Create("TabGroup")
-        tabGroup:SetLayout("Fill")
-        tabGroup.frame:SetParent(col3.content)
-        tabGroup:SetCallback("OnGroupSelected", function(widget)
-            -- Selecting the bar's tab hands the settings surface to the bar;
-            -- any panel tabs sharing the row just go unselected.
-            ST._UnifiedRowSetScope("detail")
-            ClearInfoButtons(CS.customBarInfoButtons)
-            widget:ReleaseChildren()
-
-            local scroll = AceGUI:Create("ScrollFrame")
-            scroll:SetLayout("List")
-            widget:AddChild(scroll)
-            widget._cdcScroll = scroll
-            widget._cdcScrollKey = GetCustomBarDetailScrollKey()
-            -- One advanced-gear build pass per surface rebuild
-            -- (AdvancedSettingsPanel.lua): its foot sweep closes every gear
-            -- panel whose gear did not rebuild this pass.
-            CS.RunAdvancedGearBuildPass(ST._BuildCustomAuraBarPanel, scroll, CS.selectedCustomBarId)
-            -- Re-run the layout with final widths: nested Flow rows resize
-            -- themselves after their children land, and that height never
-            -- reaches the scroll frame until something relayouts it.
-            scroll:DoLayout()
-        end)
-        ST._UnifiedRowInstallStrip(tabGroup, "detail")
-        -- The bar's Settings tab runs straight on from the primary tabs
-        -- across the fixed seam, the same grammar as the panel entry
-        -- cluster, instead of being pinned to the right edge.
-        ST._UnifiedRowSetSeamFlow(tabGroup)
-        col3._customBarEntryTabGroup = tabGroup
-    end
-
-    -- A primary tab is showing its own content: the bar keeps its place in
-    -- the row and stays selected, it just does not own the surface.
-    ShowStrip(col3, col3._customBarEntryTabGroup, GetCustomBarEntryTabs(selectedEntry),
-        "settings", GetCustomBarDetailScrollKey(),
-        ST._UnifiedRowPrimaryOwnsSurface())
-
-    -- A routed gear click named one section of the pane; the build above
-    -- remembered its heading. Writing the pixel offset into the scroll
-    -- state here wins over ShowStrip's saved-offset restore - the widget's
-    -- deferred FixScroll applies (and clamps) it next frame. The pending
-    -- name is dropped either way, so a stale target never re-scrolls a
-    -- later rebuild.
-    local tabGroup = col3._customBarEntryTabGroup
-    local scroll = tabGroup and tabGroup._cdcScroll
-    local heading = scroll and scroll._cdcPendingScrollHeading
-    if heading then
-        scroll._cdcPendingScrollHeading = nil
-        local state = GetStripScrollState(tabGroup)
-        local contentTop = scroll.content and scroll.content:GetTop()
-        local headingTop = heading.frame and heading.frame:GetTop()
-        if state and contentTop and headingTop then
-            -- scrollvalue is left alone: the deferred FixScroll rederives
-            -- it from the offset, and nil would break a mousewheel that
-            -- lands before it runs.
-            state.offset = math.max(0, contentTop - headingTop)
-        end
-    end
-    CS.pendingCustomBarScrollSection = nil
-end
-
--- Default page for the Resources home: the tabbed shared settings view.
--- Re-hosts the existing bars-mode builders unmodified: General = anchoring,
--- Appearance = bar text styling, Layout = positioning, Health (when the
--- health resource is enabled). The Layout & Order preview lives in the
--- pinned host above this page, not in a tab.
 local function ShowResourcesTabPage(col3, stripOnly)
     if not col3._resourcesTabGroup then
         local tabGroup = AceGUI:Create("TabGroup")
@@ -1062,9 +792,8 @@ end
 
 -- Settings surfaces for the Resources home: the module tab page, plus the
 -- selected resource's or custom bar's own tabs beside it.
-local function ShowResourcesHomeSurfaces(col3, CustomBarExists)
-    local selectedEntry = CS.selectedCustomBarId and FindSelectedCustomBar()
-    local wantsBarDetail = CS.selectedResourcePowerType ~= nil or selectedEntry ~= nil
+local function ShowResourcesHomeSurfaces(col3)
+    local wantsBarDetail = CS.selectedResourcePowerType ~= nil
 
     -- The module tabs are the left cluster of this home's unified row:
     -- they stay put while a bar is selected, and the bar's own tabs are
@@ -1078,14 +807,7 @@ local function ShowResourcesHomeSurfaces(col3, CustomBarExists)
     if CS.selectedResourcePowerType then
         barShown = ShowResourceSettingsPanel(col3) == true
     end
-    if not barShown and selectedEntry then
-        ShowCustomBarDetail(col3, selectedEntry)
-        barShown = true
-    end
     if not barShown then
-        if CS.selectedCustomBarId then
-            PruneConfigCustomBarSelection(CustomBarExists)
-        end
         if wantsBarDetail then
             -- The bar surface did not materialise after all (a resource
             -- with no applicable specs); the module tabs take the row
@@ -1243,10 +965,6 @@ local function RefreshBarsWideColumn(col3)
     end
 
     local settings = CooldownCompanion:GetResourceBarSettings()
-    local function CustomBarExists(customBarId)
-        return FindCustomBarById(settings, customBarId) ~= nil
-    end
-    PruneConfigCustomBarSelection(CustomBarExists)
     if PruneConfigResourceSelection then
         local RBP = ST._RBP
         PruneConfigResourceSelection(function(powerType)
@@ -1264,32 +982,17 @@ local function RefreshBarsWideColumn(col3)
     -- off entirely are offered by the canvas's own bottom-right corner.
     SetBarsOffCanvasChips(col3)
 
-    -- The Custom Bar add box and the import/export actions are the
-    -- Resources home's own chrome, so they ride on the home selection -
-    -- and the add box builds nothing while Resource Bars are disabled.
+    -- Import and export actions belong to the enabled Resources home.
     if item == nil and settings and settings.enabled == true then
         PrepareResourcesEditingChrome(col3)
     end
 
-    local selectedCustomBarIds = {}
-    local selectedCustomBarEntries = {}
-    for customBarId in pairs(CS.selectedCustomBars) do
-        local entry = FindCustomBarById(settings, customBarId)
-        selectedCustomBarIds[#selectedCustomBarIds + 1] = customBarId
-        selectedCustomBarEntries[#selectedCustomBarEntries + 1] = entry
-    end
-    table.sort(selectedCustomBarIds)
-
-    if #selectedCustomBarEntries >= 2 then
-        -- Batch edits replace the surface outright, as panel multi-select
-        -- does in the buttons workspace.
-        ShowCustomBarMultiSelect(col3, selectedCustomBarIds, selectedCustomBarEntries)
-    elseif item == "castbar" then
+    if item == "castbar" then
         ShowCastBarSettings(col3)
     elseif item then
         ShowUnitFrameSettings(col3, item)
     else
-        ShowResourcesHomeSurfaces(col3, CustomBarExists)
+        ShowResourcesHomeSurfaces(col3)
     end
 
     -- Final height pass: the settings surface just anchored below the
@@ -1312,17 +1015,8 @@ ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview
 -- The unified anchor preview (buttons view) re-hosts these settings
 -- surfaces below its divider when an attached bar is selected there.
 ST._ShowResourceSettingsSurface = ShowResourceSettingsPanel
-ST._ShowCustomBarDetailSurface = ShowCustomBarDetail
 ST._ShowCastBarSettingsSurface = ShowCastBarSettings
-ST._FindSelectedConfigCustomBar = FindSelectedCustomBar
 
-ST._ShowResourceWorkspaceSurfaces = function(col3)
-    local settings = CooldownCompanion:GetResourceBarSettings()
-    ShowResourcesHomeSurfaces(col3, function(id)
-        return FindCustomBarById(settings, id) ~= nil
-    end)
-end
+ST._ShowResourceWorkspaceSurfaces = ShowResourcesHomeSurfaces
 ST._ShowUnitFrameSettingsSurface = ShowUnitFrameSettings
-ST._EnsureCustomBarAddBox = EnsureResourcesAddBox
 ST._CollectBarsOffCanvasChips = CollectBarsOffCanvasChipItems
-ST._ShowCustomBarMultiSelectSurface = ShowCustomBarMultiSelect

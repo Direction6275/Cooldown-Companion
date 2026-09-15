@@ -60,7 +60,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
         effectiveStyle, barPreviewState)
     local style = effectiveStyle or group.style or {}
     if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
     end
     slot.style = style
 

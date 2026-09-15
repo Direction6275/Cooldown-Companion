@@ -386,7 +386,7 @@ local customNameSettings = ST._DefineSettingRoute({
     collapseKeys = EntrySettingsCollapseKey("customname"),
     applies = function(context)
         return context.group and context.buttonData
-            and context.group.displayMode == "bars"
+            and ST.GetEntryPresentation(context.group, context.buttonData) == "bars"
             and not IsEquipmentSlotContext(context)
     end,
 }):Settings({
@@ -833,7 +833,8 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     })
 
     -- Item count anchor point
-    local barNoIcon = group.displayMode == "bars" and not (group.style.showBarIcon ~= false)
+    local barNoIcon = ST.GetEntryPresentation(group, buttonData) == "bars"
+        and CooldownCompanion:GetEntryEffectiveStyle(group, buttonData).showBarIcon == false
     local defItemAnchor = barNoIcon and "BOTTOM" or "BOTTOMRIGHT"
     local defItemX = barNoIcon and 0 or -2
     local defItemY = 2
@@ -1456,7 +1457,7 @@ local function BuildCustomNameSection(scroll, buttonData)
         return
     end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group or group.displayMode ~= "bars" then return end
+    if not group or ST.GetEntryPresentation(group, buttonData) ~= "bars" then return end
 
     local customNameKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_customname"
     local _, customNameCollapsed =
@@ -1499,7 +1500,7 @@ local function BuildCustomKeybindSection(scroll, buttonData)
     -- before a conversion must not put the section back.
     if not ST.CanGroupUseOverrideSection(group, "keybindText") then return end
 
-    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(group.style or {}, buttonData)
+    local effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
     if not (effectiveStyle and effectiveStyle.showKeybindText) then
         return
     end

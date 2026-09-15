@@ -585,13 +585,28 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return BuildLegacyError(GetPayloadDataLabel(data, isDiagnostic))
     end
 
+    local converted, conversionReport = ST._ConvertUnifiedPanelImport(data)
+    if not converted then return BuildError("panel_conversion", conversionReport) end
+    local existingPanelIds
+    data, existingPanelIds = ST._FilterConvertedPanelImport(converted)
+
+    local review
     if isDiagnostic or data.reportKind == "bugReport" then
-        return ClassifyDiagnosticPayload(data)
+        review = ClassifyDiagnosticPayload(data)
+    elseif data.type then
+        review = ClassifyEntityPayload(data)
+    else
+        review = ClassifyProfilePayload(data)
     end
-    if data.type then
-        return ClassifyEntityPayload(data)
+    review.existingPanelIds = existingPanelIds
+    if review.ok and conversionReport then
+        if conversionReport.bars > 0 or conversionReport.panels > 0 then
+            AddLine(review.summaryLines, ("Converted %d Custom Bars and %d Bar Panels to ordinary panel entries.")
+                :format(conversionReport.bars, conversionReport.panels))
+        end
+        for _, notice in ipairs(conversionReport.notices or {}) do AddLine(review.summaryLines, notice) end
     end
-    return ClassifyProfilePayload(data)
+    return review
 end
 
 function CooldownCompanion:ApplyReviewedImport(review)
@@ -642,7 +657,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
     end
 
     if review.kind == "setup" then
-        return ApplySetupImportData and ApplySetupImportData(review.data) == true
+        return ApplySetupImportData and ApplySetupImportData(review.data, review.existingPanelIds) == true
     end
 
     if review.kind == "group" or review.kind == "groups" then

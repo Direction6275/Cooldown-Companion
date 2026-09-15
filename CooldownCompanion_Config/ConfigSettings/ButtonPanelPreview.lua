@@ -88,6 +88,7 @@ local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 function ST._BuildButtonPanelPreview(host, panelId, options)
     options = type(options) == "table" and options or nil
     local readOnly = options and options.readOnly == true
+    local dropGhostIndex = options and options.dropGhostIndex
     -- Rebuilding pulls the slot frames out from under an in-flight drag
     if not readOnly
         and CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
@@ -155,6 +156,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     if preview.totemSurface then preview.totemSurface:Hide() end
     if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
+    if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
     HidePreviewMessage(preview)
     preview.content:Hide()
     -- Stop the animation ticker up front: the early exits below (no group,
@@ -175,6 +177,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         FinalizePreviewState(preview)
         return
     end
+    group = ST.GetPanelLayoutGroup(group)
 
     if ST.IsTotemPanelGroup(group) then
         local content = preview.content
@@ -225,7 +228,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
 
     local buttons = group.buttons or {}
     local count = #buttons
-    if count == 0 then
+    local modules = options and options.previewModules or (not readOnly and ST._GetPanelAttachmentPreviewModules
+        and ST._GetPanelAttachmentPreviewModules(panelId)) or {}
+    if count == 0 and #modules == 0 then
         if readOnly then
             SetPreviewMessage(preview, "Empty Panel")
         elseif ST.IsAuraPanelGroup(group) then
@@ -267,7 +272,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         and not CS.otherClassLibraryActive then
         local kept = {}
         for index, buttonData in ipairs(buttons) do
-            if CooldownCompanion:IsButtonUsable(buttonData, group)
+            if index == dropGhostIndex or CooldownCompanion:IsButtonUsable(buttonData, group)
                 or IsEntrySelected(index) then
                 kept[#kept + 1] = index
             end
@@ -277,12 +282,13 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             count = #kept
         end
     end
-    if count == 0 then
+    if count == 0 and #modules == 0 then
         SetPreviewMessage(preview,
             "All entries here are unavailable or disabled, so the preview toggle has hidden them.")
         FinalizePreviewState(preview)
         return
     end
+    local guidanceReserve = count == 0 and PP.EMPTY_ENTRY_GUIDANCE_BAND or 0
 
     local geo = GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
     local w, h = geo.entryWidth, geo.entryHeight
@@ -337,7 +343,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local sectionLayout, sectionPlacement, cellIndex, cellOfIndex
     local sectionLists
     local cellCount = count
-    if sections or wantSectionDrag or wantCursorModel then
+    local hasAttachedBars = ST.PanelHasAttachedBars(group)
+    if sections or wantSectionDrag or wantCursorModel or hasAttachedBars then
         -- The engine partitions objects carrying .buttonData, which the slots
         -- do not exist yet to be; a throwaway list of the entries this build is
         -- actually rendering (the session filter may have narrowed it) carries
@@ -348,6 +355,13 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             entries[ordinal] = { buttonData = buttons[index], index = index }
         end
         sectionLists = ST.PartitionPanelSectionMembers(group, entries)
+    end
+    if hasAttachedBars then
+        cellCount = #sectionLists.base
+        cellIndex, cellOfIndex = {}, {}
+        for cell, entry in ipairs(sectionLists.base) do
+            cellIndex[cell], cellOfIndex[entry.index] = entry.index, cell
+        end
     end
     if sections then
         local lists = sectionLists
@@ -377,23 +391,31 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         end
     end
 
+    local hasVisibleIcons = cellCount > 0 or (sectionLayout and next(sectionLayout.sections))
+    if not hasVisibleIcons and ST.PanelSupportsAttachedBars(group) and ST.GetPanelLayoutKind(group) ~= "bars" then
+        -- Bars and modules still fit the configured icon body when the filter
+        -- hides its last icon. Reserve its footprint without drawing a slot.
+        sectionLayout = ST.GetConfiguredPanelIconGeometry(group)
+    end
+
     local contentWidth, contentHeight
     if sectionLayout then
         -- The union footprint, matching ResizeGroupFrame's own clamp, so the
         -- preview scales a sectioned panel by the rect the panel really spans.
-        contentWidth = math_max(sectionLayout.totalWidth, 1)
-        contentHeight = math_max(sectionLayout.totalHeight, 1)
+        contentWidth = math_max(sectionLayout.footprintWidth, 1)
+        contentHeight = math_max(sectionLayout.footprintHeight, 1)
     else
         local cols, rows
         if geo.orientation == "horizontal" then
-            cols = math_min(count, perRow)
-            rows = math_ceil(count / perRow)
+            cols = math_min(cellCount, perRow)
+            rows = math_ceil(cellCount / perRow)
         else
-            rows = math_min(count, perRow)
-            cols = math_ceil(count / perRow)
+            rows = math_min(cellCount, perRow)
+            cols = math_ceil(cellCount / perRow)
         end
         contentWidth = (cols - 1) * (w + spacing) + w
         contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
+        if hasAttachedBars and cellCount == 0 then contentWidth, contentHeight = 1, 1 end
     end
 
     -- The base grid's cells are laid out against the BASE CLUSTER's rect, not
@@ -415,16 +437,53 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
 
     -- Scale is needed while styling (badges counter-scale against it), so
     -- compute it up front from the grid extents.
-    local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
+    local iconWidth, iconHeight = contentWidth, contentHeight
+    preview.attachmentBody = { width = iconWidth, height = iconHeight,
+        base = { x = sectionLayout and sectionLayout.baseOffsetX or 0,
+            y = sectionLayout and sectionLayout.baseOffsetY or 0,
+            width = sectionLayout and sectionLayout.baseWidth or iconWidth,
+            height = sectionLayout and sectionLayout.baseHeight or iconHeight } }
+    local attachedPositions, padX, padY, modulePositions
+    if hasAttachedBars or #modules > 0 then
+        local included
+        if visibleIndices then
+            included = {}
+            for _, index in ipairs(visibleIndices) do included[index] = true end
+        end
+        attachedPositions, padX, padY, contentWidth, contentHeight, modulePositions = ST.GetAttachedBarPreviewLayout(group,
+            iconWidth, iconHeight, {
+                x = sectionLayout and sectionLayout.baseOffsetX or 0,
+                y = sectionLayout and sectionLayout.baseOffsetY or 0,
+                width = sectionLayout and sectionLayout.baseWidth or iconWidth,
+                height = sectionLayout and sectionLayout.baseHeight or iconHeight,
+            }, included, modules)
+        local oldX, oldY = ST._GetPanelAnchorOffset(growthAnchor, iconWidth, iconHeight)
+        local newX, newY = ST._GetPanelAnchorOffset(growthAnchor, contentWidth, contentHeight)
+        baseDX = baseDX + padX + iconWidth / 2 + oldX - contentWidth / 2 - newX
+        baseDY = baseDY - padY - iconHeight / 2 + oldY + contentHeight / 2 - newY
+        for _, position in pairs(sectionPlacement or {}) do
+            position.x, position.y = position.x + padX, position.y - padY
+        end
+        for _, position in ipairs(modulePositions or {}) do
+            position.x, position.y = position.x + padX, position.y - padY
+        end
+        for _, position in pairs(attachedPositions) do
+            position.x, position.y = position.x + padX, position.y - padY
+        end
+    end
+    local scale = GetHostFitScale(options and options.fitHost or host, contentWidth, contentHeight,
+        readOnly and not dropGhostIndex, guidanceReserve)
+    preview.attachmentBody.padX, preview.attachmentBody.padY = padX or 0, padY or 0
+    preview.attachmentBody.modules = modules
 
     local content = preview.content
     content:SetScale(scale) -- border styling below needs the final effective scale
     content:SetSize(contentWidth, contentHeight)
     preview.barBaseRect = {
-        x = sectionLayout and sectionLayout.baseOffsetX or 0,
-        y = sectionLayout and sectionLayout.baseOffsetY or 0,
-        width = sectionLayout and sectionLayout.baseWidth or contentWidth,
-        height = sectionLayout and sectionLayout.baseHeight or contentHeight,
+        x = (sectionLayout and sectionLayout.baseOffsetX or 0) + (padX or 0),
+        y = (sectionLayout and sectionLayout.baseOffsetY or 0) + (padY or 0),
+        width = sectionLayout and sectionLayout.baseWidth or iconWidth,
+        height = sectionLayout and sectionLayout.baseHeight or iconHeight,
     }
     content:Show()
     UpdateTextGroupHeader(preview, group, style, headerHeight)
@@ -524,12 +583,25 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             w, h, spacing, headerHeight, contentWidth, contentHeight, layoutDrag }
     end
 
+    local attachmentDrag = not readOnly and ST._CreatePanelAttachmentDrag
+        and ST._CreatePanelAttachmentDrag(preview, panelId, attachedPositions or {}, modulePositions or {},
+            { x = padX or 0, y = padY or 0, width = iconWidth, height = iconHeight })
+    if ST._BuildPanelModulePreview then
+        ST._BuildPanelModulePreview(preview, panelId, modulePositions, attachmentDrag)
+        if dropGhostIndex and preview.modulePreview then
+            for _, slot in ipairs(preview.modulePreview.pools.slots) do slot:EnableMouse(false) end
+        end
+    end
     for ordinal = 1, count do
         local index = visibleIndices and visibleIndices[ordinal] or ordinal
         local buttonData = buttons[index]
+        local isBarMode = ST.GetEntryPresentation(group, buttonData) == "bars"
+        local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
+        local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
         -- A section member's own icon size, and its position, come from the
         -- engine's layout table; nil means the entry is a base-grid cell.
-        local placement = sectionPlacement and sectionPlacement[index]
+        local placement = (attachedPositions and attachedPositions[index])
+            or (sectionPlacement and sectionPlacement[index])
         local slot = AcquireSlot(preview, content, poolName)
         if isTextMode then
             -- Cell placement stays on the uniform pitch below; only the slot's
@@ -539,6 +611,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             -- Sized before styleFn: the mirrored icon crops its texture from
             -- the slot's current size (ST._ApplyIconTexCoord).
             slot:SetSize(placement.width, placement.height)
+        elseif isBarMode and group._unifiedPanelOwner then
+            local shape = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
+            local length, thickness = shape.barLength or 180, shape.barHeight or 12
+            slot:SetSize(shape.barFillVertical and thickness or length,
+                shape.barFillVertical and length or thickness)
         else
             slot:SetSize(w, h)
         end
@@ -553,10 +630,13 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         local effectiveStyle
         local barPreviewState
         if isBarMode then
-            effectiveStyle = group.style or {}
-            if CooldownCompanion.GetEffectiveStyle then
-                effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData)
-                    or effectiveStyle
+            effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
+            if attachedPositions and attachedPositions[index] then
+                local copy = CopyTable(ST.GetEntryBaseStyle(group, buttonData))
+                for key, value in pairs(effectiveStyle) do copy[key] = value end
+                copy.barFillVertical = placement.vertical
+                copy.barLength = placement.vertical and placement.height or placement.width
+                effectiveStyle = copy
             end
             if not readOnly then
                 barPreviewState = GetStoredBarPreviewState(panelId, index)
@@ -634,7 +714,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             -- Section members drag like every other entry now: one model, and
             -- the drop target decides what the gesture meant.
             WireEntryInteraction(slot, panelId, index, buttonData, status,
-                dragModel, barVisibility)
+                ST.IsAttachedBarEntry(group, buttonData) and attachmentDrag or dragModel, barVisibility)
+        end
+        if index == dropGhostIndex then
+            buttonData._previewAttachedVertical = placement and placement.vertical
+            DropGhost.StyleCell(slot, buttonData, group, poolName, panelId)
         end
         layoutDrag.slots[index] = slot
     end
@@ -655,7 +739,16 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     content:ClearAllPoints()
-    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
+    content:SetPoint("CENTER", preview.root, "CENTER", 0, guidanceReserve / 2)
+    if guidanceReserve > 0 then
+        SetPreviewMessage(preview, #buttons == 0
+            and "This panel has no entries. Add entries in its settings."
+            or "All entries are hidden by the unavailable/disabled preview filter.")
+        local label = preview.messageLabel
+        label:ClearAllPoints()
+        label:SetPoint("BOTTOMLEFT", preview.root, "BOTTOMLEFT", 18, PP.PANEL_PREVIEW_PADDING)
+        label:SetPoint("BOTTOMRIGHT", preview.root, "BOTTOMRIGHT", -18, PP.PANEL_PREVIEW_PADDING)
+    end
 
     FinalizePreviewState(preview)
 end
@@ -693,7 +786,8 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
 
     -- Bar previews also change visibility, badges, and tooltip state. Let
     -- the build recompute that presentation when a running preview moves.
-    if group.displayMode == "bars" and CS.panelPreviewVisualsNeedReconcile then
+    local layoutKind = ST.GetPanelLayoutKind(group)
+    if (layoutKind == "bars" or layoutKind == "mixed") and CS.panelPreviewVisualsNeedReconcile then
         return false
     end
 
@@ -847,6 +941,7 @@ function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
         StopConditionalTicker(preview)
+        if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
         StopTextureMirrorEffects(preview.textureMirror)
         DropGhost.Reset(preview)
         local barPool = preview.pools.barSlots or {}

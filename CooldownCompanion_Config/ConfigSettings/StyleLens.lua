@@ -57,7 +57,9 @@ local function GroupHasAuraTrackingEntry(group)
     end
     for _, buttonData in ipairs(group.buttons) do
         if buttonData.type == "spell"
-            and (buttonData.auraTracking or buttonData.addedAs == "aura") then
+            and (buttonData.auraTracking or buttonData.addedAs == "aura")
+            and (not (group._attachedBarOwner or ST.PanelSupportsAttachedBars(group))
+                or ST.GetEntryPresentation(group, buttonData) == (group.displayMode or "icons")) then
             return true
         end
     end
@@ -90,6 +92,9 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
+    if sectionId == "barShape" and group and not ST.IsPanelBarEntry(group, buttonData) then
+        return false, "displayMode"
+    end
     if ST.CanButtonUseOverrideSection then
         local allowed, reason = ST.CanButtonUseOverrideSection(buttonData, sectionId)
         if not allowed then
@@ -176,13 +181,17 @@ end
 --
 -- `pairs` never walks __index, so a metatable the runtime left on
 -- styleOverrides is simply not seen here.
-local function BuildDetachedEffectiveStyle(groupStyle, buttonData)
+local function BuildDetachedEffectiveStyle(groupStyle, buttonData, group)
     local effective = {}
     for key, value in pairs(groupStyle or {}) do
         effective[key] = CopyDetachedStyleValue(value)
     end
     for key, value in pairs(buttonData and buttonData.styleOverrides or {}) do
         effective[key] = CopyDetachedStyleValue(value)
+    end
+    if group and buttonData and buttonData.overrideSections and buttonData.overrideSections.barShape
+        and not ST.IsPanelBarEntry(group, buttonData) then
+        for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do effective[key] = CopyDetachedStyleValue(groupStyle[key]) end
     end
     return effective
 end
@@ -196,7 +205,22 @@ end
 --             tabs stay on the panel style.
 -- Multi-select is counted the same way every other per-entry surface counts
 -- it, so scope chrome availability and lens mode can never disagree.
+-- A styling view is a local context. The real panel keeps its display mode,
+-- identity, entries, and icon style throughout widget building and callbacks.
+function ST._ResolveStylingGroup(group)
+    if not ST.PanelSupportsAttachedBars(group) then return group end
+    local count = 0
+    for _ in pairs(CS.selectedButtons or {}) do count = count + 1 end
+    local entry = count < 2 and CS.selectedButton and group.buttons[CS.selectedButton]
+    local view = entry and ST.GetEntryPresentation(group, entry)
+        or (CS.panelStyleViews and CS.panelStyleViews[group])
+        or (ST.GetPanelLayoutKind(group) == "bars" and "bars" or "icons")
+    if view ~= "bars" then return group end
+    return ST.GetPanelBarStyleGroup(group)
+end
+
 local function ResolveStyleLens(group)
+    group = ST._ResolveStylingGroup(group)
     if not GroupSupportsPerButtonOverrides(group) then
         return { mode = "panel" }
     end
@@ -212,7 +236,7 @@ local function ResolveStyleLens(group)
             mode = "entry",
             buttonIndex = CS.selectedButton,
             buttonData = buttonData,
-            effective = BuildDetachedEffectiveStyle(group.style, buttonData),
+            effective = BuildDetachedEffectiveStyle(group.style, buttonData, group),
         }
     end
 
@@ -236,6 +260,7 @@ end
 --                     styleOverrides.
 --   "inherited"     - the entry follows the panel here: shown, not written.
 local function ResolveLensSection(lens, group, sectionId)
+    group = ST._ResolveStylingGroup(group)
     local mode = lens and lens.mode or "panel"
 
     if mode ~= "entry" then
@@ -517,6 +542,7 @@ end
 -- consumes both. The pinned mirror still updates immediately through
 -- UpdateGroupStyle, so the preview never waits on that navigation.
 local function PromoteLensSection(lens, group, sectionId, opts)
+    group = ST._ResolveStylingGroup(group)
     local buttonData = lens and lens.buttonData
     local groupStyle = group and group.style
     if not (buttonData and groupStyle and sectionId) then
@@ -565,7 +591,7 @@ local ADVANCED_UNLOCK_REFRESH = {
         CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         CooldownCompanion:RefreshConfigPanel()
     end,
-    -- Custom bars: apply the bars, then rebuild.
+    -- Resource settings: apply the module, then rebuild.
     resourceBars = function()
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:RefreshConfigPanel()
@@ -1319,6 +1345,7 @@ function LensSection:Finish()
 end
 
 local function BeginLensSection(lens, group, sectionId, opts)
+    group = ST._ResolveStylingGroup(group)
     local scope, read, write, deniedReason = ResolveLensSection(lens, group, sectionId)
     local sec = setmetatable({
         lens = lens,

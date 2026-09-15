@@ -800,7 +800,10 @@ local function NormalizeCustomBarStoreForClass(barsBySpec, allowedSpecIDs)
                 if not sawSpec or next(normalizedSpecs) then
                     copiedEntry.specs = normalizedSpecs
                     ClearCustomBarLegacySpecFields(copiedEntry)
-                    local customBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or key
+                    -- The store key is the identity referenced by order and
+                    -- placement. Repeated stale embedded IDs must not merge
+                    -- two independently created bars during normalization.
+                    local customBarId = type(key) == "string" and key or copiedEntry.customBarId
                     if type(customBarId) == "string" and customBarId ~= "" then
                         filtered.entries[customBarId] = copiedEntry
                         included[customBarId] = true
@@ -816,7 +819,10 @@ local function NormalizeCustomBarStoreForClass(barsBySpec, allowedSpecIDs)
                 end
             end
         end
-        for customBarId in pairs(included) do
+        local remaining = {}
+        for customBarId in pairs(included) do remaining[#remaining + 1] = customBarId end
+        table.sort(remaining)
+        for _, customBarId in ipairs(remaining) do
             filtered.order[#filtered.order + 1] = customBarId
         end
     else
@@ -982,6 +988,9 @@ local function NormalizeResourceBarSettingsForClass(settings, classKey)
         RESOURCE_BAR_NORMALIZED_CLASS_KEYS[settings] = NormalizeClassKey(classKey)
     end
 end
+
+-- Keep source attachment IDs intact during detached import conversion.
+ST._NormalizeResourceSettingsForPanelConversion = NormalizeResourceBarSettingsForClass
 
 local function NormalizeScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then

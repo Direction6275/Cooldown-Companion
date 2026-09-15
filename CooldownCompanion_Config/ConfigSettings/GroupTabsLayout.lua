@@ -81,6 +81,7 @@ local function GetLayoutFinderState(context)
 
     local group = LayoutFinderGroup(context)
     if not group then return nil end
+    local owner = group._attachedBarOwner or group
 
     local state = { sections = {} }
     if context then context._ccLayoutFinderState = state end
@@ -166,7 +167,7 @@ local function GetLayoutFinderState(context)
     state.anchorPanel = isPanel and targetMode == "panel"
     state.anchorFrame = targetMode == "frame"
     state.autoAnchor = not standalone
-        and CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
+        and CooldownCompanion:IsIconLikeDisplayMode(owner.displayMode)
         and not isAuraPanel
 
     state.panelPoint = targetMode == "cursor"
@@ -204,6 +205,11 @@ local function GetLayoutFinderState(context)
     state.customStrataLayers = state.customStrata
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
+
+    if group._attachedBarOwner and (ST.GetPanelLayoutKind(owner) == "mixed" or ST.GetBarOnlyLayoutMode(owner) == "stack") then
+        for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
+            "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
+    end
 
     if not standalone and ST.PanelSupportsSections(group)
         and type(group.sections) == "table" then
@@ -1178,6 +1184,11 @@ local function BuildLayoutTab(container)
     local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
 
     if not arrangementCollapsed then
+    if not ST._BuildAttachedBarLayout(container, group) then
+    local group = ST._ResolveStylingGroup(group)
+    local style = group.style
+    local displayMode = group.displayMode or "icons"
+    local isIconsMode, isBarMode, isTextMode = displayMode == "icons", displayMode == "bars", displayMode == "text"
     -- Two settings have to be read together here whatever the mode: growth
     -- direction is relabelled by the orientation above it, so they always
     -- share a column and always sit adjacent.
@@ -1388,6 +1399,7 @@ local function BuildLayoutTab(container)
             settings = LAYOUT_FINDER.compact,
         })
     end
+    end -- grid arrangement
     end -- not arrangementCollapsed
 
     -- ============================================================
@@ -1404,7 +1416,8 @@ local function BuildLayoutTab(container)
     -- placement, direction, and wrap are Layout's), and the aura toggle heads
     -- the block here because "only auras live here, and they pack" is a
     -- statement about the cluster's layout rather than its look.
-    local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
+    local panelSections = not ST._ResolveStylingGroup(group)._attachedBarOwner
+        and ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
         -- panel rather than whatever order the profile happens to store them in.
@@ -1543,7 +1556,7 @@ local function BuildLayoutTab(container)
     -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
     -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
     -- Display) IS the panel. There is no stack left to reorder.
-    local showCustomStrata = isIconsMode and not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
+    local showCustomStrata = isIconsMode and not ST._ResolveStylingGroup(group)._attachedBarOwner and not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole

@@ -3483,6 +3483,22 @@ local function MigrateDurationTextVisibilityBackfill(self, profile)
     profile[DURATION_TEXT_VISIBILITY_SENTINEL.current] = true
 end
 
+-- Imports convert ordinary Bar Panels before the profile migration passes
+-- run. Normalize their style vocabulary before it moves into attachedBarStyle,
+-- and repair that bundle on earlier converted profiles. Reuse the same
+-- idempotent table migrations without consuming profile migration sentinels.
+function ST._NormalizeBarStyleForPanelConversion(style)
+    if type(style) ~= "table" then return end
+    ClearInvalidStrataOrders({ globalStyle = style })
+    StripRetiredSwipeEdgeKeysFromStyle(style)
+    StripRetiredIconFillAuraColorFromStyle(style)
+    StripRetiredTextSizeKeysFromStyle(style)
+    MigrateAuraGlowStyleTable(style, { invert = 0, combatOnly = 0, textFormat = 0 })
+    MigrateLcgStyleTable(style, { buttonGlow = 0, autocast = 0 })
+    MigrateBarAuraEffectTable(style, { remapped = 0 })
+    MigratePandemicMarkerModeStyle(style)
+end
+
 -- Panel templates (db.global.panelTemplates) are an account-wide store of
 -- saved panel styles, kept PROFILE-SHAPED on purpose: { groups = { [id] =
 -- <panel-shaped table> }, nextGroupId = N }. Each template carries a panel's
@@ -3533,7 +3549,7 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     local legacyGroups, currentGroups = {}, {}
     for id, template in pairs(store.groups) do
         if type(template) == "table" then
-            if template.templateVersion == 3 then
+            if template.templateVersion == 3 or template.templateVersion == 4 then
                 currentGroups[id] = template
             elseif template.templateVersion == nil or template.templateVersion == 1 or template.templateVersion == 2 then
                 legacyGroups[id] = template
@@ -3675,6 +3691,7 @@ function CooldownCompanion:RunAllMigrations()
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
+    if self.RunUnifiedPanelMigration and not self:RunUnifiedPanelMigration() then return false end
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

@@ -318,7 +318,7 @@ function ST.UpdateGroupSizeLabel(frame)
         return
     end
 
-    local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
+    local group = ST.GetPanelSizingGroup(frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId])
     local style = group and group.style
     if not style then
         return

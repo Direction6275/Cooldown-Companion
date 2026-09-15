@@ -724,6 +724,18 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         exportedCharInfo = data._characterInfo
     end
 
+    -- Convert before replacing the active profile, including direct restore
+    -- callers that did not enter through the import review.
+    local candidate = CopyTable(data)
+    candidate._exporterCharKey = exporterCharKey
+    candidate._characterInfo = exportedCharInfo
+    local converted, conversionError = ST._ConvertUnifiedPanelImport(candidate)
+    if not converted then
+        self:Print("Import failed: " .. tostring(conversionError))
+        return false
+    end
+    data = converted
+
     local strippedCharacterEligibility = tonumber(data._cdcCharacterEligibilityStripped) or 0
     CopyProfileDataIntoActiveProfile(db.profile, data)
     if StripLocalPanelMetadataFromProfile then

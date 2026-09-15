@@ -62,19 +62,12 @@ local CREATE_ACCENT = {
 local PANEL_TYPES = {
     {
         mode = "icons",
-        label = "Icon Panel",
-        description = "Shows spells or items as classic cooldown icons.",
-        pickerDescription = "Classic cooldown icons",
+        label = "Panel",
+        description = "Shows spells, auras, and items as icons, bars, or both.",
+        pickerDescription = "Icons, bars, or both",
         primary = true,
         -- The tutorial's create-panel step only advances on an Icon Panel.
         notifyTutorial = true,
-    },
-    {
-        mode = "bars",
-        label = "Bar Panel",
-        description = "Shows spells or items as timer bars with names and durations.",
-        pickerDescription = "Named timer bars",
-        primary = true,
     },
     {
         mode = "auraIcons",
@@ -192,7 +185,7 @@ ST._GetPanelTemplateFailureText = GetPanelTemplateFailureText
 
 local function GetPanelTemplateApplyTooltipText(template)
     local sectionNote = " Aura Only stays off in sections containing non-Aura entries."
-    if template.templateVersion == 3 then
+    if template.templateVersion == 3 or template.templateVersion == 4 then
         return "Applies all saved panel settings, including Alpha mode, layers, and panel text format. Entries and their customizations, eligibility, connections, and position stay unchanged." .. sectionNote
     end
     local scope = template.templateVersion == 2
@@ -209,7 +202,7 @@ local function GetPanelTemplateTooltipText(template)
     local modeLabel = GetPanelTypeLabel(template)
     local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
     local text = "Creates " .. article .. " " .. modeLabel .. " with the saved panel settings and placement. Entries and their customizations are not copied."
-    if template.templateVersion ~= 3 then
+    if template.templateVersion ~= 3 and template.templateVersion ~= 4 then
         text = text .. " Older template: update it from a panel to capture all panel settings."
     end
     return text
@@ -693,6 +686,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
         end
         -- Section placement and aura keys belong to the panel being left.
         ST.DetachEntryFromPanelSection(snapshot.group, entry)
+        ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
         results[i] = previousCount + i

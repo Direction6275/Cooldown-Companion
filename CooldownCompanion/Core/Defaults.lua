@@ -599,16 +599,6 @@ local defaults = {
                     textFormat = "percent",
                 },
             },
-            customAuraBarSlots = {
-                [1] = { position = "below", order = 1001 },
-                [2] = { position = "below", order = 1002 },
-                [3] = { position = "below", order = 1003 },
-                [4] = { position = "below", order = 1004 },
-                [5] = { position = "below", order = 1005 },
-            },
-            customAuraBars = {},
-            customBars = {},
-            nextCustomBarId = 1,
             layoutOrder = {},
             displayProfiles = {},
             textFont = "Friz Quadrata TT",
@@ -788,6 +778,11 @@ end
 -- Migrations) keeps working unchanged.
 local function TakeAuraEntryKey(group, buttonData)
     group.nextAuraKey = tonumber(group.nextAuraKey) or 1
+    local used = {}
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry ~= buttonData and entry._auraKey then used[tostring(entry._auraKey)] = true end
+    end
+    while used[tostring(group.nextAuraKey)] do group.nextAuraKey = group.nextAuraKey + 1 end
     buttonData._auraKey = tostring(group.nextAuraKey)
     group.nextAuraKey = group.nextAuraKey + 1
 end
@@ -814,8 +809,10 @@ end
 function CooldownCompanion:StampAuraSectionEntryKey(group, buttonData)
     if type(group) ~= "table" or type(buttonData) ~= "table" then return end
     if buttonData._auraKey ~= nil then return end
-    local anchor = ST.GetPanelSectionForEntry(group, buttonData)
-    if not (anchor and ST.IsAuraOnlyPanelSection(group, anchor)) then return end
+    if not (ST.IsPanelBarEntry and ST.IsPanelBarEntry(group, buttonData)) then
+        local anchor = ST.GetPanelSectionForEntry(group, buttonData)
+        if not (anchor and ST.IsAuraOnlyPanelSection(group, anchor)) then return end
+    end
     TakeAuraEntryKey(group, buttonData)
 end
 
@@ -1439,6 +1436,12 @@ ST.OVERRIDE_SECTIONS = {
         },
         modes = {bars = true},
     },
+    barShape = {
+        label = "Bar Settings",
+        keys = { "barLength", "barHeight", "barTexture", "barFillVertical", "barReverseFill", "durationFormat" },
+        defaults = { barLength = 180, barHeight = 12, barTexture = "Solid", barFillVertical = false, barReverseFill = false, durationFormat = "clock" },
+        modes = { bars = true },
+    },
     barColor = {
         label = "Bar Color",
         keys = {"barColor"},
@@ -1506,7 +1509,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
-    "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
+    "barShape", "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
 
@@ -1643,6 +1646,9 @@ ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
 }
 
 function ST.CanGroupUseOverrideSection(group, sectionId)
+    if sectionId == "barShape" then
+        return group and (group._attachedBarOwner ~= nil or ST.PanelSupportsAttachedBars(group)) or false
+    end
     if not ST.IsAuraPanelGroup(group) then return true end
     -- Truthy test on purpose: a predicate entry denies here too (see the
     -- table's note on why panel scope does not ask it per entry).
