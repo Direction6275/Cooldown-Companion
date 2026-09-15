@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.6.3",
         "2.6.2",
         "2.6.1",
         "2.5.3",
@@ -41,6 +42,26 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.6.3"] = {
+            markdown = [[
+## New Features
+
+- **Separate panel anchors:** Choose a panel per spec for Resources, Cast Bar, Player Frame, and Target Frame, including panels excluded from auto-anchoring. Unavailable choices temporarily fall back to Automatic and return when available.
+
+## Polish | QoL
+
+- **More complete templates:** Newly saved or updated templates retain more panel settings, defaults, and visible-icon limits. Applying them preserves existing entries, customizations, position, and anchors.
+- **Flexible Aura Only templates:** Templates now apply to sections containing ordinary spells or items, turning Aura Only off for those sections while keeping the rest of the setup.
+- **Clearer section drops:** Incompatible Aura Only drops show a red outline and explanation. Visible sections take priority over overlapping empty sections.
+- **Aura Panel previews:** Preview controls now show only options that apply to Aura Panels.
+
+## Bug Fixes
+
+- **Text positioning:** Edge anchors center text across the border, and changing anchors resets offsets to sensible defaults. Keybind text supports all nine anchors.
+    - You may need to adjust your existing text positions after this update.
+- **Moving panels:** Moving panels between groups preserves their chosen anchors and offsets. Panels anchored to their group follow the new group with the same relative placement.
+]],
+        },
         ["2.6.2"] = {
             markdown = [[
 ## New Features
