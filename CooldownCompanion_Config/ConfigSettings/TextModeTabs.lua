@@ -795,7 +795,7 @@ local function BuildTextAppearanceTab(container, group, style)
                 tbl = style, key = "textHeaderFontColor",
                 default = {1, 1, 1, 1}, hasAlpha = true,
                 disabled = panelSec.disabled,
-                onConfirm = refreshFrame, onChange = refreshFrame,
+                onConfirm = refreshFrame,
             })
         end,
     })

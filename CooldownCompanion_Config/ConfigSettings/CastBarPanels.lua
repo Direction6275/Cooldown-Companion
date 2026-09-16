@@ -704,7 +704,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1.0, 0.7, 0.0, 1.0},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         AddColorRow(barRight, {
@@ -715,7 +715,7 @@ local function BuildCastBarStylingPanel(container)
             default = {0, 0, 0, 0.5},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
     end
 
@@ -759,7 +759,7 @@ local function BuildCastBarStylingPanel(container)
                     default = {0, 0, 0, 1},
                     hasAlpha = true,
                     onConfirm = applyCastBar,
-                    onChange = castPreviewOnly,
+                    onPreview = castPreviewOnly,
                 })
 
                 local renderMode = AddBorderRenderModeDropdown(panel, settings, "borderRenderMode", function()
@@ -1038,7 +1038,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 0.8},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         local penultimateRow = AddCheckboxRow(panel, {
@@ -1070,7 +1070,7 @@ local function BuildCastBarStylingPanel(container)
                 default = {1, 0.82, 0, 1},
                 hasAlpha = true,
                 onConfirm = applyCastBar,
-                onChange = castPreviewOnly,
+                onPreview = castPreviewOnly,
             })
         end
     end
@@ -1120,8 +1120,6 @@ local function BuildCastBarStylingPanel(container)
             },
         })
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
             setting = CASTBAR_FINDER.name and CASTBAR_FINDER.name.color,
@@ -1130,7 +1128,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
     end
 
@@ -1174,8 +1172,6 @@ local function BuildCastBarStylingPanel(container)
             },
         })
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
             setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.color,
@@ -1184,7 +1180,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         -- Both offsets place the countdown on the canvas facsimile too.

@@ -1050,6 +1050,7 @@ local function RestoreOtherClassLibraryForScope(scope)
 end
 
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
     CooldownCompanion:ClearAllConfigPreviews()
     local selectedScope = ResolveConfigContainerClassScope(containerId)
@@ -2398,6 +2399,7 @@ local function CaptureLensTransition()
 end
 
 local function ClearSelectedButton(opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
@@ -2411,6 +2413,7 @@ local function ClearConfigButtonSelection()
 end
 
 local function ClearConfigPanelSelection()
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CS.selectedGroup = nil
     ClearSelectedButton()
 end
@@ -2437,6 +2440,7 @@ local function ClearConfigResourceSelection()
 end
 
 ClearConfigPrimarySelection = function()
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedContainer = nil
     CS.selectedGroup = nil
@@ -2449,6 +2453,7 @@ ClearConfigPrimarySelection = function()
 end
 
 local function SelectConfigContainer(containerId, opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.configFinderRestoredCollapsedContainerId = nil
     if not (opts and opts.keepContainerMulti) then
@@ -2477,6 +2482,7 @@ local function SelectConfigContainer(containerId, opts)
 end
 
 local function ToggleConfigContainerMultiSelect(containerId)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     if CS.selectedGroups[containerId] then
         CS.selectedGroups[containerId] = nil
@@ -2496,6 +2502,7 @@ local function ToggleConfigContainerMultiSelect(containerId)
 end
 
 local function SelectConfigPanel(panelId, opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if CS.selectedGroup ~= panelId or CS.barsEntrySelected then
         CS.panelAddModePanelId = panelId
         CS.panelAddMode = "entry"
@@ -2540,6 +2547,7 @@ local function SelectConfigPanel(panelId, opts)
 end
 
 local function ToggleConfigPanelMultiSelect(panelId)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     if CS.selectedPanels[panelId] then
         CS.selectedPanels[panelId] = nil
@@ -2566,6 +2574,7 @@ end
 -- surface lives), and a caller that names a destination with opts.scope -
 -- adding a spell, whose new entry is the destination.
 local function SelectConfigButton(panelId, buttonIndex, opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local panelChanged = CS.selectedGroup ~= panelId
     local hadEntryFocus = not panelChanged
         and (CS.selectedButton ~= nil or CS.selectedRotationAssistantEntry == true)
@@ -2645,6 +2654,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
 end
 
 local function SelectConfigRotationAssistantEntry(panelId, opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
     end
@@ -2672,6 +2682,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     -- The panel becomes the sole selected editing target.
     CS.unifiedBarKind = nil
     SelectConfigPanel(panelId)
@@ -2709,6 +2720,7 @@ end
 local function SelectConfigResource(powerType, opts)
     local numericPowerType = tonumber(powerType)
     if numericPowerType == nil then return false end
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local wasActive = CS.barsEntrySelected or CS.unifiedBarKind == "resource"
     if not CS.barsEntrySelected and CS.selectedGroup then
         CS.unifiedBarKind = "resource"
@@ -2760,6 +2772,7 @@ local function SelectUnifiedAnchorBar(slot, opts)
     if type(slot) ~= "table" then
         return false
     end
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local allowToggle = not (opts and opts.toggle == false)
     if slot.kind == "resource" and slot.powerType ~= nil then
         if allowToggle
@@ -2796,6 +2809,7 @@ end
 -- Route legacy Resources-home callers to the actual stack destination.
 -- Only the workspace router requests a standalone inventory destination.
 local function SelectConfigBarsEntry(opts)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if not (opts and opts.standalone) and ST._OpenBarWorkspace then
         return ST._OpenBarWorkspace("resources")
     end
@@ -2824,6 +2838,7 @@ local function SelectConfigCastFramesItem(item)
     if item ~= "castbar" and item ~= "player" and item ~= "target" then
         return false
     end
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local changed = CS.castFramesSelectedItem ~= item
     if ST._OpenBarWorkspace then ST._OpenBarWorkspace(item) end
     ClearConfigResourceSelection()
@@ -2881,6 +2896,7 @@ local function IsButtonsWideViewActive()
 end
 
 local function ResetConfigSelection(full)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil

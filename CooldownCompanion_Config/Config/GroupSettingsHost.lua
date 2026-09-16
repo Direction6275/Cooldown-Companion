@@ -162,6 +162,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         tabGroup:SetLayout("Fill")
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+            if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
             -- A click on the tab itself is the user choosing a tab; our own
             -- re-selects are not. Once there is a choice to honor, it is
             -- honored for every panel, text or not.
@@ -204,19 +205,23 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             widget:AddChild(scroll)
             CS.col4Scroll = scroll
             scroll._cdcStylePresentation = nil
+            scroll._cdcSettingsScopeKey, scroll._cdcSettingsOwner = nil, nil
             local styleGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-            if styleGroup and tab ~= "loadconditions" then
-                local presentation = ST._ResolveStylingGroup(styleGroup).displayMode or "icons"
-                scroll._cdcStylePresentation = presentation
+            if styleGroup then
+                scroll._cdcStylePresentation = styleGroup.displayMode or "icons"
                 if ST.PanelSupportsAttachedBars(styleGroup) then
-                    CS.panelStyleScrolls = CS.panelStyleScrolls or setmetatable({}, { __mode = "k" })
-                    local views = CS.panelStyleScrolls[styleGroup] or {}
-                    CS.panelStyleScrolls[styleGroup] = views
-                    local key = presentation .. ":" .. tab
+                    local entry = ST._GetPanelSettingsSelection(styleGroup)
+                    local scope = entry and "entry:" .. ST.GetEntryPresentation(styleGroup, entry) or "panel"
+                    local state = ST._GetPanelSettingsState(styleGroup)
+                    if not entry then state.panelTab = tab end
+                    scroll._cdcStylePresentation = "ordinary"
+                    scroll._cdcSettingsScopeKey = scope .. ":" .. tab
+                    scroll._cdcSettingsOwner = styleGroup
+                    local views = state.scrolls
+                    local key = scope .. ":" .. tab
                     views[key] = views[key] or {}
                     scroll:SetStatusTable(views[key])
                 end
-                ST._BuildPanelStyleView(scroll, styleGroup)
             end
             if ST._BeginLensAnchorBuild then
                 ST._BeginLensAnchorBuild(scroll)
@@ -288,9 +293,26 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         and group.buttons[CS.selectedButton] ~= nil
         and ST._GroupSupportsPerButtonOverrides
         and ST._GroupSupportsPerButtonOverrides(group)
+    if group and ST.PanelSupportsAttachedBars(group) then isSingleEntry = ST._GetPanelSettingsSelection(group) ~= nil end
+    local availableTabs = ST._GetOrdinaryEntrySettingsTabs and ST._GetOrdinaryEntrySettingsTabs(group)
     local selectionMode = isRotationEntry and "rotation-entry"
         or (isSingleEntry and "entry" or "panel")
     local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode
+    if availableTabs then
+        tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
+    end
+    if group and ST.PanelSupportsAttachedBars(group) then
+        local entry = ST._GetPanelSettingsSelection(group)
+        local scope = entry and "entry" or "panel"
+        local state = ST._GetPanelSettingsState(group)
+        if scope == "panel" and not CS.pendingSettingHighlight
+            and (container._settingsTabOwner ~= group or container._settingsTabScope ~= scope) then
+            CS.selectedTab = state.panelTab or CS.selectedTab
+        end
+        container._settingsTabOwner, container._settingsTabScope = group, scope
+    else
+        container._settingsTabOwner, container._settingsTabScope = nil, nil
+    end
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
         if isRotationEntry then
@@ -301,13 +323,12 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             if isTextMode then
                 tabs[#tabs + 1] = { value = "format", text = "Format" }
             end
-            -- Layout is intrinsically panel-owned, so it is absent while a
-            -- normal entry is the selected editing target.
-            if not isSingleEntry then
+            -- Entries expose Layout only when they own placement controls.
+            if not isSingleEntry or (availableTabs and availableTabs.layout) then
                 tabs[#tabs + 1] = { value = "layout", text = "Layout" }
             end
-            tabs[#tabs + 1] = { value = "appearance", text = "Appearance" }
-            if not isTextMode then
+            if not availableTabs or availableTabs.appearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
+            if not isTextMode and (not availableTabs or availableTabs.effects) then
                 tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
             end
             tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
@@ -330,8 +351,13 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
     if isRotationEntry then
         CS.selectedTab = "loadconditions"
-    elseif isSingleEntry and CS.selectedTab == "layout" then
+    elseif isSingleEntry and CS.selectedTab == "layout" and not (availableTabs and availableTabs.layout) then
         CS.selectedTab = isTextMode and "format" or "appearance"
+    end
+    if availableTabs and not availableTabs[CS.selectedTab] then
+        for _, candidate in ipairs({ "layout", "appearance", "effects", "loadconditions" }) do
+            if availableTabs[candidate] then CS.selectedTab = candidate; break end
+        end
     end
     -- A text panel with no tab choice to honor lands on Format. The remembered
     -- tab is one shared value with no "unset" state (it ships as "appearance"),
@@ -351,12 +377,14 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
 
     -- Save AceGUI scroll state before tab re-select (old col4Scroll will be released)
-    local savedOffset, savedScrollvalue
+    local savedOffset, savedScrollvalue, savedScope, savedOwner
     if CS.col4Scroll then
         local s = CS.col4Scroll.status or CS.col4Scroll.localstatus
         if s and s.offset and s.offset > 0 then
             savedOffset = s.offset
             savedScrollvalue = s.scrollvalue
+            savedScope = CS.col4Scroll._cdcSettingsScopeKey
+            savedOwner = CS.col4Scroll._cdcSettingsOwner
         end
     end
 
@@ -366,7 +394,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 
     -- Restore the saved position; a full refresh applies it after the
     -- inline Advanced editor is reinserted, before returning to rendering.
-    if savedOffset and CS.col4Scroll then
+    if savedOffset and CS.col4Scroll and savedScope == CS.col4Scroll._cdcSettingsScopeKey
+        and savedOwner == CS.col4Scroll._cdcSettingsOwner then
         local s = CS.col4Scroll.status or CS.col4Scroll.localstatus
         if s then
             s.offset = savedOffset

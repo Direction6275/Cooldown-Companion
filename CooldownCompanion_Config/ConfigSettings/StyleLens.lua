@@ -52,6 +52,12 @@ end
 -- only while the group actually has an aura-tracking entry. Shared by
 -- GroupTabs and BarModeTabs (load order: Helpers loads first).
 local function GroupHasAuraTrackingEntry(group)
+    local context = group and group._settingsContext
+    if context then
+        if context.mode ~= "entry" then return true end
+        local entry = context.entry
+        return entry and (entry.auraTracking or entry.addedAs == "aura") or false
+    end
     if not (group and group.buttons) then
         return false
     end
@@ -92,6 +98,10 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
+    if group and group._settingsContext and buttonData and buttonData.addedAs == "aura"
+        and (sectionId == "barCooldownColor" or sectionId == "barChargeColor" or sectionId == "barReadyText") then
+        return false, "entryType"
+    end
     if sectionId == "barShape" and group and not ST.IsPanelBarEntry(group, buttonData) then
         return false, "displayMode"
     end
@@ -208,15 +218,9 @@ end
 -- A styling view is a local context. The real panel keeps its display mode,
 -- identity, entries, and icon style throughout widget building and callbacks.
 function ST._ResolveStylingGroup(group)
+    if group and group._settingsContext then return group end
     if not ST.PanelSupportsAttachedBars(group) then return group end
-    local count = 0
-    for _ in pairs(CS.selectedButtons or {}) do count = count + 1 end
-    local entry = count < 2 and CS.selectedButton and group.buttons[CS.selectedButton]
-    local view = entry and ST.GetEntryPresentation(group, entry)
-        or (CS.panelStyleViews and CS.panelStyleViews[group])
-        or (ST.GetPanelLayoutKind(group) == "bars" and "bars" or "icons")
-    if view ~= "bars" then return group end
-    return ST.GetPanelBarStyleGroup(group)
+    return ST._CreatePanelSettingsContext(group).group
 end
 
 local function ResolveStyleLens(group)
@@ -225,26 +229,18 @@ local function ResolveStyleLens(group)
         return { mode = "panel" }
     end
 
-    local multiCount = 0
-    if CS.selectedButtons then
-        for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
-    end
-
-    local buttonData = CS.selectedButton and group.buttons and group.buttons[CS.selectedButton]
-    if buttonData and multiCount < 2 then
+    local context = group._settingsContext
+    local buttonData, mode, buttonIndex = ST._GetPanelSettingsSelection(group)
+    if buttonData then
         return {
             mode = "entry",
-            buttonIndex = CS.selectedButton,
+            buttonIndex = buttonIndex,
             buttonData = buttonData,
-            effective = BuildDetachedEffectiveStyle(group.style, buttonData, group),
+            effective = BuildDetachedEffectiveStyle(context and context:ReadStyle() or group.style, buttonData, group),
         }
     end
 
-    if multiCount >= 2 then
-        return { mode = "multi" }
-    end
-
-    return { mode = "panel" }
+    return { mode = mode }
 end
 
 -- Resolve one section against the lens. Returns scope, the table its controls
@@ -265,7 +261,8 @@ local function ResolveLensSection(lens, group, sectionId)
 
     if mode ~= "entry" then
         local groupStyle = group and group.style
-        return (mode == "multi") and "multi" or "panel", groupStyle, groupStyle
+        local readStyle = group and group._settingsContext and group._settingsContext:ReadStyle() or groupStyle
+        return (mode == "multi") and "multi" or "panel", readStyle, groupStyle
     end
 
     if sectionId == nil then
@@ -288,7 +285,8 @@ local function ResolveLensSection(lens, group, sectionId)
     -- live surface that edits the detached effective table.
     if buttonData.overrideSections and buttonData.overrideSections[sectionId]
         and buttonData.styleOverrides then
-        return "customized", lens.effective, buttonData.styleOverrides
+        local context = group._settingsContext
+        return "customized", lens.effective, context and context:EntryWrites() or buttonData.styleOverrides
     end
 
     return "inherited", lens.effective, nil
@@ -415,6 +413,8 @@ local function GetRevertTooltipText(sectionId)
 end
 
 local function PerformSectionRevert(buttonData, sectionId)
+    local group = CooldownCompanion.db and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not (group and group.buttons and group.buttons[CS.selectedButton] == buttonData) then return end
     CooldownCompanion:RevertSection(buttonData, sectionId)
     CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
     CooldownCompanion:RefreshConfigPanel()
@@ -543,8 +543,9 @@ end
 -- UpdateGroupStyle, so the preview never waits on that navigation.
 local function PromoteLensSection(lens, group, sectionId, opts)
     group = ST._ResolveStylingGroup(group)
+    if group and group._settingsContext and not group._settingsContext:IsCurrent() then return false end
     local buttonData = lens and lens.buttonData
-    local groupStyle = group and group.style
+    local groupStyle = group and group._settingsContext and group._settingsContext:ReadStyle() or group and group.style
     if not (buttonData and groupStyle and sectionId) then
         return false
     end
@@ -999,6 +1000,7 @@ local function AttachHeadingScopeChrome(heading, lens, group, sectionId)
     end
 
     local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    if ST._MarkSettingsScope then ST._MarkSettingsScope(heading, scope, group) end
     HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
 
     local attached = false
@@ -1076,6 +1078,7 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
     end
 
     local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    if ST._MarkSettingsScope then ST._MarkSettingsScope(rowWidget, scope, group) end
     HideScopeChrome(frame, ROW_SCOPE_FIELDS)
     SetRowScopeTooltip(rowWidget, nil)
 
@@ -1228,6 +1231,8 @@ function LensSection:Chrome(row)
     local pendingHighlight = CS.pendingSettingHighlight
     if pendingHighlight and pendingHighlight.sectionId
         and pendingHighlight.sectionId == self.sectionId
+        and (not self.group._settingsContext or not pendingHighlight.presentation
+            or pendingHighlight.presentation == self.group._settingsContext.presentation)
         and not pendingHighlight.sectionRowWidget then
         pendingHighlight.sectionRowWidget = row
     end
@@ -1246,7 +1251,8 @@ function LensSection:DirectColorControl(row, key, externallyDisabled)
 
     local pending = pendingInheritedColorOpen
     local contextMatches = pending
-        and pending.group == self.group
+        and pending.group == (self.group._settingsOwner or self.group)
+        and pending.presentation == (self.group._settingsContext and self.group._settingsContext.presentation)
         and pending.buttonData == (self.lens and self.lens.buttonData)
         and pending.groupId == CS.selectedGroup
         and pending.buttonIndex == CS.selectedButton
@@ -1291,7 +1297,8 @@ function LensSection:DirectColorControl(row, key, externallyDisabled)
         end
 
         local request = {
-            group = self.group,
+            group = self.group._settingsOwner or self.group,
+            presentation = self.group._settingsContext and self.group._settingsContext.presentation,
             buttonData = self.lens.buttonData,
             groupId = expectedGroupId,
             buttonIndex = expectedButtonIndex,
@@ -1313,6 +1320,7 @@ end
 -- Chrome for a panel-owned row inside this section (see
 -- AttachPanelSettingRowChrome): label only, and only under an entry lens.
 function LensSection:PanelRowChrome(row)
+    if ST._MarkSettingsScope then ST._MarkSettingsScope(row, "panelOnly", self.group) end
     if self.lens and self.lens.mode == "entry" then
         AttachPanelSettingRowChrome(row)
     end
@@ -1333,12 +1341,22 @@ function LensSection:Bracket(column)
 end
 
 function LensSection:FinishBracket(bracket)
+    if bracket and bracket.column and ST._MarkSettingsScope then
+        for i = (bracket.mark or 0) + 1, #bracket.column.children do
+            ST._MarkSettingsScope(bracket.column.children[i], self.scope, self.group, true)
+        end
+    end
     if self.inert and bracket and bracket.column then
         ApplyInertRange(bracket.column, bracket.mark)
     end
 end
 
 function LensSection:Finish()
+    if self.column and ST._MarkSettingsScope then
+        for i = (self.mark or 0) + 1, #self.column.children do
+            ST._MarkSettingsScope(self.column.children[i], self.scope, self.group, true)
+        end
+    end
     if self.inert and self.column then
         ApplyInertRange(self.column, self.mark)
     end
@@ -1390,6 +1408,20 @@ end
 -- defaults to (truthy = collapsed). Lens sections must use that default store;
 -- a caller with its own store would seed the wrong table.
 local function ResolveLensCollapseKey(lens, group, sectionId, baseKey, opts)
+    local context = group and group._settingsContext
+    if context then
+        local key = ST._SettingsContextKey(context, baseKey)
+        if context.mode == "entry" then
+            local scope = ResolveLensSection(lens, group, sectionId)
+            local available = scope ~= "denied" and scope ~= "panelOnly"
+            for _, hosted in ipairs(opts and opts.hostsSections or {}) do
+                local hostedScope = ResolveLensSection(lens, group, hosted)
+                if hostedScope == "inherited" or hostedScope == "customized" then available = true end
+            end
+            context.sections[key] = available
+        end
+        return key
+    end
     if not baseKey or not (lens and lens.mode == "entry") then
         return baseKey
     end
@@ -1437,6 +1469,7 @@ end
 -- uses. Its stock font is already the small one the scope chrome wears, so
 -- only the colour is set.
 local function AddLensPanelScopeNote(container, lens, includeEntryLens)
+    if ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(container) then return end
     local mode = lens and lens.mode
     local speaks = mode == "multi" or (includeEntryLens and mode == "entry")
     if not (container and speaks) then

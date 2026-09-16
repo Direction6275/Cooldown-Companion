@@ -11,7 +11,7 @@ end
 local function AttachedContext(context)
     local group = OrdinaryOwner(context)
     return group and context.group._attachedBarOwner
-        and (ST.GetPanelLayoutKind(group) == "mixed" or ST.GetBarOnlyLayoutMode(group) == "stack") or false
+        and ST.PanelUsesAttachedBarLayout(group) or false
 end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",
@@ -25,10 +25,15 @@ local panelSettings = ST._DefineSettingRoute({
 }):Settings({
     mode = { label = "Bar Arrangement", aliases = { "grid", "collapsing stack" }, applies = function(context)
         local group = OrdinaryOwner(context)
-        return group and context.group._attachedBarOwner and ST.GetPanelLayoutKind(group) ~= "mixed" or false
+        return group and context.group._attachedBarOwner and ST.GetPanelLayoutKind(group) == "bars" or false
     end },
-    spacing = { label = "Bar spacing", applies = AttachedContext },
-    gap = { label = "Gap from anchor", applies = AttachedContext },
+    spacing = { label = "Bar spacing", collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
+    gap = { label = "Gap from anchor", collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
+    stackGap = { label = "Stack gap from anchor", applies = function(context)
+        local owner = OrdinaryOwner(context)
+        return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
+            and ST.GetBarOnlyLayoutMode(owner) == "stack" or false
+    end },
 })
 local placementSettings = ST._DefineSettingRoute({
     idPrefix = "entry.layout.bar_placement", scope = "entry", rowScope = "primary",
@@ -41,29 +46,11 @@ local placementSettings = ST._DefineSettingRoute({
 })
 
 local function FlushPresentationEditors()
-    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
-    AceGUI:ClearFocus()
     Addon:ClearAllConfigPreviews()
 end
 ST._FlushPresentationEditors = FlushPresentationEditors
-
-function ST._BuildPanelStyleView(container, group)
-    if not ST.PanelSupportsAttachedBars(group) then return end
-    local count = 0
-    for _ in pairs(CS.selectedButtons or {}) do count = count + 1 end
-    if count < 2 and CS.selectedButton and group.buttons[CS.selectedButton] then return end
-    CS.panelStyleViews = CS.panelStyleViews or setmetatable({}, { __mode = "k" })
-    ST._AddDropdownRow(container, {
-        label = "Style", list = { icons = "Icons", bars = "Bars" }, order = { "icons", "bars" },
-        value = CS.panelStyleViews[group] or (ST.GetPanelLayoutKind(group) == "bars" and "bars" or "icons"),
-        onChange = function(value)
-            FlushPresentationEditors()
-            CS.panelStyleViews[group] = value
-            Addon:RefreshConfigPanel()
-        end,
-    })
-end
 
 function ST._BuildEntryPresentation(container, group, entry)
     if not ST.PanelSupportsAttachedBars(group) then return end
@@ -76,7 +63,7 @@ function ST._BuildEntryPresentation(container, group, entry)
             FlushPresentationEditors()
             -- A released dropdown must never edit whichever entry has since
             -- taken its old numeric index.
-            if group.buttons[index] ~= entry then return end
+            if CS.selectedGroup ~= groupId or CS.selectedButton ~= index or group.buttons[index] ~= entry then return end
             Addon:SetEntryPresentation(groupId, index, value)
             Addon:RefreshConfigPanel()
         end,
@@ -85,68 +72,101 @@ end
 
 function ST._BuildAttachedBarLayout(container, group)
     if not ST.PanelSupportsAttachedBars(group) then return false end
-    local view = ST._ResolveStylingGroup(group)
-    if not view._attachedBarOwner then return false end
+    local context = ST._CreatePanelSettingsContext(group)
+    local entry = context.entry
+    if not entry or context.presentation ~= "bars" or not ST.PanelUsesAttachedBarLayout(group) then return false end
+    container = ST._NewPanelSettingsSectionHost(container, context)
     local groupId = CS.selectedGroup
-    local entry = CS.selectedButton and group.buttons[CS.selectedButton]
-    local count = 0
-    for _ in pairs(CS.selectedButtons or {}) do count = count + 1 end
-    if count >= 2 then entry = nil end
     local function refresh()
         Addon:UpdateGroupStyle(groupId)
         Addon:RefreshConfigPanel()
     end
-    local kind = ST.GetPanelLayoutKind(group)
-    if kind ~= "mixed" then
-        ST._AddDropdownRow(container, {
-            label = "Bar Arrangement", setting = panelSettings.mode, value = ST.GetBarOnlyLayoutMode(group),
-            list = { grid = "Grid", stack = "Collapsing Stack" }, order = { "grid", "stack" },
-            onChange = function(value)
-                FlushPresentationEditors()
-                group.barOnlyLayout = group.barOnlyLayout or {}
-                group.barOnlyLayout.mode = value
-                Addon:RefreshGroupFrame(groupId)
-                Addon:RefreshConfigPanel()
-            end,
-        })
-        if ST.GetBarOnlyLayoutMode(group) == "grid" then return false end
+    local _, collapsed = ST._BuildCollapsibleSection(container, "Bar Placement", "layout_arrangement", nil, nil, { leftAligned = true })
+    if collapsed then return true end
+    local side, region, resources = ST.GetAttachedBarPlacement(entry)
+    local function place(key, value)
+        FlushPresentationEditors()
+        if not context:IsCurrent() then return end
+        entry.barPlacement = entry.barPlacement or {}
+        entry.barPlacement[key] = value
+        refresh()
     end
-    if entry then
-        local side, region, resources = ST.GetAttachedBarPlacement(entry)
-        local function place(key, value)
-            FlushPresentationEditors()
-            if group.buttons[CS.selectedButton or 0] ~= entry then return end
-            entry.barPlacement = entry.barPlacement or {}
-            entry.barPlacement[key] = value
-            refresh()
+    ST._AddDropdownRow(container, {
+        label = "Side", setting = placementSettings.side, value = side,
+        list = { above = "Above", below = "Below", left = "Left", right = "Right" },
+        order = { "above", "below", "left", "right" },
+        onChange = function(value) place("side", value) end,
+    })
+    ST._AddDropdownRow(container, {
+        label = "Anchor to", setting = placementSettings.region, value = region,
+        list = { main = "Main icons", outer = "Entire icon region" }, order = { "main", "outer" },
+        onChange = function(value) place("region", value) end,
+    })
+    ST._AddDropdownRow(container, {
+        label = "Resources", setting = placementSettings.resources, value = resources,
+        list = { before = "Before Resources", after = "After Resources" }, order = { "before", "after" },
+        onChange = function(value) place("resources", value) end,
+    })
+    return true
+end
+
+function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
+    group = group._settingsOwner or group
+    if not ST.PanelSupportsAttachedBars(group) then return false end
+    local presentations = ST.GetPanelLayoutKind(group) == "bars" and { "icons", "bars" } or { "icons" }
+    for _, presentation in ipairs(presentations) do
+        local context = ST._CreatePanelSettingsContext(group, presentation)
+        local host = ST._NewPanelSettingsSectionHost(container, context)
+        local _, collapsed = ST._BuildCollapsibleSection(host,
+            presentation == "icons" and "Icon Arrangement" or "Bar-only Arrangement",
+            "layout_arrangement", nil, nil, { leftAligned = true })
+        if not collapsed then
+            if presentation == "icons" then buildGrid(host, context.group, #(group.buttons or {}))
+            else
+                local note = AceGUI:Create("Label")
+                note:SetFullWidth(true)
+                note:SetText("Used when the panel contains only bars.")
+                host:AddChild(note)
+                ST._AddDropdownRow(host, { setting = panelSettings.mode, value = ST.GetBarOnlyLayoutMode(group),
+                    list = { grid = "Grid", stack = "Collapsing Stack" }, order = { "grid", "stack" },
+                    onChange = function(value)
+                        FlushPresentationEditors()
+                        if not context:IsCurrent() then return end
+                        group.barOnlyLayout = group.barOnlyLayout or {}
+                        group.barOnlyLayout.mode = value
+                        Addon:RefreshGroupFrame(context.panelId)
+                        Addon:RefreshConfigPanel()
+                    end,
+                })
+                if ST.GetBarOnlyLayoutMode(group) == "grid" then buildGrid(host, context.group, #(group.buttons or {}))
+                else
+                    ST._AddSliderRow(host, { setting = panelSettings.stackGap,
+                        value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 1,
+                        onChange = function(value)
+                            if not context:IsCurrent() then return end
+                            group.barOnlyLayout = group.barOnlyLayout or { mode = "stack" }
+                            group.barOnlyLayout.stackGap = value
+                            Addon:UpdateGroupStyle(context.panelId)
+                        end,
+                    })
+                end
+            end
         end
-        ST._AddDropdownRow(container, {
-            label = "Side", setting = placementSettings.side, value = side,
-            list = { above = "Above", below = "Below", left = "Left", right = "Right" },
-            order = { "above", "below", "left", "right" },
-            onChange = function(value) place("side", value) end,
-        })
-        ST._AddDropdownRow(container, {
-            label = "Anchor to", setting = placementSettings.region, value = region,
-            list = { main = "Main icons", outer = "Entire icon region" }, order = { "main", "outer" },
-            onChange = function(value) place("region", value) end,
-        })
-        ST._AddDropdownRow(container, {
-            label = "Resources", setting = placementSettings.resources, value = resources,
-            list = { before = "Before Resources", after = "After Resources" }, order = { "before", "after" },
-            onChange = function(value) place("resources", value) end,
-        })
-    else
-        group.attachedBarLayout = group.attachedBarLayout or {}
-        local layout = group.attachedBarLayout
-        for _, field in ipairs({ { "spacing", "Bar spacing", 3, 0, 40 },
-            { kind == "mixed" and "gap" or "stackGap", "Gap from anchor", kind == "mixed" and 3 or 0, 0, 80 } }) do
+    end
+    local context = ST._CreatePanelSettingsContext(group, "bars")
+    local host = ST._NewPanelSettingsSectionHost(container, context)
+    local _, collapsed = ST._BuildCollapsibleSection(host, "Attached Bars", "layout_attached", nil, nil, { leftAligned = true })
+    if not collapsed then
+        for _, field in ipairs({ { "spacing", 3, 40 }, { "gap", 3, 80 } }) do
             local key = field[1]
-            local owner = key == "stackGap" and group.barOnlyLayout or layout
-            ST._AddSliderRow(container, {
-                label = field[2], setting = key == "spacing" and panelSettings.spacing or panelSettings.gap,
-                value = owner[key] or field[3], min = field[4], max = field[5], step = 1,
-                onChange = function(value) owner[key] = value; Addon:UpdateGroupStyle(groupId) end,
+            ST._AddSliderRow(host, { setting = panelSettings[key],
+                value = group.attachedBarLayout and group.attachedBarLayout[key] or field[2], min = 0, max = field[3], step = 1,
+                onChange = function(value)
+                    if not context:IsCurrent() then return end
+                    group.attachedBarLayout = group.attachedBarLayout or {}
+                    group.attachedBarLayout[key] = value
+                    Addon:UpdateGroupStyle(context.panelId)
+                end,
             })
         end
     end

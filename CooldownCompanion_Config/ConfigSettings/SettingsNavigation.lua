@@ -295,6 +295,19 @@ local function CaptureLensAnchor()
         relativeOffset = anchorOffset - offset,
         rawOffset = offset,
     }
+    local owner, scope = scroll._cdcSettingsOwner, scroll._cdcSettingsScopeKey
+    if owner and scope then
+        local anchors = ST._GetPanelSettingsState(owner).anchors
+        if scope:match("^panel:") then
+            local saved = {}
+            for key, value in pairs(CS.pendingLensAnchor) do saved[key] = value end
+            anchors[registry.tab] = saved
+        elseif anchors[registry.tab] then
+            local saved = {}
+            for key, value in pairs(anchors[registry.tab]) do saved[key] = value end
+            CS.pendingLensAnchor = saved
+        end
+    end
     return CS.pendingLensAnchor
 end
 

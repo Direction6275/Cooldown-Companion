@@ -491,6 +491,8 @@ local function OpenAdvancedSettingsPanel(opts)
 end
 
 local function QueueAdvancedSettingsPanelOpen(settingKey, extraContext)
+    -- Callers carry the same identity as the destination registration. Shared
+    -- and entry-owned gears do not acquire a presentation from selection.
     if type(settingKey) ~= "string" or settingKey == "" then return end
     queuedOpen = { settingKey = settingKey, context = BuildContext(extraContext) }
 end

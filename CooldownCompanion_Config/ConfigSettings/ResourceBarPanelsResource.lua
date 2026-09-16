@@ -352,8 +352,6 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
     -- both rows go straight onto the panel scroll. The toggle these belong to
     -- lives back on the tab, so neither indents.
     local function BuildEffectStyleAdvanced(panel)
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = options.colorLabel,
             setting = options.settings and options.settings.color,
@@ -362,7 +360,6 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
             default = options.defaultColor,
             hasAlpha = true,
             onConfirm = applyBars,
-            onChange = applyBars,
         })
         HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey,
             options.textureLabel, applyBars,
@@ -592,9 +589,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             applyBars()
         end)
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced. onChange is new: it is the only path that fires
-        -- while the picker is open, and the canvas tracks the colour there.
         AddColorRow(panel, {
             label = "Text Color",
             setting = finderText and finderText.advanced and finderText.advanced.color,
@@ -603,7 +597,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             default = DEFAULT_RESOURCE_TEXT_COLOR,
             hasAlpha = true,
             onConfirm = applyBars,
-            onChange = RefreshLayoutOrderPreviewForDrag,
+            onPreview = RefreshLayoutOrderPreviewForDrag,
         })
 
         local textSettings = finderText and finderText.advanced
@@ -750,8 +744,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             CooldownCompanion:ApplyResourceBars()
         end)
 
-        -- deferCommit and onChange are deliberately absent, matching the
-        -- stock color-picker call this row replaced.
         AddColorRow(panel, {
             label = "Text Color",
             setting = finderText and finderText.rechargeAdvanced
@@ -844,11 +836,11 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         ST._AddAdvancedToggle(colorModeRow, "healthBarGradient", {}, true, {
             build = function(panel)
                 if fillGradientEnabled == true then
-                    AddColorRow(panel, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = false, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = false, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = false, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = false, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = false, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = false, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars })
                 else
-                    AddColorRow(panel, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = false, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = false, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars })
                 end
             end,
         })
@@ -887,11 +879,11 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         ST._AddAdvancedToggle(colorModeRow, "healthBackgroundGradient", {}, true, {
             build = function(panel)
                 if gradientEnabled == true then
-                    AddColorRow(panel, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = false, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = false, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = false, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = false, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = false, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = false, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars })
                 else
-                    AddColorRow(panel, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = false, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = false, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars })
                 end
 
             end,
@@ -1900,7 +1892,7 @@ local function BuildResourceColorControls(container, settings, powerType, specID
             -- The picker-open path already writes the override (the proxy is a
             -- throwaway, so the store is the only place the canvas can read
             -- it from); repainting here is what makes the swatch track live.
-            onChange = function()
+            onPreview = function()
                 local committed = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault)
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
                 RefreshLayoutOrderPreviewForDrag()
@@ -2155,9 +2147,6 @@ local function AddThresholdTickEntryEditor(panel, options)
         local proxy = {
             [proxyKey] = type(entry.color) == "table" and CopyTable(entry.color) or CopyTable(options.defaultColor),
         }
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced: the bound table IS the throwaway proxy, so a drag
-        -- value resting in it cannot reach a live renderer.
         local colorSetting = options.colorSettings and options.colorSettings[index]
         local colorLabel = colorSetting and colorSetting.label or options.colorLabel
         local colorRow = AddColorRow(panel, {
@@ -2181,7 +2170,7 @@ local function AddThresholdTickEntryEditor(panel, options)
             -- colours only show below maximum, and the canvas previews every
             -- bar at maximum). The entry is already written above, so the
             -- repaint has something to read.
-            onChange = function()
+            onPreview = function()
                 local updated = options.previewRefresh and CopyThresholdTickEntryList(entries) or nil
                 if updated and updated[index] then
                     updated[index].color = proxy[proxyKey]
@@ -2521,7 +2510,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                             key = "auraLaneColor",
                             default = RB.GetResourceOverlayLaneColor(entry),
                             onConfirm = applyBars,
-                            onChange = previewOnly,
+                            onPreview = previewOnly,
                         })
                     end
 
@@ -2576,7 +2565,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                         key = "auraFillColor",
                         default = RB.GetResourceOverlayFillColor(entry),
                         onConfirm = applyBars,
-                        onChange = previewOnly,
+                        onPreview = previewOnly,
                     })
                 end
             end
@@ -2637,7 +2626,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 key = "auraActiveColor",
                 default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
                 onConfirm = applyBars,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
 
             -- The style's own sliders, the same rows every other glow surface
@@ -2728,7 +2717,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 key = keys.color,
                 default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
                 onConfirm = applyRows,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
             AddGlowSliderRows(panel, resource,
                 borderStyle == "pixel" and "dashes" or "solid",
@@ -3094,7 +3083,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         default = { 0, 0, 0, 0.5 },
         hasAlpha = true,
         onConfirm = applyBars,
-        onChange = previewOnly,
+        onPreview = previewOnly,
     })
     end -- not barCollapsed
 
@@ -3138,7 +3127,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 default = { 0, 0, 0, 1 },
                 hasAlpha = true,
                 onConfirm = applyBars,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
 
             local renderMode = ST._AddBorderRenderModeDropdown(panel, displayProfile, "borderRenderMode", function()

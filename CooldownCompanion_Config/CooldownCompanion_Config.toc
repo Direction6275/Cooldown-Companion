@@ -55,6 +55,7 @@ Config\Panel.lua
 ConfigSettings\SettingsNavigation.lua
 ConfigSettings\Helpers.lua
 ConfigSettings\StyleLens.lua
+ConfigSettings\PanelSettingsContext.lua
 ConfigSettings\EntryCustomizations.lua
 ConfigSettings\RowWidgets.lua
 ConfigSettings\ModuleAnchoringPanels.lua

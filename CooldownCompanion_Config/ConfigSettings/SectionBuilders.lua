@@ -470,6 +470,8 @@ end
 local function AddSettingsSubheading(container, text)
     if not (container and text) then return nil end
     local heading = AceGUI:Create("Heading")
+    heading._cdcSettingsSubheading = true
+    heading:SetCallback("OnRelease", function(widget) widget._cdcSettingsSubheading = nil end)
     heading:SetText(text)
     ColorHeading(heading)
     heading:SetFullWidth(true)
@@ -577,14 +579,15 @@ local function AddDurationTextVisibilityRows(container, readSettings, writeSetti
             disabled = disabled,
             onChange = function(value)
                 if disabled then return end
-                local previous = rawget(writeSettings, key)
-                writeSettings[key] = math.floor(value + 0.5)
-                if opts.preview then
-                    opts.preview()
-                elseif ST._RefreshButtonsPreviewMirror then
-                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-                end
-                writeSettings[key] = previous
+                ST._WithSettingsPreview(writeSettings, key, function()
+                    writeSettings[key] = math.floor(value + 0.5)
+                end, function()
+                    if opts.preview then
+                        opts.preview()
+                    elseif ST._RefreshButtonsPreviewMirror then
+                        ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                    end
+                end)
             end,
             onRelease = function(value)
                 if disabled then return end
@@ -671,14 +674,13 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
 
     local function previewValue(key, value)
         if disabled then return end
-        local previous = rawget(settings, key)
-        settings[key] = value
-        if opts.preview then
-            opts.preview()
-        elseif ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-        end
-        settings[key] = previous
+        ST._WithSettingsPreview(settings, key, function() settings[key] = value end, function()
+            if opts.preview then
+                opts.preview()
+            elseif ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+            end
+        end)
     end
 
     local threshold = tonumber(settings.durationLowTimeThreshold)
@@ -783,7 +785,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             default = LOW_TIME_DEFAULT_COLOR,
             disabled = disabled,
             onConfirm = refresh,
-            onChange = opts.preview,
+            onPreview = opts.preview,
         })
 
         -- Scope stays simple on mixed surfaces: cooldown is the base consumer and
@@ -871,7 +873,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 default = LOW_TIME_DEFAULT_COLOR2,
                 disabled = disabled,
                 onConfirm = refresh,
-                onChange = opts.preview,
+                onPreview = opts.preview,
             })
         end
 
@@ -947,49 +949,6 @@ local PANDEMIC_MARKER_MODES = {
 }
 local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 
--- The reconciliation the retired per-entry Pandemic Marker checkbox used to do:
--- a marker that just resolved OFF loses its command-center control, and a
--- running stand-in would strand with no toggle left to stop it.
---
--- Two scopes, because the command center has two preview scopes and clearing
--- the wrong one would cancel a preview the change did not orphan:
---
---   entry - the mode is asked of the same gate the bind will answer with, so
---           "auto" on a player buff disarms exactly like an explicit "off".
---           Cleared through the ENTRY api: passing a buttonIndex also drops a
---           panel-wide preview, which one entry opting out must not do.
---   panel - only an explicit "off" disarms. Panel scope has no single entry to
---           read a unit from, so the command center keeps offering the control
---           for "auto" (PreviewCommandCenter's PandemicMarkerEnabled) and
---           nothing is stranded. Only the GROUP-scoped state is inspected: a
---           per-entry preview belongs to an entry whose own mode decides it.
---           Clearing the group state cannot take entry previews with it - the
---           setters keep the two mutually exclusive per group, so a live group
---           preview means there are no entry ones.
-local function ReconcilePandemicMarkerPreview(lens, mode)
-    local groupId = CS.selectedGroup
-    if not groupId then return end
-
-    if not (lens and lens.mode == "entry") then
-        if mode ~= "off" then return end
-        local groupState = ST._GetStoredConditionalPreviewState
-            and ST._GetStoredConditionalPreviewState(groupId, nil) or nil
-        if groupState and groupState.kind == "pandemic_marker" then
-            CooldownCompanion:SetConditionalVisualPreviewActive(groupId, nil, "pandemic_marker", false)
-        end
-        return
-    end
-
-    local buttonIndex = lens.buttonIndex
-    if not buttonIndex then return end
-    if CooldownCompanion:IsPandemicMarkerPreviewWanted(lens.buttonData, { pandemicMarkerMode = mode }) then
-        return
-    end
-    if CooldownCompanion:IsButtonConditionalVisualPreviewActive(groupId, buttonIndex, "pandemic_marker") then
-        CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonIndex, "pandemic_marker", false)
-    end
-end
-
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the mode row, returned so the caller can chain a
 --                       gear and the section's scope chrome off it (the
@@ -998,8 +957,6 @@ end
 --                       instead of indenting under a control that is elsewhere.
 --   neither           - both, with the three styling rows as children of the
 --                       mode row. No caller asks for this shape today.
--- opts.onModeChanged fires with the new mode BEFORE the refresh, for callers
--- that must reconcile a preview the change just orphaned.
 -- Labels deliberately say "Marker": these rows share a section with the
 -- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
 -- column would be unreadable.
@@ -1021,9 +978,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             value = mode,
             onChange = function(val)
                 styleTable.pandemicMarkerMode = val
-                if opts.onModeChanged then
-                    opts.onModeChanged(val)
-                end
                 refreshCallback()
                 rebuildCallback()
             end,
@@ -1073,8 +1027,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     })
 
     if (styleTable.pandemicMarkerColorMode or "marker") ~= "off" then
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
         AddColorRow(container, {
             label = "Marker Color",
             setting = opts.settings and opts.settings.color,
@@ -1083,7 +1035,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             key = "pandemicMarkerColor",
             default = {1, 0.5, 0, 1},
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
         })
     end
 
@@ -1131,8 +1082,6 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
                         outline = opts.settings.outline,
                     },
                 })
-            -- deferCommit is deliberately absent, matching the stock color picker
-            -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = opts.settings and opts.settings.color,
@@ -1141,7 +1090,6 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
                 default = {1, 1, 1, 1},
                 hasAlpha = true,
                 onConfirm = refreshCallback,
-                onChange = refreshCallback,
             })
             AddTextPositionControls(panel, styleTable, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshCallback, {
                 defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
@@ -1163,8 +1111,6 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         refreshCallback()
         RefreshStructuralControls(container)
     end
-    -- deferCommit is deliberately absent, matching the stock color picker this
-    -- row replaced.
     local colorRow = AddColorRow(container, {
         label = "Border Color",
         setting = opts.settings and opts.settings.color,
@@ -1174,7 +1120,6 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         default = {0, 0, 0, 1},
         hasAlpha = true,
         onConfirm = refreshCallback,
-        onChange = refreshCallback,
     })
     ST._AddAdvancedToggle(colorRow, "panelBorder", {}, not opts.sec or opts.sec.scope ~= "denied", {
         unlock = opts.sec and { sec = opts.sec } or nil,
@@ -1281,7 +1226,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
         tbl = tintTbl, key = "iconTintColor",
         default = {1, 1, 1, 1}, hasAlpha = true,
         disabled = sec.disabled,
-        onConfirm = refresh, onChange = refresh,
+        onConfirm = refresh,
     })
 
     if opts.mode == "icons" then
@@ -1291,7 +1236,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             tbl = tintTbl, key = "backgroundColor",
             default = {0, 0, 0, 0.5}, hasAlpha = true,
             disabled = sec.disabled,
-            onConfirm = refresh, onChange = refresh,
+            onConfirm = refresh,
         })
     end
 
@@ -1323,7 +1268,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
                     tbl = tintTbl, key = "iconCooldownTintColor",
                     default = {1, 0, 0.102, 1}, hasAlpha = true,
                     disabled = sec.disabled,
-                    onConfirm = refresh, onChange = refresh,
+                    onConfirm = refresh,
                 })
             end,
         })
@@ -1355,7 +1300,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
                     tbl = tintTbl, key = "iconAuraTintColor",
                     default = {0, 0.925, 1, 1}, hasAlpha = true,
                     disabled = sec.disabled,
-                    onConfirm = refresh, onChange = refresh,
+                    onConfirm = refresh,
                 })
             end,
         })
@@ -1655,8 +1600,6 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
             })
 
             if styleTable.cooldownSwipeEdgeEnabled == true then
-                -- deferCommit is deliberately absent, matching the stock color picker
-                -- this row replaced.
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
                     setting = opts.settings and opts.settings.edgeColor,
@@ -1667,7 +1610,6 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
                     hasAlpha = true,
                     disabled = disabledByIconFill,
                     onConfirm = refreshCallback,
-                    onChange = refreshCallback,
                 })
             end
 
@@ -1776,8 +1718,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
     })
 
     if styleTable.auraDurationSwipeEdgeEnabled == true then
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
         AddColorRow(container, {
             label = "Swipe Edge Color",
             setting = opts.settings and opts.settings.edgeColor,
@@ -1788,7 +1728,6 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
             hasAlpha = true,
             disabled = blizzardStyleActive,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
         })
     end
 end
@@ -1933,8 +1872,6 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         end,
     })
 
-    -- deferCommit is deliberately absent, matching the stock color picker this
-    -- row replaced.
     AddColorRow(container, {
         label = "Cooldown Fill Color",
         setting = opts.settings and opts.settings.color,
@@ -1944,7 +1881,6 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         default = {0.6, 0.13, 0.18, 0.55},
         hasAlpha = true,
         onConfirm = refreshCallback,
-        onChange = refreshCallback,
     })
 end
 
@@ -1998,7 +1934,7 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
             indent = true,
             tbl = styleTable, key = "iconUnusableTintColor",
             default = {0.4, 0.4, 0.4, 1}, hasAlpha = true,
-            onConfirm = tintRefresh, onChange = tintRefresh,
+            onConfirm = tintRefresh,
         })
     end
 
@@ -2091,8 +2027,6 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         end,
     })
 
-    -- deferCommit is deliberately absent throughout, matching the
-    -- stock color pickers these rows replaced.
     local function HighlightColorRow(rowLabel, key, default, setting)
         AddColorRow(right, {
             label = rowLabel,
@@ -2103,7 +2037,6 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
             default = default,
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
         })
     end
     local function HighlightSliderRow(rowLabel, key, minValue, maxValue, default, setting)
@@ -2359,11 +2292,6 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     })
 
     local function BuildDetails(container)
-        -- deferCommit is deliberately absent, matching the stock color pickers
-        -- these rows replaced. opts.previewRefresh (the mirror-first opt-in) moves
-        -- the picker-open path onto the caller's preview and leaves the commit on
-        -- refreshCallback; without it both stay on refreshCallback as before.
-        local pickerOpenRefresh = opts.previewRefresh or refreshCallback
         -- cfg.noColorStyles: styles whose art is untinted (the pandemic CDM
         -- look), so a color row would be a dead control.
         if not opts.hidePrimaryColorPicker
@@ -2377,7 +2305,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 default = cfg.defaultColor,
                 hasAlpha = true,
                 onConfirm = refreshCallback,
-                onChange = pickerOpenRefresh,
+                onPreview = opts.previewRefresh,
             })
         end
 
@@ -2391,7 +2319,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
                 default = cfg.defaultColor2,
                 hasAlpha = true,
                 onConfirm = refreshCallback,
-                onChange = pickerOpenRefresh,
+                onPreview = opts.previewRefresh,
             })
         end
 
@@ -2744,7 +2672,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = previewRefresh or refreshCallback,
+            onPreview = previewRefresh,
         })
 
     end
@@ -2792,8 +2720,6 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
 
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
-    -- deferCommit is deliberately absent throughout, matching the
-    -- stock color pickers this section used to make.
     AddColorRow(container, {
         label = "Background Color",
         setting = opts.settings and opts.settings.background,
@@ -2803,7 +2729,6 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
         default = {0, 0, 0, 0},
         hasAlpha = true,
         onConfirm = refreshCallback,
-        onChange = refreshCallback,
     })
 
     local borderColorRow = AddColorRow(container, {
@@ -2815,7 +2740,6 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
         default = {0, 0, 0, 1},
         hasAlpha = true,
         onConfirm = refreshCallback,
-        onChange = refreshCallback,
     })
     ST._AddAdvancedToggle(borderColorRow, "textBorder", {}, not opts.sec or opts.sec.scope ~= "denied", {
         unlock = opts.sec and { sec = opts.sec } or nil,
@@ -2910,8 +2834,6 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
     local right = opts.rightColumn or container
     local infoButtons = opts.infoButtons or tabInfoButtons
 
-    -- deferCommit is deliberately absent throughout, matching the
-    -- stock color pickers these rows replaced.
     local function TextColorRow(host, rowLabel, key, default, tooltipLines, setting)
         local row = AddColorRow(host, {
             label = rowLabel,
@@ -2922,7 +2844,6 @@ local function BuildTextColorsControls(container, styleTable, refreshCallback, o
             default = default,
             hasAlpha = true,
             onConfirm = refreshCallback,
-            onChange = refreshCallback,
         })
         -- Anchor args are a placeholder - AnchorRowBadge re-points the button
         -- onto the end of the row's label.
@@ -2977,7 +2898,6 @@ ST._AddFamilyColumnCaptions = AddFamilyColumnCaptions
 ST._AddDurationTextVisibilityRows = AddDurationTextVisibilityRows
 ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
-ST._ReconcilePandemicMarkerPreview = ReconcilePandemicMarkerPreview
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildKeybindTextControls = BuildKeybindTextControls
@@ -3103,7 +3023,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
                 end })
             AddColorRow(panel, { label = "Marker Color", setting = settings.markerColor,
                 tbl = style, key = "missingAuraMarkerColor", default = {1, 0.15, 0.1, 1}, hasAlpha = true,
-                onChange = ST._RefreshSelectedButtonsPreview, onConfirm = Refresh })
+                onPreview = ST._RefreshSelectedButtonsPreview, onConfirm = Refresh })
             AddSliderRow(panel, { label = "Marker Size (%)", setting = settings.markerSize,
                 value = style.missingAuraMarkerSize or 65, min = 10, max = 100, step = 1,
                 onChange = function(value)

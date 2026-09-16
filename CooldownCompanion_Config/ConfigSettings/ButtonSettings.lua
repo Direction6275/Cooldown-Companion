@@ -821,8 +821,7 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
         refreshGroup()
     end)
 
-    -- Item count font color. No deferCommit: this call site never had one, and
-    -- nothing here re-reads the bound table per tick.
+    -- Item count font color.
     AddColorRow(itemRight, {
         setting = itemSettings.color,
         tbl = buttonData,
