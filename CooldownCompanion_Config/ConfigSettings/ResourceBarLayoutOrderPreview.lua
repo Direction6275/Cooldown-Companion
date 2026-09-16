@@ -3708,7 +3708,7 @@ function ST._ResetPanelModulePreview(preview)
     for _, frame in ipairs(state.pools.slots) do frame:Hide() end
 end
 
-function ST._BuildPanelModulePreview(preview, panelId, positions, drag)
+function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
     local state = preview.modulePreview
     if not positions or #positions == 0 then
         ST._ResetPanelModulePreview(preview)
@@ -3727,11 +3727,12 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag)
     state.layout = CooldownCompanion:GetSpecLayoutOrder(state.rbSettings)
     state.anchorPanelId = panelId
     state.used.slots = 0
+    if not animate then state.framesBySlot = {} end
     state.root:Show()
     for _, position in ipairs(positions or {}) do
         local module, offset = position.module, 0
         for _, slot in ipairs(module.slots) do
-            local frame = AcquireSlot(state, state.root)
+            local frame = animate and state.framesBySlot[slot] or AcquireSlot(state, state.root)
             local extent = slot.thickness or 12
             local vertical = position.vertical
             local width, height = vertical and extent or position.width, vertical and position.height or extent
@@ -3743,15 +3744,25 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag)
             elseif module.side == "below" then y = y - offset
             elseif module.side == "left" then x = x + position.width - offset - width
             else x = x + offset end
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", state.root, "TOPLEFT", x, y)
+            if animate then
+                ST._ButtonPanelPreview.QueuePreviewSlotTween(preview, frame, "TOPLEFT", x, y)
+            else
+                ST._ButtonPanelPreview.ApplyPreviewSlotGeometry(preview, frame, "TOPLEFT", x, y)
+                state.framesBySlot[slot] = frame
+                frame:SetAlpha(1)
+            end
+            frame._attachmentX, frame._attachmentY = x, y
             frame.slotData = slot
             ApplySlotSelection(frame, slot, vertical, extent)
-            if ST._WirePanelAttachmentModule then ST._WirePanelAttachmentModule(frame, module, slot, drag) end
+            if not animate and ST._WirePanelAttachmentModule then
+                ST._WirePanelAttachmentModule(frame, module, slot, drag)
+            end
             offset = offset + extent + (module.spacing or 0)
         end
     end
-    for i = state.used.slots + 1, #state.pools.slots do state.pools.slots[i]:Hide() end
+    if not animate then
+        for i = state.used.slots + 1, #state.pools.slots do state.pools.slots[i]:Hide() end
+    end
     if #state.animated > 0 then
         state.root:SetScript("OnUpdate", function()
             local now = GetTime()

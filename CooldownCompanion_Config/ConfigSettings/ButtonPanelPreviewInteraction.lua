@@ -22,7 +22,7 @@ local PP = ST._ButtonPanelPreview
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
 local CopyMode = PP.CopyMode
 local QueuePreviewSlotTween = PP.QueuePreviewSlotTween
-local EnsureGapFrame = PP.EnsureGapFrame
+local ShowPreviewGap = PP.ShowPreviewGap
 local ConfigurePreviewGhost = PP.ConfigurePreviewGhost
 local StartPreviewTicker = PP.StartPreviewTicker
 local ClearPreviewGhost = PP.ClearPreviewGhost
@@ -450,14 +450,8 @@ local function UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget
         end
     end
     if gapPos then
-        local gap = EnsureGapFrame(preview)
-        -- The base grid's insertion gap is a reorder cue, not a snap: back to
-        -- the ring blue whatever colour a lane target last left on the tile.
-        SectionDrag.SetGapAccent(preview, false)
-        gap:SetSize(layoutDrag.slotW, layoutDrag.slotH)
         local x, y = layoutDrag.cellXY(gapPos)
-        QueuePreviewSlotTween(preview, gap, layoutDrag.anchor, x, y)
-        gap:Show()
+        ShowPreviewGap(preview, layoutDrag.anchor, x, y, layoutDrag.slotW, layoutDrag.slotH)
     elseif preview.gapFrame then
         preview.gapFrame:Hide()
     end
@@ -699,7 +693,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         if slot and slot.hoverHighlight then
             slot.hoverHighlight:Hide()
         end
-        ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData)
+        ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData, slot)
         BeginEntryGesture(state, sourceIndex)
         UpdateGridDragPreview(preview, layoutDrag, sourceCell, state.dropTarget, sourceIndex)
         StartPreviewTicker(preview)
@@ -715,7 +709,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         BeginEntryGesture(state, sourceIndex)
         UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget, sourceIndex)
         if not preview.ghostActive then
-            ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData)
+            ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData, layoutDrag.slots[sourceIndex])
         end
         StartPreviewTicker(preview)
     end

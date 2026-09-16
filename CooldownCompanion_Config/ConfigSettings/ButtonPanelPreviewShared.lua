@@ -1136,6 +1136,8 @@ local function ApplyPreviewSlotGeometry(preview, slot, anchor, x, y)
 end
 
 local function QueuePreviewSlotTween(preview, slot, anchor, x, y)
+    local pending = preview.tweens[slot]
+    if pending and pending.anchor == anchor and pending.tx == x and pending.ty == y then return end
     if slot._cdcPrevAnchor ~= anchor or not slot._cdcPrevX then
         ApplyPreviewSlotGeometry(preview, slot, anchor, x, y)
         return
@@ -1205,8 +1207,16 @@ local function StartPreviewTicker(preview)
     end)
 end
 
--- Cursor-following ghost: the dragged entry's footprint with its icon
--- centered, floating on the tooltip strata like the resources ghost.
+-- Cursor-following ghost: icon artwork fills its configured footprint;
+-- other presentations keep a centered symbol or an empty bar silhouette.
+local DRAG_BORDER_COLOR = { 0.55, 0.80, 1, 1 }
+local DRAG_SNAP_COLOR = { 1, 0.82, 0, 0.95 }
+local DRAG_REJECT_COLOR = { 1, 0.2, 0.2, 1 }
+local function ApplyDragBorder(frame, color)
+    frame.border = frame.border or ST.CreateBorderTextureSet(frame, "OVERLAY")
+    ST.ApplyBorderTextures(frame.border, frame, color or DRAG_BORDER_COLOR, 1, ST.BORDER_RENDER_MODE_CRISP)
+end
+
 local function EnsurePreviewGhost(preview)
     local ghost = preview.ghost
     if not ghost then
@@ -1225,18 +1235,30 @@ local function EnsurePreviewGhost(preview)
     return ghost
 end
 
-local function ConfigurePreviewGhost(preview, layoutDrag, buttonData)
+local function ConfigurePreviewGhost(preview, layoutDrag, buttonData, sourceSlot)
     local ghost = EnsurePreviewGhost(preview)
+    local group = layoutDrag.panelId and CooldownCompanion.db.profile.groups[layoutDrag.panelId]
+    local fillIcon = group and buttonData and ST.GetEntryPresentation(group, buttonData) == "icons"
     local scale = layoutDrag.scale
-    local gw = math_max(8, layoutDrag.slotW * scale)
-    local gh = math_max(8, layoutDrag.slotH * scale)
+    local width, height = layoutDrag.slotW, layoutDrag.slotH
+    if fillIcon and sourceSlot then width, height = sourceSlot:GetSize() end
+    local minimum = (layoutDrag.exactFootprint or fillIcon) and 1 or 8
+    local gw = math_max(minimum, width * scale)
+    local gh = math_max(minimum, height * scale)
     ghost:SetSize(gw, gh)
+    ApplyDragBorder(ghost)
     local iconSize = math_min(gw, gh)
     ghost.icon:ClearAllPoints()
-    ghost.icon:SetSize(iconSize, iconSize)
+    ghost.icon:SetSize(fillIcon and gw or iconSize, fillIcon and gh or iconSize)
     ghost.icon:SetPoint("CENTER")
+    if fillIcon then
+        local style = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
+        ST._ApplyIconTexCoord(ghost.icon, gw, gh, style.iconZoom)
+    else
+        ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
     local iconResolver = layoutDrag.iconResolver or GetLayoutPreviewIcon
-    local icon = iconResolver and iconResolver(buttonData)
+    local icon = not layoutDrag.hideGhostIcon and iconResolver and iconResolver(buttonData)
     if icon then
         ghost.icon:SetTexture(icon)
         ghost.icon:Show()
@@ -1254,6 +1276,11 @@ local function ClearPreviewGhost(preview)
     if preview.ghost then
         preview.ghost:Hide()
     end
+    if preview.gapFrame then
+        preview.gapFrame:Hide()
+        if preview.tweens then preview.tweens[preview.gapFrame] = nil end
+        preview.gapFrame._cdcPrevAnchor = nil
+    end
 end
 
 -- Translucent marker filling the cell the entry would land in.
@@ -1261,15 +1288,38 @@ local function EnsureGapFrame(preview)
     local gap = preview.gapFrame
     if not gap then
         gap = CreateFrame("Frame", nil, preview.content)
+        gap:SetFrameLevel(preview.content:GetFrameLevel() + 30)
+        gap:EnableMouse(false)
         gap.bg = gap:CreateTexture(nil, "BACKGROUND")
         gap.bg:SetAllPoints()
         gap.bg:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1], PANEL_PREVIEW_RING_COLOR[2],
             PANEL_PREVIEW_RING_COLOR[3], 0.18)
-        -- Only a lane target ever lights this edge (SectionDrag.SetGapAccent);
-        -- the base grid's own insertion gap stays a bare tile.
         gap.border = ST.CreateBorderTextureSet(gap, "OVERLAY")
         preview.gapFrame = gap
     end
+    return gap
+end
+
+-- All entry layouts use this same animated landing tile. Only their geometry
+-- and drop rules differ. Opaque, pixel-sized edges keep a thin bar legible at
+-- the preview's fit scale without making the translucent body heavier.
+local function ShowPreviewGap(preview, anchor, x, y, width, height, accent, message)
+    local gap = EnsureGapFrame(preview)
+    local color = accent == "snap" and DRAG_SNAP_COLOR or accent == "reject" and DRAG_REJECT_COLOR
+    local fill = color or PANEL_PREVIEW_RING_COLOR
+    gap:SetSize(width, height)
+    gap.bg:SetColorTexture(fill[1], fill[2], fill[3], accent == "snap" and 0.28 or 0.18)
+    ApplyDragBorder(gap, color)
+    if message and message ~= "" then
+        if not gap.label then
+            gap.label = gap:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            gap.label:SetPoint("BOTTOM", gap, "TOP", 0, 3)
+        end
+        gap.label:SetText(message)
+        gap.label:Show()
+    elseif gap.label then gap.label:Hide() end
+    QueuePreviewSlotTween(preview, gap, anchor, x, y)
+    gap:Show()
     return gap
 end
 
@@ -1589,7 +1639,7 @@ ST._EntryStatusBadges = ENTRY_STATUS_BADGES
 -- Private helpers consumed by later ButtonPanelPreview files.
 PP.PANEL_PREVIEW_RING_COLOR = PANEL_PREVIEW_RING_COLOR
 PP.QueuePreviewSlotTween = QueuePreviewSlotTween
-PP.EnsureGapFrame = EnsureGapFrame
+PP.ShowPreviewGap = ShowPreviewGap
 PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
 PP.DEFAULT_BAR_READY_TEXT_COLOR = DEFAULT_BAR_READY_TEXT_COLOR
 PP.GetStoredBarPreviewState = GetStoredBarPreviewState

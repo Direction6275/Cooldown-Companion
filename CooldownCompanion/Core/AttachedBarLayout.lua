@@ -392,18 +392,19 @@ function ST.GetAttachedBarDropRejection(group, source, destination, after)
     end
 end
 
-function Addon:MoveAttachedBarEntries(groupId, source, target)
-    local group = self.db.profile.groups[groupId]
-    if not ST.PanelUsesAttachedBarLayout(group) or not target then return false end
+-- Preview and commit share the same ordering decision. This phase never writes
+-- entries, so hovering a destination cannot change saved placement or identity.
+function ST.PlanAttachedBarEntryMove(group, source, target)
+    if not ST.PanelUsesAttachedBarLayout(group) or not target then return end
     local exists = false
     for _, entry in ipairs(group.buttons) do if entry == source then exists = true; break end end
-    if not exists then return false end
+    if not exists then return end
     local destination = target.index and group.buttons[target.index]
     local reason = ST.GetAttachedBarDropRejection(group, source, destination, target.after)
-    if reason then self:Print(reason); return false end
+    if reason then return nil, nil, reason end
     local unit = ST.GetAttachedBarDragEntries(group, source)
     local moving = {}; for _, entry in ipairs(unit) do moving[entry] = true end
-    if moving[destination] then return false end
+    if moving[destination] then return end
     -- A hit anywhere within another native group names its complete edge.
     -- Inserting among its saved members would draw somewhere else once the
     -- native containers restore indivisible unit ordering.
@@ -421,8 +422,20 @@ function Addon:MoveAttachedBarEntries(groupId, source, target)
     end
     insert = insert or #remaining + 1
     for i, entry in ipairs(unit) do
-        entry.barPlacement = { side = target.side, region = target.region, resources = target.resources or "after" }
         table.insert(remaining, insert + i - 1, entry)
+    end
+    return remaining, unit
+end
+
+function Addon:MoveAttachedBarEntries(groupId, source, target)
+    local group = self.db.profile.groups[groupId]
+    local remaining, unit, reason = ST.PlanAttachedBarEntryMove(group, source, target)
+    if not remaining then
+        if reason then self:Print(reason) end
+        return false
+    end
+    for _, entry in ipairs(unit) do
+        entry.barPlacement = { side = target.side, region = target.region, resources = target.resources or "after" }
     end
     wipe(group.buttons)
     for i, entry in ipairs(remaining) do group.buttons[i] = entry end
