@@ -1644,6 +1644,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Hidden and dimmed shells alike: the kit composes the full active
     -- visual either way (the dim key stands alone on 12.1).
     local shellEntry = isAuraPanelHost or CooldownCompanion:IsAuraShellEntry(buttonData)
+    local occlusionFree = ST.BarLayers.IsUncoveredAura(button, buttonData)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData, style)
     -- Keep-swipe entries (icon hosts only) skip the icon takeover: the CC
@@ -1766,6 +1767,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         ApplyFontStyle(kit.stackText, style, "auraStack")
     end
     kit.durationText:ClearAllPoints()
+    ST.BarTextLayout.ResetTimerLane(kit.durationText)
     kit.stackText:ClearAllPoints()
     if isBar and isResourceHost then
         -- Resource overlays run no text of their own — the resource bar's
@@ -1790,8 +1792,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- backdrop occludes the originals): duration text at the bar
         -- time-text spot, stack text against the icon square like the old
         -- aura stack count.
-        ST.BarTextLayout.Apply(kit.durationText, innerHost,
-            ST.BarTextLayout.Resolve(style, "aura", button._isVertical))
+        ST.BarTextLayout.ApplyAuraTimer(kit.durationText, innerHost, style, button._isVertical,
+            occlusionFree and button.nameText and buttonData)
         kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local stackAnchorTo = barIconShown and button.icon or innerHost
@@ -1836,11 +1838,15 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- BOTH alphas are written on every bind: the registration is permanent,
     -- so a pooled slot rebound to an icon host would otherwise keep showing
     -- the live name over the icon.
-    local nameEnabled = style.showBarNameText ~= false
+    -- With no cover, the normal Aura bar's entry-name label stays visible
+    -- both at rest and during the aura. Do not draw a second name over it.
+    -- Shells and native Aura Panel hosts still need the kit's name replica.
+    local keepBarName = occlusionFree and button.nameText ~= nil
+    local nameEnabled = not keepBarName and style.showBarNameText ~= false
     local useLiveName = isBar and nameEnabled and kit.liveBarNameText ~= nil
         and not buttonData.customName
         and not isResourceHost and not isCustomBarHost
-    local useStaticName = isBar and not useLiveName
+    local useStaticName = isBar and not keepBarName and not useLiveName
         and (nameEnabled or buttonData.customName ~= nil)
     local nameText = useLiveName and kit.liveBarNameText
         or useStaticName and kit.barNameText
@@ -1999,14 +2005,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local widgetStack = IsWidgetStackBind(slot, buttonData)
         local segmentedStyle = useStackFill
             and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
-        -- Occlusion-free binds (owner ruling, attempt-1 failure 4): a pure
-        -- aura custom bar has nothing running beneath that must be hidden —
-        -- the CC bar renders the absent state and follows the configured
-        -- background, so the opaque backdrop and the kit's own bg blocks
-        -- stay off and the kit adds only fill/texts/effects. Spell custom
-        -- bars keep the opaque backdrop (a live cooldown fill and its texts
-        -- render beneath and must be occluded), as do panel bars and shells.
-        local occlusionFree = isCustomBarHost and buttonData.addedAs == "aura" and not shellEntry
+        -- Pure Aura entries have no cooldown fill beneath the kit. Their CC
+        -- bar already draws the configured background, including its alpha;
+        -- an opaque cover here would turn a transparent background solid
+        -- while the aura is active. Spell entries still need that cover.
         if shellEntry or widgetStack or occlusionFree then
             kit.barBackdrop:SetAlpha(0)
         else
@@ -2400,17 +2402,7 @@ local function EnsureAuraLayer(button)
     -- (the engine preserves children's relative levels), which is how bind-
     -- time re-levels reach the slot without ever touching it.
     if button._isBar and button.barTextFrame then
-        -- Above barTextFrame (statusBar+20): CC keeps writing cooldown time
-        -- text per tick with no way to know an aura is showing, so the kit
-        -- backdrop must occlude it. Charge/count text hoists above the kit's
-        -- textOverlay (slot+3) to stay readable. UpdateBarStyle re-sets
-        -- barTextFrame's level on restyles, and UpdateGroupStyle always
-        -- re-requests a rebind, so this ordering re-converges after every
-        -- style edit.
-        layer:SetFrameLevel(button.barTextFrame:GetFrameLevel() + 1)
-        if button.overlayFrame then
-            button.overlayFrame:SetFrameLevel(layer:GetFrameLevel() + 10)
-        end
+        ST.BarLayers.Apply(button)
     elseif button._isText then
         -- Text hosts have no strata order: the entry is one flat frame
         -- (background, border and run strings all on it), so one level above

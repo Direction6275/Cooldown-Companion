@@ -4,7 +4,7 @@ local _, ST = ...
 local Addon = ST.Addon
 local Migration = {}
 ST.UnifiedPanelMigration = Migration
-local VERSION = 3
+local VERSION = 6
 
 local function Copy(value)
     if type(value) ~= "table" then return value end
@@ -88,7 +88,7 @@ local ENTRY_KEYS = {
 
 -- Legacy appearance is resolved for its saved spec, then snapshotted through
 -- ordinary customization sections. No current-spec getters are used here.
-function Migration.ConvertLegacyBar(cab, settings, spec, slot, length)
+function Migration.ConvertLegacyBar(cab, settings, spec, slot, length, legacyEntryRules)
     local id = tonumber(cab.spellID)
     if not id or id <= 0 or id ~= math.floor(id) then return nil, "Custom Bar has an invalid spell ID." end
     local layout, display = Layout(settings, spec), SpecTable(settings.displayProfiles, spec) or {}
@@ -99,6 +99,13 @@ function Migration.ConvertLegacyBar(cab, settings, spec, slot, length)
         auraTracking = not spell or cab.auraTracking == true,
         hideWhileAuraNotActive = cab.hideWhenInactive == true }
     for _, key in ipairs(ENTRY_KEYS) do entry[key] = Copy(cab[key]) end
+    -- The ordinary Aura picker marks these as passive: their availability is
+    -- the aura identity, not presence in the castable spellbook. Legacy aura
+    -- bars bypassed spellbook checks too, but did not store this entry flag.
+    if not spell and not legacyEntryRules then
+        entry.isPassive = true
+        entry.auraIndicatorEnabled = true
+    end
     entry.name = entry.name or cab.spellName or ("Spell " .. id)
     entry.auraUnit = cab.auraUnit == "target" and "target" or "player"
     entry.auraBar = Copy(cab.auraBar or {})
@@ -511,8 +518,10 @@ local function RepairConvertedDestinations(profile, context, report)
     local priorContext, correctedContext = Copy(context), Copy(context)
     priorContext._legacyDestinationRules = stamp.version == 1
     priorContext._legacyAttachmentModeRules = true
+    priorContext._legacyEntryRules = true
     correctedContext._legacyDestinationRules = nil
     correctedContext._legacyAttachmentModeRules = nil
+    correctedContext._legacyEntryRules = true
     local prior, priorError = Migration.Build(backup, priorContext)
     if not prior then return false, priorError end
     local corrected, correctedError = Migration.Build(backup, correctedContext)
@@ -606,6 +615,141 @@ local function RepairConvertedDestinations(profile, context, report)
     return true
 end
 
+-- Versions 1-3 omitted Aura entry flags and disabled an empty legacy spec
+-- filter. Version 4 missed entries whose current spec filter was cleared.
+-- Version 5 conflated different tracked identities sharing a legacy bar ID.
+-- Replay the original snapshot to repair generated values on surviving IDs.
+-- Membership, placement and customizations remain owned by the current entry.
+local function RepairConvertedEntryContracts(profile, context, report)
+    local stamp, backup = profile._unifiedPanelMigration, profile._unifiedPanelBackup
+    local version = stamp and tonumber(stamp.version)
+    if not version or version < 1 or version >= VERSION
+        or type(backup) ~= "table" then return true end
+    local priorContext, correctedContext = Copy(context), Copy(context)
+    priorContext._legacyEntryRules = true
+    correctedContext._legacyEntryRules = nil
+    local prior, priorError = Migration.Build(backup, priorContext)
+    if not prior then return false, priorError end
+    local corrected, correctedError = Migration.Build(backup, correctedContext)
+    if not corrected then return false, correctedError end
+    local function EntryIdentity(entry)
+        return Fingerprint({ entry.id, entry.addedAs })
+    end
+    local function IndexEntries(snapshot)
+        local result = {}
+        for _, group in pairs(snapshot.groups) do
+            for _, entry in ipairs(group.buttons or {}) do
+                if entry._legacyBarOrigin then
+                    local identities = result[entry._legacyBarOrigin] or {}
+                    result[entry._legacyBarOrigin] = identities
+                    local identity = EntryIdentity(entry)
+                    local specs = identities[identity] or {}
+                    identities[identity] = specs
+                    for spec, enabled in pairs(entry.loadConditions.specAllowlist or {}) do
+                        if enabled then specs[tonumber(spec) or spec] = entry end
+                    end
+                end
+            end
+        end
+        return result
+    end
+    local oldEntries, newEntries = IndexEntries(prior), IndexEntries(corrected)
+    local function CommonReplacement(entry, old, new, field)
+        local found, replacement = false, nil
+        for spec, before in pairs(old or {}) do
+            local after = new and new[spec]
+            if not after or before.id ~= entry.id or before.addedAs ~= entry.addedAs
+                or before[field] ~= entry[field] then return nil, false end
+            if found and replacement ~= after[field] then return nil, false end
+            found, replacement = true, after[field]
+        end
+        return replacement, found and replacement ~= entry[field]
+    end
+    local repaired = 0
+    for _, group in pairs(profile.groups) do
+        local entries, used = {}, {}
+        for _, entry in ipairs(group.buttons or {}) do
+            if entry._auraKey then used[tostring(entry._auraKey)] = true end
+        end
+        for _, entry in ipairs(group.buttons or {}) do
+            local identity = EntryIdentity(entry)
+            local old = oldEntries[entry._legacyBarOrigin]
+            local new = newEntries[entry._legacyBarOrigin]
+            old, new = old and old[identity], new and new[identity]
+            local original, identityChanged = entry, false
+            -- Aura identity does not depend on the user's current eligibility
+            -- filter. Clear/reset and newly added specs must still be repaired.
+            for _, field in ipairs({ "isPassive", "auraIndicatorEnabled" }) do
+                local value, changed = CommonReplacement(entry, old, new, field)
+                if changed then
+                    if entry == original then entry = Copy(entry) end
+                    entry[field], identityChanged = value, true
+                end
+            end
+            -- A v4 entry already given its Aura flag has already had its
+            -- enable state repaired. Do not undo a subsequent manual disable.
+            local repairEnabled = version < 4 or original.isPassive ~= entry.isPassive
+            local specFilter = entry.loadConditions and entry.loadConditions.specAllowlist
+            if specFilter == nil then
+                -- No filter means unrestricted. Only restore an enabled state
+                -- shared by every original variant; never narrow membership
+                -- or choose a spec's state when the originals disagree.
+                local value, changed = CommonReplacement(entry, old, new, "enabled")
+                if repairEnabled and changed then
+                    if entry == original then entry = Copy(entry) end
+                    entry.enabled, identityChanged = value, true
+                end
+                if identityChanged then repaired = repaired + 1 end
+                entries[#entries + 1] = entry
+            else
+                local variants, bySignature, changed = {}, {}, false
+                for _, spec in ipairs(Keys(specFilter)) do
+                    if specFilter[spec] then
+                        local key = tonumber(spec) or spec
+                        local before, after = old and old[key], new and new[key]
+                        local enabled = entry.enabled
+                        if repairEnabled and before and after and before.id == entry.id and before.addedAs == entry.addedAs
+                            and entry.enabled == before.enabled and before.enabled ~= after.enabled then
+                            enabled, changed = after.enabled, true
+                        end
+                        local signature = Fingerprint(enabled)
+                        local variant = bySignature[signature]
+                        if not variant then
+                            variant = { enabled = enabled, specs = {} }
+                            variants[#variants + 1], bySignature[signature] = variant, variant
+                        end
+                        variant.specs[spec] = true
+                    end
+                end
+                if changed then
+                    repaired = repaired + 1
+                    for i, variant in ipairs(variants) do
+                        local fixed = Copy(entry)
+                        fixed.enabled = variant.enabled
+                        fixed.loadConditions.specAllowlist = variant.specs
+                        if i > 1 then
+                            local key = tonumber(group.nextAuraKey) or 1
+                            while used[tostring(key)] do key = key + 1 end
+                            fixed._auraKey, group.nextAuraKey = tostring(key), key + 1
+                            used[fixed._auraKey] = true
+                        end
+                        entries[#entries + 1] = fixed
+                    end
+                else
+                    if identityChanged then repaired = repaired + 1 end
+                    entries[#entries + 1] = entry
+                end
+            end
+        end
+        group.buttons = entries
+    end
+    if repaired > 0 then
+        report.repairedEntries = repaired
+        report.notices[#report.notices + 1] = repaired .. " migrated bar entries restored their original aura tracking or enabled state."
+    end
+    return true
+end
+
 function Migration.Build(source, context)
     local valid, errorText = Validate(source)
     if not valid then return nil, errorText end
@@ -644,6 +788,8 @@ function Migration.Build(source, context)
     local report = { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
     local repaired, repairError = RepairConvertedDestinations(profile, context, report)
     if not repaired then return nil, repairError end
+    repaired, repairError = RepairConvertedEntryContracts(profile, context, report)
+    if not repaired then return nil, repairError end
     local conflicts = profile.resourceBarMigration and profile.resourceBarMigration.conflicts
     if type(conflicts) == "table" and next(conflicts) then
         return nil, "Resolve the existing Resources class conflicts before converting Custom Bars."
@@ -670,9 +816,9 @@ function Migration.Build(source, context)
                         local slot = legacy.layoutId and layout.customBars and layout.customBars[legacy.layoutId]
                         slot = slot or (legacy.slot and layout.customAuraBarSlots and SpecTable(layout.customAuraBarSlots, legacy.slot))
                             or { order = 1000 + legacy.ordinal }
-                        local entry, style, order = Migration.ConvertLegacyBar(legacy.cab, settings, spec, slot)
+                        local entry, style, order = Migration.ConvertLegacyBar(legacy.cab, settings, spec, slot, nil, context._legacyEntryRules)
                         if not entry then return nil, style end
-                        if legacy.unassigned then entry.enabled = false end
+                        if legacy.unassigned and context._legacyEntryRules then entry.enabled = false end
                         local destination = Destination(profile, classKey, spec, settings, layout, context, report, destinations)
                         local attachment = layout.attachment or {}
                         if attachment.mode == "independent" or (attachment.mode == nil
@@ -847,7 +993,7 @@ function Addon:RunUnifiedPanelMigration()
         self:Print("Panel conversion stopped: " .. tostring(report) .. " Saved panel data was kept.")
         return false
     end
-    if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 then
+    if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
         self:Print(("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
             :format(report.panels, report.bars, report.createdPanels))
         for _, notice in ipairs(report.notices) do self:Print(notice) end

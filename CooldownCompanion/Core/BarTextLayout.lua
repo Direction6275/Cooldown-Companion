@@ -103,6 +103,97 @@ function Layout.ApplyName(nameText, target, timerText, style, vertical, timerLan
     end
 end
 
+-- A persistent Aura name cannot follow a native timer's width: several units
+-- can supply that timer, and their text/layout is restricted. Reserve a stable
+-- lane using only saved settings and a private, unanchored measuring region.
+local auraTimerMeasure
+local AURA_TIMER_SAMPLES = { 359999, 59.9, 9.9 }
+local function MeasureAuraTimerLane(style, entry)
+    if not auraTimerMeasure then
+        local host = CreateFrame("Frame", nil, UIParent)
+        host:Hide()
+        auraTimerMeasure = host:CreateFontString(nil, "ARTWORK")
+    end
+    local addon = ST.Addon
+    addon.ApplyFontStyle(auraTimerMeasure, style, "auraText")
+    local width = 0
+    local markerWanted = addon:IsPandemicMarkerPreviewWanted(entry, style)
+    -- Capacity for two hour digits, minutes, and decimal seconds. Longer
+    -- timers still stay inside the lane; the font renderer truncates them.
+    for _, seconds in ipairs(AURA_TIMER_SAMPLES) do
+        local text = addon.FormatTime(seconds, style)
+        if markerWanted then
+            text = addon:DecoratePandemicPreviewText(text, style)
+        end
+        width = math.max(width, auraTimerMeasure:GetUnboundedStringWidthForText(text))
+    end
+    return math.ceil(width) + 2
+end
+
+local function ResolveAuraTimerLane(style, vertical, entry)
+    if not entry or vertical or (style.showBarNameText == false and not entry.customName) then return end
+    local namePoint, nameX, nameY, nameSelf = Layout.Resolve(style, "name", vertical)
+    local point, x, y, selfPoint = Layout.Resolve(style, "aura", vertical)
+    -- Preserve explicit centered/corner placements and separate text rows.
+    if nameSelf ~= namePoint or selfPoint ~= point or nameY ~= y then return end
+    if not ((namePoint == "LEFT" and point == "RIGHT")
+        or (namePoint == "RIGHT" and point == "LEFT")) then return end
+    -- With duration text off, the name keeps the full row's outer boundary.
+    if style.showAuraText == false then return point, x, y, 0 end
+
+    local width = MeasureAuraTimerLane(style, entry)
+    local icon = 0
+    if style.showBarIcon ~= false then
+        icon = (style.barIconSizeOverride and style.barIconSize or style.barHeight or 20)
+            + (style.barIconOffset or 0)
+    end
+    local span = (style.barLength or 180) - icon - 2 * (style.borderSize or ST.DEFAULT_BORDER_SIZE)
+    span = span + (point == "RIGHT" and (x - nameX) or (nameX - x)) - 4
+    -- On short bars neither text may consume the other's half of the row.
+    width = math.min(width, math.max(1, span / 2))
+    return point, x, y, width
+end
+
+function Layout.ResetTimerLane(timerText)
+    timerText:SetWidth(0)
+    timerText:SetMaxLines(0)
+end
+
+function Layout.ApplyAuraTimer(timerText, target, style, vertical, persistentEntry)
+    Layout.ResetTimerLane(timerText)
+    Layout.Apply(timerText, target, Layout.Resolve(style, "aura", vertical))
+    local _, _, _, width = ResolveAuraTimerLane(style, vertical, persistentEntry)
+    if width and width > 0 then
+        timerText:SetWidth(width)
+        timerText:SetMaxLines(1)
+    end
+end
+
+-- Runtime and preview use this owner for both cooldown and persistent-name
+-- placement. A ready/cooldown transition cannot restore the empty-timer anchor.
+function Layout.ApplyBarTexts(nameText, timerText, target, style, vertical, lane, persistentEntry)
+    if lane == "aura" then
+        Layout.ApplyAuraTimer(timerText, target, style, vertical, persistentEntry)
+    else
+        Layout.ResetTimerLane(timerText)
+        Layout.Apply(timerText, target, Layout.Resolve(style, lane, vertical))
+    end
+    if not nameText then return end
+    nameText:SetMaxLines(0)
+    if not persistentEntry then
+        Layout.ApplyName(nameText, target, timerText, style, vertical, lane,
+            lane ~= "aura" or style.showAuraText ~= false)
+        return
+    end
+    Layout.Apply(nameText, target, Layout.Resolve(style, "name", vertical))
+    local point, x, y, width = ResolveAuraTimerLane(style, vertical, persistentEntry)
+    if width then
+        local inset = width > 0 and (width + 4) or 0
+        nameText:SetPoint(point, target, point, x + (point == "RIGHT" and -inset or inset), y)
+        nameText:SetMaxLines(1)
+    end
+end
+
 -- Snapshot once, then retain the independent position while following Time.
 function Layout.SetAuraIndependent(store, effectiveStyle, vertical, enabled)
     if enabled and not Layout.IsAnchor(rawget(store, "barAuraTextAnchor")) then

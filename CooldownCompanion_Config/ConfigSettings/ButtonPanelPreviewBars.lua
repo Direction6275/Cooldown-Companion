@@ -56,12 +56,8 @@ end
 -- Runtime and preview share the same placement and truncation rules.
 local function AnchorBarSlotTimeText(slot, style, lane)
     lane = lane or "time"
-    ST.BarTextLayout.Apply(slot.timeText, slot.textFrame,
-        ST.BarTextLayout.Resolve(style, lane, style.barFillVertical))
-    if slot.nameText then
-        ST.BarTextLayout.ApplyName(slot.nameText, slot.textFrame, slot.timeText,
-            style, style.barFillVertical, lane, lane ~= "aura" or style.showAuraText ~= false)
-    end
+    ST.BarTextLayout.ApplyBarTexts(slot.nameText, slot.timeText, slot.textFrame,
+        style, style.barFillVertical, lane, slot._persistentAuraName and slot.buttonData)
 end
 
 local function ApplyBarReadyPresentation(slot, buttonData, style)
@@ -538,6 +534,8 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     PP.RestoreMissingReminderPreview(slot)
     ST.ChargeBarSegments.Invalidate(slot.statusBar)
     slot.buttonData = buttonData
+    slot._persistentAuraName = not ST.IsAuraPanelGroup(group)
+        and ST.BarLayers.HasPersistentAuraName(buttonData)
     slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     local style = effectiveStyle or group.style or {}
     if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then

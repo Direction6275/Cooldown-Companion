@@ -78,10 +78,9 @@ local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
 
 local function ApplyBarTextPlacement(button, style, lane)
-    ST.BarTextLayout.Apply(button.timeText, button.barTextFrame,
-        ST.BarTextLayout.Resolve(style, lane, button._isVertical))
-    ST.BarTextLayout.ApplyName(button.nameText, button.barTextFrame, button.timeText,
-        style, button._isVertical, lane, lane ~= "aura" or style.showAuraText ~= false)
+    ST.BarTextLayout.ApplyBarTexts(button.nameText, button.timeText, button.barTextFrame,
+        style, button._isVertical, lane,
+        ST.BarLayers.IsUncoveredAura(button, button.buttonData) and button.buttonData)
 end
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
@@ -441,6 +440,7 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     end
     if button.statusBar then button.statusBar:SetAlpha(alpha) end
     if button.barTextFrame then button.barTextFrame:SetAlpha(alpha) end
+    if button.barNameFrame then button.barNameFrame:SetAlpha(alpha) end
     button.cooldown:SetAlpha(alpha)
     if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
     if button.iconGCDCooldown then button.iconGCDCooldown:SetAlpha(alpha) end
@@ -569,6 +569,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, atta
     end
     button._isBar = true
     button._isVertical = isVertical
+    button.buttonData = buttonData
 
     -- F6: flatten this bar's render layers into one render pass
     -- (owner-validated V1-V10: no visual difference).
@@ -645,11 +646,14 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, atta
     -- Dedicated text layer above custom segment holders.
     button.barTextFrame = CreateFrame("Frame", nil, button)
     SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
-    button.barTextFrame:SetFrameLevel(button.statusBar:GetFrameLevel() + 20)
     button.barTextFrame:EnableMouse(false)
 
-    -- Name text
-    button.nameText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
+    -- Name and cooldown text have different covering rules. Keep their
+    -- parents separate without reparenting text when the entry changes.
+    button.barNameFrame = CreateFrame("Frame", nil, button)
+    button.barNameFrame:SetAllPoints(button.barTextFrame)
+    button.barNameFrame:EnableMouse(false)
+    button.nameText = button.barNameFrame:CreateFontString(nil, "OVERLAY")
     ApplyFontStyle(button.nameText, style, "barName", 10)
     ST.BarTextLayout.Apply(button.nameText, button.barTextFrame,
         ST.BarTextLayout.Resolve(style, "name", isVertical))
@@ -713,7 +717,6 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, atta
     button.overlayFrame:EnableMouse(false)
     button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     button.count:SetText("")
-    button.buttonData = buttonData
 
     -- Apply count text font/anchor settings
     ApplyBarCountTextStyle(button, style)
@@ -822,6 +825,7 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, atta
     -- A button restyled from icon mode may still carry its own receiver.
     SetEntryPingReceiver(button, false)
 
+    ST.BarLayers.Apply(button)
     ApplyBarAuraShellVisuals(button, buttonData)
     UpdateBarStackBlocks(button, style)
 
@@ -971,7 +975,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     if button.barTextFrame then
         button.barTextFrame:ClearAllPoints()
         SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
-        button.barTextFrame:SetFrameLevel(button.statusBar:GetFrameLevel() + 20)
     end
 
     -- Update background
@@ -1079,6 +1082,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     -- A button restyled from icon mode may still carry its own receiver.
     SetEntryPingReceiver(button, false)
 
+    ST.BarLayers.Apply(button)
     ApplyBarAuraShellVisuals(button, button.buttonData)
     UpdateBarStackBlocks(button, newStyle)
 
