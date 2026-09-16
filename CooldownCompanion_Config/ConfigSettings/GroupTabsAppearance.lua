@@ -508,7 +508,7 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.assistant = assistant:Settings({
         square = { label = "Square Icons" },
-        size = { label = "Button Size", applies = AppearanceFinderStateFlag("assistantSquare") },
+        size = { label = "Icon Size", aliases = { "Button Size" }, applies = AppearanceFinderStateFlag("assistantSquare") },
         width = { label = "Icon Width", applies = AppearanceFinderStateFlag("assistantRectangular") },
         height = { label = "Icon Height", applies = AppearanceFinderStateFlag("assistantRectangular") },
         zoom = { label = "Icon Zoom" },
@@ -538,11 +538,11 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.icons = icons:Settings({
         square = { label = "Square Icons", scope = "panel" },
-        size = { label = "Button Size", scope = "panel", applies = AppearanceFinderStateFlag("iconsSquare") },
+        size = { label = "Icon Size", aliases = { "Button Size" }, scope = "panel", applies = AppearanceFinderStateFlag("iconsSquare") },
         width = { label = "Icon Width", scope = "panel", applies = AppearanceFinderStateFlag("iconsRectangular") },
         height = { label = "Icon Height", scope = "panel", applies = AppearanceFinderStateFlag("iconsRectangular") },
         zoom = { label = "Icon Zoom", sectionId = "iconZoom" },
-        spacing = { label = "Button Spacing", scope = "panel" },
+        spacing = { label = "Icon Spacing", aliases = { "Button Spacing" }, scope = "panel" },
     })
 
     for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
@@ -843,7 +843,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
         if style.maintainAspectRatio ~= false then
             local sizeRow = AddSliderRow(assistLeft, {
-                label = "Button Size",
+                label = "Icon Size",
                 setting = APPEARANCE_FINDER.assistant.size,
                 min = 10, max = 150, step = 0.1,
                 value = style.buttonSize or ST.BUTTON_SIZE,
@@ -1067,7 +1067,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- Size sliders — always visible
     if style.maintainAspectRatio then
         local sizeRow = AddSliderRow(iconLeft, {
-            label = "Button Size",
+            label = "Icon Size",
             setting = APPEARANCE_FINDER.icons.size,
             min = 10, max = 150, step = 0.1,
             value = style.buttonSize or ST.BUTTON_SIZE,
@@ -1133,7 +1133,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
     if (group._settingsContext and group._settingsContext.mode ~= "entry") or (group.buttons and #group.buttons > 1) then
         local spacingRow = AddSliderRow(iconRight, {
-            label = "Button Spacing",
+            label = "Icon Spacing",
             setting = APPEARANCE_FINDER.icons.spacing,
             min = 0, max = 30, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,

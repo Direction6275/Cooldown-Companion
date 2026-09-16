@@ -594,8 +594,11 @@ local function BuildBarAppearanceTab(container, group, style)
         and ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid"))
         and ((group.buttons and #group.buttons > 1) or group._settingsContext) then
         AddSliderRow(barRight, {
-            label = "Bar Spacing",
-            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.spacing,
+            label = group._attachedBarOwner and "Grid Spacing" or "Bar Spacing",
+            setting = BAR_FINDER.appearance.barSettings
+                and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "gridSpacing" or "spacing"],
+            tooltip = group._attachedBarOwner and { "Grid Spacing",
+                { "Space between bars when the panel contains only bars and uses Grid arrangement.", 1, 1, 1, true } } or nil,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
             disabled = lens.mode == "entry",
@@ -2375,8 +2378,17 @@ if ST._DefineSettingRoute then
             applies = function(context)
                 local buttons = context and context.group and context.group.buttons
                 local group = context.group
-                return (not group._attachedBarOwner or ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid")
+                return not group._attachedBarOwner
                     and ((buttons and #buttons > 1) or group._settingsContext ~= nil)
+            end,
+        },
+        gridSpacing = {
+            label = "Grid Spacing", aliases = { "Bar Spacing" }, sectionId = "barSettings", scope = "panel",
+            applies = function(context)
+                local group = context.group
+                return group._attachedBarOwner ~= nil and not group._fittedBarLayout
+                    and ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid"
+                    and ((group.buttons and #group.buttons > 1) or group._settingsContext ~= nil)
             end,
         },
         texture = { label = "Bar Texture" },

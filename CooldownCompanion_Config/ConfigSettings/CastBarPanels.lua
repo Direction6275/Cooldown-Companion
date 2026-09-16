@@ -596,7 +596,7 @@ local function BuildCastBarPositioningPanel(container)
     AddSliderRow(anchorRight, {
         label = "Cast Bar Width",
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.width,
-        min = 20, max = 600, step = 1,
+        min = 20, max = 600, step = 0.1,
         value = settings.independentWidth or 200,
         onChange = function(val)
             ST._PreviewScalarSetting(settings, "independentWidth", val, RefreshBarsCanvasForDrag)

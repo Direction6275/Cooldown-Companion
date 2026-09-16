@@ -38,7 +38,7 @@ local panelSettings = ST._DefineSettingRoute({
         local group = OrdinaryOwner(context)
         return group and context.group._attachedBarOwner and ST.GetPanelLayoutKind(group) == "bars" or false
     end },
-    spacing = { label = "Bar spacing", collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
+    spacing = { label = "Stack Spacing", aliases = { "Bar Spacing", "Attached Bar Spacing" }, collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
     gap = { label = "Distance from icons", collapseKeys = { "layout_attached" }, applies = IconGapApplies },
     stackGap = { label = "Stack offset", applies = function(context)
         local owner = OrdinaryOwner(context)
@@ -194,7 +194,9 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
             ST._AddSliderRow(host, { setting = panelSettings[key],
                 value = group.attachedBarLayout and group.attachedBarLayout[key] or field[2], min = 0, max = field[3], step = 0.1,
                 tooltip = key == "gap" and { "Distance from icons",
-                    { "Distance from the icon region to its first bar. Resources use their own attachment offset when they come first.", 1, 1, 1, true } } or nil,
+                    { "Distance from the icon region to its first bar. Resources use their own attachment offset when they come first.", 1, 1, 1, true } }
+                    or { "Stack Spacing",
+                        { "Space between bars attached to icons or arranged in a Collapsing Stack.", 1, 1, 1, true } },
                 onChange = function(value)
                     if not context:IsCurrent() then return end
                     group.attachedBarLayout = group.attachedBarLayout or {}
