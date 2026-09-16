@@ -2153,6 +2153,7 @@ local function CreateConfigPanel()
             if tab == "settings" then
                 ST._BuildEntryIdentityHeading(scroll, buttonData)
                 ST._BuildEntryPresentation(scroll, group, buttonData)
+                ST._BuildEntryChargePresentation(scroll, group, buttonData)
 
                 -- Customizations leads the tab (owner ruling): it is the
                 -- entry's index of what it changes, it builds nothing until

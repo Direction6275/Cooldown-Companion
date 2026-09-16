@@ -95,6 +95,7 @@ function Migration.ConvertLegacyBar(cab, settings, spec, slot, length, legacyEnt
     local spell = cab.entryType == "spell"
     local stackMode = cab.trackingMode == "stacks" or (not spell and cab.trackingMode ~= "active")
     local entry = { type = "spell", id = id, displayAs = "bars", addedAs = not spell and "aura" or "spell",
+        barSegmentCharges = cab.barSegmentCharges == true,
         enabled = cab.enabled == true and settings.enabled == true,
         auraTracking = not spell or cab.auraTracking == true,
         hideWhileAuraNotActive = cab.hideWhenInactive == true }
@@ -913,6 +914,7 @@ function Migration.Build(source, context)
     if report.regrouped > 0 then
         report.notices[#report.notices + 1] = report.regrouped .. " formerly interleaved bars now follow their Resources block."
     end
+    for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
     profile._unifiedPanelMigration = { version = VERSION, completed = completed }
@@ -943,7 +945,10 @@ function Migration.Apply(profile, context)
                 if HasLegacy(settings) then pending = true; break end
             end
         end
-        if not pending then return true, { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} } end
+        if not pending then
+            for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+            return true, { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
+        end
     end
     local candidate, report = Migration.Build(profile, context)
     if not candidate then return false, report end

@@ -126,6 +126,14 @@ local function CloneSettingValue(value)
     return value
 end
 
+-- Only genuinely new setups use the current creation policy. Legacy seeds,
+-- imported buckets and missing keys in saved settings retain their defaults.
+local function CreateResourceBarSettings()
+    local settings = CopySubsystemDefaults("resourceBars")
+    settings.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    return settings
+end
+
 local function GetSpecKeyedTable(source, specID)
     if type(source) ~= "table" then
         return nil
@@ -1148,6 +1156,8 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     local defaults = CopySubsystemDefaults("resourceBars")
     NormalizeResourceBarSettingsForClass(defaults, classKey)
     SanitizeResourceBarAnchors(defaults, classKey)
+    if DeepEqual(comparable, defaults) then return true end
+    defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
     return DeepEqual(comparable, defaults)
 end
 
@@ -1980,7 +1990,7 @@ function CooldownCompanion:GetResourceBarSettings()
     local classStore = EnsureResourceBarClassStore(profile)
     local settings = classStore[classKey]
     if type(settings) ~= "table" then
-        settings = CopySubsystemDefaults("resourceBars")
+        settings = CreateResourceBarSettings()
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
@@ -2026,7 +2036,7 @@ function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
     local classStore = EnsureResourceBarClassStore(profile)
     local settings = classStore[classKey]
     if type(settings) ~= "table" then
-        settings = CopySubsystemDefaults("resourceBars")
+        settings = CreateResourceBarSettings()
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings

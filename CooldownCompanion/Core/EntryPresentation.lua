@@ -24,6 +24,37 @@ function ST.IsPanelBarEntry(group, entry)
     return ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" or false
 end
 
+function ST.CanSegmentEntryCharges(group, entry)
+    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    return entry ~= nil and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
+        and ST.GetEntryPresentation(group, entry) == "bars"
+        and entry.type == "spell" and entry.addedAs ~= "aura" and entry.hasCharges == true
+end
+
+-- Read the old ownership before override cleanup. Icon entries can carry a
+-- dormant bar customization too; changing presentation must retain it.
+function ST.NormalizeEntryBarCharges(group)
+    local base = ST.PanelSupportsAttachedBars(group) and (group.attachedBarStyle or ST.ATTACHED_BAR_DEFAULTS) or group.style or {}
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.barSegmentCharges == nil then
+            local value = base.barSegmentCharges
+            if entry.overrideSections and entry.overrideSections.barCharges and entry.styleOverrides then
+                local override = rawget(entry.styleOverrides, "barSegmentCharges")
+                if override ~= nil then value = override end
+            end
+            entry.barSegmentCharges = value == true
+        end
+        if entry.styleOverrides then
+            entry.styleOverrides.barSegmentCharges = nil
+            if entry.overrideSections and rawget(entry.styleOverrides, "barChargeSegmentGap") == nil then
+                entry.overrideSections.barCharges = nil
+                if not next(entry.overrideSections) then entry.overrideSections = nil end
+            end
+            if not next(entry.styleOverrides) then entry.styleOverrides = nil end
+        end
+    end
+end
+
 -- Structural eligibility only: cooldown/aura visibility and temporary load
 -- conditions cannot turn a mixed panel into a differently arranged bar grid.
 function ST.IsPanelLayoutEntryEligible(group, entry)
@@ -78,6 +109,14 @@ ST.ATTACHED_BAR_DEFAULTS.barLength = 180
 ST.ATTACHED_BAR_DEFAULTS.showBarIcon = false
 ST.ATTACHED_BAR_DEFAULTS.showBarNameText = false
 ST.ATTACHED_BAR_DEFAULTS.showKeybindText = false
+
+-- Creation policy is separate from the saved-data fallback above. Existing
+-- panels and imports with absent defaults must keep their compact appearance.
+function ST.InitializeNewPanelBarStyle(group)
+    if not ST.PanelSupportsAttachedBars(group) then return end
+    group.attachedBarStyle = CopyTable(ST._defaults.profile.globalStyle)
+    group.barOnlyLayout = { mode = "grid" }
+end
 local styleCache = setmetatable({}, { __mode = "k" })
 
 function ST.GetAttachedBarStyle(group, forEditing)

@@ -472,7 +472,6 @@ local defaults = {
             barColor = {0.2, 0.6, 1.0, 1.0},
             barCooldownColor = {0.6, 0.13, 0.18, 1.0},
             barChargeColor = {1.0, 0.82, 0.0, 1.0},
-            barSegmentCharges = false,
             barChargeSegmentGap = 4,
             barBgColor = {0.1, 0.1, 0.1, 0.8},
             showBarIcon = true,
@@ -1453,9 +1452,9 @@ ST.OVERRIDE_SECTIONS = {
         modes = {bars = true},
     },
     barCharges = {
-        label = "Charge Segments",
-        keys = {"barSegmentCharges", "barChargeSegmentGap"},
-        defaults = {barSegmentCharges = false, barChargeSegmentGap = 4},
+        label = "Segment Gap",
+        keys = {"barChargeSegmentGap"},
+        defaults = {barChargeSegmentGap = 4},
         modes = {bars = true},
     },
     barChargeColor = {
@@ -1464,7 +1463,7 @@ ST.OVERRIDE_SECTIONS = {
         modes = {bars = true},
     },
     barBgColor = {
-        label = "Bar Background Color",
+        label = "Background Color",
         keys = {"barBgColor"},
         modes = {bars = true},
     },

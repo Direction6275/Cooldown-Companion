@@ -675,6 +675,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
         local function CopyAttachedStyle(key)
+            if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
             targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
             targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
             local sourceStyle = templateFields and (source.attachedBarStyle or {})
@@ -753,6 +754,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
 
     local copiedDurationFormat = false
     local function CopyStyleKey(key)
+        if key == "barSegmentCharges" then return end
         local value = sourceStyle[key]
         if value == nil and not templateFields then
             value = baseline[key]
@@ -1431,6 +1433,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         db.groups[groupId].totemPanel = true
         self:EnforceTotemPanelInvariants(db.groups[groupId])
     end
+    ST.InitializeNewPanelBarStyle(db.groups[groupId])
 
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
@@ -2021,6 +2024,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         isPassive = isPassive or nil,
         isPassiveCooldown = isPassiveCooldown or nil,
         cdmChildSlot = cdmChildSlot or nil,
+        barSegmentCharges = false,
     }
 
     -- Blizzard identifies aura groups per container, so every Aura Panel entry
@@ -2193,6 +2197,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         type = self.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
         itemSlot = itemSlot,
         itemSlotKind = itemSlotKind or self.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
+        barSegmentCharges = false,
     }
 
     -- An equipment slot is never an aura entry; the central predicate owns the

@@ -13,11 +13,22 @@ local function AttachedContext(context)
     return group and context.group._attachedBarOwner
         and ST.PanelUsesAttachedBarLayout(group) or false
 end
+local function IconGapApplies(context)
+    local owner = OrdinaryOwner(context)
+    if not owner or not context.group._attachedBarOwner or ST.GetPanelLayoutKind(owner) ~= "mixed" then return false end
+    local modules = ST._GetPanelAttachmentPreviewModules(context.groupId, true)
+    return ST.AttachedBarGapApplies(owner, modules)
+end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",
     tab = "settings", section = "presentation", sectionLabel = "Display as",
     applies = function(context) return OrdinaryOwner(context) ~= nil end,
 }):Settings({ display = { label = "Display as", aliases = { "icon", "bar", "presentation" } } })
+local chargeSetting = ST._DefineSettingRoute({
+    idPrefix = "entry.settings.charges", scope = "entry", rowScope = "detail",
+    tab = "settings", section = "charges", sectionLabel = "Charges",
+    applies = function(context) return ST.CanSegmentEntryCharges(context.group, context.buttonData) end,
+}):Settings({ segmented = { label = "Segment Charges", aliases = { "charge bars", "segmented charges" } } })
 local panelSettings = ST._DefineSettingRoute({
     idPrefix = "panel.layout.bars", scope = "panel", rowScope = "primary",
     tab = "layout", tabLabel = "Layout", section = "arrangement", sectionLabel = "Arrangement",
@@ -28,8 +39,8 @@ local panelSettings = ST._DefineSettingRoute({
         return group and context.group._attachedBarOwner and ST.GetPanelLayoutKind(group) == "bars" or false
     end },
     spacing = { label = "Bar spacing", collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
-    gap = { label = "Gap from anchor", collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
-    stackGap = { label = "Stack gap from anchor", applies = function(context)
+    gap = { label = "Distance from icons", collapseKeys = { "layout_attached" }, applies = IconGapApplies },
+    stackGap = { label = "Stack offset", applies = function(context)
         local owner = OrdinaryOwner(context)
         return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
             and ST.GetBarOnlyLayoutMode(owner) == "stack" or false
@@ -65,6 +76,23 @@ function ST._BuildEntryPresentation(container, group, entry)
             -- taken its old numeric index.
             if CS.selectedGroup ~= groupId or CS.selectedButton ~= index or group.buttons[index] ~= entry then return end
             Addon:SetEntryPresentation(groupId, index, value)
+            Addon:RefreshConfigPanel()
+        end,
+    })
+end
+
+function ST._BuildEntryChargePresentation(container, group, entry)
+    if not ST.CanSegmentEntryCharges(group, entry) then return end
+    local context = ST._CreatePanelSettingsContext(group)
+    ST._AddCheckboxRow(container, {
+        label = "Segment Charges", setting = chargeSetting.segmented,
+        value = entry.barSegmentCharges == true,
+        onChange = function(value)
+            if not context:IsCurrent() then return end
+            FlushPresentationEditors()
+            if not context:IsCurrent() then return end
+            entry.barSegmentCharges = value
+            Addon:UpdateGroupStyle(context.panelId)
             Addon:RefreshConfigPanel()
         end,
     })
@@ -141,7 +169,7 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                 if ST.GetBarOnlyLayoutMode(group) == "grid" then buildGrid(host, context.group, #(group.buttons or {}))
                 else
                     ST._AddSliderRow(host, { setting = panelSettings.stackGap,
-                        value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 1,
+                        value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 0.1,
                         onChange = function(value)
                             if not context:IsCurrent() then return end
                             group.barOnlyLayout = group.barOnlyLayout or { mode = "stack" }
@@ -157,10 +185,16 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
     local host = ST._NewPanelSettingsSectionHost(container, context)
     local _, collapsed = ST._BuildCollapsibleSection(host, "Attached Bars", "layout_attached", nil, nil, { leftAligned = true })
     if not collapsed then
-        for _, field in ipairs({ { "spacing", 3, 40 }, { "gap", 3, 80 } }) do
+        local fields = { { "spacing", 3, 40 } }
+        if IconGapApplies({ group = context.group, groupId = context.panelId }) then
+            fields[#fields + 1] = { "gap", 3, 80 }
+        end
+        for _, field in ipairs(fields) do
             local key = field[1]
             ST._AddSliderRow(host, { setting = panelSettings[key],
-                value = group.attachedBarLayout and group.attachedBarLayout[key] or field[2], min = 0, max = field[3], step = 1,
+                value = group.attachedBarLayout and group.attachedBarLayout[key] or field[2], min = 0, max = field[3], step = 0.1,
+                tooltip = key == "gap" and { "Distance from icons",
+                    { "Distance from the icon region to its first bar. Resources use their own attachment offset when they come first.", 1, 1, 1, true } } or nil,
                 onChange = function(value)
                     if not context:IsCurrent() then return end
                     group.attachedBarLayout = group.attachedBarLayout or {}

@@ -11,6 +11,11 @@ local CS = ST._configState
 -- only on an Aura Panel, for the sections that read spell cooldown, castability,
 -- proc, charge, cast or GCD state its pure-aura entries do not have.
 local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+local function ShowChargeGap(group)
+    local entry = ST._GetPanelSettingsSelection(group)
+    return CanGroupUseOverrideSection(group, "barCharges")
+        and (not entry or (ST.CanSegmentEntryCharges(group, entry) and entry.barSegmentCharges == true))
+end
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
@@ -640,40 +645,26 @@ local function BuildBarAppearanceTab(container, group, style)
     barSettingsSec:FinishBracket(barRightBracket)
     end -- not barSettingsCollapsed
 
-    if CanGroupUseOverrideSection(group, "barCharges") then
+    if ShowChargeGap(group) then
         local chargesLeft = BeginRowGrid(container)
         local sec = BeginLensSection(lens, group, "barCharges", { column = chargesLeft })
-        local row = AddCheckboxRow(chargesLeft, {
-            label = "Segment Charges",
-            setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.enabled,
-            value = sec.read.barSegmentCharges == true,
+        local row = AddSliderRow(chargesLeft, {
+            label = "Segment Gap",
+            setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.gap,
+            min = 0, max = 20, step = 0.1,
+            value = sec.read.barChargeSegmentGap or 4,
             disabled = sec.disabled,
             onChange = function(value)
                 if not sec.write then return end
-                sec.write.barSegmentCharges = value
+                ST._PreviewScalarSetting(sec.write, "barChargeSegmentGap", value, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(value)
+                if not sec.write then return end
+                sec.write.barChargeSegmentGap = value
                 refreshStyle()
-                CooldownCompanion:RefreshConfigPanel()
             end,
         })
         sec:Chrome(row)
-        if sec.read.barSegmentCharges == true then
-            AddSliderRow(chargesLeft, {
-                label = "Segment Gap",
-                setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.gap,
-                min = 0, max = 20, step = 0.1,
-                value = sec.read.barChargeSegmentGap or 4,
-                disabled = sec.disabled,
-                onChange = function(value)
-                    if not sec.write then return end
-                    ST._PreviewScalarSetting(sec.write, "barChargeSegmentGap", value, ST._RefreshSelectedButtonsPreview)
-                end,
-                onRelease = function(value)
-                    if not sec.write then return end
-                    sec.write.barChargeSegmentGap = value
-                    refreshStyle()
-                end,
-            })
-        end
         sec:Finish()
     end
 
@@ -732,7 +723,7 @@ local function BuildBarAppearanceTab(container, group, style)
         AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0},
             BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.bar)
     end
-    AddBarColorRow(colorLeft, "barBgColor", "Bar Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8},
+    AddBarColorRow(colorLeft, "barBgColor", "Background Color", "barBgColor", {0.1, 0.1, 0.1, 0.8},
         BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.background)
     -- The two colors a spell TIMER paints - spell-side, so they close the left
     -- column. An Aura Panel bar has no cooldown and no recharge to paint.
@@ -2395,16 +2386,11 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.appearance.chargeSegments = BarFinderRoute(
         "panel.bars.appearance.chargeSegments", "appearance", "barCharges",
-        "Charge Segments", nil, nil, nil, "barCharges"):Settings({
-        enabled = {
-            label = "Segment Charges", aliases = {"charge bars", "segmented charges"},
-            applies = function(context) return BarFinderCanUse(context, "barCharges") end,
-        },
+        "Segment Gap", nil, nil, nil, "barCharges"):Settings({
         gap = {
             label = "Segment Gap", aliases = {"charge spacing"},
             applies = function(context)
-                local read = BarFinderSectionState(context, "barCharges")
-                return BarFinderCanUse(context, "barCharges") and read and read.barSegmentCharges == true
+                return context and context.group and ShowChargeGap(context.group)
             end,
         },
     })
@@ -2416,7 +2402,7 @@ if ST._DefineSettingRoute then
             label = "Bar Color", sectionId = "barColor",
             applies = function(context) return BarFinderCanUse(context, "barColor") end,
         },
-        background = { label = "Bar Background Color", sectionId = "barBgColor" },
+        background = { label = "Background Color", sectionId = "barBgColor" },
         cooldown = {
             label = "Bar Cooldown Color", sectionId = "barCooldownColor",
             applies = function(context) return BarFinderCanUse(context, "barCooldownColor") end,

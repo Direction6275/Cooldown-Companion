@@ -290,10 +290,10 @@ end
 
 function ChargeBarSegments.PaintPanel(owner, count, maximum, duration, recharging, rechargeColor, previewPercent)
     local style, data, host = owner.style, owner.buttonData, owner.statusBar
-    if style.barSegmentCharges ~= true
+    if (not data or data.barSegmentCharges ~= true)
         and not (host._chargeSegments and host._chargeSegments._attached) then return false end
     local restore = owner._barCdColor or style.barColor or {0.2, 0.6, 1, 1}
-    if style.barSegmentCharges ~= true or not data or data.type ~= "spell"
+    if not data or data.barSegmentCharges ~= true or data.type ~= "spell"
         or data.addedAs == "aura" or data.hasCharges ~= true
         or not maximum or maximum <= 1 then
         ChargeBarSegments.End(host, restore)

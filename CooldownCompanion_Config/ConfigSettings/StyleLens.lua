@@ -98,6 +98,9 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
+    if sectionId == "barCharges" and group and not ST.CanSegmentEntryCharges(group, buttonData) then
+        return false, "entryType"
+    end
     if group and group._settingsContext and buttonData and buttonData.addedAs == "aura"
         and (sectionId == "barCooldownColor" or sectionId == "barChargeColor" or sectionId == "barReadyText") then
         return false, "entryType"

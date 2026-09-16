@@ -3649,14 +3649,15 @@ ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
 
 -- Ordinary panels render modules inside the same attachment composition as
 -- their entries. Reuse this file's resource/cast painters and preview state.
-function ST._GetPanelAttachmentPreviewModules(panelId)
+function ST._GetPanelAttachmentPreviewModules(panelId, forSettings)
     local group = CooldownCompanion.db.profile.groups[panelId]
-    if not ST.PanelSupportsAttachedBars(group) or CS.unifiedAnchorBarsHidden then return {} end
+    if not ST.PanelSupportsAttachedBars(group) or (CS.unifiedAnchorBarsHidden and not forSettings) then return {} end
     local settings, cast = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder(settings)
     if not layout then return {} end
     local resources = settings and settings.enabled and ModuleBelongsToPreview("resources", panelId)
         and not CooldownCompanion:IsResourceBarAnchorIndependent()
+    if forSettings and not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then resources = false end
     local hasCast = cast and cast.enabled and ModuleBelongsToPreview("castbar", panelId)
         and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
     local vertical = resources and IsResourceBarVerticalConfig(settings, layout) or false

@@ -854,7 +854,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     local missingHeading, healthMissingCollapsed = BuildCollapsibleSection(container, "Missing Health", healthMissingKey, resourceBarCollapsedSections, nil, ROW_SECTION)
     local missingInfoBtn = CreateInfoButton(missingHeading.frame, missingHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Missing Health",
-        {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
+        {"Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
     }, missingHeading)
     AnchorLeftAlignedHeadingRule(missingHeading, missingInfoBtn)
 
@@ -3075,7 +3075,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
 
     -- Resource Background Color
     AddColorRow(barRight, {
-        label = "Resource Background Color",
+        label = "Background Color",
         setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
             and RESOURCE_FINDER.primary.bar.background,
         tbl = displayProfile,
@@ -3971,7 +3971,7 @@ if ST._DefineSettingRoute then
             end,
         },
         smoothing = { label = "Segmented Smoothing", aliases = { "smooth animation" } },
-        background = { label = "Resource Background Color", aliases = { "empty color" } },
+        background = { label = "Background Color", aliases = { "empty color", "resource background" } },
     })
 
     RESOURCE_FINDER.primary.border = ST._DefineSettingRoute({

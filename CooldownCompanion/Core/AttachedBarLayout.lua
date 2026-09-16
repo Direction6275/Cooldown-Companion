@@ -38,6 +38,26 @@ function ST.BuildAttachedBarAreas(group)
     return order
 end
 
+-- Settings use configured membership, never live aura visibility or geometry.
+function ST.AttachedBarGapApplies(group, modules)
+    if ST.GetPanelLayoutKind(group) ~= "mixed" then return false end
+    local resourceLanes = {}
+    for _, module in ipairs(modules or {}) do
+        if module.kind == "resources" then
+            local region = ST.ResolvePanelAttachmentRegion(group, module.side, module.region)
+            resourceLanes[module.side .. ":" .. region] = true
+        end
+    end
+    for _, area in ipairs(ST.BuildAttachedBarAreas(group)) do
+        if area.resources == "before" or not resourceLanes[area.side .. ":" .. area.region] then
+            for _, item in ipairs(area.entries) do
+                if ST.IsPanelLayoutEntryEligible(group, item.entry) then return true end
+            end
+        end
+    end
+    return false
+end
+
 local function EnsureArea(frame, groupId, area)
     local states = frame._attachedBarAreas
     local state = states[area.key]
