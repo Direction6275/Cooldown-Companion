@@ -234,6 +234,21 @@ function CooldownCompanion:GetParentContainer(groupOrGroupId)
     return containers and containers[group.parentContainerId]
 end
 
+local function HasAttachedModuleForUnlock(self, groupId, group)
+    if not ST.PanelSupportsAttachedBars(group) or not self.ResolveModulePanel then return false end
+    for _, kind in ipairs({ "resources", "castbar" }) do
+        local settings = ST.GetConfiguredModuleBarSettings(kind)
+        local feature = kind == "resources" and "resourceBars" or "castBar"
+        if settings and settings.enabled == true and self:IsBarsAndFramesRuntimeFeatureEnabled(feature) then
+            -- Configured resolution never re-enters unlock visibility and does
+            -- not make the answer depend on this frame already being shown.
+            local target = self:ResolveModulePanel(kind, nil, { configured = true, settings = settings })
+            if target.eligible and target.panelId == groupId then return true end
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     opts = opts or {}
 
@@ -267,7 +282,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     -- reserved one-cell footprint for exactly this), so "no saved entry" must
     -- not mean "not on screen to arrange".
     local skipEntryChecks = self:IsRotationAssistantGroup(group) or ST.IsAuraPanelGroup(group)
-        or ST.IsTotemPanelGroup(group)
+        or ST.IsTotemPanelGroup(group) or HasAttachedModuleForUnlock(self, groupId, group)
     if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
         return false
     end

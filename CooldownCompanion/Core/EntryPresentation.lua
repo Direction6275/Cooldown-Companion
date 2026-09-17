@@ -14,7 +14,7 @@ function ST.ResolveBarGeometry(group, options)
     local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
     local layout = ordinary and group.attachedBarLayout or {}
     layout = layout or {}
-    local stack = ordinary and ST.GetPanelGeometryKind(group, options.layoutKind) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
+    local stack = ST.PanelUsesBarStack(group, options.layoutKind)
     local vertical = options.vertical == true
     if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
     local thickness = options.thickness
@@ -206,6 +206,12 @@ function ST.GetBarOnlyLayoutMode(group)
     return "grid"
 end
 
+function ST.PanelUsesBarStack(group, kind)
+    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    return ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group, kind) == "bars"
+        and ST.GetBarOnlyLayoutMode(group) == "stack"
+end
+
 function ST.PanelUsesAttachedBarLayout(group, kind)
     if not ST.PanelSupportsAttachedBars(group) then return false end
     kind = ST.GetPanelGeometryKind(group, kind)
@@ -217,7 +223,7 @@ function ST.PanelUsesAttachedBarLayout(group, kind)
             if ST.IsPanelBarEntry(group, entry) then return true end
         end
     end
-    return kind == "mixed" or (kind == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack")
+    return kind == "mixed" or ST.PanelUsesBarStack(group, kind)
 end
 
 function ST.IsAttachedBarEntry(group, entry, layoutKind)
@@ -275,8 +281,8 @@ end
 
 -- An ephemeral view lets the established Bar Panel grid consume its own
 -- geometry without changing the saved panel type or the icon arrangement.
-function ST.GetPanelLayoutGroup(group, forEditing)
-    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group) ~= "bars"
+function ST.GetPanelLayoutGroup(group, forEditing, kind)
+    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars"
         or ST.GetBarOnlyLayoutMode(group) ~= "grid" then return group end
     local layout = group.barOnlyLayout or {}
     return setmetatable({
@@ -325,8 +331,7 @@ function ST.GetBarOnlyLength(group, style)
 end
 
 function ST.GetPanelAttachmentDimensions(frame, group, region)
-    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars"
-        and ST.GetBarOnlyLayoutMode(group) == "stack" then
+    if ST.PanelUsesBarStack(group) then
         local style = ST.GetAttachedBarStyle(group)
         local length, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
         return style.barFillVertical and thickness or length, style.barFillVertical and length or thickness

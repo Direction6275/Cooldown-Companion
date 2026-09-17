@@ -2103,6 +2103,13 @@ function CooldownCompanion:GetPendingResourceBarConflictSummary()
     return BuildResourceBarConflictSummary(profile)
 end
 
+function CooldownCompanion:GetNextResourceBarConflictClassKey()
+    local current = self:GetCurrentResourceBarClassKey()
+    if self:GetResourceBarConflict(current) then return current end
+    local first = self:GetPendingResourceBarConflictSummary()[1]
+    return first and first.classKey
+end
+
 function CooldownCompanion:GetPendingResourceBarConflictExportMessage()
     local summaries = self:GetPendingResourceBarConflictSummary()
     return FormatResourceBarConflictExportMessage(summaries)

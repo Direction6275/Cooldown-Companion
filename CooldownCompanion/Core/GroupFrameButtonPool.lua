@@ -326,6 +326,7 @@ end
 
 local function DeactivatePooledButton(self, groupId, button)
     if not button then return end
+    if ST.ReleaseBarTooltip then ST.ReleaseBarTooltip(button) end
     UnregisterKeyPressHighlightButton(button)
     if self.ReleaseAuraTextureVisual then
         self:ReleaseAuraTextureVisual(button)

@@ -132,7 +132,7 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
         local lane, body = side .. ":" .. region, Region(region)
         local vertical = side == "left" or side == "right"
         local length = vertical and body.height or body.width
-        if ST.GetPanelGeometryKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack" then
+        if ST.PanelUsesBarStack(group) then
             local style = ST.GetAttachedBarStyle(group)
             local barLength, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
             local w, h = style.barFillVertical and thickness or barLength, style.barFillVertical and barLength or thickness
@@ -227,10 +227,10 @@ function ST.GetBarStackResizeMetrics(group, included, positions, originX, origin
     return metrics
 end
 
-function ST.LayoutAttachedBars(groupId, frame, group)
+function ST.LayoutAttachedBars(groupId, frame, group, kind)
     group = group._unifiedPanelOwner or group
     if not ST.PanelSupportsAttachedBars(group) then return end
-    local kind = ST.GetPanelGeometryKind(group)
+    kind = ST.GetPanelGeometryKind(group, kind)
     local attached = ST.PanelUsesAttachedBarLayout(group, kind)
     if not attached then
         for _, state in pairs(frame._attachedBarAreas or {}) do

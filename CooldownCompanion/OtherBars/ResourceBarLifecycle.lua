@@ -237,7 +237,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
         end)
 
         -- When icon size / spacing / buttons-per-row changes — re-apply if primary length changed
-        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId, deferAttachments)
+            if deferAttachments then return end -- UpdateGroupLayout finishes the attachment pass.
             if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
             ReapplyIfPrimaryLengthChanged(groupId)
         end)

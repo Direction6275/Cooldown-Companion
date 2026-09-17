@@ -287,7 +287,8 @@ local function ApplyImportModeReview(review)
         if not data then
             return false
         end
-        applyReview = { ok = true, kind = review.kind, data = data }
+        applyReview = { ok = true, kind = review.kind, data = data,
+            existingPanelIds = review.existingPanelIds }
     end
     if CooldownCompanion:ApplyReviewedImport(applyReview) then
         ExitImportMode()

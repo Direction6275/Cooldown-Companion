@@ -600,6 +600,19 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return BuildLegacyError(GetPayloadDataLabel(data, isDiagnostic))
     end
 
+    -- Diagnose payload shape before migration, without building review pieces
+    -- or previewing legacy entries. Full classification still uses converted data.
+    if isDiagnostic or data.reportKind == "bugReport" then
+        if type(data.profile) ~= "table" then
+            return BuildError("diagnostic_without_profile", "This diagnostic string does not include an importable profile.")
+        end
+        local invalid = ValidateProfilePayload(data.profile)
+        if invalid then return invalid end
+    elseif not data.type then
+        local invalid = ValidateProfilePayload(data)
+        if invalid then return invalid end
+    end
+
     local converted, conversionReport = ST._ConvertUnifiedPanelImport(data)
     if not converted then
         -- A conversion refusal must remain inspectable, but never render

@@ -162,7 +162,7 @@ end
 
 local function ShowResourceBarConflictChooser(classKey, opts)
     opts = opts or {}
-    classKey = classKey or (CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey())
+    classKey = classKey or CooldownCompanion:GetNextResourceBarConflictClassKey()
     local conflict = classKey and CooldownCompanion.GetResourceBarConflict and CooldownCompanion:GetResourceBarConflict(classKey) or nil
     if not conflict then
         return false
@@ -176,7 +176,10 @@ local function ShowResourceBarConflictChooser(classKey, opts)
         return false
     end
 
+    local profile = CooldownCompanion.db.profile
     local chooser = CS.resourceBarConflictChooser
+    if chooser and chooser.classKey == classKey and chooser.profile == profile
+        and chooser.conflict == conflict and chooser.frame:IsShown() then return true end
     if not chooser then
         chooser = AceGUI:Create("Window")
         chooser:SetTitle("Resolve Resource Bars")
@@ -194,6 +197,7 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     end
 
     chooser.classKey = classKey
+    chooser.profile, chooser.conflict = profile, conflict
     chooser.selectedIndex = 1
 
     local legacyStore = CooldownCompanion.db
@@ -243,6 +247,8 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     end
 
     local function chooseRow(index)
+        if CooldownCompanion.db.profile ~= profile
+            or CooldownCompanion:GetResourceBarConflict(classKey) ~= conflict then return end
         local row = rows[index]
         if not row then
             return

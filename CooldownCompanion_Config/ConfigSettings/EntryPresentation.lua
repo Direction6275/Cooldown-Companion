@@ -14,7 +14,7 @@ local function AttachmentApplies(context)
     return ST._PanelHasConfiguredModuleBars(context.groupId) or ST.AttachedBarGapApplies(owner)
 end
 local function UsesStackOffset(group)
-    return group and ST.GetPanelGeometryKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
+    return ST.PanelUsesBarStack(group)
 end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",

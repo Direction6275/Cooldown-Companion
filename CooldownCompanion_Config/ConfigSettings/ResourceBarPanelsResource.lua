@@ -1775,6 +1775,7 @@ end
 ST._BuildBarHeightControls = function(container, settings, layout)
     if not ST.UsesSharedModuleGeometry("resources") then return BuildLegacyBarHeightControls(container, settings, layout) end
     if not CooldownCompanion:IsResourceBarAnchorIndependent() then return end
+    if not settings.enabled or not layout then return end
     local context = ST._CreateModuleSettingsContext("resources", nil, CooldownCompanion._currentSpecId)
     container = ST._NewPanelSettingsSectionHost(container, context)
     local field = (layout.orientation or settings.orientation) == "vertical" and "barWidth" or "barHeight"
@@ -3023,6 +3024,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- texture, so it stays adjacent to it. RIGHT column: how the fill moves,
     -- and what shows through where it is not.
     local barLeft, barRight = BeginRowGrid(container)
+    if ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent() then
+        ST._BuildBarHeightControls(barLeft, settings, CooldownCompanion:GetSpecLayoutOrder())
+    end
 
     -- Bar Texture. LibSharedMedia names run past the control column, so the
     -- menu is widened - a 140px control would otherwise open a 140px menu.
@@ -3493,11 +3497,6 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
 end
 
 local function BuildResourceBarBarTextStylingPanel(container)
-    if ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent() then
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        local column = BeginRowGrid(container)
-        ST._BuildBarHeightControls(column, settings, CooldownCompanion:GetSpecLayoutOrder(settings))
-    end
     BuildResourceBarStylingPanel(container, "bar_text")
 end
 

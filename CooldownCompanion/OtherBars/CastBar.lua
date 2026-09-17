@@ -2301,7 +2301,8 @@ InstallHooks = function()
         end)
 
         -- When icon size / spacing / buttons-per-row changes — re-measure
-        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId, deferAttachments)
+            if deferAttachments then return end -- Reposition after UpdateGroupLayout finishes.
             RepositionFromHook(groupId)
         end)
 

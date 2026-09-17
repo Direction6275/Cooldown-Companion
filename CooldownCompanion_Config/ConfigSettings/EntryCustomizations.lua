@@ -544,9 +544,10 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
                 if moduleContext then
                     if not moduleContext:IsCurrent() then return end
                     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+                    if not moduleContext:IsCurrent() then return end
                     if moduleContext.kind == "resources" then
-                        CS.resourcesSettingsTab = "appearance"
-                        ST._UnifiedRowSetScope("primary")
+                        ST._NavigateToFinderSetting(ST._ResourceThicknessSetting)
+                        return
                     else
                         CS.castBarHomeTab = "appearance"
                         ST._UnifiedRowSetScope("detail")

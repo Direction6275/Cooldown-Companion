@@ -96,6 +96,13 @@ local function GetBarTooltip()
     return barTooltip
 end
 
+function ST.ReleaseBarTooltip(button)
+    if barTooltipButton == button and barTooltip then
+        barTooltip:Hide()
+        barTooltipButton = nil
+    end
+end
+
 local function SetBarIconTooltipScripts(button, enable)
     local iconBounds = button and button._iconBounds
     if not iconBounds then return end
@@ -111,16 +118,10 @@ local function SetBarIconTooltipScripts(button, enable)
             tooltip:Show()
         end)
         iconBounds:SetScript("OnLeave", function()
-            if barTooltipButton == button then
-                barTooltip:Hide()
-                barTooltipButton = nil
-            end
+            ST.ReleaseBarTooltip(button)
         end)
     else
-        if barTooltipButton == button then
-            barTooltip:Hide()
-            barTooltipButton = nil
-        end
+        ST.ReleaseBarTooltip(button)
         iconBounds:SetScript("OnEnter", nil)
         iconBounds:SetScript("OnLeave", nil)
     end

@@ -2548,6 +2548,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
     CS.configRefreshInProgress = true
+    if self._unifiedPanelConversionError and ST._ShowResourceBarConflictChooser then
+        ST._ShowResourceBarConflictChooser()
+    end
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()

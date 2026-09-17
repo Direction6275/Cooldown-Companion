@@ -6,6 +6,7 @@ local Migration = {}
 ST.UnifiedPanelMigration = Migration
 local VERSION = 9
 local CONVERTED_VERSION = 8
+local ENTRY_CONTRACT_REPAIR_VERSION = 8
 local CAST_OFFSET_REPAIR = 1
 
 local function Copy(value)
@@ -48,6 +49,27 @@ local function Fingerprint(value)
     return kind:sub(1, 1) .. #str .. ":" .. str
 end
 Migration.Fingerprint = Fingerprint
+
+local function IsParkedResourceOwner(context, owner)
+    return not (context.ownerClasses and context.ownerClasses[owner])
+end
+
+-- AceDB's default tables are not evidence of a legacy setup. Partial or
+-- customized saved seeds still take the preservation path.
+local function HasLegacySeed(profile, key, defaultsKey)
+    local settings = rawget(profile, key)
+    return type(settings) == "table" and next(settings) ~= nil
+        and Fingerprint(settings) ~= Fingerprint(ST._defaults.profile[defaultsKey])
+end
+
+local function ReportParkedResources(profile, context, report)
+    for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do
+        if IsParkedResourceOwner(context, owner) then
+            report.notices[#report.notices + 1] = "Resources for " .. tostring(owner)
+                .. " were kept unchanged until their character class is known."
+        end
+    end
+end
 
 local function SpecMembership(entry, fallback, settings, context, classKey)
     local specs = {}
@@ -190,10 +212,18 @@ local function IsOrdinaryBars(group)
         and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
 end
 
-local function ConvertPanels(profile, report)
+local function ConvertPanels(profile, report, context)
     for _, id in ipairs(Keys(profile.groups)) do
         local group = profile.groups[id]
         if IsOrdinaryBars(group) then
+            -- Main never allowed Bar Panels to become Automatic module hosts.
+            -- Keep that effective eligibility when unifying their display type,
+            -- or an earlier Bar Panel can steal Resources, cast bars, and the
+            -- Custom Bars being converted below from their existing icon host.
+            -- Explicit module attachments do not use this Automatic preference.
+            if not (context and (context._legacyDestinationRules or context._legacyAttachmentModeRules)) then
+                group.anchorEligible = false
+            end
             ST._NormalizePanelOrientationKeys(group)
             ST._NormalizeBarStyleForPanelConversion(group.style)
             local style = Copy(ST._defaults.profile.globalStyle)
@@ -378,7 +408,8 @@ local function Destination(profile, classKey, spec, settings, layout, context, r
     end
     if not id then id = NewDestination(profile, classKey, spec, settings, layout, context, report, identity) end
     destinations[identity] = id
-    profile.groupContainers[profile.groups[id].parentContainerId].specs[spec] = true
+    local container = profile.groupContainers[profile.groups[id].parentContainerId]
+    if container.specs then container.specs[spec] = true end -- nil already permits every spec
     return id
 end
 
@@ -433,6 +464,16 @@ local function ResourceBlocks(settings, spec, report, classKey)
         for _, powerType in ipairs(catalog) do
             local key = rb.GetCanonicalPowerType and rb.GetCanonicalPowerType(powerType) or powerType
             allowed[key] = true
+        end
+        -- The editor catalog includes dormant powers. Match saved-spec runtime
+        -- eligibility before choosing the block's first/last resource; otherwise
+        -- hidden Mana or unavailable Astral Power can move a Custom Bar past it.
+        -- Other Druid form resources remain eligible, independent of login form.
+        local specID = tonumber(spec)
+        if classID == 11 and specID ~= 102 then allowed[8] = nil end
+        if allowed[0] and settings.hideManaForNonHealer and specID and specID ~= 62 then
+            local _, _, _, _, role = GetSpecializationInfoForSpecID(specID)
+            if role and role ~= "HEALER" then allowed[0] = nil end
         end
         if rb.RESOURCE_HEALTH then allowed[rb.RESOURCE_HEALTH] = true end
         for key in pairs(allowed) do
@@ -639,7 +680,7 @@ end
 local function RepairConvertedEntryContracts(profile, context, report)
     local stamp, backup = profile._unifiedPanelMigration, profile._unifiedPanelBackup
     local version = stamp and tonumber(stamp.version)
-    if not version or version < 1 or version >= CONVERTED_VERSION
+    if not version or version < 1 or version >= ENTRY_CONTRACT_REPAIR_VERSION
         or type(backup) ~= "table" then return true end
     local priorContext, correctedContext = Copy(context), Copy(context)
     priorContext._legacyEntryRules = true
@@ -824,7 +865,9 @@ local function RepairConvertedCastOffsets(profile, context, report)
             for owner, settings in pairs(profile[key] or {}) do
                 local original = earliest and earliest[owner] or geometry and geometry[owner]
                 local class = key == "resourceBarsByClass" and owner or context.ownerClasses and context.ownerClasses[owner]
-                Settings(settings, original, geometry and geometry[owner], class)
+                if key ~= "resourceBarsByChar" or not IsParkedResourceOwner(context, owner) then
+                    Settings(settings, original, geometry and geometry[owner], class)
+                end
             end
         else
             Settings(profile[key], earliest or geometry, geometry, context.defaultClass)
@@ -835,7 +878,7 @@ local function RepairConvertedCastOffsets(profile, context, report)
     end
 end
 
-local function VisitLegacyCastOffsets(profile, convert, report)
+local function VisitLegacyCastOffsets(profile, convert, report, context)
     local found = false
     local function Settings(settings)
         if type(settings) ~= "table" then return end
@@ -862,7 +905,9 @@ local function VisitLegacyCastOffsets(profile, convert, report)
     end
     for _, key in ipairs(CAST_OFFSET_STORES) do
         if key == "resourceBarsByClass" or key == "resourceBarsByChar" then
-            for _, settings in pairs(profile[key] or {}) do Settings(settings) end
+            for owner, settings in pairs(profile[key] or {}) do
+                if key ~= "resourceBarsByChar" or not IsParkedResourceOwner(context, owner) then Settings(settings) end
+            end
         else
             Settings(profile[key])
         end
@@ -870,14 +915,14 @@ local function VisitLegacyCastOffsets(profile, convert, report)
     return found
 end
 
-local function NormalizeCastOffsets(profile, report)
-    if not VisitLegacyCastOffsets(profile) then return end
+local function NormalizeCastOffsets(profile, context, report)
+    if not VisitLegacyCastOffsets(profile, nil, nil, context) then return end
     if not profile._castBarOffsetBackup then
         local backup = {}
         for _, key in ipairs(CAST_OFFSET_STORES) do backup[key] = Copy(profile[key]) end
         profile._castBarOffsetBackup = backup
     end
-    VisitLegacyCastOffsets(profile, true, report)
+    VisitLegacyCastOffsets(profile, true, report, context)
     if report.preservedInactiveCastOffsets then
         report.notices[#report.notices + 1] = "Previously inactive cast-bar Y offsets remain disabled; their saved values were preserved."
     end
@@ -889,7 +934,7 @@ local function RepairCastOffsets(profile, context, report)
     if repairs.castOffsets ~= CAST_OFFSET_REPAIR then
         RepairConvertedCastOffsets(profile, context, report)
     end
-    NormalizeCastOffsets(profile, report)
+    NormalizeCastOffsets(profile, context, report)
     repairs.castOffsets = CAST_OFFSET_REPAIR
     stamp.repairs, stamp.version = repairs, VERSION
     stamp.completed = stamp.completed or {}
@@ -1014,7 +1059,9 @@ local function NormalizeGeometry(profile, context, report)
         local ok, err = Resources(settings, class); if not ok then return nil, err end
     end
     for owner, settings in pairs(profile.resourceBarsByChar or {}) do
-        local ok, err = Resources(settings, context.ownerClasses[owner], owner); if not ok then return nil, err end
+        if not IsParkedResourceOwner(context, owner) then
+            local ok, err = Resources(settings, context.ownerClasses[owner], owner); if not ok then return nil, err end
+        end
     end
     -- Unscoped seeds may later be adopted by another class. Convert each
     -- class-scoped copy after normalization, rather than stamping the seed
@@ -1048,7 +1095,9 @@ local function NormalizeGeometry(profile, context, report)
     -- seeds stamped by v7 against the then-current class. Active character
     -- buckets keep their stamps and any subsequent Customize/Revert choices.
     for _, key in ipairs({ "castBar", "legacyCastBarSeed" }) do
-        local ok, err = Cast(profile[key], nil, nil, true); if not ok then return nil, err end
+        if HasLegacySeed(profile, key, "castBar") then
+            local ok, err = Cast(profile[key], nil, nil, true); if not ok then return nil, err end
+        end
     end
     if changed then
         profile._barGeometryBackup = profile._barGeometryBackup or backup
@@ -1077,9 +1126,9 @@ local function BuildConversion(source, context)
     -- Detached legacy imports retain exporter IDs until normal import remapping.
     for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do
         local settings = profile.resourceBarsByChar[owner]
-        if type(settings) == "table" and (next(settings.customBars or {}) or next(settings.customAuraBars or {})) then
+        if not IsParkedResourceOwner(context, owner) and type(settings) == "table"
+            and (next(settings.customBars or {}) or next(settings.customAuraBars or {})) then
             local class = context.ownerClasses[owner]
-            if not class then return nil, "The Resources owner has no class information: " .. tostring(owner) end
             if ST._NormalizeResourceSettingsForPanelConversion then ST._NormalizeResourceSettingsForPanelConversion(settings, class) end
             local existing = profile.resourceBarsByClass[class]
             if existing and ST._NormalizeResourceSettingsForPanelConversion then ST._NormalizeResourceSettingsForPanelConversion(existing, class) end
@@ -1100,9 +1149,13 @@ local function BuildConversion(source, context)
         if existing and Fingerprint(existing) ~= Fingerprint(seed) then
             return nil, "The legacy Resources seed conflicts with " .. class .. "; source data was kept."
         end
-        profile.resourceBarsByClass[class] = seed
+        profile.resourceBarsByClass[class] = Copy(seed)
+        -- This seed has been adopted. Retaining an unconverted copy would
+        -- create a new class-scope conflict on the next import/activation.
+        profile.legacyResourceBarsSeed, profile.resourceBars = nil, nil
     end
     local report = { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
+    ReportParkedResources(profile, context, report)
     local repaired, repairError = RepairConvertedDestinations(profile, context, report)
     if not repaired then return nil, repairError end
     repaired, repairError = RepairConvertedEntryContracts(profile, context, report)
@@ -1110,7 +1163,7 @@ local function BuildConversion(source, context)
     -- Preserve the old effective offset before an independent stack's
     -- attachment is rewritten to its replacement panel.
     RepairCastOffsets(profile, context, report)
-    ConvertPanels(profile, report)
+    ConvertPanels(profile, report, context)
     local destinations, variants, merged = {}, {}, {}
     context.classSpecs = context.classSpecs or {}
     local completed = Copy(profile._unifiedPanelMigration and profile._unifiedPanelMigration.completed or {})
@@ -1223,7 +1276,9 @@ local function BuildConversion(source, context)
     end
     -- Class normalization has already selected/merged these legacy buckets.
     -- Retain their resource settings, but prevent them from reseeding old bars.
-    for _, settings in pairs(profile.resourceBarsByChar or {}) do StripLegacyStore(settings) end
+    for owner, settings in pairs(profile.resourceBarsByChar or {}) do
+        if not IsParkedResourceOwner(context, owner) then StripLegacyStore(settings) end
+    end
     StripLegacyStore(profile.resourceBars)
     StripLegacyStore(profile.legacyResourceBarsSeed)
     if report.regrouped > 0 then
@@ -1246,32 +1301,30 @@ local CONVERTED_FIELDS = { "groups", "groupContainers", "nextGroupId", "nextCont
 local function NeedsConversion(profile, context)
     local stamp = profile._unifiedPanelMigration
     if stamp and (tonumber(stamp.version) or 0) < CONVERTED_VERSION then return true end
-    local converted = stamp ~= nil
     for _, group in pairs(profile.groups or {}) do
         if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
             and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then return true end
-        if group._barGeometryVersion == 1 then converted = true end
     end
     for classKey, settings in pairs(profile.resourceBarsByClass or {}) do
         if settings._barGeometryVersion ~= 1 or #LegacyEntries(settings, classKey, context) > 0 then return true end
-        converted = true
     end
     for _, settings in pairs(profile.castBarByChar or {}) do
         if settings._barGeometryVersion ~= 1 then return true end
-        converted = true
     end
     local function HasLegacy(settings)
         return type(settings) == "table" and (next(settings.customBars or {}) or next(settings.customAuraBars or {}))
     end
     if HasLegacy(profile.resourceBars) or HasLegacy(profile.legacyResourceBarsSeed) then return true end
-    for _, settings in pairs(profile.resourceBarsByChar or {}) do
-        if HasLegacy(settings) then return true end
+    for owner, settings in pairs(profile.resourceBarsByChar or {}) do
+        if not IsParkedResourceOwner(context, owner) and HasLegacy(settings) then return true end
     end
     -- Exports omit the profile stamp, but retain owner geometry stamps.
     -- Unscoped seeds still need the original adoption/conversion path.
-    if not stamp and (profile.resourceBars or profile.legacyResourceBarsSeed
-        or profile.castBar or profile.legacyCastBarSeed) then return true end
-    return not converted
+    if not stamp and (HasLegacySeed(profile, "resourceBars", "resourceBars")
+        or HasLegacySeed(profile, "legacyResourceBarsSeed", "resourceBars")
+        or HasLegacySeed(profile, "castBar", "castBar")
+        or HasLegacySeed(profile, "legacyCastBarSeed", "castBar")) then return true end
+    return false
 end
 
 local function EmptyReport()
@@ -1284,6 +1337,7 @@ function Migration.Build(source, context)
     context = context or {}
     if NeedsConversion(source, context) then return BuildConversion(source, context) end
     local candidate, report = Copy(source), EmptyReport()
+    if not source._unifiedPanelMigration then ReportParkedResources(source, context, report) end
     RepairCastOffsets(candidate, context, report)
     for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     valid, errorText = Validate(candidate)
@@ -1297,8 +1351,9 @@ function Migration.Apply(profile, context)
     if not valid then return false, errorText end
     if not NeedsConversion(profile, context) then
         local report = EmptyReport()
+        if not profile._unifiedPanelMigration then ReportParkedResources(profile, context, report) end
         local repairs = profile._unifiedPanelMigration and profile._unifiedPanelMigration.repairs
-        if not repairs or repairs.castOffsets ~= CAST_OFFSET_REPAIR or VisitLegacyCastOffsets(profile) then
+        if not repairs or repairs.castOffsets ~= CAST_OFFSET_REPAIR or VisitLegacyCastOffsets(profile, nil, nil, context) then
             -- Only repair-owned stores are detached/replaced; live panel owners
             -- and the original conversion snapshots keep their identity.
             local candidate = {}
@@ -1360,9 +1415,11 @@ function Addon:RunUnifiedPanelMigration()
     if not profile then return false end
     local ok, report = Migration.Apply(profile, self:GetUnifiedPanelConversionContext())
     if not ok then
+        self._unifiedPanelConversionError = report
         self:Print("Panel conversion stopped: " .. tostring(report) .. " Saved panel data was kept.")
         return false
     end
+    self._unifiedPanelConversionError = nil
     if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
         self:Print(("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
             :format(report.panels, report.bars, report.createdPanels))
