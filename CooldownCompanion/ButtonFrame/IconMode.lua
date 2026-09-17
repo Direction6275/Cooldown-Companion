@@ -105,7 +105,8 @@ local function IsKeyPressHighlightGroupEligible(button)
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
     local group = groupId and groups and groups[groupId]
-    return group and group.displayMode ~= "bars" and group.displayMode ~= "text" or false
+    local presentation = group and ST.GetEntryPresentation(group, button.buttonData)
+    return group and presentation ~= "bars" and presentation ~= "text" or false
 end
 
 local function HasCachedBindingKeys(button)

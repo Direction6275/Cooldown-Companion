@@ -180,7 +180,7 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
     end
 end
 
-function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId)
+function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
@@ -208,6 +208,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId)
     if not self:IsGroupActive(groupId, {
         group = group,
         specId = specId,
+        configurationOnly = options and options.configured,
         checkCharVisibility = true,
         checkLoadConditions = true,
     }) then
@@ -292,7 +293,7 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
         local panels = panelsByContainer[containerInfo.id]
         table.sort(panels, ST.ComparePanelOrder)
         for _, panelInfo in ipairs(panels) do
-            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId) then
+            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId, options) then
                 local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
                 if not (options and options.requireShown) or (frame and frame:IsShown()) then
                     return panelInfo.groupId
@@ -346,7 +347,23 @@ end
 function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
     group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
     if ST.IsTotemPanelGroup(group) then return false end
-    if not group or group.compactLayout ~= true then
+    if not group then return false end
+    local compact = group.compactLayout == true
+    if ST.PanelSupportsAttachedBars(group) then
+        local barLayout = group.barOnlyLayout
+        local barCompact = barLayout and barLayout.mode ~= "stack" and barLayout.compactLayout == true
+        if not compact and not barCompact then return false end
+        -- Buttons use the layout their panel materialized. Population stamps
+        -- this before updating any buttons, and eligibility changes rebuild
+        -- through GroupButtonSetNeedsRebuild. Do not rescan eligibility or
+        -- allocate a layout view for every cooldown update.
+        local frame = (self.groupFrames and self.groupFrames[groupId])
+            or (self._dormantFrames and self._dormantFrames[groupId])
+        local kind = frame and frame._panelLayoutKind
+        if not kind then kind = ST.GetPanelGeometryKind(group) end
+        if kind == "bars" and ST.GetBarOnlyLayoutMode(group) == "grid" then compact = barCompact end
+    end
+    if not compact then
         return false
     end
     return self:GetGroupCompactLayoutSuppressionReasons(groupId) == nil
@@ -369,7 +386,7 @@ local function RefreshCompactSuppressionAffectedGroup(self, groupId)
     groupId = tonumber(groupId)
     if not groupId then return end
 
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
+    local group = ST.GetPanelLayoutGroup(self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
     if not group or group.compactLayout ~= true then return end
 
     local frame = self.groupFrames and self.groupFrames[groupId]
@@ -482,6 +499,11 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
     local frame = GetFrameForButtonSetComparison(self, groupId)
     if not frame or not frame.buttons then
         return false
+    end
+    if ST.PanelSupportsAttachedBars(group)
+        and (frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group)
+            or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group)) then
+        return true
     end
     if self:IsRotationAssistantGroup(group) then
         local buttonData = frame._rotationAssistantButtonData

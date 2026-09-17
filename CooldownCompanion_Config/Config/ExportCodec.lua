@@ -14,7 +14,8 @@ local COMPACT_FORMAT_KEY = "_cdcExportFormat"
 local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
 local COMPACT3_FORMAT_VALUE = "compact3"
 local COMPACT4_FORMAT_VALUE = "compact4"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact5"
+local COMPACT5_FORMAT_VALUE = "compact5"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact6"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
@@ -368,6 +369,10 @@ local RETIRED_PROFILE_KEYS = {
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
+    _unifiedPanelBackup = true,
+    _barGeometryBackup = true,
+    _castBarOffsetBackup = true,
+    _unifiedPanelMigration = true,
     folders = true,
     nextFolderId = true,
 }
@@ -377,70 +382,17 @@ local function IsRetiredProfileKey(key)
 end
 
 local function BuildCurrentCompactProfileDefaults()
-    local profileDefaults = ST._defaults and ST._defaults.profile or {}
-    local compactDefaults = {}
-    for _, defaultKey in pairs(PROFILE_DEFAULT_KEYS) do
-        compactDefaults[defaultKey] = CopyValue(profileDefaults[defaultKey])
+    local defaults = CopyTable(ST.COMPACT5_PROFILE_DEFAULTS)
+    local resources = defaults.resourceBars
+    if resources then
+        resources.customBars, resources.customAuraBars, resources.customAuraBarSlots = nil, nil, nil
+        resources.nextCustomBarId = nil
     end
-    if compactDefaults.globalStyle then
-        -- Preserve the shipped compact3 baseline exactly. This live default was
-        -- added after the compact snapshot was defined, so exporting it here
-        -- would change compaction/rehydration behavior without a format bump.
-        compactDefaults.globalStyle.readyGlowOnlyAtMaxCharges = nil
-        -- Same rule for the 12.1 swipe-edge retirement pair: these explicit-true
-        -- keys postdate the compact snapshots, so they stay out of the baseline
-        -- and always serialize explicitly when set.
-        compactDefaults.globalStyle.cooldownSwipeEdgeEnabled = nil
-        compactDefaults.globalStyle.auraDurationSwipeEdgeEnabled = nil
-        -- Preserve the shipped compact5 baseline exactly: live shipped this
-        -- default as false, and compact5 exports from live omit the key when
-        -- it matched. 12.1 flipped the runtime default to true, so the
-        -- baseline must stay pinned at false or those imports silently flip
-        -- to reversed aura swipes. The new default serializes explicitly.
-        compactDefaults.globalStyle.auraDurationSwipeReverse = false
-        -- Same rule for the glow families the LibCustomGlow retirement
-        -- re-defaulted. An export made on live omitted these when they matched
-        -- live's defaults, so the baseline has to keep answering with the
-        -- live-era values; the glow migrations then map them exactly as they
-        -- map an in-place-upgraded profile (pixel -> dashes, speed 50 -> the
-        -- new default, and so on). Without the pins those imports land on the
-        -- 12.1 defaults instead and render a different glow than the same
-        -- profile upgraded in place.
-        compactDefaults.globalStyle.auraGlowStyle = "pixel"
-        compactDefaults.globalStyle.auraGlowSize = 8
-        compactDefaults.globalStyle.auraGlowSpeed = 50
-        compactDefaults.globalStyle.pandemicGlowSize = 5
-        compactDefaults.globalStyle.pandemicGlowThickness = 4
-        compactDefaults.globalStyle.pandemicGlowSpeed = 50
-        compactDefaults.globalStyle.pandemicGlowLines = 8
-        -- Retired keys, pinned as migration INPUTS only: the pixel -> dashes
-        -- pass reads them for the dash count/thickness and deletes them on its
-        -- way out, so they never persist into live data. Without them a filled
-        -- baseline would migrate to the new dash defaults instead of the
-        -- exporter's line/thickness values.
-        compactDefaults.globalStyle.auraGlowLines = 8
-        compactDefaults.globalStyle.auraGlowThickness = 4
-    end
-    if compactDefaults.castBar then
-        -- Channel marks postdate compact5. Keep them outside its baseline so
-        -- any explicitly materialized choices serialize instead of silently
-        -- changing the meaning of an existing compact-format export.
-        compactDefaults.castBar.showChannelTickMarks = nil
-        compactDefaults.castBar.channelTickWidth = nil
-        compactDefaults.castBar.channelTickColor = nil
-        compactDefaults.castBar.highlightPenultimateChannelTick = nil
-        compactDefaults.castBar.penultimateChannelTickColor = nil
-    end
-    if compactDefaults.resourceBars then
-        -- This setting postdates compact5. Keep it outside the frozen baseline
-        -- so both explicit states serialize without changing older imports.
-        compactDefaults.resourceBars.keepSpecResourcesInAllForms = nil
-    end
-    return compactDefaults
+    return defaults
 end
 
 local function BuildCompact3ProfileDefaults()
-    local compactDefaults = BuildCurrentCompactProfileDefaults()
+    local compactDefaults = CopyTable(ST.COMPACT5_PROFILE_DEFAULTS)
     if compactDefaults.globalStyle then
         compactDefaults.globalStyle.showUnusable = false
         compactDefaults.globalStyle.showLossOfControl = false
@@ -464,7 +416,7 @@ local function StripAuraDurationSwipeDefaults(compactDefaults)
 end
 
 local function BuildCompact4ProfileDefaults()
-    return StripAuraDurationSwipeDefaults(BuildCurrentCompactProfileDefaults())
+    return StripAuraDurationSwipeDefaults(CopyTable(ST.COMPACT5_PROFILE_DEFAULTS))
 end
 
 local function BuildCompactEntityDefaults(compactLayoutDefault)
@@ -550,12 +502,14 @@ local SCOPED_STORE_KEYS = {
 local COMPACT_PROFILE_DEFAULTS = {
     [COMPACT3_FORMAT_VALUE] = StripAuraDurationSwipeDefaults(BuildCompact3ProfileDefaults()),
     [COMPACT4_FORMAT_VALUE] = BuildCompact4ProfileDefaults(),
+    [COMPACT5_FORMAT_VALUE] = CopyTable(ST.COMPACT5_PROFILE_DEFAULTS),
     [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
 }
 
 local COMPACT_ENTITY_DEFAULTS = {
     [COMPACT3_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
     [COMPACT4_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
+    [COMPACT5_FORMAT_VALUE] = CopyTable(ST.COMPACT5_ENTITY_DEFAULTS),
     [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
 }
 
@@ -796,7 +750,10 @@ local function CompactButton(button, formatVersion)
 
     local compact = {}
     for key, value in pairs(button) do
-        if key == "loadConditions" then
+        if key == "_legacyBarImportKey" then
+            -- Replay identity belongs to the original legacy import. A new
+            -- export is ordinary additive content, even after local edits.
+        elseif key == "loadConditions" then
             local compactLoadConditions = CompactLoadConditions(value, formatVersion, true)
             if compactLoadConditions then
                 compact.loadConditions = compactLoadConditions

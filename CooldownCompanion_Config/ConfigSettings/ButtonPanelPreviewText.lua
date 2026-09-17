@@ -31,7 +31,7 @@ local RenderTextSlot
 local function StyleTextEntry(slot, buttonData, group)
     local style = group.style or {}
     if CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
     end
 
     local bgColor = style.textBgColor or { 0, 0, 0, 0 }

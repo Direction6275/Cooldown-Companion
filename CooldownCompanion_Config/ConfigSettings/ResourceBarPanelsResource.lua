@@ -352,8 +352,6 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
     -- both rows go straight onto the panel scroll. The toggle these belong to
     -- lives back on the tab, so neither indents.
     local function BuildEffectStyleAdvanced(panel)
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = options.colorLabel,
             setting = options.settings and options.settings.color,
@@ -362,7 +360,6 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
             default = options.defaultColor,
             hasAlpha = true,
             onConfirm = applyBars,
-            onChange = applyBars,
         })
         HealthResource.AddEffectTextureDropdown(panel, health, options.textureKey,
             options.textureLabel, applyBars,
@@ -592,9 +589,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             applyBars()
         end)
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced. onChange is new: it is the only path that fires
-        -- while the picker is open, and the canvas tracks the colour there.
         AddColorRow(panel, {
             label = "Text Color",
             setting = finderText and finderText.advanced and finderText.advanced.color,
@@ -603,7 +597,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             default = DEFAULT_RESOURCE_TEXT_COLOR,
             hasAlpha = true,
             onConfirm = applyBars,
-            onChange = RefreshLayoutOrderPreviewForDrag,
+            onPreview = RefreshLayoutOrderPreviewForDrag,
         })
 
         local textSettings = finderText and finderText.advanced
@@ -750,8 +744,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             CooldownCompanion:ApplyResourceBars()
         end)
 
-        -- deferCommit and onChange are deliberately absent, matching the
-        -- stock color-picker call this row replaced.
         AddColorRow(panel, {
             label = "Text Color",
             setting = finderText and finderText.rechargeAdvanced
@@ -844,11 +836,11 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         ST._AddAdvancedToggle(colorModeRow, "healthBarGradient", {}, true, {
             build = function(panel)
                 if fillGradientEnabled == true then
-                    AddColorRow(panel, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = false, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = false, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = false, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Full Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.full, indent = false, tbl = health, key = "healthBarFullColor", default = DEFAULT_HEALTH_BAR_FULL_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Half Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.half, indent = false, tbl = health, key = "healthBarHalfColor", default = DEFAULT_HEALTH_BAR_HALF_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Low Health", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.low, indent = false, tbl = health, key = "healthBarLowColor", default = DEFAULT_HEALTH_BAR_LOW_COLOR, onConfirm = applyBars })
                 else
-                    AddColorRow(panel, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = false, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthFill and RESOURCE_FINDER.primary.healthFill.color, indent = false, tbl = health, key = "healthBarColor", default = DEFAULT_HEALTH_BAR_COLOR, onConfirm = applyBars })
                 end
             end,
         })
@@ -862,7 +854,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     local missingHeading, healthMissingCollapsed = BuildCollapsibleSection(container, "Missing Health", healthMissingKey, resourceBarCollapsedSections, nil, ROW_SECTION)
     local missingInfoBtn = CreateInfoButton(missingHeading.frame, missingHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Missing Health",
-        {"Resource Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
+        {"Background Color is used by regular resource bars. Health uses Missing Health for its empty region.", 1, 1, 1, true},
     }, missingHeading)
     AnchorLeftAlignedHeadingRule(missingHeading, missingInfoBtn)
 
@@ -887,11 +879,11 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         ST._AddAdvancedToggle(colorModeRow, "healthBackgroundGradient", {}, true, {
             build = function(panel)
                 if gradientEnabled == true then
-                    AddColorRow(panel, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = false, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = false, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars, onChange = applyBars })
-                    AddColorRow(panel, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = false, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Full", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.full, indent = false, tbl = health, key = "healthBackgroundFullColor", default = DEFAULT_HEALTH_BACKGROUND_FULL_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Half", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.half, indent = false, tbl = health, key = "healthBackgroundHalfColor", default = DEFAULT_HEALTH_BACKGROUND_HALF_COLOR, onConfirm = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Low", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.low, indent = false, tbl = health, key = "healthBackgroundLowColor", default = DEFAULT_HEALTH_BACKGROUND_LOW_COLOR, onConfirm = applyBars })
                 else
-                    AddColorRow(panel, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = false, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars, onChange = applyBars })
+                    AddColorRow(panel, { label = "Missing Health Color", setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthMissing and RESOURCE_FINDER.primary.healthMissing.color, indent = false, tbl = health, key = "healthBackgroundColor", default = DEFAULT_HEALTH_BACKGROUND_COLOR, onConfirm = applyBars })
                 end
 
             end,
@@ -1095,7 +1087,6 @@ local function AddResourceSpecCopyButton(enableCb)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
         GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
-        GameTooltip:AddLine("- Custom Bars", 1, 1, 1, true)
         GameTooltip:AddLine("- Aura Tracking", 1, 1, 1, true)
         GameTooltip:Show()
     end)
@@ -1413,11 +1404,12 @@ local function BuildResourceBarPositioningPanel(container)
         local sizeLeft, sizeRight = BeginRowGrid(container)
 
         -- Bar Height + Custom Heights
-        ST._BuildBarHeightControls(sizeLeft, settings, layout)
+        if not ST.UsesSharedModuleGeometry("resources") then ST._BuildBarHeightControls(sizeLeft, settings, layout) end
 
         -- Bar Spacing. The canvas takes its lane gap straight from this value,
         -- so the whole stack re-spaces under the drag and the live bars
         -- reposition once, on release.
+        if not ST.GetModuleGeometryPanel("resources") then
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Bar Spacing",
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
@@ -1434,6 +1426,7 @@ local function BuildResourceBarPositioningPanel(container)
             stateKeys = "barSpacing",
         })
 
+        end
         -- Segment Gap
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Segment Gap",
@@ -1557,7 +1550,7 @@ local function BuildResourceBarPositioningPanel(container)
     end
 
     -- ============ Layout Section (attached mode only) ============
-    if not isIndependentStack then
+    if not isIndependentStack and not ST.GetModuleGeometryPanel("resources") then
         local posKey = "rb_position"
         local _, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
@@ -1616,7 +1609,7 @@ local function GetResourceBarTextureOptions()
 end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildBarHeightControls(container, settings, layout)
+local function BuildLegacyBarHeightControls(container, settings, layout)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
@@ -1779,7 +1772,21 @@ local function BuildBarHeightControls(container, settings, layout)
     }, customHeightsCb))
 end
 
-ST._BuildBarHeightControls = BuildBarHeightControls
+ST._BuildBarHeightControls = function(container, settings, layout)
+    if not ST.UsesSharedModuleGeometry("resources") then return BuildLegacyBarHeightControls(container, settings, layout) end
+    if not CooldownCompanion:IsResourceBarAnchorIndependent() then return end
+    if not settings.enabled or not layout then return end
+    local context = ST._CreateModuleSettingsContext("resources", nil, CooldownCompanion._currentSpecId)
+    container = ST._NewPanelSettingsSectionHost(container, context)
+    local field = (layout.orientation or settings.orientation) == "vertical" and "barWidth" or "barHeight"
+    AddMirrorFirstSliderRow(container, { label = "Default Bar Thickness",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar and RESOURCE_FINDER.primary.bar.thickness,
+        value = ST.ResolveResourceBarGeometry(settings, layout).thickness, min = 4, max = 100, step = 0.1,
+        tooltip = { "Default thickness for this independent Resources stack. Individual thickness customizations override it." },
+        set = function(value) layout[field] = value end, stateOwner = layout, stateKeys = field,
+        apply = function() CooldownCompanion:ApplyResourceBars(); CooldownCompanion:RepositionCastBar() end,
+    })
+end
 
 local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
     descriptors[#descriptors + 1] = {
@@ -1901,7 +1908,7 @@ local function BuildResourceColorControls(container, settings, powerType, specID
             -- The picker-open path already writes the override (the proxy is a
             -- throwaway, so the store is the only place the canvas can read
             -- it from); repainting here is what makes the swatch track live.
-            onChange = function()
+            onPreview = function()
                 local committed = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault)
                 WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
                 RefreshLayoutOrderPreviewForDrag()
@@ -2156,9 +2163,6 @@ local function AddThresholdTickEntryEditor(panel, options)
         local proxy = {
             [proxyKey] = type(entry.color) == "table" and CopyTable(entry.color) or CopyTable(options.defaultColor),
         }
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced: the bound table IS the throwaway proxy, so a drag
-        -- value resting in it cannot reach a live renderer.
         local colorSetting = options.colorSettings and options.colorSettings[index]
         local colorLabel = colorSetting and colorSetting.label or options.colorLabel
         local colorRow = AddColorRow(panel, {
@@ -2182,7 +2186,7 @@ local function AddThresholdTickEntryEditor(panel, options)
             -- colours only show below maximum, and the canvas previews every
             -- bar at maximum). The entry is already written above, so the
             -- repaint has something to read.
-            onChange = function()
+            onPreview = function()
                 local updated = options.previewRefresh and CopyThresholdTickEntryList(entries) or nil
                 if updated and updated[index] then
                     updated[index].color = proxy[proxyKey]
@@ -2522,7 +2526,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                             key = "auraLaneColor",
                             default = RB.GetResourceOverlayLaneColor(entry),
                             onConfirm = applyBars,
-                            onChange = previewOnly,
+                            onPreview = previewOnly,
                         })
                     end
 
@@ -2577,7 +2581,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                         key = "auraFillColor",
                         default = RB.GetResourceOverlayFillColor(entry),
                         onConfirm = applyBars,
-                        onChange = previewOnly,
+                        onPreview = previewOnly,
                     })
                 end
             end
@@ -2638,7 +2642,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 key = "auraActiveColor",
                 default = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
                 onConfirm = applyBars,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
 
             -- The style's own sliders, the same rows every other glow surface
@@ -2729,7 +2733,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 key = keys.color,
                 default = RB.DEFAULT_MW_MAX_STACK_BORDER_COLOR,
                 onConfirm = applyRows,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
             AddGlowSliderRows(panel, resource,
                 borderStyle == "pixel" and "dashes" or "solid",
@@ -3020,6 +3024,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- texture, so it stays adjacent to it. RIGHT column: how the fill moves,
     -- and what shows through where it is not.
     local barLeft, barRight = BeginRowGrid(container)
+    if ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent() then
+        ST._BuildBarHeightControls(barLeft, settings, CooldownCompanion:GetSpecLayoutOrder())
+    end
 
     -- Bar Texture. LibSharedMedia names run past the control column, so the
     -- menu is widened - a 140px control would otherwise open a 140px menu.
@@ -3080,14 +3087,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- the end of the row's label.
     AnchorRowBadge(smoothingRow, CreateInfoButton(smoothingRow.frame, smoothingRow.frame, "LEFT", "LEFT", 0, 0, {
         "Segmented Smoothing",
-        {"Controls whether segmented resource bars and segmented or overlay custom bars animate smoothly or snap between segment values.", 1, 1, 1, true},
+        {"Controls whether segmented resource bars animate smoothly or snap between segment values.", 1, 1, 1, true},
         " ",
-        {"Continuous resources and continuous custom bars are not affected.", 1, 1, 1, true},
+        {"Continuous resources are not affected.", 1, 1, 1, true},
     }, smoothingRow))
 
     -- Resource Background Color
     AddColorRow(barRight, {
-        label = "Resource Background Color",
+        label = "Background Color",
         setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
             and RESOURCE_FINDER.primary.bar.background,
         tbl = displayProfile,
@@ -3095,7 +3102,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         default = { 0, 0, 0, 0.5 },
         hasAlpha = true,
         onConfirm = applyBars,
-        onChange = previewOnly,
+        onPreview = previewOnly,
     })
     end -- not barCollapsed
 
@@ -3139,7 +3146,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 default = { 0, 0, 0, 1 },
                 hasAlpha = true,
                 onConfirm = applyBars,
-                onChange = previewOnly,
+                onPreview = previewOnly,
             })
 
             local renderMode = ST._AddBorderRenderModeDropdown(panel, displayProfile, "borderRenderMode", function()
@@ -3472,6 +3479,17 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
+    if ST.UsesSharedModuleGeometry("resources", numericSpecID) then
+        ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
+        local key = "rb_resource_appearance_" .. numericPowerType .. "_" .. numericSpecID
+        local _, collapsed = BuildCollapsibleSection(container, "Appearance", key,
+            resourceBarCollapsedSections, nil, ROW_SECTION)
+        if not collapsed then
+            local column = BeginRowGrid(container)
+            ST._BuildModuleBarThickness(column, "resources", numericPowerType, numericSpecID,
+                ST._ResourceThicknessSetting)
+        end
+    end
     BuildResourceBarStylingPanel(container, "resource_settings", {
         powerType = numericPowerType,
         specID = numericSpecID,
@@ -3644,7 +3662,7 @@ if ST._RegisterSettingsFinderContextPreparer then
         local specID = tonumber(context and context.resourceSpecID)
             or GetCurrentConfigSpecID()
         context._settingsFinderResourceLayout = RB.GetSpecLayoutOrder
-            and RB.GetSpecLayoutOrder(settings, specID) or settings
+            and RB.GetSpecLayoutOrder(CopyTable(settings or {}), specID) or settings
 
         if context.scope == "resources" then
             local active = {}
@@ -3832,6 +3850,7 @@ if ST._DefineSettingRoute then
             height = {
                 label = "Bar Height",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3841,6 +3860,7 @@ if ST._DefineSettingRoute then
             width = {
                 label = "Bar Width",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3851,6 +3871,7 @@ if ST._DefineSettingRoute then
                 label = "Custom Resource Bar Heights",
                 advancedKey = "customResourceBarHeights",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3861,13 +3882,14 @@ if ST._DefineSettingRoute then
                 label = "Custom Resource Bar Widths",
                 advancedKey = "customResourceBarHeights",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
                         == "vertical"
                 end,
             },
-            spacing = { label = "Bar Spacing", aliases = { "resource spacing" } },
+            spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
             segmentGap = { label = "Segment Gap", aliases = { "segment spacing" } },
         })
         RESOURCE_FINDER.primary.customHeight = {}
@@ -3879,7 +3901,7 @@ if ST._DefineSettingRoute then
             -- the toggle is on - off just opens its panel read-only behind
             -- the Turn On footer, so the rows stay findable.
             local function CustomSizeApplies(context, vertical)
-                local layout = RESOURCE_FINDER.Layout(context)
+                if ST.UsesSharedModuleGeometry("resources") then return false end                local layout = RESOURCE_FINDER.Layout(context)
                 local settings = RESOURCE_FINDER.Settings(context)
                 local orientation = layout and layout.orientation
                     or settings and settings.orientation
@@ -3941,6 +3963,7 @@ if ST._DefineSettingRoute then
             local layout = RESOURCE_FINDER.Layout(context)
             return RESOURCE_FINDER.BarsEnabled(context)
                 and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
+                and not ST.GetModuleGeometryPanel("resources")
         end,
     }):Settings({
         x = {
@@ -3976,6 +3999,9 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
+        thickness = { label = "Default Bar Thickness", aliases = { "bar thickness", "height", "width" }, applies = function()
+            return ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+        end },
         brightness = { advancedKey = "rbClassTexture",
             label = "Class Texture Brightness",
             applies = function(context)
@@ -3983,7 +4009,7 @@ if ST._DefineSettingRoute then
             end,
         },
         smoothing = { label = "Segmented Smoothing", aliases = { "smooth animation" } },
-        background = { label = "Resource Background Color", aliases = { "empty color" } },
+        background = { label = "Background Color", aliases = { "empty color", "resource background" } },
     })
 
     RESOURCE_FINDER.primary.border = ST._DefineSettingRoute({
@@ -4779,3 +4805,14 @@ ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
 ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel
+
+if ST._DefineSettingRoute then
+ST._ResourceThicknessSetting = ST._DefineSettingRoute({
+    idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
+    tab = "settings", tabLabel = "Settings", section = "barThickness", sectionLabel = "Appearance",
+    collapseStore = "resource", collapseKeys = function(context)
+        return { "rb_resource_appearance_" .. tostring(context.resourcePowerType) .. "_" .. tostring(context.resourceSpecID) }
+    end,
+    applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
+}):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
+end

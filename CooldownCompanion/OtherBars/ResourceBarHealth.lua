@@ -318,12 +318,13 @@ function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture, overlap
     local fillTexture = anchorTexture or (bar and bar:GetStatusBarTexture())
     if not bar or not effectBar or not fillTexture then return end
 
+    local width, height = RB.GetResourceBarSize(bar)
     effectBar:ClearAllPoints()
     effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
     local overlap = overlapJoin and HEALTH_EFFECT_JOIN_OVERLAP or 0
 
     if bar._isVertical then
-        effectBar:SetHeight(bar:GetHeight())
+        effectBar:SetHeight(height)
         if bar._reverseFill then
             effectBar:SetReverseFill(true)
             effectBar:SetPoint("TOPLEFT", fillTexture, "BOTTOMLEFT", 0, overlap)
@@ -335,7 +336,7 @@ function HealthBar.LayoutForwardEffectBar(bar, effectBar, anchorTexture, overlap
         end
     else
         effectBar:SetReverseFill(false)
-        effectBar:SetWidth(bar:GetWidth())
+        effectBar:SetWidth(width)
         effectBar:SetPoint("TOPLEFT", fillTexture, "TOPRIGHT", -overlap, 0)
         effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMRIGHT", -overlap, 0)
     end
@@ -346,11 +347,12 @@ function HealthBar.LayoutHealAbsorbBar(bar)
     local fillTexture = bar and bar:GetStatusBarTexture()
     if not bar or not effectBar or not fillTexture then return end
 
+    local width, height = RB.GetResourceBarSize(bar)
     effectBar:ClearAllPoints()
     effectBar:SetOrientation(bar._isVertical and "VERTICAL" or "HORIZONTAL")
 
     if bar._isVertical then
-        effectBar:SetHeight(bar:GetHeight())
+        effectBar:SetHeight(height)
         if bar._reverseFill then
             effectBar:SetReverseFill(false)
             effectBar:SetPoint("BOTTOMLEFT", fillTexture, "BOTTOMLEFT", 0, 0)
@@ -362,7 +364,7 @@ function HealthBar.LayoutHealAbsorbBar(bar)
         end
     else
         effectBar:SetReverseFill(true)
-        effectBar:SetWidth(bar:GetWidth())
+        effectBar:SetWidth(width)
         effectBar:SetPoint("TOPRIGHT", fillTexture, "TOPRIGHT", 0, 0)
         effectBar:SetPoint("BOTTOMRIGHT", fillTexture, "BOTTOMRIGHT", 0, 0)
     end

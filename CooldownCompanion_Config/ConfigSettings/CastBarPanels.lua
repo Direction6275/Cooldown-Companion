@@ -104,7 +104,8 @@ if ST._DefineSettingRoute then
         applies = CastBarFinderAttached,
     })
     CASTBAR_FINDER.attached = attached:Settings({
-        yOffset = { label = "Y Offset", aliases = { "stack gap" } },
+        yOffset = { label = "Y Offset", aliases = { "stack gap" },
+            applies = function() return not ST.GetModuleGeometryPanel("castbar") end },
         ownYOffset = {
             label = "Enable Cast Bar-Only Y Offset",
             aliases = { "separate cast bar offset" },
@@ -152,7 +153,8 @@ if ST._DefineSettingRoute then
     })
     CASTBAR_FINDER.bar = bar:Settings({
         texture = { label = "Bar Texture" },
-        height = { label = "Height", aliases = { "bar height" } },
+        height = { label = "Height", aliases = { "bar height" }, applies = function() return not ST.UsesSharedModuleGeometry("castbar") end },
+        thickness = { label = "Bar Thickness", sectionId = "barThickness", applies = function() return ST.UsesSharedModuleGeometry("castbar") end },
         color = { label = "Bar Color", aliases = { "fill color" } },
         background = { label = "Background Color" },
     })
@@ -336,11 +338,8 @@ end
 -- CAST BAR SETTINGS PANEL
 ------------------------------------------------------------------------
 
-local function CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings, layout)
-    return rbSettings
-        and rbSettings.enabled
-        and (not layout or not CooldownCompanion:IsResourceBarAnchorIndependent())
-        and cbSettings
+local function CanShowAttachedCastBarOffsetControls(cbSettings, layout)
+    return type(layout) == "table" and cbSettings
         and cbSettings.enabled
         and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
 end
@@ -350,11 +349,9 @@ end
 -- border state while a query is being typed.
 local function RefreshCastBarFinderCache()
     local settings = CooldownCompanion:GetCastBarSettings()
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
-    local castLayout = layout and layout.castBar
-    local attachedOffsetAvailable = CanShowAttachedCastBarOffsetControls(
-        rbSettings, settings, layout)
+    local _, offsetEnabled = ST.GetCastBarAttachmentOffset(settings, layout)
+    local attachedOffsetAvailable = CanShowAttachedCastBarOffsetControls(settings, layout)
     local pixelBorder = settings and (settings.borderStyle or "pixel") == "pixel"
     local borderMode = settings and ST.GetBorderRenderMode(settings, "borderRenderMode")
     local iconBorderMode = settings and ST.GetBorderRenderMode(settings, "iconBorderRenderMode")
@@ -362,9 +359,7 @@ local function RefreshCastBarFinderCache()
     local cache = {
         settings = settings,
         attachedOffsetAvailable = attachedOffsetAvailable == true,
-        attachedYOffsetEnabled = attachedOffsetAvailable == true
-            and type(castLayout) == "table"
-            and castLayout.panelAnchorYOffsetEnabled == true,
+        attachedYOffsetEnabled = attachedOffsetAvailable == true and offsetEnabled,
         pixelBorder = pixelBorder == true,
         customBorderSize = pixelBorder == true
             and borderMode ~= ST.BORDER_RENDER_MODE_CRISP,
@@ -391,43 +386,56 @@ local function RefreshAttachedCastBarOffset(refreshConfig)
     end
 end
 
--- Two rows, both of them row-grammar: every call site is a grid column now
--- (the Resource Bars Layout section's right column, and this file's own
--- Layout tab), so there is no stock shape left to keep.
+-- The cast bar's optional offset is added after the panel's shared distance
+-- or stack spacing. It never changes the placement of the preceding bars.
 local function BuildAttachedCastBarOffsetControls(container, layout)
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
     local cbSettings = CooldownCompanion:GetCastBarSettings()
     layout = layout or CooldownCompanion:GetSpecLayoutOrder()
-    if not layout or not CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings, layout) then
+    if not CanShowAttachedCastBarOffsetControls(cbSettings, layout) then
         return false
     end
-    if type(layout.castBar) ~= "table" then
-        layout.castBar = {}
+    local context = ST._CreateModuleSettingsContext("castbar")
+    local resources = CooldownCompanion:GetResourceBarSettings()
+    local function IsCurrent()
+        return context:IsCurrent() and CooldownCompanion:GetResourceBarSettings() == resources
+            and CooldownCompanion:GetSpecLayoutOrder() == layout
     end
-    local castLayout = layout.castBar
+    local function SetOffset(key, value)
+        layout.castBar = layout.castBar or {}
+        layout.castBar[key] = value
+        if key == "panelAnchorScreenYOffset" then layout.castBar.panelAnchorYOffset = nil end
+    end
+    local offset, enabled = ST.GetCastBarAttachmentOffset(cbSettings, layout)
 
     AddCheckboxRow(container, {
         label = "Enable Cast Bar-Only Y Offset",
         setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.ownYOffset,
-        value = castLayout.panelAnchorYOffsetEnabled == true,
+        value = enabled,
         onChange = function(val)
-            castLayout.panelAnchorYOffsetEnabled = val == true
+            if not IsCurrent() then return end
+            local _, _, savedOffset = ST.GetCastBarAttachmentOffset(cbSettings, layout)
+            SetOffset("panelAnchorScreenYOffset", savedOffset)
+            SetOffset("panelAnchorYOffsetEnabled", val == true)
             RefreshAttachedCastBarOffset(true)
         end,
     })
 
-    if castLayout.panelAnchorYOffsetEnabled then
+    if enabled then
         AddSliderRow(container, {
             label = "Cast Bar Y Offset",
             setting = CASTBAR_FINDER.attached and CASTBAR_FINDER.attached.castBarYOffset,
             indent = false,
             min = -100, max = 100, step = 0.1,
-            value = castLayout.panelAnchorYOffset or 0,
+            value = offset,
+            tooltip = { { "Moves only the cast bar vertically. Positive values move it up; negative values move it down.", 1, 1, 1, true } },
             onChange = function(val)
-                ST._PreviewScalarSetting(castLayout, "panelAnchorYOffset", val, RefreshBarsCanvasForDrag)
+                if not IsCurrent() then return end
+                layout.castBar = layout.castBar or {}
+                ST._PreviewScalarSetting(layout.castBar, "panelAnchorScreenYOffset", val, RefreshBarsCanvasForDrag)
             end,
             onRelease = function(val)
-                castLayout.panelAnchorYOffset = val
+                if not IsCurrent() then return end
+                SetOffset("panelAnchorScreenYOffset", val)
                 RefreshAttachedCastBarOffset(false)
             end,
         })
@@ -503,6 +511,12 @@ local function BuildCastBarPositioningPanel(container)
             "castbar_layout", nil, nil, ROW_SECTION)
 
         if layoutCollapsed then return end
+
+        if ST.GetModuleGeometryPanel("castbar") then
+            local left = BeginRowGrid(container)
+            BuildAttachedCastBarOffsetControls(left)
+            return
+        end
 
         local rbSettings = CooldownCompanion:GetResourceBarSettings()
         local layout = CooldownCompanion:GetSpecLayoutOrder()
@@ -596,7 +610,7 @@ local function BuildCastBarPositioningPanel(container)
     AddSliderRow(anchorRight, {
         label = "Cast Bar Width",
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.width,
-        min = 20, max = 600, step = 1,
+        min = 20, max = 600, step = 0.1,
         value = settings.independentWidth or 200,
         onChange = function(val)
             ST._PreviewScalarSetting(settings, "independentWidth", val, RefreshBarsCanvasForDrag)
@@ -631,6 +645,7 @@ local function BuildCastBarPositioningPanel(container)
 end
 
 local function BuildCastBarStylingPanel(container)
+    if ST.UsesSharedModuleGeometry("castbar") then ST._BuildModuleGeometrySummary(container, "castbar") end
     local settings = CooldownCompanion:GetCastBarSettings()
 
     -- The retired styling switch used to carry this gate too: with the
@@ -685,6 +700,9 @@ local function BuildCastBarStylingPanel(container)
 
         -- The canvas sizes the cast slot from this value, so the whole
         -- stack reflows under the drag; the live bar restyles on release.
+        if ST.UsesSharedModuleGeometry("castbar") then
+            ST._BuildModuleBarThickness(barLeft, "castbar", nil, nil, CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.thickness)
+        else
         AddMirrorFirstSliderRow(barLeft, {
             label = "Height",
             setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.height,
@@ -695,6 +713,7 @@ local function BuildCastBarStylingPanel(container)
             stateOwner = settings,
             stateKeys = "height",
         })
+        end
 
         AddColorRow(barRight, {
             label = "Bar Color",
@@ -704,7 +723,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1.0, 0.7, 0.0, 1.0},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         AddColorRow(barRight, {
@@ -715,7 +734,7 @@ local function BuildCastBarStylingPanel(container)
             default = {0, 0, 0, 0.5},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
     end
 
@@ -759,7 +778,7 @@ local function BuildCastBarStylingPanel(container)
                     default = {0, 0, 0, 1},
                     hasAlpha = true,
                     onConfirm = applyCastBar,
-                    onChange = castPreviewOnly,
+                    onPreview = castPreviewOnly,
                 })
 
                 local renderMode = AddBorderRenderModeDropdown(panel, settings, "borderRenderMode", function()
@@ -1038,7 +1057,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 0.8},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         local penultimateRow = AddCheckboxRow(panel, {
@@ -1070,7 +1089,7 @@ local function BuildCastBarStylingPanel(container)
                 default = {1, 0.82, 0, 1},
                 hasAlpha = true,
                 onConfirm = applyCastBar,
-                onChange = castPreviewOnly,
+                onPreview = castPreviewOnly,
             })
         end
     end
@@ -1120,8 +1139,6 @@ local function BuildCastBarStylingPanel(container)
             },
         })
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
             setting = CASTBAR_FINDER.name and CASTBAR_FINDER.name.color,
@@ -1130,7 +1147,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
     end
 
@@ -1174,8 +1191,6 @@ local function BuildCastBarStylingPanel(container)
             },
         })
 
-        -- deferCommit is deliberately absent, matching the stock color-picker call
-        -- this row replaced.
         AddColorRow(panel, {
             label = "Font Color",
             setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.color,
@@ -1184,7 +1199,7 @@ local function BuildCastBarStylingPanel(container)
             default = {1, 1, 1, 1},
             hasAlpha = true,
             onConfirm = applyCastBar,
-            onChange = castPreviewOnly,
+            onPreview = castPreviewOnly,
         })
 
         -- Both offsets place the countdown on the canvas facsimile too.

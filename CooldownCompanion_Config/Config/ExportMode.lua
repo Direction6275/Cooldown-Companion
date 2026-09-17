@@ -58,7 +58,6 @@ local function EnterExportMode()
             containers = {},
             panels = {},
             resources = false,
-            customBars = {},
         },
         expanded = {},
     }
@@ -120,32 +119,6 @@ local function IsResourcesExportable()
         and CooldownCompanion:IsResourceBarClassConfigured(classKey)
 end
 
-local function GetExportableCustomBars()
-    local rb = ST._RB
-    if not (rb and rb.GetAllCustomBars) then
-        return {}
-    end
-    local settings = CooldownCompanion:GetResourceBarSettings()
-    if type(settings) ~= "table" then
-        return {}
-    end
-    local bars = {}
-    for _, entry in ipairs(rb.GetAllCustomBars(settings) or {}) do
-        local customBarId = rb.EnsureCustomBarId and rb.EnsureCustomBarId(settings, entry) or entry.customBarId
-        if type(customBarId) == "string" and customBarId ~= "" then
-            bars[#bars + 1] = {
-                customBarId = customBarId,
-                entry = entry,
-                label = entry.label
-                    or (entry.spellID and C_Spell.GetSpellName(entry.spellID))
-                    or ("Custom Bar " .. tostring(#bars + 1)),
-                icon = (entry.spellID and C_Spell.GetSpellTexture(entry.spellID)) or 134400,
-            }
-        end
-    end
-    return bars
-end
-
 local function CountExportSelection()
     local selection = GetExportSelection()
     if not selection then
@@ -154,7 +127,6 @@ local function CountExportSelection()
     local count = 0
     for _ in pairs(selection.containers) do count = count + 1 end
     if selection.resources then count = count + 1 end
-    for _ in pairs(selection.customBars) do count = count + 1 end
     return count
 end
 
@@ -213,19 +185,7 @@ local function BuildExportModePayload()
         sections.resources = rb.BuildResourcesSetupSection(
             CooldownCompanion:GetResourceBarSettings(),
             GetResourceBarClassKey())
-    elseif next(selection.customBars) and rb and rb.BuildCustomBarsExportPayload then
-        -- The Resources section already carries every Custom Bar, so a bars
-        -- section is only built when Resources is not checked.
-        local settings = CooldownCompanion:GetResourceBarSettings()
-        local chosen = {}
-        for _, info in ipairs(GetExportableCustomBars()) do
-            if selection.customBars[info.customBarId] then
-                chosen[#chosen + 1] = info.entry
-            end
-        end
-        if #chosen > 0 then
-            sections.customBars = rb.BuildCustomBarsExportPayload(settings, chosen)
-        end
+
     end
 
     return BuildSetupExportPayload and BuildSetupExportPayload(sections) or nil
@@ -558,7 +518,7 @@ local function RenderExportModeSummary(col3)
         AddSummarySpacer(scroll, 6)
         AddSummaryLine(scroll, "Nothing selected yet.")
         AddSummarySpacer(scroll, 2)
-        AddSummaryLine(scroll, "Check groups, panels, Resources, or Custom Bars in the navigator. Everything you check exports as one string.", 0.7, 0.7, 0.7)
+        AddSummaryLine(scroll, "Check groups, panels, or Resources in the navigator. Everything you check exports as one string.", 0.7, 0.7, 0.7)
         scroll:DoLayout()
         return
     end
@@ -632,23 +592,8 @@ local function RenderExportModeSummary(col3)
     if selection.resources then
         AddSummarySectionHeading(scroll, "Resources  |cff777777(" .. classKey .. ")|r")
         AddSummarySpacer(scroll, 10)
-        AddSummaryLine(scroll, "Includes all resources, styling, layout order, and Custom Bars. Replaces the importer's " .. classKey .. " Resources settings.", 0.7, 0.7, 0.7)
-    else
-        local checkedBars = {}
-        for _, info in ipairs(GetExportableCustomBars()) do
-            if selection.customBars[info.customBarId] then
-                checkedBars[#checkedBars + 1] = info.label
-            end
-        end
-        if #checkedBars > 0 then
-            AddSummarySectionHeading(scroll, "Custom Bars  |cff777777(" .. #checkedBars .. ", " .. classKey .. ")|r")
-            AddSummarySpacer(scroll, 10)
-            for _, label in ipairs(checkedBars) do
-                AddSummaryLine(scroll, "    " .. label)
-            end
-            AddSummarySpacer(scroll, 6)
-            AddSummaryLine(scroll, "Custom Bars add alongside the importer's own bars.", 0.7, 0.7, 0.7)
-        end
+        AddSummaryLine(scroll, "Includes all resources, styling, and layout order. Replaces the importer's " .. classKey .. " Resources settings.", 0.7, 0.7, 0.7)
+
     end
 
     AddSummarySpacer(scroll, 4)
@@ -665,7 +610,6 @@ ST._ToggleExportMode = ToggleExportMode
 ST._ConfirmExportMode = ConfirmExportMode
 ST._CountExportSelection = CountExportSelection
 ST._IsResourcesExportable = IsResourcesExportable
-ST._GetExportableCustomBars = GetExportableCustomBars
 ST._RenderExportModeSummary = RenderExportModeSummary
 -- Shared summary grammar, so import mode reads as the mirror image of the
 -- export summary (one visual system, two directions).

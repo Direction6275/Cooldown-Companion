@@ -22,7 +22,7 @@ local PP = ST._ButtonPanelPreview
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
 local CopyMode = PP.CopyMode
 local QueuePreviewSlotTween = PP.QueuePreviewSlotTween
-local EnsureGapFrame = PP.EnsureGapFrame
+local ShowPreviewGap = PP.ShowPreviewGap
 local ConfigurePreviewGhost = PP.ConfigurePreviewGhost
 local StartPreviewTicker = PP.StartPreviewTicker
 local ClearPreviewGhost = PP.ClearPreviewGhost
@@ -87,6 +87,14 @@ local GroupSupportsPerButtonOverrides = ST._GroupSupportsPerButtonOverrides
 -- duplicate) or the entry may be gone entirely. sourceRef is the identity
 -- token; a repairable shift re-stamps the index, anything else is nil.
 local function ResolveCopyCustomizationSource(state)
+    if state.moduleContext then
+        local context = state.moduleContext
+        local current = context.kind == "resources" and CooldownCompanion:GetResourceBarSettings() or CooldownCompanion:GetCastBarSettings()
+        if current == context.settings and context:GetObject(false) == state.moduleObject then
+            return context.group, context.entry
+        end
+        return nil
+    end
     local groups = CooldownCompanion.db.profile.groups
     local group = groups and groups[state.sourceGroupId]
     if not (group and group.buttons) then return nil end
@@ -127,6 +135,8 @@ local function ArmCopyCustomization(groupId, buttonIndex, buttonData, scope, sec
         sourceGroupId = groupId,
         sourceButtonIndex = buttonIndex,
         sourceRef = buttonData,
+        moduleContext = buttonData._geometryContext,
+        moduleObject = buttonData._geometryContext and buttonData._geometryContext:GetObject(false),
         scope = scope,
         sectionId = sectionId,
     }
@@ -146,7 +156,7 @@ end
 local function CanCopySectionToEntry(targetGroup, targetButtonData, sectionId)
     local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
     if not sectionDef then return false end
-    if sectionDef.modes[targetGroup.displayMode or "icons"] ~= true then return false end
+    if sectionDef.modes[ST.GetEntryPresentation(targetGroup, targetButtonData)] ~= true then return false end
     -- == true drops the reason the helper returns alongside its verdict.
     return CanUseConfigOverrideSection(targetButtonData, sectionId, targetGroup) == true
 end
@@ -155,6 +165,8 @@ local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
     if not (state and targetGroup and targetButtonData) then return false end
     local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
     if not sourceData or targetButtonData == sourceData then return false end
+    if state.moduleObject and targetButtonData._geometryContext
+        and targetButtonData._geometryContext:GetObject(false) == state.moduleObject then return false end
     if not GroupSupportsPerButtonOverrides(targetGroup) then return false end
     -- The mode outlives arbitrary edits, so the armed payload can be
     -- reverted on the source while the rings are up. A vanished payload
@@ -187,7 +199,8 @@ end
 local function HandleCopyCustomizationClick(panelId, index, buttonData)
     local state = CS.copyCustomization
     if not state then return false end
-    local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+    local targetGroup = buttonData and buttonData._geometryContext and buttonData._geometryContext.group
+        or CooldownCompanion.db.profile.groups[panelId]
     if not targetGroup then return false end
     local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
     if not sourceData then
@@ -195,7 +208,8 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         CancelCopyCustomization()
         return true
     end
-    if buttonData == sourceData then
+    if buttonData == sourceData or (state.moduleObject and buttonData._geometryContext
+        and buttonData._geometryContext:GetObject(false) == state.moduleObject) then
         CancelCopyCustomization()
         return true
     end
@@ -204,7 +218,7 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         return true
     end
 
-    local sourceStyle = sourceGroup.style or {}
+    local sourceStyle = ST.GetEntryBaseStyle(sourceGroup, sourceData)
     local applied, skipped, formatCopied = 0, 0, false
     if state.scope == "section" then
         if CooldownCompanion:CopySectionOverride(sourceData, sourceStyle, buttonData, state.sectionId) then
@@ -244,7 +258,8 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         return true
     end
 
-    CooldownCompanion:UpdateGroupStyle(panelId)
+    if buttonData._geometryContext then buttonData._geometryContext:Refresh()
+    else CooldownCompanion:UpdateGroupStyle(panelId) end
     -- The format is re-parsed on the way through PopulateGroupButtons, which
     -- only the frame refresh reaches. Paid only when a format actually copied.
     if formatCopied then
@@ -347,7 +362,7 @@ local function UpdateCopyCustomizationBanner(preview)
     end
 
     banner = EnsureCopyCustomizationBanner(preview)
-    local text = "Click an entry to apply |cffffd100"
+    local text = "Click a compatible bar or entry to apply |cffffd100"
         .. GetCopyCustomizationLabel(state) .. "|r"
     if state.lastAppliedText then
         text = text .. "  |cff99e6a3" .. state.lastAppliedText .. "|r"
@@ -363,8 +378,9 @@ end
 local function ApplyCopyTargetVisuals(slot, panelId, buttonData)
     local state = CS.copyCustomization
     local eligible = false
-    if state and panelId and buttonData then
-        local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+    if state and buttonData and (panelId or buttonData._geometryContext) then
+        local targetGroup = buttonData._geometryContext and buttonData._geometryContext.group
+            or CooldownCompanion.db.profile.groups[panelId]
         eligible = IsEligibleCopyTarget(state, targetGroup, buttonData)
     end
     if not eligible then
@@ -387,6 +403,44 @@ local function ApplyCopyTargetVisuals(slot, panelId, buttonData)
     ST.ApplyBorderTextures(highlight.ringTextures, highlight,
         PANEL_PREVIEW_COPY_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
     highlight:Show()
+end
+
+function ST._HandleModuleThicknessCopy(slot)
+    if not CS.copyCustomization or (slot.kind ~= "resource" and slot.kind ~= "cast") then return false end
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then return false end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    return context and HandleCopyCustomizationClick(CS.selectedGroup, nil, context.entry) or false
+end
+
+function ST._ShowModuleThicknessMenu(slot)
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then return end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    if not context then return end
+    CS.barGeometryMenu = CS.barGeometryMenu or CreateFrame("Frame", "CDCBarGeometryMenu", UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(CS.barGeometryMenu, function(_, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text, info.notCheckable = "Copy Bar Thickness", true
+        info.disabled = not (context.entry.overrideSections and context.entry.overrideSections.barThickness)
+        info.func = function()
+            if not context:IsCurrent() then return end
+            CloseDropDownMenus()
+            ArmCopyCustomization(CS.selectedGroup, nil, context.entry, "section", "barThickness")
+        end
+        UIDropDownMenu_AddButton(info, level or 1)
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, CS.barGeometryMenu, "cursor", 0, 0)
+end
+
+function ST._ApplyModuleCopyTargetVisuals(frame, slot)
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then
+        if frame.copyTargetHighlight then frame.copyTargetHighlight:Hide() end
+        return
+    end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    if context then ApplyCopyTargetVisuals(frame, CS.selectedGroup, context.entry) end
 end
 
 CopyMode.COLOR = PANEL_PREVIEW_COPY_COLOR
@@ -450,14 +504,8 @@ local function UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget
         end
     end
     if gapPos then
-        local gap = EnsureGapFrame(preview)
-        -- The base grid's insertion gap is a reorder cue, not a snap: back to
-        -- the ring blue whatever colour a lane target last left on the tile.
-        SectionDrag.SetGapAccent(preview, false)
-        gap:SetSize(layoutDrag.slotW, layoutDrag.slotH)
         local x, y = layoutDrag.cellXY(gapPos)
-        QueuePreviewSlotTween(preview, gap, layoutDrag.anchor, x, y)
-        gap:Show()
+        ShowPreviewGap(preview, layoutDrag.anchor, x, y, layoutDrag.slotW, layoutDrag.slotH)
     elseif preview.gapFrame then
         preview.gapFrame:Hide()
     end
@@ -699,7 +747,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         if slot and slot.hoverHighlight then
             slot.hoverHighlight:Hide()
         end
-        ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData)
+        ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData, slot)
         BeginEntryGesture(state, sourceIndex)
         UpdateGridDragPreview(preview, layoutDrag, sourceCell, state.dropTarget, sourceIndex)
         StartPreviewTicker(preview)
@@ -715,7 +763,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         BeginEntryGesture(state, sourceIndex)
         UpdateGridDragPreview(preview, layoutDrag, sourceCell, dropTarget, sourceIndex)
         if not preview.ghostActive then
-            ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData)
+            ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData, layoutDrag.slots[sourceIndex])
         end
         StartPreviewTicker(preview)
     end
@@ -883,7 +931,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     if status.override then
         local group = panelId and CooldownCompanion.db
             and CooldownCompanion.db.profile.groups[panelId] or nil
-        local displayMode = group and (group.displayMode or "icons") or "icons"
+        local displayMode = ST.GetEntryPresentation(group, buttonData)
         -- Same order and activity gates the styling tabs use for these
         -- sections: ST.OVERRIDE_SECTION_ORDER, then the per-entry gate.
         local canUse = ST._CanButtonUseConfigOverrideSection
@@ -1077,6 +1125,9 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     end)
     slot:SetScript("OnEnter", function(self)
         if CS.dragState and CS.dragState.phase == "active" then return end
+        if self._cdcBarIdentityPreview then
+            PP.SetBarIdentityLabelsShown(self._cdcBarIdentityPreview, true)
+        end
         -- Hovering a section's own icons OFFERS the grab chip. Taking it back
         -- is not this handler's job and never was: the chip watches the cursor
         -- against its own section for as long as it is up (HandleWatch), which
@@ -1113,6 +1164,11 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         ShowEntrySlotTooltip(self, panelId, buttonData, status, visibility)
     end)
     slot:SetScript("OnLeave", function(self)
+        local preview = self._cdcBarIdentityPreview
+        if preview then
+            -- Let the adjacent bar's enter event run before clearing the set.
+            C_Timer.After(0, function() PP.RefreshBarIdentityLabels(preview) end)
+        end
         if self._cdcBarPreviewVisibility then
             self._cdcBarPreviewHovered = false
             RefreshBarSlotWorkspacePresentation(self)
@@ -1225,10 +1281,13 @@ end
 -- and DisableReadOnlySlotInteraction resets it, so the dim comes last.
 function DropGhost.StyleCell(cell, stub, group, mode, panelId)
     if mode == "barSlots" then
-        local effectiveStyle = group.style or {}
-        if CooldownCompanion.GetEffectiveStyle then
-            effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, stub)
-                or effectiveStyle
+        local effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, stub)
+        if stub._previewAttachedVertical ~= nil then
+            local copy = CopyTable(ST.GetEntryBaseStyle(group, stub))
+            for key, value in pairs(effectiveStyle) do copy[key] = value end
+            copy.barFillVertical = stub._previewAttachedVertical
+            copy.barLength = copy.barFillVertical and cell:GetHeight() or cell:GetWidth()
+            effectiveStyle = copy
         end
         ResetBarSlotConditionalVisuals(cell)
         StyleBarEntry(cell, stub, group, effectiveStyle)
@@ -1270,6 +1329,15 @@ end
 --- ({ create = anchor }, { section = anchor }, or nil for a plain add).
 function DropGhost.ResolveRect(preview, group, mode, stub, target)
     local layoutDrag = preview.layoutDrag
+    if ST.IsAttachedBarEntry(group, stub) and preview.attachmentBody then
+        local body = preview.attachmentBody
+        local positions = ST.GetAttachedBarPreviewLayout(group, body.width, body.height, body.base, nil, body.modules)
+        local position = positions[#group.buttons]
+        if position then
+            stub._previewAttachedVertical = position.vertical
+            return "TOPLEFT", position.x + body.padX, position.y - body.padY, position.width, position.height
+        end
+    end
     local model = preview.cursorPadModel
     if target and model then
         local cell = target.create and model.free[target.create]
@@ -1386,10 +1454,48 @@ function DropGhost.RestoreEmptyMessage(preview)
     if hid.note and preview.messageNote then preview.messageNote:Show() end
 end
 
---- Put the ghost away without touching the message or the content frame:
---- the rebuild prologue and the release own those, and both call here.
+-- A first Icon/Bar can replace the layout body, so the old grid cannot place
+-- its ghost. Borrow the normal detached renderer for that whole composition.
+-- The original mirror and its drop targets stay intact beneath this inert one.
+function DropGhost.ShowLayoutTransition(preview, group)
+    local host = preview.dropGhostLayoutHost
+    if not host then
+        host = CreateFrame("Frame", nil, preview.root)
+        host:SetAllPoints(preview.root)
+        preview.dropGhostLayoutHost = host
+    end
+    ST._BuildButtonPanelPreview(host, preview.panelId, {
+        readOnly = true, groupData = group, dropGhostIndex = #group.buttons,
+        applySessionFilter = true, fitHost = preview.root:GetParent(),
+        previewModules = preview.attachmentBody and preview.attachmentBody.modules,
+    })
+    local hidden = { content = preview.content:IsShown() }
+    for _, key in ipairs({ "messageTitle", "messageLabel", "messageNote" }) do
+        hidden[key] = preview[key] and preview[key]:IsShown() or false
+    end
+    preview.dropGhostLayoutActive = hidden
+    HidePreviewMessage(preview)
+    preview.content:Hide()
+    host:Show()
+end
+
+function DropGhost.RestoreLayoutTransition(preview)
+    local hidden = preview.dropGhostLayoutActive
+    if not hidden then return end
+    preview.dropGhostLayoutActive = nil
+    ST._ReleaseButtonPanelPreview(preview.dropGhostLayoutHost)
+    preview.dropGhostLayoutHost:Hide()
+    if hidden.content then preview.content:Show() end
+    for _, key in ipairs({ "messageTitle", "messageLabel", "messageNote" }) do
+        if hidden[key] then preview[key]:Show() end
+    end
+end
+
+--- Restore a borrowed composition and put every ghost away. The rebuild
+--- prologue and release call here before replacing or hiding the original.
 --- Every other hider goes through DropGhost.Hide.
 function DropGhost.Reset(preview)
+    DropGhost.RestoreLayoutTransition(preview)
     preview.dropGhostKey = nil
     preview.dropGhostOwner = nil
     preview.dropGhostHidMessage = nil
@@ -1421,6 +1527,10 @@ end
 function DropGhost.Show(host, spec, target, owner)
     local preview, mode, group = DropGhost.Preview(host)
     if not preview then return false end
+    local saved = group._unifiedPanelOwner or group
+    if ST.PanelSupportsAttachedBars(saved) then
+        mode = ST.GetEntryPresentation(saved, spec) == "bars" and "barSlots" or "iconSlots"
+    end
     local targetKey = target and (target.create and ("create:" .. tostring(target.create))
         or target.section and ("lane:" .. tostring(target.section))) or "base"
     -- The name is in the key for the rows that are nothing but a name: two
@@ -1431,8 +1541,25 @@ function DropGhost.Show(host, spec, target, owner)
         preview.dropGhostOwner = owner
         return true
     end
-    local cell = DropGhost.EnsureCell(preview, mode)
+    DropGhost.RestoreLayoutTransition(preview)
     local stub = DropGhost.FillStub(preview, spec)
+    if ST.PanelSupportsAttachedBars(saved) then
+        group = CopyTable(saved)
+        group.buttons = group.buttons or {}
+        group.buttons[#group.buttons + 1] = stub
+        if target then
+            ST.SetPanelSectionForEntry(group, stub, target.create or target.section)
+        end
+        group = ST.GetPanelLayoutGroup(group)
+    end
+    if preview.layoutDrag and ST.GetPanelGeometryKind(saved) ~= ST.GetPanelGeometryKind(group) then
+        for _, cell in pairs(preview.dropGhostCells or {}) do cell:Hide() end
+        SectionDrag.HideLandingTrail(preview)
+        DropGhost.ShowLayoutTransition(preview, group)
+        preview.dropGhostKey, preview.dropGhostOwner = key, owner
+        return true
+    end
+    local cell = DropGhost.EnsureCell(preview, mode)
     if preview.layoutDrag then
         local anchor, x, y, w, h = DropGhost.ResolveRect(preview, group, mode, stub, target)
         -- Sized before the styler: the mirrored icon crops its texture from

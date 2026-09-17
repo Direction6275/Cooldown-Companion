@@ -257,7 +257,7 @@ local function GetReviewAcceptText(review)
 end
 
 local function CanApplyReview(review, selectedCount)
-    if not review then
+    if not review or review.ok ~= true or review.blockedReason then
         return false
     end
     if ReviewUsesSelectedPieces(review) then
@@ -397,7 +397,7 @@ end
 local function BuildContainerSummaryLines(data)
     local lines = {
         "Group export",
-        "Name: " .. tostring(data.container and data.container.name or "Unnamed"),
+        "Name: " .. tostring(type(data.container) == "table" and data.container.name or "Unnamed"),
         FormatCount("Panels", type(data.panels) == "table" and #data.panels or 0),
     }
     AddCharacterEligibilityNotice(lines, data)
@@ -424,6 +424,21 @@ local function BuildLegacyGroupBundleSummaryLines(data)
     }
     AddCharacterEligibilityNotice(lines, data)
     return lines
+end
+
+local function BuildBlockedImportSummary(data, isDiagnostic)
+    if isDiagnostic or data.reportKind == "bugReport" then
+        return BuildProfileSummaryLines(type(data.profile) == "table" and data.profile or {}, "Diagnostic export")
+    elseif data.type == "customBars" then
+        return BuildCustomBarsSummaryLines(data)
+    elseif data.type == "setup" then
+        return BuildSetupSummaryLines(data, GetSetupSections(data))
+    elseif data.type == "container" then
+        return BuildContainerSummaryLines(data)
+    elseif data.type == "containers" or data.type == "folder" then
+        return BuildContainersSummaryLines(data)
+    end
+    return BuildProfileSummaryLines(data, "Profile backup export")
 end
 
 local function ValidateProfilePayload(data)
@@ -585,17 +600,57 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return BuildLegacyError(GetPayloadDataLabel(data, isDiagnostic))
     end
 
+    -- Diagnose payload shape before migration, without building review pieces
+    -- or previewing legacy entries. Full classification still uses converted data.
     if isDiagnostic or data.reportKind == "bugReport" then
-        return ClassifyDiagnosticPayload(data)
+        if type(data.profile) ~= "table" then
+            return BuildError("diagnostic_without_profile", "This diagnostic string does not include an importable profile.")
+        end
+        local invalid = ValidateProfilePayload(data.profile)
+        if invalid then return invalid end
+    elseif not data.type then
+        local invalid = ValidateProfilePayload(data)
+        if invalid then return invalid end
     end
-    if data.type then
-        return ClassifyEntityPayload(data)
+
+    local converted, conversionReport = ST._ConvertUnifiedPanelImport(data)
+    if not converted then
+        -- A conversion refusal must remain inspectable, but never render
+        -- unconverted entries in a live preview or permit partial application.
+        local lines = BuildBlockedImportSummary(data, isDiagnostic)
+        AddLine(lines, "No settings have been imported. Resolve the conversion problem in the source profile and export again.")
+        return BuildReview("blocked", data, "Conversion needs attention", "Import", lines, {
+            blockedReason = conversionReport, warning = conversionReport,
+        })
     end
-    return ClassifyProfilePayload(data)
+    local existingPanelIds, removedEntries
+    data, existingPanelIds, removedEntries = ST._FilterConvertedPanelImport(converted)
+
+    local review
+    if isDiagnostic or data.reportKind == "bugReport" then
+        review = ClassifyDiagnosticPayload(data)
+    elseif data.type then
+        review = ClassifyEntityPayload(data)
+    else
+        review = ClassifyProfilePayload(data)
+    end
+    if (review.code == "empty_groups" or review.code == "empty_setup") and removedEntries and removedEntries > 0
+        and type(data.containers) == "table" and #data.containers == 0 then
+        return BuildError("already_imported", "These entries have already been imported. No duplicates were added.")
+    end
+    review.existingPanelIds = existingPanelIds
+    if review.ok and conversionReport then
+        if conversionReport.bars > 0 or conversionReport.panels > 0 then
+            AddLine(review.summaryLines, ("Converted %d Custom Bars and %d Bar Panels to ordinary panel entries.")
+                :format(conversionReport.bars, conversionReport.panels))
+        end
+        for _, notice in ipairs(conversionReport.notices or {}) do AddLine(review.summaryLines, notice) end
+    end
+    return review
 end
 
 function CooldownCompanion:ApplyReviewedImport(review)
-    if type(review) ~= "table" or review.ok ~= true then
+    if type(review) ~= "table" or review.ok ~= true or review.blockedReason then
         return false
     end
 
@@ -642,7 +697,7 @@ function CooldownCompanion:ApplyReviewedImport(review)
     end
 
     if review.kind == "setup" then
-        return ApplySetupImportData and ApplySetupImportData(review.data) == true
+        return ApplySetupImportData and ApplySetupImportData(review.data, review.existingPanelIds) == true
     end
 
     if review.kind == "group" or review.kind == "groups" then

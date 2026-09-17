@@ -93,13 +93,6 @@ local panelLoadConditionSettings = DefineLoadConditionFinderSettings(
     "panel.visibility.where", "panel", "primary", "loadconditions", "loadconditions_panel_local")
 local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
     "entry.visibility.where", "entry", "primary", "loadconditions", "loadconditions_entry_local")
-local customBarLoadConditionSettings = DefineLoadConditionFinderSettings(
-    "customBar.settings.visibility.where", "customBar", "detail", "settings", "loadconditions_custombar_local")
-
--- ResourceBarPanelsCustomBars loads before this module and reads this map at
--- build time, just like the shared builder itself.
-ST._CustomBarLoadConditionFinderSettings = customBarLoadConditionSettings
-
 local function PanelAlphaState(context)
     if context._ccPanelAlphaFinderState then
         return context._ccPanelAlphaFinderState

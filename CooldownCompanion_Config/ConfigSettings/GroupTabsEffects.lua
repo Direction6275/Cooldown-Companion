@@ -5,14 +5,13 @@ local CS = ST._configState
 -- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
 -- only on an Aura Panel, for the sections that read spell cooldown, castability,
 -- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST.CanGroupUseOverrideSection
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddPandemicMarkerControls = ST._AddPandemicMarkerControls
-local ReconcilePandemicMarkerPreview = ST._ReconcilePandemicMarkerPreview
 local ResolveLensSection = ST._ResolveLensSection
 local BeginLensSection = ST._BeginLensSection
 local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
@@ -288,13 +287,6 @@ local function BuildProcGlowSection(container, group, style, lens)
     procSec:Chrome(procEnableCb)
 
     procSec:Finish()
-
-    -- Preview reconciliation follows the same READ the row does, so a group
-    -- preview is cleared whenever what is on screen would not render. Clearing
-    -- is the safe direction; nothing here ever starts a preview.
-    if procSec.read.procGlowStyle == "none" then
-        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-    end
 end
 
 -- Aura glow: kit-rendered on the aura slot button, so it appears exactly
@@ -305,9 +297,6 @@ local function BuildAuraGlowSection(container, group, style, lens)
     -- the row is still drawn and the lens resolves it "not available" for that
     -- entry, which states the reason rather than hiding it.
     if not GroupHasAuraTrackingEntry(group) then
-        -- The section owning an active preview just disappeared (last aura
-        -- entry removed); don't leave the preview glow orphaned.
-        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
         return
     end
 
@@ -362,10 +351,6 @@ local function BuildAuraGlowSection(container, group, style, lens)
     auraSec:Chrome(auraEnableCb)
 
     auraSec:Finish()
-
-    if not auraGlowEnabled then
-        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-    end
 end
 
 -- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
@@ -377,84 +362,62 @@ end
 -- ruling), so neither half carries a row affordance of its own: both resolve
 -- the same "pandemic" section and flip together, silently. The bars twin makes
 -- the same ruling with the chrome on its enable row.
---
--- Nil-container contract, copied from the bars twin (BarModeTabs' Glows note):
--- the builder runs with whatever host it ends up with, because a glow left
--- running by a deleted aura entry - or by a collapsed section - still has to
--- be cleared. Guarding the CALL instead would strand the preview.
 local function BuildPandemicGlowSection(container, group, style, lens)
-    local function ClearPandemicPreview()
-        if CooldownCompanion.SetGroupPandemicPreview then
-            CooldownCompanion:SetGroupPandemicPreview(CS.selectedGroup, false)
-        end
-    end
-    if not GroupHasAuraTrackingEntry(group) then
-        ClearPandemicPreview()
+    if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
 
     local pandemicSec = BeginLensSection(lens, group, "pandemic")
     local pandemicEnabled = pandemicSec.read.pandemicEffectEnabled == true
-    if container then
-        -- The host only exists on this path, so the section's bracket is taken
-        -- here rather than at Begin.
-        pandemicSec:Mark(container)
+    pandemicSec:Mark(container)
 
-        local pandemicCb = AddCheckboxRow(container, {
-            label = "Show Pandemic Effect",
-            setting = EFFECTS_FINDER.icons.aura.pandemicEffect,
-            value = pandemicEnabled,
-            disabled = pandemicSec.disabled,
-            onChange = function(val)
-                if not pandemicSec.write then return end
-                pandemicSec.write.pandemicEffectEnabled = val and true or false
-                UpdateSelectedGroupStyle(true)
-            end,
+    local pandemicCb = AddCheckboxRow(container, {
+        label = "Show Pandemic Effect",
+        setting = EFFECTS_FINDER.icons.aura.pandemicEffect,
+        value = pandemicEnabled,
+        disabled = pandemicSec.disabled,
+        onChange = function(val)
+            if not pandemicSec.write then return end
+            pandemicSec.write.pandemicEffectEnabled = val and true or false
+            UpdateSelectedGroupStyle(true)
+        end,
+    })
+
+    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- The panel captures the section's WRITE table with the panel style
+    -- behind it: this glow family resolves its enable from an explicit-true
+    -- key, so an override store that has not stored one yet reads the
+    -- panel's. The section's enable toggle lives on the row above, never in
+    -- the shared builder.
+    local function BuildPandemicAdvanced(panel)
+        BuildPandemicGlowControls(panel, pandemicSec.tbl, UpdateSelectedGroupStyle, {
+            row = true,
+            fallbackStyle = pandemicSec.fallbackStyle,
+            settings = EFFECTS_FINDER.advanced.pandemicGlow,
         })
-
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
-        -- The panel captures the section's WRITE table with the panel style
-        -- behind it: this glow family resolves its enable from an explicit-true
-        -- key, so an override store that has not stored one yet reads the
-        -- panel's. The section's enable toggle lives on the row above, never in
-        -- the shared builder.
-        local function BuildPandemicAdvanced(panel)
-            BuildPandemicGlowControls(panel, pandemicSec.tbl, UpdateSelectedGroupStyle, {
-                row = true,
-                fallbackStyle = pandemicSec.fallbackStyle,
-                settings = EFFECTS_FINDER.advanced.pandemicGlow,
-            })
-        end
-
-        if pandemicSec.scope ~= "denied" then
-            AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, true, {
-                title = "Pandemic Effect Advanced",
-                build = BuildPandemicAdvanced,
-                unlock = { sec = pandemicSec,
-                    enable = not pandemicEnabled and TURNON_PANDEMIC_EFFECT or nil },
-            })
-        end
-        AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
-            "Pandemic Effect",
-            {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
-            {" ", 1, 1, 1, true},
-            {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
-        }, tabInfoButtons))
-
-        pandemicSec:Finish()
     end
 
-    if not pandemicEnabled then
-        ClearPandemicPreview()
+    if pandemicSec.scope ~= "denied" then
+        AddAdvancedToggle(pandemicCb, "pandemicGlow", tabInfoButtons, true, {
+            title = "Pandemic Effect Advanced",
+            build = BuildPandemicAdvanced,
+            unlock = { sec = pandemicSec,
+                enable = not pandemicEnabled and TURNON_PANDEMIC_EFFECT or nil },
+        })
     end
+    AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
+        "Pandemic Effect",
+        {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
+    }, tabInfoButtons))
+
+    pandemicSec:Finish()
 end
 
--- Pandemic marker: the text half of the same window. Rows only — no preview
--- surface renders the marker in any mode (every duration-text stand-in writes
--- a bare countdown), so there is deliberately no command-center control to
--- reconcile here and no nil-container contract to honour.
+-- Pandemic marker: the text half of the same window.
 --
 -- The marker rides the aura duration text, which lives on the Appearance tab.
 -- Hide this half while that effective text surface is off; the glow half above
@@ -482,9 +445,6 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     end, {
         enableOnly = true,
         setting = EFFECTS_FINDER.icons.aura.pandemicMarker,
-        onModeChanged = function(mode)
-            ReconcilePandemicMarkerPreview(lens, mode)
-        end,
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
@@ -655,10 +615,6 @@ local function BuildReadyGlowSection(container, group, style, lens)
     readySec:Chrome(readyEnableCb)
 
     readySec:Finish()
-
-    if not (readySec.read.readyGlowStyle and readySec.read.readyGlowStyle ~= "none") then
-        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-    end
 end
 
 local function BuildKeyPressHighlightSection(container, group, style, lens)
@@ -715,10 +671,6 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
     kphSec:Chrome(kphEnableCb)
 
     kphSec:Finish()
-
-    if not (kphSec.read.keyPressHighlightStyle and kphSec.read.keyPressHighlightStyle ~= "none") then
-        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-    end
 end
 
 local function BuildCooldownPressFlashSection(container, group, style, lens)
@@ -758,7 +710,6 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
             default = {1, 0.25, 0.25, 0.6},
             hasAlpha = true,
             onConfirm = UpdateSelectedGroupStyle,
-            onChange = UpdateSelectedGroupStyle,
         })
 
         local durationRow = AddSliderRow(panel, {
@@ -907,21 +858,24 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
 -- Early returns in here (missing group, and every non-icons display mode)
 -- land on the dispatch-level gear build pass's sweep
 -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
-local function BuildEffectsTab(container)
-    ClearEffectsTabWidgets()
+local function BuildEffectsTab(container, settingsGroup)
+    if not settingsGroup then ClearEffectsTabWidgets() end
 
     if not CS.selectedGroup then return end
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local group = settingsGroup or CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
+    if not settingsGroup and ST._BuildCompletePanelStyleTab(container, group, "effects", BuildEffectsTab) then return end
+    group = ST._ResolveStylingGroup(group)
     local style = group.style
 
     local displayMode = group.displayMode
+    local previewMode = group._settingsContext and "ordinary" or displayMode
     local previewContextChanged = CS.lastEffectsPreviewGroup ~= CS.selectedGroup
-        or CS.lastEffectsPreviewMode ~= displayMode
+        or CS.lastEffectsPreviewMode ~= previewMode
     if previewContextChanged then
         ResetEffectsTabPreviews()
         CS.lastEffectsPreviewGroup = CS.selectedGroup
-        CS.lastEffectsPreviewMode = displayMode
+        CS.lastEffectsPreviewMode = previewMode
     end
 
     if displayMode == "trigger" then
@@ -1095,8 +1049,13 @@ local function BuildEffectsTab(container)
     -- three speaks for the section. A subgroup whose rows are all denied is
     -- skipped with its subheading.
     local spellGlowsShown = CanGroupUseOverrideSection(group, "procGlow")
+        or CanGroupUseOverrideSection(group, "readyGlow") or CanGroupUseOverrideSection(group, "keyPressHighlight")
+        or CanGroupUseOverrideSection(group, "cooldownPressFlash") or CanGroupUseOverrideSection(group, "assistedHighlight")
     local spellTimersShown = CanGroupUseOverrideSection(group, "cooldownSwipe")
+        or CanGroupUseOverrideSection(group, "showGCDSwipe") or CanGroupUseOverrideSection(group, "iconFillTimer")
     local spellStatesShown = CanGroupUseOverrideSection(group, "desaturation")
+        or CanGroupUseOverrideSection(group, "unusableDimming") or CanGroupUseOverrideSection(group, "showOutOfRange")
+        or CanGroupUseOverrideSection(group, "lossOfControl")
 
     if spellGlowsShown or spellTimersShown or spellStatesShown then
     local _, spellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Indicators", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
@@ -1236,7 +1195,7 @@ local function BuildEffectsTab(container)
         fallbackStyle = fillSec.fallbackStyle,
         onEnabled = function()
             if CS.QueueAdvancedSettingsPanelOpen then
-                CS.QueueAdvancedSettingsPanelOpen("iconFillTimer")
+                CS.QueueAdvancedSettingsPanelOpen(ST._SettingsContextKey(group._settingsContext, "iconFillTimer"))
             end
         end,
     })
@@ -1477,11 +1436,7 @@ local function BuildEffectsTab(container)
         end
     end
 
-    -- Nil host on purpose when the group tracks no aura: the section is gone,
-    -- and BuildAuraGlowSection's own gate returns early there after clearing a
-    -- glow preview a deleted aura entry left running. A COLLAPSED section skips
-    -- the call outright, exactly as every other row on this tab does.
-    if auraLeft or not groupHasAuraEntry then
+    if auraLeft then
         BuildAuraGlowSection(auraLeft, group, style, lens)
     end
 
@@ -1576,9 +1531,7 @@ local function BuildEffectsTab(container)
     --
     -- Drawn under exactly the gate that opened the section (an aura-tracking
     -- entry, section expanded), which is the same gate this pair carried as a
-    -- standalone header. The effect builder still runs with a nil host so it can
-    -- reconcile its preview; the bars twin has carried that contract since PTR 8
-    -- and this side needs it for the same reason.
+    -- standalone header.
     local pandemicLeft, pandemicRight
     if auraLeft then
         -- ONE scope chrome for the whole feature, on the SUBHEADING (owner
@@ -1904,6 +1857,7 @@ if ST._DefineSettingRoute then
         tooltips = { label = "Show Tooltips" },
         pings = {
             label = "Allow Pings",
+            scope = "panel",
             applies = function(context)
                 return context and context.group
                     and not CooldownCompanion:IsAuraPanel(context.group)

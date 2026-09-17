@@ -287,7 +287,8 @@ local function ApplyImportModeReview(review)
         if not data then
             return false
         end
-        applyReview = { ok = true, kind = review.kind, data = data }
+        applyReview = { ok = true, kind = review.kind, data = data,
+            existingPanelIds = review.existingPanelIds }
     end
     if CooldownCompanion:ApplyReviewedImport(applyReview) then
         ExitImportMode()
@@ -544,7 +545,7 @@ local function RenderSetupReview(scroll, mode, review)
         local keyText = tostring(classKey or "Unknown class")
         AddSectionHeading(scroll, "Resources  |cff777777(" .. keyText .. ")|r", classKey)
         AddSpacer(scroll, 10)
-        AddLine(scroll, "Includes all resources, styling, layout order, and Custom Bars.", 0.7, 0.7, 0.7)
+        AddLine(scroll, "Includes all resources, styling, and layout order.", 0.7, 0.7, 0.7)
 
         -- The one decision on the surface, shown only when there are
         -- settings to lose. Untouched-module users import silently.

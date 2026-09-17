@@ -691,7 +691,7 @@ local function BuildTextAppearanceTab(container, group, style)
         local entryWidth, entryHeight = GetTextEntryMetrics(style, nil, style.textFormat)
         for _, buttonData in ipairs(group.buttons or {}) do
             local effectiveStyle = CooldownCompanion.GetEffectiveStyle
-                and CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+                and CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
             local fmt = buttonData.textFormat or effectiveStyle.textFormat
             local width, height = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
             if width > entryWidth then entryWidth = width end
@@ -795,7 +795,7 @@ local function BuildTextAppearanceTab(container, group, style)
                 tbl = style, key = "textHeaderFontColor",
                 default = {1, 1, 1, 1}, hasAlpha = true,
                 disabled = panelSec.disabled,
-                onConfirm = refreshFrame, onChange = refreshFrame,
+                onConfirm = refreshFrame,
             })
         end,
     })

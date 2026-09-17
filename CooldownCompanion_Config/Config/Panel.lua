@@ -461,9 +461,6 @@ local function GetColumn3HeaderMode(selection)
             then
                 return "resource_settings"
             end
-            if CS.selectedCustomBarId then
-                return "custom_bar"
-            end
         end
         return "resources_panel"
     end
@@ -511,8 +508,6 @@ local function GetColumn3HeaderTitle(selection)
         return "Resource Bars"
     elseif mode == "resource_settings" then
         return GetResourceSettingsColumnTitle()
-    elseif mode == "custom_bar" then
-        return "Custom Bar Settings"
     elseif mode == "cast_bar" then
         return "Cast Bar"
     elseif mode == "player_frame" then
@@ -1392,7 +1387,7 @@ local function CreateConfigPanel()
         if CS.exportMode then
             GameTooltip:AddLine("Leave export mode.", 1, 1, 1, true)
         else
-            GameTooltip:AddLine("Pick groups, panels, Resources, and Custom Bars to share as one string.", 1, 1, 1, true)
+            GameTooltip:AddLine("Pick groups, panels, and Resources to share as one string.", 1, 1, 1, true)
         end
         GameTooltip:Show()
     end)
@@ -1996,7 +1991,7 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Anchors your player and target unit frames to your panels.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("These settings are saved per character.", 1, 1, 1, true)
-        elseif CS.barsEntrySelected and not CS.selectedResourcePowerType and not CS.selectedCustomBarId then
+        elseif CS.barsEntrySelected and not CS.selectedResourcePowerType then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
@@ -2157,6 +2152,8 @@ local function CreateConfigPanel()
             -- heads its own "<n> Selected".
             if tab == "settings" then
                 ST._BuildEntryIdentityHeading(scroll, buttonData)
+                ST._BuildEntryPresentation(scroll, group, buttonData)
+                ST._BuildEntryChargePresentation(scroll, group, buttonData)
 
                 -- Customizations leads the tab (owner ruling): it is the
                 -- entry's index of what it changes, it builds nothing until
@@ -2551,6 +2548,9 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
     CS.configRefreshInProgress = true
+    if self._unifiedPanelConversionError and ST._ShowResourceBarConflictChooser then
+        ST._ShowResourceBarConflictChooser()
+    end
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()

@@ -19,7 +19,7 @@ local PP = ST._ButtonPanelPreview
 -- ButtonPanelPreviewShared.lua
 local PANEL_PREVIEW_RING_COLOR = PP.PANEL_PREVIEW_RING_COLOR
 local QueuePreviewSlotTween = PP.QueuePreviewSlotTween
-local EnsureGapFrame = PP.EnsureGapFrame
+local ShowPreviewGap = PP.ShowPreviewGap
 local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
 
 ------------------------------------------------------------------------
@@ -78,9 +78,6 @@ do
     -- payload, an entry or a section is landing.
     SectionDrag.LANDING_ALPHA = 0.6
     local SNAP_COLOR = { 1, 0.82, 0 }
-    local SNAP_EDGE_ALPHA = 0.95
-    local SNAP_GAP_ALPHA = 0.28
-    local GAP_ALPHA = 0.18
 
     -- EVERY hairline in this gesture is drawn by Core/Utils.lua's border
     -- texture set in CRISP mode, which is the house's own 1px chrome
@@ -718,26 +715,6 @@ do
         }
     end
 
-    --- The lane gap borrows the base grid's own gap tile, so its colour has to
-    --- be written by whichever target family is holding it this frame.
-    function SectionDrag.SetGapAccent(preview, snapped)
-        local gap = preview.gapFrame
-        if not gap or preview.gapAccentSnapped == snapped then return end
-        preview.gapAccentSnapped = snapped
-        if snapped then
-            gap.bg:SetColorTexture(SNAP_COLOR[1], SNAP_COLOR[2], SNAP_COLOR[3],
-                SNAP_GAP_ALPHA)
-            -- Same gold the landing trail wears: a lane target and a landing
-            -- are the same commitment.
-            ApplyChromeBorder(gap.border, gap, SNAP_COLOR, SNAP_EDGE_ALPHA)
-        else
-            gap.bg:SetColorTexture(PANEL_PREVIEW_RING_COLOR[1],
-                PANEL_PREVIEW_RING_COLOR[2], PANEL_PREVIEW_RING_COLOR[3],
-                GAP_ALPHA)
-            ST.HideBorderTextures(gap.border)
-        end
-    end
-
     --- The unified anchor preview wraps this mirror in the attached bars'
     --- Layout & Order lanes, and a section gesture's landings can sit on
     --- the strip above or below the mirror where those lanes sit. Two
@@ -815,13 +792,8 @@ do
             end
         end
         if gapLane then
-            local gap = EnsureGapFrame(preview)
-            -- A lane target is a resolved drop, so the tile wears the snap
-            -- colour; the base grid's own gap resets it on the way past.
-            SectionDrag.SetGapAccent(preview, true)
-            gap:SetSize(gapLane.width, gapLane.height)
-            QueuePreviewSlotTween(preview, gap, "TOPLEFT", LanePosition(gapLane, gapPos))
-            gap:Show()
+            local x, y = LanePosition(gapLane, gapPos)
+            ShowPreviewGap(preview, "TOPLEFT", x, y, gapLane.width, gapLane.height, "snap")
         end
     end
 
@@ -1518,9 +1490,12 @@ do
     local function CursorPadModel(host)
         local preview = CursorMirror(host)
         if not (preview and preview.panelId == CS.selectedGroup
-            and preview.root:IsVisible() and preview.content:IsShown()) then
+            and preview.root:IsVisible() and (preview.content:IsShown()
+                or (preview.dropGhostLayoutActive and preview.dropGhostLayoutActive.content))) then
             return nil
         end
+        -- A layout-transition ghost hides the old visuals while retaining
+        -- their stable cursor targets until release or cancellation.
         local model = preview.cursorPadModel
         if not model then
             local inputs = preview.cursorPadInputs

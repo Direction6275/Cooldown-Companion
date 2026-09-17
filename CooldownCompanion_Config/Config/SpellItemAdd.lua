@@ -190,7 +190,7 @@ local function GetAutocompleteTypeDisplay(entry)
     return AUTOCOMPLETE_TYPE_DISPLAY[kind] or AUTOCOMPLETE_TYPE_DISPLAY.spell
 end
 
-local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup, customBar)
+local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
     local btn = parentFrame._cdcAddBoxInfoButton
     if not btn then
         btn = CreateFrame("Button", nil, parentFrame)
@@ -203,14 +203,10 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup, customB
             GameTooltip:SetMinimumWidth(0)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(ADD_BOX_TRACKABILITY_TOOLTIP[1])
-            if self._cdcCustomBarAdd then
-                GameTooltip:AddLine("Add a spell or aura to Resources as a Custom Bar.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-            end
             -- The workspace add box always targets the SELECTED panel (its
             -- submit path clears any stale inline-add target), so the panel
             -- rule is asked of that panel and no other.
-            local auraLines = not self._cdcCustomBarAdd and TargetPanelIsAuraOnly(CS.selectedGroup)
+            local auraLines = TargetPanelIsAuraOnly(CS.selectedGroup)
                 and ADD_BOX_AURA_PANEL_TOOLTIP or nil
             for _, line in ipairs(auraLines or {}) do
                 GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
@@ -233,7 +229,6 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup, customB
         parentFrame._cdcAddBoxInfoButton = btn
     end
 
-    btn._cdcCustomBarAdd = customBar == true
     btn:SetParent(parentFrame)
     btn:ClearAllPoints()
     btn:SetPoint("RIGHT", anchorFrame, "RIGHT", -1, 0)
@@ -402,6 +397,8 @@ function CS.ResolveProspectiveAdd(stub, groupId)
     groupId = groupId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     if not group then return false end
+    stub.displayAs = ST.PanelSupportsAttachedBars(group) and CS.panelAddModePanelId == groupId
+        and CS.panelAddPresentation == "bars" and "bars" or nil
     if stub.type == "item" then
         if CooldownCompanion:IsAuraPanel(group)
             and CooldownCompanion:GetPanelManualEntryRejectMessage(group, AURA_PANEL_ITEM_PROBE) then
@@ -429,6 +426,12 @@ function CS.ResolveProspectiveAdd(stub, groupId)
         stub.addedAs = "spell"
     end
     return true
+end
+
+local function GetAddPresentation(groupId)
+    local group = GetTargetGroup(groupId)
+    return ST.PanelSupportsAttachedBars(group) and CS.panelAddModePanelId == groupId
+        and CS.panelAddPresentation == "bars" and "bars" or "icons"
 end
 
 local function TryAddSpell(input, isPetSpell, forceAura, opts)
@@ -473,7 +476,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
         local addAsAura, routedToAura = route.addAsAura, route.routedToAura
         forceAura = route.forceAura
         local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName,
-            isPetSpell, addAsAura or nil, forceAura, nil, nil, opts and opts.section)
+            isPetSpell, addAsAura or nil, forceAura, nil, nil, opts and opts.section, GetAddPresentation(CS.selectedGroup))
         if not idx then
             return false
         end
@@ -495,7 +498,7 @@ end
 ------------------------------------------------------------------------
 -- `section` (cursor drops only): the anchor the new entry lands in, handed
 -- to AddButtonToGroup exactly as TryAddSpell hands its own.
-local function FinalizeAddItem(itemId, groupId, autoSelect, section)
+local function FinalizeAddItem(itemId, groupId, autoSelect, section, presentation)
     local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
     local spellName = C_Item.GetItemSpell(itemId)
     if not spellName then
@@ -503,7 +506,7 @@ local function FinalizeAddItem(itemId, groupId, autoSelect, section)
         return false
     end
     local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName,
-        nil, nil, nil, nil, nil, section)
+        nil, nil, nil, nil, nil, section, presentation)
     if not idx then
         return false
     end
@@ -518,6 +521,7 @@ local function TryAddItem(input, opts)
     if input == "" or not CS.selectedGroup then return false end
     if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
     local section = opts and opts.section
+    local presentation = GetAddPresentation(CS.selectedGroup)
 
     local itemId = tonumber(input)
     local itemName
@@ -535,7 +539,7 @@ local function TryAddItem(input, opts)
     end
 
     if C_Item.IsItemDataCachedByID(itemId) then
-        return FinalizeAddItem(itemId, CS.selectedGroup, nil, section)
+        return FinalizeAddItem(itemId, CS.selectedGroup, nil, section, presentation)
     end
 
     -- Only do async loading for ID-based input (not name-based).
@@ -568,7 +572,7 @@ local function TryAddItem(input, opts)
         -- The section rides the closure like the group does: the drop named a
         -- place in THAT panel, and the entry lands there whether or not the
         -- selection has moved on since.
-        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup, section) then
+        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup, section, presentation) then
             if ST._ClearWideAddBoxAfterAdd then
                 ST._ClearWideAddBoxAfterAdd(input)
             end
@@ -604,6 +608,7 @@ local function TryAddEquipmentSlot(itemSlot)
         return false
     end
 
+    if GetAddPresentation(CS.selectedGroup) == "bars" then CooldownCompanion:SetEntryPresentation(CS.selectedGroup, idx, "bars") end
     SelectNewButton(CS.selectedGroup, idx)
     CooldownCompanion:Print("Added equipment slot: " .. slotName)
     return true

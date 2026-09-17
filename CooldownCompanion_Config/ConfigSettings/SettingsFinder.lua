@@ -16,6 +16,7 @@ local MAX_RESULT_LIMIT = 8
 local registry = {}
 local descriptorsById = {}
 local contextPreparers = {}
+local presentationDescriptors = {}
 
 local TAB_LABELS = {
     general = "General",
@@ -34,7 +35,6 @@ local VALID_SCOPES = {
     entry = true,
     resources = true,
     resource = true,
-    customBar = true,
     castBar = true,
     playerFrame = true,
     targetFrame = true,
@@ -103,6 +103,23 @@ local function BuildBreadcrumb(descriptor)
         return tabLabel .. " \226\128\186 " .. sectionLabel
     end
     return tabLabel or sectionLabel or "Settings"
+end
+
+local function PresentationDescriptor(descriptor, context)
+    if not context or context.presentation == "shared" or context.kind then return descriptor end
+    local styled = descriptor.tab == "appearance" or descriptor.tab == "effects"
+        or descriptor.section == "arrangement" or descriptor.section == "compact"
+        or descriptor.id:match("^panel%.layout%.bars%.")
+    if not styled then return descriptor end
+    local id = ST._SettingsContextKey(context, descriptor.id)
+    if not presentationDescriptors[id] then
+        local variant = CopyTable(descriptor)
+        variant.id, variant.original, variant.presentation = id, descriptor, context.presentation
+        variant.breadcrumb = (context.presentation == "bars" and "Bars" or "Icons") .. " / " .. descriptor.breadcrumb
+        variant._normalizedBreadcrumb = NormalizeSearchText(variant.breadcrumb)
+        presentationDescriptors[id] = variant
+    end
+    return presentationDescriptors[id]
 end
 
 local function ScopeDefinitionIsValid(scope)
@@ -278,23 +295,13 @@ local function DefineSettingRoute(defaults)
     return route
 end
 
-local function GetSelectedCustomBar(settings)
-    if settings and ST._RB and ST._RB.FindCustomBarById then
-        return ST._RB.FindCustomBarById(settings, CS.selectedCustomBarId)
-    end
-    if ST._FindSelectedConfigCustomBar then
-        return ST._FindSelectedConfigCustomBar()
-    end
-    return nil
-end
-
 -- Captured once when the editing action row is rebuilt. Typing compares this
 -- lightweight state instead of reconstructing a full context (which can
 -- resolve class-scoped Resources settings).
 local CONTEXT_STATE_FIELDS = {
     "selectedContainer", "selectedGroup", "selectedButton",
     "selectedRotationAssistantEntry", "selectedResourcePowerType",
-    "resourceSettingsSpecID", "selectedCustomBarId", "castFramesSelectedItem",
+    "resourceSettingsSpecID", "castFramesSelectedItem",
     "barsEntrySelected", "barWorkspaceKind", "unifiedBarKind",
 }
 
@@ -315,15 +322,13 @@ local function BuildContextIdentity(context)
         tostring(context.containerId or ""),
         tostring(context.container or ""),
         tostring(context.groupId or ""),
-        tostring(context.group or ""),
+        tostring(context.group and (context.group._attachedBarOwner or context.group) or ""),
         tostring(context.displayMode or ""),
         tostring(context.buttonIndex or ""),
         tostring(context.buttonData or ""),
         tostring(context.rotationAssistant == true),
         tostring(context.resourcePowerType or ""),
         tostring(context.resourceSpecID or ""),
-        tostring(context.customBarId or ""),
-        tostring(context.customBar or ""),
         tostring(context.castFramesItem or ""),
     }
     return table.concat(parts, "|")
@@ -341,7 +346,6 @@ local function GetSettingsFinderContext()
         buttonIndex = CS.selectedButton,
         resourcePowerType = CS.selectedResourcePowerType,
         resourceSpecID = CS.resourceSettingsSpecID,
-        customBarId = CS.selectedCustomBarId,
         castFramesItem = CS.castFramesSelectedItem,
         rowScope = CS.unifiedRowScope,
     }
@@ -352,6 +356,12 @@ local function GetSettingsFinderContext()
     context.buttonData = context.group and context.buttonIndex and context.group.buttons
         and context.group.buttons[context.buttonIndex] or nil
     context.button = context.buttonData
+    if context.group and ST.PanelSupportsAttachedBars(context.group) and ST._GetPanelSettingsSelection then
+        local entry = ST._GetPanelSettingsSelection(context.group)
+        context.buttonData, context.button = entry, entry
+        if not entry then context.buttonIndex = nil end
+        context.displayMode = entry and ST.GetEntryPresentation(context.group, entry) or "icons"
+    end
     if CS.barsEntrySelected then
         -- The selected detail object remains the Finder scope while Primary
         -- and Detail merely choose which row of tabs is visible. A result is
@@ -362,8 +372,6 @@ local function GetSettingsFinderContext()
             context.scope = "playerFrame"
         elseif context.castFramesItem == "target" then
             context.scope = "targetFrame"
-        elseif context.customBarId then
-            context.scope = "customBar"
         elseif context.resourcePowerType ~= nil then
             context.scope = "resource"
         else
@@ -381,8 +389,6 @@ local function GetSettingsFinderContext()
             context.scope = "targetFrame"
         elseif CS.unifiedBarKind == "resource" and context.resourcePowerType ~= nil then
             context.scope = "resource"
-        elseif CS.unifiedBarKind == "custom" and context.customBarId then
-            context.scope = "customBar"
         elseif CS.unifiedBarKind == "cast" then
             context.scope = "castBar"
         elseif context.buttonData then
@@ -410,19 +416,12 @@ local function GetSettingsFinderContext()
     -- reason to touch them. Bar and frame surfaces already own that settings
     -- domain, so resolve it exactly once after their scope is known.
     if context.scope == "resources" or context.scope == "resource"
-        or context.scope == "customBar" or context.scope == "castBar"
+        or context.scope == "castBar"
         or context.scope == "playerFrame" or context.scope == "targetFrame"
     then
         context.resourceSettings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings() or nil
     end
-    if context.scope == "customBar" then
-        context.customBar = GetSelectedCustomBar(context.resourceSettings)
-        if not context.customBar then
-            return nil
-        end
-    end
-
     context._selectionState = CaptureContextState()
     context.identity = BuildContextIdentity(context)
     return context
@@ -450,9 +449,9 @@ local function SettingsFinderContextIsCurrent(context)
     local buttonData = group and context.buttonIndex and group.buttons
         and group.buttons[context.buttonIndex] or nil
     return container == context.container
-        and group == context.group
+        and group == (context.group and (context.group._attachedBarOwner or context.group))
         and buttonData == context.buttonData
-        and (group and (group.displayMode or "icons") or nil) == context.displayMode
+        and (group and (context.buttonData and ST.GetEntryPresentation(group, context.buttonData) or group.displayMode or "icons") or nil) == context.displayMode
 end
 
 local function ScopeMatches(scope, contextScope)
@@ -493,6 +492,17 @@ local function IsDescriptorApplicable(descriptor, context)
     if not (descriptor and context and ScopeMatches(descriptor.scope, context.scope)) then
         return false
     end
+    local editing = context.group and context.group._settingsContext
+    if editing and editing.contents and (descriptor.tab == "appearance" or descriptor.tab == "effects")
+        and not editing.contents[editing.presentation] then
+        if not (editing.presentation == "bars" and editing.contents.modules and descriptor.tab == "appearance"
+            and (descriptor.sectionId or descriptor.section) == "barThickness") then return false end
+    end
+    if context.scope == "entry" and context.group and context.group._settingsContext then
+        local sectionId = descriptor.sectionId or descriptor.section
+        if ST.OVERRIDE_SECTIONS[sectionId]
+            and not ST._CanButtonUseConfigOverrideSection(context.buttonData, sectionId, context.group) then return false end
+    end
     if descriptor._routeApplies and not descriptor._routeApplies(context, descriptor) then
         return false
     end
@@ -526,6 +536,33 @@ local function PrepareSettingsFinderContext(context, validationErrors)
     if cached and context._settingsFinderRegistrySize == #registry
         and context._settingsFinderPreparerCount == #contextPreparers
     then
+        return context
+    end
+
+    local owner = context.group and (context.group._settingsOwner or context.group)
+    if owner and ST._CreatePanelSettingsContext and ST.PanelSupportsAttachedBars(owner)
+        and (context.scope == "panel" or context.scope == "entry") and not context._presentationPass then
+        local applicable, seen = {}, {}
+        local presentations = context.scope == "entry" and { ST.GetEntryPresentation(owner, context.buttonData) } or { "icons", "bars" }
+        for _, presentation in ipairs(presentations) do
+            local editing = ST._CreatePanelSettingsContext(owner, presentation)
+            local child = CopyTable(context)
+            child.group, child.displayMode, child._presentationPass = editing.group, presentation, true
+            child._settingsFinderApplicability, child._settingsFinderApplicableDescriptors = nil, nil
+            PrepareSettingsFinderContext(child, validationErrors)
+            for _, descriptor in ipairs(child._settingsFinderApplicableDescriptors or {}) do
+                local variant = PresentationDescriptor(descriptor, editing)
+                if not seen[variant.id] then applicable[#applicable + 1], seen[variant.id] = variant, true end
+            end
+        end
+        local displayError = FindIndistinguishableResult(applicable)
+        if displayError then
+            if validationErrors then validationErrors[#validationErrors + 1] = displayError
+            else error("Cooldown Companion Settings Finder: " .. displayError) end
+        end
+        context._settingsFinderApplicability = seen
+        context._settingsFinderApplicableDescriptors = applicable
+        context._settingsFinderRegistrySize, context._settingsFinderPreparerCount = #registry, #contextPreparers
         return context
     end
 
@@ -569,7 +606,7 @@ end
 
 local function RevalidateSettingsFinderDescriptor(descriptor, context)
     if type(descriptor) == "string" then
-        descriptor = descriptorsById[descriptor]
+        descriptor = descriptorsById[descriptor] or presentationDescriptors[descriptor]
     end
     if not (descriptor and context) then
         return false
@@ -683,6 +720,7 @@ local function BindSettingWidget(widget, descriptor, renderedLabel)
     if not (widget and descriptor) then
         return nil
     end
+    descriptor = PresentationDescriptor(descriptor, ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(widget))
     if renderedLabel ~= nil and renderedLabel ~= descriptor.label then
         error("Cooldown Companion Settings Finder: widget label mismatch for "
             .. descriptor.id .. " (expected '" .. descriptor.label
@@ -803,7 +841,7 @@ end
 
 local function NavigateToFinderSetting(descriptor, expectedContext)
     if type(descriptor) == "string" then
-        descriptor = descriptorsById[descriptor]
+        descriptor = descriptorsById[descriptor] or presentationDescriptors[descriptor]
     end
     if not descriptor then
         return false
@@ -823,6 +861,11 @@ local function NavigateToFinderSetting(descriptor, expectedContext)
     if not RevalidateSettingsFinderDescriptor(descriptor, context) then
         return false
     end
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+    if descriptor.presentation then
+        local editing = ST._CreatePanelSettingsContext(context.group, descriptor.presentation)
+        context.group, context.displayMode = editing.group, descriptor.presentation
+    end
 
     if CS.CancelPickAuraTexture then
         CS.CancelPickAuraTexture()
@@ -840,8 +883,11 @@ local function NavigateToFinderSetting(descriptor, expectedContext)
     end
 
     local advancedKey = ResolveAdvancedKey(descriptor, context)
+    local editing = context.group and context.group._settingsContext
+    if editing then advancedKey = ST._SettingsContextKey(editing, advancedKey) end
     local pending = {
         source = "settingsFinder",
+        presentation = descriptor.presentation,
         settingKey = descriptor.id,
         rowKey = advancedKey,
         sectionId = descriptor.sectionId or descriptor.section,
@@ -849,6 +895,7 @@ local function NavigateToFinderSetting(descriptor, expectedContext)
     }
     CS.pendingSettingHighlight = pending
     OpenFinderCollapseTargets(descriptor, context, pending)
+    if editing then ST._PreparePanelSettingsNavigation(editing.owner, descriptor.tab) end
 
     -- Queued last: the queue snapshots tab/scope context and consumes when
     -- the rebuilt matching gear provides its actual advanced-panel builder.
@@ -920,6 +967,18 @@ ST._SearchSettingsFinder = SearchSettingsFinder
 ST._NavigateToFinderSetting = NavigateToFinderSetting
 ST._ClearSettingsFinderNavigation = ClearSettingsFinderNavigation
 ST._GetSettingsFinderRegistry = function() return registry end
-ST._GetSettingsFinderDescriptor = function(id) return descriptorsById[id] end
+ST._GetSettingsFinderDescriptor = function(id) return descriptorsById[id] or presentationDescriptors[id] end
 ST._ValidateSettingsFinderRegistry = ValidateRegistry
 ST._NormalizeSettingsFinderText = NormalizeSearchText
+
+function ST._GetOrdinarySettingsTabs(group)
+    if not ST.PanelSupportsAttachedBars(group) then return nil end
+    local context = GetSettingsFinderContext()
+    if not context or (context.scope ~= "entry" and context.scope ~= "panel") then return nil end
+    PrepareSettingsFinderContext(context)
+    local tabs = { loadconditions = true }
+    for _, descriptor in ipairs(context._settingsFinderApplicableDescriptors or {}) do
+        if descriptor.rowScope ~= "detail" then tabs[descriptor.tab] = true end
+    end
+    return tabs
+end

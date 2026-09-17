@@ -116,18 +116,7 @@ local function GetAttachedCastBarPanelYOffset(settings)
     if not settings or CooldownCompanion:IsModuleAnchorIndependent("castbar") then
         return 0
     end
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
-    local castLayout = specLayout and specLayout.castBar
-    if not rbSettings
-        or rbSettings.enabled ~= true
-        or (specLayout and CooldownCompanion:IsResourceBarAnchorIndependent()) then
-        return 0
-    end
-    if not castLayout or castLayout.panelAnchorYOffsetEnabled ~= true then
-        return 0
-    end
-    return tonumber(castLayout.panelAnchorYOffset) or 0
+    return ST.GetCastBarAttachmentOffset(settings, CooldownCompanion:GetSpecLayoutOrder())
 end
 
 ------------------------------------------------------------------------
@@ -477,12 +466,13 @@ local function CreateCastBarMoverFrame()
         -- the config Height slider does.
         getHeight = function()
             local settings = GetCastBarSettings()
-            return settings and settings.height or 15
+            return ST.ResolveCastBarGeometry(settings).thickness
         end,
         setHeight = function(height)
             local settings = GetCastBarSettings()
             if settings then
-                settings.height = height
+                if settings.overrideSections and settings.overrideSections.barThickness then settings.styleOverrides.barHeight = height
+                else settings.height = height end
             end
         end,
         apply = function()
@@ -1125,7 +1115,7 @@ end
 ------------------------------------------------------------------------
 
 local function GetCastBarHeight(s)
-    return tonumber(s and s.height) or 15
+    return ST.ResolveCastBarGeometry(s, ST.GetModuleGeometryHost("castbar")).thickness
 end
 
 local function IsInlineIcon(s)
@@ -1141,7 +1131,9 @@ local function ResolveCastBarWidth(s)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local slot = layout and layout.castBar or {}
     local lane = RB.ResolveBarLane(CooldownCompanion:ResolveModulePanel("castbar").group, slot.position or "below", slot.anchorRegion)
-    local width = RB.GetBarLaneBody(groupFrame, lane):GetWidth()
+    local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
+    local group = CooldownCompanion:ResolveModulePanel("castbar").group
+    local width = ST.GetPanelAttachmentDimensions(groupFrame, group, region)
     if not width or width <= 0 then return nil end
     return width
 end
@@ -1158,10 +1150,10 @@ local SIDE_ANCHORS = {
     right = { point = "TOPLEFT", relativePoint = "TOPRIGHT", dx = 1, dy = 0 },
 }
 
-local function AnchorBySide(frame, side, relative, spacing)
+local function AnchorBySide(frame, side, relative, spacing, yOffset)
     local anchor = SIDE_ANCHORS[side] or SIDE_ANCHORS.below
     frame:SetPoint(anchor.point, relative, anchor.relativePoint,
-        anchor.dx * spacing, anchor.dy * spacing)
+        anchor.dx * spacing, anchor.dy * spacing + yOffset)
 end
 
 --- Position + size the bar.  Returns false when the anchor is unavailable.
@@ -1198,34 +1190,35 @@ local function ApplyCastBarPosition(s, width, height)
         or (rbSettings and rbSettings.barSpacing)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
+    local geometryPanel = ST.GetModuleGeometryPanel("castbar")
+    if geometryPanel then
+        local geometry = ST.ResolveBarGeometry(geometryPanel)
+        gap, barSpacing = geometry.distance, geometry.spacing
+    end
+
+    local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
+    local panelTail = ST.GetPanelAttachmentTail and ST.GetPanelAttachmentTail(groupFrame, side, region)
+    if panelTail then
+        local anchor = side == "above" and "BOTTOM" or "TOP"
+        local far = side == "above" and "TOP" or "BOTTOM"
+        frame:SetPoint(anchor, panelTail, far, 0,
+            (side == "above" and 1 or -1) * barSpacing + panelYOffset)
+        return true
+    end
 
     if not stackDetached and CooldownCompanion:ModulesShareAnchorPanel("resources", "castbar") then
-        -- The aura block container packs itself at the end of its side, so
-        -- when the cast bar's side has one it, not the last fixed bar, is the
-        -- element the cast bar follows.
-        -- The accessor answers from the CC-side shown flag and returns the
-        -- chain TAIL, so it is already nil for a parked side and already the
-        -- right container in either bucket order. No IsShown read here.
-        local blockContainer = RB.GetCustomBarAuraBlockContainer
-            and RB.GetCustomBarAuraBlockContainer(lane)
-            or nil
-        if blockContainer then
-            AnchorBySide(frame, side, blockContainer, barSpacing + panelYOffset)
-            return true
-        end
-
         -- The cast bar is ALWAYS the last element of its side (owner ruling
         -- 2026-08-09): the stack reserves no space for an interleaved cast
         -- bar, so a stored order between two bars double-books the next
         -- bar's slot. The stored order is ignored for anchoring.
         local predecessor = CooldownCompanion:GetResourceBarPredecessor(lane, math.huge)
         if predecessor then
-            AnchorBySide(frame, side, predecessor, barSpacing + panelYOffset)
+            AnchorBySide(frame, side, predecessor, barSpacing, panelYOffset)
             return true
         end
     end
 
-    AnchorBySide(frame, side, RB.GetBarLaneBody(groupFrame, lane), gap + panelYOffset)
+    AnchorBySide(frame, side, RB.GetBarLaneBody(groupFrame, lane), gap, panelYOffset)
     return true
 end
 
@@ -2308,7 +2301,8 @@ InstallHooks = function()
         end)
 
         -- When icon size / spacing / buttons-per-row changes — re-measure
-        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId)
+        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId, deferAttachments)
+            if deferAttachments then return end -- Reposition after UpdateGroupLayout finishes.
             RepositionFromHook(groupId)
         end)
 

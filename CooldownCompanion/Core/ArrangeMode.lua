@@ -129,6 +129,7 @@ local ARRANGE_PANEL_SIZE_KEYS = {
     "barLength",
     "barHeight",
 }
+local ARRANGE_ATTACHED_BAR_SIZE_KEYS = { "barLength", "barHeight" }
 -- The section-owned geometry Arrange Mode can now edit (nudger/coord label
 -- write offsets, wheel/grip/size label write icon dimensions). Deliberately
 -- NOT spacing or maxPerLine: those are config-only, so Cancel must not
@@ -235,6 +236,8 @@ function CooldownCompanion:CaptureArrangePanelRecord(groupId)
     snapshot.panels[groupId] = {
         anchor = CopyArrangeTable(group.anchor),
         size = CaptureArrangeFields(group.style, ARRANGE_PANEL_SIZE_KEYS),
+        barSize = ST.PanelSupportsAttachedBars(group)
+            and CaptureArrangeFields(group.attachedBarStyle or {}, ARRANGE_ATTACHED_BAR_SIZE_KEYS) or nil,
         sections = sections,
         texture = CaptureArrangeFields(group.textureSettings, ARRANGE_TEXTURE_POSITION_KEYS),
         signal = CaptureArrangeFields(
@@ -346,6 +349,10 @@ local function RestoreArrangeSnapshot(addon, snapshot)
             if record.size then
                 group.style = type(group.style) == "table" and group.style or {}
                 RestoreArrangeFields(group.style, record.size, ARRANGE_PANEL_SIZE_KEYS)
+            end
+            if record.barSize and (type(group.attachedBarStyle) == "table" or next(record.barSize.present)) then
+                group.attachedBarStyle = type(group.attachedBarStyle) == "table" and group.attachedBarStyle or {}
+                RestoreArrangeFields(group.attachedBarStyle, record.barSize, ARRANGE_ATTACHED_BAR_SIZE_KEYS)
             end
             -- Only the SAME section instance takes its geometry back (table
             -- identity, captured above); one created, dissolved, or
@@ -1205,7 +1212,8 @@ function CooldownCompanion:EndCombatForcedLock()
             and self:IsContainerUnlockPreviewActive(group.parentContainerId)
             or false
         local handleShown = (frame.dragHandle and frame.dragHandle:IsShown()) == true
-        self:SetAuraPanelPlaceholderPreviewShown(frame, handleShown or containerPreviewActive)
+        self:SetAuraPanelPlaceholderPreviewShown(frame,
+            handleShown or containerPreviewActive or self:IsPanelUnlockPreviewActive(group))
         -- Section overlays share the aura placeholder preview's wide gate:
         -- drag controls up, or any member of an active container preview.
         ST.SetSectionMoverOverlaysShown(self, frame, group,

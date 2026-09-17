@@ -35,8 +35,6 @@ local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 
 local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
-local IsAuraBlockEntry = RB.IsAuraBlockEntry
-local GetResolvedCustomAuraBarAuraUnit = RB.GetResolvedCustomAuraBarAuraUnit
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
 local GetResourceColors = RB.GetResourceColors
@@ -48,10 +46,6 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 local StyleContinuousBar = RB.StyleContinuousBar
 local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
-local PrepareCustomAuraBar = RB.PrepareCustomAuraBar
-local EnsureCustomBarId = RB.EnsureCustomBarId
-local EnsureCustomBarLayout = RB.EnsureCustomBarLayout
-local GetCustomBarLayout = RB.GetCustomBarLayout
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
 local CreatePixelBorders = RB.CreatePixelBorders
@@ -83,63 +77,6 @@ local LAYOUT_PREVIEW_EMPTY_DROP_SIZE = 8
 local CAST_PREVIEW_DURATION = 1.5
 local CAST_PREVIEW_REST_FILL = 0.65
 local CAST_PREVIEW_SPELL_NAME = "Preview Cast"
-
--- Custom-bar identity, revealed on hover (owner ruling 2026-07-26, after
--- seeing a permanent label in game). The preview must be clean at rest AND
--- identify every bar at a glance; those only conflict if identity is
--- visible at rest, so it is not. Hovering any bar names them ALL at once —
--- one mouse movement, no clicks, the whole map — and moving away leaves
--- bars only.
---
--- A permanent label was tried first and rejected: anything drawn inside the
--- bar's rect reads as the bar's own content no matter how it is styled,
--- because that rect is exactly where bar text lives. A transient overlay
--- has the opposite problem to solve — it reads as an affordance on sight,
--- so it can be properly legible instead of apologetically dim, and it is
--- never present while the owner is judging their design.
--- Custom bars only; resources are identified by their well-known colors.
-local LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE = 10
-local LAYOUT_PREVIEW_IDENTITY_INSET = 4
-local LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE = "OUTLINE, SLUG"
--- Shell (Show Only While Aura Active) bars carry the bar-mode panel
--- mirror's crossed-eye badge, same atlas and counter-scale convention, so
--- the two previews say "this one only shows while its aura runs" the same
--- way. The atlas has substantial transparent padding around its glyph.
-local LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
-local LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE = 18
--- Aura-block members get their own badge: they leave the stack in play and
--- the bars past them close up, which the expanded preview cannot show.
-local LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS = "QuestRepeatableTurnin"
-local LAYOUT_PREVIEW_AURA_BLOCK_BADGE_SCREEN_SIZE = 14
-
--- The handle on the seam between a lane's two aura-block buckets. One table
--- rather than a run of file-level functions: this chunk sits on Lua 5.1's
--- 200-local ceiling, so a feature's worth of names has to fold into a single
--- one. Its members are filled in further down, where the lane geometry they
--- read is in scope.
---
--- The size is a SCREEN size, counter-scaled against the fit-to-host scale
--- exactly like the identity marks: a hit target that shrank with the
--- composition would stop being one.
---
--- One flat glyph, no plate: it hangs over the bars the owner is judging, so
--- anything with a filled background of its own reads as part of the
--- composition. The glyph is orientation-neutral, which is why nothing here
--- keys off the lane axis.
-local SwapSeam = {
-    SCREEN_SIZE = 16,
-    -- Cross-axis clearance between the bars' outer edge and the handle's
-    -- NEAR edge: the handle sits wholly outside the bars (owner ruling; a
-    -- centre-on-edge hang clipped them), close enough to stay attached to
-    -- the seam it names. The hover plate overhangs the frame by 10% a side,
-    -- so this must stay above that overhang.
-    HANG = 3,
-    GLYPH_ATLAS = "uitools-icon-refresh",
-    HOVER_ATLAS = "uitools-icon-highlight",
-    HOVER_SCALE = 1.2,
-    REST = { 0.62, 0.64, 0.70, 1 },
-    HOVER = { 1, 1, 1, 1 },
-}
 
 local GetLayoutPreviewIcon
 
@@ -253,7 +190,6 @@ local function EnsurePreviewState(host)
             slots = {},
             gaps = {},
             pills = {},
-            swaps = {},
         },
         used = {},
         tweens = {},
@@ -288,11 +224,14 @@ local function EnsurePreviewState(host)
 end
 
 local function ResetPreviewState(preview)
+    if preview.panelHost then
+        ST._ReleaseButtonPanelPreview(preview.panelHost)
+        preview.panelHost:Hide()
+    end
     preview.used.containers = 0
     preview.used.slots = 0
     preview.used.gaps = 0
     preview.used.pills = 0
-    preview.used.swaps = 0
     preview.renderedSelectionKeys = {}
     preview.independentResources = false
     preview.layoutDrag = nil
@@ -462,17 +401,6 @@ local function CreateSlotFrame(parent)
     frame.selectedHighlight.side2 = frame.selectedHighlight:CreateTexture(nil, "OVERLAY")
     frame.selectedHighlight:Hide()
 
-    -- Config-chrome identity marks (custom bars only), above the bar
-    -- visuals but below the hover/selection highlights so those still read
-    -- as the topmost state.
-    frame.identityLayer = CreateFrame("Frame", nil, frame)
-    frame.identityLayer:SetAllPoints(frame.previewCanvas)
-    frame.identityLayer:EnableMouse(false)
-    frame.identityLayer.label = frame.identityLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.identityLayer.label:SetWordWrap(false)
-    frame.identityLayer.badge = frame.identityLayer:CreateTexture(nil, "OVERLAY", nil, 7)
-    frame.identityLayer:Hide()
-
     return frame
 end
 
@@ -508,40 +436,6 @@ local function AcquireGap(preview, parent)
     frame:SetParent(parent)
     frame:Show()
     frame.text:Hide()
-    return frame
-end
-
--- Mouse-enabled on its own small rect alone, so it never takes a drag off
--- the bars it sits over. The hover plate is created below the glyph and
--- anchored once: ApplyScale only ever resizes, so the CENTER anchor keeps
--- both on the seam.
-function SwapSeam.Acquire(preview, parent)
-    local pool = preview.pools.swaps
-    if not pool then
-        pool = {}
-        preview.pools.swaps = pool
-    end
-    local index = (preview.used.swaps or 0) + 1
-    preview.used.swaps = index
-    local frame = pool[index]
-    if not frame then
-        frame = CreateFrame("Button", nil, parent)
-        frame:SetClipsChildren(false)
-        frame:RegisterForClicks("LeftButtonUp")
-        pool[index] = frame
-    end
-    if not frame.glyph then
-        frame.hover = frame:CreateTexture(nil, "ARTWORK")
-        frame.hover:SetAtlas(SwapSeam.HOVER_ATLAS, false)
-        frame.hover:SetPoint("CENTER")
-        frame.hover:Hide()
-        frame.glyph = frame:CreateTexture(nil, "OVERLAY")
-        frame.glyph:SetAtlas(SwapSeam.GLYPH_ATLAS, false)
-        frame.glyph:SetPoint("CENTER")
-    end
-    frame:SetParent(parent)
-    frame:EnableMouse(true)
-    frame:Show()
     return frame
 end
 
@@ -859,7 +753,11 @@ local function GetPreviewPanelId()
     return CooldownCompanion:ResolveModulePanel(kind or "resources").panelId
 end
 
-local function ModuleBelongsToPreview(kind, panelId)
+local function ModuleBelongsToPreview(kind, panelId, forSettings, settings)
+    if forSettings then
+        local target = CooldownCompanion:ResolveModulePanel(kind, nil, { configured = true, settings = settings })
+        return target.eligible == true and target.panelId == panelId and target.mode ~= "independent"
+    end
     local target = CooldownCompanion:ResolveModulePanel(kind)
     return target.group ~= nil and target.panelId == panelId and target.mode ~= "independent"
 end
@@ -920,44 +818,41 @@ local function CollapseToPlacementPowerTypes(powerTypes)
     return placementResources
 end
 
+-- The configured resource list and preview share eligibility, without needing
+-- rendered slots, live geometry, or writes to either settings owner.
+local function IsConfiguredPreviewResource(settings, powerType)
+    local resource = settings.resources and settings.resources[powerType]
+    if powerType == RESOURCE_HEALTH and type(resource) ~= "table" then return false end
+    if resource and resource.enabled == false then return false end
+    if powerType == 0 and settings.hideManaForNonHealer then
+        local specIndex = C_SpecializationInfo.GetSpecialization()
+        if specIndex then
+            local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+            if specID ~= 62 and role ~= "HEALER" then return false end
+        end
+    end
+    return true
+end
+
 local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
     requireRuntimeEligibleSlots)
     includeResourceSlots = includeResourceSlots == true
     local activeResources = CollapseToPlacementPowerTypes(includeResourceSlots
         and (requireRuntimeEligibleSlots and RB.DetermineActiveResources(rbSettings) or GetConfigActiveResources())
         or {})
-    local customBars = includeResourceSlots and CooldownCompanion:GetSpecCustomAuraBars() or {}
     local primarySlots = {}
     local castSlots = {}
     local resourceBarsEnabled = includeResourceSlots and rbSettings and rbSettings.enabled
 
     if includeResourceSlots then
         layout.resources = layout.resources or {}
-        layout.customAuraBarSlots = layout.customAuraBarSlots or {}
-        layout.customBars = layout.customBars or {}
         rbSettings = rbSettings or {}
         rbSettings.resources = rbSettings.resources or {}
     end
 
-    -- Per-slot thickness, resolved exactly as the apply pass resolves it
-    -- (ResourceBar.lua, the customBarHeights branch): the override only
-    -- applies when that layout flag is on, and the axis decides which
-    -- stored key wins. Without this every slot rendered at one uniform
-    -- thickness, so a bar with an override previewed at the wrong size.
-    local globalThickness = includeResourceSlots
-        and tonumber(GetResourceGlobalThickness(rbSettings)) or nil
-
-    local function ResolveSlotThickness(slotLayout)
-        if not (layout.customBarHeights and type(slotLayout) == "table") then
-            return globalThickness
-        end
-        local override
-        if isVerticalLayout then
-            override = slotLayout.barWidth or slotLayout.barHeight
-        else
-            override = slotLayout.barHeight or slotLayout.barWidth
-        end
-        return tonumber(override) or globalThickness
+    local function ResolveSlotThickness(powerType)
+        return ST.ResolveResourceBarGeometry(rbSettings, layout, powerType,
+            ST.GetModuleGeometryHost("resources")).thickness
     end
 
     local function GetSlotColor(powerType)
@@ -996,19 +891,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             rbSettings.resources[renderType] = rbSettings.resources[renderType] or {}
         end
         local resourceConfig = rbSettings.resources[renderType]
-        local showResource = resourceBarsEnabled and (
-            renderType == RESOURCE_HEALTH and resourceConfig.enabled == true
-            or resourceConfig.enabled ~= false
-        )
-        if showResource and renderType == 0 and rbSettings.hideManaForNonHealer then
-            local specIndex = C_SpecializationInfo.GetSpecialization()
-            if specIndex then
-                local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-                if specID ~= 62 and role ~= "HEALER" then
-                    showResource = false
-                end
-            end
-        end
+        local showResource = resourceBarsEnabled and IsConfiguredPreviewResource(rbSettings, renderType)
 
         if showResource then
             local function EnsureLayoutResource()
@@ -1029,7 +912,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 powerType = renderType,
                 label = POWER_NAMES[renderType] or ("Power " .. renderType),
                 shortLabel = POWER_SHORT_NAMES[renderType] or GetShortLabel(POWER_NAMES[renderType] or ("Power " .. renderType)),
-                thickness = ResolveSlotThickness(layout.resources[powerType]),
+                thickness = ResolveSlotThickness(powerType),
                 color = GetSlotColor(renderType),
                 icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
@@ -1070,76 +953,6 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         end
     end
 
-    if resourceBarsEnabled then
-        for customIndex, customAura in ipairs(customBars or {}) do
-            if customAura and customAura.enabled and customAura.spellID
-                and (not requireRuntimeEligibleSlots
-                    or CooldownCompanion:IsCustomBarRuntimeEligible(customAura)) then
-                local customBarId = EnsureCustomBarId(rbSettings, customAura)
-                local spellInfo = C_Spell.GetSpellInfo(customAura.spellID)
-                local label = spellInfo and spellInfo.name or customAura.label or ("Custom Bar " .. customIndex)
-                local slotName = "Custom Bar: " .. label
-                local function EnsureLayoutSlot()
-                    return EnsureCustomBarLayout(rbSettings, nil, customBarId, 1000 + customIndex)
-                end
-
-                table_insert(primarySlots, {
-                    id = "custom:" .. tostring(customBarId),
-                    slotCategory = "primary",
-                    kind = "custom",
-                    customAuraIndex = customIndex,
-                    customBarId = customBarId,
-                    customEntry = {
-                        kind = "custom",
-                        customBarIndex = customIndex,
-                        customBarId = customBarId,
-                        config = customAura,
-                    },
-                    label = slotName,
-                    shortLabel = GetShortLabel(label),
-                    thickness = ResolveSlotThickness(
-                        GetCustomBarLayout(rbSettings, nil, customAura, false)),
-                    color = CloneColor(customAura.barColor, { 0.52, 0.64, 1.0, 1 }),
-                    icon = C_Spell.GetSpellTexture(customAura.spellID) or LAYOUT_PREVIEW_ICON_FALLBACK,
-                    getPos = function()
-                        local slot = GetCustomBarLayout(rbSettings, nil, customAura, false)
-                        if isVerticalLayout then
-                            local pos = slot and slot.verticalPosition
-                            if pos == "left" or pos == "right" then
-                                return pos
-                            end
-                            return (slot and slot.position == "above") and "left" or "right"
-                        end
-                        return (slot and slot.position) or "below"
-                    end,
-                    getOrder = function()
-                        local slot = GetCustomBarLayout(rbSettings, nil, customAura, false)
-                        if isVerticalLayout then
-                            return (slot and slot.verticalOrder) or (slot and slot.order) or (1000 + customIndex)
-                        end
-                        return (slot and slot.order) or (1000 + customIndex)
-                    end,
-                    setPos = function(value)
-                        local slot = EnsureLayoutSlot()
-                        if isVerticalLayout then
-                            slot.verticalPosition = value
-                        else
-                            slot.position = value
-                        end
-                    end,
-                    setOrder = function(value)
-                        local slot = EnsureLayoutSlot()
-                        if isVerticalLayout then
-                            slot.verticalOrder = value
-                        else
-                            slot.order = value
-                        end
-                    end,
-                })
-            end
-        end
-    end
-
     if cbSettings and cbSettings.enabled and (not CooldownCompanion:IsModuleAnchorIndependent("castbar")
         or (IsBarsWorkspaceActive() and CS.barWorkspaceKind == "castbar")) then
         table_insert(castSlots, {
@@ -1151,7 +964,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             -- The cast bar's own height, not the stack's: it used to be
             -- folded into one max with the resource thickness, which
             -- clamped every bar up to whichever was taller.
-            thickness = tonumber(cbSettings.height) or 15,
+            thickness = ST.ResolveCastBarGeometry(cbSettings, ST.GetModuleGeometryHost("castbar")).thickness,
             color = CloneColor(cbSettings.barColor, { 1.0, 0.72, 0.18, 1 }),
             icon = LAYOUT_PREVIEW_ICON_FALLBACK,
             getPos = function()
@@ -1161,7 +974,12 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 return (layout.castBar and layout.castBar.order) or 2000
             end,
             setPos = function(value)
+                -- Pin the displayed screen Y before a side change. Legacy
+                -- character defaults otherwise flip their sign on drop.
+                local _, _, offset = ST.GetCastBarAttachmentOffset(cbSettings, layout)
                 layout.castBar = layout.castBar or { position = "below", order = 2000 }
+                layout.castBar.panelAnchorScreenYOffset = offset
+                layout.castBar.panelAnchorYOffset = nil
                 layout.castBar.position = value
             end,
             setOrder = function(value)
@@ -1181,8 +999,6 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     if slot.kind == "cast" then
                         layout.castBar = layout.castBar or { position = "below", order = 2000 }
                         return layout.castBar
-                    elseif slot.kind == "custom" then
-                        return EnsureCustomBarLayout(rbSettings, nil, slot.customBarId, 1000 + slot.customAuraIndex)
                     end
                     local pt = RB.GetCanonicalPowerType(slot.powerType)
                     layout.resources[pt] = layout.resources[pt] or {}
@@ -1209,132 +1025,20 @@ end
 -- the TARGET past them. Each bucket is its own rank, which is all the sort
 -- and the section-local drag math need to keep them from interleaving.
 local STACK_RANK_FIXED = 0
-local STACK_RANK_AURA_BLOCK_PLAYER = 1
-local STACK_RANK_AURA_BLOCK_TARGET = 2
-local STACK_RANK_CAST = 3
-
--- One test for the sort, the badge and the tooltip: the preview must not
--- carry its own copy of what counts as a block entry.
-local function IsAuraBlockCustomBar(config)
-    return type(config) == "table" and IsAuraBlockEntry(config) == true
-end
-
-local function IsAuraBlockSlot(slot)
-    return slot.kind == "custom"
-        and IsAuraBlockCustomBar(slot.customEntry and slot.customEntry.config)
-end
-
--- Derived exactly the way the live partition derives it, so the canvas can
--- never draw a bucket the stack does not build.
-local function GetAuraBlockSlotUnit(slot)
-    local config = slot.customEntry and slot.customEntry.config
-    if type(config) ~= "table" then
-        return "player"
-    end
-    return GetResolvedCustomAuraBarAuraUnit(config, tonumber(config.spellID)) or "player"
-end
-
--- Which bucket a slot belongs to, or nil for anything outside the block.
--- IDENTITY, never order: the wash colours key off this, so a flipped side
--- still draws your auras blue and the target's gold.
-local function GetSlotBucketId(slot)
-    if not IsAuraBlockSlot(slot) then
-        return nil
-    end
-    if GetAuraBlockSlotUnit(slot) == "target" then
-        return STACK_RANK_AURA_BLOCK_TARGET
-    end
-    return STACK_RANK_AURA_BLOCK_PLAYER
-end
-
--- ORDER, not identity. The two bucket ranks trade places when the side is
--- flipped (auraBlockTargetFirst), which is what makes the sort, the seam
--- runs and the drag containment agree with the live bind order.
-local function GetSlotStackRank(slot, targetFirst, regionOverride)
-    local bucket = GetSlotBucketId(slot)
-    local rank = STACK_RANK_FIXED
+local STACK_RANK_CAST = 1
+local function GetSlotStackRank(slot, regionOverride)
     if slot.kind == "cast" then return STACK_RANK_CAST end
-    if bucket then
-        rank = bucket
-        if targetFirst then
-            rank = bucket == STACK_RANK_AURA_BLOCK_PLAYER
-                and STACK_RANK_AURA_BLOCK_TARGET or STACK_RANK_AURA_BLOCK_PLAYER
-        end
-    end
     local region = regionOverride
     if region == nil then region = slot.getRegionRank and slot.getRegionRank() or 0 end
-    return rank + region * 0.25
+    return STACK_RANK_FIXED + region * 0.25
 end
-
--- Resolved ONCE per sort or layout pass and carried on the lane, never
--- re-read per comparator call: every rank in a pass has to answer to the same
--- flag or the comparator stops being a total order.
---
--- Reached through RB rather than through a file-level alias: this chunk sits
--- on Lua 5.1's 200-local ceiling, so the two bucket-order helpers are the
--- ones that pay for it.
-local function GetPreviewTargetFirst(preview, side)
-    return RB.IsAuraBlockTargetFirst(preview and preview.rbSettings, side) == true
-end
-
--- The saved side a lane's block bars share, or nil plus a split marker when
--- they straddle two sides — which only the merged independent lane can
--- render. The bucket-order flag belongs to THIS side: the merged lane's own
--- label is just the dominant side and can disagree with where the bars are
--- actually saved, and the live stack builds its containers per saved side.
-local function GetLaneBlockFlagSide(slots)
-    local flagSide
-    for _, slot in ipairs(slots or {}) do
-        if IsAuraBlockSlot(slot) then
-            local pos = slot.getPos()
-            if flagSide == nil then
-                flagSide = pos
-            elseif flagSide ~= pos then
-                return nil, true
-            end
-        end
-    end
-    return flagSide, false
-end
-
--- Bucket membership is worn by the MEMBER BARS themselves, never by a shared
--- frame around them: anything drawn around the run has to shrink when a bar
--- lifts out of the stack, and a bucket that shrinks mid-drag reads as one
--- with no room for the bar in flight. Both colors are already in this
--- canvas's vocabulary - the slot-hover blue for your own auras, the
--- aura-block tooltip's gold for the target's.
---
--- `wash` is applied with ADD, the same blend the hover and selection glows
--- use, so it can only lift the bar and never mutes the colour the owner is
--- judging. The two alphas are not equal on purpose: they are matched by the
--- LUMA each hue adds (blue 0.14 and gold 0.10 both land at ~0.08), so neither
--- bucket reads louder than the other.
---
--- `gap*` is the drop cue and is drawn over empty lane, not over a bar, so it
--- is a plain translucent fill a step stronger than the wash. The inner fill
--- is part of the same cue and moves with it, or a target-bucket drop would
--- open a blue gap inside a gold run.
-local LAYOUT_PREVIEW_BUCKET_TINTS = {
-    [STACK_RANK_AURA_BLOCK_PLAYER] = {
-        wash = { 0.38, 0.60, 0.92, 0.14 },
-        gapBg = { 0.38, 0.60, 0.92, 0.26 },
-        gapBorder = { 0.38, 0.60, 0.92, 0.95 },
-        gapInner = { 0.38, 0.60, 0.92, 0.22 },
-    },
-    [STACK_RANK_AURA_BLOCK_TARGET] = {
-        wash = { 1.00, 0.82, 0.20, 0.10 },
-        gapBg = { 1.00, 0.82, 0.20, 0.20 },
-        gapBorder = { 1.00, 0.82, 0.20, 0.95 },
-        gapInner = { 1.00, 0.82, 0.20, 0.18 },
-    },
-}
 
 -- Sections run the same direction the lane does: on a reversed lane index 1
 -- is the slot furthest from the panel, so the block has to come first there
 -- and last everywhere else.
-local function CompareStackRank(a, b, reversed, targetFirst)
-    local aRank = GetSlotStackRank(a, targetFirst)
-    local bRank = GetSlotStackRank(b, targetFirst)
+local function CompareStackRank(a, b, reversed)
+    local aRank = GetSlotStackRank(a)
+    local bRank = GetSlotStackRank(b)
     if aRank == bRank then
         return nil
     end
@@ -1344,7 +1048,7 @@ local function CompareStackRank(a, b, reversed, targetFirst)
     return aRank < bRank
 end
 
-local function SortSlotsForSide(slots, side, reversed, targetFirst)
+local function SortSlotsForSide(slots, side, reversed)
     local out = {}
     for _, slot in ipairs(slots) do
         if slot.getPos() == side then
@@ -1352,7 +1056,7 @@ local function SortSlotsForSide(slots, side, reversed, targetFirst)
         end
     end
     table_sort(out, function(a, b)
-        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        local rankResult = CompareStackRank(a, b, reversed)
         if rankResult ~= nil then
             return rankResult
         end
@@ -1370,8 +1074,8 @@ local function SortSlotsForSide(slots, side, reversed, targetFirst)
         -- other way round from the stack it is supposed to mirror. A reversed
         -- lane runs the ascending live sequence backwards, so the tie-break
         -- follows the primary comparison's direction.
-        local aKey = tostring(a.powerType or a.customBarId or "")
-        local bKey = tostring(b.powerType or b.customBarId or "")
+        local aKey = tostring(a.powerType or "")
+        local bKey = tostring(b.powerType or "")
         if reversed then
             return aKey > bKey
         end
@@ -1398,12 +1102,8 @@ local function SortSlotsForIndependentStack(slots, firstSide, secondSide, previe
     -- stack. Ties use the normal below/right direction.
     local side = firstCount > secondCount and firstSide or secondSide
     local reversed = side == firstSide
-    -- The flag comes from the side the block bars are SAVED on, not from the
-    -- dominant side this merged lane happens to be labelled with.
-    local targetFirst = GetPreviewTargetFirst(preview,
-        GetLaneBlockFlagSide(out) or side)
     table_sort(out, function(a, b)
-        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        local rankResult = CompareStackRank(a, b, reversed)
         if rankResult ~= nil then
             return rankResult
         end
@@ -1558,184 +1258,8 @@ local function ConfigureSlotChrome(frame, slot, skin, isVertical)
         frame.selectedHighlight:SetFrameLevel(frame:GetFrameLevel() + 19)
         frame.selectedHighlight:Hide()
     end
-    if frame.identityLayer then
-        frame.identityLayer:SetFrameLevel(frame:GetFrameLevel() + 18)
-        frame.identityLayer:Hide()
-    end
-
-    -- Aura-block membership, worn by the bar itself. Elevated above the bar
-    -- composition (a texture at the slot's own level renders UNDER the bar
-    -- frames inside previewCanvas) but under the identity marks and the
-    -- hover/selection glows, so those stay the topmost read.
-    --
-    -- Runs on EVERY configure, both legs: a pooled slot arrives wearing
-    -- whatever its last owner left on it, so the non-bucket case has to clear
-    -- the wash rather than skip it.
-    local tint = LAYOUT_PREVIEW_BUCKET_TINTS[GetSlotBucketId(slot)]
-    local wash = frame.bucketWash
-    if tint then
-        if not wash then
-            wash = CreateFrame("Frame", nil, frame)
-            wash:SetAllPoints(frame.previewCanvas)
-            wash:EnableMouse(false)
-            wash.tex = wash:CreateTexture(nil, "OVERLAY")
-            wash.tex:SetAllPoints()
-            wash.tex:SetBlendMode("ADD")
-            frame.bucketWash = wash
-        end
-        wash:SetFrameLevel(frame:GetFrameLevel() + 17)
-        wash.tex:SetColorTexture(tint.wash[1], tint.wash[2], tint.wash[3], tint.wash[4])
-        -- Full-rect is the default shape; the slot render re-shapes the wash
-        -- onto the capacity blocks when the bar renders as segments (pooled
-        -- slots may arrive block-shaped from their last owner, so both legs
-        -- reset here every configure).
-        wash.color = tint.wash
-        wash.tex:Show()
-        if wash.blockTexes then
-            for _, blockTex in ipairs(wash.blockTexes) do
-                blockTex:Hide()
-            end
-        end
-        wash:Show()
-    elseif wash then
-        wash:Hide()
-    end
-
     frame.previewCanvas:ClearAllPoints()
     frame.previewCanvas:SetAllPoints(frame)
-end
-
--- Identity marks for one custom-bar slot. Runs AFTER the content scale is
--- known so both marks can counter-scale and stay legible on a preview that
--- has been shrunk to fit. The badge is permanent (a small corner glyph
--- reads as chrome, and the setting it stands for has no other visual); the
--- name is laid out here but only shown while the preview is hovered.
--- widthOverride: for the drag ghost, whose slot takes its size from anchors
--- and would measure nothing until the next layout pass.
-local function ApplySlotIdentityMarks(preview, frame, scale, widthOverride)
-    local layer = frame and frame.identityLayer
-    if not layer then return end
-    local slot = frame.slotData
-    if not (slot and slot.kind == "custom") then
-        layer:Hide()
-        return
-    end
-
-    scale = math_max(scale or 1, 0.01)
-    local isVertical = frame._cdcIdentityVertical == true
-
-    -- A narrow vertical bar cannot carry a name, so it gets the same short
-    -- label the drag chrome uses; its plate is allowed to overhang the thin
-    -- bar, which a transient overlay can afford to do.
-    local text = isVertical and slot.shortLabel or slot.label
-    -- Slot labels are stored as "Custom Bar: <name>"; the prefix is noise
-    -- when every labelled bar in the canvas is a custom bar.
-    if type(text) == "string" then
-        text = string.gsub(text, "^Custom Bar:%s*", "")
-    end
-
-    local label = layer.label
-    if text and text ~= "" then
-        local fontFile = label:GetFont()
-        -- Slug outline instead of a backing plate: it keeps the name
-        -- legible over any bar color without laying an opaque rectangle
-        -- across the bar the owner is trying to look at.
-        label:SetFont(fontFile,
-            math_max(8, math_min(14, LAYOUT_PREVIEW_IDENTITY_FONT_SCREEN_SIZE / scale)),
-            LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE)
-        ST.ApplyFontShadowForOutline(label, LAYOUT_PREVIEW_IDENTITY_FONT_OUTLINE)
-        label:SetText(text)
-        label:SetTextColor(1, 1, 1, 1)
-        label:SetJustifyH("CENTER")
-        label:ClearAllPoints()
-        label:SetPoint("CENTER", layer, "CENTER", 0, 0)
-        if isVertical then
-            label:SetWidth(0)
-        else
-            -- Snug to the text, but never wider than the bar: a long name
-            -- truncates with an ellipsis instead of overflowing. Measured
-            -- off the slot frame, which was explicitly sized; the layer
-            -- inherits its size by anchor and reports nothing until the
-            -- next layout pass.
-            local available = math_max(1,
-                (widthOverride or frame:GetWidth() or 0) - (LAYOUT_PREVIEW_IDENTITY_INSET * 2))
-            label:SetWidth(math_min(label:GetStringWidth() + 1, available))
-        end
-        layer._cdcHasLabel = true
-        label:SetShown(preview.identityLabelsShown == true)
-    else
-        layer._cdcHasLabel = nil
-        label:Hide()
-    end
-
-    local badge = layer.badge
-    local config = slot.customEntry and slot.customEntry.config
-    if type(config) == "table" and config.hideWhenInactive == true then
-        local isAuraBlockBadge = IsAuraBlockCustomBar(config)
-        local screenSize = isAuraBlockBadge
-            and LAYOUT_PREVIEW_AURA_BLOCK_BADGE_SCREEN_SIZE
-            or LAYOUT_PREVIEW_VISIBILITY_BADGE_SCREEN_SIZE
-        local size = math_min(24, math_max(12,
-            screenSize / scale))
-        badge:SetAtlas(isAuraBlockBadge
-            and LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS
-            or LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
-        badge:SetSize(size, size)
-        badge:ClearAllPoints()
-        if isVertical then
-            badge:SetPoint("TOP", layer, "TOP", 0, 0)
-        else
-            badge:SetPoint("RIGHT", layer, "RIGHT", 0, 0)
-        end
-        badge:Show()
-    else
-        badge:Hide()
-    end
-
-    layer:Show()
-end
-
--- Only a CUSTOM bar reveals the names: resources are identified by their
--- own well-known colors and never carry a label, so passing over one has
--- no reason to light the set up.
-local function AnyCustomPreviewSlotHovered(preview)
-    local pool = preview.pools and preview.pools.slots
-    if not pool then return false end
-    for index = 1, (preview.used.slots or 0) do
-        local frame = pool[index]
-        if frame and frame.slotData and frame.slotData.kind == "custom"
-            and frame:IsShown() and frame:IsMouseOver() then
-            return true
-        end
-    end
-    return false
-end
-
--- A reorder freezes the reveal wherever it was when the drag began. Slots
--- tween out from under the cursor while dragging, so enter/leave fire
--- continuously and the names flickered; and mid-reorder is precisely when
--- a stable read of which bar is which is worth the most.
-local function IsLayoutDragActive()
-    return CS.dragState ~= nil and CS.dragState.kind == LAYOUT_PREVIEW_DRAG_KIND
-end
-
--- Reveal or hide every custom bar's name at once. Hovering ONE bar names
--- them ALL: the point is the whole map in one glance, which naming only the
--- hovered bar would not give (the tooltip already does that).
-local function SetIdentityLabelsShown(preview, shown)
-    shown = shown == true
-    if IsLayoutDragActive() or preview.identityLabelsShown == shown then
-        return
-    end
-    preview.identityLabelsShown = shown
-    local pool = preview.pools and preview.pools.slots
-    if not pool then return end
-    for index = 1, (preview.used.slots or 0) do
-        local layer = pool[index] and pool[index].identityLayer
-        if layer and layer._cdcHasLabel then
-            layer.label:SetShown(shown)
-        end
-    end
 end
 
 local function HideUnusedSlotVisuals(frame)
@@ -1755,63 +1279,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
     local layout = preview.layout
     local segmentGap = (layout and layout.segmentGap) or rbSettings.segmentGap or 4
 
-    if slot.kind == "custom" then
-        local customBars = CooldownCompanion:GetSpecCustomAuraBars()
-        barInfo = PrepareCustomAuraBar(
-            frame.previewCanvas,
-            barInfo,
-            slot.customEntry,
-            customBars,
-            rbSettings,
-            preview.isVerticalLayout,
-            IsVerticalFillReversed(rbSettings),
-            width,
-            height,
-            segmentGap
-        )
-        frame._cdcCustomBarLength = preview.isVerticalLayout and height or width
-        -- The Active Aura preview state, on the canvas rather than out in the
-        -- world (owner ruling 2026-07-26). Written every pass so stopping the
-        -- preview clears it from a recycled frame.
-        local cabConfig = slot.customEntry and slot.customEntry.config
-        -- The pandemic recolor renders over the aura fill, so its preview
-        -- arms the Active Aura stand-in too (union), while the pandemic
-        -- flag itself stays owned by its own command-center control. Gated
-        -- on the entry's own enable, like the recolor itself: a stale map
-        -- entry left by unchecking Show Pandemic Color must not keep the
-        -- stand-in armed after its control disappeared.
-        local pandemicPreview = cabConfig
-            and cabConfig.pandemicEffect == true
-            and CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig)
-        -- The marker rides the duration text the Active Aura stand-in writes,
-        -- so it unions into that flag the same way the recolor does. Gated on
-        -- the same predicate the command-center control offers itself on, or
-        -- the stand-in strands armed with no toggle left to stop it.
-        local markerPreview = cabConfig
-            and CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig)
-            and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cabConfig)
-        barInfo.frame._barAuraActivePreview = (cabConfig
-            and (CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig)
-                or pandemicPreview or markerPreview))
-            or nil
-        barInfo.frame._barPandemicPreview = pandemicPreview or nil
-        barInfo.frame._barMarkerPreview = markerPreview or nil
-        -- The Cooldown preview state for spell custom bars, same canvas-only
-        -- model: the kind ("cooldown"/"recharge") or nil, written every pass
-        -- so stopping the preview clears it from a recycled frame. Gated on
-        -- the same charge resolve the command-center control offers itself
-        -- on, or a "recharge" stand-in strands armed after a talent or spec
-        -- change takes the spell's extra charge — and its control — away.
-        local cooldownPreviewKind = cabConfig
-            and CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig)
-            or nil
-        if cooldownPreviewKind == "recharge"
-            and not (RB.GetCustomBarReadyChargeCount
-                and RB.GetCustomBarReadyChargeCount(cabConfig)) then
-            cooldownPreviewKind = nil
-        end
-        barInfo.frame._barCooldownPreview = cooldownPreviewKind
-    elseif slot.powerType == 101 then
+    if slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
             if barInfo and barInfo.frame then
                 barInfo.frame:Hide()
@@ -1822,7 +1290,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 powerType = slot.powerType,
             }
         end
-        barInfo.frame:SetSize(width, height)
+        RB.SetResourceBarSize(barInfo.frame, width, height)
         StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
     elseif slot.powerType == RESOURCE_HEALTH then
         if not barInfo or barInfo.barType ~= "health_continuous" then
@@ -1835,7 +1303,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 powerType = slot.powerType,
             }
         end
-        barInfo.frame:SetSize(width, height)
+        RB.SetResourceBarSize(barInfo.frame, width, height)
         StyleHealthBar(barInfo.frame, rbSettings)
     elseif slot.powerType == RESOURCE_MAELSTROM_WEAPON then
         -- Mirrors the three real MW shapes exactly (ResourceBar.lua's apply
@@ -1853,7 +1321,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     powerType = slot.powerType,
                 }
             end
-            barInfo.frame:SetSize(width, height)
+            RB.SetResourceBarSize(barInfo.frame, width, height)
             StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
         elseif mwStyle == "segments" then
             if not barInfo or barInfo.barType ~= "mw_segments"
@@ -1867,7 +1335,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     powerType = slot.powerType,
                 }
             end
-            barInfo.frame:SetSize(width, height)
+            RB.SetResourceBarSize(barInfo.frame, width, height)
             LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
             local baseColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, mwMaxStacks do
@@ -1886,7 +1354,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     powerType = slot.powerType,
                 }
             end
-            barInfo.frame:SetSize(width, height)
+            RB.SetResourceBarSize(barInfo.frame, width, height)
             LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments)
             local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, halfSegments do
@@ -1924,7 +1392,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 -- restamps identity on reuse for exactly this reason.
                 barInfo.powerType = slot.powerType
             end
-            barInfo.frame:SetSize(width, height)
+            RB.SetResourceBarSize(barInfo.frame, width, height)
             StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
         else
             if not barInfo or barInfo.barType ~= "stackaura_segments"
@@ -1941,7 +1409,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 -- Same pooled-identity restamp as the continuous shape above.
                 barInfo.powerType = slot.powerType
             end
-            barInfo.frame:SetSize(width, height)
+            RB.SetResourceBarSize(barInfo.frame, width, height)
             LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
             local baseColor = GetResourceColors(slot.powerType, rbSettings)
             for i = 1, stackMax do
@@ -1973,7 +1441,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             -- resolve from it.
             barInfo.powerType = slot.powerType
         end
-        barInfo.frame:SetSize(width, height)
+        RB.SetResourceBarSize(barInfo.frame, width, height)
         LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
         StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings)
     else
@@ -1994,7 +1462,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             -- from it.
             barInfo.powerType = slot.powerType
         end
-        barInfo.frame:SetSize(width, height)
+        RB.SetResourceBarSize(barInfo.frame, width, height)
         StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
     end
 
@@ -2013,82 +1481,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             and CooldownCompanion:IsResourceAuraActivePreviewActive(barInfo.powerType)
             or nil
         ApplyPreviewBarState(barInfo, rbSettings)
-        -- The aura-absent layer for stacks-mode aura bars: the real
-        -- capacity blocks and their per-block rings, the same call the live
-        -- apply pass makes. Without it a stack bar previewed as one
-        -- continuous fill — the headline fidelity gap.
-        --
-        -- includeShell because the canvas renders hide-while-inactive bars
-        -- (they must stay visible to edit); barLength because the bar frame
-        -- has not been through a layout pass this frame, so the block layout
-        -- cannot measure it; maxStacks because a bar the config shows may
-        -- have no live slot running and therefore no cached max.
-        if slot.kind == "custom" and RB.ApplyCustomBarAbsentStackVisuals then
-            -- One resolved max for the blocks AND for the stand-in's lit run
-            -- and stack text, so the number of blocks drawn and the number
-            -- the text quotes can never disagree.
-            local standInMax = RB.GetCustomBarStandInStackMax
-                and RB.GetCustomBarStandInStackMax(barInfo, rbSettings) or nil
-            RB.ApplyCustomBarAbsentStackVisuals(barInfo, rbSettings, {
-                includeShell = true,
-                barLength = frame._cdcCustomBarLength,
-                maxStacks = standInMax,
-                -- The Active Aura stand-in on a stacks bar: the blocks are
-                -- the bar, so the lit run is painted here rather than as a
-                -- fill over the top of them.
-                litStacks = RB.GetCustomBarStandInLitStacks
-                    and RB.GetCustomBarStandInLitStacks(barInfo, rbSettings, standInMax) or nil,
-                -- The blocks are the visible fill in segmented stack mode,
-                -- so the Pandemic preview colors their lit run here instead
-                -- of tinting the hidden whole-bar StatusBar beneath them.
-                pandemicActive = barInfo.frame._barPandemicPreview == true,
-            })
-            -- Bucket wash containment: on a stacks bar the blocks ARE the
-            -- bar and the gaps are genuinely empty, so the full-rect wash
-            -- read as one solid tinted bar over them. Re-shape the wash onto
-            -- the block rects; every other shape keeps the whole-canvas wash
-            -- ConfigureSlotChrome laid down.
-            local wash = frame.bucketWash
-            if wash and wash:IsShown() and RB.GetCustomBarActiveStackBlocks then
-                local blocks = RB.GetCustomBarActiveStackBlocks(barInfo)
-                if blocks then
-                    local texes = wash.blockTexes
-                    if not texes then
-                        texes = {}
-                        wash.blockTexes = texes
-                    end
-                    local color = wash.color
-                    for i, block in ipairs(blocks) do
-                        local blockTex = texes[i]
-                        if not blockTex then
-                            blockTex = wash:CreateTexture(nil, "OVERLAY")
-                            blockTex:SetBlendMode("ADD")
-                            texes[i] = blockTex
-                        end
-                        blockTex:ClearAllPoints()
-                        blockTex:SetAllPoints(block)
-                        blockTex:SetColorTexture(color[1], color[2], color[3], color[4])
-                        -- Blocks past the resolved max stay laid out at
-                        -- alpha 0; mirror it so the wash never outlines a
-                        -- block the bar is not drawing.
-                        blockTex:SetAlpha(block:GetAlpha())
-                        blockTex:Show()
-                    end
-                    for i = #blocks + 1, #texes do
-                        texes[i]:Hide()
-                    end
-                    wash.tex:Hide()
-                end
-            end
-        end
-        if barInfo.frame._barAuraActivePreview and RB.AnimatePreviewBarAura then
-            table_insert(preview.animated, {
-                barInfo = barInfo,
-                Tick = function(entry)
-                    RB.AnimatePreviewBarAura(entry.barInfo)
-                end,
-            })
-        elseif barInfo.barType == "health_continuous"
+        if barInfo.barType == "health_continuous"
             and RB.IsHealthEffectPreviewAnimated
             and RB.IsHealthEffectPreviewAnimated() then
             table_insert(preview.animated, {
@@ -2574,143 +1967,6 @@ end
 -- The sort already guarantees the buckets do not interleave, so a run is
 -- simply the stretch of one bucket IDENTITY; everything else breaks the run.
 -- Only the seam handle needs this: membership itself is drawn per bar.
-function SwapSeam.BuildRuns(slotModels)
-    local runs = {}
-    local current
-    for index, slot in ipairs(slotModels or {}) do
-        local bucket = GetSlotBucketId(slot)
-        if bucket then
-            if current and current.bucket == bucket then
-                current.last = index
-            else
-                current = { bucket = bucket, first = index, last = index }
-                table_insert(runs, current)
-            end
-        else
-            current = nil
-        end
-    end
-    return runs
-end
-
--- Sized against the fit-to-host scale, like the identity marks. Both textures
--- are anchored by CENTER at creation, so resizing alone keeps them on the
--- seam.
-function SwapSeam.ApplyScale(frame, scale)
-    if not (frame and frame.glyph) then return end
-    scale = math_max(scale or 1, 0.01)
-    local size = math_min(26, math_max(13, SwapSeam.SCREEN_SIZE / scale))
-    frame:SetSize(size, size)
-    frame.glyph:SetSize(size, size)
-    frame.hover:SetSize(size * SwapSeam.HOVER_SCALE, size * SwapSeam.HOVER_SCALE)
-end
-
-function SwapSeam.OnEnter(self)
-    local color = SwapSeam.HOVER
-    self.glyph:SetVertexColor(color[1], color[2], color[3], color[4])
-    self.hover:Show()
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Swap Group Order", 1, 1, 1)
-    GameTooltip:AddLine("Blue bars track your auras. Gold bars track the target's.", 0.7, 0.7, 0.7, true)
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Bars cannot move between the groups. Swapping moves the other group next to the panel.", 0.7, 0.7, 0.7, true)
-    GameTooltip:Show()
-end
-
-function SwapSeam.ApplyRestingLook(self)
-    local color = SwapSeam.REST
-    self.glyph:SetVertexColor(color[1], color[2], color[3], color[4])
-    self.hover:Hide()
-end
-
-function SwapSeam.OnLeave(self)
-    SwapSeam.ApplyRestingLook(self)
-    GameTooltip:Hide()
-end
-
--- The handle on the seam between a lane's two aura-block buckets, and the
--- only place the bucket order can be changed: containment forbids dragging a
--- bar out of its own bucket, so the ORDER OF THE BUCKETS needs its own
--- control. Drawn only when the lane holds both buckets, which is the only
--- time there is an order to swap.
---
--- It rides the seam ALONG the stack and hangs just off the bars' outer edge
--- ACROSS it: clear of the bar centre, where the identity name sits, and of
--- the far edge, where the aura-block badge does.
-function SwapSeam.Build(preview, lane)
-    lane.swapButton = nil
-    local runs = SwapSeam.BuildRuns(lane.slotModels)
-    if #runs ~= 2 then
-        return
-    end
-
-    -- Which side's flag this seam owns: the side the bucket bars are SAVED
-    -- on. The merged independent lane renders BOTH saved sides at once, and
-    -- buckets living on different saved sides are separate one-bucket
-    -- containers live — a swap would flip one side's flag and change nothing
-    -- in play, so the handle only appears when every bucket bar shares one
-    -- saved side, and it reads/writes THAT side's flag.
-    local flagSide, split = GetLaneBlockFlagSide(lane.slotModels)
-    if split then
-        return
-    end
-    flagSide = flagSide or lane.side
-
-    -- No drag is open on the build path, so display index is model index.
-    local xa, ya, wa, ha = BuildLaneSlotGeometry(lane, runs[1].last)
-    local xb, yb, wb, hb = BuildLaneSlotGeometry(lane, runs[2].first)
-    local hang = SwapSeam.HANG
-
-    -- Anchored by its bars-facing EDGE, not its centre: the handle sits
-    -- wholly outside the bars, and the fit-to-host re-scale grows it away
-    -- from them instead of into them.
-    local point, px, py
-    if lane.axis == "x" then
-        point = "TOP"
-        px = ((xa + wa) + xb) / 2
-        py = (yb - hb) - hang
-    else
-        point = "RIGHT"
-        px = xb - hang
-        py = ((ya - ha) + yb) / 2
-    end
-
-    local frame = SwapSeam.Acquire(preview, lane.frame)
-    frame:SetFrameLevel(lane.frame:GetFrameLevel() + 3)
-    -- Provisional size; the fit-to-host pass re-runs ApplyScale once the
-    -- composition's scale is known.
-    SwapSeam.ApplyScale(frame, 1)
-    -- The resting look, NOT OnLeave: a rebuild can land while the cursor is
-    -- on a bar, and hiding the tooltip here would take that bar's away.
-    SwapSeam.ApplyRestingLook(frame)
-    frame:ClearAllPoints()
-    frame:SetPoint(point, lane.frame, "TOPLEFT", px, py)
-
-    local side = flagSide
-    frame:SetScript("OnEnter", SwapSeam.OnEnter)
-    frame:SetScript("OnLeave", SwapSeam.OnLeave)
-    frame:SetScript("OnClick", function()
-        local settings = preview.rbSettings
-        RB.SetAuraBlockTargetFirst(settings, side, not RB.IsAuraBlockTargetFirst(settings, side))
-        GameTooltip:Hide()
-        -- The drop-commit refresh, verbatim: the flag reorders the live
-        -- buckets, and the rebuild is what re-ranks this canvas.
-        CooldownCompanion:ApplyResourceBars()
-        -- In combat the block rebind defers, but its internal reason never
-        -- prints the "applies when combat ends" notice. This edit is
-        -- config-originated, so say so; out of combat the apply above
-        -- already rebound and this would only run a redundant pass.
-        if InCombatLockdown() then
-            CooldownCompanion:RequestAuraRebind("config")
-        end
-        CooldownCompanion:RepositionCastBar()
-        CooldownCompanion:UpdateAnchorStacking()
-        CooldownCompanion:RefreshConfigPanel()
-    end)
-
-    lane.swapButton = frame
-end
-
 -- The insert index a drop is ALLOWED to take, clamped out of the raw one.
 -- `filtered` is the destination lane's slots with the dragged one lifted out.
 --
@@ -2731,18 +1987,17 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
         return math_max(1, math_min(count + 1, insertIndex or 1))
     end
 
-    local targetFirst = lane.targetFirst == true
     -- Sections run the lane's own direction: on a reversed lane index 1 is
     -- the slot furthest from the panel, so ranks descend there.
     local reversed = lane.reversed == true
     -- Every new attached placement has destination region rank zero: main
     -- placements save main, and split panel destinations have no region tie.
     -- The source's collapsed-stack rank must not constrain the landing.
-    local rank = GetSlotStackRank(slotData, targetFirst, 0)
+    local rank = GetSlotStackRank(slotData, 0)
 
     local lower = 1
     for index = 1, count do
-        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local other = GetSlotStackRank(filtered[index])
         local precedes
         if reversed then precedes = other > rank else precedes = other < rank end
         if not precedes then
@@ -2753,7 +2008,7 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
 
     local upper = count + 1
     for index = count, 1, -1 do
-        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local other = GetSlotStackRank(filtered[index])
         local follows
         if reversed then follows = other < rank else follows = other > rank end
         if not follows then
@@ -2848,6 +2103,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
     if type(slot) ~= "table" then
         return false
     end
+    if ST._HandleModuleThicknessCopy and ST._HandleModuleThicknessCopy(slot) then return true end
     local allowToggle = not CS.spellbookPanelDocked
 
     -- Unified anchor preview (buttons view): route to the unified bar
@@ -2876,21 +2132,46 @@ local function SelectPreviewSlot(slot, modifierMulti)
         return true
     end
 
-    if slot.kind == "custom" and slot.customBarId ~= nil and ST._SelectConfigCustomBar then
-        if modifierMulti and ST._ToggleConfigCustomBarMultiSelect then
-            if not CS.selectedCustomBarId then
-                ST._SelectConfigCustomBar(slot.customBarId)
-            end
-            ST._ToggleConfigCustomBarMultiSelect(slot.customBarId)
-        else
-            ST._SelectConfigCustomBar(slot.customBarId, {
-                toggle = allowToggle,
-            })
-        end
-        return true
-    end
-
     return false
+end
+ST._SelectPanelAttachmentModule = SelectPreviewSlot
+
+local function ApplySlotSelection(slotFrame, slotModel, vertical, slotExtent)
+    if ST._ApplyModuleCopyTargetVisuals then ST._ApplyModuleCopyTargetVisuals(slotFrame, slotModel) end
+    local isSelected
+    if IsBarsWorkspaceActive() then
+        isSelected = (slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar")
+            or (slotModel.kind == "resource" and slotModel.powerType ~= nil
+                and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
+    else
+        local kind = CS.unifiedBarKind
+        isSelected = (kind == "resource" and slotModel.kind == "resource"
+                and slotModel.powerType ~= nil
+                and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
+            or (kind == "cast" and slotModel.kind == "cast")
+    end
+    if isSelected and slotFrame.selectedHighlight then
+        local marker = slotFrame.selectedHighlight
+        local arrowSize = math_max(14, math_min(28, slotExtent + 6))
+        marker.side1:SetSize(arrowSize, arrowSize)
+        marker.side2:SetSize(arrowSize, arrowSize)
+        marker.side1:ClearAllPoints()
+        marker.side2:ClearAllPoints()
+        if vertical then
+            -- Tall vertical bar: arrows above and below, pointing inward
+            marker.side1:SetAtlas("npe_arrowdown", false)
+            marker.side1:SetPoint("BOTTOM", marker, "TOP", 0, 2)
+            marker.side2:SetAtlas("npe_arrowup", false)
+            marker.side2:SetPoint("TOP", marker, "BOTTOM", 0, -2)
+        else
+            -- Wide horizontal bar: arrows at the sides, pointing inward
+            marker.side1:SetAtlas("npe_arrowright", false)
+            marker.side1:SetPoint("RIGHT", marker, "LEFT", -2, 0)
+            marker.side2:SetAtlas("npe_arrowleft", false)
+            marker.side2:SetPoint("LEFT", marker, "RIGHT", 2, 0)
+        end
+        marker:Show()
+    end
 end
 
 local function BuildLane(preview, parent, layoutDrag, title, width, height, axis, side, reversed, slotModels, slotWidth, slotHeight, acceptedCategory)
@@ -2908,8 +2189,6 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         -- side, not lane side: on the merged independent lane the two can
         -- disagree (a split-side lane falls back to the lane side, where the
         -- flag is moot — the seam never builds there).
-        targetFirst = GetPreviewTargetFirst(preview,
-            GetLaneBlockFlagSide(slotModels) or side),
         slotModels = slotModels,
         baseWidth = width,
         baseHeight = height,
@@ -2954,47 +2233,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         -- whichever kind it is; in the buttons view (unified anchor preview)
         -- the highlight follows the unified bar selection, so a stale
         -- workspace selection can't light a bar up.
-        local isSelected
-        if IsBarsWorkspaceActive() then
-            isSelected = (slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar")
-                or (slotModel.kind == "resource" and slotModel.powerType ~= nil
-                    and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
-                or (slotModel.kind == "custom" and slotModel.customBarId ~= nil
-                    and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
-                        or (CS.selectedCustomBars and CS.selectedCustomBars[slotModel.customBarId] == true)))
-        else
-            local kind = CS.unifiedBarKind
-            isSelected = (kind == "resource" and slotModel.kind == "resource"
-                    and slotModel.powerType ~= nil
-                    and tostring(CS.selectedResourcePowerType) == tostring(slotModel.powerType))
-                or (kind == "custom" and slotModel.kind == "custom"
-                    and slotModel.customBarId ~= nil
-                    and (tostring(CS.selectedCustomBarId) == tostring(slotModel.customBarId)
-                        or CS.selectedCustomBars[slotModel.customBarId] == true))
-                or (kind == "cast" and slotModel.kind == "cast")
-        end
-        if isSelected and slotFrame.selectedHighlight then
-            local marker = slotFrame.selectedHighlight
-            local arrowSize = math_max(14, math_min(28, slotExtent + 6))
-            marker.side1:SetSize(arrowSize, arrowSize)
-            marker.side2:SetSize(arrowSize, arrowSize)
-            marker.side1:ClearAllPoints()
-            marker.side2:ClearAllPoints()
-            if axis == "x" then
-                -- Tall vertical bar: arrows above and below, pointing inward
-                marker.side1:SetAtlas("npe_arrowdown", false)
-                marker.side1:SetPoint("BOTTOM", marker, "TOP", 0, 2)
-                marker.side2:SetAtlas("npe_arrowup", false)
-                marker.side2:SetPoint("TOP", marker, "BOTTOM", 0, -2)
-            else
-                -- Wide horizontal bar: arrows at the sides, pointing inward
-                marker.side1:SetAtlas("npe_arrowright", false)
-                marker.side1:SetPoint("RIGHT", marker, "LEFT", -2, 0)
-                marker.side2:SetAtlas("npe_arrowleft", false)
-                marker.side2:SetPoint("LEFT", marker, "RIGHT", 2, 0)
-            end
-            marker:Show()
-        end
+        ApplySlotSelection(slotFrame, slotModel, axis == "x", slotExtent)
         slotFrame:SetScript("OnMouseDown", function(self, button)
             if button ~= "LeftButton" or GetCursorInfo() or preview.standaloneCast then return end
             layoutDrag.slotCategory = slotModel.slotCategory
@@ -3013,22 +2252,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         end)
         slotFrame:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" then
-                if slotModel.kind == "custom" and slotModel.customBarId ~= nil then
-                    if IsBarsWorkspaceActive() then
-                        ST._SelectConfigCustomBar(slotModel.customBarId)
-                        CooldownCompanion:RefreshConfigPanel()
-                    elseif ST._SelectUnifiedAnchorBar
-                        and ST._SelectUnifiedAnchorBar(slotModel, { toggle = false }) then
-                        -- Unified anchor preview (buttons view): right-click
-                        -- selects like a left click, minus the toggle-off -
-                        -- re-right-clicking the selected bar must keep it
-                        -- selected under its menu.
-                        CooldownCompanion:RefreshConfigPanel()
-                    end
-                    if ST._OpenConfigCustomBarMenu then
-                        ST._OpenConfigCustomBarMenu(slotModel.customBarId)
-                    end
-                end
+                if ST._ShowModuleThicknessMenu then ST._ShowModuleThicknessMenu(slotModel) end
                 return
             end
 
@@ -3065,11 +2289,6 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             if self.hoverHighlight then
                 self.hoverHighlight:Show()
             end
-            -- Names every custom bar, not just this one — and only a
-            -- custom bar triggers it.
-            if slotModel.kind == "custom" then
-                SetIdentityLabelsShown(preview, true)
-            end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
             if lane.placementLabel then GameTooltip:AddLine(lane.placementLabel, 0.8, 0.8, 0.8) end
@@ -3078,52 +2297,12 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
                 and "Click to edit. Drag to reorder this independent bar."
                 or "Click to edit. Drag to reorder this attached bar."
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
-            if slotModel.kind == "custom" then
-                GameTooltip:AddLine("Ctrl+Click to multi-select. Right-click for actions.", 0.75, 0.82, 0.92, true)
-            end
-            local customConfig = slotModel.customEntry and slotModel.customEntry.config
-            if IsAuraBlockCustomBar(customConfig) then
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(
-                    ("|A:%s:14:14|a Leaves the stack while its aura is down")
-                        :format(LAYOUT_PREVIEW_AURA_BLOCK_BADGE_ATLAS),
-                    1, 0.82, 0.2)
-                GameTooltip:AddLine(
-                    "In play the bars past it close up. This preview keeps every bar in its slot.",
-                    0.7, 0.7, 0.7, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(
-                    "Blue bars track your auras, gold bars the target's. Each group collapses on its own.",
-                    0.7, 0.7, 0.7, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(
-                    "A group whose bars are all hidden still holds one bar gap of space. Splitting the groups onto different sides avoids this.",
-                    0.7, 0.7, 0.7, true)
-            elseif type(customConfig) == "table"
-                and customConfig.hideWhenInactive == true
-                and customConfig.auraTracking == true then
-                -- Spell bars never join the block, so their slot really does
-                -- stay reserved while the bar is hidden. Aura tracking is
-                -- what makes them hide at all.
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine(
-                    ("|A:%s:14:14|a Hidden, but its slot stays reserved")
-                        :format(LAYOUT_PREVIEW_VISIBILITY_BADGE_ATLAS),
-                    1, 0.82, 0.2)
-            end
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function(self)
             if self.hoverHighlight then
                 self.hoverHighlight:Hide()
             end
-            -- Next frame, so sliding from one bar straight onto its
-            -- neighbour does not flicker the whole set off and back on:
-            -- by then the neighbour's OnEnter has fired and this reports
-            -- the cursor still inside the stack.
-            C_Timer.After(0, function()
-                SetIdentityLabelsShown(preview, AnyCustomPreviewSlotHovered(preview))
-            end)
             GameTooltip:Hide()
         end)
         local x, y, w, h = BuildLaneSlotGeometry(lane, index)
@@ -3132,7 +2311,6 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         lane.slotFramesById[slotModel.id] = slotFrame
     end
 
-    SwapSeam.Build(preview, lane)
 
     lane.gapFrame = AcquireGap(preview, laneFrame)
     lane.gapFrame:SetFrameLevel(laneFrame:GetFrameLevel() + 1)
@@ -3166,11 +2344,12 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local group = CooldownCompanion.db.profile.groups[sourcePanel.groupId]
     for _, slot in ipairs(slots) do slot.anchorGroup = group end
     local labels, destinations = RB.GetBarPlacementOptions(group)
-    local gap = RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
+    local gap = ST.PanelSupportsAttachedBars(group) and ST.ResolveBarGeometry(group).distance
+        or RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
     local boxes, top, bottom = {}, 0, panelHeight
     for _, destination in ipairs(destinations) do
         local above = RB.GetBarLaneSide(destination) == "above"
-        local members = SortSlotsForSide(slots, destination, above, GetPreviewTargetFirst(preview, destination))
+        local members = SortSlotsForSide(slots, destination, above)
         local x, y, width, height = ST._GetAttachedBarPreviewRect(panelFrame, destination)
         local extent = GetLaneExtent(preview, members, slotHeight)
         local laneY = above and (y - gap - extent) or (y + height + gap)
@@ -3253,8 +2432,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
-    local leftSlots = SortSlotsForSide(primarySlots, "left", true, GetPreviewTargetFirst(preview, "left"))
-    local rightSlots = SortSlotsForSide(primarySlots, "right", false, GetPreviewTargetFirst(preview, "right"))
+    local leftSlots = SortSlotsForSide(primarySlots, "left", true)
+    local rightSlots = SortSlotsForSide(primarySlots, "right", false)
     local leftWidth = GetLaneExtent(preview, leftSlots, verticalBarWidth)
     local rightWidth = GetLaneExtent(preview, rightSlots, verticalBarWidth)
     local verticalBarHeight = panelHeight
@@ -3758,20 +2937,9 @@ local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget, dragg
 
     if gapIndex then
         local x, y, w, h = BuildLaneSlotGeometry(lane, gapIndex)
-        -- Containment already clamps a bucket bar's landing inside its own
-        -- bucket, so the bar's identity decides the cue's colour. Re-applied
-        -- on both legs every update: the gap frame is pooled per lane and a
-        -- previous drag can have left the other bucket's colours on it.
-        local tint = draggedSlot and LAYOUT_PREVIEW_BUCKET_TINTS[GetSlotBucketId(draggedSlot)]
-        if tint then
-            ApplyBackdrop(lane.gapFrame, tint.gapBg, tint.gapBorder)
-            lane.gapFrame.inner:SetColorTexture(tint.gapInner[1], tint.gapInner[2],
-                tint.gapInner[3], tint.gapInner[4])
-        else
-            ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
-            lane.gapFrame.inner:SetColorTexture(preview.skin.slotHover[1],
-                preview.skin.slotHover[2], preview.skin.slotHover[3], 0.22)
-        end
+        ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
+        lane.gapFrame.inner:SetColorTexture(preview.skin.slotHover[1],
+            preview.skin.slotHover[2], preview.skin.slotHover[3], 0.22)
         lane.gapFrame:SetAlpha(0.95)
         QueueSlotTween(preview, lane.gapFrame, lane.frame, x, y, w, h, 1, LAYOUT_PREVIEW_ANIM_DURATION)
         lane.gapFrame:Show()
@@ -3833,7 +3001,6 @@ local function ConfigureGhost(preview, slotData, slotFrame)
     -- hangs off UIParent, not off the scaled preview content.
     ghostSlot.slotData = slotData
     ghostSlot._cdcIdentityVertical = slotFrame._cdcIdentityVertical
-    ApplySlotIdentityMarks(preview, ghostSlot, 1, ghost:GetWidth())
     ghost:SetAlpha(0.92)
     ghost:Show()
     preview.ghostActive = true
@@ -3892,13 +3059,12 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         layoutDrag.draggedSlotData = nil
-        preview.draggedSlotExtent = nil
+        local geometryPanel = ST.GetModuleGeometryPanel(preview.standaloneCast and "castbar" or "resources")
+    if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
+    preview.draggedSlotExtent = nil
         -- Thaw the reveal once the drag really is over. Deferred because
         -- this runs while CS.dragState is still set (CancelDrag clears it
         -- immediately after), which is what the freeze keys on.
-        C_Timer.After(0, function()
-            SetIdentityLabelsShown(preview, AnyCustomPreviewSlotHovered(preview))
-        end)
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)
         end
@@ -3957,12 +3123,11 @@ local function CreateLayoutDragModel(preview)
             local peers = filtered
             local peerIndex = adjustedIndex
             do
-                local targetFirst = lane.targetFirst == true
-                local rank = GetSlotStackRank(slotData, targetFirst, 0)
+                local rank = GetSlotStackRank(slotData, 0)
                 local section = {}
                 local sectionIndex = 0
                 for index, slot in ipairs(filtered) do
-                    if GetSlotStackRank(slot, targetFirst) == rank then
+                    if GetSlotStackRank(slot) == rank then
                         table_insert(section, slot)
                         if index < adjustedIndex then
                             sectionIndex = #section
@@ -3982,13 +3147,6 @@ local function CreateLayoutDragModel(preview)
 
         if changed then
             CooldownCompanion:ApplyResourceBars()
-            -- A block bar's order only lands at the deferred aura rebind in
-            -- combat, and the rebind's internal reason never prints the
-            -- "applies when combat ends" notice. This drop is a config edit,
-            -- so say so; out of combat the apply above already rebound.
-            if InCombatLockdown() and IsAuraBlockSlot(slotData) then
-                CooldownCompanion:RequestAuraRebind("config")
-            end
             CooldownCompanion:RepositionCastBar()
             CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
@@ -4084,6 +3242,23 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local independentResourcesPreview = standaloneResources and resourceBarsEnabled
         and CooldownCompanion:IsResourceBarAnchorIndependent()
+    local attachedPanel = preview.anchorPanelId and CooldownCompanion.db.profile.groups[preview.anchorPanelId]
+    local attachedWorkspace = (standaloneResources and resourceBarsEnabled and not independentResourcesPreview)
+        or (standaloneCast and castBarEnabled and not CooldownCompanion:IsModuleAnchorIndependent("castbar"))
+    if attachedWorkspace and ST.PanelSupportsAttachedBars(attachedPanel) then
+        -- The same composition owns fitted dimensions and block placement in
+        -- both workspaces. Do not wrap another set of bars around its bounds.
+        local inner = preview.panelHost
+        if not inner then
+            inner = CreateFrame("Frame", nil, preview.root)
+            inner:SetAllPoints(preview.root)
+            preview.panelHost = inner
+        end
+        inner:Show()
+        ST._BuildButtonPanelPreview(inner, preview.anchorPanelId, { bannerHost = container })
+        FinalizePreviewState(preview)
+        return
+    end
     local standalonePreview = independentResourcesPreview or (standaloneCast and castBarEnabled)
     preview.standaloneCast = standaloneCast
     preview.independentResources = independentResourcesPreview == true
@@ -4141,10 +3316,10 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
     if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameBadges then
         if independentResourcesPreview then
             FinishPreviewWithMessage(preview,
-                "No active resources to order. Enable a resource or Custom Bar first.")
+                "No active resources to order. Enable a resource first.")
         else
             FinishPreviewWithMessage(preview,
-                "No active bars to order. Enable resources, Custom Bars, or cast bar first.")
+                "No active bars to order. Enable Resources or the cast bar first.")
         end
         return
     end
@@ -4198,7 +3373,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings)))
             or math_floor(sourcePanel.iconHeight * 0.56)
         -- Fallback thickness only: every slot now carries its own (the cast
-        -- bar its configured height, resources and custom bars their
+        -- bar its configured height, resources their
         -- per-slot override). This used to be one max across both, which
         -- clamped every bar up to whichever was tallest.
         local horizontalBarHeight = math_max(8, math_floor(resourceThickness))
@@ -4283,21 +3458,6 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
             ST.RefreshBorderTextureScale(auraOverlay and auraOverlay.glow and auraOverlay.glow.edges)
             ST.RefreshBorderTextureScale(maxBorder and maxBorder.glow and maxBorder.glow.edges)
         end
-    end
-
-    -- Identity marks last: they counter-scale against the fit above, so
-    -- they can only be laid out once it is known. A rebuild can happen with
-    -- the cursor already resting on a bar (a value change repaints the
-    -- preview under it), so the reveal state is re-derived rather than
-    -- assumed off.
-    preview.identityLabelsShown = AnyCustomPreviewSlotHovered(preview)
-    for index = 1, (preview.used.slots or 0) do
-        ApplySlotIdentityMarks(preview, preview.pools.slots[index], scale)
-    end
-    -- Same reason, same pass: the seam handle is a hit target, so it is sized
-    -- in screen pixels rather than in the composition's.
-    for index = 1, (preview.used.swaps or 0) do
-        SwapSeam.ApplyScale(preview.pools.swaps[index], scale)
     end
 
     FinalizePreviewState(preview)
@@ -4439,13 +3599,19 @@ end
 -- disagree about which objects are on screen. Call it AFTER the build.
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)
     local preview = host and host._cdcLayoutPreview
-    return preview and preview.root and preview.root:IsShown()
-        and preview.renderedSelectionKeys or nil
+    if not (preview and preview.root and preview.root:IsShown()) then return end
+    local inner = preview.panelHost
+    if inner and inner:IsShown() then
+        local panel = inner._cdcPanelPreview
+        local modules = panel and panel.modulePreview
+        return modules and modules.root:IsShown() and modules.renderedSelectionKeys or nil
+    end
+    return preview.renderedSelectionKeys
 end
 
 -- The pools that hold this canvas's own lane chrome. A constant, not a literal
 -- rebuilt inside the fade below: that runs on a drag's frame budget.
-local LANE_CHROME_POOLS = { "slots", "gaps", "pills", "swaps" }
+local LANE_CHROME_POOLS = { "slots", "gaps", "pills" }
 
 --- Fade this canvas's bar lanes out of the way (or bring them back).
 --- The panel-section drag lays its anchor pads exactly where the wrapped bars
@@ -4484,3 +3650,143 @@ ST._StyleMirroredIconFrame = StyleMirroredIconFrame
 -- place" refusal the canvas's own placeholder wears, so the strings have one
 -- home.
 ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
+
+-- Ordinary panels render modules inside the same attachment composition as
+-- their entries. Reuse this file's resource/cast painters and preview state.
+function ST._PanelHasConfiguredModuleBars(panelId)
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if not ST.PanelSupportsAttachedBars(group) then return false end
+    local cast = ST.GetConfiguredModuleBarSettings("castbar")
+    if cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
+        and ModuleBelongsToPreview("castbar", panelId, true, cast) then return true end
+    local saved = ST.GetConfiguredModuleBarSettings("resources")
+    if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
+    local settings = CopyTable(saved)
+    -- The addon wrapper always loads the live bucket. Normalize only this
+    -- detached copy, so legacy attachment defaults agree without being saved.
+    if not RB.GetSpecLayoutOrder(settings) or not ModuleBelongsToPreview("resources", panelId, true, settings) then return false end
+    for _, powerType in ipairs(GetConfigActiveResources()) do
+        if IsConfiguredPreviewResource(settings, powerType) then return true end
+    end
+    return false
+end
+
+function ST._GetPanelAttachmentPreviewModules(panelId)
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if not ST.PanelSupportsAttachedBars(group) or CS.unifiedAnchorBarsHidden then return {} end
+    local settings, cast = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
+    if not layout then return {} end
+    local resources = settings and settings.enabled and ModuleBelongsToPreview("resources", panelId)
+    local hasCast = cast and cast.enabled and ModuleBelongsToPreview("castbar", panelId)
+    local vertical = resources and IsResourceBarVerticalConfig(settings, layout) or false
+    local slots, casts = CollectPreviewSlots(settings, hasCast and cast or nil, layout, vertical, resources == true)
+    local modules, sides = {}, {}
+    local spacing = ST.ResolveBarGeometry(group).spacing
+    for _, slot in ipairs(slots) do
+        if slot.kind == "resource" then
+            local side = RB.GetBarLaneSide(slot.getPos())
+            local block = sides[side]
+            if not block then
+                local region = RB.GetResourceBlockRegion(layout, side, vertical)
+                block = { kind = "resources", side = side, region = region == "main" and "main" or "outer",
+                    slots = {}, thickness = 0, spacing = spacing, layout = layout }
+                sides[side], modules[#modules + 1] = block, block
+            end
+            block.slots[#block.slots + 1] = slot
+        end
+    end
+    for _, block in ipairs(modules) do
+        table.sort(block.slots, function(a,b)
+            if a.getOrder() == b.getOrder() then return a.id < b.id end
+            return a.getOrder() < b.getOrder()
+        end)
+        for i, slot in ipairs(block.slots) do
+            block.thickness = block.thickness + (slot.thickness or 12) + (i > 1 and spacing or 0)
+        end
+    end
+    for _, slot in ipairs(casts) do
+        local side = RB.GetBarLaneSide(slot.getPos())
+        local saved = layout.castBar or {}
+        modules[#modules + 1] = { kind = "cast", side = side,
+            region = saved.anchorRegion == "main" and "main" or "outer", slots = { slot },
+            thickness = slot.thickness, layout = layout,
+            attachmentOffset = ST.GetCastBarAttachmentOffset(cast, layout) }
+    end
+    return modules
+end
+
+function ST._ResetPanelModulePreview(preview)
+    local state = preview.modulePreview
+    if not state then return end
+    state.root:Hide()
+    state.renderedSelectionKeys = nil
+    state.root:SetScript("OnUpdate", nil)
+    wipe(state.animated)
+    for _, frame in ipairs(state.pools.slots) do frame:Hide() end
+end
+
+function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
+    local state = preview.modulePreview
+    if not positions or #positions == 0 then
+        ST._ResetPanelModulePreview(preview)
+        return
+    end
+    if not state then
+        state = { pools = { slots = {} }, used = {}, animated = {}, tweens = {} }
+        state.root = CreateFrame("Frame", nil, preview.content)
+        state.root:SetAllPoints(preview.content)
+        preview.modulePreview = state
+    end
+    wipe(state.animated)
+    state.root:SetScript("OnUpdate", nil)
+    state.skin = ResolvePreviewSkin(preview.root:GetParent())
+    state.rbSettings, state.cbSettings = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
+    state.layout = CooldownCompanion:GetSpecLayoutOrder(state.rbSettings)
+    state.anchorPanelId = panelId
+    state.used.slots = 0
+    if not animate then state.framesBySlot = {} end
+    state.renderedSelectionKeys = {}
+    state.root:Show()
+    for _, position in ipairs(positions or {}) do
+        local module, offset = position.module, 0
+        for _, slot in ipairs(module.slots) do
+            local frame = animate and state.framesBySlot[slot] or AcquireSlot(state, state.root)
+            local extent = slot.thickness or 12
+            local vertical = position.vertical
+            local width, height = vertical and extent or position.width, vertical and position.height or extent
+            state.isVerticalLayout = vertical
+            ConfigureSlotPreview(frame, slot, state, width, height, vertical)
+            frame:SetSize(width, height)
+            local x, y = position.x, position.y
+            if module.side == "above" then y = y - position.height + offset + height
+            elseif module.side == "below" then y = y - offset
+            elseif module.side == "left" then x = x + position.width - offset - width
+            else x = x + offset end
+            if animate then
+                ST._ButtonPanelPreview.QueuePreviewSlotTween(preview, frame, "TOPLEFT", x, y)
+            else
+                ST._ButtonPanelPreview.ApplyPreviewSlotGeometry(preview, frame, "TOPLEFT", x, y)
+                state.framesBySlot[slot] = frame
+                frame:SetAlpha(1)
+            end
+            frame._attachmentX, frame._attachmentY = x, y
+            frame.slotData = slot
+            state.renderedSelectionKeys[slot.id] = true
+            ApplySlotSelection(frame, slot, vertical, extent)
+            if not animate and ST._WirePanelAttachmentModule then
+                ST._WirePanelAttachmentModule(frame, module, slot, drag)
+            end
+            offset = offset + extent + (module.spacing or 0)
+        end
+    end
+    if not animate then
+        for i = state.used.slots + 1, #state.pools.slots do state.pools.slots[i]:Hide() end
+    end
+    if #state.animated > 0 then
+        state.root:SetScript("OnUpdate", function()
+            local now = GetTime()
+            for _, animation in ipairs(state.animated) do animation.Tick(animation, now) end
+        end)
+    end
+end

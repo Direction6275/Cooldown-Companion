@@ -672,6 +672,50 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local copiedVisibility = false
     local copiedArrangement = false
     local copiedPosition = false
+    if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
+        and ST.PanelSupportsAttachedBars(targetGroup) then
+        local function CopyAttachedStyle(key)
+            if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
+            if key == "buttonSpacing" and not templateFields then
+                local arrangement = false
+                for _, scope in ipairs(scopes) do if scope == "arrangement" then arrangement = true end end
+                if not arrangement then return end
+            end
+            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
+            targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
+            local sourceStyle = templateFields and (source.attachedBarStyle or {})
+                or ST.GetAttachedBarStyle(source)
+            targetGroup.attachedBarStyle[key] = CopyPresetValue(sourceStyle[key])
+            if key == "durationFormat" and not templateFields and self.GetDurationFormat then
+                targetGroup.attachedBarStyle[key] = self.GetDurationFormat(sourceStyle)
+                targetGroup.attachedBarStyle.decimalTimers = nil
+            end
+        end
+        local function CopyAttachedLayout(key)
+            targetGroup.attachedBarLayout = targetGroup.attachedBarLayout or {}
+            targetGroup.attachedBarLayout[key] = CopyPresetValue((source.attachedBarLayout or {})[key])
+        end
+        local function CopyBarOnlyLayout(key)
+            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
+            local value = (source.barOnlyLayout or {})[key]
+            if key == "mode" and not templateFields then value = ST.GetBarOnlyLayoutMode(source) end
+            targetGroup.barOnlyLayout[key] = CopyPresetValue(value)
+        end
+        if templateFields then
+            for key in pairs(templateFields.attachedBarStyle or {}) do CopyAttachedStyle(key) end
+            for key in pairs(templateFields.attachedBarLayout or {}) do CopyAttachedLayout(key) end
+            for key in pairs(templateFields.barOnlyLayout or {}) do CopyBarOnlyLayout(key) end
+        else
+            ForEachPanelCopyStyleKey("bars", scopes, CopyAttachedStyle, false)
+            for _, scope in ipairs(scopes) do
+                if scope == "arrangement" then
+                    for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do CopyAttachedLayout(key) end
+                    for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do CopyBarOnlyLayout(key) end
+                    for _, key in ipairs({ "barOrientation", "growthOrigin", "buttonsPerRow", "buttonSpacing" }) do CopyAttachedStyle(key) end
+                end
+            end
+        end
+    end
     for _, scopeName in ipairs(scopes) do
         local scopeData = modeScopes[scopeName]
         if scopeData and scopeData.copiesLoadConditions then
@@ -715,6 +759,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
 
     local copiedDurationFormat = false
     local function CopyStyleKey(key)
+        if key == "barSegmentCharges" then return end
         local value = sourceStyle[key]
         if value == nil and not templateFields then
             value = baseline[key]
@@ -1334,7 +1379,7 @@ local function ResolvePanelCreationMode(displayMode)
     if baseMode then
         return baseMode, true
     end
-    return displayMode, false
+    return displayMode == "bars" and "icons" or displayMode, false
 end
 
 function CooldownCompanion:CreatePanel(containerId, displayMode)
@@ -1393,6 +1438,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         db.groups[groupId].totemPanel = true
         self:EnforceTotemPanelInvariants(db.groups[groupId])
     end
+    ST.InitializeNewPanelBarStyle(db.groups[groupId])
 
     -- Style defaults (nil-guard respects user-customized globalStyle)
     local style = db.groups[groupId].style
@@ -1900,7 +1946,7 @@ end
 -- `section` (optional): the anchor name of a section the new entry joins on
 -- a panel that supports sections. An aura-only section or a bad anchor is
 -- refused by the membership writer, and the entry stays in the base grid.
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section, presentation)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
@@ -1983,12 +2029,18 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         isPassive = isPassive or nil,
         isPassiveCooldown = isPassiveCooldown or nil,
         cdmChildSlot = cdmChildSlot or nil,
+        barSegmentCharges = false,
     }
 
     -- Blizzard identifies aura groups per container, so every Aura Panel entry
     -- carries a stable key that is unique within its own panel (Defaults.lua
     -- owns the stamp; the config insert paths call the same one).
     self:StampAuraPanelEntryKey(group, group.buttons[buttonIndex])
+    if ST.PanelSupportsAttachedBars(group) and presentation == "bars" then
+        group.buttons[buttonIndex].displayAs = "bars"
+        ST.GetAttachedBarStyle(group, true)
+        self:StampAuraSectionEntryKey(group, group.buttons[buttonIndex])
+    end
 
     -- Auto-detect charges for castable and passive-cooldown spells.
     -- Treat as charge-based only when max charges is greater than 1.
@@ -2150,6 +2202,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         type = self.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
         itemSlot = itemSlot,
         itemSlotKind = itemSlotKind or self.EQUIPMENT_SLOT_KIND_TRINKET or "trinket",
+        barSegmentCharges = false,
     }
 
     -- An equipment slot is never an aura entry; the central predicate owns the

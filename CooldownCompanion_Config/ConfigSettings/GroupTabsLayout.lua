@@ -81,6 +81,7 @@ local function GetLayoutFinderState(context)
 
     local group = LayoutFinderGroup(context)
     if not group then return nil end
+    local owner = group._attachedBarOwner or group
 
     local state = { sections = {} }
     if context then context._ccLayoutFinderState = state end
@@ -157,6 +158,7 @@ local function GetLayoutFinderState(context)
 
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
     local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
+    local allDefaults = group._settingsContext and group._settingsContext.mode ~= "entry"
     local isIconsMode = displayMode == "icons"
     local isBarMode = displayMode == "bars"
     local isTextMode = displayMode == "text"
@@ -166,7 +168,7 @@ local function GetLayoutFinderState(context)
     state.anchorPanel = isPanel and targetMode == "panel"
     state.anchorFrame = targetMode == "frame"
     state.autoAnchor = not standalone
-        and CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
+        and CooldownCompanion:IsIconLikeDisplayMode(owner.displayMode)
         and not isAuraPanel
 
     state.panelPoint = targetMode == "cursor"
@@ -180,9 +182,9 @@ local function GetLayoutFinderState(context)
     state.xOffset = true
     state.yOffset = true
 
-    state.horizontalBars = not standalone and isBarMode and buttonCount > 1 and not auraBarPanel
+    state.horizontalBars = not standalone and isBarMode and (allDefaults or buttonCount > 1) and not auraBarPanel
     state.orientation = not standalone and not isBarMode
-    state.growth = not standalone and buttonCount > 1
+    state.growth = not standalone and (allDefaults or buttonCount > 1)
     state.collapse = not standalone and (isAuraPanel or ST.IsTotemPanelGroup(group))
     state.buttonsPerLine = not standalone and not auraBarPanel and not isTextMode
     state.entriesPerLine = not standalone and isTextMode and buttonCount > 1
@@ -200,12 +202,20 @@ local function GetLayoutFinderState(context)
             ST.GetPanelLayoutOrientation(group.displayMode, style)
         ) == nil
 
-    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group)
+    local hasIcons = not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
+    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group) and hasIcons
     state.customStrataLayers = state.customStrata
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
 
-    if not standalone and ST.PanelSupportsSections(group)
+    -- Arrangement controls follow eligible contents, not inactive ghost geometry.
+    if (isIconsMode and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
+        or ST.GetPanelLayoutKind(owner) ~= "bars")) then
+        for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
+            "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
+    end
+
+    if not standalone and hasIcons and ST.PanelSupportsSections(group)
         and type(group.sections) == "table" then
         for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
             local section = group.sections[sectionAnchor]
@@ -402,6 +412,224 @@ local appearanceTabElements = CS.appearanceTabElements
 -- Early returns in here (missing group, and the standalone texture/trigger
 -- settings guard) land on the dispatch-level gear build pass's sweep
 -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
+local function BuildGridArrangement(container, group, layoutCount)
+    local tabInfoButtons = CS.tabInfoButtons
+    local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
+    local style = group.style
+    local displayMode = group.displayMode or "icons"
+    local isIconsMode, isBarMode, isTextMode = displayMode == "icons", displayMode == "bars", displayMode == "text"
+    -- Two settings have to be read together here whatever the mode: growth
+    -- direction is relabelled by the orientation above it, so they always
+    -- share a column and always sit adjacent.
+    --
+    -- LEFT column, in every mode: that pair. RIGHT column: how the block is
+    -- packed - the wrap count and Compact Mode.
+    local arrangeLeft, arrangeRight = BeginRowGrid(container)
+
+    -- An Aura BAR Panel is ONE vertical column by construction: the aura
+    -- container's bars branch hard-codes the axis and takes no line ceiling, so
+    -- neither the orientation question nor the wrap count has an answer to give
+    -- here. Aura ICON Panels keep both - their grid follows the same style keys
+    -- an ordinary icon panel's does.
+    local auraBarPanel = isBarMode and CooldownCompanion:IsAuraPanel(group)
+
+    -- Orientation is remembered per display mode (bar and text panels own
+    -- their keys, unset = vertical), so a mode swap keeps every mode's
+    -- layout. Same helper GetCompactGrowthDirectionLabels uses, because the
+    -- Growth Direction labels below have to agree with it.
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
+
+    -- A centered growth edge lives on one axis, so every orientation control
+    -- swaps it across with the orientation instead of silently stranding it
+    -- on the old axis (where runtime folds it to a corner).
+    local function SwapCenteredGrowthAxis()
+        local swap = { TOP = "LEFT", LEFT = "TOP", BOTTOM = "RIGHT", RIGHT = "BOTTOM" }
+        if swap[style.growthOrigin or ""] then
+            style.growthOrigin = swap[style.growthOrigin]
+        end
+    end
+
+    if isBarMode then
+        -- A bar panel's orientation is one question ("do the bars sit in a
+        -- row?"), so it is a checkbox rather than the horizontal/vertical
+        -- dropdown the other modes show. With a single bar there is nothing
+        -- to lay out.
+        --
+        -- Which way a single bar's own FILL runs is a different question - it
+        -- is what the bar looks like, not where the bars sit - so those two
+        -- rows live with the bar's shape on the Appearance tab (Bar Settings).
+        if (layoutCount > 1 or showAll) and not auraBarPanel then
+            AddCheckboxRow(arrangeLeft, {
+                label = "Horizontal Bar Layout",
+                setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
+                value = orientation == "horizontal",
+                onChange = function(val)
+                    style.barOrientation = val and "horizontal" or "vertical"
+                    SwapCenteredGrowthAxis()
+                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
+        end
+    else
+        AddDropdownRow(arrangeLeft, {
+            label = "Orientation",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.orientation,
+            -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
+            -- reads the same per-mode helper the core lays out with, and
+            -- text panels now default vertical like bars. Each mode writes
+            -- its own key so swapping modes keeps every mode's layout.
+            list = { horizontal = "Horizontal", vertical = "Vertical" },
+            value = orientation,
+            onChange = function(val)
+                if isTextMode then
+                    style.textOrientation = val
+                else
+                    style.orientation = val
+                end
+                SwapCenteredGrowthAxis()
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
+
+    if layoutCount > 1 or showAll then
+        local labels, order
+        -- Aura panels delegate intra-line placement to Blizzard's flow
+        -- container, so they fold centered values to TOPLEFT at runtime and
+        -- this dropdown displays the same fold.
+        local allowCentered = not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
+        -- Same override the Collapse Direction row below applies: an Aura BAR
+        -- Panel is one vertical column by construction, so its labels must not
+        -- follow the barOrientation key (hidden for this subtype, still
+        -- copyable, and never read by the engine here).
+        if auraBarPanel or orientation == "vertical" then
+            labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
+            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+            if allowCentered then
+                labels.LEFT, labels.RIGHT = "Centered, Right", "Centered, Left"
+                order[5], order[6] = "LEFT", "RIGHT"
+            end
+        else
+            labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
+            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+            if allowCentered then
+                labels.TOP, labels.BOTTOM = "Centered, Down", "Centered, Up"
+                order[5], order[6] = "TOP", "BOTTOM"
+            end
+        end
+
+        local shownValue = style.growthOrigin or "TOPLEFT"
+        if not labels[shownValue] then
+            shownValue = "TOPLEFT"
+        end
+
+        AddDropdownRow(arrangeLeft, {
+            label = "Growth Direction",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.growth,
+            list = labels,
+            order = order,
+            value = shownValue,
+            onChange = function(val)
+                style.growthOrigin = val
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
+
+    -- An Aura Panel packs only its ACTIVE auras (Blizzard's aura container does
+    -- the collapsing, so it is inherent and always on), which leaves one
+    -- question Growth Direction cannot answer: which end of the panel the packed
+    -- block holds as auras come and go. Same start/center/end key every other
+    -- panel's compact mode writes, so it reads and writes through the compact
+    -- helpers - but here it is simply how the panel arranges itself, so it sits
+    -- under Growth Direction rather than behind a compact toggle this panel
+    -- subtype does not have (owner ruling 2026-08-15).
+    if CooldownCompanion:IsAuraPanel(group) or ST.IsTotemPanelGroup(group) then
+        -- PanelFlowSpec hard-codes the Vertical axis for an Aura BAR Panel, so
+        -- the labels follow that rather than the (gated-away, possibly stale)
+        -- barOrientation key the row above still reads.
+        local collapseOrientation = auraBarPanel and "vertical" or nil
+        local collapseRow = AddDropdownRow(arrangeLeft, {
+            label = "Collapse Direction",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.collapse,
+            list = GetCompactGrowthDirectionLabels(group, collapseOrientation),
+            order = { "start", "center", "end" },
+            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
+            onChange = function(val)
+                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
+                -- The mount point is read at BIND time, so the display only
+                -- moves on the next aura pass. RefreshGroupFrame ends in
+                -- RequestAuraRebind("aura-panel", groupId) for exactly this
+                -- panel subtype, which is the request that re-runs it.
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            end,
+        })
+
+        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
+        -- onto the end of the row's label.
+        AnchorRowBadge(collapseRow, CreateInfoButton(collapseRow.frame, collapseRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Collapse Direction",
+            {ST.IsTotemPanelGroup(group) and "Occupied slots pack from the start of the panel, from its center, or from its end."
+                or "Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {ST.IsTotemPanelGroup(group) and "Empty slots take no space. Slots retain their numeric order."
+                or "Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
+        }, tabInfoButtons))
+    end
+
+    -- Text mode calls its entries entries, and offers the wrap count only
+    -- once there is something to wrap.
+    if not auraBarPanel and (not isTextMode or #group.buttons > 1) then
+        local numButtons = math.max(showAll and 100 or 1, layoutCount)
+        local wrapRow = AddSliderRow(arrangeRight, {
+            label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
+            setting = LAYOUT_FINDER.arrangement and (
+                isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
+                or LAYOUT_FINDER.arrangement.buttonsPerLine),
+            min = 1, max = numButtons, step = 1,
+            value = math.min(style.buttonsPerRow or 12, numButtons),
+        })
+        WireMirrorFirstSlider(wrapRow, function(val)
+            style.buttonsPerRow = val
+        end, function()
+            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+        end, nil, style, "buttonsPerRow")
+    end
+
+    -- Compact Mode: how the panel packs the entries that are actually visible,
+    -- which is the same question the wrap count above it answers for the ones
+    -- that always are - so it closes the right column rather than sitting with
+    -- the look on the Appearance tab.
+    --
+    -- The builder carries one gate of its own: it draws NOTHING on an Aura
+    -- Panel (Blizzard's aura container packs itself, and "which end" is the
+    -- Collapse Direction row above). The MODE gate is here, and it is the
+    -- three modes that have always offered it - texture and trigger panels
+    -- returned far above, but a rotation assistant panel reaches this section
+    -- and never had a Compact Mode row, so naming the three is what keeps this
+    -- move from handing it one.
+    --
+    -- Panel-only data with no override section, and the Layout tab is panel
+    -- scope throughout (no entry lens ever reaches it), so the row needs no
+    -- lens bracket of its own here. Its gear panel closes like every other
+    -- gear's: the dispatch-level gear build pass sweeps it when this
+    -- section collapses, and a surface move closes it through the panel
+    -- context (selecting an entry lands the surface on Appearance, changing
+    -- panelSettingsTab - selectedButton itself is lens-ignored).
+    --
+    -- Compact Mode copies with the Arrangement scope of
+    -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua).
+    if not ST.IsTotemPanelGroup(group) and (isIconsMode or isBarMode or isTextMode) then
+        BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,
+            settings = LAYOUT_FINDER.compact,
+        })
+    end
+end
+
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -413,6 +641,14 @@ local function BuildLayoutTab(container)
     if not CS.selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
+    if ST.PanelSupportsAttachedBars(group) then
+        -- Entry placement is edited by dragging in the preview.
+        if ST._GetPanelSettingsSelection(group) then return end
+        ST._AddLensPanelScopeNote(container, ST._ResolveStyleLens(group))
+        local context = ST._CreatePanelSettingsContext(group, "shared")
+        container = ST._NewPanelSettingsSectionHost(container, context)
+        group = context.group
+    end
     local style = group.style
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
@@ -1175,220 +1411,12 @@ local function BuildLayoutTab(container)
     -- ============================================================
     -- Arrangement (how the entries sit relative to each other)
     -- ============================================================
-    local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
-
-    if not arrangementCollapsed then
-    -- Two settings have to be read together here whatever the mode: growth
-    -- direction is relabelled by the orientation above it, so they always
-    -- share a column and always sit adjacent.
-    --
-    -- LEFT column, in every mode: that pair. RIGHT column: how the block is
-    -- packed - the wrap count and Compact Mode.
-    local arrangeLeft, arrangeRight = BeginRowGrid(container)
-
-    -- An Aura BAR Panel is ONE vertical column by construction: the aura
-    -- container's bars branch hard-codes the axis and takes no line ceiling, so
-    -- neither the orientation question nor the wrap count has an answer to give
-    -- here. Aura ICON Panels keep both - their grid follows the same style keys
-    -- an ordinary icon panel's does.
-    local auraBarPanel = isBarMode and CooldownCompanion:IsAuraPanel(group)
-
-    -- Orientation is remembered per display mode (bar and text panels own
-    -- their keys, unset = vertical), so a mode swap keeps every mode's
-    -- layout. Same helper GetCompactGrowthDirectionLabels uses, because the
-    -- Growth Direction labels below have to agree with it.
-    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
-
-    -- A centered growth edge lives on one axis, so every orientation control
-    -- swaps it across with the orientation instead of silently stranding it
-    -- on the old axis (where runtime folds it to a corner).
-    local function SwapCenteredGrowthAxis()
-        local swap = { TOP = "LEFT", LEFT = "TOP", BOTTOM = "RIGHT", RIGHT = "BOTTOM" }
-        if swap[style.growthOrigin or ""] then
-            style.growthOrigin = swap[style.growthOrigin]
+    if not ST._BuildUnifiedPanelArrangement(container, group, BuildGridArrangement) then
+        local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
+        if not arrangementCollapsed then
+            BuildGridArrangement(container, group, layoutCount)
         end
     end
-
-    if isBarMode then
-        -- A bar panel's orientation is one question ("do the bars sit in a
-        -- row?"), so it is a checkbox rather than the horizontal/vertical
-        -- dropdown the other modes show. With a single bar there is nothing
-        -- to lay out.
-        --
-        -- Which way a single bar's own FILL runs is a different question - it
-        -- is what the bar looks like, not where the bars sit - so those two
-        -- rows live with the bar's shape on the Appearance tab (Bar Settings).
-        if layoutCount > 1 and not auraBarPanel then
-            AddCheckboxRow(arrangeLeft, {
-                label = "Horizontal Bar Layout",
-                setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
-                value = orientation == "horizontal",
-                onChange = function(val)
-                    style.barOrientation = val and "horizontal" or "vertical"
-                    SwapCenteredGrowthAxis()
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end
-    else
-        AddDropdownRow(arrangeLeft, {
-            label = "Orientation",
-            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.orientation,
-            -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
-            -- reads the same per-mode helper the core lays out with, and
-            -- text panels now default vertical like bars. Each mode writes
-            -- its own key so swapping modes keeps every mode's layout.
-            list = { horizontal = "Horizontal", vertical = "Vertical" },
-            value = orientation,
-            onChange = function(val)
-                if isTextMode then
-                    style.textOrientation = val
-                else
-                    style.orientation = val
-                end
-                SwapCenteredGrowthAxis()
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-    end
-
-    if layoutCount > 1 then
-        local labels, order
-        -- Aura panels delegate intra-line placement to Blizzard's flow
-        -- container, so they fold centered values to TOPLEFT at runtime and
-        -- this dropdown displays the same fold.
-        local allowCentered = not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
-        -- Same override the Collapse Direction row below applies: an Aura BAR
-        -- Panel is one vertical column by construction, so its labels must not
-        -- follow the barOrientation key (hidden for this subtype, still
-        -- copyable, and never read by the engine here).
-        if auraBarPanel or orientation == "vertical" then
-            labels = { TOPLEFT = "Down, Right", TOPRIGHT = "Down, Left", BOTTOMLEFT = "Up, Right", BOTTOMRIGHT = "Up, Left" }
-            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
-            if allowCentered then
-                labels.LEFT, labels.RIGHT = "Centered, Right", "Centered, Left"
-                order[5], order[6] = "LEFT", "RIGHT"
-            end
-        else
-            labels = { TOPLEFT = "Right, Down", TOPRIGHT = "Left, Down", BOTTOMLEFT = "Right, Up", BOTTOMRIGHT = "Left, Up" }
-            order = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
-            if allowCentered then
-                labels.TOP, labels.BOTTOM = "Centered, Down", "Centered, Up"
-                order[5], order[6] = "TOP", "BOTTOM"
-            end
-        end
-
-        local shownValue = style.growthOrigin or "TOPLEFT"
-        if not labels[shownValue] then
-            shownValue = "TOPLEFT"
-        end
-
-        AddDropdownRow(arrangeLeft, {
-            label = "Growth Direction",
-            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.growth,
-            list = labels,
-            order = order,
-            value = shownValue,
-            onChange = function(val)
-                style.growthOrigin = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-    end
-
-    -- An Aura Panel packs only its ACTIVE auras (Blizzard's aura container does
-    -- the collapsing, so it is inherent and always on), which leaves one
-    -- question Growth Direction cannot answer: which end of the panel the packed
-    -- block holds as auras come and go. Same start/center/end key every other
-    -- panel's compact mode writes, so it reads and writes through the compact
-    -- helpers - but here it is simply how the panel arranges itself, so it sits
-    -- under Growth Direction rather than behind a compact toggle this panel
-    -- subtype does not have (owner ruling 2026-08-15).
-    if CooldownCompanion:IsAuraPanel(group) or ST.IsTotemPanelGroup(group) then
-        -- PanelFlowSpec hard-codes the Vertical axis for an Aura BAR Panel, so
-        -- the labels follow that rather than the (gated-away, possibly stale)
-        -- barOrientation key the row above still reads.
-        local collapseOrientation = auraBarPanel and "vertical" or nil
-        local collapseRow = AddDropdownRow(arrangeLeft, {
-            label = "Collapse Direction",
-            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.collapse,
-            list = GetCompactGrowthDirectionLabels(group, collapseOrientation),
-            order = { "start", "center", "end" },
-            value = NormalizeCompactGrowthDirection(group.compactGrowthDirection),
-            onChange = function(val)
-                group.compactGrowthDirection = NormalizeCompactGrowthDirection(val)
-                -- The mount point is read at BIND time, so the display only
-                -- moves on the next aura pass. RefreshGroupFrame ends in
-                -- RequestAuraRebind("aura-panel", groupId) for exactly this
-                -- panel subtype, which is the request that re-runs it.
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            end,
-        })
-
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(collapseRow, CreateInfoButton(collapseRow.frame, collapseRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Collapse Direction",
-            {ST.IsTotemPanelGroup(group) and "Occupied slots pack from the start of the panel, from its center, or from its end."
-                or "Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
-            {" ", 1, 1, 1},
-            {ST.IsTotemPanelGroup(group) and "Empty slots take no space. Slots retain their numeric order."
-                or "Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
-        }, tabInfoButtons))
-    end
-
-    -- Text mode calls its entries entries, and offers the wrap count only
-    -- once there is something to wrap.
-    if not auraBarPanel and (not isTextMode or #group.buttons > 1) then
-        local numButtons = math.max(1, layoutCount)
-        local wrapRow = AddSliderRow(arrangeRight, {
-            label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
-            setting = LAYOUT_FINDER.arrangement and (
-                isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
-                or LAYOUT_FINDER.arrangement.buttonsPerLine),
-            min = 1, max = numButtons, step = 1,
-            value = math.min(style.buttonsPerRow or 12, numButtons),
-        })
-        WireMirrorFirstSlider(wrapRow, function(val)
-            style.buttonsPerRow = val
-        end, function()
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end, nil, style, "buttonsPerRow")
-    end
-
-    -- Compact Mode: how the panel packs the entries that are actually visible,
-    -- which is the same question the wrap count above it answers for the ones
-    -- that always are - so it closes the right column rather than sitting with
-    -- the look on the Appearance tab.
-    --
-    -- The builder carries one gate of its own: it draws NOTHING on an Aura
-    -- Panel (Blizzard's aura container packs itself, and "which end" is the
-    -- Collapse Direction row above). The MODE gate is here, and it is the
-    -- three modes that have always offered it - texture and trigger panels
-    -- returned far above, but a rotation assistant panel reaches this section
-    -- and never had a Compact Mode row, so naming the three is what keeps this
-    -- move from handing it one.
-    --
-    -- Panel-only data with no override section, and the Layout tab is panel
-    -- scope throughout (no entry lens ever reaches it), so the row needs no
-    -- lens bracket of its own here. Its gear panel closes like every other
-    -- gear's: the dispatch-level gear build pass sweeps it when this
-    -- section collapses, and a surface move closes it through the panel
-    -- context (selecting an entry lands the surface on Appearance, changing
-    -- panelSettingsTab - selectedButton itself is lens-ignored).
-    --
-    -- Compact Mode copies with the Arrangement scope of
-    -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua).
-    if not ST.IsTotemPanelGroup(group) and (isIconsMode or isBarMode or isTextMode) then
-        BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
-            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,
-            settings = LAYOUT_FINDER.compact,
-        })
-    end
-    end -- not arrangementCollapsed
 
     -- ============================================================
     -- Panel Sections (one quiet block per placed cluster)
@@ -1404,7 +1432,9 @@ local function BuildLayoutTab(container)
     -- placement, direction, and wrap are Layout's), and the aura toggle heads
     -- the block here because "only auras live here, and they pack" is a
     -- statement about the cluster's layout rather than its look.
-    local panelSections = ST.PanelSupportsSections(group) and group.sections or nil
+    local panelSections = not ST._ResolveStylingGroup(group)._attachedBarOwner
+        and (not ST.PanelSupportsAttachedBars(group) or ST._GetPanelSettingsContents(group).icons)
+        and ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
         -- panel rather than whatever order the profile happens to store them in.
@@ -1543,7 +1573,7 @@ local function BuildLayoutTab(container)
     -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
     -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
     -- Display) IS the panel. There is no stack left to reorder.
-    local showCustomStrata = isIconsMode and not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
+    local showCustomStrata = GetLayoutFinderState({ group = group, groupId = CS.selectedGroup }).customStrata
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole

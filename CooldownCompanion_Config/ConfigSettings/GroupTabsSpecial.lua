@@ -735,15 +735,12 @@ local function BuildTriggerIconAppearanceTab(container, group)
         end,
     })
 
-    -- deferCommit is deliberately absent throughout, matching the
-    -- stock color pickers these rows replace: the callbacks repaint the
-    -- canvas, they do not re-read the bound table every tick.
     AddColorRow(iconLeft, {
         label = "Icon Color",
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.baseColor,
         tbl = settings, key = "iconTintColor",
         default = { 1, 1, 1, 1 }, hasAlpha = true,
-        onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
+        onConfirm = RefreshIconPreview,
     })
 
     AddColorRow(iconLeft, {
@@ -751,7 +748,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.background,
         tbl = settings, key = "backgroundColor",
         default = { 0, 0, 0, 0.5 }, hasAlpha = true,
-        onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
+        onConfirm = RefreshIconPreview,
     })
 
     local renderMode, borderModeRow = AddBorderRenderModeDropdown(iconRight, settings, "borderRenderMode", function()
@@ -791,7 +788,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderColor,
         tbl = settings, key = "borderColor",
         default = { 0, 0, 0, 1 }, hasAlpha = true,
-        onConfirm = RefreshIconPreview, onChange = RefreshIconPreview,
+        onConfirm = RefreshIconPreview,
     })
     end -- not iconCollapsed
 
@@ -912,14 +909,12 @@ local function BuildTriggerTextAppearanceTab(container, group)
         end,
     })
 
-    -- deferCommit is deliberately absent, matching the stock color pickers
-    -- these rows replace.
     AddColorRow(textRight, {
         label = "Text Color",
         setting = SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.color,
         tbl = settings, key = "textFontColor",
         default = { 1, 1, 1, 1 }, hasAlpha = true,
-        onConfirm = RefreshTextPreview, onChange = RefreshTextPreview,
+        onConfirm = RefreshTextPreview,
     })
 
     AddColorRow(textRight, {
@@ -927,7 +922,7 @@ local function BuildTriggerTextAppearanceTab(container, group)
         setting = SPECIAL_FINDER.trigger.text and SPECIAL_FINDER.trigger.text.background,
         tbl = settings, key = "textBgColor",
         default = { 0, 0, 0, 0 }, hasAlpha = true,
-        onConfirm = RefreshTextPreview, onChange = RefreshTextPreview,
+        onConfirm = RefreshTextPreview,
     })
     end -- not textCollapsed
 
@@ -1075,8 +1070,6 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             end,
         })
 
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
         if config.effectType == "colorShift" then
             AddColorRow(details, {
                 label = "Shift Color",
@@ -1087,7 +1080,6 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
                 onConfirm = RefreshRuntime,
-                onChange = RefreshRuntime,
             })
             BuildTextureIndicatorSpeedSlider(details, config, "Shift Duration", RefreshRuntime, inline,
                 finder and finder.shiftDuration)
@@ -1155,8 +1147,6 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll.
     local function BuildTriggerEffectAdvanced(panel)
-        -- deferCommit is deliberately absent, matching the stock color picker
-        -- this row replaced.
         if effectKey == "colorShift" then
             AddColorRow(panel, {
                 label = "Shift Color",
@@ -1166,7 +1156,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
                 onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
-                onChange = function()
+                onPreview = function()
                     local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
                         and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
                     if not refreshedMirror then
@@ -1574,11 +1564,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
         RefreshTextureVisual()
     end
 
-    -- Bound to the STAGED table, exactly as the stock picker was: the drag
-    -- writes previewSettings.color and only ConfirmTextureColor copies it
-    -- across to the saved settings. deferCommit stays absent for the same
-    -- reason it was absent before - the staging copy already keeps the live
-    -- renderers off the uncommitted value.
+    -- Preview through the staging table; only ConfirmTextureColor copies
+    -- the committed color across to the saved settings.
     local colorRow = AddColorRow(textureLeft, {
         label = "Color",
         setting = SPECIAL_FINDER.texture.color,
@@ -1587,7 +1574,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         default = { 1, 1, 1, 1 },
         hasAlpha = true,
         onConfirm = ConfirmTextureColor,
-        onChange = textureValueChanged,
+        onPreview = textureValueChanged,
     })
 
     -- The cancel triad hangs on the row's embedded stock ColorPicker - the

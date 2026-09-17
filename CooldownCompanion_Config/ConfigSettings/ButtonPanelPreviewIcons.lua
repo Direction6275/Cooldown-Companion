@@ -39,7 +39,7 @@ local function StyleIconEntry(slot, buttonData, group)
     -- is what the world shows.
     local style = group and group.style or {}
     if CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
     end
     local text
     if style.showKeybindText and CooldownCompanion.GetDisplayedKeybindText

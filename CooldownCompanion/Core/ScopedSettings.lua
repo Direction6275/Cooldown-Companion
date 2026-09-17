@@ -126,6 +126,15 @@ local function CloneSettingValue(value)
     return value
 end
 
+-- Only genuinely new setups use the current creation policy. Legacy seeds,
+-- imported buckets and missing keys in saved settings retain their defaults.
+local function CreateResourceBarSettings()
+    local settings = CopySubsystemDefaults("resourceBars")
+    settings.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    settings._barGeometryVersion = 1
+    return settings
+end
+
 local function GetSpecKeyedTable(source, specID)
     if type(source) ~= "table" then
         return nil
@@ -800,7 +809,10 @@ local function NormalizeCustomBarStoreForClass(barsBySpec, allowedSpecIDs)
                 if not sawSpec or next(normalizedSpecs) then
                     copiedEntry.specs = normalizedSpecs
                     ClearCustomBarLegacySpecFields(copiedEntry)
-                    local customBarId = type(copiedEntry.customBarId) == "string" and copiedEntry.customBarId or key
+                    -- The store key is the identity referenced by order and
+                    -- placement. Repeated stale embedded IDs must not merge
+                    -- two independently created bars during normalization.
+                    local customBarId = type(key) == "string" and key or copiedEntry.customBarId
                     if type(customBarId) == "string" and customBarId ~= "" then
                         filtered.entries[customBarId] = copiedEntry
                         included[customBarId] = true
@@ -816,7 +828,10 @@ local function NormalizeCustomBarStoreForClass(barsBySpec, allowedSpecIDs)
                 end
             end
         end
-        for customBarId in pairs(included) do
+        local remaining = {}
+        for customBarId in pairs(included) do remaining[#remaining + 1] = customBarId end
+        table.sort(remaining)
+        for _, customBarId in ipairs(remaining) do
             filtered.order[#filtered.order + 1] = customBarId
         end
     else
@@ -983,6 +998,9 @@ local function NormalizeResourceBarSettingsForClass(settings, classKey)
     end
 end
 
+-- Keep source attachment IDs intact during detached import conversion.
+ST._NormalizeResourceSettingsForPanelConversion = NormalizeResourceBarSettingsForClass
+
 local function NormalizeScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
         NormalizeResourceBarSettingsForClass(settings, GetCurrentResourceBarClassKey(CooldownCompanion))
@@ -1139,6 +1157,9 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     local defaults = CopySubsystemDefaults("resourceBars")
     NormalizeResourceBarSettingsForClass(defaults, classKey)
     SanitizeResourceBarAnchors(defaults, classKey)
+    if DeepEqual(comparable, defaults) then return true end
+    defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    defaults._barGeometryVersion = 1
     return DeepEqual(comparable, defaults)
 end
 
@@ -1741,6 +1762,10 @@ local function GetResourceBarConflict(profile, classKey)
     return conflict
 end
 
+-- Detached profile/import conversion uses the same conflict semantics as
+-- the live resolver, including already-resolved and empty records.
+ST.GetResourceBarConflictForProfile = GetResourceBarConflict
+
 local function BuildResourceBarConflictSummary(profile)
     local summaries = {}
     local state = type(profile) == "table" and rawget(profile, RESOURCE_BAR_MIGRATION_KEY) or nil
@@ -1896,6 +1921,7 @@ function CooldownCompanion:GetCharacterScopedSettings(systemKey)
             and type(seenCharacters) == "table"
             and seenCharacters[charKey] == true
         settings = shouldUseLegacySeed and CopyTable(seed) or CopySubsystemDefaults(systemSpec.legacyKey)
+        if systemKey == "castBar" and not shouldUseLegacySeed then settings._barGeometryVersion = 1 end
         NormalizeScopedBarSettings(systemKey, settings)
         SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
         store[charKey] = settings
@@ -1971,7 +1997,7 @@ function CooldownCompanion:GetResourceBarSettings()
     local classStore = EnsureResourceBarClassStore(profile)
     local settings = classStore[classKey]
     if type(settings) ~= "table" then
-        settings = CopySubsystemDefaults("resourceBars")
+        settings = CreateResourceBarSettings()
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
@@ -2017,7 +2043,7 @@ function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
     local classStore = EnsureResourceBarClassStore(profile)
     local settings = classStore[classKey]
     if type(settings) ~= "table" then
-        settings = CopySubsystemDefaults("resourceBars")
+        settings = CreateResourceBarSettings()
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
@@ -2075,6 +2101,13 @@ end
 function CooldownCompanion:GetPendingResourceBarConflictSummary()
     local profile = self.db and self.db.profile
     return BuildResourceBarConflictSummary(profile)
+end
+
+function CooldownCompanion:GetNextResourceBarConflictClassKey()
+    local current = self:GetCurrentResourceBarClassKey()
+    if self:GetResourceBarConflict(current) then return current end
+    local first = self:GetPendingResourceBarConflictSummary()[1]
+    return first and first.classKey
 end
 
 function CooldownCompanion:GetPendingResourceBarConflictExportMessage()

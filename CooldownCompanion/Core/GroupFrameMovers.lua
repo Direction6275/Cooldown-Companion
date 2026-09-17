@@ -410,11 +410,159 @@ local function GetPanelResizeCursorPosition()
     return cursorX / scale, cursorY / scale
 end
 
+local function GetPanelBarStackGeometry(group)
+    local included = {}
+    local includeInactive = ST.GetPanelLayoutKind(group) == "empty"
+    for index, entry in ipairs(group.buttons or {}) do
+        if includeInactive or ST.IsPanelLayoutEntryEligible(group, entry) then included[index] = true end
+    end
+    local positions, originX, originY, width, height = ST.GetAttachedBarPreviewLayout(
+        group, 1, 1, { x = 0, y = 0, width = 1, height = 1 }, included)
+    return included, positions, originX, originY, width, height
+end
+
+-- A rebuild is only a reason to recheck the resize basis, not to cancel.
+-- Use the same calculations at mouse-down and after any button population.
+local function GetPanelResizeBasis(frame, groupId, group, basis, start)
+    local style = group.style
+    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
+    local buttonsPerRow = style.buttonsPerRow or 12
+    local numButtons = frame.visibleButtonCount
+        or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
+        or #group.buttons
+    if group.parentContainerId and not CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
+        numButtons = math_max(numButtons, frame.layoutButtonCount)
+    end
+    -- On a sectioned panel the counts above include the section members, but the
+    -- panel-wide size keys this drag scales drive the BASE CLUSTER only (each
+    -- section owns its own icon size), so the grid to measure is the base one.
+    if frame._sectionLayout then
+        numButtons = math_max(1, frame._sectionLayout.baseCount)
+    end
+    if ST.IsAuraPanelGroup(group) then
+        -- The drag scales per cell, so it has to read the same expanded grid
+        -- ResizeGroupFrame lays out -- notably the single bar column, which the
+        -- buttonsPerRow math below would wrap.
+        basis.cols, basis.rows = CooldownCompanion:GetAuraPanelGridMetrics(
+            groupId,
+            group,
+            GetGroupButtonSizingOptions(CooldownCompanion, groupId, group, nil)
+        )
+    elseif orientation == "horizontal" then
+        basis.cols = math_max(1, math_min(numButtons, buttonsPerRow))
+        basis.rows = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    else
+        basis.rows = math_max(1, math_min(numButtons, buttonsPerRow))
+        basis.cols = math_max(1, math_ceil(numButtons / buttonsPerRow))
+    end
+
+    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
+    local factorPoint
+    if not ST.IsAuraPanelGroup(group) then
+        factorPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
+    end
+    if not factorPoint and CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) then
+        factorPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
+    end
+    factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
+    if factorPoint:find("LEFT", 1, true) then
+        basis.kX = 1
+    elseif factorPoint:find("RIGHT", 1, true) then
+        basis.kX = 0
+    else
+        basis.kX = 0.5
+    end
+    if factorPoint:find("TOP", 1, true) then
+        basis.kY = 1
+    elseif factorPoint:find("BOTTOM", 1, true) then
+        basis.kY = 0
+    else
+        basis.kY = 0.5
+    end
+    if basis.kX == 0 then
+        basis.kX = 1
+    end
+    if basis.kY == 0 then
+        basis.kY = 1
+    end
+    -- A parked cursor panel extends away from its anchored point, so the
+    -- factors and delta signs come from that anchor: the grip sits on the
+    -- movable corner and dragging it outward always grows the panel.
+    basis.signX = 1
+    basis.signY = 1
+    if IsCursorAnchor(group.anchor) then
+        local point = group.anchor.point or "CENTER"
+        basis.kX = (point:find("LEFT", 1, true) or point:find("RIGHT", 1, true)) and 1 or 0.5
+        basis.kY = (point:find("TOP", 1, true) or point:find("BOTTOM", 1, true)) and 1 or 0.5
+        if point:find("RIGHT", 1, true) then
+            basis.signX = -1
+        end
+        if point:find("BOTTOM", 1, true) then
+            basis.signY = -1
+        end
+    end
+
+    if frame._barStackMoverActive then
+        -- The root stays fixed regardless of its saved anchor. The grip's
+        -- moving edge is determined by bar placement around that root.
+        local panel = group._attachedBarOwner or group
+        if start then
+            -- Compare at the drag's starting dimensions. Resizing can change
+            -- the dominant stack edge without changing its saved arrangement.
+            local view, barStyle = {}, {}
+            for key, value in pairs(panel) do view[key] = value end
+            for key, value in pairs(group.style) do barStyle[key] = value end
+            -- Effective-style resolution updates entry override metatables.
+            -- Keep those writes away from the live entries during this check.
+            view.buttons = CopyTable(panel.buttons)
+            barStyle.barLength, barStyle.barHeight = start._resizeStartPrimary, start._resizeStartSecondary
+            view.attachedBarStyle, panel = barStyle, view
+        end
+        local included, positions, originX, originY, width, height = GetPanelBarStackGeometry(panel)
+        local metrics = ST.GetBarStackResizeMetrics(panel, included, positions, originX, originY, width, height)
+        basis.cols, basis.rows = metrics.xFactor, metrics.yFactor
+        basis.kX, basis.kY = 1, 1
+        basis.signX = metrics.xSide == "LEFT" and -1 or 1
+        basis.signY = metrics.ySide == "TOP" and -1 or 1
+    end
+
+    basis.kind = group.displayMode == "bars" and "bar" or style.maintainAspectRatio and "square" or "icon"
+    basis.barFillVertical = basis.kind == "bar" and style.barFillVertical == true
+    basis.displayMode = group.displayMode or "icons"
+    basis.orientation = orientation
+    basis.stack = frame._barStackMoverActive == true
+    return basis
+end
+
 local function ApplyPanelResizeFromCursor(grip)
     local groupId = grip._resizeGroupId
-    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
-    if not group or not CanUsePanelResizeInteractions(groupId, group) then
+    local owner = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local group = grip._resizeSizingGroup
+    local frame = grip._resizeFrame
+    if not group or owner ~= grip._resizeOwner or CooldownCompanion._currentSpecId ~= grip._resizeSpecId
+        or CooldownCompanion.groupFrames[groupId] ~= frame
+        or grip._resizeStyle ~= (group._attachedBarOwner and owner.attachedBarStyle or owner.style)
+        or not CanUsePanelResizeInteractions(groupId, group) then
+        grip._resizeSizingGroup = nil
         return false
+    end
+
+    if frame._panelLayoutRevision ~= grip._resizeLayoutRevision then
+        local current = ST.GetPanelSizingGroup(owner)
+        if current.style ~= grip._resizeStyle or not CanUsePanelResizeInteractions(groupId, current) then
+            grip._resizeSizingGroup = nil
+            return false
+        end
+        local basis = GetPanelResizeBasis(frame, groupId, current, grip._resizeBasisCheck or {}, grip)
+        grip._resizeBasisCheck = basis
+        for key, value in pairs(grip._resizeBasis) do
+            if basis[key] ~= value then
+                grip._resizeSizingGroup = nil
+                return false
+            end
+        end
+        grip._resizeSizingGroup, group = current, current
+        grip._resizeLayoutRevision = frame._panelLayoutRevision
     end
 
     local cursorX, cursorY = GetPanelResizeCursorPosition()
@@ -427,19 +575,20 @@ local function ApplyPanelResizeFromCursor(grip)
         return false
     end
 
-    local dx = (cursorX - grip._resizeStartX) * (grip._resizeSignX or 1)
-    local dy = (cursorY - grip._resizeStartY) * (grip._resizeSignY or 1)
-    local perButtonDW = dx / (grip._resizeCols * grip._resizeKX)
-    local perButtonDH = -dy / (grip._resizeRows * grip._resizeKY)
+    local basis = grip._resizeBasis
+    local dx = (cursorX - grip._resizeStartX) * (basis.signX or 1)
+    local dy = (cursorY - grip._resizeStartY) * (basis.signY or 1)
+    local perButtonDW = basis.cols > 0 and dx / (basis.cols * basis.kX) or 0
+    local perButtonDH = basis.rows > 0 and -dy / (basis.rows * basis.kY) or 0
     local changed = false
 
-    if grip._resizeKind == "square" then
+    if basis.kind == "square" then
         local newSize = RoundAndClampPanelSize(grip._resizeStartPrimary + ((perButtonDW + perButtonDH) / 2), 10, 150)
         if style.buttonSize ~= newSize then
             style.buttonSize = newSize
             changed = true
         end
-    elseif grip._resizeKind == "icon" then
+    elseif basis.kind == "icon" then
         local newWidth = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 150)
         local newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 10, 150)
         if style.iconWidth ~= newWidth then
@@ -450,10 +599,10 @@ local function ApplyPanelResizeFromCursor(grip)
             style.iconHeight = newHeight
             changed = true
         end
-    elseif grip._resizeKind == "bar" then
+    elseif basis.kind == "bar" then
         local newLength
         local newHeight
-        if grip._resizeBarFillVertical then
+        if basis.barFillVertical then
             newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDH, 10, 500)
             newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDW, 5, 100)
         else
@@ -506,26 +655,24 @@ local function EndPanelResizeGesture(grip, applyFinal)
 
     if applyFinal and groupId then
         ApplyPanelResizeFromCursor(grip)
-        CooldownCompanion:UpdateGroupStyle(groupId)
-        RefreshConfigPanelIfShown()
+        if grip._resizeSizingGroup then
+            CooldownCompanion:UpdateGroupStyle(groupId)
+            RefreshConfigPanelIfShown()
+        elseif restylePending then
+            CooldownCompanion._pendingFullRefresh = true
+        end
     elseif restylePending then
         CooldownCompanion._pendingFullRefresh = true
     end
     ST.UpdateGroupSizeLabel(grip._resizeFrame)
 
     grip._resizeGroupId = nil
-    grip._resizeKind = nil
+    grip._resizeOwner, grip._resizeSizingGroup, grip._resizeSpecId, grip._resizeLayoutRevision = nil, nil, nil, nil
+    grip._resizeBasis, grip._resizeBasisCheck, grip._resizeStyle = nil, nil, nil
     grip._resizeStartX = nil
     grip._resizeStartY = nil
     grip._resizeStartPrimary = nil
     grip._resizeStartSecondary = nil
-    grip._resizeBarFillVertical = nil
-    grip._resizeCols = nil
-    grip._resizeRows = nil
-    grip._resizeKX = nil
-    grip._resizeKY = nil
-    grip._resizeSignX = nil
-    grip._resizeSignY = nil
     grip._resizeElapsed = nil
     grip._resizeRestylePending = nil
     CooldownCompanion:EndMoverChromeFade(grip)
@@ -539,6 +686,10 @@ local function UpdatePanelResizeGesture(grip, elapsed)
     grip._resizeElapsed = grip._resizeElapsed + elapsed
     if ApplyPanelResizeFromCursor(grip) then
         grip._resizeRestylePending = true
+    end
+    if not grip._resizeSizingGroup then
+        EndPanelResizeGesture(grip, false)
+        return
     end
 
     if grip._resizeElapsed >= PANEL_RESIZE_REFRESH_INTERVAL then
@@ -554,7 +705,8 @@ end
 local function BeginPanelResizeGesture(grip)
     local frame = grip._resizeFrame
     local groupId = frame and frame.groupId
-    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local owner = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local group = ST.GetPanelSizingGroup(owner)
     if not group or not CanUsePanelResizeInteractions(groupId, group) then
         return
     end
@@ -572,103 +724,24 @@ local function BeginPanelResizeGesture(grip)
     end
 
     grip._resizeGroupId = groupId
+    grip._resizeOwner, grip._resizeSizingGroup, grip._resizeStyle = owner, group, style
+    grip._resizeSpecId, grip._resizeLayoutRevision = CooldownCompanion._currentSpecId, frame._panelLayoutRevision
     grip._resizeStartX = cursorX
     grip._resizeStartY = cursorY
     grip._resizeElapsed = 0
     grip._resizeRestylePending = nil
 
-    local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
-    local buttonsPerRow = style.buttonsPerRow or 12
-    local numButtons = frame.visibleButtonCount
-        or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
-        or #group.buttons
-    if group.parentContainerId and not CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
-        numButtons = math_max(numButtons, frame.layoutButtonCount)
-    end
-    -- On a sectioned panel the counts above include the section members, but the
-    -- panel-wide size keys this drag scales drive the BASE CLUSTER only (each
-    -- section owns its own icon size), so the grid to measure is the base one.
-    if frame._sectionLayout then
-        numButtons = math_max(1, frame._sectionLayout.baseCount)
-    end
-    if ST.IsAuraPanelGroup(group) then
-        -- The drag scales per cell, so it has to read the same expanded grid
-        -- ResizeGroupFrame lays out -- notably the single bar column, which the
-        -- buttonsPerRow math below would wrap.
-        grip._resizeCols, grip._resizeRows = CooldownCompanion:GetAuraPanelGridMetrics(
-            groupId,
-            group,
-            GetGroupButtonSizingOptions(CooldownCompanion, groupId, group, nil)
-        )
-    elseif orientation == "horizontal" then
-        grip._resizeCols = math_max(1, math_min(numButtons, buttonsPerRow))
-        grip._resizeRows = math_max(1, math_ceil(numButtons / buttonsPerRow))
-    else
-        grip._resizeRows = math_max(1, math_min(numButtons, buttonsPerRow))
-        grip._resizeCols = math_max(1, math_ceil(numButtons / buttonsPerRow))
-    end
-
-    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local factorPoint
-    if not ST.IsAuraPanelGroup(group) then
-        factorPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
-    end
-    if not factorPoint and CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) then
-        factorPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
-    end
-    factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
-    if factorPoint:find("LEFT", 1, true) then
-        grip._resizeKX = 1
-    elseif factorPoint:find("RIGHT", 1, true) then
-        grip._resizeKX = 0
-    else
-        grip._resizeKX = 0.5
-    end
-    if factorPoint:find("TOP", 1, true) then
-        grip._resizeKY = 1
-    elseif factorPoint:find("BOTTOM", 1, true) then
-        grip._resizeKY = 0
-    else
-        grip._resizeKY = 0.5
-    end
-    if grip._resizeKX == 0 then
-        grip._resizeKX = 1
-    end
-    if grip._resizeKY == 0 then
-        grip._resizeKY = 1
-    end
-    -- A parked cursor panel extends away from its anchored point, so the
-    -- factors and delta signs come from that anchor: the grip sits on the
-    -- movable corner and dragging it outward always grows the panel.
-    grip._resizeSignX = 1
-    grip._resizeSignY = 1
-    if IsCursorAnchor(group.anchor) then
-        local point = group.anchor.point or "CENTER"
-        grip._resizeKX = (point:find("LEFT", 1, true) or point:find("RIGHT", 1, true)) and 1 or 0.5
-        grip._resizeKY = (point:find("TOP", 1, true) or point:find("BOTTOM", 1, true)) and 1 or 0.5
-        if point:find("RIGHT", 1, true) then
-            grip._resizeSignX = -1
-        end
-        if point:find("BOTTOM", 1, true) then
-            grip._resizeSignY = -1
-        end
-    end
-
+    if frame._barStackMoverActive then ST.UpdatePanelMoverBounds(frame, owner) end
+    grip._resizeBasis = GetPanelResizeBasis(frame, groupId, group, {})
     if group.displayMode == "bars" then
-        grip._resizeKind = "bar"
         grip._resizeStartPrimary = style.barLength or 180
         grip._resizeStartSecondary = style.barHeight or 20
-        grip._resizeBarFillVertical = style.barFillVertical and true or nil
     elseif style.maintainAspectRatio then
-        grip._resizeKind = "square"
         grip._resizeStartPrimary = style.buttonSize or ST.BUTTON_SIZE
         grip._resizeStartSecondary = nil
-        grip._resizeBarFillVertical = nil
     else
-        grip._resizeKind = "icon"
         grip._resizeStartPrimary = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         grip._resizeStartSecondary = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-        grip._resizeBarFillVertical = nil
     end
 
     grip._resizeActive = true
@@ -722,7 +795,7 @@ end
 
 local function OnUnlockedPanelMouseWheel(frame, delta)
     local groupId = frame.groupId
-    local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local group = ST.GetPanelSizingGroup(groupId and CooldownCompanion.db.profile.groups[groupId])
     if not group
         or not CanUsePanelResizeInteractions(groupId, group)
         or not delta
@@ -913,6 +986,49 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
 end
 
+-- Bar-only stacks retain a tiny positioning root. Their chrome instead uses
+-- the configured, fully expanded bar footprint, never native aura dimensions.
+function ST.UpdatePanelMoverBounds(frame, group, kind)
+    if InCombatLockdown() or not frame.dragHandle or not frame.dragHandle:IsShown() then return end
+    local surface = frame
+    local stack = ST.PanelUsesBarStack(group, kind)
+    if stack then
+        surface = frame._barStackMoverBounds
+        if not surface then
+            surface = CreateFrame("Frame", nil, frame)
+            frame._barStackMoverBounds = surface
+        end
+        local included, positions, originX, originY, width, height = GetPanelBarStackGeometry(group)
+        if not (frame.resizeGrip and frame.resizeGrip._resizeActive) then
+            frame._barStackResizeMetrics = ST.GetBarStackResizeMetrics(
+                group, included, positions, originX, originY, width, height)
+        end
+        surface:ClearAllPoints()
+        surface:SetPoint("TOPLEFT", frame, "TOPLEFT", -originX, originY)
+        surface:SetSize(width, height)
+        frame.dragHandle:ClearAllPoints()
+        frame.dragHandle:SetPoint("BOTTOM", surface, "TOP", 0, 2)
+        frame.dragHandle:SetWidth(math_max(100, width))
+        if frame.coordLabel then
+            frame.coordLabel:ClearAllPoints()
+            frame.coordLabel:SetPoint("TOP", surface, "BOTTOM", 0, -2)
+            frame.coordLabel:SetWidth(math_max(100, width))
+        end
+    elseif frame._barStackMoverActive then
+        frame._barStackResizeMetrics = nil
+        frame.dragHandle:ClearAllPoints()
+        frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
+        frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
+        if frame.coordLabel then
+            frame.coordLabel:ClearAllPoints()
+            frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
+            frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
+        end
+    else return end
+    frame._barStackMoverActive = stack or nil
+    CooldownCompanion:RepositionPanelResizeGrip(frame)
+end
+
 -- The resize grip lives on the panel's movable corner. Ordinary panels keep
 -- the BOTTOMRIGHT default; a parked cursor panel's anchored point is fixed at
 -- the dummy cursor, so the opposite corner is the one that tracks resizes.
@@ -923,7 +1039,9 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
     end
     local group = frame.groupId and self.db.profile.groups[frame.groupId]
     local xSide, ySide = "RIGHT", "BOTTOM"
-    if group and IsCursorAnchor(group.anchor) then
+    if frame._barStackMoverActive and frame._barStackResizeMetrics then
+        xSide, ySide = frame._barStackResizeMetrics.xSide, frame._barStackResizeMetrics.ySide
+    elseif group and IsCursorAnchor(group.anchor) then
         local point = group.anchor.point or "CENTER"
         if point:find("RIGHT", 1, true) then
             xSide = "LEFT"
@@ -932,14 +1050,16 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
             ySide = "TOP"
         end
     end
-    if grip._cornerX == xSide and grip._cornerY == ySide then
+    local surface = frame._barStackMoverActive and frame._barStackMoverBounds or frame
+    if grip._cornerX == xSide and grip._cornerY == ySide and grip._cornerSurface == surface then
         return
     end
     grip._cornerX = xSide
     grip._cornerY = ySide
+    grip._cornerSurface = surface
     local corner = ySide .. xSide
     grip:ClearAllPoints()
-    grip:SetPoint(corner, frame, corner,
+    grip:SetPoint(corner, surface, corner,
         xSide == "LEFT" and 1 or -1,
         ySide == "TOP" and -1 or 1)
     -- The bracket's L opens toward the corner it lives on.
@@ -967,6 +1087,7 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.nudger then
         frame.nudger:SetShown(shown)
     end
+    if shown then ST.UpdatePanelMoverBounds(frame, group) end
     -- Cursor panels resize through the positioning preview's selection gate,
     -- same as their drag; other panels keep the plain resizable check.
     local resizeShown = shown
@@ -1004,14 +1125,17 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     -- A mixed panel's AURA SECTION is the same trade in miniature and reads the
     -- same flag: its cluster is empty air without the tiles, and on a panel
     -- whose entries all sit in sections there would be nothing to grab at all.
-    local auraPreviewShown = (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group))
-        and not CooldownCompanion._combatForcedLock
-        and (shown == true or containerPreviewActive)
-        or false
+    -- Attached aura bars need the same expanded editing presentation even
+    -- when the ordinary panel has no Aura Only section.
+    -- Solo Arrange hides handles, not the unlocked panel's editing state.
+    -- Use that same state for shells and native-container suppression.
+    local editing = not CooldownCompanion._combatForcedLock
+        and (shown or containerPreviewActive or CooldownCompanion:IsPanelUnlockPreviewActive(group))
+    local auraPreviewShown = editing and (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
+        or ST.PanelUsesAttachedBarLayout(group, frame._panelLayoutKind)) or false
     CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
     CooldownCompanion:SetTotemPanelPreviewShown(frame,
-        ST.IsTotemPanelGroup(group) and not CooldownCompanion._combatForcedLock
-            and (shown == true or containerPreviewActive))
+        editing and ST.IsTotemPanelGroup(group))
 
     -- Section click targets ride the same wide gate the aura placeholder
     -- preview does: every member of an active container preview shows its

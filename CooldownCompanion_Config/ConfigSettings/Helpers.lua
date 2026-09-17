@@ -59,11 +59,38 @@ local function RefreshActiveConfigPreview()
     end
 end
 
+-- Snapshot storage, not effective values: nil and an inherited default are
+-- different saved states. Restoring bypasses editor guards so a selection
+-- change during the preview cannot strand temporary values in the old owner.
+function ST._CaptureRawSettingsFields(tbl, keys)
+    local saved = {}
+    if tbl then
+        for _, key in ipairs(keys) do saved[key] = rawget(tbl, key) end
+    end
+    return function()
+        if tbl then
+            for _, key in ipairs(keys) do rawset(tbl, key, saved[key]) end
+        end
+    end
+end
+
+function ST._WithSettingsPreview(tbl, keys, apply, preview)
+    if type(keys) == "string" then keys = { keys } end
+    local target = ST._GetSettingsPreviewTarget and ST._GetSettingsPreviewTarget(tbl)
+    if target and not target.isCurrent() then return end
+    local restore = target and target.capture(keys) or ST._CaptureRawSettingsFields(tbl, keys)
+    -- This exception boundary guarantees rollback before propagating a failed
+    -- preview; errors are never swallowed or used to select a fallback path.
+    local ok, failure = xpcall(function()
+        apply()
+        if preview then preview() end
+    end, function(err) return err end)
+    restore()
+    if not ok then error(failure, 0) end
+end
+
 local function PreviewScalarSetting(tbl, key, value, previewFn)
-    local committed = tbl[key]
-    tbl[key] = value
-    previewFn()
-    tbl[key] = committed
+    ST._WithSettingsPreview(tbl, key, function() tbl[key] = value end, previewFn)
 end
 
 -- Helper: tint AceGUI Heading labels with player class color.
@@ -328,6 +355,8 @@ local function ChainHeadingBadges(heading, widget)
 end
 
 local function BuildCollapsibleSection(container, title, key, store, refreshFn, opts)
+    local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(container)
+    if context then key = ST._SettingsContextKey(context, key) end
     store = store or CS.collapsedSections
     local heading = AceGUI:Create("Heading")
     heading:SetText(title)
@@ -339,6 +368,14 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
     end
 
     local collapsed = store[key]
+    heading._cdcSettingsHeading = context ~= nil
+    heading._cdcSettingsAvailable = context and context.sections[key]
+    if heading._cdcSettingsAvailable == false then collapsed = true end
+    heading._cdcSettingsCollapsed = collapsed
+    heading:SetCallback("OnRelease", function(widget)
+        widget._cdcSettingsHeading, widget._cdcSettingsAvailable, widget._cdcSettingsCollapsed = nil, nil, nil
+        widget._cdcSettingsScope = nil
+    end)
     local btn = AttachCollapseButton(heading, collapsed, function()
         store[key] = not store[key]
         if refreshFn then
@@ -361,6 +398,19 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
 
     if opts and opts.leftAligned then
         ApplyLeftAlignedHeading(heading, btn)
+        if opts.largeTitle then
+            local font, size, flags = heading.label:GetFont()
+            if font then
+                heading.label:SetFont(font, size + 4, flags)
+                heading:SetHeight(HEADING_STOCK_HEIGHT + HEADING_TOP_PAD + 4)
+                -- Heading widgets share a pool with subsections and other addons.
+                local prevOnRelease = heading.events["OnRelease"]
+                heading:SetCallback("OnRelease", function(widget, event, ...)
+                    heading.label:SetFont(font, size, flags)
+                    if prevOnRelease then prevOnRelease(widget, event, ...) end
+                end)
+            end
+        end
     end
 
     return heading, collapsed, btn
@@ -499,10 +549,25 @@ local function GetAdvancedToggleTitle(parentWidget, options)
 end
 
 local function BuildAdvancedDescriptor(parentWidget, settingKey, options)
+    local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(parentWidget)
+    local build = options and options.build
+    if context and build then
+        local original = build
+        build = function(panel, ...)
+            panel._cdcSettingsContext = context
+            local previous = panel.events and panel.events.OnRelease
+            panel:SetCallback("OnRelease", function(widget, event, ...)
+                if previous then previous(widget, event, ...) end
+                widget._cdcSettingsContext = nil
+            end)
+            original(panel, ...)
+            if context.mode == "entry" then ST._FilterEntrySettingsWidgets(panel) end
+        end
+    end
     return {
         settingKey = settingKey,
         title = GetAdvancedToggleTitle(parentWidget, options),
-        build = options and options.build,
+        build = build,
         isAvailable = options and options.isAvailable,
         context = options and options.context,
         unlock = options and options.unlock,
@@ -534,6 +599,8 @@ local function SetActiveAdvancedSettingsToggleButton(btn)
 end
 
 local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnabled, options)
+    local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(parentWidget)
+    if context then settingKey = ST._SettingsContextKey(context, settingKey) end
     local hasEditor = options and type(options.build) == "function" and CS.OpenAdvancedSettingsPanel
     local frame = parentWidget.frame
     local btn = frame._cdcAdvancedBtn
@@ -608,7 +675,8 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     end
 
     local function ToggleEditor()
-        AceGUI:ClearFocus()
+        if context and not context:IsCurrent() then return end
+        ST._FlushSettingsEdits()
         if hasEditor then
             CS.OpenAdvancedSettingsPanel(BuildAdvancedDescriptor(parentWidget, settingKey, options))
         end
@@ -1002,10 +1070,9 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
             min = 1, max = sliderMax, step = 1,
             value = savedLimit == 0 and sliderMax or savedLimit,
             onChange = function(val)
-                local committed = group.maxVisibleButtons
-                SetMaxVisibleButtons(val)
-                RefreshSelectedButtonsPreview()
-                group.maxVisibleButtons = committed
+                ST._WithSettingsPreview(group, "maxVisibleButtons", function()
+                    SetMaxVisibleButtons(val)
+                end, RefreshSelectedButtonsPreview)
             end,
             onRelease = function(val)
                 SetMaxVisibleButtons(val)
@@ -1212,42 +1279,34 @@ local function ArmColorCommitOnClose(onConfirmedFn)
     pendingColorCommit = onConfirmedFn
 end
 
--- Helper: wire up OnValueChanged and OnValueConfirmed for a ColorPicker widget.
--- Stores {r,g,b,a} into tbl[key]. onConfirmedFn fires when the color picker
--- closes (via the commit-on-close bridge above); onChangeFn (optional) fires
--- during drag for live preview.
--- With deferCommit, the drag value never rests in the bound table: it is
--- swapped in only for the duration of the onChangeFn call and committed for
--- real when the picker closes. Use it when a live renderer re-reads the same
--- table every tick and must keep showing the committed color during a drag.
-local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onChangeFn, deferCommit)
+function ST._FlushSettingsEdits()
+    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
+    if pendingColorCommit then
+        local commit = pendingColorCommit
+        pendingColorCommit = nil
+        commit()
+        if ColorPickerFrame then ColorPickerFrame:Hide() end
+    end
+    AceGUI:ClearFocus()
+end
+
+-- Preview color drags temporarily; only picker close/confirmation saves the value.
+local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn, context)
     widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
-        if deferCommit then
-            -- Deferred mode: the live renderers re-read this table every tick,
-            -- so an uncommitted drag value may only exist in it for the moment
-            -- the config canvas rebuild reads it. Arm the close commit FIRST so
-            -- a failed refresh still converges when the picker closes â€” and arm
-            -- it unconditionally, because this closure is the only writer of
-            -- tbl[key] in deferred mode; without it the edit would be silently
-            -- discarded when no confirm callback is supplied.
-            local pending = {r, g, b, a}
-            ArmColorCommitOnClose(function()
-                tbl[key] = pending
-                if onConfirmedFn then onConfirmedFn() end
-            end)
-            local committed = tbl[key]
+        if context and not context:IsCurrent() then return end
+        local pending = {r, g, b, a}
+        -- Arm first so closing still commits if the preview refresh fails.
+        ArmColorCommitOnClose(function()
+            if context and not context:IsCurrent() then return end
             tbl[key] = pending
-            if onChangeFn then onChangeFn() end
-            tbl[key] = committed
-        else
-            tbl[key] = {r, g, b, a}
-            if onConfirmedFn then ArmColorCommitOnClose(onConfirmedFn) end
-            if onChangeFn then onChangeFn() end
-        end
+            if onConfirmedFn then onConfirmedFn() end
+        end)
+        PreviewScalarSetting(tbl, key, pending, onPreviewFn)
     end)
     -- Kept wired so nothing double-fires if a future Ace3 update restores
     -- OnValueConfirmed: disarm the pending close commit before running it here.
     widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
+        if context and not context:IsCurrent() then return end
         pendingColorCommit = nil
         tbl[key] = {r, g, b, a}
         if onConfirmedFn then onConfirmedFn() end
@@ -1322,12 +1381,8 @@ local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, re
         local keys = { anchorKey, xKey, yKey }
         if opts.prepareKey then keys[#keys + 1] = opts.prepareKey end
         if opts.selfPointKey then keys[#keys + 1] = opts.selfPointKey end
-        local saved = {}
-        for _, field in ipairs(keys) do saved[field] = rawget(tbl, field) end
-        Set(key, value)
         local previewRefresh = opts.previewRefresh or RefreshSelectedButtonsPreview
-        previewRefresh()
-        for _, field in ipairs(keys) do tbl[field] = saved[field] end
+        ST._WithSettingsPreview(tbl, keys, function() Set(key, value) end, previewRefresh)
     end
     local xRow, yRow
     local anchorRow = ST._AddDropdownRow(container, {

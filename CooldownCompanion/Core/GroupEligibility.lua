@@ -234,6 +234,21 @@ function CooldownCompanion:GetParentContainer(groupOrGroupId)
     return containers and containers[group.parentContainerId]
 end
 
+local function HasAttachedModuleForUnlock(self, groupId, group)
+    if not ST.PanelSupportsAttachedBars(group) or not self.ResolveModulePanel then return false end
+    for _, kind in ipairs({ "resources", "castbar" }) do
+        local settings = ST.GetConfiguredModuleBarSettings(kind)
+        local feature = kind == "resources" and "resourceBars" or "castBar"
+        if settings and settings.enabled == true and self:IsBarsAndFramesRuntimeFeatureEnabled(feature) then
+            -- Configured resolution never re-enters unlock visibility and does
+            -- not make the answer depend on this frame already being shown.
+            local target = self:ResolveModulePanel(kind, nil, { configured = true, settings = settings })
+            if target.eligible and target.panelId == groupId then return true end
+        end
+    end
+    return false
+end
+
 function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     opts = opts or {}
 
@@ -267,7 +282,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
     -- reserved one-cell footprint for exactly this), so "no saved entry" must
     -- not mean "not on screen to arrange".
     local skipEntryChecks = self:IsRotationAssistantGroup(group) or ST.IsAuraPanelGroup(group)
-        or ST.IsTotemPanelGroup(group)
+        or ST.IsTotemPanelGroup(group) or HasAttachedModuleForUnlock(self, groupId, group)
     if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
         return false
     end
@@ -646,7 +661,8 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
 
     local count = 0
     for _, buttonData in ipairs(group.buttons) do
-        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
+        if not ST.IsAttachedBarEntry(group, buttonData)
+            and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             count = count + 1
         end
     end
@@ -751,14 +767,14 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
 
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
-    if container and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
+    if container and not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             container = container,
             checkCharVisibility = opts.checkCharVisibility,
         })
     end
-    if not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
+    if not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             panelUnlockPreview = true,
@@ -782,7 +798,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         end
     end
 
-    if not self:IsHeroTalentAllowed(group) then return false end
+    if not (opts.configurationOnly and opts.specId and opts.specId ~= self._currentSpecId)
+        and not self:IsHeroTalentAllowed(group) then return false end
 
     local checkCharVisibility = opts.checkCharVisibility
     if checkCharVisibility == nil then checkCharVisibility = true end
@@ -790,7 +807,9 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    if opts.checkLoadConditions ~= false then
+    if opts.configurationOnly then
+        if not self:IsGroupEligibilityMet(group, opts.specId) then return false end
+    elseif opts.checkLoadConditions ~= false then
         if not self:IsGroupLoadConditionMet(group) then
             return false
         end
@@ -1387,6 +1406,7 @@ function CooldownCompanion:EvaluateLoadConditionSources(sources, opts)
             if not eligibility then
                 eligibility = {}
                 identity = self:GetCurrentEligibilityIdentity()
+                if opts.specId then identity.specId = opts.specId end
             end
             if source.allowClassEligibility then
                 MergeEligibilityAllowlist(eligibility, "class", loadConditions.classAllowlist, NormalizeClassKey)
@@ -1408,29 +1428,16 @@ function CooldownCompanion:IsGroupLoadConditionMet(group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group))
 end
 
-function CooldownCompanion:IsGroupEligibilityMet(group)
+function CooldownCompanion:IsGroupEligibilityMet(group, specId)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group), {
         eligibilityOnly = true,
+        specId = specId,
     })
 end
 
 function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForEntry(buttonData, group))
 end
-
-function CooldownCompanion:IsCustomBarLoadConditionMet(customBar)
-    local sources = {}
-    AddLoadConditionSource(sources, "Custom Bar", customBar, LOCAL_LOAD_CONDITION_DEFAULTS, true)
-    return self:EvaluateLoadConditionSources(sources)
-end
-
-function CooldownCompanion:IsCustomBarRuntimeEligible(customBar)
-    if type(customBar) ~= "table" then return false end
-    if customBar.enabled ~= true or not customBar.spellID then return false end
-    if not self:IsTalentConditionMet(customBar) then return false end
-    return self:IsCustomBarLoadConditionMet(customBar)
-end
-
 
 -- ToggleGroupGlobal is defined in GroupManagement.lua (container-aware version)
 

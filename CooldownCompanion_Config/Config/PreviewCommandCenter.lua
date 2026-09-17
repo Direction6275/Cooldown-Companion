@@ -165,68 +165,6 @@ local CastBarPreview = {
     end,
 }
 
--- Custom-bar active-aura preview (the aura pass): a CC-side stand-in on the
--- config canvas â€” fill, texts, and effects render as if the aura were
--- running; the real bar and the aura slot kit are never touched. Keyed by
--- the stored config table (the identity the runtime carries).
-local function CustomBarAuraPreview(cabConfig)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:IsCustomAuraBarActivePreviewActive(cabConfig) == true
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetCustomAuraBarActivePreview(cabConfig, show)
-        end,
-    }
-end
-
--- Pandemic recolor stand-in (PTR 8 Phase 2): its own flag; the canvas
--- unions it into the Active Aura stand-in, since the recolor only exists
--- over the aura fill.
-local function CustomBarPandemicPreview(cabConfig)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:IsCustomAuraBarPandemicPreviewActive(cabConfig) == true
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetCustomAuraBarPandemicPreview(cabConfig, show)
-        end,
-    }
-end
-
--- Pandemic MARKER stand-in: decorates the duration text the Active Aura
--- stand-in writes, so the canvas unions it into that flag too.
-local function CustomBarMarkerPreview(cabConfig)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:IsCustomAuraBarMarkerPreviewActive(cabConfig) == true
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetCustomAuraBarMarkerPreview(cabConfig, show)
-        end,
-    }
-end
-
--- Spell custom-bar cooldown stand-in: the mid-cooldown look on the config
--- canvas â€” fill progress, cooldown/recharge colour, duration text and the
--- charge readout. One flag holding a KIND rather than two flags: the two
--- looks are the same fabrication in different colours, and only one can
--- ever run.
-local function CustomBarCooldownPreview(cabConfig, kind)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:GetCustomBarCooldownPreviewKind(cabConfig) == kind
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetCustomBarCooldownPreview(cabConfig, show and kind or nil)
-        end,
-    }
-end
-
 local function ResourceAuraPreview(powerType)
     return {
         groupScoped = true,
@@ -259,7 +197,8 @@ local function SectionApplies(group, sectionId, buttonIndex)
         return buttonData ~= nil and canUse(buttonData, sectionId, group) == true
     end
     for _, buttonData in ipairs(buttons) do
-        if canUse(buttonData, sectionId, group) == true then
+        if ST.GetEntryPresentation(group, buttonData) == (group.displayMode or "icons")
+            and canUse(buttonData, sectionId, group) == true then
             return true
         end
     end
@@ -305,7 +244,7 @@ local function ResolveTargetStyle(group, buttonIndex)
     local style = group.style or {}
     local buttonData = buttonIndex and (group.buttons or {})[buttonIndex] or nil
     if buttonData and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        style = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData) or style
     end
     return style
 end
@@ -797,7 +736,6 @@ local CONTROLS = {
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
         requiresBarRangeIconConsumer = true,
-        stopWhenInapplicable = true,
         settings = StateRoute(nil),
         preview = ConditionalPreview("out_of_range"),
     },
@@ -952,7 +890,10 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if ST.IsTotemPanelGroup(group) then return false end
     -- Aura Panels only render aura states, even when their entries also
     -- name spells with cooldowns, charges, or cast feedback.
-    if ST.IsAuraPanelGroup(group) and control.group ~= GROUP_AURAS then
+    local entry = buttonIndex and group.buttons and group.buttons[buttonIndex]
+    local auraOnly = ST.IsAuraPanelGroup(group)
+        or (group._settingsContext and entry and entry.addedAs == "aura")
+    if auraOnly and control.group ~= GROUP_AURAS then
         return false
     end
     if not control.modes[displayMode] then
@@ -1030,10 +971,77 @@ local function ResolveGearRoute(control, displayMode)
         return nil
     end
     -- One route, or one per display mode.
-    if settings.tab or settings.object then
-        return settings
+    local route = (settings.tab or settings.object) and settings or settings[control.presentation or displayMode]
+    if route and control.presentation then
+        local copy = {}
+        for key, value in pairs(route) do copy[key] = value end
+        copy.presentation = control.presentation
+        return copy
     end
-    return displayMode and settings[displayMode] or nil
+    return route
+end
+
+local presentationControls = {}
+local function PresentationControl(control, presentation)
+    local id = presentation .. ":" .. control.id
+    if presentationControls[id] then return presentationControls[id] end
+    local variant = {}
+    for key, value in pairs(control) do variant[key] = value end
+    variant.id, variant.presentation = id, presentation
+    variant.baseControl = control
+    local prefix = presentation == "bars" and "Bars: " or "Icons: "
+    variant.label, variant.menuLabel = prefix .. control.label, prefix .. (control.menuLabel or control.label):gsub("^Preview%s+", "")
+    local function Visit(panelId, buttonIndex, action)
+        local owner = CooldownCompanion.db.profile.groups[panelId]
+        if not owner then return false end
+        local group = ST._CreatePanelSettingsContext(owner, presentation).group
+        local found = false
+        for index, entry in ipairs(owner.buttons or {}) do
+            if (not buttonIndex or index == buttonIndex) and ST.GetEntryPresentation(owner, entry) == presentation then
+                if action(index, entry, group) then found = true end
+            end
+        end
+        return found
+    end
+    variant.preview = {
+        IsActive = function(panelId, buttonIndex)
+            return Visit(panelId, buttonIndex, function(index) return control.preview.IsActive(panelId, index) == true end)
+        end,
+        SetActive = function(panelId, buttonIndex, show)
+            Visit(panelId, buttonIndex, function(index, entry, group)
+                if not show or (ST.IsPanelLayoutEntryEligible(group._settingsOwner, entry)
+                    and ControlApplies(control, group, presentation, index)) then
+                    control.preview.SetActive(panelId, index, show)
+                end
+            end)
+        end,
+    }
+    presentationControls[id] = variant
+    return variant
+end
+
+local function CollectPanelControls(group, buttonIndex)
+    local owner = group._settingsOwner or group
+    local ordinary = ST.PanelSupportsAttachedBars(owner) and ST._CreatePanelSettingsContext
+    local presentations = ordinary and { "icons", "bars" } or { group.displayMode or "icons" }
+    local applicable = {}
+    for _, presentation in ipairs(presentations) do
+        local view = ordinary and ST._CreatePanelSettingsContext(owner, presentation).group or group
+        for _, control in ipairs(CONTROLS) do
+            local variant = ordinary and PresentationControl(control, presentation) or control
+            local applies = false
+            if ordinary then
+                for index, entry in ipairs(owner.buttons or {}) do
+                    if (not buttonIndex or index == buttonIndex) and ST.GetEntryPresentation(owner, entry) == presentation
+                        and ST.IsPanelLayoutEntryEligible(owner, entry) and ControlApplies(control, view, presentation, index) then
+                        applies = true; break
+                    end
+                end
+            else applies = ControlApplies(control, view, presentation, buttonIndex) end
+            if applies then applicable[#applicable + 1] = variant end
+        end
+    end
+    return applicable
 end
 
 ------------------------------------------------------------------------
@@ -1185,143 +1193,6 @@ local function CollectObjectControls(objects)
         end
     end
 
-    -- Per-custom-bar groups (the aura pass): one group per live
-    -- aura-tracked Custom Bar, built dynamically â€” the entry appears
-    -- exactly when the bar would render an aura display. Controls close
-    -- over the stored config table, the same identity the runtime keys
-    -- its preview state by.
-    if objects.customBars then
-        local settings = CooldownCompanion.GetResourceBarSettings
-            and CooldownCompanion:GetResourceBarSettings()
-        if settings and settings.enabled == true then
-            for _, cab in ipairs(CooldownCompanion:GetSpecCustomAuraBars()) do
-                local capabilities = type(cab) == "table"
-                    and RB.GetCustomBarConfigCapabilities(cab)
-                local isSpellBar = capabilities and capabilities.isSpellBar
-                local auraTracked = capabilities and capabilities.auraTracked
-                local cooldownPreviewKind = type(cab) == "table"
-                    and CooldownCompanion:GetCustomBarCooldownPreviewKind(cab)
-                if cooldownPreviewKind
-                    and (not (isSpellBar
-                            and capabilities.baseSpellShellConsumer
-                            and capabilities.cooldownConsumer)
-                        or (cooldownPreviewKind == "recharge" and not capabilities.hasCharges)) then
-                    -- A capability change or hidden base shell removes the
-                    -- command that could stop this stand-in. Disarm it now
-                    -- rather than leave an invisible preview running.
-                    CooldownCompanion:SetCustomBarCooldownPreview(cab, nil)
-                end
-                if type(cab) == "table" and CooldownCompanion:IsCustomBarRuntimeEligible(cab) then
-                    local name = cab.label
-                    if not name or name == "" then
-                        name = C_Spell.GetSpellName(tonumber(cab.spellID)) or "Custom Bar"
-                    end
-                    -- The cooldown looks, spell bars only (an aura bar has no
-                    -- cooldown leg at all). Listed before the aura entries:
-                    -- the cooldown is the bar's base render, the aura display
-                    -- occludes it. On a charge spell the cooldown colour is
-                    -- the zero-charges look, so the entry says so, and the
-                    -- recharge look exists only there.
-                    if isSpellBar
-                        and capabilities.baseSpellShellConsumer
-                        and capabilities.cooldownConsumer then
-                        local maxCharges = capabilities.maxCharges
-                        -- Both looks share the bar's Colors section, so the
-                        -- gear route is one shape.
-                        local cooldownRoute = {
-                            object = "customBarAura",
-                            customBarId = cab.customBarId,
-                            appearanceSection = "colors",
-                        }
-                        applicable[#applicable + 1] = {
-                            id = "customBarCooldown_" .. tostring(cab.customBarId),
-                            label = maxCharges and "Preview Zero Charges" or "Preview Cooldown",
-                            group = "Custom Bar: " .. name,
-                            object = "customBars",
-                            settings = cooldownRoute,
-                            preview = CustomBarCooldownPreview(cab, "cooldown"),
-                        }
-                        if maxCharges then
-                            applicable[#applicable + 1] = {
-                                id = "customBarRecharge_" .. tostring(cab.customBarId),
-                                label = "Preview Recharging",
-                                group = "Custom Bar: " .. name,
-                                object = "customBars",
-                                settings = cooldownRoute,
-                                preview = CustomBarCooldownPreview(cab, "recharge"),
-                            }
-                        end
-                    end
-                    if auraTracked then
-                        applicable[#applicable + 1] = {
-                            id = "customBarAura_" .. tostring(cab.customBarId),
-                            label = "Preview Active Aura",
-                            group = "Custom Bar: " .. name,
-                            object = "customBars",
-                            settings = {
-                                object = "customBarAura",
-                                customBarId = cab.customBarId,
-                                -- The aura sections exist only on a
-                                -- spell-backed bar's Settings pane.
-                                auraTab = cab.spellID ~= nil,
-                            },
-                            preview = CustomBarAuraPreview(cab),
-                        }
-                        -- Offered exactly while the entry's own enable is on
-                        -- (the same honesty rule as requiresPandemicEffect on
-                        -- the panel controls).
-                        if cab.pandemicEffect == true then
-                            applicable[#applicable + 1] = {
-                                id = "customBarPandemic_" .. tostring(cab.customBarId),
-                                label = "Preview Pandemic Color",
-                                group = "Custom Bar: " .. name,
-                                object = "customBars",
-                                settings = {
-                                    object = "customBarAura",
-                                    customBarId = cab.customBarId,
-                                    auraTab = cab.spellID ~= nil,
-                                },
-                                preview = CustomBarPandemicPreview(cab),
-                            }
-                        end
-                        -- Same honesty rule, resolved through the shared marker
-                        -- gate: the panel kill switch, then this bar's own switch,
-                        -- then the tracked-unit default. The canvas union must
-                        -- agree with this or the stand-in strands armed. Plus
-                        -- the duration text the marker rides (2026-08-16, with
-                        -- the settings-row gate): hidden text renders no
-                        -- marker, so the command would arm a blank preview and
-                        -- its settings route would open a section with no
-                        -- marker row.
-                        if cab.showDurationText == true
-                            and CooldownCompanion:IsCustomBarPandemicMarkerPreviewWanted(cab) then
-                            applicable[#applicable + 1] = {
-                                id = "customBarPandemicMarker_" .. tostring(cab.customBarId),
-                                label = "Preview Pandemic Marker",
-                                group = "Custom Bar: " .. name,
-                                object = "customBars",
-                                settings = {
-                                    object = "customBarAura",
-                                    customBarId = cab.customBarId,
-                                    auraTab = cab.spellID ~= nil,
-                                },
-                                preview = CustomBarMarkerPreview(cab),
-                            }
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Per-resource groups (the aura pass, Phase 2): one group per resource
-    -- whose overlay is configured, built the same way as the custom-bar
-    -- groups above, and keyed by power type â€” the identity that survives
-    -- rebuilds. The CANVAS owns which resources have a lane on screen (its
-    -- choice of list depends on the anchor mode), so ask it rather than
-    -- re-derive: enumerating independently here put the menu out of step
-    -- with the canvas in both directions, offering toggles whose lane was
-    -- absent and dropping toggles whose lane was drawn.
     if objects.resourceAuras then
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
@@ -1351,7 +1222,7 @@ end
 -- one entry, and "nothing narrowed" is the ruled fallback).
 ------------------------------------------------------------------------
 
-local function ResolveContext()
+local function ResolveContext(presentation)
     local panelId = CS.selectedGroup
     if not panelId then
         return nil
@@ -1362,17 +1233,13 @@ local function ResolveContext()
         return nil
     end
 
-    local multiCount = 0
-    for _ in pairs(CS.selectedButtons or {}) do
-        multiCount = multiCount + 1
+    local entry, _, buttonIndex = ST._GetPanelSettingsSelection(group)
+    if ST.PanelSupportsAttachedBars(group) then
+        presentation = presentation or (entry and ST.GetEntryPresentation(group, entry))
+            or (ST.GetPanelLayoutKind(group) == "bars" and "bars" or "icons")
+        local context = ST._CreatePanelSettingsContext(group, presentation)
+        return panelId, context.group, context.buttonIndex
     end
-    local buttonIndex
-    if multiCount < 2
-        and CS.selectedButton
-        and (group.buttons or {})[CS.selectedButton] then
-        buttonIndex = CS.selectedButton
-    end
-
     return panelId, group, buttonIndex
 end
 
@@ -1385,7 +1252,7 @@ local function ControlSectionId(control)
         return nil
     end
     if control.resolveSection then
-        local _, group, buttonIndex = ResolveContext()
+        local _, group, buttonIndex = ResolveContext(control.presentation)
         if not group then
             return nil
         end
@@ -1396,7 +1263,7 @@ local function ControlSectionId(control)
         -- No section on a text panel (see ControlApplies): the gear is a
         -- plain tab route, with no lens scope or Customize shortcut to
         -- describe.
-        local _, group = ResolveContext()
+        local _, group = ResolveContext(control.presentation)
         if group and group.displayMode == "text" then
             return nil
         end
@@ -1524,38 +1391,6 @@ local function ApplyObjectRoute(route)
             RBP.collapsedSections["rb_health_effects"] = nil
             RecordHighlightSectionKey("rb_health_effects")
         end
-    elseif route.object == "customBarAura" then
-        if ST._SelectConfigCustomBar then
-            ST._SelectConfigCustomBar(route.customBarId)
-        end
-        SetRowScope("detail")
-        -- The bar's sections all live on its one Settings pane, collapsible
-        -- and keyed per bar, so a route has to open the ones it means: an
-        -- aura route opens the tracking section and the effects this preview
-        -- is showing; a cooldown-preview route names its own section instead
-        -- (those land on Colors).
-        if RBP then
-            local barKey = tostring(route.customBarId)
-            if route.auraTab then
-                RBP.collapsedSections["cab_aura_" .. barKey] = nil
-                RBP.collapsedSections["cab_aura_effects_" .. barKey] = nil
-            end
-            if route.appearanceSection then
-                RBP.collapsedSections["cab_" .. route.appearanceSection .. "_" .. barKey] = nil
-            end
-            -- Opening the sections is not enough to show them: the merged
-            -- pane keeps one scroll offset per bar, so the routed section
-            -- can sit below the fold at the restored position. Name it, and
-            -- the rebuild scrolls its heading into view (consumed by
-            -- ShowCustomBarDetail).
-            if route.auraTab then
-                CS.pendingCustomBarScrollSection = "cab_aura_" .. barKey
-                RecordHighlightSectionKey(CS.pendingCustomBarScrollSection)
-            elseif route.appearanceSection then
-                CS.pendingCustomBarScrollSection = "cab_" .. route.appearanceSection .. "_" .. barKey
-                RecordHighlightSectionKey(CS.pendingCustomBarScrollSection)
-            end
-        end
     elseif route.object == "resourceAura" then
         -- Always the CURRENT spec: the overlay the preview draws is resolved
         -- for it (GetActiveResourceAuraEntry), so a resource already selected
@@ -1586,12 +1421,12 @@ end
 -- icons one still resolves to the place the user will actually be looking.
 -- A mode with no home for the section answers nil, and the route's own tab
 -- constant carries the navigation as before.
-local function ResolveSectionHome(sectionId)
+local function ResolveSectionHome(sectionId, presentation)
     if not sectionId then
         return nil
     end
     local homes = ST._SECTION_HOME
-    local _, group = ResolveContext()
+    local _, group = ResolveContext(presentation)
     local byMode = homes and homes[(group and group.displayMode) or "icons"]
     return byMode and byMode[sectionId] or nil
 end
@@ -1669,6 +1504,8 @@ local function NavigateToSectionHome(sectionId, opts)
     if not tab then
         return false
     end
+    local editing = group._settingsContext
+    local advancedKey = ST._SettingsContextKey(editing, opts and opts.advancedKey)
 
     -- The inline texture browser takes over the settings area; leave it
     -- before landing somewhere underneath it.
@@ -1685,8 +1522,9 @@ local function NavigateToSectionHome(sectionId, opts)
     -- makes no request.
     if sectionId or home or (opts and opts.advancedKey) then
         CS.pendingSettingHighlight = {
+            presentation = editing and editing.presentation,
             sectionId = sectionId,
-            rowKey = opts and opts.advancedKey or nil,
+            rowKey = advancedKey,
         }
     end
 
@@ -1709,7 +1547,6 @@ local function NavigateToSectionHome(sectionId, opts)
     -- already-open guard is the gear route's, for the same reason: a panel still
     -- up on this key would be re-opened through the queue rather than left
     -- alone, and nothing here means "toggle".
-    local advancedKey = opts and opts.advancedKey
     if advancedKey
         and CS.QueueAdvancedSettingsPanelOpen
         and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(advancedKey)) then
@@ -1738,7 +1575,7 @@ local function ApplyGearRoute(route, queueKey, sectionId)
         CS.unifiedBarKind = nil
         ST._ClearConfigBarsHomeSelection()
     end
-    local home = ResolveSectionHome(sectionId)
+    local home = ResolveSectionHome(sectionId, route.presentation)
 
     SetRowScope("primary")
     local tab = (home and home.tab) or route.tab
@@ -1752,7 +1589,7 @@ local function ApplyGearRoute(route, queueKey, sectionId)
     if type(CS.collapsedSections) == "table" then
         -- The lens the section keys below are opened against - the same one the
         -- tab builder will resolve when it rebuilds a moment from now.
-        local _, routeGroup = ResolveContext()
+        local _, routeGroup = ResolveContext(route.presentation)
         local resolveLens = ST._ResolveStyleLens
         local lens = (routeGroup and resolveLens) and resolveLens(routeGroup) or nil
 
@@ -1788,7 +1625,7 @@ local function ResolveRouteAdvancedKey(route)
         return nil
     end
     if route.resolveKey then
-        local _, group, buttonIndex = ResolveContext()
+        local _, group, buttonIndex = ResolveContext(route.presentation)
         if not group then
             return nil
         end
@@ -1805,13 +1642,14 @@ local function IsRoutePanelOpen(route)
         return false
     end
     local key = ResolveRouteAdvancedKey(route)
+    if route and route.presentation then key = ST._SettingsContextKey(route, key) end
     return key ~= nil and CS.IsAdvancedSettingsPanelOpen(key) == true
 end
 
 -- Which entry-lens scope the route's section has right now. Panel and multi
 -- lenses deliberately answer nil: their sections write the panel style and the
 -- preview gear can open the advanced panel normally.
-local function ResolveRouteSectionScope(sectionId)
+local function ResolveRouteSectionScope(sectionId, presentation)
     if not sectionId then
         return nil
     end
@@ -1820,7 +1658,7 @@ local function ResolveRouteSectionScope(sectionId)
     if not (resolveLens and resolveSection) then
         return nil
     end
-    local _, group = ResolveContext()
+    local _, group = ResolveContext(presentation)
     if not group then
         return nil
     end
@@ -1844,6 +1682,7 @@ local function RouteSectionSuppressesAdvancedPanel(scope)
 end
 
 local function NavigateToPreviewSettings(bar)
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local control = bar._selected
     local route = bar._gearRoute
     if not (control and route) then
@@ -1852,6 +1691,7 @@ local function NavigateToPreviewSettings(bar)
 
     local sectionId = ControlSectionId(control)
     local queueKey = ResolveRouteAdvancedKey(route)
+    local settingsKey = route.presentation and ST._SettingsContextKey(route, queueKey) or queueKey
     -- Read BEFORE ApplyGearRoute: the lens is resolved from the selection,
     -- which navigation does not touch, but keeping the read on this side of it
     -- keeps the answer tied to the state the click was made in.
@@ -1870,7 +1710,7 @@ local function NavigateToPreviewSettings(bar)
     -- The preview target is the selected object, so its entry/panel ownership
     -- is already settled. Resolve customization scope before choosing the
     -- panel-tab half of that object's settings surface below.
-    local sectionScope = ResolveRouteSectionScope(sectionId)
+    local sectionScope = ResolveRouteSectionScope(sectionId, control.presentation)
     local suppressQueue = queueKey ~= nil
         and RouteSectionSuppressesAdvancedPanel(sectionScope)
 
@@ -1889,8 +1729,9 @@ local function NavigateToPreviewSettings(bar)
     -- about not OPENING a panel on an inert section, but the row is still the
     -- destination and pointing at it is the whole feature (owner 2026-08-20).
     CS.pendingSettingHighlight = {
+        presentation = control.presentation,
         sectionId = sectionId,
-        rowKey = queueKey,
+        rowKey = settingsKey,
     }
 
     local destination = ApplyGearRoute(route, queueKey, sectionId)
@@ -1899,11 +1740,11 @@ local function NavigateToPreviewSettings(bar)
     -- it snapshots is the one the rebuild will consume it under. The
     -- Navigation ensures the editor is open, including repeated clicks.
     -- An already open editor is rebound by the page build below.
-    if queueKey
+    if settingsKey
         and not suppressQueue
         and CS.QueueAdvancedSettingsPanelOpen
-        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(queueKey)) then
-        CS.QueueAdvancedSettingsPanelOpen(queueKey)
+        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingsKey)) then
+        CS.QueueAdvancedSettingsPanelOpen(settingsKey)
     end
 
     CooldownCompanion:RefreshConfigPanel()
@@ -1933,7 +1774,7 @@ local function ResolvePreviewCustomizeSection(bar)
         return nil
     end
 
-    local scope, _, group = ResolveRouteSectionScope(sectionId)
+    local scope, _, group = ResolveRouteSectionScope(sectionId, control.presentation)
     if scope ~= "inherited" or not group then
         return nil
     end
@@ -1960,7 +1801,7 @@ local function CustomizePreviewSection(bar)
         return
     end
 
-    local scope, lens, group = ResolveRouteSectionScope(sectionId)
+    local scope, lens, group = ResolveRouteSectionScope(sectionId, bar._selected.presentation)
     local promote = ST._PromoteLensSection
     if scope ~= "inherited" or not promote then
         return
@@ -1994,6 +1835,7 @@ local function FindControlById(controlId)
     if not controlId then
         return nil
     end
+    if presentationControls[controlId] then return presentationControls[controlId] end
     for _, control in ipairs(CONTROLS) do
         if control.id == controlId then
             return control
@@ -2009,6 +1851,37 @@ local function IsControlApplicable(control, applicable)
         end
     end
     return false
+end
+
+-- Reconcile the running command, not every control that shares its stored
+-- flag or staged aura state. Ordinary panel previews own individual targets;
+-- one target losing eligibility must not stop the other presentation or an
+-- entry whose customization still enables the effect. This runs even when
+-- the settings section is collapsed or a different tab is open.
+local function ReconcileRunningPreview(panelId, group, buttonIndex)
+    local control = FindControlById(CS.previewCommandCenterSelection)
+    if not control then return end
+    local preview = (control.baseControl or control).preview
+    if preview.IsActive(panelId, nil) ~= true then return end
+    local owner = group._settingsOwner or group
+    local function StopIfInapplicable(index, applies)
+        if not applies and preview.IsActive(panelId, index) == true then
+            preview.SetActive(panelId, index, false)
+            CS.panelPreviewVisualsNeedReconcile = true
+        end
+    end
+    if control.presentation then
+        local view = ST._CreatePanelSettingsContext(owner, control.presentation).group
+        for index, entry in ipairs(owner.buttons or {}) do
+            StopIfInapplicable(index,
+                ST.GetEntryPresentation(owner, entry) == control.presentation
+                and ST.IsPanelLayoutEntryEligible(owner, entry)
+                and ControlApplies(control.baseControl, view, control.presentation, index))
+        end
+    else
+        StopIfInapplicable(buttonIndex,
+            ControlApplies(control, group, group.displayMode or "icons", buttonIndex))
+    end
 end
 
 local function MigrateRunningPreview(panelId, buttonIndex, applicable)
@@ -2375,7 +2248,7 @@ local function EnsureBar(host, surface)
         else
             local control = bar._selected
             local sectionScope = control
-                and ResolveRouteSectionScope(ControlSectionId(control)) or nil
+                and ResolveRouteSectionScope(ControlSectionId(control), control.presentation) or nil
             if sectionScope == "inherited" then
                 GameTooltip:AddLine("Open settings")
                 GameTooltip:AddLine(
@@ -2684,18 +2557,8 @@ local function UpdatePreviewCommandCenter(host)
         CS.previewCommandCenterWasRunning = false
         return
     end
-    local applicable = {}
-    for _, control in ipairs(CONTROLS) do
-        local applies = ControlApplies(control, group, displayMode, buttonIndex)
-        if applies then
-            applicable[#applicable + 1] = control
-        elseif control.stopWhenInapplicable
-            and control.preview.IsActive(panelId, buttonIndex) == true then
-            -- A hidden command must not keep running and silently resume if
-            -- its consumer returns later (for example, Show Icon toggled on).
-            control.preview.SetActive(panelId, buttonIndex, false)
-        end
-    end
+    local applicable = CollectPanelControls(group, buttonIndex)
+    ReconcileRunningPreview(panelId, group, buttonIndex)
 
     -- Attached modules are edited here too. Reuse their existing commands,
     -- with the same visibility gate as the lanes this canvas is about to draw.
@@ -2706,7 +2569,6 @@ local function UpdatePreviewCommandCenter(host)
     local resourcesAttached = resourcePanel == panelId
     for _, control in ipairs(CollectObjectControls({
         health = resourcesAttached,
-        customBars = resourcesAttached,
         resourceAuras = resourcesAttached,
         cast = castPanel == panelId,
     })) do
@@ -2749,7 +2611,7 @@ local function UpdateResourcesPreviewCommandCenter(host)
     end
 
     -- One canvas draws every object this workspace configures, whatever is
-    -- selected, so the health bar, the custom bars and the resource overlays
+    -- selected, so the health bar and the resource overlays
     -- qualify for the whole workspace rather than for its home alone. Each
     -- object still carries its own enablement gate below (CollectObject-
     -- Controls), so a disabled module contributes nothing.
@@ -2765,7 +2627,6 @@ local function UpdateResourcesPreviewCommandCenter(host)
         cast = ST._ResourcesPreviewRendersCastSlot ~= nil
             and ST._ResourcesPreviewRendersCastSlot() == true,
         health = onBarsWorkspace,
-        customBars = onBarsWorkspace,
         resourceAuras = onBarsWorkspace,
     }
     UpdateBar(host, RESOURCES_SURFACE, CollectObjectControls(objects))

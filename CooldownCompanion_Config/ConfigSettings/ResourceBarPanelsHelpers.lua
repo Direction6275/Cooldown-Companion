@@ -674,7 +674,9 @@ local function AddMirrorFirstSliderRow(container, opts)
 end
 
 local function OpenResourceBarConflictChooser(force)
-    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey()
+    local classKey = CooldownCompanion._unifiedPanelConversionError
+        and CooldownCompanion:GetNextResourceBarConflictClassKey()
+        or CooldownCompanion:GetCurrentResourceBarClassKey()
     local showChooser = ST._ShowResourceBarConflictChooser
     if showChooser then
         return showChooser(classKey, { force = force })
@@ -684,12 +686,14 @@ local function OpenResourceBarConflictChooser(force)
 end
 
 local function BuildResourceBarConflictGate(container, editSurface, autoOpen)
-    local conflict = CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict()
+    local classKey = CooldownCompanion._unifiedPanelConversionError
+        and CooldownCompanion:GetNextResourceBarConflictClassKey()
+        or CooldownCompanion:GetCurrentResourceBarClassKey()
+    local conflict = CooldownCompanion:GetResourceBarConflict(classKey)
     if not conflict then
         return false
     end
 
-    local classKey = CooldownCompanion.GetCurrentResourceBarClassKey and CooldownCompanion:GetCurrentResourceBarClassKey() or "current class"
     local label = AceGUI:Create("Label")
     ST._ConfigureWrappedHelperLabel(label)
     label:SetText("Resource Bars for " .. tostring(classKey) .. " have multiple legacy setups. Choose one setup before editing " .. (editSurface or "Resource Bars") .. ".")
@@ -707,7 +711,7 @@ local function BuildResourceBarConflictGate(container, editSurface, autoOpen)
 
     if autoOpen and not (CS.resourceBarConflictChooserDismissed and CS.resourceBarConflictChooserDismissed[classKey]) then
         local function openIfStillPending()
-            if CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
+            if CooldownCompanion:GetResourceBarConflict(classKey) then
                 OpenResourceBarConflictChooser(false)
             end
         end
@@ -766,7 +770,7 @@ ST._AddMirrorFirstSliderRow = AddMirrorFirstSliderRow
 -- Adapt the existing per-slot order/editor contract without changing saved
 -- above/below values. Vertical and independent slots do not use this adapter.
 function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
-    local getSide = slot.getPos
+    local getSide, setSide = slot.getPos, slot.setPos
     slot.getPos = function()
         local saved = ensureLayout()
         return RB.ResolveBarLane(slot.anchorGroup or RB.GetBarAnchorGroup(),
@@ -780,6 +784,7 @@ function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
     slot.setPos = function(lane)
         local saved = ensureLayout()
         local oldRegion, oldSide = saved.anchorRegion, saved.position
+        setSide(RB.GetBarLaneSide(lane))
         RB.SetBarLane(saved, lane)
         return oldRegion ~= saved.anchorRegion or oldSide ~= saved.position
     end

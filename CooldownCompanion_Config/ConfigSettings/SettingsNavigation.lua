@@ -209,6 +209,7 @@ end
 local function BeginLensAnchorBuild(scroll)
     CS.lensAnchorRegistry = {
         scroll = scroll,
+        presentation = scroll._cdcStylePresentation,
         panelId = CS.selectedGroup,
         tab = CS.selectedTab,
         headings = {},
@@ -285,6 +286,7 @@ local function CaptureLensAnchor()
     end
 
     CS.pendingLensAnchor = {
+        presentation = registry.presentation,
         panelId = registry.panelId,
         tab = registry.tab,
         semanticKey = orderKeys[anchorIndex],
@@ -293,6 +295,19 @@ local function CaptureLensAnchor()
         relativeOffset = anchorOffset - offset,
         rawOffset = offset,
     }
+    local owner, scope = scroll._cdcSettingsOwner, scroll._cdcSettingsScopeKey
+    if owner and scope then
+        local anchors = ST._GetPanelSettingsState(owner).anchors
+        if scope:match("^panel:") then
+            local saved = {}
+            for key, value in pairs(CS.pendingLensAnchor) do saved[key] = value end
+            anchors[registry.tab] = saved
+        elseif anchors[registry.tab] then
+            local saved = {}
+            for key, value in pairs(anchors[registry.tab]) do saved[key] = value end
+            CS.pendingLensAnchor = saved
+        end
+    end
     return CS.pendingLensAnchor
 end
 
@@ -337,6 +352,7 @@ local function RestoreLensAnchor()
         and scroll and scroll == CS.col4Scroll and scroll.scrollframe and scroll.content
         and registry.panelId == pending.panelId
         and registry.tab == pending.tab
+        and registry.presentation == pending.presentation
         and CS.selectedGroup == pending.panelId
         and CS.selectedTab == pending.tab) then
         return

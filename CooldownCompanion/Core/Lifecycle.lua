@@ -494,9 +494,6 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
                 end
             end
         end)
-        if self.RecordCustomBarSpellCast then
-            self:RecordCustomBarSpellCast(spellID)
-        end
         self:QueueCooldownRefresh("cast-event")
     end
 end

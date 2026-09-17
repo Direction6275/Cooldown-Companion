@@ -1575,7 +1575,24 @@ end
 -- boilerplate they replace. Every one returns the row widget.
 ------------------------------------------------------------------------
 
-local function ApplyCommonRowOptions(row, opts)
+local function ApplyCommonRowOptions(row, opts, container)
+    row._cdcSettingsContext = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(container)
+    row._cdcSettingsScope = nil
+    row._cdcSettingDescriptor = nil
+    local context = row._cdcSettingsContext
+    if context then
+        for _, key in ipairs({ "onChange", "onRelease", "onEnterPressed", "onConfirm", "onPreview" }) do
+            local callback = opts[key]
+            if callback then
+                opts[key] = function(...)
+                    if row._cdcSettingsContext == context and context:IsCurrent() then return callback(...) end
+                end
+            end
+        end
+    end
+    row:SetCallback("OnRelease", function(widget)
+        widget._cdcSettingsContext, widget._cdcSettingsScope = nil, nil
+    end)
     local descriptor = opts.setting
     if descriptor and ST._BindSettingWidget then
         descriptor = ST._BindSettingWidget(row, descriptor, opts.label)
@@ -1611,7 +1628,7 @@ end
 
 local function AddCheckboxRow(container, opts)
     local row = AceGUI:Create(CHECKBOX_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     if opts.tristate then row:SetTriState(true) end
     row:SetValue(opts.value)
     row:SetDisabled(opts.disabled == true)
@@ -1626,7 +1643,7 @@ end
 
 local function AddSliderRow(container, opts)
     local row = AceGUI:Create(SLIDER_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     row:SetSliderValues(opts.min or 0, opts.max or 100, opts.step or 1)
     row:SetValue(opts.value or opts.min or 0)
     row:SetDisabled(opts.disabled == true)
@@ -1646,7 +1663,7 @@ end
 
 local function AddDropdownRow(container, opts, itemTypeOverride)
     local row = AceGUI:Create(DROPDOWN_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     if opts.pulloutWidth then row:SetPulloutWidth(opts.pulloutWidth) end
     row:SetList(opts.list, opts.order, itemTypeOverride or opts.itemType)
     if opts.value ~= nil then row:SetValue(opts.value) end
@@ -1722,7 +1739,7 @@ end
 -- contract (the widget is passed second so a rejected value can be put back).
 local function AddEditBoxRow(container, opts)
     local row = AceGUI:Create(EDITBOX_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     row:SetText(opts.value)
     row:SetDisabled(opts.disabled == true)
     if opts.onEnterPressed then
@@ -1734,11 +1751,12 @@ local function AddEditBoxRow(container, opts)
     return row
 end
 
--- opts.tbl/opts.key bind the color the same way the stock color pickers they
--- replaced did, so conversion packets swap call sites 1:1 (incl. deferCommit).
+-- Color drags preview a temporary value; closing the picker commits it.
+-- opts.onPreview may name a specialized canvas. Otherwise use the active
+-- config preview. opts.onConfirm applies the committed value to live displays.
 local function AddColorRow(container, opts)
     local row = AceGUI:Create(COLOR_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     row:SetHasAlpha(opts.hasAlpha == true)
 
     local color = opts.color
@@ -1751,21 +1769,8 @@ local function AddColorRow(container, opts)
     row:SetDisabled(opts.disabled == true)
 
     if opts.tbl and opts.key and SetupColorCallbacks then
-        local onChange = opts.onChange
-        local deferCommit = opts.deferCommit
-        if opts.onConfirm then
-            -- A picker drag is another continuous edit: unless the caller has
-            -- a distinct canvas-only callback, keep it on the active config
-            -- preview and apply the saved color to live displays on close.
-            if not onChange or onChange == opts.onConfirm then
-                onChange = ST._RefreshActiveConfigPreview
-            end
-            if deferCommit == nil then
-                deferCommit = true
-            end
-        end
         SetupColorCallbacks(row.colorPicker, opts.tbl, opts.key,
-            opts.onConfirm, onChange, deferCommit)
+            opts.onConfirm, opts.onPreview or ST._RefreshActiveConfigPreview, row._cdcSettingsContext)
     end
 
     container:AddChild(row)
@@ -1776,7 +1781,7 @@ end
 -- opts.controlText puts a short right-aligned status word there instead.
 local function AddLabelRow(container, opts)
     local row = AceGUI:Create(LABEL_ROW_TYPE)
-    ApplyCommonRowOptions(row, opts)
+    ApplyCommonRowOptions(row, opts, container)
     if opts.controlWidget then row:SetControlWidget(opts.controlWidget) end
     if opts.controlText then row:SetControlText(opts.controlText) end
     container:AddChild(row)

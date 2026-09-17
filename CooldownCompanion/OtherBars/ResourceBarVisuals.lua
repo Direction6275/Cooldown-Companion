@@ -27,6 +27,18 @@ local GetResourceColors = RB.GetResourceColors
 local GetContinuousTickEntriesConfig = RB.GetContinuousTickEntriesConfig
 local GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
 
+-- A resource can follow a native aura container. Its resolved rectangle is
+-- then secret even though CC supplied its size. Keep the layout inputs with
+-- the frame so visual geometry never has to read that restricted rectangle.
+function RB.SetResourceBarSize(frame, width, height)
+    frame:SetSize(width, height)
+    frame._ccResourceWidth, frame._ccResourceHeight = width, height
+end
+
+function RB.GetResourceBarSize(frame)
+    return frame._ccResourceWidth or 0, frame._ccResourceHeight or 0
+end
+
 local function GetResourceDisplayStyle(settings)
     return GetSpecResourceDisplayProfile and GetSpecResourceDisplayProfile(settings) or settings
 end
@@ -246,8 +258,7 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
     local borderStyle = style and style.borderStyle or "pixel"
     local borderRenderMode = ST.GetBorderRenderMode(style)
     local borderSize = (borderStyle == "pixel") and ST.GetEffectiveBorderLayoutSize(bar, style and style.borderSize or 1, borderRenderMode) or 0
-    local width = bar:GetWidth() or 0
-    local height = bar:GetHeight() or 0
+    local width, height = RB.GetResourceBarSize(bar)
     if width <= 0 or height <= 0 then
         HideContinuousTickMarkers(bar)
         return

@@ -1437,18 +1437,19 @@ local TOOLTIP_ANCHOR_POINTS = {
 
 -- Position GameTooltip for a CC button per the group's tooltip settings.
 -- Returns false when the tooltip should not show (hidden in combat).
-local function PrepareButtonTooltip(owner, button)
+local function PrepareButtonTooltip(owner, button, tooltip)
+    tooltip = tooltip or GameTooltip
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
     local group = groups and button._groupId and groups[button._groupId]
-    local style = group and group.style
+    local style = group and ST.GetEntryBaseStyle(group, button.buttonData)
     if style and style.tooltipHideInCombat == true and UnitAffectingCombat("player") then
         return false
     end
     local anchor = style and TOOLTIP_ANCHOR_POINTS[style.tooltipAnchor]
     if anchor then
-        GameTooltip:SetOwner(owner, anchor)
+        tooltip:SetOwner(owner, anchor)
     else
-        GameTooltip_SetDefaultAnchor(GameTooltip, UIParent)
+        GameTooltip_SetDefaultAnchor(tooltip, UIParent)
     end
     return true
 end

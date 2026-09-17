@@ -398,11 +398,17 @@ end
 
 local function RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     if frame and group and frame.buttons then
-        local groupStyle = group.style or {}
-        for _, button in ipairs(frame.buttons) do
-            if button.UpdateStyle then
-                local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
-                button:UpdateStyle(effectiveStyle)
+        if ST.PanelSupportsAttachedBars(group) then
+            -- Resolve each entry's baseline and reapply fitted bar geometry
+            -- through the normal layout path, including combat deferral.
+            self:UpdateGroupStyle(groupId)
+        else
+            local groupStyle = group.style or {}
+            for _, button in ipairs(frame.buttons) do
+                if button.UpdateStyle then
+                    local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
+                    button:UpdateStyle(effectiveStyle)
+                end
             end
         end
     end

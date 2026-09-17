@@ -66,7 +66,7 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
             w, h = GetTextEntryMetrics(style, nil, style.textFormat or "{name}  {status}")
             for _, buttonData in ipairs(group.buttons or {}) do
                 if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
-                    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData)
+                    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData, group)
                     local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
                     local buttonWidth, buttonHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
                     w = math_max(w, buttonWidth)
@@ -77,8 +77,7 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
             w, h = 200, 20
         end
     elseif isBarMode then
-        w, h = style.barLength or 180, style.barHeight or 20
-        if style.barFillVertical then w, h = h, w end
+        w, h = ST.GetBarGridCellDimensions(group)
     elseif style.maintainAspectRatio then
         local size = style.buttonSize or ST.BUTTON_SIZE
         w, h = size, size
@@ -234,7 +233,7 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
                 yMul * row * (cellHeight + spacing)
             )
 
-            local effectiveStyle = self:GetEffectiveStyle(style, buttonData) or style
+            local effectiveStyle = self:GetEffectiveStyle(style, buttonData, group) or style
             local borderSize = effectiveStyle.borderSize or ST.DEFAULT_BORDER_SIZE
             local borderRenderMode = ST.GetBorderRenderMode(effectiveStyle)
             local effectiveBorderRenderMode = ST.GetEffectiveBorderRenderMode(
@@ -398,11 +397,12 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     -- interior anchor frame; the loop below then runs its existing arithmetic
     -- against that frame instead of the panel. A panel with no sections gets
     -- nil here and lays out through the exact code it always did.
+    local iconButtons = ST.GetPanelIconButtons(frame, group, frame.buttons)
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
-        frame, group, frame.buttons, buttonWidth, buttonHeight, spacing, headerHeight,
+        frame, group, iconButtons, buttonWidth, buttonHeight, spacing, headerHeight,
         buttonSizingOptions)
     local layoutRef = baseAnchor or frame
-    local layoutButtons = sectionLists and sectionLists.base or frame.buttons
+    local layoutButtons = sectionLists and sectionLists.base or iconButtons
     local total = #layoutButtons
     local lineCount = math_ceil(total / buttonsPerRow)
     local visibleIndex = 0
@@ -447,7 +447,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     if sectionLayout then
         -- The count stays the panel's materialized total: section members were
         -- placed by PrepareSectionedPanelLayout, not by the base loop above.
-        visibleIndex = #frame.buttons
+        visibleIndex = #iconButtons
     end
     frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and self.GetGroupLayoutButtonCount then
@@ -465,7 +465,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     -- until the immediate reflow has the final visible base dimensions.
     local compact = self:IsGroupCompactLayoutActive(groupId, group)
     frame._deferPanelBaseAnchor = compact or nil
-    self:ResizeGroupFrame(groupId)
+    self:ResizeGroupFrame(groupId, compact)
 
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
@@ -509,6 +509,8 @@ local function ClearStyleUpdateEntries(entries, visibleCount)
 end
 
 local function GetStyleUpdateEntries(self, groupId, frame, group)
+    if frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group)
+        or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group) then return nil end
     if IsIconMasqueStyleRefreshUnsafe(self, group) then
         return nil
     end
@@ -546,7 +548,7 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
                 ClearStyleUpdateEntries(entries, visibleIndex)
                 return nil
             end
-            local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
+            local effectiveStyle = self:GetEntryEffectiveStyle(group, buttonData)
             local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
             if button.buttonData ~= buttonData
                 or button.index ~= sourceIndex
@@ -578,9 +580,12 @@ end
 
 function CooldownCompanion:PopulateGroupButtons(groupId)
     local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
+    local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
     if not frame or not group then return end
+    frame._panelLayoutKind = ST.GetPanelGeometryKind(group)
+    frame._panelLayoutRevision = (frame._panelLayoutRevision or 0) + 1
+    frame._barOnlyLayoutMode = ST.GetBarOnlyLayoutMode(group)
     if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then
         frame._totemPanelSurface:Hide()
     end
@@ -640,15 +645,16 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         for i, buttonData in ipairs(sourceButtons) do
             if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions)
                 and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
-                local effectiveStyle = self:GetEffectiveStyle(style, buttonData)
+                local effectiveStyle = self:GetEntryEffectiveStyle(group, buttonData)
                 local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
                 local button = AcquireButtonFromPool(frame, poolKey, buttonData)
                 local reusedButton = button ~= nil
                 if not button then
                     if group.displayMode == "text" then
                         button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
-                    elseif isBarMode then
-                        button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle)
+                    elseif poolKey == "bars" or poolKey == "attachedBars" then
+                        button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle,
+                            ST.IsAttachedBarEntry(group, buttonData))
                     else
                         button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
                         if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
@@ -669,7 +675,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 button:Show()
 
                 -- Add to Masque if enabled (after button is shown and in the list, icons only)
-                if group.displayMode == "icons" and group.masqueEnabled then
+                if poolKey == "icons" and group.displayMode == "icons" and group.masqueEnabled then
                     self:AddButtonToMasque(groupId, button)
                 end
             end
@@ -707,9 +713,11 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     self:RequestAuraRebind("populate")
 end
 
-function CooldownCompanion:ResizeGroupFrame(groupId)
+function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryKind)
     local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
+    local owner = self.db.profile.groups[groupId]
+    geometryKind = ST.GetPanelGeometryKind(owner, geometryKind)
+    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
 
     if not frame or not group then return end
 
@@ -744,6 +752,15 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if ST.IsTotemPanelGroup(group) then
         local geo = ST.GetTotemPanelGeometry(group, frame.visibleButtonCount)
         targetWidth, targetHeight = geo.panelWidth, geo.panelHeight
+    elseif numButtons == 0 and ST.PanelSupportsAttachedBars(owner)
+        and (geometryKind == "mixed" or geometryKind == "icons")
+        and (not sectionLayout or not next(sectionLayout.sections)) then
+        local configured = ST.GetConfiguredPanelIconGeometry(group)
+        targetWidth, targetHeight = configured.footprintWidth, configured.footprintHeight
+    elseif numButtons == 0 and not sectionLayout and ST.PanelUsesBarStack(group, geometryKind) then
+        -- An attached-only panel has no icon cell. Its bars carry their own
+        -- explicit length; the owner frame is only their positioning root.
+        targetWidth, targetHeight = 1, 1
     elseif numButtons == 0 and not sectionLayout then
         targetWidth, targetHeight = buttonWidth, buttonHeight
     elseif sectionLayout then
@@ -842,6 +859,8 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     -- The section click overlays re-fit at the same choke point, so a wheel or
     -- grip resize mid-gesture keeps them glued to the rects they name.
     ST.UpdateSectionMoverOverlays(self, frame, group)
+    ST.UpdatePanelMoverBounds(frame, group, geometryKind)
+    if ST.LayoutAttachedBars and not deferAttachments then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
     return true
 end
 
@@ -849,7 +868,9 @@ end
 -- Only runs when compact layout is effective and _layoutDirty is true.
 function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
+    local owner = self.db.profile.groups[groupId]
+    local geometryKind = ST.GetPanelGeometryKind(owner)
+    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
     if not frame or not group then return end
 
     if not self:IsGroupCompactLayoutActive(groupId, group) then
@@ -857,6 +878,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
             ClearButtonCompactSlotCache(button)
         end
         frame._layoutDirty = false
+        if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
         return
     end
 
@@ -880,9 +902,12 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
         visibleButtons = {}
         frame._compactVisibleButtons = visibleButtons
     end
+    local attachedLayout = ST.PanelUsesAttachedBarLayout(group, geometryKind)
     for _, button in ipairs(frame.buttons) do
         local forceVisible = button._forceVisibleByConfig
-        local shouldHide = (not forceVisible) and (button._visibilityHidden or #visibleButtons >= maxVis)
+        local attached = attachedLayout and ST.IsPanelBarEntry(group, button.buttonData)
+        local shouldHide = (not forceVisible) and (button._visibilityHidden
+            or (not attached and #visibleButtons >= maxVis))
         local wasShown = button:IsShown()
         if shouldHide then
             if wasShown then
@@ -891,7 +916,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
             button:Hide()
         else
             button:Show()
-            table_insert(visibleButtons, button)
+            if not attached then table_insert(visibleButtons, button) end
         end
     end
 
@@ -970,9 +995,10 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     end
     if forceResize or frame.visibleButtonCount ~= visibleCount or footprintChanged then
         frame.visibleButtonCount = visibleCount
-        self:ResizeGroupFrame(groupId)
+        self:ResizeGroupFrame(groupId, true, geometryKind)
     end
 
+    if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
     frame._layoutDirty = false
 end
 
@@ -986,7 +1012,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     end
 
     local frame = self.groupFrames[groupId]
-    local group = self.db.profile.groups[groupId]
+    local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
     if not frame or not group then return end
     if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then

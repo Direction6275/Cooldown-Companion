@@ -71,6 +71,10 @@ local TAB_OVERLAP = 10
 -- this way whenever they fit, so every tab in the row is sized alike.
 local NATURAL_STRIP_BUDGET = 100000
 
+-- Entry tabs may need one extra Layout tab. Use up to 6px less padding per
+-- side before wrapping, keeping the labels and font size unchanged.
+local MAX_TAB_PADDING_REDUCTION = 12
+
 -- Floor for a cluster's share of a wrapped row. Below this a cluster is
 -- unusable as a strip, so it is allowed to run past its share instead (the
 -- accepted narrow-window edge) rather than wrapping one tab per row.
@@ -83,7 +87,7 @@ local MIN_STRIP_WIDTH = 120
 -- Rendered width of a strip's leading row, matching how BuildTabs chains
 -- tabs (each anchored 10px into its predecessor).
 local function MeasureStripWidth(tabGroup)
-    if not tabGroup then return 0 end
+    if not tabGroup then return 0, 0 end
     local total, count = 0, 0
     for _, tab in ipairs(tabGroup.tabs) do
         if tab:IsShown() then
@@ -91,8 +95,23 @@ local function MeasureStripWidth(tabGroup)
             count = count + 1
         end
     end
-    if count == 0 then return 0 end
-    return total - TAB_OVERLAP * (count - 1)
+    if count == 0 then return 0, 0 end
+    return total - TAB_OVERLAP * (count - 1), count
+end
+
+-- BuildStrip restores AceGUI's natural dimensions on every pass, so this
+-- never accumulates across resizing or selection changes. Resize all the
+-- tab art together, including its selected and hover states.
+local function ReduceStripPadding(tabGroup, reduction)
+    for _, tab in ipairs(tabGroup.tabs) do
+        if tab:IsShown() then
+            local width = tab:GetWidth() - reduction
+            tab.Middle:SetWidth(tab.Middle:GetWidth() - reduction)
+            tab.MiddleDisabled:SetWidth(tab.MiddleDisabled:GetWidth() - reduction)
+            tab:SetWidth(width)
+            tab.HighlightTexture:SetWidth(width)
+        end
+    end
 end
 
 -- Every strip registers as one of two roles. Primary strips take the left
@@ -239,14 +258,25 @@ local function LayoutUnifiedRow(trigger)
         full = math.max(full, detail.frame:GetWidth() or 0)
     end
 
-    local primaryWidth = primary and MeasureStripWidth(primary) or 0
-    local detailWidth = detail and MeasureStripWidth(detail) or 0
+    local primaryWidth, primaryCount = MeasureStripWidth(primary)
+    local detailWidth, detailCount = MeasureStripWidth(detail)
 
     -- A seam strip runs on from the primary tabs across a fixed gap; every
     -- other detail strip keeps the right-aligned cluster and the elastic gap
     -- that comes with it.
     local seamFlow = (detail and detail._cdcSeamFlow) == true
     local gap = seamFlow and SEAM_GAP or MIN_CLUSTER_GAP
+
+    if full > 0 and seamFlow and primaryCount > 0 and detailCount > 0 then
+        local excess = primaryWidth + gap + detailWidth - full
+        local reduction = math.ceil(excess / (primaryCount + detailCount))
+        if reduction > 0 and reduction <= MAX_TAB_PADDING_REDUCTION then
+            ReduceStripPadding(primary, reduction)
+            ReduceStripPadding(detail, reduction)
+            primaryWidth = MeasureStripWidth(primary)
+            detailWidth = MeasureStripWidth(detail)
+        end
+    end
 
     if full <= 0 then
         -- No usable width yet (a first pass before the rect resolves).
@@ -353,7 +383,9 @@ local function GetScope()
 end
 
 local function SetScope(scope)
-    CS.unifiedRowScope = (scope == "primary") and "primary" or "detail"
+    scope = (scope == "primary") and "primary" or "detail"
+    if CS.unifiedRowScope ~= scope and ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+    CS.unifiedRowScope = scope
 end
 
 -- Asked by the detail surfaces before they select a tab: primary scope

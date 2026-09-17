@@ -387,7 +387,7 @@ local function GetAuraTrackingCatalogState(context)
     if not isTexturePanel then
         state.maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
     end
-    if not isTexturePanel and (group.displayMode or "icons") == "bars" then
+    if not isTexturePanel and ST.GetEntryPresentation(group, buttonData) == "bars" then
         state.barShowsStacks = CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
         if state.barShowsStacks then
             state.stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
@@ -455,7 +455,7 @@ local auraSettings = ST._DefineSettingRoute({
         aliases = { "stack fill", "fill by stacks" },
         applies = AuraStateApplies(function(state)
             return state.active and not state.isTexturePanel
-                and (state.group.displayMode or "icons") == "bars"
+                and ST.GetEntryPresentation(state.group, state.buttonData) == "bars"
         end),
     },
     stackStyle = { advancedKey = "entryAuraStackDisplay",
@@ -913,7 +913,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- Bar fill mode (tracker C2): bar hosts can fill the aura bar by stack
     -- count instead of draining with time. Max stacks is automatic (game
     -- data); the status row below shows what resolved.
-    if (group.displayMode or "icons") == "bars" then
+    if ST.GetEntryPresentation(group, buttonData) == "bars" then
         -- Anchor args are a placeholder - AnchorRowBadge re-points the button
         -- onto the end of the row's label.
         local stacksRow = AddCheckboxRow(auraRight, {
@@ -1039,10 +1039,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- with — the panel style, or this entry's customized section when one
     -- is promoted (owner ruling 2026-08-16: settings for a hidden text
     -- hide with it, following whichever scope currently applies).
-    local effectiveStyle = group and group.style or {}
-    if CooldownCompanion.GetEffectiveStyle then
-        effectiveStyle = CooldownCompanion:GetEffectiveStyle(effectiveStyle, buttonData) or effectiveStyle
-    end
+    local effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
 
     -- Stack text formatter options: the count can begin at one, recolor at a
     -- chosen stack count, and recolor again at max stacks. Mode-agnostic

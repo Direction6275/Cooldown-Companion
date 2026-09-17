@@ -85,7 +85,8 @@ local function ClearButtonCompactSlotCache(button)
 end
 
 local function GetButtonPoolKey(group, buttonData, style)
-    local displayMode = group and group.displayMode
+    if ST.IsAttachedBarEntry(group, buttonData) then return "attachedBars" end
+    local displayMode = ST.GetEntryPresentation(group, buttonData)
     if displayMode == "text" then
         return "text"
     elseif displayMode == "bars" then
@@ -325,6 +326,7 @@ end
 
 local function DeactivatePooledButton(self, groupId, button)
     if not button then return end
+    if ST.ReleaseBarTooltip then ST.ReleaseBarTooltip(button) end
     UnregisterKeyPressHighlightButton(button)
     if self.ReleaseAuraTextureVisual then
         self:ReleaseAuraTextureVisual(button)

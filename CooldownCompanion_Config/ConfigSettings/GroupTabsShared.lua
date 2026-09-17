@@ -20,44 +20,24 @@ local AddColorRow = ST._AddColorRow
 -- snapshotted on every preview tick instead of restoring slider:GetValue(): a
 -- slider can display a fallback for an absent field, and writing that fallback
 -- back would silently materialize an override before the user commits.
-local NIL_SETTING = {}
 local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, stateOwner, stateKeys)
-    if type(stateKeys) == "string" then
-        stateKeys = { stateKeys }
-    end
-    local function CaptureState()
-        local state = {}
-        for index, key in ipairs(stateKeys) do
-            local value = stateOwner[key]
-            state[index] = value == nil and NIL_SETTING or value
-        end
-        return state
-    end
-    local function RestoreState(state)
-        for index, key in ipairs(stateKeys) do
-            local value = state[index]
-            if value == NIL_SETTING then
-                stateOwner[key] = nil
-            else
-                stateOwner[key] = value
-            end
-        end
-    end
+    local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(slider)
 
     slider:SetCallback("OnValueChanged", function(_, _, value)
-        local state = CaptureState()
-        applyValue(value)
-        if previewFn == false then
-            -- Some sliders change screen-space placement, which the pinned
-            -- mirror intentionally does not represent.
-        elseif previewFn then
-            previewFn()
-        elseif ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-        end
-        RestoreState(state)
+        if context and not context:IsCurrent() then return end
+        ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function()
+            if previewFn == false then
+                -- Some sliders change screen-space placement, which the pinned
+                -- mirror intentionally does not represent.
+            elseif previewFn then
+                previewFn()
+            elseif ST._RefreshButtonsPreviewMirror then
+                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+            end
+        end)
     end)
     slider:SetCallback("OnMouseUp", function(_, _, value)
+        if context and not context:IsCurrent() then return end
         applyValue(value)
         if commitFn then
             commitFn()
@@ -139,8 +119,6 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
                 },
             })
 
-            -- deferCommit is deliberately absent, matching the stock color picker
-            -- this row replaced.
             AddColorRow(panel, {
                 label = "Font Color",
                 setting = finderSettings and finderSettings.color,
@@ -148,7 +126,6 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
                 key = "cooldownFontColor",
                 default = {1, 1, 1, 1},
                 onConfirm = RefreshSelectedGroupStyle,
-                onChange = RefreshSelectedGroupStyle,
             })
 
             AddTextPositionControls(panel, style, "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", RefreshSelectedGroupStyle, {
@@ -229,8 +206,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
                 end,
             })
 
-            -- Swipe Edge Color (only when edge is visible). deferCommit is
-            -- deliberately absent, matching the stock color picker it replaced.
+            -- Swipe Edge Color (only when edge is visible).
             if style.cooldownSwipeEdgeEnabled == true then
                 AddColorRow(panel, {
                     label = "Swipe Edge Color",
@@ -241,7 +217,6 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
                     default = {1, 1, 1, 1},
                     hasAlpha = true,
                     onConfirm = RefreshSelectedGroupStyle,
-                    onChange = RefreshSelectedGroupStyle,
                 })
             end
         end,
