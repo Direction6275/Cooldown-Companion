@@ -513,8 +513,7 @@ local function BuildCastBarPositioningPanel(container)
         if layoutCollapsed then return end
 
         if ST.GetModuleGeometryPanel("castbar") then
-            ST._AddLabelRow(container, { label = "Spacing and distance use the Panel's Layout settings.",
-                tooltip = { "Drag the cast bar in the preview to change its attachment location." } })
+            ST._AddLabelRow(container, { label = "Spacing and distance use the Panel's Layout settings." })
             local left = BeginRowGrid(container)
             BuildAttachedCastBarOffsetControls(left)
             return
