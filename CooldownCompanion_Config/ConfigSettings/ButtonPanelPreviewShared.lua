@@ -487,6 +487,65 @@ local function EnsurePreviewState(host)
     return preview
 end
 
+-- Temporary authoring labels, independent of the bar's saved name-text style.
+-- Hovering one bar identifies the whole set, as the former Custom Bars preview did.
+local function SetBarIdentityLabelsShown(preview, shown)
+    if preview.ghostActive then return end
+    for index = 1, (preview.used.barSlots or 0) do
+        local slot = preview.pools.barSlots[index]
+        if slot and slot._cdcBarIdentityPreview == preview then
+            -- An already visible name needs no second label over it.
+            slot.identityLayer:SetShown(shown and not slot.nameText:IsShown())
+        end
+    end
+end
+
+local function RefreshBarIdentityLabels(preview)
+    local shown = false
+    if preview.readOnly ~= true and preview.root:IsShown() then
+        for index = 1, (preview.used.barSlots or 0) do
+            local slot = preview.pools.barSlots[index]
+            if slot and slot._cdcBarIdentityPreview == preview
+                and slot:IsShown() and slot:IsMouseOver() then
+                shown = true
+                break
+            end
+        end
+    end
+    SetBarIdentityLabelsShown(preview, shown)
+end
+
+local function ConfigureBarIdentityLabel(preview, slot, buttonData, scale, vertical)
+    local layer = slot.identityLayer
+    if not layer then
+        layer = CreateFrame("Frame", nil, slot)
+        layer:SetAllPoints(slot.barBounds)
+        layer:EnableMouse(false)
+        layer.label = layer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        layer.label:SetWordWrap(false)
+        layer.label:SetJustifyH("CENTER")
+        slot.identityLayer = layer
+    end
+    layer:SetFrameLevel(math_max(slot.textFrame:GetFrameLevel(),
+        slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET) + 1)
+    local label = layer.label
+    local font = label:GetFont()
+    label:SetFont(font, math_max(8, math_min(14, 11 / math_max(scale or 1, 0.01))), "OUTLINE")
+    ST.ApplyFontShadowForOutline(label, "OUTLINE")
+    label:SetTextColor(1, 1, 1, 1)
+    label:SetText(GetConfigOnlyBarPreviewName(buttonData))
+    -- Vertical bars may overhang; horizontal labels stay inside the bar.
+    label:ClearAllPoints()
+    label:SetWidth(0)
+    label:SetPoint("CENTER", layer, "CENTER", 0, 0)
+    if not vertical then
+        label:SetPoint("LEFT", layer, "LEFT", 4, 0)
+        label:SetPoint("RIGHT", layer, "RIGHT", -4, 0)
+    end
+    layer:Hide()
+    slot._cdcBarIdentityPreview = preview
+end
+
 local function ResetPreviewState(preview)
     for poolName in pairs(preview.pools) do
         preview.used[poolName] = 0
@@ -516,6 +575,7 @@ local function FinalizePreviewState(preview)
     -- Every build path ends here, so the copy-customization banner follows
     -- the preview onto whatever panel it now shows.
     CopyMode.UpdateBanner(preview)
+    RefreshBarIdentityLabels(preview)
 
     -- Aura Panel caption. The replica is the EXPANDED grid - every entry, in
     -- order - because that is the footprint the panel holds; in the world
@@ -705,6 +765,8 @@ ResetBarSlotWorkspaceState = function(frame)
         ST._ClearConfigShiftTooltipHover(frame._cdcShiftTooltipAdapter)
     end
     frame._cdcBarPreviewVisibility = nil
+    frame._cdcBarIdentityPreview = nil
+    if frame.identityLayer then frame.identityLayer:Hide() end
     frame._cdcBarPreviewHovered = nil
     frame._cdcBarPreviewScale = nil
     frame._cdcEntryIndex = nil
@@ -1281,6 +1343,7 @@ local function ClearPreviewGhost(preview)
         if preview.tweens then preview.tweens[preview.gapFrame] = nil end
         preview.gapFrame._cdcPrevAnchor = nil
     end
+    RefreshBarIdentityLabels(preview)
 end
 
 -- Translucent marker filling the cell the entry would land in.
@@ -1652,6 +1715,9 @@ PP.CopyMode = CopyMode
 PP.ConfigurePreviewGhost = ConfigurePreviewGhost
 PP.StartPreviewTicker = StartPreviewTicker
 PP.ClearPreviewGhost = ClearPreviewGhost
+PP.ConfigureBarIdentityLabel = ConfigureBarIdentityLabel
+PP.SetBarIdentityLabelsShown = SetBarIdentityLabelsShown
+PP.RefreshBarIdentityLabels = RefreshBarIdentityLabels
 PP.ENTRY_STATUS_BADGE_ATLAS = ENTRY_STATUS_BADGE_ATLAS
 PP.PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS = PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS
 PP.PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS

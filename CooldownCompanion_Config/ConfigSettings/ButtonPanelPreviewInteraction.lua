@@ -1125,6 +1125,9 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     end)
     slot:SetScript("OnEnter", function(self)
         if CS.dragState and CS.dragState.phase == "active" then return end
+        if self._cdcBarIdentityPreview then
+            PP.SetBarIdentityLabelsShown(self._cdcBarIdentityPreview, true)
+        end
         -- Hovering a section's own icons OFFERS the grab chip. Taking it back
         -- is not this handler's job and never was: the chip watches the cursor
         -- against its own section for as long as it is up (HandleWatch), which
@@ -1161,6 +1164,11 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
         ShowEntrySlotTooltip(self, panelId, buttonData, status, visibility)
     end)
     slot:SetScript("OnLeave", function(self)
+        local preview = self._cdcBarIdentityPreview
+        if preview then
+            -- Let the adjacent bar's enter event run before clearing the set.
+            C_Timer.After(0, function() PP.RefreshBarIdentityLabels(preview) end)
+        end
         if self._cdcBarPreviewVisibility then
             self._cdcBarPreviewHovered = false
             RefreshBarSlotWorkspacePresentation(self)

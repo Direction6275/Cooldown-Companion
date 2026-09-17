@@ -693,6 +693,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             or (status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1))
         if not readOnly and isBarMode then
             ApplyBarSlotPreviewVisibility(slot, barVisibility, scale, IsEntrySelected(index))
+            if index ~= dropGhostIndex then
+                PP.ConfigureBarIdentityLabel(preview, slot, buttonData, scale, effectiveStyle.barFillVertical)
+            end
         end
         if readOnly then
             ApplySlotBadges(slot, {}, scale, true)
