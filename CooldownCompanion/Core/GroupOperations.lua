@@ -180,7 +180,7 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
     end
 end
 
-function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId)
+function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
@@ -208,6 +208,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId)
     if not self:IsGroupActive(groupId, {
         group = group,
         specId = specId,
+        configurationOnly = options and options.configured,
         checkCharVisibility = true,
         checkLoadConditions = true,
     }) then
@@ -292,7 +293,7 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
         local panels = panelsByContainer[containerInfo.id]
         table.sort(panels, ST.ComparePanelOrder)
         for _, panelInfo in ipairs(panels) do
-            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId) then
+            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId, options) then
                 local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
                 if not (options and options.requireShown) or (frame and frame:IsShown()) then
                     return panelInfo.groupId

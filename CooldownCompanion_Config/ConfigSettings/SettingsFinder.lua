@@ -106,7 +106,7 @@ local function BuildBreadcrumb(descriptor)
 end
 
 local function PresentationDescriptor(descriptor, context)
-    if not context or context.presentation == "shared" then return descriptor end
+    if not context or context.presentation == "shared" or context.kind then return descriptor end
     local styled = descriptor.tab == "appearance" or descriptor.tab == "effects"
         or descriptor.section == "arrangement" or descriptor.section == "compact"
         or descriptor.id:match("^panel%.layout%.bars%.")
@@ -491,6 +491,12 @@ local function IsDescriptorApplicable(descriptor, context)
     end
     if not (descriptor and context and ScopeMatches(descriptor.scope, context.scope)) then
         return false
+    end
+    local editing = context.group and context.group._settingsContext
+    if editing and editing.contents and (descriptor.tab == "appearance" or descriptor.tab == "effects")
+        and not editing.contents[editing.presentation] then
+        if not (editing.presentation == "bars" and editing.contents.modules and descriptor.tab == "appearance"
+            and (descriptor.sectionId or descriptor.section) == "barThickness") then return false end
     end
     if context.scope == "entry" and context.group and context.group._settingsContext then
         local sectionId = descriptor.sectionId or descriptor.section
@@ -965,10 +971,10 @@ ST._GetSettingsFinderDescriptor = function(id) return descriptorsById[id] or pre
 ST._ValidateSettingsFinderRegistry = ValidateRegistry
 ST._NormalizeSettingsFinderText = NormalizeSearchText
 
-function ST._GetOrdinaryEntrySettingsTabs(group)
-    if not ST.PanelSupportsAttachedBars(group) or not ST._GetPanelSettingsSelection(group) then return nil end
+function ST._GetOrdinarySettingsTabs(group)
+    if not ST.PanelSupportsAttachedBars(group) then return nil end
     local context = GetSettingsFinderContext()
-    if not context or context.scope ~= "entry" then return nil end
+    if not context or (context.scope ~= "entry" and context.scope ~= "panel") then return nil end
     PrepareSettingsFinderContext(context)
     local tabs = { loadconditions = true }
     for _, descriptor in ipairs(context._settingsFinderApplicableDescriptors or {}) do

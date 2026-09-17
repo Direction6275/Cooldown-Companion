@@ -4,6 +4,88 @@ local Addon = ST.Addon
 ST.BAR_ONLY_LAYOUT_KEYS = { "mode", "compactLayout", "compactGrowthDirection", "maxVisibleButtons", "stackGap" }
 ST.ATTACHED_BAR_LAYOUT_KEYS = { "spacing", "gap", "length" }
 
+-- Geometry has one owner even when the bar's renderer belongs to a module.
+-- Inputs are configuration/body geometry, never native aura-container extents.
+function ST.ResolveBarGeometry(group, options)
+    options = options or {}
+    group = group and (group._attachedBarOwner or group._unifiedPanelOwner or group)
+    local ordinary = ST.PanelSupportsAttachedBars(group)
+    local attached = ordinary and options.attached ~= false
+    local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
+    local layout = ordinary and group.attachedBarLayout or {}
+    layout = layout or {}
+    local stack = ordinary and ST.GetPanelLayoutKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
+    local vertical = options.vertical == true
+    if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
+    local thickness = options.thickness
+    local owner = options.owner
+    if owner and owner.overrideSections and owner.overrideSections.barThickness and owner.styleOverrides then
+        thickness = rawget(owner.styleOverrides, "barHeight") or thickness
+    end
+    thickness = thickness or (attached and style.barHeight) or options.baseline or style.barHeight or 12
+    local length = options.length or style.barLength or 180
+    if attached and options.fit then length = (vertical and options.height or options.width) or length end
+    length = math.max(1, length)
+    return {
+        thickness = thickness, length = length, vertical = vertical,
+        width = vertical and thickness or length, height = vertical and length or thickness,
+        spacing = attached and (layout.spacing or 3) or options.spacing or 3,
+        distance = attached and (stack and (group.barOnlyLayout and group.barOnlyLayout.stackGap or 0)
+            or layout.gap or 3) or options.distance or 3,
+    }
+end
+
+-- Read-only availability checks must not create a module setup as a side
+-- effect of opening an ordinary Panel's settings.
+function ST.GetConfiguredModuleBarSettings(kind)
+    local profile = Addon.db and Addon.db.profile
+    if not profile then return nil end
+    if kind == "resources" then
+        return profile.resourceBarsByClass and profile.resourceBarsByClass[Addon._playerClassFilename]
+    end
+    local char = Addon.db.keys and Addon.db.keys.char
+    return profile.castBarByChar and profile.castBarByChar[char]
+end
+
+function ST.GetModuleGeometryHost(kind, spec)
+    if not Addon.ResolveModulePanel then return nil end
+    local target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
+    return target and target.mode ~= "independent" and target.group or nil
+end
+
+function ST.GetModuleGeometryPanel(kind, spec)
+    local group = ST.GetModuleGeometryHost(kind, spec)
+    return ST.PanelSupportsAttachedBars(group) and group or nil
+end
+
+function ST.UsesSharedModuleGeometry(kind, spec)
+    if not Addon.ResolveModulePanel then return false end
+    local group = ST.GetModuleGeometryHost(kind, spec)
+    return not group or ST.PanelSupportsAttachedBars(group)
+end
+
+function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
+    settings, layout = settings or {}, layout or {}
+    local vertical = (layout.orientation or settings.orientation) == "vertical"
+    local baseline = vertical and (layout.barWidth or settings.barWidth or layout.barHeight or settings.barHeight)
+        or (layout.barHeight or settings.barHeight or layout.barWidth or settings.barWidth)
+    local slot = layout.resources and layout.resources[powerType]
+    local thickness
+    -- Specialized hosts retain their old geometry behavior. Independent bars
+    -- use the same explicit customization but keep their local sizing baseline.
+    if not ST.PanelSupportsAttachedBars(group) and (group or settings._barGeometryVersion ~= 1)
+        and layout.customBarHeights and slot then
+        thickness = vertical and (slot.barWidth or slot.barHeight) or (slot.barHeight or slot.barWidth)
+    end
+    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and slot or nil, baseline = baseline or 12, thickness = thickness,
+        vertical = vertical, spacing = layout.barSpacing or settings.barSpacing or 3.6 })
+end
+
+function ST.ResolveCastBarGeometry(settings, group)
+    settings = settings or {}
+    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and settings or nil, baseline = settings.height or 15 })
+end
+
 function ST.PanelSupportsAttachedBars(group)
     return type(group) == "table"
         and (group.displayMode or "icons") == "icons"
@@ -114,6 +196,7 @@ ST.ATTACHED_BAR_DEFAULTS.showKeybindText = false
 -- panels and imports with absent defaults must keep their compact appearance.
 function ST.InitializeNewPanelBarStyle(group)
     if not ST.PanelSupportsAttachedBars(group) then return end
+    group._barGeometryVersion = 1
     group.attachedBarStyle = CopyTable(ST._defaults.profile.globalStyle)
     group.barOnlyLayout = { mode = "grid" }
 end
@@ -144,6 +227,7 @@ function ST.GetAttachedBarStyle(group, forEditing)
 end
 
 function ST.GetEntryBaseStyle(group, entry)
+    if entry and entry._geometryContext then return entry._geometryContext:ReadStyle() end
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
     if ST.IsPanelBarEntry(group, entry) then return ST.GetAttachedBarStyle(group) end
     return group and group.style or {}
@@ -206,6 +290,14 @@ function ST.GetPanelAttachmentDimensions(frame, group, region)
         local style = ST.GetAttachedBarStyle(group)
         local length, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
         return style.barFillVertical and thickness or length, style.barFillVertical and length or thickness
+    end
+    if ST.PanelSupportsAttachedBars(group) and ST.GetConfiguredPanelIconGeometry
+        and (frame.visibleButtonCount or 0) == 0
+        and not (frame._sectionLayout and next(frame._sectionLayout.sections))
+        and ST.GetPanelLayoutKind(group) ~= "bars" then
+        local configured = ST.GetConfiguredPanelIconGeometry(group)
+        if region == "main" then return configured.baseWidth, configured.baseHeight end
+        return configured.footprintWidth, configured.footprintHeight
     end
     local body = region == "main" and ST.GetPanelAnchorBodyFrame(frame) or frame
     return body:GetWidth(), body:GetHeight()

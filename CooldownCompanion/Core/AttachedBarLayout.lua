@@ -40,19 +40,11 @@ end
 
 -- Settings use configured membership, never live aura visibility or geometry.
 function ST.AttachedBarGapApplies(group, modules)
-    if ST.GetPanelLayoutKind(group) ~= "mixed" then return false end
-    local resourceLanes = {}
-    for _, module in ipairs(modules or {}) do
-        if module.kind == "resources" then
-            local region = ST.ResolvePanelAttachmentRegion(group, module.side, module.region)
-            resourceLanes[module.side .. ":" .. region] = true
-        end
-    end
+    if not ST.PanelSupportsAttachedBars(group) then return false end
+    if modules and #modules > 0 then return true end
     for _, area in ipairs(ST.BuildAttachedBarAreas(group)) do
-        if area.resources == "before" or not resourceLanes[area.side .. ":" .. area.region] then
-            for _, item in ipairs(area.entries) do
-                if ST.IsPanelLayoutEntryEligible(group, item.entry) then return true end
-            end
+        for _, item in ipairs(area.entries) do
+            if ST.IsPanelLayoutEntryEligible(group, item.entry) then return true end
         end
     end
     return false
@@ -104,13 +96,10 @@ function ST.GetAttachedBarAreaOrder(group, entries)
 end
 
 function ST.ResolveAttachedBarDimensions(group, style, side, width, height)
-    local mixed = ST.GetPanelLayoutKind(group) == "mixed"
-    local vertical = mixed and (side == "left" or side == "right") or false
-    if not mixed then vertical = style.barFillVertical == true end
-    local length = mixed and (vertical and height or width) or ST.GetBarOnlyLength(group, style)
-    length = math.max(1, length)
-    local thickness = style.barHeight or 12
-    return vertical and thickness or length, vertical and length or thickness, vertical, length
+    local geometry = ST.ResolveBarGeometry(group, { style = style, thickness = style.barHeight,
+        side = side, fit = ST.GetPanelLayoutKind(group) == "mixed", width = width, height = height,
+        vertical = style.barFillVertical, length = ST.GetBarOnlyLength(group, style) })
+    return geometry.width, geometry.height, geometry.vertical, geometry.length
 end
 
 -- Preview expansion uses explicit saved geometry, never live aura sizes.
@@ -118,9 +107,9 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
     group = group._unifiedPanelOwner or group
     local positions, modulePositions = {}, {}
     local minX, minY, maxX, maxY = 0, 0, width, height
-    local layout, offsets = group.attachedBarLayout or {}, {}
-    local spacing, gap = layout.spacing or 3, layout.gap or 3
-    local mixed = ST.GetPanelLayoutKind(group) == "mixed"
+    local offsets = {}
+    local geometry = ST.ResolveBarGeometry(group)
+    local spacing, gap = geometry.spacing, geometry.distance
     local function Region(name)
         return name == "main" and base or { x = 0, y = 0, width = width, height = height }
     end
@@ -146,8 +135,7 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
             local w, h = style.barFillVertical and thickness or barLength, style.barFillVertical and barLength or thickness
             length = vertical and h or w
         end
-        local offset = (offsets[lane] or module.gap or gap) + (module.extraGap or 0)
-        if offsets[lane] and module.followSpacing then offset = offset + module.followSpacing - spacing end
+        local offset = offsets[lane] or gap
         local position = Place(side, region, vertical and module.thickness or length,
             vertical and length or module.thickness, offset)
         position.module = module
@@ -165,7 +153,7 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
                 end
             end
         end
-        local offset = offsets[lane] or (mixed and gap or (group.barOnlyLayout and group.barOnlyLayout.stackGap or 0))
+        local offset = offsets[lane] or gap
         local ordered = ST.GetAttachedBarAreaOrder(group, area.entries)
         for _, item in ipairs(ordered) do
             if not included or included[item.index] then
@@ -252,8 +240,8 @@ function ST.LayoutAttachedBars(groupId, frame, group)
     frame._attachedBarAreas = frame._attachedBarAreas or {}
     local byEntry = {}
     for _, button in ipairs(frame.buttons or {}) do byEntry[button.buttonData] = button end
-    local layout = group.attachedBarLayout or {}
-    local spacing, gap = layout.spacing or 3, layout.gap or 3
+    local geometry = ST.ResolveBarGeometry(group)
+    local spacing, gap = geometry.spacing, geometry.distance
     local body = ST.GetPanelAnchorBodyFrame(frame)
     local hasIcons = (frame.visibleButtonCount or 0) > 0
         or (frame._sectionLayout and next(frame._sectionLayout.sections))
@@ -275,7 +263,7 @@ function ST.LayoutAttachedBars(groupId, frame, group)
             local block = resourceBlocks[lane]
             if block then
                 block.frame:ClearAllPoints()
-                local distance = predecessor and spacing or block.gap
+                local distance = predecessor and spacing or gap
                 block.frame:SetPoint(flow.point, predecessor or anchorBody, flow.far,
                     flow.dx * distance, flow.dy * distance)
                 predecessor = block.tail or block.frame
@@ -287,7 +275,7 @@ function ST.LayoutAttachedBars(groupId, frame, group)
             regionWidth = area.region == "main" and configured.baseWidth or configured.footprintWidth
             regionHeight = area.region == "main" and configured.baseHeight or configured.footprintHeight
         end
-        local offset = mixed and gap or (group.barOnlyLayout and group.barOnlyLayout.stackGap or 0)
+        local offset = gap
         if predecessor then offset = spacing end
         local last = nil
         for _, item in ipairs(area.entries) do

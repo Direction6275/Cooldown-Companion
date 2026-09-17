@@ -131,6 +131,7 @@ end
 local function CreateResourceBarSettings()
     local settings = CopySubsystemDefaults("resourceBars")
     settings.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    settings._barGeometryVersion = 1
     return settings
 end
 
@@ -1158,6 +1159,7 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     SanitizeResourceBarAnchors(defaults, classKey)
     if DeepEqual(comparable, defaults) then return true end
     defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    defaults._barGeometryVersion = 1
     return DeepEqual(comparable, defaults)
 end
 
@@ -1915,6 +1917,7 @@ function CooldownCompanion:GetCharacterScopedSettings(systemKey)
             and type(seenCharacters) == "table"
             and seenCharacters[charKey] == true
         settings = shouldUseLegacySeed and CopyTable(seed) or CopySubsystemDefaults(systemSpec.legacyKey)
+        if systemKey == "castBar" and not shouldUseLegacySeed then settings._barGeometryVersion = 1 end
         NormalizeScopedBarSettings(systemKey, settings)
         SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
         store[charKey] = settings

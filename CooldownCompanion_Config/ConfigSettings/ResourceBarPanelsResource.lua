@@ -1404,11 +1404,12 @@ local function BuildResourceBarPositioningPanel(container)
         local sizeLeft, sizeRight = BeginRowGrid(container)
 
         -- Bar Height + Custom Heights
-        ST._BuildBarHeightControls(sizeLeft, settings, layout)
+        if not ST.UsesSharedModuleGeometry("resources") then ST._BuildBarHeightControls(sizeLeft, settings, layout) end
 
         -- Bar Spacing. The canvas takes its lane gap straight from this value,
         -- so the whole stack re-spaces under the drag and the live bars
         -- reposition once, on release.
+        if not ST.GetModuleGeometryPanel("resources") then
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Bar Spacing",
             setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
@@ -1425,6 +1426,7 @@ local function BuildResourceBarPositioningPanel(container)
             stateKeys = "barSpacing",
         })
 
+        end
         -- Segment Gap
         AddMirrorFirstSliderRow(sizeRight, {
             label = "Segment Gap",
@@ -1548,7 +1550,7 @@ local function BuildResourceBarPositioningPanel(container)
     end
 
     -- ============ Layout Section (attached mode only) ============
-    if not isIndependentStack then
+    if not isIndependentStack and not ST.GetModuleGeometryPanel("resources") then
         local posKey = "rb_position"
         local _, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
@@ -1607,7 +1609,7 @@ local function GetResourceBarTextureOptions()
 end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildBarHeightControls(container, settings, layout)
+local function BuildLegacyBarHeightControls(container, settings, layout)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
@@ -1770,7 +1772,17 @@ local function BuildBarHeightControls(container, settings, layout)
     }, customHeightsCb))
 end
 
-ST._BuildBarHeightControls = BuildBarHeightControls
+ST._BuildBarHeightControls = function(container, settings, layout)
+    if not ST.UsesSharedModuleGeometry("resources") then return BuildLegacyBarHeightControls(container, settings, layout) end
+    if not CooldownCompanion:IsResourceBarAnchorIndependent() then return end
+    local field = (layout.orientation or settings.orientation) == "vertical" and "barWidth" or "barHeight"
+    AddMirrorFirstSliderRow(container, { label = "Bar Thickness",
+        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar and RESOURCE_FINDER.primary.bar.thickness,
+        value = ST.ResolveResourceBarGeometry(settings, layout).thickness, min = 4, max = 100, step = 0.1,
+        set = function(value) layout[field] = value end, stateOwner = layout, stateKeys = field,
+        apply = function() CooldownCompanion:ApplyResourceBars(); CooldownCompanion:RepositionCastBar() end,
+    })
+end
 
 local function AddResourceColorDescriptor(descriptors, key, label, defaultColor, hasAlpha)
     descriptors[#descriptors + 1] = {
@@ -3460,6 +3472,9 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
+    if ST.UsesSharedModuleGeometry("resources", numericSpecID) then
+        ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
+    end
     BuildResourceBarStylingPanel(container, "resource_settings", {
         powerType = numericPowerType,
         specID = numericSpecID,
@@ -3467,6 +3482,11 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
 end
 
 local function BuildResourceBarBarTextStylingPanel(container)
+    if ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent() then
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        local column = BeginRowGrid(container)
+        ST._BuildBarHeightControls(column, settings, CooldownCompanion:GetSpecLayoutOrder(settings))
+    end
     BuildResourceBarStylingPanel(container, "bar_text")
 end
 
@@ -3632,7 +3652,7 @@ if ST._RegisterSettingsFinderContextPreparer then
         local specID = tonumber(context and context.resourceSpecID)
             or GetCurrentConfigSpecID()
         context._settingsFinderResourceLayout = RB.GetSpecLayoutOrder
-            and RB.GetSpecLayoutOrder(settings, specID) or settings
+            and RB.GetSpecLayoutOrder(CopyTable(settings or {}), specID) or settings
 
         if context.scope == "resources" then
             local active = {}
@@ -3820,6 +3840,7 @@ if ST._DefineSettingRoute then
             height = {
                 label = "Bar Height",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3829,6 +3850,7 @@ if ST._DefineSettingRoute then
             width = {
                 label = "Bar Width",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3839,6 +3861,7 @@ if ST._DefineSettingRoute then
                 label = "Custom Resource Bar Heights",
                 advancedKey = "customResourceBarHeights",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
@@ -3849,13 +3872,14 @@ if ST._DefineSettingRoute then
                 label = "Custom Resource Bar Widths",
                 advancedKey = "customResourceBarHeights",
                 applies = function(context)
+                    if ST.UsesSharedModuleGeometry("resources") then return false end
                     local layout = RESOURCE_FINDER.Layout(context)
                     local settings = RESOURCE_FINDER.Settings(context)
                     return (layout and layout.orientation or settings and settings.orientation)
                         == "vertical"
                 end,
             },
-            spacing = { label = "Bar Spacing", aliases = { "resource spacing" } },
+            spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
             segmentGap = { label = "Segment Gap", aliases = { "segment spacing" } },
         })
         RESOURCE_FINDER.primary.customHeight = {}
@@ -3867,7 +3891,7 @@ if ST._DefineSettingRoute then
             -- the toggle is on - off just opens its panel read-only behind
             -- the Turn On footer, so the rows stay findable.
             local function CustomSizeApplies(context, vertical)
-                local layout = RESOURCE_FINDER.Layout(context)
+                if ST.UsesSharedModuleGeometry("resources") then return false end                local layout = RESOURCE_FINDER.Layout(context)
                 local settings = RESOURCE_FINDER.Settings(context)
                 local orientation = layout and layout.orientation
                     or settings and settings.orientation
@@ -3929,6 +3953,7 @@ if ST._DefineSettingRoute then
             local layout = RESOURCE_FINDER.Layout(context)
             return RESOURCE_FINDER.BarsEnabled(context)
                 and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
+                and not ST.GetModuleGeometryPanel("resources")
         end,
     }):Settings({
         x = {
@@ -3964,6 +3989,9 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
+        thickness = { label = "Bar Thickness", applies = function()
+            return ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+        end },
         brightness = { advancedKey = "rbClassTexture",
             label = "Class Texture Brightness",
             applies = function(context)
@@ -4767,3 +4795,11 @@ ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
 ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
 ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
 ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel
+
+if ST._DefineSettingRoute then
+ST._ResourceThicknessSetting = ST._DefineSettingRoute({
+    idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "primary",
+    tab = "appearance", tabLabel = "Appearance", section = "barThickness", sectionLabel = "Dimensions",
+    applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
+}):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
+end

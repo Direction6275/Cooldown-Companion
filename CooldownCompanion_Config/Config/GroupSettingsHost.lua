@@ -294,7 +294,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         and ST._GroupSupportsPerButtonOverrides
         and ST._GroupSupportsPerButtonOverrides(group)
     if group and ST.PanelSupportsAttachedBars(group) then isSingleEntry = ST._GetPanelSettingsSelection(group) ~= nil end
-    local availableTabs = ST._GetOrdinaryEntrySettingsTabs and ST._GetOrdinaryEntrySettingsTabs(group)
+    local availableTabs = ST._GetOrdinarySettingsTabs and ST._GetOrdinarySettingsTabs(group)
     local selectionMode = isRotationEntry and "rotation-entry"
         or (isSingleEntry and "entry" or "panel")
     local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode

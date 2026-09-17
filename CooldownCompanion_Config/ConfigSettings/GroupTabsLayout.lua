@@ -207,13 +207,14 @@ local function GetLayoutFinderState(context)
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
 
-    if group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
-        or ST.GetPanelLayoutKind(owner) ~= "bars") then
+    local hasIcons = not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
+    if (isIconsMode and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
+        or ST.GetPanelLayoutKind(owner) ~= "bars")) then
         for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
             "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
     end
 
-    if not standalone and ST.PanelSupportsSections(group)
+    if not standalone and hasIcons and ST.PanelSupportsSections(group)
         and type(group.sections) == "table" then
         for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
             local section = group.sections[sectionAnchor]
@@ -1433,6 +1434,7 @@ local function BuildLayoutTab(container)
     -- the block here because "only auras live here, and they pack" is a
     -- statement about the cluster's layout rather than its look.
     local panelSections = not ST._ResolveStylingGroup(group)._attachedBarOwner
+        and (not ST.PanelSupportsAttachedBars(group) or ST._GetPanelSettingsContents(group).icons)
         and ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the

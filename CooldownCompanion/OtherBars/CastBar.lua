@@ -477,12 +477,13 @@ local function CreateCastBarMoverFrame()
         -- the config Height slider does.
         getHeight = function()
             local settings = GetCastBarSettings()
-            return settings and settings.height or 15
+            return ST.ResolveCastBarGeometry(settings).thickness
         end,
         setHeight = function(height)
             local settings = GetCastBarSettings()
             if settings then
-                settings.height = height
+                if settings.overrideSections and settings.overrideSections.barThickness then settings.styleOverrides.barHeight = height
+                else settings.height = height end
             end
         end,
         apply = function()
@@ -1125,7 +1126,7 @@ end
 ------------------------------------------------------------------------
 
 local function GetCastBarHeight(s)
-    return tonumber(s and s.height) or 15
+    return ST.ResolveCastBarGeometry(s, ST.GetModuleGeometryHost("castbar")).thickness
 end
 
 local function IsInlineIcon(s)
@@ -1200,6 +1201,11 @@ local function ApplyCastBarPosition(s, width, height)
         or (rbSettings and rbSettings.barSpacing)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
+    local geometryPanel = ST.GetModuleGeometryPanel("castbar")
+    if geometryPanel then
+        local geometry = ST.ResolveBarGeometry(geometryPanel)
+        gap, barSpacing, panelYOffset = geometry.distance, geometry.spacing, 0
+    end
 
     local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
     local panelTail = ST.GetPanelAttachmentTail and ST.GetPanelAttachmentTail(groupFrame, side, region)

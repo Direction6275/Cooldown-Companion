@@ -291,6 +291,7 @@ end
 -- style) agree about that section's own keys: promotion copies them across.
 ST._SECTION_HOME = ST._SECTION_HOME or {}
 ST._SECTION_HOME.bars = {
+    barThickness = { tab = "appearance", collapseKey = "barappearance_thickness" },
     barShape = { tab = "appearance", collapseKey = "barappearance_settings" },
     barColor = { tab = "appearance" },
     barBgColor = { tab = "appearance" },
@@ -505,6 +506,20 @@ local function BuildBarAppearanceTab(container, group, style)
     -- in every other lens mode.
     AddLensPanelScopeNote(container, lens)
 
+    if group._attachedBarOwner then
+        local column = BeginRowGrid(container)
+        local sec = BeginLensSection(lens, group, "barThickness", { column = column })
+        local row = AddSliderRow(column, {
+            label = "Bar Thickness", setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.thickness,
+            min = 4, max = 100, step = 0.1, value = sec.tbl.barHeight or 12, disabled = sec.disabled,
+            onChange = function(value) ST._PreviewScalarSetting(sec.tbl, "barHeight", value, ST._RefreshSelectedButtonsPreview) end,
+            onRelease = function(value) sec.tbl.barHeight = value; refreshStyle() end,
+        })
+        sec:Chrome(row)
+        sec:Finish()
+    end
+    if group._moduleGeometryOnly then return end
+
     -- ================================================================
     -- Bar Settings (length, height, fill direction, spacing, texture)
     -- ================================================================
@@ -545,10 +560,10 @@ local function BuildBarAppearanceTab(container, group, style)
     })
 
     end
+    if not group._attachedBarOwner then
     AddSliderRow(barLeft, {
-        label = group._attachedBarOwner and "Bar Thickness" or "Bar Height",
-        setting = BAR_FINDER.appearance.barSettings
-            and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "thickness" or "height"],
+        label = "Bar Height",
+        setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.height,
         min = 5, max = 100, step = 0.1,
         value = shapeStyle.barHeight or 20,
         disabled = barSettingsSec.disabled,
@@ -560,6 +575,7 @@ local function BuildBarAppearanceTab(container, group, style)
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end,
     })
+    end
 
     -- Which way a single bar's own fill runs is what the bar LOOKS like, not
     -- where the bars sit, so it belongs with the bar's shape rather than with
@@ -590,11 +606,10 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    if lens.mode ~= "entry" and (not group._attachedBarOwner or (not group._fittedBarLayout
-        and ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid"))
+    if lens.mode ~= "entry" and not group._attachedBarOwner
         and ((group.buttons and #group.buttons > 1) or group._settingsContext) then
         AddSliderRow(barRight, {
-            label = group._attachedBarOwner and "Grid Spacing" or "Bar Spacing",
+            label = "Bar Spacing",
             setting = BAR_FINDER.appearance.barSettings
                 and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "gridSpacing" or "spacing"],
             tooltip = group._attachedBarOwner and { "Grid Spacing",
@@ -2368,7 +2383,7 @@ if ST._DefineSettingRoute then
         length = { label = "Bar Length", applies = function(context) return not context.group._fittedBarLayout end },
         height = { label = "Bar Height", aliases = { "bar thickness" },
             applies = function(context) return context.group._attachedBarOwner == nil end },
-        thickness = { label = "Bar Thickness", aliases = { "bar height" },
+        thickness = { label = "Bar Thickness", aliases = { "bar height" }, sectionId = "barThickness", collapseKeys = {},
             applies = function(context) return context.group._attachedBarOwner ~= nil end },
         vertical = { label = "Vertical Bar Fill", aliases = { "orientation" },
             applies = function(context) return not context.group._fittedBarLayout end },
@@ -2380,15 +2395,6 @@ if ST._DefineSettingRoute then
                 local group = context.group
                 return not group._attachedBarOwner
                     and ((buttons and #buttons > 1) or group._settingsContext ~= nil)
-            end,
-        },
-        gridSpacing = {
-            label = "Grid Spacing", aliases = { "Bar Spacing" }, sectionId = "barSettings", scope = "panel",
-            applies = function(context)
-                local group = context.group
-                return group._attachedBarOwner ~= nil and not group._fittedBarLayout
-                    and ST.GetBarOnlyLayoutMode(group._attachedBarOwner) == "grid"
-                    and ((group.buttons and #group.buttons > 1) or group._settingsContext ~= nil)
             end,
         },
         texture = { label = "Bar Texture" },

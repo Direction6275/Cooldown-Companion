@@ -311,6 +311,7 @@ end
 
 local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons)
     group = ST._ResolveStylingGroup(group)
+    local moduleContext = buttonData and buttonData._geometryContext
     if not (group and buttonData) then
         return
     end
@@ -379,7 +380,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     end
 
     local heading, collapsed = BuildCollapsibleSection(scroll, "Customizations",
-        CS.selectedGroup .. "_" .. CS.selectedButton .. "_customizations",
+        moduleContext and (moduleContext.kind .. ":" .. tostring(moduleContext.powerType) .. ":" .. tostring(moduleContext.spec) .. "_customizations")
+            or (CS.selectedGroup .. "_" .. CS.selectedButton .. "_customizations"),
         nil, nil, { leftAligned = true })
     ChainHeadingBadges(heading, CreateInfoButton(heading.frame, heading.label,
         "LEFT", "RIGHT", 4, 0, CUSTOMIZATIONS_TOOLTIP, infoButtons))
@@ -395,6 +397,13 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     SetScopeText(revertAll, "Revert All", SCOPE_CHROME_GOLD)
     WireScopeTextHover(revertAll, "Revert every customization on this entry")
     revertAll:SetScript("OnClick", function()
+        if moduleContext then
+            if not moduleContext:IsCurrent() then return end
+            CooldownCompanion:RevertSection(buttonData, "barThickness")
+            moduleContext:Refresh()
+            CooldownCompanion:RefreshConfigPanel()
+            return
+        end
         local entryName = ST._GetConfigEntryDisplayName
             and ST._GetConfigEntryDisplayName(buttonData)
             or buttonData.name
@@ -532,6 +541,19 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
             -- names its tab instead.
             local sectionId, formatRow = item.sectionId, item.format
             nav:SetScript("OnClick", function()
+                if moduleContext then
+                    if not moduleContext:IsCurrent() then return end
+                    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+                    if moduleContext.kind == "resources" then
+                        CS.resourcesSettingsTab = "appearance"
+                        ST._UnifiedRowSetScope("primary")
+                    else
+                        CS.castBarHomeTab = "appearance"
+                        ST._UnifiedRowSetScope("detail")
+                    end
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
                 local navigate = ST._NavigateToSectionHome
                 if navigate then
                     navigate(sectionId, formatRow and { tab = "format" } or nil)

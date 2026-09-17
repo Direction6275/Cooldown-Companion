@@ -101,7 +101,7 @@ if ST._DefineSettingRoute then
         sectionLabel = "Layout",
         collapseKeys = { "castbar_layout" },
         rowScope = "detail",
-        applies = CastBarFinderAttached,
+        applies = function(context) return CastBarFinderAttached(context) and not ST.GetModuleGeometryPanel("castbar") end,
     })
     CASTBAR_FINDER.attached = attached:Settings({
         yOffset = { label = "Y Offset", aliases = { "stack gap" } },
@@ -152,7 +152,8 @@ if ST._DefineSettingRoute then
     })
     CASTBAR_FINDER.bar = bar:Settings({
         texture = { label = "Bar Texture" },
-        height = { label = "Height", aliases = { "bar height" } },
+        height = { label = "Height", aliases = { "bar height" }, applies = function() return not ST.UsesSharedModuleGeometry("castbar") end },
+        thickness = { label = "Bar Thickness", sectionId = "barThickness", applies = function() return ST.UsesSharedModuleGeometry("castbar") end },
         color = { label = "Bar Color", aliases = { "fill color" } },
         background = { label = "Background Color" },
     })
@@ -337,7 +338,7 @@ end
 ------------------------------------------------------------------------
 
 local function CanShowAttachedCastBarOffsetControls(rbSettings, cbSettings, layout)
-    return rbSettings
+    return not ST.UsesSharedModuleGeometry("castbar") and rbSettings
         and rbSettings.enabled
         and (not layout or not CooldownCompanion:IsResourceBarAnchorIndependent())
         and cbSettings
@@ -487,6 +488,11 @@ local function BuildCastBarAnchoringPanel(container)
 end
 
 local function BuildCastBarPositioningPanel(container)
+    if ST.GetModuleGeometryPanel("castbar") then
+        ST._AddLabelRow(container, { label = "Spacing and distance use the Panel's Layout settings.",
+            tooltip = "Drag the cast bar in the preview to change its attachment location." })
+        return
+    end
     local settings = CooldownCompanion:GetCastBarSettings()
 
     if not settings.enabled then
@@ -631,6 +637,7 @@ local function BuildCastBarPositioningPanel(container)
 end
 
 local function BuildCastBarStylingPanel(container)
+    if ST.UsesSharedModuleGeometry("castbar") then ST._BuildModuleGeometrySummary(container, "castbar") end
     local settings = CooldownCompanion:GetCastBarSettings()
 
     -- The retired styling switch used to carry this gate too: with the
@@ -685,6 +692,9 @@ local function BuildCastBarStylingPanel(container)
 
         -- The canvas sizes the cast slot from this value, so the whole
         -- stack reflows under the drag; the live bar restyles on release.
+        if ST.UsesSharedModuleGeometry("castbar") then
+            ST._BuildModuleBarThickness(barLeft, "castbar", nil, nil, CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.thickness)
+        else
         AddMirrorFirstSliderRow(barLeft, {
             label = "Height",
             setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.height,
@@ -695,6 +705,7 @@ local function BuildCastBarStylingPanel(container)
             stateOwner = settings,
             stateKeys = "height",
         })
+        end
 
         AddColorRow(barRight, {
             label = "Bar Color",

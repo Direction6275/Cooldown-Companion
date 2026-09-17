@@ -98,6 +98,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
+    if buttonData and buttonData._barGeometryKind then return sectionId == "barThickness", "entryType" end
     if sectionId == "barCharges" and group and not ST.CanSegmentEntryCharges(group, buttonData) then
         return false, "entryType"
     end
@@ -105,7 +106,7 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
         and (sectionId == "barCooldownColor" or sectionId == "barChargeColor" or sectionId == "barReadyText") then
         return false, "entryType"
     end
-    if sectionId == "barShape" and group and not ST.IsPanelBarEntry(group, buttonData) then
+    if (sectionId == "barShape" or sectionId == "barThickness") and group and not ST.IsPanelBarEntry(group, buttonData) then
         return false, "displayMode"
     end
     if ST.CanButtonUseOverrideSection then
@@ -202,9 +203,10 @@ local function BuildDetachedEffectiveStyle(groupStyle, buttonData, group)
     for key, value in pairs(buttonData and buttonData.styleOverrides or {}) do
         effective[key] = CopyDetachedStyleValue(value)
     end
-    if group and buttonData and buttonData.overrideSections and buttonData.overrideSections.barShape
+    if group and buttonData and buttonData.overrideSections and (buttonData.overrideSections.barShape or buttonData.overrideSections.barThickness)
         and not ST.IsPanelBarEntry(group, buttonData) then
         for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do effective[key] = CopyDetachedStyleValue(groupStyle[key]) end
+        effective.barHeight = groupStyle.barHeight
     end
     return effective
 end
@@ -411,11 +413,24 @@ local function GetRevertTooltipTextForLabel(label)
     return "Revert " .. label .. " to panel settings"
 end
 
-local function GetRevertTooltipText(sectionId)
+local function GetRevertTooltipText(sectionId, buttonData)
+    local context = buttonData and buttonData._geometryContext
+    if context and not context.owner then
+        return "Revert " .. GetOverrideSectionLabel(sectionId) .. " to "
+            .. (context.kind == "resources" and "Resources defaults" or "Cast Bar defaults")
+    end
     return GetRevertTooltipTextForLabel(GetOverrideSectionLabel(sectionId))
 end
 
 local function PerformSectionRevert(buttonData, sectionId)
+    local context = buttonData and buttonData._geometryContext
+    if context then
+        if not context:IsCurrent() then return end
+        CooldownCompanion:RevertSection(buttonData, sectionId)
+        context:Refresh()
+        CooldownCompanion:RefreshConfigPanel()
+        return
+    end
     local group = CooldownCompanion.db and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not (group and group.buttons and group.buttons[CS.selectedButton] == buttonData) then return end
     CooldownCompanion:RevertSection(buttonData, sectionId)
@@ -448,7 +463,7 @@ end
 -- creating and placing the button.
 local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
     ApplyRevertGlyphLook(icon)
-    BindRevertGlyph(revertBtn, GetRevertTooltipText(sectionId), function()
+    BindRevertGlyph(revertBtn, GetRevertTooltipText(sectionId, buttonData), function()
         PerformSectionRevert(buttonData, sectionId)
     end)
 end
@@ -553,7 +568,8 @@ local function PromoteLensSection(lens, group, sectionId, opts)
         return false
     end
     CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
-    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+    if buttonData._geometryContext then buttonData._geometryContext:Refresh()
+    else CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     if not (opts and opts.deferRefresh) then
         CooldownCompanion:RefreshConfigPanel()
     end
@@ -987,7 +1003,7 @@ end
 -- glyph (both go through GetRevertTooltipText / PerformSectionRevert); only the
 -- shape differs, so a heading's pair of controls reads as one line.
 local function WireScopeRevertAction(action, buttonData, sectionId)
-    WireScopeTextHover(action, GetRevertTooltipText(sectionId))
+    WireScopeTextHover(action, GetRevertTooltipText(sectionId, buttonData))
     action:SetScript("OnClick", function()
         PerformSectionRevert(buttonData, sectionId)
     end)
@@ -1096,7 +1112,11 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         -- The grey row states WHOSE values it shows only on the CONTROL's
         -- hover; the gold affordance beside the label is the visible half of
         -- the same message.
-        SetRowScopeTooltip(rowWidget, ROW_SCOPE_INHERITED_TOOLTIP)
+        local context = lens.buttonData and lens.buttonData._geometryContext
+        SetRowScopeTooltip(rowWidget, context and not context.owner and {
+            context.kind == "resources" and "Resources default" or "Cast Bar default",
+            { "Customize to give this bar its own thickness.", 1, 1, 1, true },
+        } or ROW_SCOPE_INHERITED_TOOLTIP)
         attached = true
 
     elseif scope == "customized" then

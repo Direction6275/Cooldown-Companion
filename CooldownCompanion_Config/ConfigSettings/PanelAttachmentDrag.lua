@@ -209,13 +209,17 @@ end
 
 function ST._WirePanelAttachmentModule(frame, module, slot, drag)
     frame:SetScript("OnMouseDown", function(self, button)
-        if button ~= "LeftButton" or not drag or GetCursorInfo() then return end
+        if button ~= "LeftButton" or CS.copyCustomization or not drag or GetCursorInfo() then return end
         local x, y = GetCursorPosition()
         CS.dragState = { kind = "layout-slot", phase = "pending", previewSlot = self,
             scrollWidget = UIParent, startX = x, startY = y, layoutDrag = drag, slotData = { module = module } }
         ST._StartDragTracking()
     end)
     frame:SetScript("OnMouseUp", function(self, button)
+        if button == "RightButton" then
+            ST._ShowModuleThicknessMenu(slot)
+            return
+        end
         if button ~= "LeftButton" or ST._ConsumeDragEscapeMouseUp() then return end
         local state = CS.dragState
         if state then
@@ -231,6 +235,15 @@ function ST._WirePanelAttachmentModule(frame, module, slot, drag)
         if self.hoverHighlight then self.hoverHighlight:Show() end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(slot.label)
+        local context = ST._CreateModuleSettingsContext(slot.kind == "resource" and "resources" or "castbar", slot.powerType)
+        if context and context.entry.overrideSections and context.entry.overrideSections.barThickness then
+            GameTooltip:AddLine("Customized: Bar Thickness", 1, 0.82, 0)
+        end
+        if CS.copyCustomization then
+            local compatible = context and ST._ButtonPanelPreview.CopyMode.IsEligibleTarget(CS.copyCustomization, context.group, context.entry)
+            GameTooltip:AddLine(compatible and "Click to apply compatible thickness customization."
+                or "This bar supports Bar Thickness customization only.", 1, 1, 1, true)
+        end
         GameTooltip:AddLine(module.kind == "cast" and "Drag to another side. The cast bar stays last."
             or "Drag to move this Resources block. Resource ordering stays inside the block.", 1, 1, 1, true)
         GameTooltip:Show()

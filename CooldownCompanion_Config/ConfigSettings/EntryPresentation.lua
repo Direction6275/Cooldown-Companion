@@ -13,11 +13,10 @@ local function AttachedContext(context)
     return group and context.group._attachedBarOwner
         and ST.PanelUsesAttachedBarLayout(group) or false
 end
-local function IconGapApplies(context)
+local function AttachmentApplies(context)
     local owner = OrdinaryOwner(context)
-    if not owner or not context.group._attachedBarOwner or ST.GetPanelLayoutKind(owner) ~= "mixed" then return false end
-    local modules = ST._GetPanelAttachmentPreviewModules(context.groupId, true)
-    return ST.AttachedBarGapApplies(owner, modules)
+    if not owner or not context.group._attachedBarOwner then return false end
+    return ST._PanelHasConfiguredModuleBars(context.groupId) or ST.AttachedBarGapApplies(owner)
 end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",
@@ -38,8 +37,16 @@ local panelSettings = ST._DefineSettingRoute({
         local group = OrdinaryOwner(context)
         return group and context.group._attachedBarOwner and ST.GetPanelLayoutKind(group) == "bars" or false
     end },
-    spacing = { label = "Stack Spacing", aliases = { "Bar Spacing", "Attached Bar Spacing" }, collapseKeys = { "layout_attached" }, applies = function(context) return OrdinaryOwner(context) ~= nil and context.group._attachedBarOwner ~= nil end },
-    gap = { label = "Distance from icons", collapseKeys = { "layout_attached" }, applies = IconGapApplies },
+    spacing = { label = "Stack Spacing", aliases = { "Bar Spacing", "Attached Bar Spacing" }, collapseKeys = { "layout_attached" }, applies = AttachmentApplies },
+    gap = { label = "Distance from Panel", aliases = { "Distance from icons", "Gap from anchor" }, collapseKeys = { "layout_attached" }, applies = function(context)
+        local owner = OrdinaryOwner(context)
+        return AttachmentApplies(context) and not (ST.GetPanelLayoutKind(owner) == "bars" and ST.GetBarOnlyLayoutMode(owner) == "stack")
+    end },
+    gridSpacing = { label = "Grid Spacing", applies = function(context)
+        local owner = OrdinaryOwner(context)
+        return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
+            and ST.GetBarOnlyLayoutMode(owner) == "grid" or false
+    end },
     stackGap = { label = "Stack offset", applies = function(context)
         local owner = OrdinaryOwner(context)
         return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
@@ -141,7 +148,8 @@ end
 function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
     group = group._settingsOwner or group
     if not ST.PanelSupportsAttachedBars(group) then return false end
-    local presentations = ST.GetPanelLayoutKind(group) == "bars" and { "icons", "bars" } or { "icons" }
+    local contents = ST._GetPanelSettingsContents(group)
+    local presentations = contents.icons and { "icons" } or contents.bars and { "bars" } or {}
     for _, presentation in ipairs(presentations) do
         local context = ST._CreatePanelSettingsContext(group, presentation)
         local host = ST._NewPanelSettingsSectionHost(container, context)
@@ -166,7 +174,18 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                         Addon:RefreshConfigPanel()
                     end,
                 })
-                if ST.GetBarOnlyLayoutMode(group) == "grid" then buildGrid(host, context.group, #(group.buttons or {}))
+                if ST.GetBarOnlyLayoutMode(group) == "grid" then
+                    buildGrid(host, context.group, #(group.buttons or {}))
+                    ST._AddSliderRow(host, { setting = panelSettings.gridSpacing,
+                        value = context.writeStyle.buttonSpacing or ST.BUTTON_SPACING, min = -10, max = 100, step = 0.1,
+                        onChange = function(value)
+                            ST._PreviewScalarSetting(context.writeStyle, "buttonSpacing", value, ST._RefreshSelectedButtonsPreview)
+                        end,
+                        onRelease = function(value)
+                            context.writeStyle.buttonSpacing = value
+                            if context:IsCurrent() then Addon:UpdateGroupStyle(context.panelId) end
+                        end,
+                    })
                 else
                     ST._AddSliderRow(host, { setting = panelSettings.stackGap,
                         value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 0.1,
@@ -182,21 +201,22 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
         end
     end
     local context = ST._CreatePanelSettingsContext(group, "bars")
+    if not AttachmentApplies({ group = context.group, groupId = context.panelId }) then return true end
     local host = ST._NewPanelSettingsSectionHost(container, context)
     local _, collapsed = ST._BuildCollapsibleSection(host, "Attached Bars", "layout_attached", nil, nil, { leftAligned = true })
     if not collapsed then
         local fields = { { "spacing", 3, 40 } }
-        if IconGapApplies({ group = context.group, groupId = context.panelId }) then
+        if not (ST.GetPanelLayoutKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack") then
             fields[#fields + 1] = { "gap", 3, 80 }
         end
         for _, field in ipairs(fields) do
             local key = field[1]
             ST._AddSliderRow(host, { setting = panelSettings[key],
                 value = group.attachedBarLayout and group.attachedBarLayout[key] or field[2], min = 0, max = field[3], step = 0.1,
-                tooltip = key == "gap" and { "Distance from icons",
-                    { "Distance from the icon region to its first bar. Resources use their own attachment offset when they come first.", 1, 1, 1, true } }
+                tooltip = key == "gap" and { "Distance from Panel",
+                    { "Distance from the selected panel region to the first bar or block on each side.", 1, 1, 1, true } }
                     or { "Stack Spacing",
-                        { "Space between bars attached to icons or arranged in a Collapsing Stack.", 1, 1, 1, true } },
+                        { "Space between attached bars, including Resources and the cast bar, or bars arranged in a Collapsing Stack.", 1, 1, 1, true } },
                 onChange = function(value)
                     if not context:IsCurrent() then return end
                     group.attachedBarLayout = group.attachedBarLayout or {}

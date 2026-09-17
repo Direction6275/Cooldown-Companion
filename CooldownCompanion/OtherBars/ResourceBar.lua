@@ -620,21 +620,15 @@ local function CreateIndependentWrapperFrame()
                 placementSettings.independentWidth = width
             end
         end,
-        -- Height edits the shared thickness, whose key flips with orientation
-        -- exactly as the config slider's does; per-resource custom heights
-        -- disable it here the same way they disable that slider.
+        -- The independent stack's baseline stays editable even when individual
+        -- resources customize their thickness.
         getHeight = function()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)
             if not placementSettings then
                 return 12
             end
-            if RB.IsVerticalResourceLayout(settings) then
-                return placementSettings.barWidth or placementSettings.barHeight
-                    or settings.barWidth or settings.barHeight or 12
-            end
-            return placementSettings.barHeight or placementSettings.barWidth
-                or settings.barHeight or settings.barWidth or 12
+            return ST.ResolveResourceBarGeometry(settings, placementSettings).thickness
         end,
         setHeight = function(height)
             local settings = GetResourceBarSettings()
@@ -651,7 +645,7 @@ local function CreateIndependentWrapperFrame()
         isHeightEnabled = function()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)
-            return placementSettings ~= nil and placementSettings.customBarHeights ~= true
+            return placementSettings ~= nil
         end,
         isVertical = function()
             local settings = GetResourceBarSettings()
@@ -2444,8 +2438,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
     end
 
     -- Create or recycle bar frames
-    local globalBarThickness = GetResourceGlobalThickness(settings)
-    local barSpacing = layout.barSpacing or settings.barSpacing or 3.6
+    local geometryHost = not isIndependentStack and ST.GetModuleGeometryHost("resources") or nil
+    local sharedGeometry = ST.ResolveResourceBarGeometry(settings, layout, nil, geometryHost)
+    local globalBarThickness = sharedGeometry.thickness
+    local barSpacing = sharedGeometry.spacing
     lastAppliedBarSpacing = barSpacing
     lastAppliedBarThickness = globalBarThickness
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
@@ -2540,19 +2536,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
             or GetResourcePrimaryLength(groupFrame, settings, region == "main" and "main" or "outer")
 
         -- Resolve per-bar thickness override
-        local effectiveThickness = globalBarThickness
-        if layout.customBarHeights then
-            local thicknessKey = isVerticalLayout and "barWidth" or "barHeight"
-                -- Same placement identity as the side/order pass above: a
-                -- pair's thickness override belongs to the shared slot.
-                local res = layout.resources
-                    and layout.resources[RB.GetCanonicalPowerType(powerType)]
-                if thicknessKey == "barWidth" then
-                    effectiveThickness = (res and (res.barWidth or res.barHeight)) or globalBarThickness
-                else
-                    effectiveThickness = (res and (res.barHeight or res.barWidth)) or globalBarThickness
-                end
-        end
+        local effectiveThickness = ST.ResolveResourceBarGeometry(settings, layout,
+            RB.GetCanonicalPowerType(powerType), geometryHost).thickness
         local effectiveWidth = isVerticalLayout and effectiveThickness or totalPrimaryLength
         local effectiveHeight = isVerticalLayout and totalPrimaryLength or effectiveThickness
 
@@ -3282,7 +3267,6 @@ end
 function CooldownCompanion:GetPanelResourceBlocks(groupId)
     local blocks = {}
     if not isApplied or lastAppliedIndependentStack or RB._attachedPanelId ~= groupId then return blocks end
-    local settings = GetResourceBarSettings()
     local vertical = lastAppliedOrientation == "vertical"
     local lanes = vertical and { "left", "right" } or RB.ATTACHED_BAR_LANES
     for _, lane in ipairs(lanes) do
@@ -3297,8 +3281,7 @@ function CooldownCompanion:GetPanelResourceBlocks(groupId)
             if ST.PanelSupportsAttachedBars(group) then
                 region = ST.ResolvePanelAttachmentRegion(group, side, region)
             end
-            blocks[side .. ":" .. region] = { frame = container, tail = container,
-                gap = GetResourceAnchorGap(settings, lastAppliedLayout) }
+            blocks[side .. ":" .. region] = { frame = container, tail = container }
         end
     end
     return blocks

@@ -690,7 +690,9 @@ local function ShowResourceSettingsPanel(col3)
             -- panel whose gear did not rebuild this pass.
             CS.RunAdvancedGearBuildPass(function()
                 if ST._BuildResourceSettingsPanel then
-                    ST._BuildResourceSettingsPanel(scroll, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
+                    local context = ST._CreateModuleSettingsContext("resources", CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
+                    local host = context and ST._NewPanelSettingsSectionHost(scroll, context) or scroll
+                    ST._BuildResourceSettingsPanel(host, CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
                 else
                     local label = AceGUI:Create("Label")
                     ST._ConfigureWrappedHelperLabel(label)
@@ -748,7 +750,12 @@ local function ShowResourcesTabPage(col3, stripOnly)
                 if tab == "general" then
                     ST._BuildResourceBarAnchoringPanel(scroll)
                 elseif tab == "appearance" then
-                    ST._BuildResourceBarBarTextStylingPanel(scroll)
+                    if CS.selectedResourcePowerType and ST.UsesSharedModuleGeometry("resources", CS.resourceSettingsSpecID) then
+                        ST._BuildModuleGeometrySummary(scroll, "resources", CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
+                        local left = ST._BeginRowGrid(scroll)
+                        ST._BuildModuleBarThickness(left, "resources", CS.selectedResourcePowerType, CS.resourceSettingsSpecID,
+                            ST._ResourceThicknessSetting)
+                    else ST._BuildResourceBarBarTextStylingPanel(scroll) end
                 elseif tab == "layout" then
                     ST._BuildResourceBarPositioningPanel(scroll)
                 elseif tab == "health" then
@@ -845,6 +852,8 @@ local function ShowCastBarSettings(col3)
             -- panel whose gear did not rebuild this pass - the cast bar's
             -- gears open panels like every other surface's.
             CS.RunAdvancedGearBuildPass(function()
+                local context = ST._CreateModuleSettingsContext("castbar")
+                local scroll = context and ST._NewPanelSettingsSectionHost(scroll, context) or scroll
                 if tab == "general" then
                     ST._BuildCastBarAnchoringPanel(scroll)
                 elseif tab == "appearance" then

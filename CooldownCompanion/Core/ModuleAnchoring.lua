@@ -85,7 +85,7 @@ function Addon:CanModuleAnchorToPanel(panelId)
     return self:CanGroupBeExternalAnchorTarget(panelId)
 end
 
-local function ResolvePanel(self, panelId, specId)
+local function ResolvePanel(self, panelId, specId, configured)
     local result = { panelId = panelId, available = false, eligible = false }
     if not panelId then result.reason = "missing"; return result end
     local ok, reason = self:CanModuleAnchorToPanel(result.panelId)
@@ -93,19 +93,22 @@ local function ResolvePanel(self, panelId, specId)
     if not self:IsGroupVisibleToCurrentChar(result.panelId) then result.reason = "inaccessible"; return result end
     result.group = self.db.profile.groups[result.panelId]
     if not self:IsGroupActive(result.panelId, { group = result.group, specId = specId,
-        checkCharVisibility = true, checkLoadConditions = true }) then
+        checkCharVisibility = true, checkLoadConditions = true, configurationOnly = configured }) then
         result.reason = "inactive"; return result
     end
     result.eligible = true
     result.frame = self.groupFrames and self.groupFrames[result.panelId]
-    result.available = result.frame ~= nil and result.frame:IsShown() == true
+    result.available = not configured and result.frame ~= nil and result.frame:IsShown() == true
     result.reason = result.available and "ok" or "hidden"
     return result
 end
 
-function Addon:ResolveModulePanel(kind, specId)
+function Addon:ResolveModulePanel(kind, specId, options)
+    -- Editors inspect configured eligibility without consulting frame visibility.
+    -- Runtime callers omit options and retain the shown-panel fallback policy.
+    local configured = options and options.configured == true
     specId = tonumber(specId) or self._currentSpecId
-    local attachment = self:GetModuleAttachment(kind, specId)
+    local attachment = self:GetModuleAttachment(kind, specId, options and options.settings)
     local selection = attachment.mode == "player" and self:GetModuleAttachment("player", specId) or attachment
     if not specId or selection.mode == "independent" then
         return { mode = attachment.mode, available = false, eligible = false,
@@ -113,14 +116,14 @@ function Addon:ResolveModulePanel(kind, specId)
     end
     local selectedPanelId = selection.mode == "panel" and tonumber(selection.panelId) or nil
     local result = ResolvePanel(self, selectedPanelId
-        or (selection.mode == "auto" and self:GetFirstAvailableAnchorGroup(specId) or nil), specId)
+        or (selection.mode == "auto" and self:GetFirstAvailableAnchorGroup(specId, options) or nil), specId, configured)
     if selection.mode == "panel" then
         local selectedReason, selectedEligible = result.reason, result.eligible
-        if not result.available then
+        if (configured and not result.eligible) or (not configured and not result.available) then
             -- Keep the preference untouched. All consumers use panelId as the
             -- effective destination, so stacking, navigation and previews agree.
-            local fallbackId = self:GetFirstAvailableAnchorGroup(specId, { requireShown = true })
-            result = ResolvePanel(self, fallbackId, specId)
+            local fallbackId = self:GetFirstAvailableAnchorGroup(specId, { requireShown = not configured, configured = configured })
+            result = ResolvePanel(self, fallbackId, specId, configured)
             result.fallback = true
         end
         result.selectedPanelId = selectedPanelId

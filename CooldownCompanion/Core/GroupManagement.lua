@@ -676,6 +676,11 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         and ST.PanelSupportsAttachedBars(targetGroup) then
         local function CopyAttachedStyle(key)
             if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
+            if key == "buttonSpacing" and not templateFields then
+                local arrangement = false
+                for _, scope in ipairs(scopes) do if scope == "arrangement" then arrangement = true end end
+                if not arrangement then return end
+            end
             targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
             targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
             local sourceStyle = templateFields and (source.attachedBarStyle or {})
@@ -706,7 +711,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
                 if scope == "arrangement" then
                     for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do CopyAttachedLayout(key) end
                     for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do CopyBarOnlyLayout(key) end
-                    for _, key in ipairs({ "barOrientation", "growthOrigin", "buttonsPerRow" }) do CopyAttachedStyle(key) end
+                    for _, key in ipairs({ "barOrientation", "growthOrigin", "buttonsPerRow", "buttonSpacing" }) do CopyAttachedStyle(key) end
                 end
             end
         end

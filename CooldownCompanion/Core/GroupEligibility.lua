@@ -752,14 +752,14 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
 
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
-    if container and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
+    if container and not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             container = container,
             checkCharVisibility = opts.checkCharVisibility,
         })
     end
-    if not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
+    if not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsPanelUnlockPreviewActive(group) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             panelUnlockPreview = true,
@@ -783,7 +783,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         end
     end
 
-    if not self:IsHeroTalentAllowed(group) then return false end
+    if not (opts.configurationOnly and opts.specId and opts.specId ~= self._currentSpecId)
+        and not self:IsHeroTalentAllowed(group) then return false end
 
     local checkCharVisibility = opts.checkCharVisibility
     if checkCharVisibility == nil then checkCharVisibility = true end
@@ -791,7 +792,9 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    if opts.checkLoadConditions ~= false then
+    if opts.configurationOnly then
+        if not self:IsGroupEligibilityMet(group, opts.specId) then return false end
+    elseif opts.checkLoadConditions ~= false then
         if not self:IsGroupLoadConditionMet(group) then
             return false
         end
@@ -1388,6 +1391,7 @@ function CooldownCompanion:EvaluateLoadConditionSources(sources, opts)
             if not eligibility then
                 eligibility = {}
                 identity = self:GetCurrentEligibilityIdentity()
+                if opts.specId then identity.specId = opts.specId end
             end
             if source.allowClassEligibility then
                 MergeEligibilityAllowlist(eligibility, "class", loadConditions.classAllowlist, NormalizeClassKey)
@@ -1409,9 +1413,10 @@ function CooldownCompanion:IsGroupLoadConditionMet(group)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group))
 end
 
-function CooldownCompanion:IsGroupEligibilityMet(group)
+function CooldownCompanion:IsGroupEligibilityMet(group, specId)
     return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group), {
         eligibilityOnly = true,
+        specId = specId,
     })
 end
 

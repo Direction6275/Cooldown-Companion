@@ -87,6 +87,14 @@ local GroupSupportsPerButtonOverrides = ST._GroupSupportsPerButtonOverrides
 -- duplicate) or the entry may be gone entirely. sourceRef is the identity
 -- token; a repairable shift re-stamps the index, anything else is nil.
 local function ResolveCopyCustomizationSource(state)
+    if state.moduleContext then
+        local context = state.moduleContext
+        local current = context.kind == "resources" and CooldownCompanion:GetResourceBarSettings() or CooldownCompanion:GetCastBarSettings()
+        if current == context.settings and context:GetObject(false) == state.moduleObject then
+            return context.group, context.entry
+        end
+        return nil
+    end
     local groups = CooldownCompanion.db.profile.groups
     local group = groups and groups[state.sourceGroupId]
     if not (group and group.buttons) then return nil end
@@ -127,6 +135,8 @@ local function ArmCopyCustomization(groupId, buttonIndex, buttonData, scope, sec
         sourceGroupId = groupId,
         sourceButtonIndex = buttonIndex,
         sourceRef = buttonData,
+        moduleContext = buttonData._geometryContext,
+        moduleObject = buttonData._geometryContext and buttonData._geometryContext:GetObject(false),
         scope = scope,
         sectionId = sectionId,
     }
@@ -155,6 +165,8 @@ local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
     if not (state and targetGroup and targetButtonData) then return false end
     local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
     if not sourceData or targetButtonData == sourceData then return false end
+    if state.moduleObject and targetButtonData._geometryContext
+        and targetButtonData._geometryContext:GetObject(false) == state.moduleObject then return false end
     if not GroupSupportsPerButtonOverrides(targetGroup) then return false end
     -- The mode outlives arbitrary edits, so the armed payload can be
     -- reverted on the source while the rings are up. A vanished payload
@@ -187,7 +199,8 @@ end
 local function HandleCopyCustomizationClick(panelId, index, buttonData)
     local state = CS.copyCustomization
     if not state then return false end
-    local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+    local targetGroup = buttonData and buttonData._geometryContext and buttonData._geometryContext.group
+        or CooldownCompanion.db.profile.groups[panelId]
     if not targetGroup then return false end
     local sourceGroup, sourceData = ResolveCopyCustomizationSource(state)
     if not sourceData then
@@ -195,7 +208,8 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         CancelCopyCustomization()
         return true
     end
-    if buttonData == sourceData then
+    if buttonData == sourceData or (state.moduleObject and buttonData._geometryContext
+        and buttonData._geometryContext:GetObject(false) == state.moduleObject) then
         CancelCopyCustomization()
         return true
     end
@@ -244,7 +258,8 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
         return true
     end
 
-    CooldownCompanion:UpdateGroupStyle(panelId)
+    if buttonData._geometryContext then buttonData._geometryContext:Refresh()
+    else CooldownCompanion:UpdateGroupStyle(panelId) end
     -- The format is re-parsed on the way through PopulateGroupButtons, which
     -- only the frame refresh reaches. Paid only when a format actually copied.
     if formatCopied then
@@ -347,7 +362,7 @@ local function UpdateCopyCustomizationBanner(preview)
     end
 
     banner = EnsureCopyCustomizationBanner(preview)
-    local text = "Click an entry to apply |cffffd100"
+    local text = "Click a compatible bar or entry to apply |cffffd100"
         .. GetCopyCustomizationLabel(state) .. "|r"
     if state.lastAppliedText then
         text = text .. "  |cff99e6a3" .. state.lastAppliedText .. "|r"
@@ -363,8 +378,9 @@ end
 local function ApplyCopyTargetVisuals(slot, panelId, buttonData)
     local state = CS.copyCustomization
     local eligible = false
-    if state and panelId and buttonData then
-        local targetGroup = CooldownCompanion.db.profile.groups[panelId]
+    if state and buttonData and (panelId or buttonData._geometryContext) then
+        local targetGroup = buttonData._geometryContext and buttonData._geometryContext.group
+            or CooldownCompanion.db.profile.groups[panelId]
         eligible = IsEligibleCopyTarget(state, targetGroup, buttonData)
     end
     if not eligible then
@@ -387,6 +403,44 @@ local function ApplyCopyTargetVisuals(slot, panelId, buttonData)
     ST.ApplyBorderTextures(highlight.ringTextures, highlight,
         PANEL_PREVIEW_COPY_COLOR, 1, ST.GetEffectiveBorderRenderMode(nil, nil, 1))
     highlight:Show()
+end
+
+function ST._HandleModuleThicknessCopy(slot)
+    if not CS.copyCustomization or (slot.kind ~= "resource" and slot.kind ~= "cast") then return false end
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then return false end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    return context and HandleCopyCustomizationClick(CS.selectedGroup, nil, context.entry) or false
+end
+
+function ST._ShowModuleThicknessMenu(slot)
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then return end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    if not context then return end
+    CS.barGeometryMenu = CS.barGeometryMenu or CreateFrame("Frame", "CDCBarGeometryMenu", UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(CS.barGeometryMenu, function(_, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text, info.notCheckable = "Copy Bar Thickness", true
+        info.disabled = not (context.entry.overrideSections and context.entry.overrideSections.barThickness)
+        info.func = function()
+            if not context:IsCurrent() then return end
+            CloseDropDownMenus()
+            ArmCopyCustomization(CS.selectedGroup, nil, context.entry, "section", "barThickness")
+        end
+        UIDropDownMenu_AddButton(info, level or 1)
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, CS.barGeometryMenu, "cursor", 0, 0)
+end
+
+function ST._ApplyModuleCopyTargetVisuals(frame, slot)
+    local kind = slot.kind == "resource" and "resources" or "castbar"
+    if not ST.UsesSharedModuleGeometry(kind) then
+        if frame.copyTargetHighlight then frame.copyTargetHighlight:Hide() end
+        return
+    end
+    local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
+    if context then ApplyCopyTargetVisuals(frame, CS.selectedGroup, context.entry) end
 end
 
 CopyMode.COLOR = PANEL_PREVIEW_COPY_COLOR

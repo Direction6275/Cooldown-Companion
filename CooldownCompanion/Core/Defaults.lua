@@ -1435,10 +1435,14 @@ ST.OVERRIDE_SECTIONS = {
         },
         modes = {bars = true},
     },
+    barThickness = {
+        label = "Bar Thickness", keys = { "barHeight" },
+        defaults = { barHeight = 12 }, modes = { bars = true },
+    },
     barShape = {
         label = "Bar Settings",
-        keys = { "barLength", "barHeight", "barTexture", "barFillVertical", "barReverseFill", "durationFormat" },
-        defaults = { barLength = 180, barHeight = 12, barTexture = "Solid", barFillVertical = false, barReverseFill = false, durationFormat = "clock" },
+        keys = { "barLength", "barTexture", "barFillVertical", "barReverseFill", "durationFormat" },
+        defaults = { barLength = 180, barTexture = "Solid", barFillVertical = false, barReverseFill = false, durationFormat = "clock" },
         modes = { bars = true },
     },
     barColor = {
@@ -1508,7 +1512,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
-    "barShape", "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
+    "barThickness", "barShape", "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
     "textFont", "textColors", "textBackground",
 }
 
@@ -1645,7 +1649,7 @@ ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
 }
 
 function ST.CanGroupUseOverrideSection(group, sectionId)
-    if sectionId == "barShape" then
+    if sectionId == "barShape" or sectionId == "barThickness" then
         return group and (group._attachedBarOwner ~= nil or ST.PanelSupportsAttachedBars(group)) or false
     end
     if not ST.IsAuraPanelGroup(group) then return true end
@@ -1840,6 +1844,7 @@ for _, key in ipairs(PANEL_VISIBILITY_COPY_SCOPE.groupKeys) do
 end
 
 function ST.CanButtonUseOverrideSection(buttonData, sectionId)
+    if buttonData and buttonData._barGeometryKind then return sectionId == "barThickness", "entryType" end
     if buttonData and buttonData.type == "equipmentSlot" then
         if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
             return false, "entryType"

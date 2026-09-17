@@ -55,12 +55,13 @@ function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData, group)
             cache = {}
             effectiveStyleCache[buttonData] = cache
         end
-        if group and buttonData.overrideSections.barShape and not ST.IsPanelBarEntry(group, buttonData) then
+        if group and (buttonData.overrideSections.barShape or buttonData.overrideSections.barThickness) and not ST.IsPanelBarEntry(group, buttonData) then
             local filtered = cache.inactiveBarShape or {}
             cache.inactiveBarShape = filtered
             wipe(filtered)
             for key, value in pairs(buttonData.styleOverrides) do filtered[key] = value end
             for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do filtered[key] = nil end
+            filtered.barHeight = nil
             setmetatable(filtered, { __index = groupStyle })
             return filtered
         end

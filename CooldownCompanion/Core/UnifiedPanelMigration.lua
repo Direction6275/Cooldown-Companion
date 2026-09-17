@@ -4,7 +4,7 @@ local _, ST = ...
 local Addon = ST.Addon
 local Migration = {}
 ST.UnifiedPanelMigration = Migration
-local VERSION = 6
+local VERSION = 8
 
 local function Copy(value)
     if type(value) ~= "table" then return value end
@@ -240,6 +240,8 @@ local function EligibleDestination(profile, group, classKey, spec, context)
     for _, entity in ipairs({ container, group }) do
         local conditions = entity.loadConditions or {}
         if not Allows(conditions.classAllowlist, classKey) or not Allows(conditions.specAllowlist, spec) then return false end
+        if context.geometryOnly and context.geometryOwner
+            and not Allows(conditions.characterAllowlist, context.geometryOwner) then return false end
     end
     if not context._legacyDestinationRules then
         if group.enabled == false or container.enabled == false then return false end
@@ -309,7 +311,12 @@ local function Destination(profile, classKey, spec, settings, layout, context, r
         or (attachment.mode == nil and Value(layout, settings, "independentAnchorEnabled", false))
     local preferred
     if not independent then
-        if context._legacyDestinationRules or context._legacyAttachmentModeRules then
+        if context.geometryOnly then
+            -- GetModuleAttachment ignores retired anchorGroupId preferences.
+            -- Only an explicit current attachment may choose the host whose
+            -- defaults replace a module's inherited thickness.
+            if attachment.mode == "panel" then preferred = tonumber(attachment.panelId) end
+        elseif context._legacyDestinationRules or context._legacyAttachmentModeRules then
             preferred = tonumber(attachment.panelId or settings.anchorGroupId)
         elseif attachment.mode == "panel" then
             preferred = tonumber(attachment.panelId)
@@ -351,6 +358,7 @@ local function Destination(profile, classKey, spec, settings, layout, context, r
                 and EligibleDestination(profile, group, classKey, spec, context) then return id end
         end
     end
+    if context.geometryOnly then return nil end
     local identity = classKey .. ":" .. Fingerprint({ independent = independent, anchor = Value(layout, settings, "independentAnchor"),
         length = Value(layout, settings, "independentWidth", 180), orientation = Value(layout, settings, "orientation", "horizontal"),
         spacing = Value(layout, settings, "barSpacing", 3.6), height = Value(layout, settings, "barHeight", 12),
@@ -751,6 +759,169 @@ local function RepairConvertedEntryContracts(profile, context, report)
     return true
 end
 
+-- Geometry conversion is separate from legacy bar identity conversion. Its
+-- per-owner stamp survives exports, so importing an already-upgraded object
+-- cannot restore a customization the user subsequently reverted.
+local function NormalizeGeometry(profile, context, report)
+    local changed = false
+    local backup = {}
+    for _, key in ipairs({ "groups", "resourceBarsByClass", "resourceBarsByChar", "resourceBars",
+        "legacyResourceBarsSeed", "castBarByChar", "castBar", "legacyCastBarSeed" }) do
+        backup[key] = Copy(profile[key])
+    end
+    local function OwnThickness(owner, value)
+        if type(value) ~= "number" or value ~= value or value <= 0 or value == math.huge then
+            return nil, "A saved bar thickness is invalid; geometry conversion was not applied."
+        end
+        owner.styleOverrides = owner.styleOverrides or {}
+        owner.overrideSections = owner.overrideSections or {}
+        owner.styleOverrides.barHeight = value
+        owner.overrideSections.barThickness = true
+        return true
+    end
+    for _, group in pairs(profile.groups or {}) do
+        if group._barGeometryVersion ~= 1 then
+            local ordinary, convertedEntry = ST.PanelSupportsAttachedBars(group), false
+            for _, entry in ipairs(group.buttons or {}) do
+                local sections, overrides = entry.overrideSections, entry.styleOverrides
+                if sections and sections.barShape and overrides and not sections.barThickness then
+                    local value = rawget(overrides, "barHeight") or Value(ordinary and group.attachedBarStyle or group.style,
+                        ordinary and ST.ATTACHED_BAR_DEFAULTS or ST._defaults.profile.globalStyle, "barHeight", 12)
+                    local ok, err = OwnThickness(entry, value)
+                    if not ok then return nil, err end
+                    convertedEntry = true
+                end
+            end
+            if ordinary or convertedEntry then group._barGeometryVersion, changed = 1, true end
+        end
+    end
+    local lookup = Copy(context)
+    lookup.geometryOnly = true
+    local function InheritancePanel(class, spec, settings, layout, owner)
+        if not class or not spec then return nil end
+        lookup.geometryOwner = owner
+        local id = Destination(profile, class, spec, settings, layout, lookup, report, {})
+        local group = id and profile.groups[id]
+        if not group then return nil end
+        -- Destination chooses saved placement, not a guaranteed runtime host.
+        -- A conditional candidate may yield to a different panel's defaults.
+        -- Keep the old thickness explicit; do not skip it and infer inheritance
+        -- from the next candidate. This decision serves Resources and Cast Bar.
+        for _, entity in ipairs({ group, profile.groupContainers[group.parentContainerId] }) do
+            if entity.heroTalents and next(entity.heroTalents) then return nil end
+            local conditions = entity.loadConditions
+            if conditions then
+                -- Class-shared Resources have no single character identity.
+                if not owner and conditions.characterAllowlist ~= nil then return nil end
+                -- Legacy panel/container load-condition tables default these
+                -- two gates on, including when their fields are unset.
+                if conditions.petBattle ~= false or conditions.vehicleUI ~= false then return nil end
+                for key, value in pairs(conditions) do
+                    if key ~= "classAllowlist" and key ~= "specAllowlist" and key ~= "characterAllowlist"
+                        and value then return nil end
+                end
+            end
+        end
+        return group
+    end
+    local visited = {}
+    local function Resources(settings, class, owner)
+        if type(settings) ~= "table" or settings._barGeometryVersion == 1 or visited[settings] then return true end
+        visited[settings] = true
+        settings.layoutOrder = settings.layoutOrder or {}
+        local specs = {}
+        local classSpecs = context.classSpecs and context.classSpecs[class]
+            or (class and ST._GetResourceBarClassSpecInfo and ST._GetResourceBarClassSpecInfo(class))
+        for spec in pairs(classSpecs or {}) do specs[tonumber(spec) or spec] = true end
+        for spec in pairs(settings.layoutOrder) do specs[tonumber(spec) or spec] = true end
+        if not next(specs) then return true end
+        local classID = ST._GetClassIDFromResourceBarClassKey and ST._GetClassIDFromResourceBarClassKey(class)
+        for spec in pairs(specs) do
+            local layout = SpecTable(settings.layoutOrder, spec) or {}
+            settings.layoutOrder[spec] = layout
+            layout.resources = layout.resources or {}
+            local catalog = ST._RB and ((ST._RB.SPEC_RESOURCES_CONFIG or {})[spec]
+                or (ST._RB.CLASS_RESOURCES_CONFIG or {})[classID]) or {}
+            local keys = { [-1] = true }
+            for _, key in ipairs(catalog) do keys[key] = true end
+            for key in pairs(settings.resources or {}) do keys[tonumber(key) or key] = true end
+            for key in pairs(layout.resources) do keys[tonumber(key) or key] = true end
+            local panel = InheritancePanel(class, spec, settings, layout, owner)
+            local vertical = Value(layout, settings, "orientation", "horizontal") == "vertical"
+            local baseline = vertical and Value(layout, settings, "barWidth", Value(layout, settings, "barHeight", 12))
+                or Value(layout, settings, "barHeight", Value(layout, settings, "barWidth", 12))
+            for key in pairs(keys) do
+                local slot = layout.resources[key] or layout.resources[tostring(key)] or {}
+                -- Unvisited specs have not run SeedResourceLayoutFromGlobal.
+                -- Resolve its per-axis fallbacks before choosing thickness.
+                local resource = SpecTable(settings.resources, key)
+                local height = Value(slot, resource, "barHeight")
+                local width = Value(slot, resource, "barWidth")
+                local explicit = Value(layout, settings, "customBarHeights", false)
+                    and (height ~= nil or width ~= nil)
+                local value = explicit and (vertical and (width or height) or (height or width)) or baseline
+                if not (slot.overrideSections and slot.overrideSections.barThickness)
+                    and (explicit or not panel or value ~= Value(panel.attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS, "barHeight", 12)) then
+                    local ok, err = OwnThickness(slot, value)
+                    if not ok then return nil, err end
+                    layout.resources[key] = slot
+                    if tostring(key) ~= key then layout.resources[tostring(key)] = nil end
+                end
+            end
+            ResourceBlocks(settings, spec, report, class)
+        end
+        settings._barGeometryVersion, changed = 1, true
+        return true
+    end
+    for class, settings in pairs(profile.resourceBarsByClass or {}) do
+        local ok, err = Resources(settings, class); if not ok then return nil, err end
+    end
+    for owner, settings in pairs(profile.resourceBarsByChar or {}) do
+        local ok, err = Resources(settings, context.ownerClasses[owner], owner); if not ok then return nil, err end
+    end
+    -- Unscoped seeds may later be adopted by another class. Convert each
+    -- class-scoped copy after normalization, rather than stamping the seed
+    -- with only the current class's resource/spec catalog.
+    local function Cast(settings, class, owner, seed)
+        if type(settings) ~= "table" then return true end
+        if settings._barGeometryVersion == 1 and (not seed
+            or (settings.overrideSections and settings.overrideSections.barThickness)) then return true end
+        local inherits, found = true, false
+        local specs = {}
+        local classSpecs = context.classSpecs and context.classSpecs[class]
+            or (class and ST._GetResourceBarClassSpecInfo and ST._GetResourceBarClassSpecInfo(class))
+        for spec in pairs(classSpecs or {}) do specs[tonumber(spec) or spec] = true end
+        for spec in pairs(settings.attachmentBySpec or {}) do specs[tonumber(spec) or spec] = true end
+        for spec in pairs(specs) do
+            local panel = InheritancePanel(class, spec, settings, { attachment = SpecTable(settings.attachmentBySpec, spec),
+                independentAnchorEnabled = settings.independentAnchorEnabled }, owner)
+            found = true
+            if not panel or (settings.height or 15) ~= Value(panel.attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS, "barHeight", 12) then inherits = false end
+        end
+        if not (settings.overrideSections and settings.overrideSections.barThickness) and not (found and inherits) then
+            local ok, err = OwnThickness(settings, settings.height or 15); if not ok then return nil, err end
+        end
+        settings._barGeometryVersion, changed = 1, true
+        return true
+    end
+    for owner, settings in pairs(profile.castBarByChar or {}) do
+        local ok, err = Cast(settings, context.ownerClasses[owner], owner); if not ok then return nil, err end
+    end
+    -- Seeds have no final owner or host. Pin their legacy baseline, including
+    -- seeds stamped by v7 against the then-current class. Active character
+    -- buckets keep their stamps and any subsequent Customize/Revert choices.
+    for _, key in ipairs({ "castBar", "legacyCastBarSeed" }) do
+        local ok, err = Cast(profile[key], nil, nil, true); if not ok then return nil, err end
+    end
+    if changed then
+        profile._barGeometryBackup = profile._barGeometryBackup or backup
+        report.geometryChanged = true
+        report.notices[#report.notices + 1] = "Attached bars now share each Panel's Stack Spacing and Distance from Panel. Existing thicknesses were preserved; stack positions may change."
+    end
+    return true
+end
+Migration.NormalizeGeometry = NormalizeGeometry
+
 function Migration.Build(source, context)
     local valid, errorText = Validate(source)
     if not valid then return nil, errorText end
@@ -914,6 +1085,8 @@ function Migration.Build(source, context)
     if report.regrouped > 0 then
         report.notices[#report.notices + 1] = report.regrouped .. " formerly interleaved bars now follow their Resources block."
     end
+    local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
+    if not geometryOK then return nil, geometryError end
     for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
@@ -922,18 +1095,23 @@ function Migration.Build(source, context)
 end
 
 local CONVERTED_FIELDS = { "groups", "groupContainers", "nextGroupId", "nextContainerId", "resourceBarsByClass",
-    "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed" }
+    "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed", "castBarByChar", "castBar", "legacyCastBarSeed", "_barGeometryBackup" }
 
 function Migration.Apply(profile, context)
     if profile._unifiedPanelMigration and profile._unifiedPanelMigration.version == VERSION then
         local pending = false
         for _, group in pairs(profile.groups or {}) do
             if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
-                and (group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout) then pending = true; break end
+                and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then pending = true; break end
         end
         if not pending then
             for classKey, settings in pairs(profile.resourceBarsByClass or {}) do
-                if #LegacyEntries(settings, classKey, context or {}) > 0 then pending = true; break end
+                if settings._barGeometryVersion ~= 1 or #LegacyEntries(settings, classKey, context or {}) > 0 then pending = true; break end
+            end
+        end
+        if not pending then
+            for _, settings in pairs(profile.castBarByChar or {}) do
+                if settings._barGeometryVersion ~= 1 then pending = true; break end
             end
         end
         if not pending then
@@ -1001,8 +1179,8 @@ function Addon:RunUnifiedPanelMigration()
     if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
         self:Print(("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
             :format(report.panels, report.bars, report.createdPanels))
-        for _, notice in ipairs(report.notices) do self:Print(notice) end
     end
+    for _, notice in ipairs(report.notices) do self:Print(notice) end
     return true
 end
 

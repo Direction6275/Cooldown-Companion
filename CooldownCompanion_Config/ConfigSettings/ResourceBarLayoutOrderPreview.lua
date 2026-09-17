@@ -753,7 +753,11 @@ local function GetPreviewPanelId()
     return CooldownCompanion:ResolveModulePanel(kind or "resources").panelId
 end
 
-local function ModuleBelongsToPreview(kind, panelId)
+local function ModuleBelongsToPreview(kind, panelId, forSettings, settings)
+    if forSettings then
+        local target = CooldownCompanion:ResolveModulePanel(kind, nil, { configured = true, settings = settings })
+        return target.eligible == true and target.panelId == panelId and target.mode ~= "independent"
+    end
     local target = CooldownCompanion:ResolveModulePanel(kind)
     return target.group ~= nil and target.panelId == panelId and target.mode ~= "independent"
 end
@@ -814,6 +818,22 @@ local function CollapseToPlacementPowerTypes(powerTypes)
     return placementResources
 end
 
+-- The configured resource list and preview share eligibility, without needing
+-- rendered slots, live geometry, or writes to either settings owner.
+local function IsConfiguredPreviewResource(settings, powerType)
+    local resource = settings.resources and settings.resources[powerType]
+    if powerType == RESOURCE_HEALTH and type(resource) ~= "table" then return false end
+    if resource and resource.enabled == false then return false end
+    if powerType == 0 and settings.hideManaForNonHealer then
+        local specIndex = C_SpecializationInfo.GetSpecialization()
+        if specIndex then
+            local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+            if specID ~= 62 and role ~= "HEALER" then return false end
+        end
+    end
+    return true
+end
+
 local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
     requireRuntimeEligibleSlots)
     includeResourceSlots = includeResourceSlots == true
@@ -830,25 +850,9 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         rbSettings.resources = rbSettings.resources or {}
     end
 
-    -- Per-slot thickness, resolved exactly as the apply pass resolves it
-    -- (ResourceBar.lua, the customBarHeights branch): the override only
-    -- applies when that layout flag is on, and the axis decides which
-    -- stored key wins. Without this every slot rendered at one uniform
-    -- thickness, so a bar with an override previewed at the wrong size.
-    local globalThickness = includeResourceSlots
-        and tonumber(GetResourceGlobalThickness(rbSettings)) or nil
-
-    local function ResolveSlotThickness(slotLayout)
-        if not (layout.customBarHeights and type(slotLayout) == "table") then
-            return globalThickness
-        end
-        local override
-        if isVerticalLayout then
-            override = slotLayout.barWidth or slotLayout.barHeight
-        else
-            override = slotLayout.barHeight or slotLayout.barWidth
-        end
-        return tonumber(override) or globalThickness
+    local function ResolveSlotThickness(powerType)
+        return ST.ResolveResourceBarGeometry(rbSettings, layout, powerType,
+            ST.GetModuleGeometryHost("resources")).thickness
     end
 
     local function GetSlotColor(powerType)
@@ -887,19 +891,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             rbSettings.resources[renderType] = rbSettings.resources[renderType] or {}
         end
         local resourceConfig = rbSettings.resources[renderType]
-        local showResource = resourceBarsEnabled and (
-            renderType == RESOURCE_HEALTH and resourceConfig.enabled == true
-            or resourceConfig.enabled ~= false
-        )
-        if showResource and renderType == 0 and rbSettings.hideManaForNonHealer then
-            local specIndex = C_SpecializationInfo.GetSpecialization()
-            if specIndex then
-                local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-                if specID ~= 62 and role ~= "HEALER" then
-                    showResource = false
-                end
-            end
-        end
+        local showResource = resourceBarsEnabled and IsConfiguredPreviewResource(rbSettings, renderType)
 
         if showResource then
             local function EnsureLayoutResource()
@@ -920,7 +912,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 powerType = renderType,
                 label = POWER_NAMES[renderType] or ("Power " .. renderType),
                 shortLabel = POWER_SHORT_NAMES[renderType] or GetShortLabel(POWER_NAMES[renderType] or ("Power " .. renderType)),
-                thickness = ResolveSlotThickness(layout.resources[powerType]),
+                thickness = ResolveSlotThickness(powerType),
                 color = GetSlotColor(renderType),
                 icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
@@ -972,7 +964,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             -- The cast bar's own height, not the stack's: it used to be
             -- folded into one max with the resource thickness, which
             -- clamped every bar up to whichever was taller.
-            thickness = tonumber(cbSettings.height) or 15,
+            thickness = ST.ResolveCastBarGeometry(cbSettings, ST.GetModuleGeometryHost("castbar")).thickness,
             color = CloneColor(cbSettings.barColor, { 1.0, 0.72, 0.18, 1 }),
             icon = LAYOUT_PREVIEW_ICON_FALLBACK,
             getPos = function()
@@ -2110,6 +2102,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
     if type(slot) ~= "table" then
         return false
     end
+    if ST._HandleModuleThicknessCopy and ST._HandleModuleThicknessCopy(slot) then return true end
     local allowToggle = not CS.spellbookPanelDocked
 
     -- Unified anchor preview (buttons view): route to the unified bar
@@ -2143,6 +2136,7 @@ end
 ST._SelectPanelAttachmentModule = SelectPreviewSlot
 
 local function ApplySlotSelection(slotFrame, slotModel, vertical, slotExtent)
+    if ST._ApplyModuleCopyTargetVisuals then ST._ApplyModuleCopyTargetVisuals(slotFrame, slotModel) end
     local isSelected
     if IsBarsWorkspaceActive() then
         isSelected = (slotModel.kind == "cast" and CS.castFramesSelectedItem == "castbar")
@@ -2257,6 +2251,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         end)
         slotFrame:SetScript("OnMouseUp", function(self, button)
             if button == "RightButton" then
+                if ST._ShowModuleThicknessMenu then ST._ShowModuleThicknessMenu(slotModel) end
                 return
             end
 
@@ -2348,7 +2343,8 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local group = CooldownCompanion.db.profile.groups[sourcePanel.groupId]
     for _, slot in ipairs(slots) do slot.anchorGroup = group end
     local labels, destinations = RB.GetBarPlacementOptions(group)
-    local gap = RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
+    local gap = ST.PanelSupportsAttachedBars(group) and ST.ResolveBarGeometry(group).distance
+        or RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
     local boxes, top, bottom = {}, 0, panelHeight
     for _, destination in ipairs(destinations) do
         local above = RB.GetBarLaneSide(destination) == "above"
@@ -3062,7 +3058,9 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         layoutDrag.draggedSlotData = nil
-        preview.draggedSlotExtent = nil
+        local geometryPanel = ST.GetModuleGeometryPanel(preview.standaloneCast and "castbar" or "resources")
+    if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
+    preview.draggedSlotExtent = nil
         -- Thaw the reveal once the drag really is over. Deferred because
         -- this runs while CS.dragState is still set (CancelDrag clears it
         -- immediately after), which is what the freeze keys on.
@@ -3649,21 +3647,36 @@ ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
 
 -- Ordinary panels render modules inside the same attachment composition as
 -- their entries. Reuse this file's resource/cast painters and preview state.
-function ST._GetPanelAttachmentPreviewModules(panelId, forSettings)
+function ST._PanelHasConfiguredModuleBars(panelId)
     local group = CooldownCompanion.db.profile.groups[panelId]
-    if not ST.PanelSupportsAttachedBars(group) or (CS.unifiedAnchorBarsHidden and not forSettings) then return {} end
+    if not ST.PanelSupportsAttachedBars(group) then return false end
+    local cast = ST.GetConfiguredModuleBarSettings("castbar")
+    if cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
+        and ModuleBelongsToPreview("castbar", panelId, true, cast) then return true end
+    local saved = ST.GetConfiguredModuleBarSettings("resources")
+    if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
+    local settings = CopyTable(saved)
+    -- The addon wrapper always loads the live bucket. Normalize only this
+    -- detached copy, so legacy attachment defaults agree without being saved.
+    if not RB.GetSpecLayoutOrder(settings) or not ModuleBelongsToPreview("resources", panelId, true, settings) then return false end
+    for _, powerType in ipairs(GetConfigActiveResources()) do
+        if IsConfiguredPreviewResource(settings, powerType) then return true end
+    end
+    return false
+end
+
+function ST._GetPanelAttachmentPreviewModules(panelId)
+    local group = CooldownCompanion.db.profile.groups[panelId]
+    if not ST.PanelSupportsAttachedBars(group) or CS.unifiedAnchorBarsHidden then return {} end
     local settings, cast = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
-    local layout = CooldownCompanion:GetSpecLayoutOrder(settings)
+    local layout = CooldownCompanion:GetSpecLayoutOrder()
     if not layout then return {} end
     local resources = settings and settings.enabled and ModuleBelongsToPreview("resources", panelId)
-        and not CooldownCompanion:IsResourceBarAnchorIndependent()
-    if forSettings and not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then resources = false end
     local hasCast = cast and cast.enabled and ModuleBelongsToPreview("castbar", panelId)
-        and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
     local vertical = resources and IsResourceBarVerticalConfig(settings, layout) or false
     local slots, casts = CollectPreviewSlots(settings, hasCast and cast or nil, layout, vertical, resources == true)
     local modules, sides = {}, {}
-    local spacing = layout.barSpacing or settings.barSpacing or 3.6
+    local spacing = ST.ResolveBarGeometry(group).spacing
     for _, slot in ipairs(slots) do
         if slot.kind == "resource" then
             local side = RB.GetBarLaneSide(slot.getPos())
@@ -3671,8 +3684,7 @@ function ST._GetPanelAttachmentPreviewModules(panelId, forSettings)
             if not block then
                 local region = RB.GetResourceBlockRegion(layout, side, vertical)
                 block = { kind = "resources", side = side, region = region == "main" and "main" or "outer",
-                    slots = {}, thickness = 0, spacing = spacing, layout = layout,
-                    gap = RB.GetResourceAnchorGap(settings, layout, vertical and "vertical" or "horizontal") }
+                    slots = {}, thickness = 0, spacing = spacing, layout = layout }
                 sides[side], modules[#modules + 1] = block, block
             end
             block.slots[#block.slots + 1] = slot
@@ -3692,10 +3704,7 @@ function ST._GetPanelAttachmentPreviewModules(panelId, forSettings)
         local saved = layout.castBar or {}
         modules[#modules + 1] = { kind = "cast", side = side,
             region = saved.anchorRegion == "main" and "main" or "outer", slots = { slot },
-            thickness = slot.thickness, layout = layout,
-            followSpacing = spacing,
-            gap = RB.GetResourceAnchorGap(settings or {}, layout, "horizontal"),
-            extraGap = resources and saved.panelAnchorYOffsetEnabled == true and (tonumber(saved.panelAnchorYOffset) or 0) or 0 }
+            thickness = slot.thickness, layout = layout }
     end
     return modules
 end

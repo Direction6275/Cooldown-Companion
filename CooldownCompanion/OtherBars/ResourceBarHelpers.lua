@@ -294,7 +294,8 @@ end
 function RB.GetBarAnchorGeometry(frame, group)
     local body = ST.GetPanelAnchorBodyFrame(frame)
     if not body then return nil end
-    return table.concat({ tostring(frame), tostring(body), frame:GetWidth(), frame:GetHeight(),
+    local geometry = ST.ResolveBarGeometry(group)
+    return table.concat({ tostring(frame), tostring(body), geometry.thickness, geometry.spacing, geometry.distance, frame:GetWidth(), frame:GetHeight(),
         body:GetWidth(), body:GetHeight(),
         tostring(RB.HasBarSectionOnSide(group, "above")),
         tostring(RB.HasBarSectionOnSide(group, "below")) }, ":")

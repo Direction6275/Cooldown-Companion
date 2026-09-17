@@ -1,5 +1,5 @@
--- Ordinary panels expose both style bundles. Context belongs to the section
--- being built, never to a remembered global Icons/Bars editing mode.
+-- Ordinary panels expose the style bundles used by their configured contents.
+-- Context belongs to the section, never a remembered Icons/Bars editing mode.
 local _, ST = ...
 local Addon, CS = ST.Addon, ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
@@ -33,6 +33,19 @@ local function Selection(group)
 end
 ST._GetPanelSettingsSelection = Selection
 
+-- Temporary cooldown/aura visibility never changes the editor's organization.
+-- Modules use shared dimensions, but do not make entry appearance applicable.
+function ST._GetPanelSettingsContents(owner, panelId)
+    owner = owner._settingsOwner or owner._attachedBarOwner or owner
+    local kind = ST.GetPanelLayoutKind(owner)
+    return {
+        icons = kind == "icons" or kind == "mixed",
+        bars = kind == "bars" or kind == "mixed",
+        modules = ST._PanelHasConfiguredModuleBars ~= nil
+            and ST._PanelHasConfiguredModuleBars(panelId or CS.selectedGroup),
+    }
+end
+
 function ST._GetSettingsWidgetContext(widget)
     while widget do
         if widget._cdcSettingsContext then return widget._cdcSettingsContext end
@@ -41,7 +54,7 @@ function ST._GetSettingsWidgetContext(widget)
 end
 
 function ST._SettingsContextKey(context, key)
-    if not context or context.presentation == "shared" or not key or key:match("^presentation:") then return key end
+    if not context or context.kind or context.presentation == "shared" or not key or key:match("^presentation:") then return key end
     return "presentation:" .. context.presentation .. ":" .. key
 end
 
@@ -70,11 +83,18 @@ function ST._CreatePanelSettingsContext(owner, presentation)
     presentation = presentation or (entry and ST.GetEntryPresentation(owner, entry)) or "shared"
     local context = { owner = owner, presentation = presentation, entry = entry, mode = mode,
         buttonIndex = buttonIndex, panelId = CS.selectedGroup, tab = CS.selectedTab, sections = {} }
+    context.contents = not entry and ST._GetPanelSettingsContents(owner, context.panelId) or nil
     function context:IsCurrent()
         local profile = Addon.db and Addon.db.profile
         if self.released or CS.barsEntrySelected or CS.unifiedBarKind or CS.selectedTab ~= self.tab or not profile
             or profile.groups[self.panelId] ~= self.owner or CS.selectedGroup ~= self.panelId then return false end
         local selected, scope = Selection(self.owner)
+        if not selected and self.contents then
+            local current = ST._GetPanelSettingsContents(self.owner, self.panelId)
+            for _, key in ipairs({ "icons", "bars", "modules" }) do
+                if current[key] ~= self.contents[key] then return false end
+            end
+        end
         return selected == self.entry and scope == self.mode
             and (not selected or ST.GetEntryPresentation(self.owner, selected) == self.presentation)
     end
@@ -143,7 +163,10 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         _settingsContext = context, _settingsOwner = owner,
         _attachedBarOwner = bar and owner or nil,
         displayMode = bar and "bars" or "icons", style = writeStyle,
-        _fittedBarLayout = bar and mode == "entry" and ST.GetPanelLayoutKind(owner) == "mixed" or false,
+        -- Fixed dimensions are editable only when bar entries form the body.
+        -- All selection scopes use the same applicability as Finder.
+        _fittedBarLayout = bar and ST.GetPanelLayoutKind(owner) ~= "bars" or false,
+        _moduleGeometryOnly = bar and context.contents and not context.contents.bars or false,
     }, {
         __index = function(_, key)
             if bar and BAR_LAYOUT_FIELDS[key] then
@@ -271,21 +294,135 @@ function ST._BuildCompletePanelStyleTab(container, owner, tab, builder)
         if ST._FilterEntrySettingsWidgets then ST._FilterEntrySettingsWidgets(host) end
         return true
     end
-    local eligible = { icons = false, bars = false }
-    for _, item in ipairs(owner.buttons or {}) do
-        if ST.IsPanelLayoutEntryEligible(owner, item) then eligible[ST.GetEntryPresentation(owner, item)] = true end
-    end
-    if not eligible.icons and not eligible.bars then eligible.icons = true end
+    local contents = ST._GetPanelSettingsContents(owner)
     ST._AddLensPanelScopeNote(container, { mode = mode })
     local folds = ST._GetPanelSettingsState(owner).folds
     for _, presentation in ipairs({ "icons", "bars" }) do
-        local context = ST._CreatePanelSettingsContext(owner, presentation)
-        local host = NewSectionHost(container, context)
-        local key = ST._SettingsContextKey(context, tab .. "_defaults")
-        if folds[key] == nil then folds[key] = not eligible[presentation] end
-        local _, collapsed = ST._BuildCollapsibleSection(host, presentation == "icons" and "Icons" or "Bars",
-            key, folds, nil, { leftAligned = true })
-        if not collapsed then builder(host, context.group) end
+        if contents[presentation] or (presentation == "bars" and contents.modules and tab == "appearance") then
+            local context = ST._CreatePanelSettingsContext(owner, presentation)
+            local host = NewSectionHost(container, context)
+            local key = ST._SettingsContextKey(context, tab .. "_defaults")
+            if folds[key] == nil then folds[key] = false end
+            local _, collapsed = ST._BuildCollapsibleSection(host, presentation == "icons" and "Icons" or "Bars",
+                key, folds, nil, { leftAligned = true })
+            if not collapsed then builder(host, context.group) end
+        end
     end
     return true
+end
+
+-- Module geometry uses the same section lens as an entry, with a lazy object
+-- adapter. Opening a resource that has no placement record creates no data.
+function ST._CreateModuleSettingsContext(kind, powerType, spec)
+    local settings = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()
+    if not settings then return nil end
+    spec = spec or Addon._currentSpecId
+    local canonical = kind == "resources" and ST._RB.GetCanonicalPowerType(powerType) or nil
+    local panel = ST.GetModuleGeometryPanel(kind, spec)
+    local captured = {}
+    for _, key in ipairs({ "selectedGroup", "selectedButton", "selectedResourcePowerType", "resourceSettingsSpecID",
+        "barsEntrySelected", "unifiedBarKind", "barWorkspaceKind", "selectedTab", "resourcesSettingsTab", "castBarHomeTab" }) do
+        captured[key] = CS[key]
+    end
+    local context = { kind = kind, settings = settings, owner = panel, presentation = "bars", mode = "entry",
+        panelId = CS.selectedGroup, spec = spec, powerType = canonical, sections = {} }
+    local profile, currentSpec = Addon.db.profile, Addon._currentSpecId
+    function context:IsCurrent()
+        if self.released or Addon.db.profile ~= profile or Addon._currentSpecId ~= currentSpec then return false end
+        for _, key in ipairs({ "selectedGroup", "selectedButton", "selectedResourcePowerType", "resourceSettingsSpecID",
+            "barsEntrySelected", "unifiedBarKind", "barWorkspaceKind", "selectedTab", "resourcesSettingsTab", "castBarHomeTab" }) do
+            if CS[key] ~= captured[key] then return false end
+        end
+        local current = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()
+        return current == settings and ST.GetModuleGeometryPanel(kind, spec) == panel
+    end
+    function context:GetLayout(create)
+        if kind ~= "resources" then return nil end
+        local layout = settings.layoutOrder and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)])
+        if not layout and create then
+            layout = ST._RB.GetSpecLayoutOrder(settings, spec)
+        end
+        return layout
+    end
+    function context:GetObject(create)
+        if kind ~= "resources" then return settings end
+        local layout = self:GetLayout(create)
+        if not layout then return nil end
+        if create then layout.resources = layout.resources or {} end
+        local slot = layout.resources and layout.resources[canonical]
+        if not slot and create then slot = {}; layout.resources[canonical] = slot end
+        return slot
+    end
+    function context:ReadStyle()
+        local baseline
+        if kind == "resources" then
+            local layout = self:GetLayout(false) or {}
+            -- The default is resolved without the selected object's override.
+            local geometry = ST.ResolveResourceBarGeometry(settings, layout, nil, panel)
+            baseline = geometry.thickness
+        else baseline = ST.ResolveBarGeometry(panel, { baseline = settings.height or 15 }).thickness end
+        return { barHeight = baseline }
+    end
+    function context:Refresh()
+        if kind == "resources" then Addon:ApplyResourceBars() else Addon:ApplyCastBarSettings() end
+        if Addon.RepositionCastBar then Addon:RepositionCastBar() end
+        if ST._RefreshResourcesCanvasForDrag then ST._RefreshResourcesCanvasForDrag() end
+    end
+    local metadata = { _geometryContext = context, _barGeometryKind = kind, displayAs = "bars",
+        type = "module", name = kind == "resources" and (ST._RB.POWER_NAMES[powerType] or "Resource") or "Cast Bar" }
+    context.entry = setmetatable({}, {
+        __index = function(_, key)
+            if metadata[key] ~= nil then return metadata[key] end
+            local object = context:GetObject(false)
+            return object and object[key]
+        end,
+        __newindex = function(_, key, value)
+            if context:IsCurrent() then context:GetObject(true)[key] = value end
+        end,
+    })
+    function context:EntryWrites()
+        local object = self:GetObject(false)
+        local overrides = object and object.styleOverrides
+        local writes = setmetatable({}, { __index = overrides, __newindex = function(_, key, value)
+            if self:IsCurrent() and self:GetObject(false) == object and object.styleOverrides == overrides then overrides[key] = value end
+        end })
+        getmetatable(writes)._settingsPreviewTarget = {
+            isCurrent = function() return self:IsCurrent() and self:GetObject(false) == object and object.styleOverrides == overrides end,
+            capture = function(keys) return ST._CaptureRawSettingsFields(overrides, keys) end,
+        }
+        return writes
+    end
+    context.group = { _settingsContext = context, _attachedBarOwner = panel or { displayMode = "icons" },
+        displayMode = "bars", style = context:ReadStyle(), buttons = {} }
+    return context
+end
+
+function ST._BuildModuleBarThickness(container, kind, powerType, spec, setting)
+    local context = ST._CreateModuleSettingsContext(kind, powerType, spec)
+    if not context then return end
+    local host = ST._NewPanelSettingsSectionHost(container, context)
+    local lens = ST._ResolveStyleLens(context.group)
+    local sec = ST._BeginLensSection(lens, context.group, "barThickness", { column = host })
+    local row = ST._AddSliderRow(host, { label = "Bar Thickness", setting = setting,
+        min = 4, max = 100, step = 0.1, value = sec.tbl.barHeight or 12, disabled = sec.disabled,
+        onChange = function(value)
+            ST._PreviewScalarSetting(sec.tbl, "barHeight", value, ST._RefreshResourcesCanvasForDrag)
+        end,
+        onRelease = function(value)
+            if not context:IsCurrent() then return end
+            sec.tbl.barHeight = value
+            context:Refresh()
+        end,
+    })
+    sec:Chrome(row)
+    sec:Finish()
+    return context
+end
+
+function ST._BuildModuleGeometrySummary(container, kind, powerType, spec)
+    local context = ST._CreateModuleSettingsContext(kind, powerType, spec)
+    if context and context.entry.overrideSections and context.entry.overrideSections.barThickness then
+        local host = ST._NewPanelSettingsSectionHost(container, context)
+        ST._BuildCustomizationsSection(host, context.group, context.entry, CS.tabInfoButtons)
+    end
 end
