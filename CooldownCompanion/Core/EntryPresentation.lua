@@ -195,6 +195,14 @@ end
 function ST.PanelUsesAttachedBarLayout(group)
     if not ST.PanelSupportsAttachedBars(group) then return false end
     local kind = ST.GetPanelLayoutKind(group)
+    if kind == "icons" then
+        -- Disabled/spec-ineligible bars can still be shown for editing. They
+        -- belong beside the icon body even when no eligible bar remains to
+        -- make this a mixed layout; they must never become icon-grid cells.
+        for _, entry in ipairs(group.buttons or {}) do
+            if ST.IsPanelBarEntry(group, entry) then return true end
+        end
+    end
     return kind == "mixed" or (kind == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack")
 end
 

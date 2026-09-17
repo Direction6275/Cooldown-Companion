@@ -96,8 +96,9 @@ function ST.GetAttachedBarAreaOrder(group, entries)
 end
 
 function ST.ResolveAttachedBarDimensions(group, style, side, width, height)
+    local kind = ST.GetPanelLayoutKind(group)
     local geometry = ST.ResolveBarGeometry(group, { style = style, thickness = style.barHeight,
-        side = side, fit = ST.GetPanelLayoutKind(group) == "mixed", width = width, height = height,
+        side = side, fit = kind == "mixed" or kind == "icons", width = width, height = height,
         vertical = style.barFillVertical, length = ST.GetBarOnlyLength(group, style) })
     return geometry.width, geometry.height, geometry.vertical, geometry.length
 end
@@ -246,8 +247,9 @@ function ST.LayoutAttachedBars(groupId, frame, group)
     local body = ST.GetPanelAnchorBodyFrame(frame)
     local hasIcons = (frame.visibleButtonCount or 0) > 0
         or (frame._sectionLayout and next(frame._sectionLayout.sections))
-    local mixed = ST.GetPanelLayoutKind(group) == "mixed"
-    local configured = mixed and not hasIcons and ST.GetConfiguredPanelIconGeometry(group)
+    local kind = ST.GetPanelLayoutKind(group)
+    local configured = (kind == "mixed" or kind == "icons") and not hasIcons
+        and ST.GetConfiguredPanelIconGeometry(group)
     local previous = {}
     for _, area in ipairs(ST.BuildAttachedBarAreas(group)) do
         local state = EnsureArea(frame, groupId, area)
