@@ -257,7 +257,7 @@ local function GetReviewAcceptText(review)
 end
 
 local function CanApplyReview(review, selectedCount)
-    if not review then
+    if not review or review.ok ~= true or review.blockedReason then
         return false
     end
     if ReviewUsesSelectedPieces(review) then
@@ -397,7 +397,7 @@ end
 local function BuildContainerSummaryLines(data)
     local lines = {
         "Group export",
-        "Name: " .. tostring(data.container and data.container.name or "Unnamed"),
+        "Name: " .. tostring(type(data.container) == "table" and data.container.name or "Unnamed"),
         FormatCount("Panels", type(data.panels) == "table" and #data.panels or 0),
     }
     AddCharacterEligibilityNotice(lines, data)
@@ -424,6 +424,21 @@ local function BuildLegacyGroupBundleSummaryLines(data)
     }
     AddCharacterEligibilityNotice(lines, data)
     return lines
+end
+
+local function BuildBlockedImportSummary(data, isDiagnostic)
+    if isDiagnostic or data.reportKind == "bugReport" then
+        return BuildProfileSummaryLines(type(data.profile) == "table" and data.profile or {}, "Diagnostic export")
+    elseif data.type == "customBars" then
+        return BuildCustomBarsSummaryLines(data)
+    elseif data.type == "setup" then
+        return BuildSetupSummaryLines(data, GetSetupSections(data))
+    elseif data.type == "container" then
+        return BuildContainerSummaryLines(data)
+    elseif data.type == "containers" or data.type == "folder" then
+        return BuildContainersSummaryLines(data)
+    end
+    return BuildProfileSummaryLines(data, "Profile backup export")
 end
 
 local function ValidateProfilePayload(data)
@@ -586,9 +601,17 @@ function CooldownCompanion:ClassifyImportReviewText(text)
     end
 
     local converted, conversionReport = ST._ConvertUnifiedPanelImport(data)
-    if not converted then return BuildError("panel_conversion", conversionReport) end
-    local existingPanelIds
-    data, existingPanelIds = ST._FilterConvertedPanelImport(converted)
+    if not converted then
+        -- A conversion refusal must remain inspectable, but never render
+        -- unconverted entries in a live preview or permit partial application.
+        local lines = BuildBlockedImportSummary(data, isDiagnostic)
+        AddLine(lines, "No settings have been imported. Resolve the conversion problem in the source profile and export again.")
+        return BuildReview("blocked", data, "Conversion needs attention", "Import", lines, {
+            blockedReason = conversionReport, warning = conversionReport,
+        })
+    end
+    local existingPanelIds, removedEntries
+    data, existingPanelIds, removedEntries = ST._FilterConvertedPanelImport(converted)
 
     local review
     if isDiagnostic or data.reportKind == "bugReport" then
@@ -597,6 +620,10 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         review = ClassifyEntityPayload(data)
     else
         review = ClassifyProfilePayload(data)
+    end
+    if (review.code == "empty_groups" or review.code == "empty_setup") and removedEntries and removedEntries > 0
+        and type(data.containers) == "table" and #data.containers == 0 then
+        return BuildError("already_imported", "These entries have already been imported. No duplicates were added.")
     end
     review.existingPanelIds = existingPanelIds
     if review.ok and conversionReport then
@@ -610,7 +637,7 @@ function CooldownCompanion:ClassifyImportReviewText(text)
 end
 
 function CooldownCompanion:ApplyReviewedImport(review)
-    if type(review) ~= "table" or review.ok ~= true then
+    if type(review) ~= "table" or review.ok ~= true or review.blockedReason then
         return false
     end
 

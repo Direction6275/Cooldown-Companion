@@ -1552,7 +1552,7 @@ function DropGhost.Show(host, spec, target, owner)
         end
         group = ST.GetPanelLayoutGroup(group)
     end
-    if preview.layoutDrag and ST.GetPanelLayoutKind(saved) ~= ST.GetPanelLayoutKind(group) then
+    if preview.layoutDrag and ST.GetPanelGeometryKind(saved) ~= ST.GetPanelGeometryKind(group) then
         for _, cell in pairs(preview.dropGhostCells or {}) do cell:Hide() end
         SectionDrag.HideLandingTrail(preview)
         DropGhost.ShowLayoutTransition(preview, group)

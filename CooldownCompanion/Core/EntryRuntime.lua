@@ -27,7 +27,6 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 -- each fill, so a previous call can never leak values into the next one
 -- even if an error aborts an update mid-call.
 local buttonSpellCooldownLaneOpts = {}
-local customBarSpellCooldownLaneOpts = {}
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
@@ -379,22 +378,6 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
-local function ResolveSpellCooldownSecrecy(owner, spellID)
-    if not (spellID and C_Secrets and C_Secrets.GetSpellCooldownSecrecy) then
-        return owner and owner._cooldownSecrecy or nil
-    end
-
-    if owner then
-        if owner._cooldownSecrecy == nil or owner._cooldownSecrecySpellID ~= spellID then
-            owner._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(spellID)
-            owner._cooldownSecrecySpellID = spellID
-        end
-        return owner._cooldownSecrecy
-    end
-
-    return C_Secrets.GetSpellCooldownSecrecy(spellID)
-end
-
 local function ResolveCachedSpellBooleanState(owner, spellID, hasCharges, valueKey, spellKey, resolver)
     if hasCharges then
         if owner then
@@ -467,12 +450,6 @@ EntryRuntime.ResolveBaseNoCooldownState = ResolveBaseNoCooldownState
 EntryRuntime.ResolveResourceGateCostState = ResolveResourceGateCostState
 EntryRuntime.ResolveBaseResourceGateCostState = ResolveBaseResourceGateCostState
 
-local function ClearOwnerChargeState(owner)
-    if not owner then return end
-    owner._chargeRecharging = nil
-    owner._chargesSpent = nil
-end
-
 function EntryRuntime.RecordChargeSpent(owner)
     if not owner then return end
     if not owner._chargeRecharging then
@@ -483,7 +460,7 @@ function EntryRuntime.RecordChargeSpent(owner)
 end
 
 -- Single charge-state classifier shared by the button tick (via the
--- ResolveChargeState adapter in CooldownUpdate) and the custom-bar lane.
+-- ResolveChargeState adapter in CooldownUpdate) and charge previews.
 -- readableCharges: plain (non-secret) current charge count, or nil when the
 -- count is unreadable; nil routes to the confirmation/recharge fallback.
 -- Owner-specific input policy (e.g. stack-quantity items) stays in the
@@ -546,142 +523,3 @@ local function ResolveZeroChargesConfirmed(owner, mainCDShown, countUnreadable, 
     return zeroConfirmed
 end
 EntryRuntime.ResolveZeroChargesConfirmed = ResolveZeroChargesConfirmed
-
-local function SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
-    if not customBar then return end
-
-    if maxCharges and maxCharges > 1 then
-        if customBar.hasCharges ~= true then
-            customBar.hasCharges = true
-        end
-        if customBar.maxCharges ~= maxCharges then
-            customBar.maxCharges = maxCharges
-        end
-    elseif charges then
-        if customBar.hasCharges ~= nil then
-            customBar.hasCharges = nil
-        end
-        if customBar.maxCharges ~= maxCharges then
-            customBar.maxCharges = maxCharges
-        end
-    else
-        if customBar.hasCharges ~= nil then
-            customBar.hasCharges = nil
-        end
-        if customBar.maxCharges ~= nil then
-            customBar.maxCharges = nil
-        end
-    end
-end
-
-local function ApplyCustomBarChargeState(owner, result, baseSpellID, cooldownSpellID, charges, maxCharges)
-    result.hasCharges = true
-    result.maxCharges = maxCharges
-    result.charges = charges
-
-    local currentCharges
-    if charges and charges.currentCharges ~= nil and not issecretvalue(charges.currentCharges) then
-        currentCharges = charges.currentCharges
-        result.currentCharges = currentCharges
-    elseif C_Spell.GetSpellDisplayCount then
-        result.chargeDisplayCount = C_Spell.GetSpellDisplayCount(cooldownSpellID)
-    end
-
-    local chargeDurationObj = C_Spell.GetSpellChargeDuration(cooldownSpellID)
-    local chargeRecharging = DurationObjectShowsCooldown(chargeDurationObj)
-    result.chargeRecharging = chargeRecharging or false
-
-    if owner then
-        owner._chargeRecharging = result.chargeRecharging
-    end
-
-    local mainCDShown = false
-    if currentCharges ~= nil then
-        mainCDShown = currentCharges <= 0
-    else
-        local probeShown, probeRealShown = ResolveSlotProbeShown(result, baseSpellID, cooldownSpellID)
-        if probeShown ~= nil then
-            mainCDShown = probeRealShown == true
-        elseif result.fetchOk then
-            mainCDShown = result.state == COOLDOWN_STATE_COOLDOWN
-        end
-    end
-
-    if owner and result.chargeRecharging and not owner._chargesSpent then
-        owner._chargesSpent = maxCharges or 0
-    end
-
-    local zeroConfirmed = ResolveZeroChargesConfirmed(owner, mainCDShown, currentCharges == nil, maxCharges, result.info)
-    result.chargeState = ClassifyChargeState(currentCharges, maxCharges, zeroConfirmed, result.chargeRecharging)
-
-    if result.chargeRecharging then
-        result.state = COOLDOWN_STATE_COOLDOWN
-        result.source = "spell-charge-recharge"
-        result.renderDurationObj = chargeDurationObj
-    end
-end
-
--- Returns the spell cooldown lane scratch; read only synchronously in the
--- current custom-bar update and never retain across ticks/events.
-function EntryRuntime.EvaluateSpellCooldownStateForCustomBar(customBar, owner)
-    local spellID = tonumber(customBar and customBar.spellID)
-    if not spellID then
-        return EvaluateSpellCooldownLane(nil, 0, nil)
-    end
-    owner = owner or customBar
-
-    local cooldownSpellID = C_Spell.GetOverrideSpell(spellID)
-    if not cooldownSpellID or cooldownSpellID == 0 then
-        cooldownSpellID = spellID
-    end
-
-    local charges = C_Spell.GetSpellCharges(cooldownSpellID)
-    local maxCharges = charges and tonumber(charges.maxCharges)
-    SyncCustomBarChargeMetadata(customBar, charges, maxCharges)
-    local hasCharges = (maxCharges or 0) > 1
-    local secrecy = ResolveSpellCooldownSecrecy(owner, cooldownSpellID)
-    local noCooldown = ResolveNoCooldownState(owner, cooldownSpellID, hasCharges)
-    local resourceGateCost = ResolveResourceGateCostState(owner, cooldownSpellID, hasCharges)
-    local baseNoCooldown = noCooldown
-    local baseResourceGateCost = resourceGateCost
-    if cooldownSpellID ~= spellID then
-        baseNoCooldown = ResolveBaseNoCooldownState(owner, spellID, hasCharges)
-        baseResourceGateCost = ResolveBaseResourceGateCostState(owner, spellID, hasCharges)
-    end
-    local resourceGatedNoCooldown = noCooldown == true
-        and (resourceGateCost == true
-            or (cooldownSpellID ~= spellID
-                and baseNoCooldown == true
-                and baseResourceGateCost == true))
-
-    local allowActionSlotRealFallback = not hasCharges
-        and (noCooldown ~= true
-            or (cooldownSpellID ~= spellID and baseNoCooldown ~= true))
-    local allowActionSlotReadyFallback = allowActionSlotRealFallback
-        and cooldownSpellID ~= spellID
-
-    wipe(customBarSpellCooldownLaneOpts)
-    customBarSpellCooldownLaneOpts.allowActionSlotRealFallback = allowActionSlotRealFallback
-    customBarSpellCooldownLaneOpts.allowActionSlotReadyFallback = allowActionSlotReadyFallback
-    customBarSpellCooldownLaneOpts.suppressCooldownSurface = resourceGatedNoCooldown == true
-    local result = EvaluateSpellCooldownLane(cooldownSpellID, secrecy, spellID, customBarSpellCooldownLaneOpts)
-
-    -- The combined classification visibility rules need (display AND base,
-    -- the IsNoCooldownForVisibility pair), published on the result because
-    -- the frame's cached base field is only refreshed when an override
-    -- diverges — a recycled frame could otherwise serve another spell's
-    -- stale base classification. The scratch is wiped per call, so this is
-    -- always current.
-    result.noCooldownForVisibility = noCooldown == true and baseNoCooldown == true
-    -- Raw charge info is consumed synchronously by the segmented renderer.
-    result.chargeInfo = charges
-    result.chargeSpellID = cooldownSpellID
-
-    if hasCharges then
-        ApplyCustomBarChargeState(owner, result, spellID, cooldownSpellID, charges, maxCharges)
-    else
-        ClearOwnerChargeState(owner)
-    end
-
-    return result
-end

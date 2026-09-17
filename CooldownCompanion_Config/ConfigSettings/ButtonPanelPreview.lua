@@ -392,7 +392,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     local hasVisibleIcons = cellCount > 0 or (sectionLayout and next(sectionLayout.sections))
-    if not hasVisibleIcons and ST.PanelSupportsAttachedBars(group) and ST.GetPanelLayoutKind(group) ~= "bars" then
+    if not hasVisibleIcons and ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) ~= "bars" then
         -- Bars and modules still fit the configured icon body when the filter
         -- hides its last icon. Reserve its footprint without drawing a slot.
         sectionLayout = ST.GetConfiguredPanelIconGeometry(group)
@@ -789,7 +789,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
 
     -- Bar previews also change visibility, badges, and tooltip state. Let
     -- the build recompute that presentation when a running preview moves.
-    local layoutKind = ST.GetPanelLayoutKind(group)
+    local layoutKind = ST.GetPanelGeometryKind(group)
     if (layoutKind == "bars" or layoutKind == "mixed") and CS.panelPreviewVisualsNeedReconcile then
         return false
     end

@@ -2506,6 +2506,7 @@ local function SelectConfigPanel(panelId, opts)
     if CS.selectedGroup ~= panelId or CS.barsEntrySelected then
         CS.panelAddModePanelId = panelId
         CS.panelAddMode = "entry"
+        CS.panelAddPresentation = "icons"
         CS.panelAddModeQuery = nil
     end
     CooldownCompanion:ClearAllConfigPreviews()

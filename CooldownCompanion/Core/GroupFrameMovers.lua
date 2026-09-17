@@ -1069,14 +1069,17 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     -- A mixed panel's AURA SECTION is the same trade in miniature and reads the
     -- same flag: its cluster is empty air without the tiles, and on a panel
     -- whose entries all sit in sections there would be nothing to grab at all.
-    local auraPreviewShown = (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group))
-        and not CooldownCompanion._combatForcedLock
-        and (shown == true or containerPreviewActive)
-        or false
+    -- Attached aura bars need the same expanded editing presentation even
+    -- when the ordinary panel has no Aura Only section.
+    -- Solo Arrange hides handles, not the unlocked panel's editing state.
+    -- Use that same state for shells and native-container suppression.
+    local editing = not CooldownCompanion._combatForcedLock
+        and (shown or containerPreviewActive or CooldownCompanion:IsPanelUnlockPreviewActive(group))
+    local auraPreviewShown = editing and (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
+        or ST.PanelUsesAttachedBarLayout(group, frame._panelLayoutKind)) or false
     CooldownCompanion:SetAuraPanelPlaceholderPreviewShown(frame, auraPreviewShown)
     CooldownCompanion:SetTotemPanelPreviewShown(frame,
-        ST.IsTotemPanelGroup(group) and not CooldownCompanion._combatForcedLock
-            and (shown == true or containerPreviewActive))
+        editing and ST.IsTotemPanelGroup(group))
 
     -- Section click targets ride the same wide gate the aura placeholder
     -- preview does: every member of an active container preview shows its

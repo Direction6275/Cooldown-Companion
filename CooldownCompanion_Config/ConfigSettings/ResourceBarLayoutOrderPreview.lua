@@ -1026,7 +1026,7 @@ end
 -- and the section-local drag math need to keep them from interleaving.
 local STACK_RANK_FIXED = 0
 local STACK_RANK_CAST = 1
-local function GetSlotStackRank(slot, unused, regionOverride)
+local function GetSlotStackRank(slot, regionOverride)
     if slot.kind == "cast" then return STACK_RANK_CAST end
     local region = regionOverride
     if region == nil then region = slot.getRegionRank and slot.getRegionRank() or 0 end
@@ -1036,9 +1036,9 @@ end
 -- Sections run the same direction the lane does: on a reversed lane index 1
 -- is the slot furthest from the panel, so the block has to come first there
 -- and last everywhere else.
-local function CompareStackRank(a, b, reversed, targetFirst)
-    local aRank = GetSlotStackRank(a, targetFirst)
-    local bRank = GetSlotStackRank(b, targetFirst)
+local function CompareStackRank(a, b, reversed)
+    local aRank = GetSlotStackRank(a)
+    local bRank = GetSlotStackRank(b)
     if aRank == bRank then
         return nil
     end
@@ -1048,7 +1048,7 @@ local function CompareStackRank(a, b, reversed, targetFirst)
     return aRank < bRank
 end
 
-local function SortSlotsForSide(slots, side, reversed, targetFirst)
+local function SortSlotsForSide(slots, side, reversed)
     local out = {}
     for _, slot in ipairs(slots) do
         if slot.getPos() == side then
@@ -1056,7 +1056,7 @@ local function SortSlotsForSide(slots, side, reversed, targetFirst)
         end
     end
     table_sort(out, function(a, b)
-        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        local rankResult = CompareStackRank(a, b, reversed)
         if rankResult ~= nil then
             return rankResult
         end
@@ -1102,11 +1102,8 @@ local function SortSlotsForIndependentStack(slots, firstSide, secondSide, previe
     -- stack. Ties use the normal below/right direction.
     local side = firstCount > secondCount and firstSide or secondSide
     local reversed = side == firstSide
-    -- The flag comes from the side the block bars are SAVED on, not from the
-    -- dominant side this merged lane happens to be labelled with.
-    local targetFirst = false
     table_sort(out, function(a, b)
-        local rankResult = CompareStackRank(a, b, reversed, targetFirst)
+        local rankResult = CompareStackRank(a, b, reversed)
         if rankResult ~= nil then
             return rankResult
         end
@@ -1990,18 +1987,17 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
         return math_max(1, math_min(count + 1, insertIndex or 1))
     end
 
-    local targetFirst = lane.targetFirst == true
     -- Sections run the lane's own direction: on a reversed lane index 1 is
     -- the slot furthest from the panel, so ranks descend there.
     local reversed = lane.reversed == true
     -- Every new attached placement has destination region rank zero: main
     -- placements save main, and split panel destinations have no region tie.
     -- The source's collapsed-stack rank must not constrain the landing.
-    local rank = GetSlotStackRank(slotData, targetFirst, 0)
+    local rank = GetSlotStackRank(slotData, 0)
 
     local lower = 1
     for index = 1, count do
-        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local other = GetSlotStackRank(filtered[index])
         local precedes
         if reversed then precedes = other > rank else precedes = other < rank end
         if not precedes then
@@ -2012,7 +2008,7 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
 
     local upper = count + 1
     for index = count, 1, -1 do
-        local other = GetSlotStackRank(filtered[index], targetFirst)
+        local other = GetSlotStackRank(filtered[index])
         local follows
         if reversed then follows = other < rank else follows = other > rank end
         if not follows then
@@ -2353,7 +2349,7 @@ local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
     local boxes, top, bottom = {}, 0, panelHeight
     for _, destination in ipairs(destinations) do
         local above = RB.GetBarLaneSide(destination) == "above"
-        local members = SortSlotsForSide(slots, destination, above, false)
+        local members = SortSlotsForSide(slots, destination, above)
         local x, y, width, height = ST._GetAttachedBarPreviewRect(panelFrame, destination)
         local extent = GetLaneExtent(preview, members, slotHeight)
         local laneY = above and (y - gap - extent) or (y + height + gap)
@@ -2436,8 +2432,8 @@ local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, p
     local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
     local panelWidth = panelFrame:GetWidth()
     local panelHeight = panelFrame:GetHeight()
-    local leftSlots = SortSlotsForSide(primarySlots, "left", true, false)
-    local rightSlots = SortSlotsForSide(primarySlots, "right", false, false)
+    local leftSlots = SortSlotsForSide(primarySlots, "left", true)
+    local rightSlots = SortSlotsForSide(primarySlots, "right", false)
     local leftWidth = GetLaneExtent(preview, leftSlots, verticalBarWidth)
     local rightWidth = GetLaneExtent(preview, rightSlots, verticalBarWidth)
     local verticalBarHeight = panelHeight
@@ -3127,12 +3123,11 @@ local function CreateLayoutDragModel(preview)
             local peers = filtered
             local peerIndex = adjustedIndex
             do
-                local targetFirst = lane.targetFirst == true
-                local rank = GetSlotStackRank(slotData, targetFirst, 0)
+                local rank = GetSlotStackRank(slotData, 0)
                 local section = {}
                 local sectionIndex = 0
                 for index, slot in ipairs(filtered) do
-                    if GetSlotStackRank(slot, targetFirst) == rank then
+                    if GetSlotStackRank(slot) == rank then
                         table_insert(section, slot)
                         if index < adjustedIndex then
                             sectionIndex = #section
@@ -3604,8 +3599,14 @@ end
 -- disagree about which objects are on screen. Call it AFTER the build.
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)
     local preview = host and host._cdcLayoutPreview
-    return preview and preview.root and preview.root:IsShown()
-        and preview.renderedSelectionKeys or nil
+    if not (preview and preview.root and preview.root:IsShown()) then return end
+    local inner = preview.panelHost
+    if inner and inner:IsShown() then
+        local panel = inner._cdcPanelPreview
+        local modules = panel and panel.modulePreview
+        return modules and modules.root:IsShown() and modules.renderedSelectionKeys or nil
+    end
+    return preview.renderedSelectionKeys
 end
 
 -- The pools that hold this canvas's own lane chrome. A constant, not a literal
@@ -3719,6 +3720,7 @@ function ST._ResetPanelModulePreview(preview)
     local state = preview.modulePreview
     if not state then return end
     state.root:Hide()
+    state.renderedSelectionKeys = nil
     state.root:SetScript("OnUpdate", nil)
     wipe(state.animated)
     for _, frame in ipairs(state.pools.slots) do frame:Hide() end
@@ -3744,6 +3746,7 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
     state.anchorPanelId = panelId
     state.used.slots = 0
     if not animate then state.framesBySlot = {} end
+    state.renderedSelectionKeys = {}
     state.root:Show()
     for _, position in ipairs(positions or {}) do
         local module, offset = position.module, 0
@@ -3769,6 +3772,7 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
             end
             frame._attachmentX, frame._attachmentY = x, y
             frame.slotData = slot
+            state.renderedSelectionKeys[slot.id] = true
             ApplySlotSelection(frame, slot, vertical, extent)
             if not animate and ST._WirePanelAttachmentModule then
                 ST._WirePanelAttachmentModule(frame, module, slot, drag)

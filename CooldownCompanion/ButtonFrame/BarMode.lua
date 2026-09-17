@@ -84,6 +84,18 @@ local function ApplyBarTextPlacement(button, style, lane)
 end
 
 -- Bar mode tooltip behavior: tooltip should come from hovering the icon area only.
+-- The owner can inherit native aura layout restrictions. Opt our tooltip in
+-- at creation, as required by ForbiddenAspectTemplates.xml, without changing
+-- GameTooltip's restrictions for unrelated UI.
+local barTooltip, barTooltipButton
+local function GetBarTooltip()
+    if not barTooltip then
+        barTooltip = CreateFrame("GameTooltip", "CooldownCompanionBarTooltip", UIParent,
+            "GameTooltipTemplate,DisableUntrustedLayoutScriptsTemplate")
+    end
+    return barTooltip
+end
+
 local function SetBarIconTooltipScripts(button, enable)
     local iconBounds = button and button._iconBounds
     if not iconBounds then return end
@@ -92,14 +104,23 @@ local function SetBarIconTooltipScripts(button, enable)
         iconBounds:SetScript("OnEnter", function()
             local bd = button.buttonData
             if not bd then return end
-            if not PrepareButtonTooltip(iconBounds, button) then return end
-            ShowButtonTooltip(button, GameTooltip)
-            GameTooltip:Show()
+            local tooltip = GetBarTooltip()
+            if not PrepareButtonTooltip(iconBounds, button, tooltip) then return end
+            barTooltipButton = button
+            ShowButtonTooltip(button, tooltip)
+            tooltip:Show()
         end)
         iconBounds:SetScript("OnLeave", function()
-            GameTooltip:Hide()
+            if barTooltipButton == button then
+                barTooltip:Hide()
+                barTooltipButton = nil
+            end
         end)
     else
+        if barTooltipButton == button then
+            barTooltip:Hide()
+            barTooltipButton = nil
+        end
         iconBounds:SetScript("OnEnter", nil)
         iconBounds:SetScript("OnLeave", nil)
     end
@@ -411,7 +432,9 @@ end
 -- IconMode's ApplyAuraShellVisuals; the predicate, alpha decision, and
 -- exposure rules live in Core/Aura.lua.
 local function ApplyBarAuraShellVisuals(button, buttonData)
-    local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
+    local parent = button:GetParent()
+    local alpha = parent and parent._auraPanelChromeSuppressed and 1
+        or CooldownCompanion:GetAuraShellAlpha(button, buttonData)
     if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
     -- While per-stack blocks are up, UpdateBarStackBlocks owns bg and the
     -- whole-bar ring (both suppressed to 0) and is the only thing that
@@ -889,7 +912,6 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     button._visibilityHidden = false
     button._prevVisibilityHidden = false
     button._visibilityAlphaOverride = nil
-    button._lastVisAlpha = 1
     button._barCdColor = nil
     button._chargeRecharging = nil
     button._chargesSpent = nil

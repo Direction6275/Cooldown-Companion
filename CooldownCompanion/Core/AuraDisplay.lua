@@ -160,7 +160,8 @@ local function SetIdentityVisibility(record, shown)
     shown = shown == true
     local changed = record.identityVisible ~= shown
     record.identityVisible = shown
-    record.visibilityRoot:SetShown(shown)
+    local ownerFrame = record.owner and record.owner.parent
+    record.visibilityRoot:SetShown(shown and not (ownerFrame and ownerFrame._auraPanelChromeSuppressed))
     return changed
 end
 
@@ -3647,6 +3648,16 @@ function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
             record.chromeSuppressed = suppressed
             ApplyPanelRootVisibility(record)
         end
+    end
+    for _, record in ipairs(blockRecords) do
+        if record.owner and record.owner.parent == frame then
+            SetIdentityVisibility(record, record.identityVisible)
+        end
+    end
+    local group = self.db and self.db.profile.groups[frame.groupId]
+    if group then
+        ST.LayoutAttachedBars(frame.groupId, frame, group)
+        if self.RepositionCastBar then self:RepositionCastBar() end
     end
 end
 

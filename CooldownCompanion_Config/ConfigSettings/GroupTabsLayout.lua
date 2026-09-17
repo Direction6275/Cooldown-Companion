@@ -202,12 +202,13 @@ local function GetLayoutFinderState(context)
             ST.GetPanelLayoutOrientation(group.displayMode, style)
         ) == nil
 
-    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group)
+    local hasIcons = not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
+    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group) and hasIcons
     state.customStrataLayers = state.customStrata
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
 
-    local hasIcons = not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
+    -- Arrangement controls follow eligible contents, not inactive ghost geometry.
     if (isIconsMode and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
         or ST.GetPanelLayoutKind(owner) ~= "bars")) then
         for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
@@ -1572,7 +1573,7 @@ local function BuildLayoutTab(container)
     -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
     -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
     -- Display) IS the panel. There is no stack left to reorder.
-    local showCustomStrata = isIconsMode and not ST._ResolveStylingGroup(group)._attachedBarOwner and not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
+    local showCustomStrata = GetLayoutFinderState({ group = group, groupId = CS.selectedGroup }).customStrata
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole

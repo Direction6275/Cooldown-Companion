@@ -63,7 +63,7 @@ function ST._PreparePanelSettingsNavigation(owner, tab)
     if not pending then return end
     local entry = Selection(owner)
     local presentation = pending.presentation or (entry and ST.GetEntryPresentation(owner, entry))
-        or (ST.GetPanelLayoutKind(owner) == "bars" and "bars" or "icons")
+        or (ST.GetPanelGeometryKind(owner) == "bars" and "bars" or "icons")
     pending.presentation = presentation
     local context = { presentation = presentation }
     pending.rowKey = ST._SettingsContextKey(context, pending.rowKey)
@@ -165,7 +165,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         displayMode = bar and "bars" or "icons", style = writeStyle,
         -- Fixed dimensions are editable only when bar entries form the body.
         -- All selection scopes use the same applicability as Finder.
-        _fittedBarLayout = bar and ST.GetPanelLayoutKind(owner) ~= "bars" or false,
+        _fittedBarLayout = bar and ST.GetPanelGeometryKind(owner) ~= "bars" or false,
         _moduleGeometryOnly = bar and context.contents and not context.contents.bars or false,
     }, {
         __index = function(_, key)
@@ -313,6 +313,9 @@ end
 
 -- Module geometry uses the same section lens as an entry, with a lazy object
 -- adapter. Opening a resource that has no placement record creates no data.
+local MODULE_SELECTION_KEYS = { "selectedGroup", "selectedButton", "selectedResourcePowerType", "resourceSettingsSpecID",
+    "barsEntrySelected", "unifiedBarKind", "barWorkspaceKind", "selectedTab", "resourcesSettingsTab", "castBarHomeTab", "unifiedRowScope" }
+
 function ST._CreateModuleSettingsContext(kind, powerType, spec)
     local settings = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()
     if not settings then return nil end
@@ -320,8 +323,7 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
     local canonical = kind == "resources" and ST._RB.GetCanonicalPowerType(powerType) or nil
     local panel = ST.GetModuleGeometryPanel(kind, spec)
     local captured = {}
-    for _, key in ipairs({ "selectedGroup", "selectedButton", "selectedResourcePowerType", "resourceSettingsSpecID",
-        "barsEntrySelected", "unifiedBarKind", "barWorkspaceKind", "selectedTab", "resourcesSettingsTab", "castBarHomeTab" }) do
+    for _, key in ipairs(MODULE_SELECTION_KEYS) do
         captured[key] = CS[key]
     end
     local context = { kind = kind, settings = settings, owner = panel, presentation = "bars", mode = "entry",
@@ -329,8 +331,7 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
     local profile, currentSpec = Addon.db.profile, Addon._currentSpecId
     function context:IsCurrent()
         if self.released or Addon.db.profile ~= profile or Addon._currentSpecId ~= currentSpec then return false end
-        for _, key in ipairs({ "selectedGroup", "selectedButton", "selectedResourcePowerType", "resourceSettingsSpecID",
-            "barsEntrySelected", "unifiedBarKind", "barWorkspaceKind", "selectedTab", "resourcesSettingsTab", "castBarHomeTab" }) do
+        for _, key in ipairs(MODULE_SELECTION_KEYS) do
             if CS[key] ~= captured[key] then return false end
         end
         local current = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()

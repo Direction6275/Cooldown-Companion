@@ -23,7 +23,7 @@ function ST._FilterConvertedPanelImport(data)
         end
     end
     local result = CopyTable(data)
-    local existingPanelIds = {}
+    local existingPanelIds, removedEntries = {}, 0
     local function FilterPacket(packet)
         local panels, removed = {}, false
         for _, panel in ipairs(packet.panels or {}) do
@@ -31,6 +31,7 @@ function ST._FilterConvertedPanelImport(data)
             for _, entry in ipairs(panel.buttons or {}) do
                 local destination = entry._legacyBarImportKey and existing[entry._legacyBarImportKey]
                 if destination then
+                    removedEntries = removedEntries + 1
                     dropped = true
                     destinations[destination] = (destinations[destination] or 0) + 1
                 else entries[#entries + 1] = entry end
@@ -61,5 +62,5 @@ function ST._FilterConvertedPanelImport(data)
     elseif result.container and not FilterPacket(result) then
         result.type, result.container, result.panels, result.containers = "containers", nil, nil, {}
     end
-    return result, existingPanelIds
+    return result, existingPanelIds, removedEntries
 end

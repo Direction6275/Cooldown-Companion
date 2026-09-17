@@ -254,15 +254,9 @@ local function ShowResourceBarConflictChooser(classKey, opts)
             return
         end
         HideResourceBarConflictChooser(false)
-        if CooldownCompanion.ApplyResourceBars then
-            CooldownCompanion:ApplyResourceBars()
-        end
-        if CooldownCompanion.UpdateAnchorStacking then
-            CooldownCompanion:UpdateAnchorStacking()
-        end
-        if CooldownCompanion.RefreshConfigPanel then
-            CooldownCompanion:RefreshConfigPanel()
-        end
+        -- Resume the same migration/activation path used by profile changes.
+        -- A refused initial conversion has not created any panel frames yet.
+        CooldownCompanion:RunProfileMigrationAndRefresh("resource-conflict-resolved")
     end
 
     local function addCandidateRow(sourceCharKey, candidateText, options)

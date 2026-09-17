@@ -27,7 +27,10 @@ function Layers.Apply(button)
         -- combat AND aura-secrecy gate as their existing binding lifecycle.
         if Addon:CanRunAuraRebindNow() then
             button.auraLayer:SetFrameLevel(base + 21)
-        else
+            button._barAuraLayerOwner, button._barAuraLayerBase = button.auraLayer, base
+        elseif button._barAuraLayerOwner ~= button.auraLayer or button._barAuraLayerBase ~= base then
+            -- Geometry-only restyles do not change this composition. Remember
+            -- our last safe write; never read restricted native descendants.
             Addon:RequestAuraRebind("bar-layers")
         end
     end

@@ -13,6 +13,9 @@ local function AttachmentApplies(context)
     if not owner or not context.group._attachedBarOwner then return false end
     return ST._PanelHasConfiguredModuleBars(context.groupId) or ST.AttachedBarGapApplies(owner)
 end
+local function UsesStackOffset(group)
+    return group and ST.GetPanelGeometryKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
+end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",
     tab = "settings", section = "presentation", sectionLabel = "Display as",
@@ -34,20 +37,33 @@ local panelSettings = ST._DefineSettingRoute({
     end },
     spacing = { label = "Stack Spacing", aliases = { "Bar Spacing", "Attached Bar Spacing" }, collapseKeys = { "layout_attached" }, applies = AttachmentApplies },
     gap = { label = "Distance from Panel", aliases = { "Distance from icons", "Gap from anchor" }, collapseKeys = { "layout_attached" }, applies = function(context)
-        local owner = OrdinaryOwner(context)
-        return AttachmentApplies(context) and not (ST.GetPanelLayoutKind(owner) == "bars" and ST.GetBarOnlyLayoutMode(owner) == "stack")
+        return AttachmentApplies(context) and not UsesStackOffset(OrdinaryOwner(context))
     end },
     gridSpacing = { label = "Grid Spacing", applies = function(context)
         local owner = OrdinaryOwner(context)
         return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
             and ST.GetBarOnlyLayoutMode(owner) == "grid" or false
     end },
-    stackGap = { label = "Stack offset", applies = function(context)
-        local owner = OrdinaryOwner(context)
-        return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
-            and ST.GetBarOnlyLayoutMode(owner) == "stack" or false
+    stackGap = { label = "Stack offset", collapseKeys = function(context)
+        return { ST.GetPanelLayoutKind(OrdinaryOwner(context)) == "bars" and "layout_arrangement" or "layout_attached" }
+    end, applies = function(context)
+        return AttachmentApplies(context) and UsesStackOffset(OrdinaryOwner(context))
     end },
 })
+
+local function BuildStackOffset(container, context)
+    local group = context.owner
+    local column = ST._BeginRowGrid(container)
+    ST._AddSliderRow(column, { setting = panelSettings.stackGap,
+        value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 0.1,
+        onChange = function(value)
+            if not context:IsCurrent() or not UsesStackOffset(group) then return end
+            group.barOnlyLayout = group.barOnlyLayout or { mode = "stack" }
+            group.barOnlyLayout.stackGap = value
+            Addon:UpdateGroupStyle(context.panelId)
+        end,
+    })
+end
 
 local function FlushPresentationEditors()
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
@@ -133,15 +149,7 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                         end,
                     })
                 else
-                    ST._AddSliderRow(host, { setting = panelSettings.stackGap,
-                        value = group.barOnlyLayout and group.barOnlyLayout.stackGap or 0, min = 0, max = 80, step = 0.1,
-                        onChange = function(value)
-                            if not context:IsCurrent() then return end
-                            group.barOnlyLayout = group.barOnlyLayout or { mode = "stack" }
-                            group.barOnlyLayout.stackGap = value
-                            Addon:UpdateGroupStyle(context.panelId)
-                        end,
-                    })
+                    BuildStackOffset(host, context)
                 end
             end
         end
@@ -152,7 +160,7 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
     local _, collapsed = ST._BuildCollapsibleSection(host, "Attached Bars", "layout_attached", nil, nil, { leftAligned = true })
     if not collapsed then
         local fields = { { "spacing", 3, 40 } }
-        if not (ST.GetPanelLayoutKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack") then
+        if not UsesStackOffset(group) then
             fields[#fields + 1] = { "gap", 3, 80 }
         end
         for _, field in ipairs(fields) do
@@ -171,6 +179,9 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                 end,
             })
         end
+        -- The arrangement section is absent when all entries are ineligible,
+        -- but attached modules still use the saved stack's initial offset.
+        if UsesStackOffset(group) and not contents.bars then BuildStackOffset(host, context) end
     end
     return true
 end

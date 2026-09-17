@@ -360,7 +360,7 @@ function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
         local frame = (self.groupFrames and self.groupFrames[groupId])
             or (self._dormantFrames and self._dormantFrames[groupId])
         local kind = frame and frame._panelLayoutKind
-        if not kind then kind = ST.GetPanelLayoutKind(group) end
+        if not kind then kind = ST.GetPanelGeometryKind(group) end
         if kind == "bars" and ST.GetBarOnlyLayoutMode(group) == "grid" then compact = barCompact end
     end
     if not compact then
@@ -501,7 +501,7 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
         return false
     end
     if ST.PanelSupportsAttachedBars(group)
-        and (frame._panelLayoutKind ~= ST.GetPanelLayoutKind(group)
+        and (frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group)
             or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group)) then
         return true
     end

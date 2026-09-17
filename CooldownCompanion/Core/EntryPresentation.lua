@@ -14,7 +14,7 @@ function ST.ResolveBarGeometry(group, options)
     local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
     local layout = ordinary and group.attachedBarLayout or {}
     layout = layout or {}
-    local stack = ordinary and ST.GetPanelLayoutKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
+    local stack = ordinary and ST.GetPanelGeometryKind(group, options.layoutKind) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack"
     local vertical = options.vertical == true
     if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
     local thickness = options.thickness
@@ -182,6 +182,20 @@ function ST.GetPanelLayoutKind(group)
     return icons and "icons" or "empty"
 end
 
+-- Eligibility still controls runtime membership. When none is eligible,
+-- configured entries provide the geometry for editing their inactive ghosts.
+-- The same decision owns fitting, the saved bar arrangement and its controls.
+function ST.GetPanelGeometryKind(group, kind)
+    kind = kind or ST.GetPanelLayoutKind(group)
+    if kind ~= "empty" then return kind end
+    local icons, bars = false, false
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.displayAs == "bars" then bars = true else icons = true end
+    end
+    if icons and bars then return "mixed" end
+    return bars and "bars" or icons and "icons" or "empty"
+end
+
 function ST.GetBarOnlyLayoutMode(group)
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
     if group and group.barOnlyLayout then
@@ -192,9 +206,9 @@ function ST.GetBarOnlyLayoutMode(group)
     return "grid"
 end
 
-function ST.PanelUsesAttachedBarLayout(group)
+function ST.PanelUsesAttachedBarLayout(group, kind)
     if not ST.PanelSupportsAttachedBars(group) then return false end
-    local kind = ST.GetPanelLayoutKind(group)
+    kind = ST.GetPanelGeometryKind(group, kind)
     if kind == "icons" then
         -- Disabled/spec-ineligible bars can still be shown for editing. They
         -- belong beside the icon body even when no eligible bar remains to
@@ -206,8 +220,8 @@ function ST.PanelUsesAttachedBarLayout(group)
     return kind == "mixed" or (kind == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack")
 end
 
-function ST.IsAttachedBarEntry(group, entry)
-    return ST.IsPanelBarEntry(group, entry) and ST.PanelUsesAttachedBarLayout(group) or false
+function ST.IsAttachedBarEntry(group, entry, layoutKind)
+    return ST.IsPanelBarEntry(group, entry) and ST.PanelUsesAttachedBarLayout(group, layoutKind) or false
 end
 
 -- Freeze canonical defaults, never the current profile's icon baseline.
@@ -262,7 +276,7 @@ end
 -- An ephemeral view lets the established Bar Panel grid consume its own
 -- geometry without changing the saved panel type or the icon arrangement.
 function ST.GetPanelLayoutGroup(group, forEditing)
-    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelLayoutKind(group) ~= "bars"
+    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group) ~= "bars"
         or ST.GetBarOnlyLayoutMode(group) ~= "grid" then return group end
     local layout = group.barOnlyLayout or {}
     return setmetatable({
@@ -277,7 +291,7 @@ function ST.GetPanelBarStyleGroup(group)
     local style = ST.GetAttachedBarStyle(group, true)
     local defaults = { compactLayout = false, compactGrowthDirection = "center", maxVisibleButtons = 0 }
     return setmetatable({ displayMode = "bars", style = style, _attachedBarOwner = group,
-        _fittedBarLayout = ST.GetPanelLayoutKind(group) == "mixed" }, {
+        _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, {
         __index = function(_, key)
             if defaults[key] ~= nil then
                 local value = group.barOnlyLayout and group.barOnlyLayout[key]
@@ -299,7 +313,7 @@ end
 
 -- Movers edit the visible bar dimensions in either bar-only arrangement.
 function ST.GetPanelSizingGroup(group)
-    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelLayoutKind(group) == "bars" then
+    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars" then
         return ST.GetPanelBarStyleGroup(group)
     end
     return group
@@ -311,7 +325,7 @@ function ST.GetBarOnlyLength(group, style)
 end
 
 function ST.GetPanelAttachmentDimensions(frame, group, region)
-    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelLayoutKind(group) == "bars"
+    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars"
         and ST.GetBarOnlyLayoutMode(group) == "stack" then
         local style = ST.GetAttachedBarStyle(group)
         local length, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
@@ -320,7 +334,7 @@ function ST.GetPanelAttachmentDimensions(frame, group, region)
     if ST.PanelSupportsAttachedBars(group) and ST.GetConfiguredPanelIconGeometry
         and (frame.visibleButtonCount or 0) == 0
         and not (frame._sectionLayout and next(frame._sectionLayout.sections))
-        and ST.GetPanelLayoutKind(group) ~= "bars" then
+        and ST.GetPanelGeometryKind(group) ~= "bars" then
         local configured = ST.GetConfiguredPanelIconGeometry(group)
         if region == "main" then return configured.baseWidth, configured.baseHeight end
         return configured.footprintWidth, configured.footprintHeight
@@ -338,8 +352,9 @@ function ST.GetBarGridCellDimensions(group)
     local width, height = style.barLength or 180, style.barHeight or 20
     if style.barFillVertical then width, height = height, width end
     if group._unifiedPanelOwner then
+        local includeInactive = ST.GetPanelLayoutKind(group._unifiedPanelOwner) == "empty"
         for _, entry in ipairs(group.buttons or {}) do
-            if ST.IsPanelLayoutEntryEligible(group, entry) then
+            if includeInactive or ST.IsPanelLayoutEntryEligible(group, entry) then
                 local effective = Addon:GetEntryEffectiveStyle(group, entry)
                 local w, h = effective.barLength or 180, effective.barHeight or 12
                 if effective.barFillVertical then w, h = h, w end
@@ -373,11 +388,11 @@ function ST.ResolvePanelAttachmentRegion(group, side, region)
     return "main"
 end
 
-function ST.IsCollapsingAttachedBar(group, entry)
-    return ST.IsAttachedBarEntry(group, entry)
-        and entry.type == "spell" and entry.addedAs == "aura"
+function ST.IsCollapsingAttachedBar(group, entry, layoutKind)
+    return entry and entry.type == "spell" and entry.addedAs == "aura"
         and entry.hideWhileAuraNotActive == true
         and not entry.auraTrackGroup and not entry.auraTrackPet
+        and ST.IsAttachedBarEntry(group, entry, layoutKind) or false
 end
 
 function Addon:SetEntryPresentation(groupId, index, presentation)

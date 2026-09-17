@@ -465,7 +465,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     -- until the immediate reflow has the final visible base dimensions.
     local compact = self:IsGroupCompactLayoutActive(groupId, group)
     frame._deferPanelBaseAnchor = compact or nil
-    self:ResizeGroupFrame(groupId)
+    self:ResizeGroupFrame(groupId, compact)
 
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
@@ -509,7 +509,7 @@ local function ClearStyleUpdateEntries(entries, visibleCount)
 end
 
 local function GetStyleUpdateEntries(self, groupId, frame, group)
-    if frame._panelLayoutKind ~= ST.GetPanelLayoutKind(group)
+    if frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group)
         or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group) then return nil end
     if IsIconMasqueStyleRefreshUnsafe(self, group) then
         return nil
@@ -583,7 +583,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
     if not frame or not group then return end
-    frame._panelLayoutKind = ST.GetPanelLayoutKind(group)
+    frame._panelLayoutKind = ST.GetPanelGeometryKind(group)
     frame._barOnlyLayoutMode = ST.GetBarOnlyLayoutMode(group)
     if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then
         frame._totemPanelSurface:Hide()
@@ -712,7 +712,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     self:RequestAuraRebind("populate")
 end
 
-function CooldownCompanion:ResizeGroupFrame(groupId)
+function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments)
     local frame = self.groupFrames[groupId]
     local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
@@ -749,7 +749,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     if ST.IsTotemPanelGroup(group) then
         local geo = ST.GetTotemPanelGeometry(group, frame.visibleButtonCount)
         targetWidth, targetHeight = geo.panelWidth, geo.panelHeight
-    elseif numButtons == 0 and ST.GetPanelLayoutKind(group) == "mixed"
+    elseif numButtons == 0 and ST.GetPanelGeometryKind(group) == "mixed"
         and (not sectionLayout or not next(sectionLayout.sections)) then
         local configured = ST.GetConfiguredPanelIconGeometry(group)
         targetWidth, targetHeight = configured.footprintWidth, configured.footprintHeight
@@ -856,7 +856,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId)
     -- grip resize mid-gesture keeps them glued to the rects they name.
     ST.UpdateSectionMoverOverlays(self, frame, group)
     ST.UpdatePanelMoverBounds(frame, group)
-    if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group) end
+    if ST.LayoutAttachedBars and not deferAttachments then ST.LayoutAttachedBars(groupId, frame, group) end
     return true
 end
 
@@ -896,9 +896,10 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
         visibleButtons = {}
         frame._compactVisibleButtons = visibleButtons
     end
+    local attachedLayout = ST.PanelUsesAttachedBarLayout(group)
     for _, button in ipairs(frame.buttons) do
         local forceVisible = button._forceVisibleByConfig
-        local attached = ST.IsAttachedBarEntry(group, button.buttonData)
+        local attached = attachedLayout and ST.IsPanelBarEntry(group, button.buttonData)
         local shouldHide = (not forceVisible) and (button._visibilityHidden
             or (not attached and #visibleButtons >= maxVis))
         local wasShown = button:IsShown()
@@ -988,7 +989,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     end
     if forceResize or frame.visibleButtonCount ~= visibleCount or footprintChanged then
         frame.visibleButtonCount = visibleCount
-        self:ResizeGroupFrame(groupId)
+        self:ResizeGroupFrame(groupId, true)
     end
 
     if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group) end

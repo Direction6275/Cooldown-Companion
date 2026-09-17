@@ -1212,7 +1212,8 @@ function CooldownCompanion:EndCombatForcedLock()
             and self:IsContainerUnlockPreviewActive(group.parentContainerId)
             or false
         local handleShown = (frame.dragHandle and frame.dragHandle:IsShown()) == true
-        self:SetAuraPanelPlaceholderPreviewShown(frame, handleShown or containerPreviewActive)
+        self:SetAuraPanelPlaceholderPreviewShown(frame,
+            handleShown or containerPreviewActive or self:IsPanelUnlockPreviewActive(group))
         -- Section overlays share the aura placeholder preview's wide gate:
         -- drag controls up, or any member of an active container preview.
         ST.SetSectionMoverOverlaysShown(self, frame, group,

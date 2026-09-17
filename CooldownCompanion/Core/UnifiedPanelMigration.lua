@@ -4,7 +4,9 @@ local _, ST = ...
 local Addon = ST.Addon
 local Migration = {}
 ST.UnifiedPanelMigration = Migration
-local VERSION = 8
+local VERSION = 9
+local CONVERTED_VERSION = 8
+local CAST_OFFSET_REPAIR = 1
 
 local function Copy(value)
     if type(value) ~= "table" then return value end
@@ -24,7 +26,7 @@ local function Keys(map)
 end
 
 local function SpecTable(map, spec)
-    return type(map) == "table" and (map[spec] or map[tostring(spec)]) or nil
+    return type(map) == "table" and (map[spec] or map[tonumber(spec)] or map[tostring(spec)]) or nil
 end
 
 local function Value(primary, fallback, key, default)
@@ -305,6 +307,14 @@ local function NewDestination(profile, classKey, spec, settings, layout, context
     return id
 end
 
+local function LegacyStackIdentity(classKey, settings, layout, independent)
+    return classKey .. ":" .. Fingerprint({ independent = independent, anchor = Value(layout, settings, "independentAnchor"),
+        length = Value(layout, settings, "independentWidth", 180), orientation = Value(layout, settings, "orientation", "horizontal"),
+        spacing = Value(layout, settings, "barSpacing", 3.6), height = Value(layout, settings, "barHeight", 12),
+        gap = Value(layout, settings, Value(layout, settings, "orientation", "horizontal") == "vertical"
+            and "verticalXOffset" or "yOffset", 3) })
+end
+
 local function Destination(profile, classKey, spec, settings, layout, context, report, destinations)
     local attachment = layout.attachment or {}
     local independent = attachment.mode == "independent"
@@ -359,11 +369,7 @@ local function Destination(profile, classKey, spec, settings, layout, context, r
         end
     end
     if context.geometryOnly then return nil end
-    local identity = classKey .. ":" .. Fingerprint({ independent = independent, anchor = Value(layout, settings, "independentAnchor"),
-        length = Value(layout, settings, "independentWidth", 180), orientation = Value(layout, settings, "orientation", "horizontal"),
-        spacing = Value(layout, settings, "barSpacing", 3.6), height = Value(layout, settings, "barHeight", 12),
-        gap = Value(layout, settings, Value(layout, settings, "orientation", "horizontal") == "vertical"
-            and "verticalXOffset" or "yOffset", 3) })
+    local identity = LegacyStackIdentity(classKey, settings, layout, independent)
     local id = destinations[identity]
     if not id then
         for _, candidateId in ipairs(Keys(profile.groups)) do
@@ -629,10 +635,11 @@ end
 -- Version 5 conflated different tracked identities sharing a legacy bar ID.
 -- Replay the original snapshot to repair generated values on surviving IDs.
 -- Membership, placement and customizations remain owned by the current entry.
+-- Version 8 completed this repair; later conversion revisions must not replay it.
 local function RepairConvertedEntryContracts(profile, context, report)
     local stamp, backup = profile._unifiedPanelMigration, profile._unifiedPanelBackup
     local version = stamp and tonumber(stamp.version)
-    if not version or version < 1 or version >= VERSION
+    if not version or version < 1 or version >= CONVERTED_VERSION
         or type(backup) ~= "table" then return true end
     local priorContext, correctedContext = Copy(context), Copy(context)
     priorContext._legacyEntryRules = true
@@ -757,6 +764,136 @@ local function RepairConvertedEntryContracts(profile, context, report)
         report.notices[#report.notices + 1] = repaired .. " migrated bar entries restored their original aura tracking or enabled state."
     end
     return true
+end
+
+local CAST_OFFSET_STORES = { "resourceBarsByClass", "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed" }
+local function LegacyCastOffsetIsSuppressed(settings, layout)
+    local slot = type(layout) == "table" and layout.castBar
+    if type(slot) ~= "table" then return false end
+    local attachment = layout.attachment or {}
+    local independent = attachment.mode == "independent"
+        or (attachment.mode == nil and Value(layout, settings, "independentAnchorEnabled", false))
+    return settings._barGeometryVersion ~= 1
+        and (settings.enabled ~= true or independent)
+        and slot.panelAnchorYOffsetEnabled == true and slot.panelAnchorScreenYOffset == nil
+end
+
+-- Read the oldest evidence before attachment conversion. A geometry snapshot
+-- may already name a generated Bars panel instead of the independent stack.
+-- Missing evidence (including exported profiles) never authorizes a repair.
+local function RepairConvertedCastOffsets(profile, context, report)
+    local repaired = 0
+    local function Settings(settings, original, geometry, class)
+        if type(settings) ~= "table" or type(original) ~= "table"
+            or settings.enabled ~= original.enabled then return end
+        for spec, oldLayout in pairs(original.layoutOrder or {}) do
+            local layout = SpecTable(settings.layoutOrder, spec)
+            local unchangedAttachment = layout and Fingerprint(layout.attachment) == Fingerprint(oldLayout.attachment)
+            if layout and not unchangedAttachment and class then
+                local converted = geometry and SpecTable(geometry.layoutOrder, spec)
+                local attachment = converted and converted.attachment
+                local target = attachment and profile.groups and profile.groups[attachment.panelId]
+                unchangedAttachment = attachment and attachment.mode == "panel" and target
+                    and target._legacyBarStack == LegacyStackIdentity(class, original, oldLayout, true)
+                    and Fingerprint(layout.attachment) == Fingerprint(attachment)
+            end
+            if layout and unchangedAttachment and LegacyCastOffsetIsSuppressed(original, oldLayout)
+                and Value(layout, settings, "independentAnchorEnabled", false)
+                    == Value(oldLayout, original, "independentAnchorEnabled", false) then
+                local current, old = layout.castBar, oldLayout.castBar
+                local _, _, offset = ST.GetCastBarAttachmentOffset(nil, oldLayout)
+                -- Order is unrelated to the offset. Its value, side, region,
+                -- attachment and enable choices are the user's dependencies.
+                local unchanged = type(current) == "table" and current.panelAnchorYOffsetEnabled == true
+                    and (current.position or "below") == (old.position or "below")
+                    and current.anchorRegion == old.anchorRegion
+                    and current.verticalPosition == old.verticalPosition
+                    and ((current.panelAnchorScreenYOffset == offset and current.panelAnchorYOffset == nil)
+                        or (current.panelAnchorScreenYOffset == nil and current.panelAnchorYOffset == old.panelAnchorYOffset))
+                if unchanged then
+                    current.panelAnchorYOffsetEnabled = false
+                    repaired = repaired + 1
+                end
+            end
+        end
+    end
+    for _, key in ipairs(CAST_OFFSET_STORES) do
+        local earliest = profile._unifiedPanelBackup and profile._unifiedPanelBackup[key]
+        local geometry = profile._barGeometryBackup and profile._barGeometryBackup[key]
+        if key == "resourceBarsByClass" or key == "resourceBarsByChar" then
+            for owner, settings in pairs(profile[key] or {}) do
+                local original = earliest and earliest[owner] or geometry and geometry[owner]
+                local class = key == "resourceBarsByClass" and owner or context.ownerClasses and context.ownerClasses[owner]
+                Settings(settings, original, geometry and geometry[owner], class)
+            end
+        else
+            Settings(profile[key], earliest or geometry, geometry, context.defaultClass)
+        end
+    end
+    if repaired > 0 then
+        report.notices[#report.notices + 1] = repaired .. " previously inactive cast-bar Y offsets were restored to disabled; their saved values were preserved."
+    end
+end
+
+local function VisitLegacyCastOffsets(profile, convert, report)
+    local found = false
+    local function Settings(settings)
+        if type(settings) ~= "table" then return end
+        for _, layout in pairs(settings.layoutOrder or {}) do
+            local slot = type(layout) == "table" and layout.castBar
+            -- Before shared geometry, Resources gated this offset. Preserve the
+            -- effective position without reintroducing that runtime dependency.
+            local suppressed = LegacyCastOffsetIsSuppressed(settings, layout)
+            if type(slot) == "table" and (slot.panelAnchorYOffset ~= nil or suppressed) then
+                found = true
+                if convert then
+                    -- Resolve even disabled values, without applying their enable gate.
+                    -- A newer screen-space edit wins if both fields are present.
+                    local _, _, offset = ST.GetCastBarAttachmentOffset(nil, layout)
+                    slot.panelAnchorScreenYOffset = offset
+                    slot.panelAnchorYOffset = nil
+                    if suppressed then
+                        slot.panelAnchorYOffsetEnabled = false
+                        if report then report.preservedInactiveCastOffsets = true end
+                    end
+                end
+            end
+        end
+    end
+    for _, key in ipairs(CAST_OFFSET_STORES) do
+        if key == "resourceBarsByClass" or key == "resourceBarsByChar" then
+            for _, settings in pairs(profile[key] or {}) do Settings(settings) end
+        else
+            Settings(profile[key])
+        end
+    end
+    return found
+end
+
+local function NormalizeCastOffsets(profile, report)
+    if not VisitLegacyCastOffsets(profile) then return end
+    if not profile._castBarOffsetBackup then
+        local backup = {}
+        for _, key in ipairs(CAST_OFFSET_STORES) do backup[key] = Copy(profile[key]) end
+        profile._castBarOffsetBackup = backup
+    end
+    VisitLegacyCastOffsets(profile, true, report)
+    if report.preservedInactiveCastOffsets then
+        report.notices[#report.notices + 1] = "Previously inactive cast-bar Y offsets remain disabled; their saved values were preserved."
+    end
+end
+
+local function RepairCastOffsets(profile, context, report)
+    local stamp = profile._unifiedPanelMigration or {}
+    local repairs = stamp.repairs or {}
+    if repairs.castOffsets ~= CAST_OFFSET_REPAIR then
+        RepairConvertedCastOffsets(profile, context, report)
+    end
+    NormalizeCastOffsets(profile, report)
+    repairs.castOffsets = CAST_OFFSET_REPAIR
+    stamp.repairs, stamp.version = repairs, VERSION
+    stamp.completed = stamp.completed or {}
+    profile._unifiedPanelMigration = stamp
 end
 
 -- Geometry conversion is separate from legacy bar identity conversion. Its
@@ -922,51 +1059,20 @@ local function NormalizeGeometry(profile, context, report)
 end
 Migration.NormalizeGeometry = NormalizeGeometry
 
-local CAST_OFFSET_STORES = { "resourceBarsByClass", "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed" }
-local function VisitLegacyCastOffsets(profile, convert)
-    local found = false
-    local function Settings(settings)
-        if type(settings) ~= "table" then return end
-        for _, layout in pairs(settings.layoutOrder or {}) do
-            local slot = type(layout) == "table" and layout.castBar
-            if type(slot) == "table" and slot.panelAnchorYOffset ~= nil then
-                found = true
-                if convert then
-                    -- Resolve even disabled values, without applying their enable gate.
-                    -- A newer screen-space edit wins if both fields are present.
-                    local _, _, offset = ST.GetCastBarAttachmentOffset(nil, layout)
-                    slot.panelAnchorScreenYOffset = offset
-                    slot.panelAnchorYOffset = nil
-                end
-            end
-        end
-    end
-    for _, key in ipairs(CAST_OFFSET_STORES) do
-        if key == "resourceBarsByClass" or key == "resourceBarsByChar" then
-            for _, settings in pairs(profile[key] or {}) do Settings(settings) end
-        else
-            Settings(profile[key])
-        end
-    end
-    return found
-end
-
-local function NormalizeCastOffsets(profile)
-    if not VisitLegacyCastOffsets(profile) then return end
-    if not profile._castBarOffsetBackup then
-        local backup = {}
-        for _, key in ipairs(CAST_OFFSET_STORES) do backup[key] = Copy(profile[key]) end
-        profile._castBarOffsetBackup = backup
-    end
-    VisitLegacyCastOffsets(profile, true)
-end
-
-function Migration.Build(source, context)
+local function BuildConversion(source, context)
     local valid, errorText = Validate(source)
     if not valid then return nil, errorText end
     context = context or {}
     context.ownerClasses, context.classOwners = context.ownerClasses or {}, context.classOwners or {}
     local profile = Copy(source)
+    -- Promotion must not create the class-store evidence which makes an
+    -- unresolved conflict look as though the user already chose a winner.
+    local conflicts = profile.resourceBarMigration and profile.resourceBarMigration.conflicts
+    for classKey in pairs(type(conflicts) == "table" and conflicts or {}) do
+        if ST.GetResourceBarConflictForProfile(profile, classKey) then
+            return nil, "Resolve the existing Resources class conflict for " .. tostring(classKey) .. " before converting Custom Bars."
+        end
+    end
     profile.resourceBarsByClass = profile.resourceBarsByClass or {}
     -- Detached legacy imports retain exporter IDs until normal import remapping.
     for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do
@@ -1001,10 +1107,9 @@ function Migration.Build(source, context)
     if not repaired then return nil, repairError end
     repaired, repairError = RepairConvertedEntryContracts(profile, context, report)
     if not repaired then return nil, repairError end
-    local conflicts = profile.resourceBarMigration and profile.resourceBarMigration.conflicts
-    if type(conflicts) == "table" and next(conflicts) then
-        return nil, "Resolve the existing Resources class conflicts before converting Custom Bars."
-    end
+    -- Preserve the old effective offset before an independent stack's
+    -- attachment is rewritten to its replacement panel.
+    RepairCastOffsets(profile, context, report)
     ConvertPanels(profile, report)
     local destinations, variants, merged = {}, {}, {}
     context.classSpecs = context.classSpecs or {}
@@ -1126,47 +1231,89 @@ function Migration.Build(source, context)
     end
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
-    NormalizeCastOffsets(profile)
     for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
-    profile._unifiedPanelMigration = { version = VERSION, completed = completed }
+    profile._unifiedPanelMigration.completed = completed
     return profile, report
 end
 
 local CONVERTED_FIELDS = { "groups", "groupContainers", "nextGroupId", "nextContainerId", "resourceBarsByClass",
     "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed", "castBarByChar", "castBar", "legacyCastBarSeed", "_barGeometryBackup", "_castBarOffsetBackup" }
 
+-- Structural conversion and targeted repairs have separate completion gates.
+-- A converted profile may still retain an unrelated Resources conflict.
+local function NeedsConversion(profile, context)
+    local stamp = profile._unifiedPanelMigration
+    if stamp and (tonumber(stamp.version) or 0) < CONVERTED_VERSION then return true end
+    local converted = stamp ~= nil
+    for _, group in pairs(profile.groups or {}) do
+        if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
+            and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then return true end
+        if group._barGeometryVersion == 1 then converted = true end
+    end
+    for classKey, settings in pairs(profile.resourceBarsByClass or {}) do
+        if settings._barGeometryVersion ~= 1 or #LegacyEntries(settings, classKey, context) > 0 then return true end
+        converted = true
+    end
+    for _, settings in pairs(profile.castBarByChar or {}) do
+        if settings._barGeometryVersion ~= 1 then return true end
+        converted = true
+    end
+    local function HasLegacy(settings)
+        return type(settings) == "table" and (next(settings.customBars or {}) or next(settings.customAuraBars or {}))
+    end
+    if HasLegacy(profile.resourceBars) or HasLegacy(profile.legacyResourceBarsSeed) then return true end
+    for _, settings in pairs(profile.resourceBarsByChar or {}) do
+        if HasLegacy(settings) then return true end
+    end
+    -- Exports omit the profile stamp, but retain owner geometry stamps.
+    -- Unscoped seeds still need the original adoption/conversion path.
+    if not stamp and (profile.resourceBars or profile.legacyResourceBarsSeed
+        or profile.castBar or profile.legacyCastBarSeed) then return true end
+    return not converted
+end
+
+local function EmptyReport()
+    return { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
+end
+
+function Migration.Build(source, context)
+    local valid, errorText = Validate(source)
+    if not valid then return nil, errorText end
+    context = context or {}
+    if NeedsConversion(source, context) then return BuildConversion(source, context) end
+    local candidate, report = Copy(source), EmptyReport()
+    RepairCastOffsets(candidate, context, report)
+    for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+    valid, errorText = Validate(candidate)
+    if not valid then return nil, errorText end
+    return candidate, report
+end
+
 function Migration.Apply(profile, context)
-    if profile._unifiedPanelMigration and profile._unifiedPanelMigration.version == VERSION then
-        local pending = VisitLegacyCastOffsets(profile)
-        for _, group in pairs(profile.groups or {}) do
-            if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
-                and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then pending = true; break end
+    context = context or {}
+    local valid, errorText = Validate(profile)
+    if not valid then return false, errorText end
+    if not NeedsConversion(profile, context) then
+        local report = EmptyReport()
+        local repairs = profile._unifiedPanelMigration and profile._unifiedPanelMigration.repairs
+        if not repairs or repairs.castOffsets ~= CAST_OFFSET_REPAIR or VisitLegacyCastOffsets(profile) then
+            -- Only repair-owned stores are detached/replaced; live panel owners
+            -- and the original conversion snapshots keep their identity.
+            local candidate = {}
+            for key, value in pairs(profile) do candidate[key] = value end
+            for _, key in ipairs(CAST_OFFSET_STORES) do candidate[key] = Copy(profile[key]) end
+            candidate._unifiedPanelMigration = Copy(profile._unifiedPanelMigration)
+            RepairCastOffsets(candidate, context, report)
+            valid, errorText = Validate(candidate)
+            if not valid then return false, errorText end
+            for _, key in ipairs(CAST_OFFSET_STORES) do profile[key] = candidate[key] end
+            profile._castBarOffsetBackup = candidate._castBarOffsetBackup
+            profile._unifiedPanelMigration = candidate._unifiedPanelMigration
         end
-        if not pending then
-            for classKey, settings in pairs(profile.resourceBarsByClass or {}) do
-                if settings._barGeometryVersion ~= 1 or #LegacyEntries(settings, classKey, context or {}) > 0 then pending = true; break end
-            end
-        end
-        if not pending then
-            for _, settings in pairs(profile.castBarByChar or {}) do
-                if settings._barGeometryVersion ~= 1 then pending = true; break end
-            end
-        end
-        if not pending then
-            local function HasLegacy(settings)
-                return type(settings) == "table" and (next(settings.customBars or {}) or next(settings.customAuraBars or {}))
-            end
-            pending = HasLegacy(profile.resourceBars) or HasLegacy(profile.legacyResourceBarsSeed)
-            for _, settings in pairs(profile.resourceBarsByChar or {}) do
-                if HasLegacy(settings) then pending = true; break end
-            end
-        end
-        if not pending then
-            for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
-            return true, { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
-        end
+        for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+        return true, report
     end
     local candidate, report = Migration.Build(profile, context)
     if not candidate then return false, report end

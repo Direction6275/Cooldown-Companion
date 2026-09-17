@@ -750,12 +750,7 @@ local function ShowResourcesTabPage(col3, stripOnly)
                 if tab == "general" then
                     ST._BuildResourceBarAnchoringPanel(scroll)
                 elseif tab == "appearance" then
-                    if CS.selectedResourcePowerType and ST.UsesSharedModuleGeometry("resources", CS.resourceSettingsSpecID) then
-                        ST._BuildModuleGeometrySummary(scroll, "resources", CS.selectedResourcePowerType, CS.resourceSettingsSpecID)
-                        local left = ST._BeginRowGrid(scroll)
-                        ST._BuildModuleBarThickness(left, "resources", CS.selectedResourcePowerType, CS.resourceSettingsSpecID,
-                            ST._ResourceThicknessSetting)
-                    else ST._BuildResourceBarBarTextStylingPanel(scroll) end
+                    ST._BuildResourceBarBarTextStylingPanel(scroll)
                 elseif tab == "layout" then
                     ST._BuildResourceBarPositioningPanel(scroll)
                 elseif tab == "health" then

@@ -1775,10 +1775,13 @@ end
 ST._BuildBarHeightControls = function(container, settings, layout)
     if not ST.UsesSharedModuleGeometry("resources") then return BuildLegacyBarHeightControls(container, settings, layout) end
     if not CooldownCompanion:IsResourceBarAnchorIndependent() then return end
+    local context = ST._CreateModuleSettingsContext("resources", nil, CooldownCompanion._currentSpecId)
+    container = ST._NewPanelSettingsSectionHost(container, context)
     local field = (layout.orientation or settings.orientation) == "vertical" and "barWidth" or "barHeight"
-    AddMirrorFirstSliderRow(container, { label = "Bar Thickness",
+    AddMirrorFirstSliderRow(container, { label = "Default Bar Thickness",
         setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar and RESOURCE_FINDER.primary.bar.thickness,
         value = ST.ResolveResourceBarGeometry(settings, layout).thickness, min = 4, max = 100, step = 0.1,
+        tooltip = { "Default thickness for this independent Resources stack. Individual thickness customizations override it." },
         set = function(value) layout[field] = value end, stateOwner = layout, stateKeys = field,
         apply = function() CooldownCompanion:ApplyResourceBars(); CooldownCompanion:RepositionCastBar() end,
     })
@@ -3474,6 +3477,14 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
     end
     if ST.UsesSharedModuleGeometry("resources", numericSpecID) then
         ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
+        local key = "rb_resource_appearance_" .. numericPowerType .. "_" .. numericSpecID
+        local _, collapsed = BuildCollapsibleSection(container, "Appearance", key,
+            resourceBarCollapsedSections, nil, ROW_SECTION)
+        if not collapsed then
+            local column = BeginRowGrid(container)
+            ST._BuildModuleBarThickness(column, "resources", numericPowerType, numericSpecID,
+                ST._ResourceThicknessSetting)
+        end
     end
     BuildResourceBarStylingPanel(container, "resource_settings", {
         powerType = numericPowerType,
@@ -3989,7 +4000,7 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
         texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
-        thickness = { label = "Bar Thickness", applies = function()
+        thickness = { label = "Default Bar Thickness", aliases = { "bar thickness", "height", "width" }, applies = function()
             return ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
         end },
         brightness = { advancedKey = "rbClassTexture",
@@ -4798,8 +4809,11 @@ ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel
 
 if ST._DefineSettingRoute then
 ST._ResourceThicknessSetting = ST._DefineSettingRoute({
-    idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "primary",
-    tab = "appearance", tabLabel = "Appearance", section = "barThickness", sectionLabel = "Dimensions",
+    idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
+    tab = "settings", tabLabel = "Settings", section = "barThickness", sectionLabel = "Appearance",
+    collapseStore = "resource", collapseKeys = function(context)
+        return { "rb_resource_appearance_" .. tostring(context.resourcePowerType) .. "_" .. tostring(context.resourceSpecID) }
+    end,
     applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
 }):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
 end

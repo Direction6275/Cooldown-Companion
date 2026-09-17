@@ -1154,6 +1154,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Explicit positioning previews stay visible on the real display. Ordinary
     -- config selection is rendered only by the pinned config mirror.
     local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
+    local collapsingPlaceholder = (forceVisibleByUnlockPreview or forceVisibleByLayoutPreview)
+        and ST.IsCollapsingAttachedBar(group, buttonData, unlockFrame and unlockFrame._panelLayoutKind)
     if forceVisibleByUnlockPreview then
         button._visibilityHidden = false
         -- An entry its own rules would hide right now comes back as a GHOST,
@@ -1161,7 +1163,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- 40% ghost do, so the unlocked panel reads as "here is where this
         -- entry sits" rather than as the entry being ready (owner ruling
         -- 2026-09-03). Entries the rules leave visible keep their real alpha.
-        if button._rawVisibilityHidden == true then
+        if button._rawVisibilityHidden == true or collapsingPlaceholder then
             button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
         else
             button._visibilityAlphaOverride = 1
@@ -1169,7 +1171,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         visibilityOverrideSource = "unlock-preview"
     elseif forceVisibleByLayoutPreview and not isTriggerPanel then
         button._visibilityHidden = false
-        button._visibilityAlphaOverride = 1
+        button._visibilityAlphaOverride = collapsingPlaceholder and CooldownCompanion.DIM_FALLBACK_ALPHA or 1
         visibilityOverrideSource = "layout-preview"
     end
     button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil

@@ -383,7 +383,9 @@ local function GetScope()
 end
 
 local function SetScope(scope)
-    CS.unifiedRowScope = (scope == "primary") and "primary" or "detail"
+    scope = (scope == "primary") and "primary" or "detail"
+    if CS.unifiedRowScope ~= scope and ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+    CS.unifiedRowScope = scope
 end
 
 -- Asked by the detail surfaces before they select a tab: primary scope

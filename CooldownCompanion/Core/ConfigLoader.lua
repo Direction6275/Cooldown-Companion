@@ -244,7 +244,8 @@ local function RestampCharacterScopedProfileOwnership(addon)
     end
 end
 
-local function RunProfileMigrationAndRefresh(addon, reason)
+function CooldownCompanion:RunProfileMigrationAndRefresh(reason)
+    local addon = self
     if not addon:RunAllMigrations() then
         addon:ClearUnsupportedProfileRuntime()
         addon:RefreshConfigPanel()
@@ -326,7 +327,7 @@ function CooldownCompanion:SetupConfig()
         if type(rawProfile) ~= "table" or next(rawProfile) == nil then
             CooldownCompanion._allowMissingMigrationCheckpointOnce = true
         end
-        RunProfileMigrationAndRefresh(CooldownCompanion, "profile-changed")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-changed")
     end)
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
@@ -343,12 +344,12 @@ function CooldownCompanion:SetupConfig()
             RestampCharacterScopedProfileOwnership(CooldownCompanion)
         end
 
-        RunProfileMigrationAndRefresh(CooldownCompanion, "profile-copied")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-copied")
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
         CooldownCompanion._allowMissingMigrationCheckpointOnce = true
-        RunProfileMigrationAndRefresh(CooldownCompanion, "profile-reset")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-reset")
     end)
     self.db.RegisterCallback(self, "OnProfileDeleted", function()
         CooldownCompanion:RefreshConfigPanel()

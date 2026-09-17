@@ -1762,6 +1762,10 @@ local function GetResourceBarConflict(profile, classKey)
     return conflict
 end
 
+-- Detached profile/import conversion uses the same conflict semantics as
+-- the live resolver, including already-resolved and empty records.
+ST.GetResourceBarConflictForProfile = GetResourceBarConflict
+
 local function BuildResourceBarConflictSummary(profile)
     local summaries = {}
     local state = type(profile) == "table" and rawget(profile, RESOURCE_BAR_MIGRATION_KEY) or nil

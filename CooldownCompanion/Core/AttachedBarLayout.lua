@@ -12,7 +12,7 @@ local FLOW = {
 
 -- Shared ordered model for the runtime and preview. Resource placement is a
 -- boundary between areas, never a member interleaved among their entries.
-function ST.BuildAttachedBarAreas(group)
+function ST.BuildAttachedBarAreas(group, layoutKind)
     local areas, order = {}, {}
     for _, side in ipairs(SIDES) do
         for _, region in ipairs({ "main", "outer" }) do
@@ -25,7 +25,7 @@ function ST.BuildAttachedBarAreas(group)
             end
         end
     end
-    if ST.PanelUsesAttachedBarLayout(group) then
+    if ST.PanelUsesAttachedBarLayout(group, layoutKind) then
         for index, entry in ipairs(group.buttons or {}) do
             if ST.IsPanelBarEntry(group, entry) then
                 local side, region, resources = ST.GetAttachedBarPlacement(entry)
@@ -65,8 +65,9 @@ end
 
 function ST.GetConfiguredPanelIconGeometry(group)
     local style, entries = group.style or {}, {}
+    local includeInactive = ST.GetPanelLayoutKind(group) == "empty"
     for _, entry in ipairs(group.buttons or {}) do
-        if ST.GetEntryPresentation(group, entry) == "icons" and ST.IsPanelLayoutEntryEligible(group, entry) then
+        if ST.GetEntryPresentation(group, entry) == "icons" and (includeInactive or ST.IsPanelLayoutEntryEligible(group, entry)) then
             entries[#entries + 1] = { buttonData = entry }
         end
     end
@@ -80,10 +81,11 @@ end
 
 -- Within an area fixed bars precede native aura buckets. Each unit's auras
 -- stay contiguous, in saved order; the first encountered unit leads.
-function ST.GetAttachedBarAreaOrder(group, entries)
+function ST.GetAttachedBarAreaOrder(group, entries, layoutKind)
+    if #entries == 0 then return entries end
     local ordered, units, firstUnit = {}, { player = {}, target = {} }, nil
     for _, item in ipairs(entries) do
-        if ST.IsCollapsingAttachedBar(group, item.entry) then
+        if ST.IsCollapsingAttachedBar(group, item.entry, layoutKind) then
             local unit = Addon:IsAuraTrackedOnTarget(item.entry) and "target" or "player"
             firstUnit = firstUnit or unit
             units[unit][#units[unit] + 1] = item
@@ -95,11 +97,11 @@ function ST.GetAttachedBarAreaOrder(group, entries)
     return ordered
 end
 
-function ST.ResolveAttachedBarDimensions(group, style, side, width, height)
-    local kind = ST.GetPanelLayoutKind(group)
+function ST.ResolveAttachedBarDimensions(group, style, side, width, height, layoutKind)
+    local kind = ST.GetPanelGeometryKind(group, layoutKind)
     local geometry = ST.ResolveBarGeometry(group, { style = style, thickness = style.barHeight,
         side = side, fit = kind == "mixed" or kind == "icons", width = width, height = height,
-        vertical = style.barFillVertical, length = ST.GetBarOnlyLength(group, style) })
+        vertical = style.barFillVertical, length = ST.GetBarOnlyLength(group, style), layoutKind = kind })
     return geometry.width, geometry.height, geometry.vertical, geometry.length
 end
 
@@ -130,7 +132,7 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
         local lane, body = side .. ":" .. region, Region(region)
         local vertical = side == "left" or side == "right"
         local length = vertical and body.height or body.width
-        if ST.GetPanelLayoutKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack" then
+        if ST.GetPanelGeometryKind(group) == "bars" and ST.GetBarOnlyLayoutMode(group) == "stack" then
             local style = ST.GetAttachedBarStyle(group)
             local barLength, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
             local w, h = style.barFillVertical and thickness or barLength, style.barFillVertical and barLength or thickness
@@ -228,7 +230,8 @@ end
 function ST.LayoutAttachedBars(groupId, frame, group)
     group = group._unifiedPanelOwner or group
     if not ST.PanelSupportsAttachedBars(group) then return end
-    local attached = ST.PanelUsesAttachedBarLayout(group)
+    local kind = ST.GetPanelGeometryKind(group)
+    local attached = ST.PanelUsesAttachedBarLayout(group, kind)
     if not attached then
         for _, state in pairs(frame._attachedBarAreas or {}) do
             state.entries, state.tail = {}, nil
@@ -242,16 +245,17 @@ function ST.LayoutAttachedBars(groupId, frame, group)
     frame._attachedBarAreas = frame._attachedBarAreas or {}
     local byEntry = {}
     for _, button in ipairs(frame.buttons or {}) do byEntry[button.buttonData] = button end
-    local geometry = ST.ResolveBarGeometry(group)
+    local base = ST.GetAttachedBarStyle(group)
+    local geometry = ST.ResolveBarGeometry(group, { style = base, layoutKind = kind })
     local spacing, gap = geometry.spacing, geometry.distance
     local body = ST.GetPanelAnchorBodyFrame(frame)
     local hasIcons = (frame.visibleButtonCount or 0) > 0
         or (frame._sectionLayout and next(frame._sectionLayout.sections))
-    local kind = ST.GetPanelLayoutKind(group)
     local configured = (kind == "mixed" or kind == "icons") and not hasIcons
         and ST.GetConfiguredPanelIconGeometry(group)
     local previous = {}
-    for _, area in ipairs(ST.BuildAttachedBarAreas(group)) do
+    local placeholders = frame._auraPanelChromeSuppressed == true
+    for _, area in ipairs(ST.BuildAttachedBarAreas(group, kind)) do
         local state = EnsureArea(frame, groupId, area)
         state.entries = {}
         state.side, state.spacing = area.side, spacing
@@ -281,30 +285,45 @@ function ST.LayoutAttachedBars(groupId, frame, group)
         local offset = gap
         if predecessor then offset = spacing end
         local last = nil
-        for _, item in ipairs(area.entries) do
+        local entries = placeholders and ST.GetAttachedBarAreaOrder(group, area.entries, kind) or area.entries
+        for _, item in ipairs(entries) do
             local entry, button = item.entry, byEntry[item.entry]
             if button then
-                local effective = Addon:GetEntryEffectiveStyle(group, entry)
-                -- Runtime geometry is transient: no fitted dimension or
-                -- orientation is written back into an entry's customizations.
-                local style = {}
-                for key, value in pairs(ST.GetEntryBaseStyle(group, entry)) do style[key] = value end
-                for key, value in pairs(effective) do style[key] = value end
+                local effective = Addon:GetEffectiveStyle(base, entry, group)
                 local width, height, vertical, length = ST.ResolveAttachedBarDimensions(
-                    group, style, area.side, regionWidth, regionHeight)
-                style.barLength, style.barFillVertical = length, vertical
+                    group, effective, area.side, regionWidth, regionHeight, kind)
                 -- A positioning pass must not reset the charge renderer or
                 -- cooldown visuals. Normal style refreshes already apply all
                 -- appearance changes; only a changed fitted geometry needs
                 -- another style application here.
                 local current = button.style
-                if not current or current.barLength ~= length
-                    or (current.barFillVertical == true) ~= vertical then
+                local restyle = not current or current.barLength ~= length
+                    or (current.barFillVertical == true) ~= vertical
+                local collapsing = ST.IsCollapsingAttachedBar(group, entry, kind)
+                local style
+                if restyle or collapsing then
+                    -- Only a restyle or native binding needs an owned style
+                    -- snapshot. Geometry never mutates saved customizations.
+                    style = {}
+                    for key, value in pairs(base) do style[key] = value end
+                    for key, value in pairs(effective) do style[key] = value end
+                    style.barLength, style.barFillVertical = length, vertical
+                end
+                if restyle then
                     button:UpdateStyle(style)
                 end
-                if ST.IsCollapsingAttachedBar(group, entry) then
+                if collapsing then
                     Addon:StampAuraSectionEntryKey(group, entry)
-                    button:Hide()
+                    if placeholders then
+                        button:ClearAllPoints()
+                        button:SetPoint(flow.point, last or ref, flow.far,
+                            flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
+                        ST._ApplyBarAuraShellVisuals(button, entry)
+                        button:Show()
+                        last = button
+                    else
+                        button:Hide()
+                    end
                     state.entries[#state.entries + 1] = {
                         id = tostring(entry._auraKey), buttonData = entry, style = style,
                         width = width, height = height,
@@ -325,7 +344,7 @@ function ST.LayoutAttachedBars(groupId, frame, group)
             flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
         if #state.entries == 0 then state.tail = nil end
         state.fixedTail = last
-        previous[lane] = state.tail or last or predecessor
+        previous[lane] = (not placeholders and state.tail) or last or predecessor
     end
     frame._attachmentTails = previous
 end
