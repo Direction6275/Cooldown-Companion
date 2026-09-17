@@ -8,11 +8,6 @@ local function OrdinaryOwner(context)
     group = group and (group._attachedBarOwner or group._unifiedPanelOwner or group)
     return ST.PanelSupportsAttachedBars(group) and group or nil
 end
-local function AttachedContext(context)
-    local group = OrdinaryOwner(context)
-    return group and context.group._attachedBarOwner
-        and ST.PanelUsesAttachedBarLayout(group) or false
-end
 local function AttachmentApplies(context)
     local owner = OrdinaryOwner(context)
     if not owner or not context.group._attachedBarOwner then return false end
@@ -52,15 +47,6 @@ local panelSettings = ST._DefineSettingRoute({
         return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars"
             and ST.GetBarOnlyLayoutMode(owner) == "stack" or false
     end },
-})
-local placementSettings = ST._DefineSettingRoute({
-    idPrefix = "entry.layout.bar_placement", scope = "entry", rowScope = "primary",
-    tab = "layout", tabLabel = "Layout", section = "arrangement", sectionLabel = "Arrangement",
-    collapseKeys = { "layout_arrangement" }, applies = AttachedContext,
-}):Settings({
-    side = { label = "Side", aliases = { "above", "below", "left", "right" } },
-    region = { label = "Anchor to", aliases = { "main icons", "entire icon region" } },
-    resources = { label = "Resources", aliases = { "before Resources", "after Resources" } },
 })
 
 local function FlushPresentationEditors()
@@ -103,46 +89,6 @@ function ST._BuildEntryChargePresentation(container, group, entry)
             Addon:RefreshConfigPanel()
         end,
     })
-end
-
-function ST._BuildAttachedBarLayout(container, group)
-    if not ST.PanelSupportsAttachedBars(group) then return false end
-    local context = ST._CreatePanelSettingsContext(group)
-    local entry = context.entry
-    if not entry or context.presentation ~= "bars" or not ST.PanelUsesAttachedBarLayout(group) then return false end
-    container = ST._NewPanelSettingsSectionHost(container, context)
-    local groupId = CS.selectedGroup
-    local function refresh()
-        Addon:UpdateGroupStyle(groupId)
-        Addon:RefreshConfigPanel()
-    end
-    local _, collapsed = ST._BuildCollapsibleSection(container, "Bar Placement", "layout_arrangement", nil, nil, { leftAligned = true })
-    if collapsed then return true end
-    local side, region, resources = ST.GetAttachedBarPlacement(entry)
-    local function place(key, value)
-        FlushPresentationEditors()
-        if not context:IsCurrent() then return end
-        entry.barPlacement = entry.barPlacement or {}
-        entry.barPlacement[key] = value
-        refresh()
-    end
-    ST._AddDropdownRow(container, {
-        label = "Side", setting = placementSettings.side, value = side,
-        list = { above = "Above", below = "Below", left = "Left", right = "Right" },
-        order = { "above", "below", "left", "right" },
-        onChange = function(value) place("side", value) end,
-    })
-    ST._AddDropdownRow(container, {
-        label = "Anchor to", setting = placementSettings.region, value = region,
-        list = { main = "Main icons", outer = "Entire icon region" }, order = { "main", "outer" },
-        onChange = function(value) place("region", value) end,
-    })
-    ST._AddDropdownRow(container, {
-        label = "Resources", setting = placementSettings.resources, value = resources,
-        list = { before = "Before Resources", after = "After Resources" }, order = { "before", "after" },
-        onChange = function(value) place("resources", value) end,
-    })
-    return true
 end
 
 function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)

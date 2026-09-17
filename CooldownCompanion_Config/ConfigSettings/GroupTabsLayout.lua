@@ -640,11 +640,9 @@ local function BuildLayoutTab(container)
     if not CS.selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-    if ST.PanelSupportsAttachedBars(group) and ST._GetPanelSettingsSelection(group) then
-        ST._BuildAttachedBarLayout(container, group)
-        return
-    end
     if ST.PanelSupportsAttachedBars(group) then
+        -- Entry placement is edited by dragging in the preview.
+        if ST._GetPanelSettingsSelection(group) then return end
         ST._AddLensPanelScopeNote(container, ST._ResolveStyleLens(group))
         local context = ST._CreatePanelSettingsContext(group, "shared")
         container = ST._NewPanelSettingsSectionHost(container, context)
