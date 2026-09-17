@@ -304,7 +304,7 @@ function ST._BuildCompletePanelStyleTab(container, owner, tab, builder)
             local key = ST._SettingsContextKey(context, tab .. "_defaults")
             if folds[key] == nil then folds[key] = false end
             local _, collapsed = ST._BuildCollapsibleSection(host, presentation == "icons" and "Icons" or "Bars",
-                key, folds, nil, { leftAligned = true })
+                key, folds, nil, { leftAligned = true, largeTitle = true })
             if not collapsed then builder(host, context.group) end
         end
     end

@@ -398,6 +398,19 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
 
     if opts and opts.leftAligned then
         ApplyLeftAlignedHeading(heading, btn)
+        if opts.largeTitle then
+            local font, size, flags = heading.label:GetFont()
+            if font then
+                heading.label:SetFont(font, size + 4, flags)
+                heading:SetHeight(HEADING_STOCK_HEIGHT + HEADING_TOP_PAD + 4)
+                -- Heading widgets share a pool with subsections and other addons.
+                local prevOnRelease = heading.events["OnRelease"]
+                heading:SetCallback("OnRelease", function(widget, event, ...)
+                    heading.label:SetFont(font, size, flags)
+                    if prevOnRelease then prevOnRelease(widget, event, ...) end
+                end)
+            end
+        end
     end
 
     return heading, collapsed, btn
