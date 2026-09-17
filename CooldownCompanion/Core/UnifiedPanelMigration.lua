@@ -922,6 +922,45 @@ local function NormalizeGeometry(profile, context, report)
 end
 Migration.NormalizeGeometry = NormalizeGeometry
 
+local CAST_OFFSET_STORES = { "resourceBarsByClass", "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed" }
+local function VisitLegacyCastOffsets(profile, convert)
+    local found = false
+    local function Settings(settings)
+        if type(settings) ~= "table" then return end
+        for _, layout in pairs(settings.layoutOrder or {}) do
+            local slot = type(layout) == "table" and layout.castBar
+            if type(slot) == "table" and slot.panelAnchorYOffset ~= nil then
+                found = true
+                if convert then
+                    -- Resolve even disabled values, without applying their enable gate.
+                    -- A newer screen-space edit wins if both fields are present.
+                    local _, _, offset = ST.GetCastBarAttachmentOffset(nil, layout)
+                    slot.panelAnchorScreenYOffset = offset
+                    slot.panelAnchorYOffset = nil
+                end
+            end
+        end
+    end
+    for _, key in ipairs(CAST_OFFSET_STORES) do
+        if key == "resourceBarsByClass" or key == "resourceBarsByChar" then
+            for _, settings in pairs(profile[key] or {}) do Settings(settings) end
+        else
+            Settings(profile[key])
+        end
+    end
+    return found
+end
+
+local function NormalizeCastOffsets(profile)
+    if not VisitLegacyCastOffsets(profile) then return end
+    if not profile._castBarOffsetBackup then
+        local backup = {}
+        for _, key in ipairs(CAST_OFFSET_STORES) do backup[key] = Copy(profile[key]) end
+        profile._castBarOffsetBackup = backup
+    end
+    VisitLegacyCastOffsets(profile, true)
+end
+
 function Migration.Build(source, context)
     local valid, errorText = Validate(source)
     if not valid then return nil, errorText end
@@ -1087,6 +1126,7 @@ function Migration.Build(source, context)
     end
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
+    NormalizeCastOffsets(profile)
     for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
@@ -1095,11 +1135,11 @@ function Migration.Build(source, context)
 end
 
 local CONVERTED_FIELDS = { "groups", "groupContainers", "nextGroupId", "nextContainerId", "resourceBarsByClass",
-    "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed", "castBarByChar", "castBar", "legacyCastBarSeed", "_barGeometryBackup" }
+    "resourceBarsByChar", "resourceBars", "legacyResourceBarsSeed", "castBarByChar", "castBar", "legacyCastBarSeed", "_barGeometryBackup", "_castBarOffsetBackup" }
 
 function Migration.Apply(profile, context)
     if profile._unifiedPanelMigration and profile._unifiedPanelMigration.version == VERSION then
-        local pending = false
+        local pending = VisitLegacyCastOffsets(profile)
         for _, group in pairs(profile.groups or {}) do
             if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
                 and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then pending = true; break end

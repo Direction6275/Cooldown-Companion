@@ -116,18 +116,7 @@ local function GetAttachedCastBarPanelYOffset(settings)
     if not settings or CooldownCompanion:IsModuleAnchorIndependent("castbar") then
         return 0
     end
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local specLayout = CooldownCompanion:GetSpecLayoutOrder()
-    local castLayout = specLayout and specLayout.castBar
-    if not rbSettings
-        or rbSettings.enabled ~= true
-        or (specLayout and CooldownCompanion:IsResourceBarAnchorIndependent()) then
-        return 0
-    end
-    if not castLayout or castLayout.panelAnchorYOffsetEnabled ~= true then
-        return 0
-    end
-    return tonumber(castLayout.panelAnchorYOffset) or 0
+    return ST.GetCastBarAttachmentOffset(settings, CooldownCompanion:GetSpecLayoutOrder())
 end
 
 ------------------------------------------------------------------------
@@ -1161,10 +1150,10 @@ local SIDE_ANCHORS = {
     right = { point = "TOPLEFT", relativePoint = "TOPRIGHT", dx = 1, dy = 0 },
 }
 
-local function AnchorBySide(frame, side, relative, spacing)
+local function AnchorBySide(frame, side, relative, spacing, yOffset)
     local anchor = SIDE_ANCHORS[side] or SIDE_ANCHORS.below
     frame:SetPoint(anchor.point, relative, anchor.relativePoint,
-        anchor.dx * spacing, anchor.dy * spacing)
+        anchor.dx * spacing, anchor.dy * spacing + yOffset)
 end
 
 --- Position + size the bar.  Returns false when the anchor is unavailable.
@@ -1204,7 +1193,7 @@ local function ApplyCastBarPosition(s, width, height)
     local geometryPanel = ST.GetModuleGeometryPanel("castbar")
     if geometryPanel then
         local geometry = ST.ResolveBarGeometry(geometryPanel)
-        gap, barSpacing, panelYOffset = geometry.distance, geometry.spacing, 0
+        gap, barSpacing = geometry.distance, geometry.spacing
     end
 
     local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
@@ -1213,7 +1202,7 @@ local function ApplyCastBarPosition(s, width, height)
         local anchor = side == "above" and "BOTTOM" or "TOP"
         local far = side == "above" and "TOP" or "BOTTOM"
         frame:SetPoint(anchor, panelTail, far, 0,
-            (side == "above" and 1 or -1) * (barSpacing + panelYOffset))
+            (side == "above" and 1 or -1) * barSpacing + panelYOffset)
         return true
     end
 
@@ -1224,12 +1213,12 @@ local function ApplyCastBarPosition(s, width, height)
         -- bar's slot. The stored order is ignored for anchoring.
         local predecessor = CooldownCompanion:GetResourceBarPredecessor(lane, math.huge)
         if predecessor then
-            AnchorBySide(frame, side, predecessor, barSpacing + panelYOffset)
+            AnchorBySide(frame, side, predecessor, barSpacing, panelYOffset)
             return true
         end
     end
 
-    AnchorBySide(frame, side, RB.GetBarLaneBody(groupFrame, lane), gap + panelYOffset)
+    AnchorBySide(frame, side, RB.GetBarLaneBody(groupFrame, lane), gap, panelYOffset)
     return true
 end
 

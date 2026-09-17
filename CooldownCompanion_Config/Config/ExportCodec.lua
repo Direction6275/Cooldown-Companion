@@ -371,6 +371,7 @@ local RETIRED_PROFILE_KEYS = {
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
     _unifiedPanelBackup = true,
     _barGeometryBackup = true,
+    _castBarOffsetBackup = true,
     _unifiedPanelMigration = true,
     folders = true,
     nextFolderId = true,

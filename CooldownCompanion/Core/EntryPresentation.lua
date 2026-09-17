@@ -86,6 +86,24 @@ function ST.ResolveCastBarGeometry(settings, group)
     return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and settings or nil, baseline = settings.height or 15 })
 end
 
+-- Screen Y is independent of attachment side: positive is up, negative down.
+-- The old field measured distance away from the panel. Keep that interpretation
+-- only for legacy values, including character-owned defaults which can be
+-- inherited by several specs on different sides of a class-shared layout.
+function ST.GetCastBarAttachmentOffset(settings, layout)
+    settings = settings or {}
+    local placement = layout and layout.castBar or {}
+    local enabled, offset = placement.panelAnchorYOffsetEnabled, placement.panelAnchorScreenYOffset
+    if enabled == nil then enabled = settings.panelAnchorYOffsetEnabled end
+    if offset == nil then
+        offset = placement.panelAnchorYOffset
+        if offset == nil then offset = settings.panelAnchorYOffset end
+        offset = (tonumber(offset) or 0) * (placement.position == "above" and 1 or -1)
+    end
+    offset = tonumber(offset) or 0
+    return enabled == true and offset or 0, enabled == true, offset
+end
+
 function ST.PanelSupportsAttachedBars(group)
     return type(group) == "table"
         and (group.displayMode or "icons") == "icons"

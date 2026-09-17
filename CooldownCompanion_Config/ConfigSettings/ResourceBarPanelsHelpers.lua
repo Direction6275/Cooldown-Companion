@@ -766,7 +766,7 @@ ST._AddMirrorFirstSliderRow = AddMirrorFirstSliderRow
 -- Adapt the existing per-slot order/editor contract without changing saved
 -- above/below values. Vertical and independent slots do not use this adapter.
 function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
-    local getSide = slot.getPos
+    local getSide, setSide = slot.getPos, slot.setPos
     slot.getPos = function()
         local saved = ensureLayout()
         return RB.ResolveBarLane(slot.anchorGroup or RB.GetBarAnchorGroup(),
@@ -780,6 +780,7 @@ function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
     slot.setPos = function(lane)
         local saved = ensureLayout()
         local oldRegion, oldSide = saved.anchorRegion, saved.position
+        setSide(RB.GetBarLaneSide(lane))
         RB.SetBarLane(saved, lane)
         return oldRegion ~= saved.anchorRegion or oldSide ~= saved.position
     end

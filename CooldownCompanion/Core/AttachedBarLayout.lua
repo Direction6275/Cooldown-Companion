@@ -135,7 +135,8 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
             local w, h = style.barFillVertical and thickness or barLength, style.barFillVertical and barLength or thickness
             length = vertical and h or w
         end
-        local offset = offsets[lane] or gap
+        local yOffset = module.kind == "cast" and module.attachmentOffset or 0
+        local offset = (offsets[lane] or gap) + (module.side == "above" and yOffset or -yOffset)
         local position = Place(side, region, vertical and module.thickness or length,
             vertical and length or module.thickness, offset)
         position.module = module

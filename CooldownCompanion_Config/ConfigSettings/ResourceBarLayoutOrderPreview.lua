@@ -974,7 +974,12 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 return (layout.castBar and layout.castBar.order) or 2000
             end,
             setPos = function(value)
+                -- Pin the displayed screen Y before a side change. Legacy
+                -- character defaults otherwise flip their sign on drop.
+                local _, _, offset = ST.GetCastBarAttachmentOffset(cbSettings, layout)
                 layout.castBar = layout.castBar or { position = "below", order = 2000 }
+                layout.castBar.panelAnchorScreenYOffset = offset
+                layout.castBar.panelAnchorYOffset = nil
                 layout.castBar.position = value
             end,
             setOrder = function(value)
@@ -3704,7 +3709,8 @@ function ST._GetPanelAttachmentPreviewModules(panelId)
         local saved = layout.castBar or {}
         modules[#modules + 1] = { kind = "cast", side = side,
             region = saved.anchorRegion == "main" and "main" or "outer", slots = { slot },
-            thickness = slot.thickness, layout = layout }
+            thickness = slot.thickness, layout = layout,
+            attachmentOffset = ST.GetCastBarAttachmentOffset(cast, layout) }
     end
     return modules
 end
