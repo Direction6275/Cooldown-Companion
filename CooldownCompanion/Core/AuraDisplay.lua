@@ -332,26 +332,28 @@ local RefreshSlotIdentityVisibility
 -- BindAuraPanel/BindAuraSection's for blocks and panels. A skipped record can
 -- therefore never present a stale parse.
 --
--- The identity half stays UNCONDITIONAL. It is two C calls and a no-op
--- SetShown on a parked record, but its `changed` return is what asks for a
--- rebind, and suppressing that would move when a display comes back.
+-- Ordinary slots stay bound across relationship changes: their visibility
+-- root and the container refresh below are enough to follow the new unit.
+-- Their visibility changes (including parked slots) must not request a full
+-- rebind. Blocks and Aura Panels can remain unbound on an incompatible unit,
+-- so their identity changes still request the binding/layout pass.
 local function RefreshRecordsForToken(isMatch)
-    local changed = false
+    local needsRebind = false
     for _, record in ipairs(records) do
         if isMatch(record.unit) then
-            changed = RefreshSlotIdentityVisibility(record) or changed
+            RefreshSlotIdentityVisibility(record)
             if not record.parked then
                 record.container:UpdateAllAuras()
             end
         end
     end
     if RefreshBlockRecordsForToken then
-        changed = RefreshBlockRecordsForToken(isMatch) or changed
+        needsRebind = RefreshBlockRecordsForToken(isMatch) or needsRebind
     end
     if RefreshPanelRecordsForToken then
-        changed = RefreshPanelRecordsForToken(isMatch) or changed
+        needsRebind = RefreshPanelRecordsForToken(isMatch) or needsRebind
     end
-    return changed
+    return needsRebind
 end
 
 local function IsTargetToken(unit) return unit == "target" end
