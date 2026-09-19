@@ -976,9 +976,15 @@ function ST._GetOrdinarySettingsTabs(group)
     local context = GetSettingsFinderContext()
     if not context or (context.scope ~= "entry" and context.scope ~= "panel") then return nil end
     PrepareSettingsFinderContext(context)
-    local tabs = { loadconditions = true }
+    local tabs, presentations = { loadconditions = true }, {}
     for _, descriptor in ipairs(context._settingsFinderApplicableDescriptors or {}) do
-        if descriptor.rowScope ~= "detail" then tabs[descriptor.tab] = true end
+        if descriptor.rowScope ~= "detail" then
+            tabs[descriptor.tab] = true
+            if descriptor.presentation then
+                presentations[descriptor.tab] = presentations[descriptor.tab] or {}
+                presentations[descriptor.tab][descriptor.presentation] = true
+            end
+        end
     end
-    return tabs
+    return tabs, presentations
 end

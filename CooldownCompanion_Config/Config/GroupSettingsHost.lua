@@ -12,6 +12,122 @@ local CS = ST._configState
 
 local AceGUI = LibStub("AceGUI-3.0")
 
+local PRESENTATION_HEADER_HEIGHT = 32
+local PRESENTATION_HEADER_TYPE = "CCPresentationHeader"
+local PRESENTATION_LAYOUT = "CCPanelStylePage"
+
+local function UpdatePresentationHeader(header, hovered)
+    if header.selected then
+        header.label:SetTextColor(1, 0.82, 0)
+    elseif hovered then
+        header.label:SetTextColor(1, 1, 1)
+    else
+        header.label:SetTextColor(0.65, 0.65, 0.65)
+    end
+    header.underline:SetColorTexture(1, 0.65, 0, header.selected and 0.9 or (hovered and 0.5 or 0.18))
+    header.underline:SetHeight(header.selected and 2 or 1)
+end
+
+-- Own the header's art and mouse handlers in a dedicated widget, so neither
+-- can leak into ordinary AceGUI labels/buttons when the surface is recycled.
+AceGUI:RegisterWidgetType(PRESENTATION_HEADER_TYPE, function()
+    local frame = CreateFrame("Button", nil, UIParent)
+    frame:Hide()
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -3)
+    label:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 3)
+    label:SetJustifyH("CENTER")
+    local underline = frame:CreateTexture(nil, "ARTWORK")
+    underline:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    underline:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    local header = { type = PRESENTATION_HEADER_TYPE, frame = frame, label = label, underline = underline }
+    function header:OnAcquire()
+        self:SetWidth(200)
+        self:SetHeight(PRESENTATION_HEADER_HEIGHT - 6)
+        self:SetText("")
+        self:SetSelected(false)
+        self:SetInteractive(false)
+    end
+    function header:SetText(text) self.label:SetText(text) end
+    function header:SetSelected(selected)
+        self.selected = selected
+        UpdatePresentationHeader(self)
+    end
+    function header:SetInteractive(interactive)
+        self.interactive = interactive
+        self.frame:EnableMouse(interactive)
+    end
+    frame:SetScript("OnEnter", function() UpdatePresentationHeader(header, true) end)
+    frame:SetScript("OnLeave", function() UpdatePresentationHeader(header) end)
+    frame:SetScript("OnClick", function(_, button)
+        if header.interactive and button == "LeftButton" then header:Fire("OnClick") end
+    end)
+    return AceGUI:RegisterAsWidget(header)
+end, 1)
+
+-- The headings and scroll are siblings: the header never participates in the
+-- scroll's section geometry, and every scope reserves exactly the same space.
+AceGUI:RegisterLayout(PRESENTATION_LAYOUT, function(content, children)
+    local width, height = content:GetWidth(), content:GetHeight()
+    local headerCount = 0
+    for _, child in ipairs(children) do
+        if child.type == PRESENTATION_HEADER_TYPE then headerCount = headerCount + 1 end
+    end
+    for index, child in ipairs(children) do
+        child.frame:ClearAllPoints()
+        if child.type == "ScrollFrame" then
+            child:SetWidth(width)
+            child:SetHeight(math.max(1, height - PRESENTATION_HEADER_HEIGHT))
+            child.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -PRESENTATION_HEADER_HEIGHT)
+            child.frame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+        else
+            local headerWidth = width / headerCount
+            child:SetWidth(headerWidth)
+            child:SetHeight(PRESENTATION_HEADER_HEIGHT - 6)
+            child.frame:SetPoint("TOPLEFT", content, "TOPLEFT", (index - 1) * headerWidth, 0)
+        end
+        child.frame:Show()
+    end
+end)
+
+local function CreatePresentationPage(widget, group, tab, presentation, available)
+    local page = AceGUI:Create("SimpleGroup")
+    page:SetAutoAdjustHeight(false)
+    page:SetLayout(PRESENTATION_LAYOUT)
+    page:PauseLayout()
+    widget:AddChild(page)
+    local entry = ST._GetPanelSettingsSelection(group)
+    if not entry and available.icons and available.bars then
+        local panelId = CS.selectedGroup
+        for _, kind in ipairs({ "icons", "bars" }) do
+            local header = AceGUI:Create(PRESENTATION_HEADER_TYPE)
+            local selected = kind == presentation
+            local label = kind == "icons" and "Icons" or "Bars"
+            header:SetText(label)
+            header:SetSelected(selected)
+            header:SetInteractive(true)
+            header:SetCallback("OnClick", function()
+                if selected or CS.selectedGroup ~= panelId or CS.selectedTab ~= tab
+                    or CooldownCompanion.db.profile.groups[panelId] ~= group
+                    or ST._GetPanelSettingsSelection(group) then return end
+                if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+                ST._RememberPanelSettingsView()
+                ST._GetPanelSettingsState(group).presentation = kind
+                CooldownCompanion:ClearAllConfigPreviews()
+                CooldownCompanion:RefreshConfigSelection()
+            end)
+            page:AddChild(header)
+        end
+    else
+        local header = AceGUI:Create(PRESENTATION_HEADER_TYPE)
+        header:SetText(presentation == "bars" and "Bars" or "Icons")
+        header:SetSelected(true)
+        page:AddChild(header)
+    end
+    page:ResumeLayout()
+    return page
+end
+
 -- Set only while this file drives SelectTab itself. A user clicking a tab
 -- fires the same callback with the flag clear, which is the only way to tell
 -- "the user picked this tab" from "we re-selected the remembered one" — and
@@ -35,6 +151,7 @@ end
 -- Both strips still belong to the same selected entry.
 local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     anchorFn = anchorFn or FillHostFrame
+    if ST._RememberPanelSettingsView then ST._RememberPanelSettingsView() end
     -- Callers that re-select the panel tab (e.g. the custom strata toggle)
     -- need the host that most recently built these surfaces.
     CS.groupSettingsActiveHost = container
@@ -163,6 +280,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 
         tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
             if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+            if ST._RememberPanelSettingsView then ST._RememberPanelSettingsView() end
+            local oldScroll = CS.col4Scroll
+            local oldOwner = oldScroll and oldScroll._cdcSettingsOwner
+            local oldView = oldScroll and oldScroll._cdcSettingsViewKey
+            local oldEntry = oldScroll and oldScroll._cdcSettingsEntry
             -- A click on the tab itself is the user choosing a tab; our own
             -- re-selects are not. Once there is a choice to honor, it is
             -- honored for every panel, text or not.
@@ -200,29 +322,52 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             wipe(CS.tabInfoButtons)
             widget:ReleaseChildren()
 
+            local styleGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            local presentation, available
+            if styleGroup and ST.PanelSupportsAttachedBars(styleGroup) then
+                ST._PreparePanelSettingsNavigation(styleGroup, tab)
+                available = container._settingsPresentations and container._settingsPresentations[tab] or {}
+                presentation = ST._GetPanelSettingsPresentation(styleGroup, tab, available)
+            end
+            local scrollParent = presentation
+                and CreatePresentationPage(widget, styleGroup, tab, presentation, available) or widget
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
-            widget:AddChild(scroll)
+            scrollParent:AddChild(scroll)
             CS.col4Scroll = scroll
             scroll._cdcStylePresentation = nil
             scroll._cdcSettingsScopeKey, scroll._cdcSettingsOwner = nil, nil
-            local styleGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+            scroll._cdcSettingsViewKey, scroll._cdcSettingsEntry = nil, nil
             if styleGroup then
                 scroll._cdcStylePresentation = styleGroup.displayMode or "icons"
                 if ST.PanelSupportsAttachedBars(styleGroup) then
                     local entry = ST._GetPanelSettingsSelection(styleGroup)
-                    local scope = entry and "entry:" .. ST.GetEntryPresentation(styleGroup, entry) or "panel"
+                    local scope = entry and "entry" or "panel"
                     local state = ST._GetPanelSettingsState(styleGroup)
-                    if not entry then state.panelTab = tab end
-                    scroll._cdcStylePresentation = "ordinary"
+                    state.panelTab = tab
+                    if entry then state.presentation = ST.GetEntryPresentation(styleGroup, entry) end
+                    if presentation then scope = scope .. ":" .. presentation end
+                    scroll._cdcStylePresentation = presentation or "ordinary"
                     scroll._cdcSettingsScopeKey = scope .. ":" .. tab
                     scroll._cdcSettingsOwner = styleGroup
+                    scroll._cdcSettingsEntry = entry
+                    scroll._cdcSettingsViewKey = presentation and presentation .. ":" .. tab or nil
                     local views = state.scrolls
                     local key = scope .. ":" .. tab
                     views[key] = views[key] or {}
                     scroll:SetStatusTable(views[key])
+                    if presentation and (oldOwner ~= styleGroup or oldView ~= scroll._cdcSettingsViewKey
+                        or oldEntry ~= entry or CS.pendingLensAnchor) then
+                        ST._PreparePanelSettingsView(scroll)
+                    end
                 end
             end
+            scroll:SetCallback("OnRelease", function(released)
+                local registry = CS.lensAnchorRegistry
+                if registry and registry.scroll == released then registry.released = true end
+                released._cdcStylePresentation, released._cdcSettingsScopeKey = nil, nil
+                released._cdcSettingsOwner, released._cdcSettingsViewKey, released._cdcSettingsEntry = nil, nil, nil
+            end)
             if ST._BeginLensAnchorBuild then
                 ST._BeginLensAnchorBuild(scroll)
             end
@@ -263,6 +408,14 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             if ST._EndLensAnchorBuild then
                 ST._EndLensAnchorBuild()
             end
+            -- Direct tab clicks do not run the config refresh coordinator.
+            -- Complete the same layout/editor/anchor sequence synchronously.
+            if not CS.configRefreshInProgress and CS.pendingLensAnchor then
+                if ST._UnifiedRowRefresh then ST._UnifiedRowRefresh() end
+                if CS.RefreshAdvancedSettingsPanel then CS.RefreshAdvancedSettingsPanel() end
+                scroll:FixScroll()
+                if ST._RestoreLensAnchor then ST._RestoreLensAnchor() end
+            end
         end)
 
         -- Parent the AceGUI widget frame to the raw host frame
@@ -294,7 +447,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         and ST._GroupSupportsPerButtonOverrides
         and ST._GroupSupportsPerButtonOverrides(group)
     if group and ST.PanelSupportsAttachedBars(group) then isSingleEntry = ST._GetPanelSettingsSelection(group) ~= nil end
-    local availableTabs = ST._GetOrdinarySettingsTabs and ST._GetOrdinarySettingsTabs(group)
+    local availableTabs, presentations
+    if ST._GetOrdinarySettingsTabs then availableTabs, presentations = ST._GetOrdinarySettingsTabs(group) end
+    container._settingsPresentations = presentations
     local selectionMode = isRotationEntry and "rotation-entry"
         or (isSingleEntry and "entry" or "panel")
     local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode
@@ -305,8 +460,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         local entry = ST._GetPanelSettingsSelection(group)
         local scope = entry and "entry" or "panel"
         local state = ST._GetPanelSettingsState(group)
+        if entry then state.presentation = ST.GetEntryPresentation(group, entry) end
         if scope == "panel" and not CS.pendingSettingHighlight
-            and (container._settingsTabOwner ~= group or container._settingsTabScope ~= scope) then
+            and container._settingsTabOwner ~= group then
             CS.selectedTab = state.panelTab or CS.selectedTab
         end
         container._settingsTabOwner, container._settingsTabScope = group, scope

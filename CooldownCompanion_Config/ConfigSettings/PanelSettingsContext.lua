@@ -1,5 +1,5 @@
--- Ordinary panels expose the style bundles used by their configured contents.
--- Context belongs to the section, never a remembered Icons/Bars editing mode.
+-- Ordinary panels edit one applicable style bundle at a time. Presentation
+-- and view memory belong to this editor, never the saved panel display mode.
 local _, ST = ...
 local Addon, CS = ST.Addon, ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
@@ -9,7 +9,7 @@ local panelEditorStates = setmetatable({}, { __mode = "k" })
 function ST._GetPanelSettingsState(owner)
     local state = panelEditorStates[owner]
     if not state then
-        state = { folds = {}, scrolls = {}, anchors = {} }
+        state = { scrolls = {}, anchors = {} }
         panelEditorStates[owner] = state
     end
     return state
@@ -32,6 +32,20 @@ local function Selection(group)
     return entry, entry and "entry" or "panel", entry and CS.selectedButton or nil
 end
 ST._GetPanelSettingsSelection = Selection
+
+function ST._GetPanelSettingsPresentation(owner, tab, available)
+    if tab ~= "appearance" and tab ~= "effects" then return nil end
+    local entry = Selection(owner)
+    if entry then return ST.GetEntryPresentation(owner, entry) end
+    if not available then
+        local _, presentations = ST._GetOrdinarySettingsTabs(owner)
+        available = presentations and presentations[tab] or {}
+    end
+    local preferred = ST._GetPanelSettingsState(owner).presentation or "icons"
+    if available[preferred] then return preferred end
+    if available.icons then return "icons" end
+    if available.bars then return "bars" end
+end
 
 -- Temporary cooldown/aura visibility never changes the editor's organization.
 -- Modules use shared dimensions, but do not make entry appearance applicable.
@@ -73,8 +87,8 @@ function ST._PreparePanelSettingsNavigation(owner, tab)
         local qualified = ST._SettingsContextKey(context, key)
         CS.collapsedSections[qualified], pending.collapseKeys[qualified] = false, true
     end
-    if tab == "appearance" or tab == "effects" then
-        ST._GetPanelSettingsState(owner).folds[ST._SettingsContextKey(context, tab .. "_defaults")] = false
+    if (tab == "appearance" or tab == "effects") and not entry then
+        ST._GetPanelSettingsState(owner).presentation = presentation
     end
 end
 
@@ -294,19 +308,12 @@ function ST._BuildCompletePanelStyleTab(container, owner, tab, builder)
         if ST._FilterEntrySettingsWidgets then ST._FilterEntrySettingsWidgets(host) end
         return true
     end
-    local contents = ST._GetPanelSettingsContents(owner)
     ST._AddLensPanelScopeNote(container, { mode = mode })
-    local folds = ST._GetPanelSettingsState(owner).folds
-    for _, presentation in ipairs({ "icons", "bars" }) do
-        if contents[presentation] or (presentation == "bars" and contents.modules and tab == "appearance") then
-            local context = ST._CreatePanelSettingsContext(owner, presentation)
-            local host = NewSectionHost(container, context)
-            local key = ST._SettingsContextKey(context, tab .. "_defaults")
-            if folds[key] == nil then folds[key] = false end
-            local _, collapsed = ST._BuildCollapsibleSection(host, presentation == "icons" and "Icons" or "Bars",
-                key, folds, nil, { leftAligned = true, largeTitle = true })
-            if not collapsed then builder(host, context.group) end
-        end
+    local presentation = container._cdcSettingsViewKey and container._cdcStylePresentation
+        or ST._GetPanelSettingsPresentation(owner, tab)
+    if presentation then
+        local context = ST._CreatePanelSettingsContext(owner, presentation)
+        builder(NewSectionHost(container, context), context.group)
     end
     return true
 end

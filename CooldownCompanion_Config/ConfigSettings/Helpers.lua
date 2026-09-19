@@ -173,7 +173,10 @@ local function AttachCollapseButton(heading, isCollapsed, onClickFn)
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    heading:SetCallback("OnRelease", function()
+    -- Preserve section metadata and anchor cleanup installed by the caller.
+    local prevOnRelease = heading.events and heading.events.OnRelease
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then prevOnRelease(widget, event, ...) end
         btn:ClearAllPoints()
         btn:Hide()
         btn:SetParent(nil)
@@ -363,10 +366,6 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
     ColorHeading(heading)
     heading:SetFullWidth(true)
     container:AddChild(heading)
-    if RegisterLensAnchorHeading then
-        RegisterLensAnchorHeading(heading, key)
-    end
-
     local collapsed = store[key]
     heading._cdcSettingsHeading = context ~= nil
     heading._cdcSettingsAvailable = context and context.sections[key]
@@ -376,6 +375,9 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
         widget._cdcSettingsHeading, widget._cdcSettingsAvailable, widget._cdcSettingsCollapsed = nil, nil, nil
         widget._cdcSettingsScope = nil
     end)
+    if RegisterLensAnchorHeading then
+        RegisterLensAnchorHeading(heading, key)
+    end
     local btn = AttachCollapseButton(heading, collapsed, function()
         store[key] = not store[key]
         if refreshFn then

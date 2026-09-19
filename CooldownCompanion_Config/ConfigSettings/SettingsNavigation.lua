@@ -210,6 +210,8 @@ local function BeginLensAnchorBuild(scroll)
     CS.lensAnchorRegistry = {
         scroll = scroll,
         presentation = scroll._cdcStylePresentation,
+        owner = scroll._cdcSettingsOwner,
+        viewKey = scroll._cdcSettingsViewKey,
         panelId = CS.selectedGroup,
         tab = CS.selectedTab,
         headings = {},
@@ -232,13 +234,20 @@ RegisterLensAnchorHeading = function(widget, key)
     if not (registry and registry.building and widget and key) then
         return
     end
-    registry.headings[#registry.headings + 1] = {
+    local heading = {
         widget = widget,
         semanticKey = NormalizeLensAnchorKey(key),
     }
+    registry.headings[#registry.headings + 1] = heading
+    local onRelease = widget.events and widget.events.OnRelease
+    widget:SetCallback("OnRelease", function(released, event, ...)
+        heading.released = true
+        if onRelease then onRelease(released, event, ...) end
+    end)
 end
 
 local function GetLensAnchorHeadingOffset(scroll, heading)
+    if not heading or heading.released then return nil end
     local contentTop = scroll and scroll.content and scroll.content:GetTop()
     local frame = heading and heading.widget and heading.widget.frame
     local headingTop = frame and frame:GetTop()
@@ -248,29 +257,18 @@ local function GetLensAnchorHeadingOffset(scroll, heading)
     return contentTop - headingTop
 end
 
-local function CaptureLensAnchor()
-    CS.pendingLensAnchor = nil
-    if CS.pendingSettingHighlight or not ST._UnifiedRowPrimaryOwnsSurface() then
-        return nil
-    end
-
-    local registry = CS.lensAnchorRegistry
-    local scroll = CS.col4Scroll
-    if not (registry and not registry.building and registry.scroll == scroll
-        and registry.panelId == CS.selectedGroup and registry.tab == CS.selectedTab
-        and scroll and scroll.scrollframe) then
-        return nil
-    end
-
+local function SnapshotLensAnchor(registry)
+    local scroll = registry.scroll
     local status = scroll.status or scroll.localstatus
     local offset = (status and status.offset) or 0
     local anchorIndex
     local anchorOffset
     local orderKeys = {}
-    for index, heading in ipairs(registry.headings or {}) do
-        orderKeys[index] = heading.semanticKey
+    for _, heading in ipairs(registry.headings or {}) do
         local headingOffset = GetLensAnchorHeadingOffset(scroll, heading)
         if headingOffset ~= nil then
+            local index = #orderKeys + 1
+            orderKeys[index] = heading.semanticKey
             if not anchorIndex then
                 anchorIndex = index
                 anchorOffset = headingOffset
@@ -285,7 +283,7 @@ local function CaptureLensAnchor()
         return nil
     end
 
-    CS.pendingLensAnchor = {
+    return {
         presentation = registry.presentation,
         panelId = registry.panelId,
         tab = registry.tab,
@@ -295,26 +293,48 @@ local function CaptureLensAnchor()
         relativeOffset = anchorOffset - offset,
         rawOffset = offset,
     }
-    local owner, scope = scroll._cdcSettingsOwner, scroll._cdcSettingsScopeKey
-    if owner and scope then
-        local anchors = ST._GetPanelSettingsState(owner).anchors
-        if scope:match("^panel:") then
-            local saved = {}
-            for key, value in pairs(CS.pendingLensAnchor) do saved[key] = value end
-            anchors[registry.tab] = saved
-        elseif anchors[registry.tab] then
-            local saved = {}
-            for key, value in pairs(anchors[registry.tab]) do saved[key] = value end
-            CS.pendingLensAnchor = saved
-        end
+end
+
+-- Read the source registry, not the destination selection: selection handlers
+-- may already have changed panel, entry or tab when its host is rebuilt.
+local function RememberPanelSettingsView()
+    local registry = CS.lensAnchorRegistry
+    if not (registry and not registry.building and not registry.released
+        and registry.scroll == CS.col4Scroll and registry.owner and registry.viewKey) then return end
+    local anchor = SnapshotLensAnchor(registry)
+    if anchor then
+        ST._GetPanelSettingsState(registry.owner).anchors[registry.viewKey] = anchor
     end
+end
+
+local function CaptureLensAnchor()
+    CS.pendingLensAnchor = nil
+    if CS.pendingSettingHighlight or not ST._UnifiedRowPrimaryOwnsSurface() then return nil end
+    local registry = CS.lensAnchorRegistry
+    if not (registry and not registry.building and not registry.released
+        and registry.scroll == CS.col4Scroll and registry.scroll.scrollframe
+        and registry.panelId == CS.selectedGroup and registry.tab == CS.selectedTab) then return nil end
+    RememberPanelSettingsView()
+    CS.pendingLensAnchor = SnapshotLensAnchor(registry)
     return CS.pendingLensAnchor
+end
+
+local function PreparePanelSettingsView(scroll)
+    CS.pendingLensAnchor = nil
+    if CS.pendingSettingHighlight then return end
+    local saved = ST._GetPanelSettingsState(scroll._cdcSettingsOwner).anchors[scroll._cdcSettingsViewKey]
+    local pending = {}
+    for key, value in pairs(saved or {}) do pending[key] = value end
+    pending.panelId, pending.tab = CS.selectedGroup, CS.selectedTab
+    pending.presentation = scroll._cdcStylePresentation
+    pending.rawOffset = pending.rawOffset or 0
+    CS.pendingLensAnchor = pending
 end
 
 local function FindLensAnchorDestination(registry, pending)
     local byKey = {}
     for _, heading in ipairs(registry.headings or {}) do
-        if heading.semanticKey ~= nil and byKey[heading.semanticKey] == nil then
+        if not heading.released and heading.semanticKey ~= nil and byKey[heading.semanticKey] == nil then
             byKey[heading.semanticKey] = heading
         end
     end
@@ -348,7 +368,7 @@ local function RestoreLensAnchor()
 
     local registry = CS.lensAnchorRegistry
     local scroll = registry and registry.scroll
-    if not (registry and registry == pending.registry and not registry.building
+    if not (registry and registry == pending.registry and not registry.building and not registry.released
         and scroll and scroll == CS.col4Scroll and scroll.scrollframe and scroll.content
         and registry.panelId == pending.panelId
         and registry.tab == pending.tab
@@ -364,12 +384,25 @@ local function RestoreLensAnchor()
     scroll:FixScroll()
     local viewHeight = scroll.scrollframe:GetHeight() or 0
     local maxOffset = math.max(0, (scroll.content:GetHeight() or 0) - viewHeight)
-    local desired = pending.rawOffset or 0
+    local desired = registry.viewKey and 0 or pending.rawOffset or 0
     local destination = FindLensAnchorDestination(registry, pending)
     local destinationOffset = destination
         and GetLensAnchorHeadingOffset(scroll, destination) or nil
     if destinationOffset ~= nil then
-        desired = destinationOffset - (pending.relativeOffset or 0)
+        local sameSection = destination.semanticKey == pending.semanticKey
+        desired = destinationOffset - ((sameSection or not registry.viewKey) and pending.relativeOffset or 0)
+        -- A shorter destination section cannot carry its old intra-section
+        -- offset into the following section (e.g. entry-only filtering).
+        if registry.viewKey then
+            local nextOffset
+            for _, heading in ipairs(registry.headings) do
+                local offset = GetLensAnchorHeadingOffset(scroll, heading)
+                if offset and offset > destinationOffset and (not nextOffset or offset < nextOffset) then
+                    nextOffset = offset
+                end
+            end
+            if nextOffset then desired = math.min(desired, nextOffset - 1) end
+        end
     end
     desired = math.max(0, math.min(desired, maxOffset))
 
@@ -455,6 +488,8 @@ ST._BeginLensAnchorBuild = BeginLensAnchorBuild
 ST._EndLensAnchorBuild = EndLensAnchorBuild
 ST._CaptureLensAnchor = CaptureLensAnchor
 ST._RestoreLensAnchor = RestoreLensAnchor
+ST._RememberPanelSettingsView = RememberPanelSettingsView
+ST._PreparePanelSettingsView = PreparePanelSettingsView
 
 -- Private helpers consumed by later Helpers files.
 SH.RegisterLensAnchorHeading = RegisterLensAnchorHeading

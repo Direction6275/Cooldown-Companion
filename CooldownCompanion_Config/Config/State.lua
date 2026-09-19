@@ -2400,6 +2400,7 @@ end
 
 local function ClearSelectedButton(opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+    if ST._RememberPanelSettingsView then ST._RememberPanelSettingsView() end
     CS.selectedButton = nil
     CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
@@ -2593,7 +2594,9 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         and ST._GroupSupportsPerButtonOverrides(group)
     local preservePlace = supportsEntryLens
         and not explicitDestination
-        and (togglingOff or enteringFromPanel)
+        and not (opts and opts.multi)
+        and not panelChanged
+        and (togglingOff or enteringFromPanel or (hadEntryFocus and ST.PanelSupportsAttachedBars(group)))
     if preservePlace then
         CaptureLensTransition()
     elseif explicitDestination then
