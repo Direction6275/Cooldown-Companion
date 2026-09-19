@@ -86,14 +86,14 @@ local PANEL_TYPES = {
     },
     {
         mode = "auraBars",
-        parentMode = "bars",
+        parentMode = "icons",
         label = "Aura Bar Panel",
         pickerLabel = "Aura Bars",
         description = "Shows your tracked buffs or target debuffs as bars while active. Inactive auras collapse.",
     },
     {
         mode = "totemBars",
-        parentMode = "bars",
+        parentMode = "icons",
         label = "Totem Bar Panel",
         pickerLabel = "Totem Bars",
         description = "Automatically shows active totems and summons as timer bars, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
