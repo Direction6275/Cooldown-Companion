@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.7",
         "2.6.3",
         "2.6.2",
         "2.6.1",
@@ -42,6 +43,24 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.7"] = {
+            markdown = [[
+## New Features
+
+- **Unified icon and bar panels:** Ordinary panels can now contain icons, bars, or both. Add either type to the same panel, then use **Display as: Icon / Bar** to change how an entry appears.
+    - **Automatic conversion:** Existing Bar Panels and Resources Custom Bars convert automatically, preserving saved appearance and spec restrictions. Bars previously available to all specs remain available to all specs.
+    - **Where to edit bars:** Find former Custom Bars in panel and entry settings instead of Resources. They now use the usual panel defaults, Customize/Revert, copying, and templates.
+    - **Check your layout:** Attached bars, Resources, and the Cast Bar share **Bar Thickness**, **Stack Spacing**, and **Distance from Panel** controls. Spacing becomes uniform on upgrade, so check your gaps and bar positions. Individual thickness overrides and resource-specific colors and tracking remain available.
+    - **Review individual overrides:** Converted bars may retain custom settings to preserve their appearance. If a panel-wide style change does not affect a bar, check that entry's Customize/Revert settings.
+
+## Polish | QoL
+
+- **Faster adding:** Choose Icon or Bar below Add search results, or press Tab to switch without losing your search.
+- **Easier navigation:** The Select row stays on one line, with extra destinations under More. Player and Target settings now share a Unit Frames page while keeping their independent positions and panel choices.
+- **Clearer group previews:** Group overviews now show attached resources, plus clearer custom-bar names, colors, and spell/aura labels.
+- **Better bar previews:** Dragging bars shows animated placement previews that match their configured size. Hover over a bar in the settings preview to see its name.
+]],
+        },
         ["2.6.3"] = {
             markdown = [[
 ## New Features
