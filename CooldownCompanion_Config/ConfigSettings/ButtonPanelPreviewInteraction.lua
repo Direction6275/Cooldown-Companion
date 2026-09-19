@@ -1542,6 +1542,9 @@ function DropGhost.Show(host, spec, target, owner)
         return true
     end
     DropGhost.RestoreLayoutTransition(preview)
+    -- Each presentation has its own pooled cell. Retire the previous choice
+    -- before showing the new entry/type, even when the panel layout is stable.
+    for _, cell in pairs(preview.dropGhostCells or {}) do cell:Hide() end
     local stub = DropGhost.FillStub(preview, spec)
     if ST.PanelSupportsAttachedBars(saved) then
         group = CopyTable(saved)
@@ -1553,7 +1556,6 @@ function DropGhost.Show(host, spec, target, owner)
         group = ST.GetPanelLayoutGroup(group)
     end
     if preview.layoutDrag and ST.GetPanelGeometryKind(saved) ~= ST.GetPanelGeometryKind(group) then
-        for _, cell in pairs(preview.dropGhostCells or {}) do cell:Hide() end
         SectionDrag.HideLandingTrail(preview)
         DropGhost.ShowLayoutTransition(preview, group)
         preview.dropGhostKey, preview.dropGhostOwner = key, owner

@@ -23,7 +23,6 @@ local PREVIEW_GAP = 4
 -- Standalone resources use this parent crumb; attached objects use their panel.
 local BARS_HOME_LABEL = "Resource Bars"
 local ADD_BOX_HEIGHT = 26
-local ADD_MODE_WIDTH = 104
 local EDIT_ACTION_COMPACT_GAP = 6
 local EDIT_CONTEXT_ICON_SIZE = 16
 local EDIT_CONTEXT_BADGE_SIZE = 16
@@ -761,17 +760,10 @@ local function LayoutEditingActionRow(col3)
         return
     end
 
-    local selector = col3._cdcAddModeDropdown
-    local modeWidth = selector and selector.frame:IsShown() and (ADD_MODE_WIDTH + 6) or 0
     local compact = IsThreeColumnLayout()
     if finder then
         finder._cdcInstructions:SetText(compact and "Search..."
             or "Find a setting by name or keyword\226\128\166")
-    end
-    if modeWidth > 0 then
-        selector.frame:SetParent(row)
-        selector.frame:ClearAllPoints()
-        selector.frame:SetPoint("LEFT", row, "LEFT", 0, 0)
     end
     local height = ADD_BOX_HEIGHT
     if hasAdd then
@@ -789,7 +781,7 @@ local function LayoutEditingActionRow(col3)
         finderWidth = math.min(math.max(1, rowWidth - 40), finderWidth)
         local fieldGap = compact and EDIT_ACTION_COMPACT_GAP or 0
         if compact then
-            finderWidth = math.max(1, (rowWidth - modeWidth - fieldGap) / 2)
+            finderWidth = math.max(1, (rowWidth - fieldGap) / 2)
         end
 
         finder.frame:ClearAllPoints()
@@ -799,19 +791,19 @@ local function LayoutEditingActionRow(col3)
 
         addBox.frame:ClearAllPoints()
         addBox.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
         addBox.frame:SetPoint("RIGHT", finder.frame, "LEFT", -fieldGap, 0)
         addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     elseif hasFinder then
         finder.frame:ClearAllPoints()
         finder.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
         finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         finder.frame:SetHeight(ADD_BOX_HEIGHT)
     else
         addBox.frame:ClearAllPoints()
         addBox.frame:SetPoint(
-            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE + modeWidth, 0)
+            "LEFT", row, "LEFT", EDIT_ACTION_FIELD_LEFT_NUDGE, 0)
         addBox.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
         addBox.frame:SetHeight(addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
@@ -1099,10 +1091,6 @@ local function SetWideEditingChips(col3, prefix, items)
 end
 
 local function ClearWideEditingExtras(col3, preserveFinderState)
-    if col3._cdcAddModeDropdown then
-        col3._cdcAddModeDropdown:ClearFocus()
-        col3._cdcAddModeDropdown.frame:Hide()
-    end
     local alternate = col3._cdcAlternateEditingAddBox
     if alternate and alternate.frame then
         alternate.frame:Hide()
@@ -2341,6 +2329,7 @@ local function EnsureAddBox(col3)
             end, {
                 requireExactNumericEnter = true,
                 requireExplicitChoice = true,
+                addTargetPanelId = CS.selectedGroup,
                 -- The suggestion under consideration ghosts onto this box's
                 -- Live Preview (SpellItemAdd's autocomplete ghost); no other
                 -- field's dropdown names a host.
@@ -2351,6 +2340,13 @@ local function EnsureAddBox(col3)
         end
     end)
     CS.SetupAutocompleteKeyHandler(addBox)
+    -- This persistent input owns Tab only while its add-mode popup is active.
+    -- Otherwise retain InputBoxTemplate's ordinary focus traversal.
+    addBox.editbox:SetScript("OnTabPressed", function(self)
+        if not CS.HandleAutocompleteKeyDown("TAB", self) then
+            EditBox_OnTabPressed(self)
+        end
+    end)
     addBox.editbox:HookScript("OnEditFocusGained", function()
         HideSettingsFinderResults()
     end)
@@ -2359,38 +2355,12 @@ local function EnsureAddBox(col3)
     return addBox
 end
 
-local function EnsureAddModeDropdown(col3)
-    local selector = col3._cdcAddModeDropdown
-    if selector then return selector end
-    selector = AceGUI:Create("Dropdown")
-    selector:SetLabel()
-    selector:SetWidth(ADD_MODE_WIDTH)
-    selector.frame:SetParent(col3.content)
-    selector:SetCallback("OnOpened", function()
-        CS.HideAutocomplete()
-        HideSettingsFinderResults()
-    end)
-    selector:SetCallback("OnValueChanged", function(widget, _, mode)
-        if mode ~= "icons" and mode ~= "bars" then return end
-        CS.panelAddPresentation = mode
-        widget:ClearFocus()
-        CS.HideAutocomplete()
-        if col3.buttonsAddBox then
-            col3.buttonsAddBox:SetFocus()
-            col3.buttonsAddBox:Fire("OnTextChanged", col3.buttonsAddBox:GetText())
-        end
-    end)
-    col3._cdcAddModeDropdown = selector
-    return selector
-end
-
 local function UpdateAddBox(col3)
     local host = col3.buttonsPreviewHost
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local canAddEntry = CanManuallyAddToPanel(group)
     if not (host and host:IsShown() and canAddEntry) then
         if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
-        if col3._cdcAddModeDropdown then col3._cdcAddModeDropdown.frame:Hide() end
         UpdateEditingActionRow(col3)
         return
     end
@@ -2398,10 +2368,6 @@ local function UpdateAddBox(col3)
         CS.panelAddModePanelId = CS.selectedGroup
         CS.panelAddPresentation = "icons"
     end
-    local selector = EnsureAddModeDropdown(col3)
-    selector.frame:SetShown(ST.PanelSupportsAttachedBars(group))
-    selector:SetList({ icons = "Add Icon", bars = "Add Bar" }, { "icons", "bars" })
-    selector:SetValue(CS.panelAddPresentation or "icons")
     local addBox = EnsureAddBox(col3)
     if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
     CS.panelAddModeQuery = nil

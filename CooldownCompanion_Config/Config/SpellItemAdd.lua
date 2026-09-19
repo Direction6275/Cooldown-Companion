@@ -131,6 +131,10 @@ local AUTOCOMPLETE_TYPE_BADGE_SIZE = 13
 local AUTOCOMPLETE_TYPE_LABEL_WIDTH = 68
 local AUTOCOMPLETE_TYPE_RIGHT_PAD = 6
 local AUTOCOMPLETE_TYPE_GAP = 4
+local AUTOCOMPLETE_ADD_FOOTER_HEIGHT = 24
+local AUTOCOMPLETE_ADD_FOOTER_PADDING = 5
+local AUTOCOMPLETE_ADD_BUTTON_GAP = 4
+local AUTOCOMPLETE_ADD_LABELS = { icons = "Icon", bars = "Bar", text = "Text", textures = "Texture" }
 
 -- Player-owned auras applied indirectly by a passive can lack their own
 -- spellbook or Cooldown Manager suggestion row.
@@ -1374,6 +1378,84 @@ local function HideAutocomplete()
     end
 end
 
+-- Only the panel Add field opts into the presentation footer. Other consumers of
+-- this shared popup (aura pickers, fallback spells, etc.) keep their own flow.
+local function GetAutocompleteAddGroup(dropdown)
+    local groupId = dropdown._addTargetPanelId
+    if groupId and groupId == CS.selectedGroup then
+        return GetTargetGroup(groupId)
+    end
+end
+
+local function GetAutocompleteAddPresentation(dropdown, group)
+    if ST.PanelSupportsAttachedBars(group) then
+        return GetAddPresentation(dropdown._addTargetPanelId)
+    end
+    return group.displayMode or "icons"
+end
+
+local function LayoutAutocompleteAddFooter(footer)
+    if not footer:IsShown() then return end
+    -- Reserve the controls first. The remaining lane owns the hint at every
+    -- width, including when the same popup is resized or reused for one type.
+    local controlsWidth = footer.label:GetUnboundedStringWidth()
+    for _, button in ipairs(footer.buttons) do
+        if button:IsShown() then
+            controlsWidth = controlsWidth + AUTOCOMPLETE_ADD_BUTTON_GAP + button:GetWidth()
+        end
+    end
+    local available = math.max(0, math.floor(footer:GetWidth() - controlsWidth
+        - AUTOCOMPLETE_ADD_FOOTER_PADDING * 2 - 8))
+    local hint = footer.hint
+    hint:SetWidth(available)
+    local tab = ST._GetClassColoredText("Tab")
+    local enter = ST._GetClassColoredText("Enter")
+    local choices = footer.buttons[2]:IsShown()
+        and { tab .. ": switch   " .. enter .. ": add", tab .. ": switch", tab }
+        or { enter .. ": add", enter }
+    for _, text in ipairs(choices) do
+        hint:SetText(text)
+        if math.ceil(hint:GetUnboundedStringWidth()) <= available then
+            hint:Show()
+            return
+        end
+    end
+    hint:Hide()
+end
+
+local function UpdateAutocompleteAddFooter(dropdown)
+    local footer = dropdown.addFooter
+    local group = GetAutocompleteAddGroup(dropdown)
+    footer:SetShown(group ~= nil)
+    if not group then return end
+    local mixed = ST.PanelSupportsAttachedBars(group)
+    local presentation = GetAutocompleteAddPresentation(dropdown, group)
+    local color = footer.accentColor
+    for index, button in ipairs(footer.buttons) do
+        button.presentation = mixed and (index == 1 and "icons" or "bars") or presentation
+        button.label:SetText(AUTOCOMPLETE_ADD_LABELS[button.presentation] or "Entry")
+        local selected = button.presentation == presentation
+        button.label:SetTextColor(selected and color.r or 0.85, selected and color.g or 0.85, selected and color.b or 0.85)
+        button.selection:SetShown(mixed and selected)
+        button:EnableMouse(mixed)
+        button:SetShown(index == 1 or mixed)
+    end
+    LayoutAutocompleteAddFooter(footer)
+end
+
+local function SelectAutocompleteResult(dropdown, entry)
+    if not entry then return end
+    if dropdown._addTargetPanelId then
+        local group = GetAutocompleteAddGroup(dropdown)
+        if not group then
+            HideAutocomplete()
+            return
+        end
+        HideAutocomplete()
+    end
+    if dropdown._onSelect then return dropdown._onSelect(entry) end
+end
+
 ------------------------------------------------------------------------
 -- Autocomplete: Live Preview ghost for the row under consideration
 ------------------------------------------------------------------------
@@ -1383,6 +1465,8 @@ end
 -- Enter would add and nothing else: the list has ONE selection (the
 -- highlight), which the arrow keys and the mouse both move, so the
 -- highlight bar, the ghost and Enter can never name three different rows.
+-- The footer and Tab choose the presentation for the whole list; the ghost
+-- and Enter both use that same remembered choice.
 -- Index 0 (no explicit choice yet) shows nothing. The preview draws the cell
 -- where the pick will land (ST._ShowPreviewDropGhost).
 --
@@ -1391,25 +1475,25 @@ end
 -- (CS.ResolveProspectiveAdd), which is also where the stub learns what the
 -- entry will be born as.
 local autocompleteGhostSpec = {}
-local function AutocompleteGhostSpec(entry)
+local function AutocompleteGhostSpec(entry, groupId)
     local spec = autocompleteGhostSpec
     wipe(spec)
     -- The row's own icon, through the manual-icon door both preview icon
     -- resolvers already honor, so the ghost never re-resolves it.
     spec.manualIcon = entry.icon
     spec.name = entry.name
-    if entry.isEquipmentSlot then
-        -- Name and icon only: all a trinket-slot ghost can claim before the
-        -- slot resolves to an item.
-        return spec
+    if not entry.isEquipmentSlot then
+        spec.type = entry.isItem and "item" or "spell"
+        spec.id = tonumber(entry.id) or entry.id
+        spec.isPetSpell = entry.isPetSpell or nil
+        spec.forceAura = entry.forceAura or nil
+        if not CS.ResolveProspectiveAdd(spec, groupId) then
+            return nil
+        end
     end
-    spec.type = entry.isItem and "item" or "spell"
-    spec.id = tonumber(entry.id) or entry.id
-    spec.isPetSpell = entry.isPetSpell or nil
-    spec.forceAura = entry.forceAura or nil
-    if not CS.ResolveProspectiveAdd(spec, CS.addingToPanelId or CS.selectedGroup) then
-        return nil
-    end
+    -- Equipment slots can preview their shape before the item is known too.
+    spec.displayAs = ST.PanelSupportsAttachedBars(GetTargetGroup(groupId))
+        and GetAddPresentation(groupId) == "bars" and "bars" or nil
     return spec
 end
 
@@ -1417,10 +1501,12 @@ local function UpdateAutocompleteGhost()
     local dropdown = autocompleteDropdown
     local host = dropdown and dropdown._ghostHost
     if not host then return end
+    local groupId = dropdown._addTargetPanelId or CS.addingToPanelId or CS.selectedGroup
     local idx = dropdown._highlightIndex or 0
     local row = dropdown:IsShown() and idx > 0 and dropdown.rows[idx] or nil
     local entry = row and row.entry
-    local spec = entry and AutocompleteGhostSpec(entry)
+    local currentTarget = not dropdown._addTargetPanelId or GetAutocompleteAddGroup(dropdown)
+    local spec = currentTarget and entry and AutocompleteGhostSpec(entry, groupId)
     if spec and ST._ShowPreviewDropGhost
         and ST._ShowPreviewDropGhost(host, spec, nil, "autocomplete") then
         return
@@ -1428,6 +1514,21 @@ local function UpdateAutocompleteGhost()
     if ST._HidePreviewDropGhost then
         ST._HidePreviewDropGhost(host, "autocomplete")
     end
+end
+
+local function SetAutocompleteAddPresentation(dropdown, presentation)
+    local group = GetAutocompleteAddGroup(dropdown)
+    if not group then
+        HideAutocomplete()
+        return false
+    end
+    if not ST.PanelSupportsAttachedBars(group)
+        or (presentation ~= "icons" and presentation ~= "bars") then return false end
+    CS.panelAddModePanelId = dropdown._addTargetPanelId
+    CS.panelAddPresentation = presentation
+    UpdateAutocompleteAddFooter(dropdown)
+    UpdateAutocompleteGhost()
+    return true
 end
 
 ------------------------------------------------------------------------
@@ -1564,14 +1665,76 @@ local function GetOrCreateAutocompleteDropdown()
 
         row:SetScript("OnClick", function()
             dropdown._clickInProgress = false
-            if row.entry and dropdown._onSelect then
-                dropdown._onSelect(row.entry)
-            end
+            SelectAutocompleteResult(dropdown, row.entry)
         end)
 
         row:Hide()
         dropdown.rows[i] = row
     end
+
+    local footer = CreateFrame("Frame", nil, dropdown)
+    footer:SetPoint("BOTTOMLEFT", dropdown, "BOTTOMLEFT", 1, 1)
+    footer:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -1, 1)
+    footer:SetHeight(AUTOCOMPLETE_ADD_FOOTER_HEIGHT)
+    local _, classKey = UnitClass("player")
+    local color = classKey and C_ClassColor.GetClassColor(classKey) or nil
+    color = color or { r = 1, g = 0.82, b = 0 }
+    footer.accentColor = color
+    local background = footer:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(footer)
+    background:SetColorTexture(0.12, 0.12, 0.12, 0.95)
+    local divider = footer:CreateTexture(nil, "ARTWORK")
+    divider:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
+    divider:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
+    divider:SetHeight(1)
+    divider:SetColorTexture(color.r, color.g, color.b, 0.6)
+    local label = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", footer, "LEFT", AUTOCOMPLETE_ADD_FOOTER_PADDING, 0)
+    label:SetText("Add as:")
+    footer.label = label
+    local previous = label
+    footer.buttons = {}
+    for index = 1, 2 do
+        local button = CreateFrame("Button", nil, footer)
+        button:SetSize(44, AUTOCOMPLETE_ADD_FOOTER_HEIGHT)
+        button:SetPoint("LEFT", previous, "RIGHT", AUTOCOMPLETE_ADD_BUTTON_GAP, 0)
+        button:RegisterForClicks("LeftButtonUp")
+        local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        text:SetPoint("CENTER", button, "CENTER", 0, 0)
+        button.label = text
+        local selection = button:CreateTexture(nil, "BACKGROUND")
+        selection:SetAllPoints(button)
+        selection:SetColorTexture(color.r, color.g, color.b, 0.3)
+        button.selection = selection
+        local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints(button)
+        highlight:SetColorTexture(color.r, color.g, color.b, 0.12)
+        button:SetScript("OnMouseDown", function()
+            dropdown._clickInProgress = true
+        end)
+        button:SetScript("OnMouseUp", function()
+            dropdown._clickInProgress = false
+        end)
+        button:SetScript("OnClick", function(self, mouseButton)
+            dropdown._clickInProgress = false
+            if mouseButton == "LeftButton" and dropdown:IsShown()
+                and SetAutocompleteAddPresentation(dropdown, self.presentation) then
+                dropdown._anchorWidget:SetFocus()
+            end
+        end)
+        footer.buttons[index] = button
+        previous = button
+    end
+    local hint = footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hint:SetPoint("RIGHT", footer, "RIGHT", -AUTOCOMPLETE_ADD_FOOTER_PADDING, 0)
+    hint:SetJustifyH("RIGHT")
+    hint:SetWordWrap(false)
+    hint:SetTextColor(0.75, 0.75, 0.75)
+    footer.hint = hint
+    footer:SetScript("OnSizeChanged", LayoutAutocompleteAddFooter)
+    footer:SetScript("OnShow", LayoutAutocompleteAddFooter)
+    footer:Hide()
+    dropdown.addFooter = footer
 
     -- Hide when edit box loses focus (checked via OnUpdate)
     dropdown:SetScript("OnUpdate", function(self)
@@ -1583,6 +1746,7 @@ local function GetOrCreateAutocompleteDropdown()
     -- However the list goes (a pick, Escape, the field cleared or blurred),
     -- the ghost goes with it.
     dropdown:SetScript("OnHide", function(self)
+        self._clickInProgress = false
         if self._ghostHost and ST._HidePreviewDropGhost then
             ST._HidePreviewDropGhost(self._ghostHost, "autocomplete")
         end
@@ -1606,6 +1770,14 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     dropdown._editbox = anchorWidget.editbox
     dropdown._requireExactNumericEnter = options and options.requireExactNumericEnter == true
     dropdown._requireExplicitChoice = options and options.requireExplicitChoice == true
+    dropdown._addTargetPanelId = options and options.addTargetPanelId or nil
+    dropdown._clickInProgress = false
+    local addGroup = GetAutocompleteAddGroup(dropdown)
+    if dropdown._addTargetPanelId and not addGroup then
+        dropdown:Hide()
+        return
+    end
+    UpdateAutocompleteAddFooter(dropdown)
     -- One dropdown serves every field. A ghost the previous owner left up
     -- (the list stayed open while another field took over) goes with the
     -- owner, since the hider below only ever knows the current one.
@@ -1642,7 +1814,8 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     dropdown._highlightIndex = dropdown._requireExplicitChoice and numResults > 1 and 0 or 1
     dropdown._userNavigated = nil
     dropdown._numResults = numResults
-    dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2)
+    dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2
+        + (addGroup and AUTOCOMPLETE_ADD_FOOTER_HEIGHT or 0))
 
     for i = 1, AUTOCOMPLETE_MAX_ROWS do
         local row = dropdown.rows[i]
@@ -1681,11 +1854,19 @@ end
 ------------------------------------------------------------------------
 -- Autocomplete: Centralized keyboard handler for arrow/enter navigation
 ------------------------------------------------------------------------
-local function HandleAutocompleteKeyDown(key)
+local function HandleAutocompleteKeyDown(key, input)
     if not autocompleteDropdown or not autocompleteDropdown:IsShown() then return end
+    if input and input ~= autocompleteDropdown._editbox then return end
     local maxIdx = autocompleteDropdown._numResults or 0
     if maxIdx == 0 then return end
-    if key == "DOWN" then
+    if key == "TAB" then
+        local group = GetAutocompleteAddGroup(autocompleteDropdown)
+        if group and ST.PanelSupportsAttachedBars(group) then
+            local presentation = GetAutocompleteAddPresentation(autocompleteDropdown, group) == "bars"
+                and "icons" or "bars"
+            return SetAutocompleteAddPresentation(autocompleteDropdown, presentation)
+        end
+    elseif key == "DOWN" then
         local idx = (autocompleteDropdown._highlightIndex or 0) + 1
         if idx > maxIdx then idx = 1 end
         autocompleteDropdown._highlightIndex = idx
@@ -1735,9 +1916,7 @@ local function HandleAutocompleteKeyDown(key)
         end
         if idx and idx > 0 and autocompleteDropdown.rows[idx] and autocompleteDropdown.rows[idx].entry then
             autocompleteDropdown._enterConsumed = true
-            if autocompleteDropdown._onSelect then
-                autocompleteDropdown._onSelect(autocompleteDropdown.rows[idx].entry)
-            end
+            SelectAutocompleteResult(autocompleteDropdown, autocompleteDropdown.rows[idx].entry)
         end
     end
 end
@@ -1814,7 +1993,8 @@ CS.ConsumeAutocompleteEnter = ConsumeAutocompleteEnter
 -- HandleAutocompleteKeyDown no-ops when the autocomplete dropdown is hidden.
 function CS.SetupAutocompleteKeyHandler(editBoxWidget)
     editBoxWidget.editbox:SetScript("OnKeyDown", function(self, key)
-        CS.HandleAutocompleteKeyDown(key)
+        -- The persistent panel Add box handles Tab through OnTabPressed.
+        if key ~= "TAB" then CS.HandleAutocompleteKeyDown(key, self) end
     end)
 end
 
