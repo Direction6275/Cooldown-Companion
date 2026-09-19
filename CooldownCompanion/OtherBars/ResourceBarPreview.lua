@@ -149,7 +149,7 @@ function RB.CreateResourceBarPreviewModule(deps)
     -- Ready-state rendering
     ------------------------------------------------------------------------
 
-    local function ApplyPreviewDataToBar(barInfo, settings)
+    local function ApplyPreviewDataToBar(barInfo, settings, staticPreview)
         if not (barInfo and barInfo.frame and barInfo.frame:IsShown()) then
             return
         end
@@ -315,7 +315,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             -- secret value, and arithmetic on one is forbidden (see
             -- agent-reference/secret-values.md). The resting leg below never
             -- computes on it at all — range and value pass straight through.
-            local wounded = HealthBar.HasActiveEffectPreview()
+            local wounded = not staticPreview and HealthBar.HasActiveEffectPreview()
                 and not (issecretvalue and issecretvalue(maxHealth))
             local health = maxHealth
             local fraction = 1
@@ -327,7 +327,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetStatusBarSmoothValue(barInfo.frame, health)
             HealthBar.ApplyFillColor(barInfo.frame, config, fraction)
             HealthBar.ApplyBackgroundColor(barInfo.frame, config, fraction)
-            HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, HEALTH_EFFECTS.preview)
+            HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, staticPreview and {} or HEALTH_EFFECTS.preview)
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
                 local abbreviated = AbbreviateNumbers(health)

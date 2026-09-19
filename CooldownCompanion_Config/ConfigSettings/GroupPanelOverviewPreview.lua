@@ -1499,7 +1499,7 @@ local function LayoutPanelTileGrid(overview, host, records, full)
             tile:Show()
             if full then
                 RestoreOverviewColors(tile)
-                ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId)
+                ST._BuildReadOnlyPanelPreview(tile.visualHost, record.panelId, record.previewOptions)
                 if record.disabledReason then GrayOverviewContents(tile) end
             end
         end
@@ -1556,23 +1556,15 @@ function ST._BuildGroupPanelOverview(host, containerId)
         return
     end
 
-    local attachedResourcePanelId
-    if ST._GetResourcesEntryPlacement then
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if placement == "attached" then
-            attachedResourcePanelId = anchorPanelId
-        end
-    end
-
     local records = {}
-    local includeSections = ST._IsThreeColumnConfigLayout
-        and ST._IsThreeColumnConfigLayout()
+    local includeSections = true
     local browsingOtherClasses = ST._configState
         and ST._configState.otherClassLibraryActive == true
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
+        local modules = ST._GetPanelAttachmentPreviewModules(panelInfo.groupId, { groupOverview = true })
         local naturalWidth, naturalHeight =
-            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId, includeSections)
+            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId, includeSections, modules)
         local record = {
             tile = tile,
             containerId = containerId,
@@ -1581,7 +1573,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
             name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
-            hasAttachedResources = attachedResourcePanelId == panelInfo.groupId,
+            hasAttachedResources = #modules > 0,
+            previewOptions = { groupOverview = true, includeSections = includeSections, previewModules = modules },
             canToggleAnchorLock = not browsingOtherClasses,
         }
         local panelDisabled = panelInfo.group.enabled == false

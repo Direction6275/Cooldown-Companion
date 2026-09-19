@@ -98,6 +98,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     local preview = EnsurePreviewState(host)
     preview.panelId = panelId
     preview.readOnly = readOnly
+    preview.groupOverview = readOnly and options and options.groupOverview == true or false
     -- Copy-customization banner surface; nil means the preview's own root.
     preview.copyBannerHost = options and options.bannerHost or nil
     -- The Live Preview host whose attached bar lanes wrap this mirror; nil for
@@ -288,7 +289,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         FinalizePreviewState(preview)
         return
     end
-    local guidanceReserve = count == 0 and PP.EMPTY_ENTRY_GUIDANCE_BAND or 0
+    local guidanceReserve = count == 0 and not readOnly and PP.EMPTY_ENTRY_GUIDANCE_BAND or 0
 
     local geo = GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
     local w, h = geo.entryWidth, geo.entryHeight
@@ -700,6 +701,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         if readOnly then
             ApplySlotBadges(slot, {}, scale, true)
             DisableReadOnlySlotInteraction(slot)
+            if preview.groupOverview and isBarMode then
+                PP.ApplyOverviewBarPresentation(preview, slot, buttonData, group, effectiveStyle, scale)
+            end
         else
             ApplySlotBadges(slot, status, scale,
                 isBarMode and barVisibility.exactPreview == true)
@@ -856,16 +860,19 @@ end
 
 -- Saved-design mirror used by Group Panel Overview tiles. The overview owns
 -- the only mouse surface; this renderer supplies visuals and natural geometry.
-function ST._GetReadOnlyPanelPreviewNaturalSize(panelId, includeSections)
+function ST._GetReadOnlyPanelPreviewNaturalSize(panelId, includeSections, modules)
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
-    return GetPanelPreviewNaturalSize(group, includeSections)
+    return GetPanelPreviewNaturalSize(group, includeSections, modules)
 end
 
-function ST._BuildReadOnlyPanelPreview(host, panelId)
+function ST._BuildReadOnlyPanelPreview(host, panelId, options)
     if not host then return nil, 220, 90 end
     local naturalWidth, naturalHeight =
-        ST._GetReadOnlyPanelPreviewNaturalSize(panelId)
-    ST._BuildButtonPanelPreview(host, panelId, { readOnly = true })
+        ST._GetReadOnlyPanelPreviewNaturalSize(panelId, options and options.includeSections,
+            options and options.previewModules)
+    ST._BuildButtonPanelPreview(host, panelId, { readOnly = true,
+        groupOverview = options and options.groupOverview,
+        previewModules = options and options.previewModules })
     local preview = host._cdcPanelPreview
     return preview and preview.root or nil, naturalWidth, naturalHeight
 end
@@ -889,6 +896,7 @@ function ST._ReleaseReadOnlyPanelPreview(host)
     if not preview then return end
     StopConditionalTicker(preview)
     StopTextureMirrorEffects(preview.textureMirror)
+    if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
     for poolName, pool in pairs(preview.pools) do
         local used = preview.used[poolName] or 0
         for index = 1, used do
