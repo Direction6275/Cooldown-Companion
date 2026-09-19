@@ -501,7 +501,7 @@ local function SetBarIdentityLabelsShown(preview, shown)
 end
 
 local function RefreshBarIdentityLabels(preview)
-    local shown = false
+    local shown = preview.groupOverview == true
     if preview.readOnly ~= true and preview.root:IsShown() then
         for index = 1, (preview.used.barSlots or 0) do
             local slot = preview.pools.barSlots[index]
@@ -528,19 +528,25 @@ local function ConfigureBarIdentityLabel(preview, slot, buttonData, scale, verti
     end
     layer:SetFrameLevel(math_max(slot.textFrame:GetFrameLevel(),
         slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET) + 1)
-    local label = layer.label
+    local label = preview.groupOverview and slot.nameText:IsShown() and slot.nameText or layer.label
     local font = label:GetFont()
     label:SetFont(font, math_max(8, math_min(14, 11 / math_max(scale or 1, 0.01))), "OUTLINE")
     ST.ApplyFontShadowForOutline(label, "OUTLINE")
     label:SetTextColor(1, 1, 1, 1)
-    label:SetText(GetConfigOnlyBarPreviewName(buttonData))
+    local name = GetConfigOnlyBarPreviewName(buttonData)
+    if preview.groupOverview then
+        local kind = ST._GetEntryIdentityKindText(buttonData)
+        if kind then name = name .. " |cff999999(" .. kind .. ")|r" end
+        label:SetMaxLines(1)
+    end
+    label:SetText(name)
     -- Vertical bars may overhang; horizontal labels stay inside the bar.
     label:ClearAllPoints()
     label:SetWidth(0)
     label:SetPoint("CENTER", layer, "CENTER", 0, 0)
     if not vertical then
-        label:SetPoint("LEFT", layer, "LEFT", 4, 0)
-        label:SetPoint("RIGHT", layer, "RIGHT", -4, 0)
+        label:SetPoint("LEFT", slot.barBounds, "LEFT", 4, 0)
+        label:SetPoint("RIGHT", slot.barBounds, "RIGHT", -4, 0)
     end
     layer:Hide()
     slot._cdcBarIdentityPreview = preview
@@ -1585,7 +1591,8 @@ local function GetTriggerDisplayNaturalSize(group)
     return 0, 0
 end
 
-local function GetPanelPreviewNaturalSize(group, includeSections)
+local function GetPanelPreviewNaturalSize(group, includeSections, modules)
+    modules = modules or {}
     group = ST.GetPanelLayoutGroup(group)
     if ST.IsTotemPanelGroup(group) then
         local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
@@ -1633,7 +1640,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections)
     local isTextMode = group.displayMode == "text"
     if isBarMode or isTextMode or IsIconModePanel(group) then
         local count = #(group.buttons or {})
-        if count == 0 then
+        if count == 0 and #modules == 0 then
             return 220, 90
         end
         local hasAttachedBars = ST.PanelHasAttachedBars(group)
@@ -1677,9 +1684,16 @@ local function GetPanelPreviewNaturalSize(group, includeSections)
             base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
                 width = layout.baseWidth, height = layout.baseHeight }
         end
-        if hasAttachedBars then
+        if count == 0 and #modules > 0 and ST.PanelSupportsAttachedBars(group)
+            and ST.GetPanelGeometryKind(group) ~= "bars" then
+            local layout = ST.GetConfiguredPanelIconGeometry(group)
+            width, height = math_max(1, layout.footprintWidth), math_max(1, layout.footprintHeight)
+            base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
+                width = layout.baseWidth, height = layout.baseHeight }
+        end
+        if hasAttachedBars or #modules > 0 then
             local _, _, _, attachedWidth, attachedHeight = ST.GetAttachedBarPreviewLayout(
-                group, width, height, base or { x = 0, y = 0, width = width, height = height })
+                group, width, height, base or { x = 0, y = 0, width = width, height = height }, nil, modules)
             return attachedWidth, attachedHeight
         end
         return width, height

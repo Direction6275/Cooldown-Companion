@@ -471,6 +471,7 @@ local function GetEntryIdentityKindText(buttonData)
     end
     return addedAs == "aura" and "Aura" or "Spell"
 end
+ST._GetEntryIdentityKindText = GetEntryIdentityKindText
 
 local function BuildEntryIdentityHeading(container, buttonData)
     if not (container and buttonData) then return nil end

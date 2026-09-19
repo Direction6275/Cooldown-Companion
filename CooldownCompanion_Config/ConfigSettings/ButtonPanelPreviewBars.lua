@@ -634,8 +634,21 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     end
 end
 
+-- Overview identity is based on the saved entry kind, never its active phase.
+local function ApplyOverviewBarPresentation(preview, slot, buttonData, group, style, scale)
+    if ST._GetEntryIdentityKindText(buttonData) == "Aura" then
+        ST.ChargeBarSegments.End(slot.statusBar)
+        slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
+        local color = ResolveBarAuraFillColor(style, buttonData, ST.IsAuraPanelGroup(group))
+        slot.statusBar:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
+        slot.statusBar:SetValue(1)
+    end
+    PP.ConfigureBarIdentityLabel(preview, slot, buttonData, scale, style.barFillVertical)
+end
+
 -- Private helpers consumed by later ButtonPanelPreview files.
 PP.IsPandemicPreviewEnabled = IsPandemicPreviewEnabled
 PP.ResetBarSlotConditionalVisuals = ResetBarSlotConditionalVisuals
 PP.StyleBarEntry = StyleBarEntry
 PP.ApplyBarSlotConditionalPreview = ApplyBarSlotConditionalPreview
+PP.ApplyOverviewBarPresentation = ApplyOverviewBarPresentation
