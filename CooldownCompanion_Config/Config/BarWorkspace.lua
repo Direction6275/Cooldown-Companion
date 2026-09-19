@@ -80,12 +80,14 @@ local function SetAttachment(kind, value, panelId)
     return true
 end
 
-local function GetPanelWorkspaceChips()
+local function GetPanelWorkspaceChips(rendered)
     local items = {}
+    rendered = rendered or {}
     local panelId = CS.selectedGroup
     if not panelId or CS.otherClassLibraryActive then return items end
-    local function AddItem(label, kind, selected)
-        items[#items + 1] = { label = label, selected = selected, onClick = function()
+    local function AddItem(label, kind, selected, previewKey)
+        if previewKey and rendered[previewKey] then return end
+        items[#items + 1] = { key = kind, label = label, selected = selected, onClick = function()
             OpenWorkspace(kind)
             Addon:RefreshConfigPanel()
         end }
@@ -95,11 +97,17 @@ local function GetPanelWorkspaceChips()
         AddItem("Resources", "resources", CS.unifiedBarKind == "stack")
     end
     local _, castPanel = GetPlacement("castbar")
-    if castPanel == panelId then AddItem("Cast Bar", "castbar", CS.unifiedBarKind == "cast") end
+    if castPanel == panelId then AddItem("Cast Bar", "castbar", CS.unifiedBarKind == "cast", "cast") end
     local _, playerPanel = GetPlacement("player")
     local _, targetPanel = GetPlacement("target")
-    if playerPanel == panelId then AddItem("Player Frame", "player", CS.unifiedBarKind == "player") end
-    if targetPanel == panelId then AddItem("Target Frame", "target", CS.unifiedBarKind == "target") end
+    local hasPlayer, hasTarget = playerPanel == panelId, targetPanel == panelId
+    if (hasPlayer or hasTarget)
+        and not ((hasPlayer and rendered["frame:player"]) or (hasTarget and rendered["frame:target"])) then
+        -- Keep navigation on this owning panel when the two anchors differ.
+        local kind = hasTarget and (not hasPlayer or CS.unifiedBarKind == "target") and "target" or "player"
+        AddItem("Unit Frames", kind, CS.unifiedBarKind == "player" or CS.unifiedBarKind == "target")
+        items[#items].key = "frames"
+    end
     return items
 end
 

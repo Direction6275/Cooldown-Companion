@@ -128,31 +128,20 @@ local function CollectBarsEnableItems()
     return items
 end
 
--- Every OBJECT this workspace can configure that the shared canvas is not
--- drawing right now, as items for the quiet "Not currently shown:" chip
--- strip below the editing divider. One list for the whole workspace,
--- because one canvas serves every selection within it. `rendered` is the
--- canvas's own selection-key set from the build that just ran, so the
--- strip and the canvas can never disagree about what is on screen.
---
--- A chip is a left-click destination that also answers the canvas slot's
--- right-click context menu, since an object the canvas is not drawing has
--- no other route to it. Multi-select stays on the canvas slots, where the
--- object is actually visible.
---
--- The player and target frames are never chips: with frame anchoring on
--- they are badges on the canvas, and with it off the corner cluster's
--- enable pill is the only thing to offer.
+-- Settings destinations without an interactive target in this workspace's
+-- current preview. Keep disabled and off-spec resources reachable here.
 local function CollectBarsOffCanvasChipItems(rendered)
     rendered = rendered or {}
     local items = {}
     if CS.barsEntrySelected and CS.barWorkspaceKind ~= "resources" then
         if CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target" then
-            for _, kind in ipairs({ "player", "target" }) do
-                local item = kind
+            -- Either frame's preview target opens the complete shared page.
+            if not (rendered["frame:player"] or rendered["frame:target"]) then
+                local item = CS.barWorkspaceKind
                 items[#items + 1] = {
-                    label = item == "player" and "Player Frame" or "Target Frame",
-                    selected = CS.castFramesSelectedItem == item,
+                    key = "frames",
+                    label = "Unit Frames",
+                    selected = true,
                     onClick = function()
                         ST._OpenBarWorkspace(item)
                         CooldownCompanion:RefreshConfigPanel()
@@ -172,6 +161,7 @@ local function CollectBarsOffCanvasChipItems(rendered)
         local key = "resource:" .. tostring(powerType)
         if not rendered[key] then
             items[#items + 1] = {
+                key = key,
                 label = powerNames[powerType] or ("Power " .. tostring(powerType)),
                 selected = (CS.barsEntrySelected or CS.unifiedBarKind == "resource")
                     and tostring(CS.selectedResourcePowerType) == tostring(powerType),
@@ -199,6 +189,7 @@ local function SetBarsOffCanvasChips(col3)
     local items = CollectBarsOffCanvasChipItems(rendered or {})
     if CS.barWorkspaceKind == "resources" then
         table.insert(items, 1, {
+            key = "resources",
             label = "Resources",
             selected = not CS.selectedResourcePowerType,
             onClick = function()
@@ -207,7 +198,11 @@ local function SetBarsOffCanvasChips(col3)
             end,
         })
     end
-    ST._SetWideEditingChips(col3, "Select:", items)
+    local visibilityChanged = ST._SetWideEditingChips(col3, "Select:", items)
+    local content = col3._cdcEditingContentFrame
+    if visibilityChanged and content and content:IsVisible() then
+        ST._AnchorButtonsContentFrame(col3, content)
+    end
 end
 
 local function PrepareResourcesEditingChrome(col3)
@@ -233,7 +228,7 @@ local BAR_WORKSPACE_INTROS = {
         onEnable = EnableCastBarModule,
     },
     frames = {
-        title = "Unit Frame Anchoring",
+        title = "Unit Frames",
         body = "Keep Blizzard's player and target frames positioned alongside your panels."
             .. "\n\nAdjust their placement together with the rest of your setup.",
         buttonText = "Enable Unit Frame Anchoring",
@@ -606,6 +601,10 @@ local function BuildResourcesLayoutPreview(host, mirrorReuse)
             end
         end
     end
+    local col3 = CS.configFrame and CS.configFrame.col3
+    if col3 and col3._resourcesPreviewHost == host then
+        SetBarsOffCanvasChips(col3)
+    end
 end
 
 -- Pinned Layout & Order preview at the top of the wide column, registered
@@ -883,8 +882,8 @@ local function ShowCastBarSettings(col3)
     }), tab, "castbar:" .. tab, ST._UnifiedRowPrimaryOwnsSurface())
 end
 
--- Player or target frame anchoring panel, below the pinned preview.
-local function ShowUnitFrameSettings(col3, item)
+-- Both unit frames share one settings page and scroll position.
+local function ShowUnitFrameSettings(col3)
     if not col3._castFramesSettingsScroll then
         local scroll = AceGUI:Create("ScrollFrame")
         scroll:SetLayout("List")
@@ -897,7 +896,7 @@ local function ShowUnitFrameSettings(col3, item)
 
     -- Preserve scroll position across value-change refreshes on the same row
     local savedOffset, savedScrollvalue
-    local currentScrollKey = "unitframe:" .. tostring(item)
+    local currentScrollKey = "unitframes"
     if col3._castFramesSettingsScrollKey == currentScrollKey then
         local state = scroll.status or scroll.localstatus
         if state and state.offset and state.offset > 0 then
@@ -912,11 +911,7 @@ local function ShowUnitFrameSettings(col3, item)
     -- (AdvancedSettingsPanel.lua): gearless today, but the pass's foot sweep
     -- still closes whatever stale gear panels the previous surface left open.
     CS.RunAdvancedGearBuildPass(function()
-        if item == "player" then
-            ST._BuildFrameAnchoringPlayerPanel(scroll)
-        else
-            ST._BuildFrameAnchoringTargetPanel(scroll)
-        end
+        ST._BuildFrameAnchoringPanel(scroll)
     end)
     -- Re-run the layout with final widths: AddChild lays out on every
     -- insertion, so a row grid added before its siblings measures against a
@@ -981,11 +976,6 @@ local function RefreshBarsWideColumn(col3)
 
     UpdateResourcesPreviewHost(col3)
 
-    -- Whatever objects the canvas left out are offered by the quiet chip
-    -- strip below the divider, for every selection; the modules that are
-    -- off entirely are offered by the canvas's own bottom-right corner.
-    SetBarsOffCanvasChips(col3)
-
     -- Import and export actions belong to the enabled Resources home.
     if item == nil and settings and settings.enabled == true then
         PrepareResourcesEditingChrome(col3)
@@ -994,7 +984,7 @@ local function RefreshBarsWideColumn(col3)
     if item == "castbar" then
         ShowCastBarSettings(col3)
     elseif item then
-        ShowUnitFrameSettings(col3, item)
+        ShowUnitFrameSettings(col3)
     else
         ShowResourcesHomeSurfaces(col3)
     end

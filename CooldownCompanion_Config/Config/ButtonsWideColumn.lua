@@ -39,8 +39,8 @@ local EDIT_HEADER_GAP = 5
 local EDIT_BOTTOM_INSET = 6
 local EDIT_CHIPS_HEIGHT = 18
 local EDIT_CHIPS_GAP = 4
-local EDIT_CHIPS_SCROLL_STEP = 80
-local EDIT_CHIPS_SCROLL_BUTTON_WIDTH = 18
+local EDIT_CHIPS_MORE_GAP = 8
+local UpdatePanelWorkspaceChips
 local EDIT_ACTION_FIELD_LEFT_NUDGE = -1
 local SETTINGS_FINDER_WIDTH_FRACTION = 0.38
 local SETTINGS_FINDER_MIN_WIDTH = 220
@@ -904,106 +904,106 @@ local function GetActiveEditingActionRow(col3)
     return nil
 end
 
-local function LayoutWideEditingChips(frame)
-    if not (frame and frame:IsShown()) then return end
-    local label = frame._cdcPrefix
-    local clip = frame._cdcClip
-    local content = frame._cdcContent
-    local previous = frame._cdcPrevious
-    local next = frame._cdcNext
-    local buttons = frame._cdcButtons or {}
-    label:ClearAllPoints()
-    label:SetPoint("LEFT", frame, "LEFT", 0, 0)
-
-    local contentWidth = 0
-    local selectedLeft
-    local selectedRight
-    for _, button in ipairs(buttons) do
-        if button:IsShown() then
-            button:ClearAllPoints()
-            button:SetPoint("LEFT", content, "LEFT", contentWidth, 0)
-            if button._cdcSelected then
-                selectedLeft = contentWidth
-                selectedRight = contentWidth + button:GetWidth()
-            end
-            contentWidth = contentWidth + button:GetWidth()
-        end
-    end
-
-    local labelWidth = math.ceil(label:GetStringWidth())
-    local unscrolledWidth = math.max(0, frame:GetWidth() - labelWidth)
-    local hasOverflow = contentWidth > unscrolledWidth
-    previous:SetShown(hasOverflow)
-    next:SetShown(hasOverflow)
-
-    clip:ClearAllPoints()
-    if hasOverflow then
-        previous:ClearAllPoints()
-        previous:SetPoint("LEFT", label, "RIGHT", 0, 0)
-        next:ClearAllPoints()
-        next:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
-        clip:SetPoint("LEFT", previous, "RIGHT", 0, 0)
-        clip:SetPoint("RIGHT", next, "LEFT", 0, 0)
+local function RefreshEditingChipColor(button)
+    if button._cdcHovered then
+        button.text:SetTextColor(1, 0.82, 0)
+    elseif button._cdcSelected then
+        button.text:SetTextColor(1, 1, 1)
     else
-        clip:SetPoint("LEFT", label, "RIGHT", 0, 0)
-        clip:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        button.text:SetTextColor(0.70, 0.68, 0.64)
     end
-
-    local visibleWidth = math.max(0, unscrolledWidth
-        - (hasOverflow and (EDIT_CHIPS_SCROLL_BUTTON_WIDTH * 2) or 0))
-    local maxOffset = math.max(0, contentWidth - visibleWidth)
-    local offset = math.max(0, math.min(frame._cdcScrollOffset or 0, maxOffset))
-    if frame._cdcEnsureSelectedVisible then
-        if selectedLeft and selectedLeft < offset then
-            offset = selectedLeft
-        elseif selectedRight and selectedRight > offset + visibleWidth then
-            offset = selectedRight - visibleWidth
-        end
-        frame._cdcEnsureSelectedVisible = nil
-    end
-    frame._cdcScrollOffset = math.max(0, math.min(offset, maxOffset))
-
-    content:ClearAllPoints()
-    content:SetPoint("LEFT", clip, "LEFT", -frame._cdcScrollOffset, 0)
-    content:SetSize(math.max(1, contentWidth), EDIT_CHIPS_HEIGHT)
-    previous:SetEnabled(frame._cdcScrollOffset > 0)
-    next:SetEnabled(frame._cdcScrollOffset < maxOffset)
-    previous._cdcRefreshArrow()
-    next._cdcRefreshArrow()
 end
 
-local function CreateEditingChipScrollButton(parent, rotation)
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(EDIT_CHIPS_SCROLL_BUTTON_WIDTH, EDIT_CHIPS_HEIGHT)
-    local arrow = button:CreateTexture(nil, "ARTWORK")
-    arrow:SetSize(12, 12)
-    arrow:SetPoint("CENTER")
-    arrow:SetAtlas("uitools-icon-chevron-down", false)
-    arrow:SetRotation(rotation)
+local function CloseEditingChipMenu(frame)
+    if frame._cdcMenuOpen then CloseDropDownMenus() end
+end
 
-    local hovered = false
-    local function RefreshArrow()
-        if not button:IsEnabled() then
-            arrow:SetVertexColor(0.70, 0.68, 0.64, 0.25)
-        elseif hovered then
-            arrow:SetVertexColor(1, 0.82, 0, 1)
-        else
-            arrow:SetVertexColor(0.70, 0.68, 0.64, 0.85)
+local function LayoutWideEditingChips(frame)
+    if not (frame and frame:IsShown()) then return end
+    local label, more = frame._cdcPrefix, frame._cdcMore
+    local items, buttons = frame._cdcItems or {}, frame._cdcButtons
+    local labelWidth = math.ceil(label:GetStringWidth())
+    local available = math.max(0, frame:GetWidth() - labelWidth)
+    local total = 0
+    for index = 1, #items do total = total + buttons[index]:GetWidth() end
+    local overflow = total > available
+    if overflow then available = math.max(0, available - more:GetWidth() - EDIT_CHIPS_MORE_GAP) end
+
+    local inlineCount, width = 0, 0
+    for index = 1, #items do
+        local buttonWidth = buttons[index]:GetWidth()
+        if width + buttonWidth > available then break end
+        inlineCount, width = index, width + buttonWidth
+    end
+    if frame._cdcInlineCount ~= inlineCount then
+        CloseEditingChipMenu(frame)
+        frame._cdcRevision = (frame._cdcRevision or 0) + 1
+    end
+    frame._cdcInlineCount = inlineCount
+    local offset = labelWidth
+    more._cdcSelected = false
+    for index, button in ipairs(buttons) do
+        button:SetShown(index <= inlineCount)
+        if index <= inlineCount then
+            button:ClearAllPoints()
+            button:SetPoint("LEFT", frame, "LEFT", offset, 0)
+            offset = offset + button:GetWidth()
+        elseif items[index] and items[index].selected then
+            more._cdcSelected = true
         end
     end
-    button._cdcRefreshArrow = RefreshArrow
-    button:SetScript("OnEnter", function()
-        hovered = true
-        RefreshArrow()
-    end)
-    local function ClearHover()
-        hovered = false
-        RefreshArrow()
+    more:SetShown(overflow)
+    RefreshEditingChipColor(more)
+end
+
+local function OpenEditingChipMenu(frame)
+    if frame._cdcMenuOpen then
+        CloseEditingChipMenu(frame)
+        return
     end
-    button:SetScript("OnLeave", ClearHover)
-    button:SetScript("OnHide", ClearHover)
-    RefreshArrow()
-    return button
+    -- Match the config gear: an outside mouse-down may already have closed
+    -- this menu during the same click. Do not immediately reopen it.
+    if frame._cdcMenuClosedAt == GetTime() then return end
+    local items = frame._cdcItems or {}
+    local first = (frame._cdcInlineCount or 0) + 1
+    if first > #items then return end
+    local menu = frame._cdcMenu
+    if not menu then
+        menu = CreateFrame("Frame", "CDCEditingSelectDropdown", UIParent, "UIDropDownMenuTemplate")
+        menu.point, menu.relativePoint = "TOPRIGHT", "BOTTOMRIGHT"
+        menu.xOffset, menu.yOffset = 0, -2
+        menu.listFrameStrata = "FULLSCREEN_DIALOG"
+        menu.onHide = function()
+            frame._cdcMenuOpen = nil
+            frame._cdcMenuClosedAt = GetTime()
+        end
+        frame._cdcMenu = menu
+    end
+    local revision = frame._cdcRevision
+    UIDropDownMenu_Initialize(menu, function(_, level)
+        for index = first, #items do
+            local itemIndex = index
+            local item = frame._cdcItems[itemIndex]
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = item.label
+            info.checked = item.selected == true
+            info.registerForRightClick = item.onRightClick ~= nil
+            info.tooltipTitle = item.tooltip
+            info.func = function(_, _, _, _, mouseButton)
+                if not frame:IsVisible() or frame._cdcRevision ~= revision then return end
+                local current = frame._cdcItems[itemIndex]
+                if not current then return end
+                CloseDropDownMenus()
+                if mouseButton == "RightButton" and current.onRightClick then
+                    current.onRightClick()
+                elseif mouseButton == "LeftButton" and current.onClick then
+                    current.onClick()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end, "MENU")
+    frame._cdcMenuOpen = ToggleDropDownMenu(1, nil, menu, frame._cdcMore, 0, 0) and true or nil
 end
 
 local function SetWideEditingChips(col3, prefix, items)
@@ -1014,80 +1014,120 @@ local function SetWideEditingChips(col3, prefix, items)
         frame:SetHeight(EDIT_CHIPS_HEIGHT)
         frame._cdcPrefix = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         frame._cdcPrefix:SetJustifyH("LEFT")
-        frame._cdcClip = CreateFrame("Frame", nil, frame)
-        frame._cdcClip:SetHeight(EDIT_CHIPS_HEIGHT)
-        frame._cdcClip:SetClipsChildren(true)
-        frame._cdcContent = CreateFrame("Frame", nil, frame._cdcClip)
-        frame._cdcContent:SetHeight(EDIT_CHIPS_HEIGHT)
-        frame._cdcPrevious = CreateEditingChipScrollButton(frame, -math.pi / 2)
-        frame._cdcPrevious:SetScript("OnClick", function()
-            frame._cdcScrollOffset = math.max(0,
-                (frame._cdcScrollOffset or 0) - EDIT_CHIPS_SCROLL_STEP)
-            LayoutWideEditingChips(frame)
+        frame._cdcPrefix:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        local more = CreateFrame("Button", nil, frame)
+        more.text = more:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        more.text:SetPoint("LEFT")
+        more.text:SetText("More")
+        more:SetSize(math.ceil(more.text:GetStringWidth()) + 16, EDIT_CHIPS_HEIGHT)
+        more:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        local arrow = more:CreateTexture(nil, "ARTWORK")
+        arrow:SetSize(12, 12)
+        arrow:SetPoint("RIGHT")
+        arrow:SetAtlas("uitools-icon-chevron-down", false)
+        arrow:SetVertexColor(0.70, 0.68, 0.64)
+        more:RegisterForClicks("LeftButtonDown")
+        more:SetScript("OnClick", function() OpenEditingChipMenu(frame) end)
+        more:SetScript("OnEnter", function(self)
+            self._cdcHovered = true
+            RefreshEditingChipColor(self)
         end)
-        frame._cdcNext = CreateEditingChipScrollButton(frame, math.pi / 2)
-        frame._cdcNext:SetScript("OnClick", function()
-            frame._cdcScrollOffset = (frame._cdcScrollOffset or 0) + EDIT_CHIPS_SCROLL_STEP
-            LayoutWideEditingChips(frame)
-        end)
+        local function ClearMoreHover(self)
+            self._cdcHovered = nil
+            RefreshEditingChipColor(self)
+        end
+        more:SetScript("OnLeave", ClearMoreHover)
+        more:SetScript("OnHide", ClearMoreHover)
+        frame._cdcMore = more
         frame._cdcButtons = {}
         frame:SetScript("OnSizeChanged", LayoutWideEditingChips)
+        frame:SetScript("OnHide", function(self)
+            CloseEditingChipMenu(self)
+            self._cdcRevision = (self._cdcRevision or 0) + 1
+        end)
         col3._cdcEditingChips = frame
     end
+    local wasShown = frame:IsShown()
 
-    if not items or #items == 0 then
-        frame:Hide()
-        return
+    -- Keep callbacks current without disturbing an open menu on a repaint
+    -- whose destinations and selection have not changed.
+    local old = frame._cdcItems or {}
+    items = items or {}
+    local workspace = CS.barsEntrySelected and CS.barWorkspaceKind or nil
+    local changed = frame._cdcProfile ~= CooldownCompanion.db.profile
+        or frame._cdcPanel ~= CS.selectedGroup or frame._cdcWorkspace ~= workspace
+        or frame._cdcLabel ~= prefix or #old ~= #items
+    for index, item in ipairs(items) do
+        local previous = old[index]
+        if not previous or previous.key ~= item.key or previous.label ~= item.label
+            or previous.selected ~= item.selected or previous.tooltip ~= item.tooltip then
+            changed = true
+        end
     end
+    frame._cdcItems = items
+    frame._cdcProfile, frame._cdcPanel = CooldownCompanion.db.profile, CS.selectedGroup
+    frame._cdcWorkspace, frame._cdcLabel = workspace, prefix
+    if changed then
+        CloseEditingChipMenu(frame)
+        frame._cdcRevision = (frame._cdcRevision or 0) + 1
+    end
+    if #items == 0 then
+        frame:Hide()
+        return wasShown
+    end
+    if not changed and frame:IsShown() then return end
 
     frame._cdcPrefix:SetText((prefix or "Not currently shown:") .. " ")
     for index, item in ipairs(items) do
-        local captured = item
         local button = frame._cdcButtons[index]
         if not button then
-            button = CreateFrame("Button", nil, frame._cdcContent)
+            local itemIndex = index
+            button = CreateFrame("Button", nil, frame)
             button:RegisterForClicks("AnyUp")
             button.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            button.text:SetAllPoints()
+            button.text:SetPoint("LEFT")
             button.text:SetJustifyH("LEFT")
+            button.text:SetWordWrap(false)
             button:SetScript("OnEnter", function(self)
-                self.text:SetTextColor(1, 0.82, 0)
+                self._cdcHovered = true
+                RefreshEditingChipColor(self)
                 if self._cdcTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetText(self._cdcTooltip, 1, 1, 1)
                     GameTooltip:Show()
                 end
             end)
-            button:SetScript("OnLeave", function(self)
-                local color = self._cdcSelected and self._cdcSelectedColor or self._cdcNormalColor
-                self.text:SetTextColor(color[1], color[2], color[3])
-                GameTooltip:Hide()
+            local function ClearHover(self)
+                self._cdcHovered = nil
+                RefreshEditingChipColor(self)
+                if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+            end
+            button:SetScript("OnLeave", ClearHover)
+            button:SetScript("OnHide", ClearHover)
+            button:SetScript("OnClick", function(_, mouseButton)
+                local current = frame._cdcItems[itemIndex]
+                if not current or not frame:IsVisible() then return end
+                CloseEditingChipMenu(frame)
+                if mouseButton == "RightButton" and current.onRightClick then
+                    current.onRightClick()
+                elseif mouseButton == "LeftButton" and current.onClick then
+                    current.onClick()
+                end
             end)
             frame._cdcButtons[index] = button
         end
         button.text:SetText((index > 1 and "  \194\183  " or "") .. tostring(item.label or ""))
         button:SetSize(math.ceil(button.text:GetStringWidth()) + 2, EDIT_CHIPS_HEIGHT)
         button._cdcSelected = item.selected == true
-        button._cdcNormalColor = { 0.70, 0.68, 0.64 }
-        button._cdcSelectedColor = { 1, 1, 1 }
         button._cdcTooltip = item.tooltip
-        local color = button._cdcSelected and button._cdcSelectedColor or button._cdcNormalColor
-        button.text:SetTextColor(color[1], color[2], color[3])
-        button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" and captured.onRightClick then
-                captured.onRightClick()
-            elseif mouseButton == "LeftButton" and captured.onClick then
-                captured.onClick()
-            end
-        end)
-        button:Show()
+        RefreshEditingChipColor(button)
     end
     for index = #items + 1, #frame._cdcButtons do
         frame._cdcButtons[index]:Hide()
     end
     frame:Show()
-    frame._cdcEnsureSelectedVisible = true
     LayoutWideEditingChips(frame)
+    return not wasShown
 end
 
 local function ClearWideEditingExtras(col3, preserveFinderState)
@@ -1136,10 +1176,8 @@ end
 local function GetEditingHeaderPath()
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     if CS.barsEntrySelected and CS.castFramesSelectedItem then
-        if CS.castFramesSelectedItem == "player" then
-            return "Unit Frame Anchoring", "Player Frame"
-        elseif CS.castFramesSelectedItem == "target" then
-            return "Unit Frame Anchoring", "Target Frame"
+        if CS.castFramesSelectedItem == "player" or CS.castFramesSelectedItem == "target" then
+            return nil, "Unit Frames"
         end
         return nil, "Cast Bar"
     end
@@ -1756,6 +1794,7 @@ end
 -- editing header and add box; they fill the whole column when no preview
 -- is active.
 local function AnchorButtonsContentFrame(col3, frame)
+    col3._cdcEditingContentFrame = frame
     frame:ClearAllPoints()
     local actionRow = UpdateEditingActionRow(col3)
     local previewHost = col3._cdcActiveWideHost
@@ -2206,6 +2245,7 @@ local function UpdatePanelPreview(col3, selectionOnly)
             elseif ST._BuildButtonPanelPreview then
                 ST._BuildButtonPanelPreview(hostFrame, activePanelId)
             end
+            UpdatePanelWorkspaceChips(col3)
             return
         end
 
@@ -2526,21 +2566,23 @@ end
 -- Extend the Editing path with a selected entry or attached bar. The entry
 -- icon, tracking kind, and status badges all share that header line instead
 -- of consuming a separate identity row below the add box.
-local function UpdatePanelWorkspaceChips(col3)
+UpdatePanelWorkspaceChips = function(col3)
     if ST._GetPanelWorkspaceChips then
-        local chips = ST._GetPanelWorkspaceChips()
+        local rendered = ST._GetLayoutPreviewRenderedSelectionKeys
+            and ST._GetLayoutPreviewRenderedSelectionKeys(col3.buttonsPreviewHost) or {}
+        local chips = ST._GetPanelWorkspaceChips(rendered)
         local _, resourcePanel = ST._GetBarWorkspacePlacement("resources")
         if resourcePanel and resourcePanel == CS.selectedGroup and ST._CollectBarsOffCanvasChips then
-            -- Include inactive resources/custom bars; visible slots can be
-            -- clicked in the preview, while these chips remain a fallback.
-            local host = col3.buttonsPreviewHost
-            local rendered = ST._GetLayoutPreviewRenderedSelectionKeys
-                and ST._GetLayoutPreviewRenderedSelectionKeys(host) or {}
+            -- Disabled and unavailable resources retain their fallback route.
             for _, item in ipairs(ST._CollectBarsOffCanvasChips(rendered or {})) do
                 chips[#chips + 1] = item
             end
         end
-        SetWideEditingChips(col3, "Select:", chips)
+        local visibilityChanged = SetWideEditingChips(col3, "Select:", chips)
+        local content = col3._cdcEditingContentFrame
+        if visibilityChanged and content and content:IsVisible() then
+            AnchorButtonsContentFrame(col3, content)
+        end
     end
 end
 
@@ -2560,10 +2602,8 @@ local function UpdateEditingContext(col3)
                 kindText = "Resource"
             elseif CS.unifiedBarKind == "stack" then
                 name = "Resources"
-            elseif CS.unifiedBarKind == "player" then
-                name = "Player Frame"
-            elseif CS.unifiedBarKind == "target" then
-                name = "Target Frame"
+            elseif CS.unifiedBarKind == "player" or CS.unifiedBarKind == "target" then
+                name = "Unit Frames"
             elseif CS.unifiedBarKind == "cast" then
                 name = "Cast Bar"
             end
@@ -2828,7 +2868,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
             ST._ShowResourceWorkspaceSurfaces(col3)
             return
         elseif unifiedBarKind == "player" or unifiedBarKind == "target" then
-            ST._ShowUnitFrameSettingsSurface(col3, unifiedBarKind)
+            ST._ShowUnitFrameSettingsSurface(col3)
             return
         elseif unifiedBarKind == "cast" then
             ST._ShowCastBarSettingsSurface(col3)
