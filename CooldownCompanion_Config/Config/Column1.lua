@@ -3243,7 +3243,7 @@ local function RefreshColumn1(preserveDrag)
         for _, item in ipairs({
             { kind = "resources", label = "Resource Bars", atlas = "ui_adv_health" },
             { kind = "castbar", label = "Cast Bar", atlas = "ui_adv_health" },
-            { kind = "player", label = "Unit Frame Anchoring", atlas = "ui_adv_health" },
+            { kind = "player", label = "Unit Frames", atlas = "ui_adv_health" },
         }) do
             local placement, anchorId = ST._GetBarWorkspacePlacement(item.kind)
             -- The shared unit-frame entry must remain reachable when only

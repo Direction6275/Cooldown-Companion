@@ -3593,18 +3593,24 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
     return lanes
 end
 
--- The selection keys the canvas drew on its most recent build for `host`.
--- Read by the bars workspace as it builds the "Not currently shown:" chip
--- strip below the editing divider, so the strip and the canvas can never
--- disagree about which objects are on screen. Call it AFTER the build.
+-- Select links fill gaps in the interactive preview, including the ordinary
+-- panel's attached-module composition. Hidden or read-only copies cannot
+-- replace a link. Call this after the active preview has finished building.
 function ST._GetLayoutPreviewRenderedSelectionKeys(host)
+    local function PanelKeys(panel)
+        if not (panel and panel.root and panel.root:IsVisible()) or panel.readOnly then return end
+        local modules = panel.modulePreview
+        return modules and modules.root:IsVisible() and modules.renderedSelectionKeys or nil
+    end
+    local panel = host and host._cdcPanelPreview
+    if panel and panel.root and panel.root:IsVisible() then
+        return PanelKeys(panel)
+    end
     local preview = host and host._cdcLayoutPreview
-    if not (preview and preview.root and preview.root:IsShown()) then return end
+    if not (preview and preview.root and preview.root:IsVisible()) then return end
     local inner = preview.panelHost
-    if inner and inner:IsShown() then
-        local panel = inner._cdcPanelPreview
-        local modules = panel and panel.modulePreview
-        return modules and modules.root:IsShown() and modules.renderedSelectionKeys or nil
+    if inner and inner:IsVisible() then
+        return PanelKeys(inner._cdcPanelPreview)
     end
     return preview.renderedSelectionKeys
 end

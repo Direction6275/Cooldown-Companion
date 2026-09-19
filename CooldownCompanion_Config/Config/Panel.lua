@@ -444,10 +444,8 @@ local function GetColumn3HeaderMode(selection)
         return "bar_intro"
     end
     if CS.barsEntrySelected and CS.castFramesSelectedItem then
-        if CS.castFramesSelectedItem == "player" then
-            return "player_frame"
-        elseif CS.castFramesSelectedItem == "target" then
-            return "target_frame"
+        if CS.castFramesSelectedItem == "player" or CS.castFramesSelectedItem == "target" then
+            return "unit_frames"
         end
         return "cast_bar"
     end
@@ -510,10 +508,8 @@ local function GetColumn3HeaderTitle(selection)
         return GetResourceSettingsColumnTitle()
     elseif mode == "cast_bar" then
         return "Cast Bar"
-    elseif mode == "player_frame" then
-        return "Player Frame"
-    elseif mode == "target_frame" then
-        return "Target Frame"
+    elseif mode == "unit_frames" then
+        return "Unit Frames"
     elseif mode == "group_actions" then
         return "Group Actions"
     elseif mode == "panel_actions" then

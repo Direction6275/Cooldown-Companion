@@ -53,6 +53,7 @@ local UNIT_FRAME_ORDER = { "", "blizzard", "uuf", "elvui", "ellesmere", "msuf", 
 ------------------------------------------------------------------------
 
 local FRAME_ANCHORING_FINDER = { player = {}, target = {} }
+local FRAME_SCOPES = { "playerFrame", "targetFrame" }
 
 local function FrameAnchoringFinderEnabled()
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
@@ -72,7 +73,7 @@ end
 if ST._DefineSettingRoute then
     local playerAnchoring = ST._DefineSettingRoute({
         idPrefix = "playerFrame.settings.anchoring",
-        scope = "playerFrame",
+        scope = FRAME_SCOPES,
         tab = "settings",
         tabLabel = "Settings",
         section = "anchoring",
@@ -82,12 +83,16 @@ if ST._DefineSettingRoute then
     })
     FRAME_ANCHORING_FINDER.player.anchoring = playerAnchoring:Settings({
         enabled = { label = "Enable Unit Frame Anchoring" },
-        mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled },
-        panel = { label = "Anchor Panel", applies = function()
+        mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled,
+            section = "player", sectionLabel = "Player Frame", collapseKeys = { "unitframe_player_position" } },
+        panel = { label = "Anchor Panel",
+            section = "player", sectionLabel = "Player Frame", collapseKeys = { "unitframe_player_position" }, applies = function()
             return FrameAnchoringFinderEnabled() and CooldownCompanion:GetModuleAttachment("player").mode == "panel"
         end },
         unitFrames = { label = "Unit Frames", applies = FrameAnchoringFinderEnabled },
-        mirrorTarget = { label = "Mirror target position", applies = FrameAnchoringFinderEnabled },
+        mirrorTarget = { label = "Mirror player position", aliases = { "Mirror target position" },
+            section = "target", sectionLabel = "Target Frame", collapseKeys = { "unitframe_target_position" },
+            applies = FrameAnchoringFinderEnabled },
         inheritAlpha = { label = "Inherit group alpha", applies = FrameAnchoringFinderEnabled },
         playerFrameName = { label = "Player Frame Name", aliases = { "custom player frame" }, applies = PlayerFrameFinderCustom },
         targetFrameName = { label = "Target Frame Name", aliases = { "custom target frame" }, applies = PlayerFrameFinderCustom },
@@ -95,11 +100,11 @@ if ST._DefineSettingRoute then
 
     FRAME_ANCHORING_FINDER.player.position = ST._DefineSettingRoute({
         idPrefix = "playerFrame.settings.position",
-        scope = "playerFrame",
+        scope = FRAME_SCOPES,
         tab = "settings",
         tabLabel = "Settings",
         section = "position",
-        sectionLabel = "Player Frame Position",
+        sectionLabel = "Player Frame",
         collapseKeys = { "unitframe_player_position" },
         rowScope = "detail",
         applies = FrameAnchoringFinderEnabled,
@@ -112,15 +117,14 @@ if ST._DefineSettingRoute then
 
     FRAME_ANCHORING_FINDER.target.anchoring = ST._DefineSettingRoute({
         idPrefix = "targetFrame.settings.anchoring",
-        scope = "targetFrame",
+        scope = FRAME_SCOPES,
         tab = "settings",
         tabLabel = "Settings",
         section = "anchoring",
-        sectionLabel = "Unit Frame Anchoring",
-        collapseKeys = { "unitframe_target_anchoring" },
+        sectionLabel = "Target Frame",
+        collapseKeys = { "unitframe_target_position" },
         rowScope = "detail",
     }):Settings({
-        enabled = { label = "Enable Unit Frame Anchoring" },
         mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled },
         panel = { label = "Anchor Panel", applies = function()
             return FrameAnchoringFinderEnabled() and CooldownCompanion:GetModuleAttachment("target").mode == "panel"
@@ -129,11 +133,11 @@ if ST._DefineSettingRoute then
 
     FRAME_ANCHORING_FINDER.target.position = ST._DefineSettingRoute({
         idPrefix = "targetFrame.settings.position",
-        scope = "targetFrame",
+        scope = FRAME_SCOPES,
         tab = "settings",
         tabLabel = "Settings",
         section = "position",
-        sectionLabel = "Target Frame Position",
+        sectionLabel = "Target Frame",
         collapseKeys = { "unitframe_target_position" },
         rowScope = "detail",
         applies = TargetFrameFinderPositioned,
@@ -270,8 +274,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
     })
 end
 
-local function BuildFrameAnchoringPlayerPanel(container)
-    local db = CooldownCompanion.db.profile
+local function BuildFrameAnchoringPanel(container)
     local settings = CooldownCompanion:GetFrameAnchoringSettings()
 
     -- ================================================================
@@ -287,9 +290,8 @@ local function BuildFrameAnchoringPlayerPanel(container)
         "unitframe_player_anchoring", nil, nil, ROW_SECTION)
 
     if not anchoringCollapsed then
-        -- LEFT column: the switch and which unit frames it drives. RIGHT
-        -- column: what the target frame and the anchored group take from
-        -- elsewhere. The right side is empty until the module is on.
+        -- LEFT column: the switch and unit-frame provider. RIGHT column:
+        -- shared alpha behavior, available once the module is on.
         local generalLeft, generalRight = BeginRowGrid(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
@@ -310,7 +312,6 @@ local function BuildFrameAnchoringPlayerPanel(container)
         end)
 
         if settings.enabled then
-            ST._BuildModuleAnchoringControls(generalLeft, "player", FRAME_ANCHORING_FINDER.player.anchoring)
             -- Unit-frame addon names run past the control column, so the menu
             -- is widened - a 140px control would otherwise open a 140px menu.
             AddDropdownRow(generalLeft, {
@@ -324,18 +325,6 @@ local function BuildFrameAnchoringPlayerPanel(container)
                 onChange = function(val)
                     settings.unitFrameAddon = val ~= "" and val or nil
                     CooldownCompanion:EvaluateFrameAnchoring()
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-
-            AddCheckboxRow(generalRight, {
-                label = "Mirror target position",
-                setting = FRAME_ANCHORING_FINDER.player.anchoring
-                    and FRAME_ANCHORING_FINDER.player.anchoring.mirrorTarget,
-                value = settings.mirroring,
-                onChange = function(val)
-                    settings.mirroring = val
-                    CooldownCompanion:ApplyFrameAnchoring()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -369,12 +358,14 @@ local function BuildFrameAnchoringPlayerPanel(container)
     if not settings.enabled then return end
 
     -- ================================================================
-    -- Player Frame Position
+    -- Player Frame
     -- ================================================================
-    local _, positionCollapsed = BuildCollapsibleSection(container, "Player Frame Position",
+    local _, positionCollapsed = BuildCollapsibleSection(container, "Player Frame",
         "unitframe_player_position", nil, nil, ROW_SECTION)
 
     if not positionCollapsed then
+        local anchorLeft = BeginRowGrid(container)
+        ST._BuildModuleAnchoringControls(anchorLeft, "player", FRAME_ANCHORING_FINDER.player.anchoring)
         -- LEFT column: the two points that have to be read together (mine,
         -- then the frame's). RIGHT column: the offset applied on top of them.
         local posLeft, posRight = BeginRowGrid(container)
@@ -383,43 +374,27 @@ local function BuildFrameAnchoringPlayerPanel(container)
             CooldownCompanion:RefreshConfigPanel()
         end, FRAME_ANCHORING_FINDER.player.position)
     end
-end
 
-local function BuildFrameAnchoringTargetPanel(container)
-    local settings = CooldownCompanion:GetFrameAnchoringSettings()
+    -- Target keeps its own anchor even when its position mirrors Player.
+    local _, targetCollapsed = BuildCollapsibleSection(container, "Target Frame",
+        "unitframe_target_position", nil, nil, ROW_SECTION)
+    if targetCollapsed then return end
 
-    -- The module switch, as on the Player Frame panel: either frame can be
-    -- selected on its own in the workspace, so each one has to be able to
-    -- turn frame anchoring on rather than pointing at the other.
-    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Unit Frame Anchoring",
-        "unitframe_target_anchoring", nil, nil, ROW_SECTION)
-
-    if not anchoringCollapsed then
-        -- One switch with nothing to pair it against, so the left column
-        -- carries it alone.
-        local generalLeft = BeginRowGrid(container)
-
-        AddCheckboxRow(generalLeft, {
-            label = "Enable Unit Frame Anchoring",
-            setting = FRAME_ANCHORING_FINDER.target.anchoring
-                and FRAME_ANCHORING_FINDER.target.anchoring.enabled,
-            value = settings.enabled,
-            onChange = function(val)
-                settings.enabled = val
-                CooldownCompanion:EvaluateFrameAnchoring()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-        if settings.enabled then
-            ST._BuildModuleAnchoringControls(generalLeft, "target", FRAME_ANCHORING_FINDER.target.anchoring)
-        end
-    end
-
-    if not settings.enabled then return end
+    local anchorLeft, anchorRight = BeginRowGrid(container)
+    ST._BuildModuleAnchoringControls(anchorLeft, "target", FRAME_ANCHORING_FINDER.target.anchoring)
+    AddCheckboxRow(anchorRight, {
+        label = "Mirror player position",
+        setting = FRAME_ANCHORING_FINDER.player.anchoring
+            and FRAME_ANCHORING_FINDER.player.anchoring.mirrorTarget,
+        value = settings.mirroring,
+        onChange = function(val)
+            settings.mirroring = val
+            CooldownCompanion:ApplyFrameAnchoring()
+            CooldownCompanion:RefreshConfigPanel()
+        end,
+    })
 
     if settings.mirroring then
-        -- Mirrored: there is no independent position to show, so the notice
-        -- takes the place of the position section rather than sitting in it.
         local infoLabel = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(infoLabel)
         infoLabel:SetText("Target position is mirrored from player settings around its selected panel.")
@@ -428,22 +403,10 @@ local function BuildFrameAnchoringTargetPanel(container)
         return
     end
 
-    -- ================================================================
-    -- Target Frame Position
-    -- ================================================================
-    local _, positionCollapsed = BuildCollapsibleSection(container, "Target Frame Position",
-        "unitframe_target_position", nil, nil, ROW_SECTION)
-
-    if not positionCollapsed then
-        -- Same split as the player panel: the two points on the left, the
-        -- offset applied on top of them on the right.
-        local posLeft, posRight = BeginRowGrid(container)
-        AddFramePositionRows(posLeft, posRight, settings.target, "LEFT", "RIGHT", function()
-            CooldownCompanion:ApplyFrameAnchoring()
-        end, FRAME_ANCHORING_FINDER.target.position)
-    end
+    local posLeft, posRight = BeginRowGrid(container)
+    AddFramePositionRows(posLeft, posRight, settings.target, "LEFT", "RIGHT", function()
+        CooldownCompanion:ApplyFrameAnchoring()
+    end, FRAME_ANCHORING_FINDER.target.position)
 end
 
--- Expose for ButtonSettings.lua and Config.lua
-ST._BuildFrameAnchoringPlayerPanel = BuildFrameAnchoringPlayerPanel
-ST._BuildFrameAnchoringTargetPanel = BuildFrameAnchoringTargetPanel
+ST._BuildFrameAnchoringPanel = BuildFrameAnchoringPanel
