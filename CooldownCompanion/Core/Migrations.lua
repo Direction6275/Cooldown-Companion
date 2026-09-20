@@ -3691,7 +3691,11 @@ function CooldownCompanion:RunAllMigrations()
     if self.RunResourceBarClassScopeMigration then
         self:RunResourceBarClassScopeMigration()
     end
-    if self.RunUnifiedPanelMigration and not self:RunUnifiedPanelMigration() then return false end
+    local unifiedOK = not self.RunUnifiedPanelMigration or self:RunUnifiedPanelMigration()
+    -- Unified conversion can replace Resources stores. Prepare their final
+    -- identities, including the legacy fallback when a conflict stays unresolved.
+    self:PrepareResourceBarSettings()
+    if not unifiedOK then return false end
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end
