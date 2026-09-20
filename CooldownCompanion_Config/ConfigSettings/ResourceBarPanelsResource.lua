@@ -2247,6 +2247,7 @@ local function GetResourceAuraOverlayEntry(settings, powerType, specID)
 end
 
 local function EnsureResourceAuraOverlayEntry(settings, powerType, specID)
+    specID = tonumber(specID)
     if not specID then return nil end
     if type(settings.resources[powerType]) ~= "table" then
         settings.resources[powerType] = {}
@@ -2263,7 +2264,12 @@ local function EnsureResourceAuraOverlayEntry(settings, powerType, specID)
         entries[specID] = type(legacy) == "table" and legacy or {}
         entries[tostring(specID)] = nil
     end
-    return entries[specID]
+    local entry = entries[specID]
+    if entry.auraUnit ~= "player" and entry.auraUnit ~= "target" then
+        entry.auraUnit = "player"
+        entry.auraUnitExplicit = nil
+    end
+    return entry
 end
 
 -- Mirrors IsResourceAuraOverlayEnabled (ResourceBarVisuals) for an
@@ -2438,7 +2444,8 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
                 if target then
                     target.auraColorSpellID = nil
-                    target.auraUnit = nil
+                    target.auraUnit = "player"
+                    target.auraUnitExplicit = nil
                 end
                 refresh()
             end)

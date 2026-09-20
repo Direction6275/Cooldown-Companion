@@ -470,7 +470,11 @@ function CooldownCompanion:CacheCurrentSpec()
     local specIndex = C_SpecializationInfo.GetSpecialization()
     if specIndex then
         local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+        local previousSpecId = self._currentSpecId
         self._currentSpecId = specId
+        if specId ~= previousSpecId then
+            self:CompleteResourceBarSpecMigration()
+        end
     end
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
 end

@@ -5,7 +5,6 @@ local CopyTable = CopyTable
 local pairs = pairs
 local next = next
 local rawget = rawget
-local setmetatable = setmetatable
 local tonumber = tonumber
 local type = type
 local sort = table.sort
@@ -21,7 +20,6 @@ local RESOURCE_BAR_SYSTEM_SPEC = {
 
 local RESOURCE_BAR_CLASS_STORE_KEY = "resourceBarsByClass"
 local RESOURCE_BAR_MIGRATION_KEY = "resourceBarMigration"
-local RESOURCE_BAR_NORMALIZED_CLASS_KEYS = setmetatable({}, { __mode = "k" })
 
 local function GetEnsureCustomAuraBarAuraUnit()
     local rb = ST and ST._RB
@@ -543,6 +541,7 @@ local function GetClassSpecInfo(classKey)
         local specIndex = C_SpecializationInfo.GetSpecialization()
         if specIndex then
             currentSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+            if not specIDs[currentSpecID] then currentSpecID = nil end
         end
     end
 
@@ -611,6 +610,8 @@ local function CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
             ClearSpecKeyedValue(resource.specOverrides, targetSpecID)
             if copiedSpecData then
                 resource.specOverrides[targetSpecID] = copiedSpecData
+                NormalizeThresholdEntriesOnTarget(resource, targetSpecID, copiedSpecData)
+                NormalizeTickEntriesOnTarget(resource, targetSpecID, copiedSpecData)
             end
 
             if not next(resource.specOverrides) then
@@ -667,7 +668,7 @@ local function ClearLegacyResourceAuraOverlayFields(resource)
     resource.auraUnitExplicit = nil
 end
 
-local function NormalizeResourceAuraOverlayEntriesForClass(settings, classKey)
+local function NormalizeResourceAuraOverlayEntriesForClass(settings, classKey, legacyOnly)
     if type(settings) ~= "table" or type(settings.resources) ~= "table" then
         return
     end
@@ -678,7 +679,7 @@ local function NormalizeResourceAuraOverlayEntriesForClass(settings, classKey)
     end
 
     for _, resource in pairs(settings.resources) do
-        if type(resource) == "table" then
+        if type(resource) == "table" and (not legacyOnly or HasLegacyResourceAuraOverlayData(resource)) then
             local explicitEnabled = nil
             if type(resource.auraOverlayEnabled) == "boolean" then
                 explicitEnabled = resource.auraOverlayEnabled
@@ -694,8 +695,15 @@ local function NormalizeResourceAuraOverlayEntriesForClass(settings, classKey)
                         if not filteredEntries then
                             filteredEntries = {}
                         end
-                        filteredEntries[numericSpecID] = CopyTable(entry)
-                        BackfillLegacyResourceAuraUnit(filteredEntries[numericSpecID])
+                        -- Activation can revisit a live record after an unrelated
+                        -- import. Keep valid entries bound to their open controls.
+                        local normalizedEntry = entry
+                        if key ~= numericSpecID
+                            or (entry.auraUnit ~= "player" and entry.auraUnit ~= "target") then
+                            normalizedEntry = CopyTable(entry)
+                            BackfillLegacyResourceAuraUnit(normalizedEntry)
+                        end
+                        filteredEntries[numericSpecID] = normalizedEntry
                     end
                 end
             end
@@ -994,89 +1002,11 @@ local function NormalizeResourceBarSettingsForClass(settings, classKey)
         if settings.keepSpecResourcesInAllForms == nil then
             settings.keepSpecResourcesInAllForms = false
         end
-        RESOURCE_BAR_NORMALIZED_CLASS_KEYS[settings] = NormalizeClassKey(classKey)
     end
 end
 
 -- Keep source attachment IDs intact during detached import conversion.
 ST._NormalizeResourceSettingsForPanelConversion = NormalizeResourceBarSettingsForClass
-
-local function NormalizeScopedBarSettings(systemKey, settings)
-    if systemKey == "resourceBars" then
-        NormalizeResourceBarSettingsForClass(settings, GetCurrentResourceBarClassKey(CooldownCompanion))
-    end
-end
-
-local function IsResourceAuraUnitNormalized(auraEntry)
-    if type(auraEntry) ~= "table" then
-        return false
-    end
-    return auraEntry.auraUnit == "player" or auraEntry.auraUnit == "target"
-end
-
-local function ResourceAuraOverlayNeedsNormalizationForClass(settings, classKey)
-    if type(settings) ~= "table" or type(settings.resources) ~= "table" then
-        return false
-    end
-    classKey = NormalizeClassKey(classKey)
-
-    -- Entries mutate in place, so validate them on every read. Resolve only
-    -- the allowed IDs here; current-spec discovery is for normalization.
-    local allowedSpecIDs = nil
-
-    for _, resource in pairs(settings.resources) do
-        if type(resource) == "table" then
-            if HasLegacyResourceAuraOverlayData(resource) then
-                return true
-            end
-
-            if type(resource.auraOverlayEntries) == "table" then
-                if not next(resource.auraOverlayEntries) then
-                    return true
-                end
-
-                if not allowedSpecIDs then
-                    allowedSpecIDs = GetClassSpecIDs(classKey)
-                end
-                if type(allowedSpecIDs) ~= "table" then
-                    return true
-                end
-
-                for specID, entry in pairs(resource.auraOverlayEntries) do
-                    local numericSpecID = tonumber(specID)
-                    if not numericSpecID
-                        or numericSpecID ~= specID
-                        or allowedSpecIDs[numericSpecID] ~= true
-                        or not IsResourceAuraUnitNormalized(entry) then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-
-    return false
-end
-
-local function ResourceAuraOverlayNeedsNormalization(settings)
-    return ResourceAuraOverlayNeedsNormalizationForClass(settings, GetCurrentResourceBarClassKey(CooldownCompanion))
-end
-
-local function ResourceBarSettingsNeedsNormalizationForClass(settings, classKey)
-    if type(settings) ~= "table" then
-        return false
-    end
-    classKey = NormalizeClassKey(classKey)
-    return RESOURCE_BAR_NORMALIZED_CLASS_KEYS[settings] ~= classKey
-        or ResourceAuraOverlayNeedsNormalizationForClass(settings, classKey)
-end
-
-local function NeedsScopedBarNormalization(systemKey, settings)
-    if systemKey == "resourceBars" then
-        return ResourceAuraOverlayNeedsNormalization(settings)
-    end
-    return false
-end
 
 local function SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
     if systemKey == "resourceBars" then
@@ -1678,9 +1608,10 @@ local function MergeResourceBarConflictCustomBars(targetSettings, classKey, conf
 end
 
 local function PromoteResourceBarClassSettings(classStore, classKey, settings)
-    classStore[classKey] = CopyTable(settings)
-    NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
-    SanitizeResourceBarAnchors(classStore[classKey], classKey)
+    local promoted = CopyTable(settings)
+    NormalizeResourceBarSettingsForClass(promoted, classKey)
+    SanitizeResourceBarAnchors(promoted, classKey)
+    classStore[classKey] = promoted
 end
 
 local function MigrateResourceBarClass(profile, classStore, state, classKey, candidates)
@@ -1814,19 +1745,13 @@ local function FormatResourceBarConflictExportMessage(summaries)
         .. ". Open Resource Bar settings on the affected class and choose the setup to keep."
 end
 
-local function GetFallbackResourceBarSettings(addon, classKey)
-    if type(addon._resourceBarConflictFallbackSettings) ~= "table" then
-        addon._resourceBarConflictFallbackSettings = {}
-    end
-    local settings = addon._resourceBarConflictFallbackSettings[classKey]
-    if type(settings) ~= "table" then
-        local profile = addon.db and addon.db.profile
-        local classStore = type(profile) == "table" and rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY) or nil
-        local classSettings = type(classStore) == "table" and classStore[classKey] or nil
-        settings = type(classSettings) == "table" and CopyTable(classSettings) or CopySubsystemDefaults("resourceBars")
-        NormalizeResourceBarSettingsForClass(settings, classKey)
-        addon._resourceBarConflictFallbackSettings[classKey] = settings
-    end
+local function PrepareFallbackResourceBarSettings(addon, classKey)
+    local profile = addon.db and addon.db.profile
+    local classStore = type(profile) == "table" and rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY) or nil
+    local classSettings = type(classStore) == "table" and classStore[classKey] or nil
+    local settings = type(classSettings) == "table" and CopyTable(classSettings) or CopySubsystemDefaults("resourceBars")
+    NormalizeResourceBarSettingsForClass(settings, classKey)
+    addon._resourceBarConflictFallbackSettings[classKey] = settings
     return settings
 end
 
@@ -1922,11 +1847,8 @@ function CooldownCompanion:GetCharacterScopedSettings(systemKey)
             and seenCharacters[charKey] == true
         settings = shouldUseLegacySeed and CopyTable(seed) or CopySubsystemDefaults(systemSpec.legacyKey)
         if systemKey == "castBar" and not shouldUseLegacySeed then settings._barGeometryVersion = 1 end
-        NormalizeScopedBarSettings(systemKey, settings)
         SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
         store[charKey] = settings
-    elseif NeedsScopedBarNormalization(systemKey, settings) then
-        NormalizeScopedBarSettings(systemKey, settings)
     end
 
     return settings
@@ -1969,10 +1891,16 @@ function CooldownCompanion:GetCurrentResourceBarClassKey()
     return GetCurrentResourceBarClassKey(self)
 end
 
-function CooldownCompanion:GetResourceBarSettings()
+-- Load/profile/import completion prepares the selected record before runtime or
+-- editor exposure. This is also the explicit creation boundary for new setups.
+function CooldownCompanion:PrepareResourceBarSettings()
     local profile = self.db and self.db.profile
     if type(profile) ~= "table" then
         return nil
+    end
+    if self._resourceBarSettingsProfile ~= profile then
+        self._resourceBarSettingsProfile = profile
+        self._resourceBarConflictFallbackSettings = {}
     end
 
     local classKey = GetCurrentResourceBarClassKey(self)
@@ -1986,12 +1914,10 @@ function CooldownCompanion:GetResourceBarSettings()
         local legacyStore = GetResourceBarLegacyStore(profile, false)
         local currentLegacy = type(legacyStore) == "table" and legacyStore[currentCharKey] or nil
         if type(currentLegacy) == "table" then
-            if ResourceBarSettingsNeedsNormalizationForClass(currentLegacy, classKey) then
-                NormalizeResourceBarSettingsForClass(currentLegacy, classKey)
-            end
+            NormalizeResourceBarSettingsForClass(currentLegacy, classKey)
             return currentLegacy
         end
-        return GetFallbackResourceBarSettings(self, classKey)
+        return PrepareFallbackResourceBarSettings(self, classKey)
     end
 
     local classStore = EnsureResourceBarClassStore(profile)
@@ -2001,11 +1927,46 @@ function CooldownCompanion:GetResourceBarSettings()
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
-    elseif ResourceBarSettingsNeedsNormalizationForClass(settings, classKey) then
+    else
         NormalizeResourceBarSettingsForClass(settings, classKey)
     end
 
     return settings
+end
+
+-- Settings writes own validity. Gameplay reads only select the existing record;
+-- they neither create setups nor traverse resource/overlay contents.
+function CooldownCompanion:GetResourceBarSettings()
+    local profile = self.db and self.db.profile
+    local classKey = GetCurrentResourceBarClassKey(self)
+    if type(profile) ~= "table" or not classKey then return nil end
+
+    if GetResourceBarConflict(profile, classKey) then
+        local charKey = self.db.keys and self.db.keys.char
+        local legacyStore = GetResourceBarLegacyStore(profile, false)
+        local currentLegacy = legacyStore and legacyStore[charKey]
+        if type(currentLegacy) == "table" then return currentLegacy end
+        if self._resourceBarSettingsProfile == profile then
+            local fallbacks = self._resourceBarConflictFallbackSettings
+            return fallbacks and fallbacks[classKey]
+        end
+        return nil
+    end
+
+    local store = rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY)
+    local settings = type(store) == "table" and store[classKey]
+    return type(settings) == "table" and settings or nil
+end
+
+-- Legacy unscoped aura data cannot be assigned until a real spec is selected.
+-- Retry at the existing spec transition, leaving all current entry objects alone.
+function CooldownCompanion:CompleteResourceBarSpecMigration()
+    -- CacheCurrentSpec also runs before initial migration. Do not touch raw or
+    -- unsupported profiles until the activation boundary has prepared them.
+    if self._resourceBarSettingsProfile ~= (self.db and self.db.profile)
+        or self._unsupportedLegacyProfile then return end
+    NormalizeResourceAuraOverlayEntriesForClass(self:GetResourceBarSettings(),
+        GetCurrentResourceBarClassKey(self), true)
 end
 
 -- True when the class has a saved Resources bucket that differs from defaults.
@@ -2028,7 +1989,7 @@ end
 -- Resolves (creating from defaults when missing) the Resources bucket for any
 -- class. Import paths only: reads that must not persist a bucket should go
 -- through the raw class store instead. The current class delegates to
--- GetResourceBarSettings so conflict-fallback semantics stay in one place.
+-- PrepareResourceBarSettings so conflict-fallback semantics stay in one place.
 function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
     local profile = self.db and self.db.profile
     classKey = NormalizeClassKey(classKey)
@@ -2037,7 +1998,7 @@ function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
     end
 
     if classKey == GetCurrentResourceBarClassKey(self) then
-        return self:GetResourceBarSettings()
+        return self:PrepareResourceBarSettings()
     end
 
     local classStore = EnsureResourceBarClassStore(profile)
@@ -2047,7 +2008,7 @@ function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
         NormalizeResourceBarSettingsForClass(settings, classKey)
         SanitizeResourceBarAnchors(settings, classKey)
         classStore[classKey] = settings
-    elseif ResourceBarSettingsNeedsNormalizationForClass(settings, classKey) then
+    else
         NormalizeResourceBarSettingsForClass(settings, classKey)
     end
     return settings
@@ -2167,11 +2128,13 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         if type(classStore[classKey]) ~= "table" then
             return false, "missing_candidate"
         end
-        NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
+        local selected = CopyTable(classStore[classKey])
+        NormalizeResourceBarSettingsForClass(selected, classKey)
         if classKey == GetCurrentResourceBarClassKey(self) then
-            SanitizeResourceBarAnchors(classStore[classKey], classKey)
+            SanitizeResourceBarAnchors(selected, classKey)
         end
-        MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, nil, nil)
+        MergeResourceBarConflictCustomBars(selected, classKey, conflict, legacyStore, nil, nil)
+        classStore[classKey] = selected
         RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
         local state = EnsureResourceBarMigrationState(profile)
         ClearResourceBarUnsafeLegacyKeys(state, conflict.candidateCharKeys)
@@ -2202,11 +2165,9 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
         and type(classStore[classKey]) == "table"
         and CopyTable(classStore[classKey])
         or nil
-    PromoteResourceBarClassSettings(classStore, classKey, source)
-    if classKey == GetCurrentResourceBarClassKey(self) then
-        SanitizeResourceBarAnchors(classStore[classKey], classKey)
-    end
-    MergeResourceBarConflictCustomBars(classStore[classKey], classKey, conflict, legacyStore, sourceCharKey, existingClassSettings)
+    local selected = CopyNormalizedResourceBarCandidate(source, classKey)
+    MergeResourceBarConflictCustomBars(selected, classKey, conflict, legacyStore, sourceCharKey, existingClassSettings)
+    classStore[classKey] = selected
 
     RemoveLegacyResourceBarCandidates(profile, conflict.candidateCharKeys)
     local state = EnsureResourceBarMigrationState(profile)
@@ -2295,7 +2256,6 @@ function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
     end
 
     local copied = CopyTable(source)
-    NormalizeScopedBarSettings(systemKey, copied)
     SanitizeCopiedOrSeededScopedBarSettings(systemKey, copied)
     store[currentChar] = copied
     return true
@@ -2328,7 +2288,6 @@ function CooldownCompanion:CopyResourceBarSpecSettings(sourceSpecID, targetSpecI
     CopySpecDisplayProfile(settings, sourceSpecID, targetSpecID)
     CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
 
-    NormalizeScopedBarSettings("resourceBars", settings)
     SanitizeCopiedOrSeededScopedBarSettings("resourceBars", settings)
 
     return true
