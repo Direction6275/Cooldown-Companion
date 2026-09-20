@@ -311,6 +311,9 @@ function ST.LayoutAttachedBars(groupId, frame, group, kind)
                 end
                 if restyle then
                     button:UpdateStyle(style)
+                    -- Fitting can follow the panel cooldown pass. Restore
+                    -- runtime visuals before choosing visibility and order.
+                    if not collapsing then button:UpdateCooldown() end
                 end
                 if collapsing then
                     Addon:StampAuraSectionEntryKey(group, entry)
@@ -358,10 +361,7 @@ function ST.GetPanelAttachmentTail(frame, side, region)
 end
 
 function ST.RefreshPanelAttachments(groupId)
-    local frame = Addon.groupFrames and Addon.groupFrames[groupId]
-    local group = Addon.db and Addon.db.profile.groups[groupId]
-    if frame and group then ST.LayoutAttachedBars(groupId, frame, group) end
-    if Addon.RepositionCastBar then Addon:RepositionCastBar() end
+    Addon:RefreshPanelAttachmentGeometry(groupId)
 end
 
 function ST.CollectAttachedBarAuraBlocks(wants)

@@ -479,7 +479,6 @@ local function BuildCastBarAnchoringPanel(container)
 
         CreateCharacterCopyButton(enableRow, "castBar", "Cast Bar", function()
             CooldownCompanion:EvaluateCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
         end)
 
@@ -541,8 +540,6 @@ local function BuildCastBarPositioningPanel(container)
             onRelease = function(val)
                 if layout then layout.yOffset = val end
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
             end,
         })
 

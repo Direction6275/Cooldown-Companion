@@ -657,6 +657,7 @@ end
 -- the profile. Spec and talent callers keep the escalation: they can flip
 -- which containers exist for the character.
 function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local needsFullRefresh = not (opts and opts.perGroupRebuild)
         and self:AnyGroupButtonSetNeedsRebuild()
     self:ResetSpellAvailabilityButtonRuntime()
@@ -673,9 +674,11 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
     -- D3: spec/talent/spell-availability churn can change override identity
     -- without repopulating buttons — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("availability")
+    self:EndPanelAttachmentRefresh(attachmentOperation, false, "spell-availability")
 end
 
 function CooldownCompanion:CreateAllGroupFrames()
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local previousCreatingAllGroupFrames = self._creatingAllGroupFrames
     self._creatingAllGroupFrames = true
     for groupId, _ in pairs(self.db.profile.groups) do
@@ -690,6 +693,7 @@ function CooldownCompanion:CreateAllGroupFrames()
         self:RefreshAlphaUpdateDriver()
     end
     self:RefreshCursorAnchorLayoutPreview()
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "create-all-panels")
 end
 
 function CooldownCompanion:FinalizePanelAnchors()
@@ -698,6 +702,7 @@ function CooldownCompanion:FinalizePanelAnchors()
         return
     end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     self:RefreshStableExternalAnchorCompactSuppression()
 
     -- This is the post-create/post-refresh owner for panel lifecycle order:
@@ -740,6 +745,7 @@ function CooldownCompanion:FinalizePanelAnchors()
     -- Every bulk frame pass ends here, so the stable external anchor
     -- re-points once per pass, after the marked panel's frame object settles.
     self:RefreshExternalAnchorFrame()
+    self:EndPanelAttachmentRefresh(attachmentOperation)
 end
 
 function CooldownCompanion:FinalizeNonPanelGroupAnchors()
@@ -762,13 +768,11 @@ function CooldownCompanion:FinalizeNonPanelGroupAnchors()
     end
 end
 
-function CooldownCompanion:RefreshAllGroups()
+function CooldownCompanion:RefreshAllGroups(reason)
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
     end
-
-    self:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
 
     -- Defer entire refresh during combat — protected frame operations
     -- (Show/Hide/SetSize/SetPoint/SetFrameStrata/RegisterForDrag/EnableMouse)
@@ -780,6 +784,8 @@ function CooldownCompanion:RefreshAllGroups()
         end
         return
     end
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
+    self:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
     -- Clean up stale container frames (e.g. after profile switch)
     if self.containerFrames then
         local containers = self.db.profile.groupContainers or {}
@@ -852,25 +858,23 @@ function CooldownCompanion:RefreshAllGroups()
     end
     self:RefreshCursorAnchorLayoutPreview()
     self:RefreshUnlockToolbar()
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, reason or "all-panels")
 end
 
 -- Refresh only frame-level visibility/load-state without rebuilding buttons.
 -- Used by zone/resting/pet-battle transitions to avoid compact-layout flash
 -- caused by full button repopulation.
-function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
-    -- nil until this pass reports: a hook must never read the previous pass.
-    self._lastVisibilityPassChanged = nil
+function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
     end
 
-    -- Whether this pass loaded, unloaded, repopulated or first-showed any
-    -- frame. The anchor/wrapper finalization at the end costs a resize and
-    -- re-anchor of every panel, and the resource bar hook re-applies the bars
-    -- after it; neither has anything to do when the pass changed nothing,
-    -- which is every shapeshift on a profile without form-gated entries.
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
+    -- Finalize anchors only when panel topology changed. Independent module
+    -- load-condition events explicitly request evaluation through opts.
     local changed = self:RefreshStableExternalAnchorCompactSuppression() == true
+    local completed = changed
 
     -- Fully unload frames for groups not in the current profile
     for groupId, _ in pairs(self.groupFrames) do
@@ -931,6 +935,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     else
                         -- Recover dormant frame with buttons intact (no repopulation needed)
                         frame = self:RecoverDormantFrame(groupId)
+                        completed = completed or frame ~= nil
                     end
                 end
                 if not frame then
@@ -973,6 +978,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
                     -- immediately so compact groups never show stale slots.
                     if not wasShown then
                         changed = true
+                        completed = completed or frame:IsShown()
                         if frame.UpdateCooldowns then
                             frame:UpdateCooldowns()
                         end
@@ -986,9 +992,6 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         end
     end
 
-    -- Read by the resource bar lifecycle hook on this method, which otherwise
-    -- re-applies every bar 0.1s after each pass.
-    self._lastVisibilityPassChanged = changed
     if changed then
         self:FinalizeContainerAnchorsToScreenOffsets()
         self:FinalizePanelAnchors()
@@ -1003,6 +1006,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly()
         self:RefreshAlphaUpdateDriver()
     end
     self:RefreshCursorAnchorLayoutPreview()
+    self:EndPanelAttachmentRefresh(attachmentOperation,
+        completed or (opts and opts.evaluateModules), opts and opts.reason or "panel-visibility")
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, clear runtime
@@ -1015,6 +1020,7 @@ end
 function CooldownCompanion:UnloadGroup(groupId)
     local frame = self.groupFrames[groupId]
     if not frame then return end
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     UnregisterKeyPressHighlightFrame(frame)
 
     -- Save and clear button OnUpdate scripts.
@@ -1068,6 +1074,7 @@ function CooldownCompanion:UnloadGroup(groupId)
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "unload-panel")
 end
 
 -- Recover a dormant frame: restore it to groupFrames and re-enable button
@@ -1225,12 +1232,17 @@ function CooldownCompanion:UpdateAllCooldowns()
 end
 
 function CooldownCompanion:UpdateAllGroupLayouts()
+    local attachmentOperation
     -- Combat state cannot change part-way through a synchronous pass, so the
     -- lockdown read is per pass, not per frame.
     local inCombat = InCombatLockdown()
     for groupId, frame in pairs(self.groupFrames) do
         if frame and frame:IsShown() then
             local protected = inCombat and frame:IsProtected()
+            if not attachmentOperation and (frame._sizeDirty or frame._layoutDirty
+                or (frame._strataDirty and not protected)) then
+                attachmentOperation = self:BeginPanelAttachmentRefresh()
+            end
             if frame._strataDirty and not protected then
                 self:RefreshGroupFrame(groupId)
             end
@@ -1260,6 +1272,9 @@ function CooldownCompanion:UpdateAllGroupLayouts()
                 end
             end
         end
+    end
+    if attachmentOperation then
+        self:EndPanelAttachmentRefresh(attachmentOperation)
     end
 end
 

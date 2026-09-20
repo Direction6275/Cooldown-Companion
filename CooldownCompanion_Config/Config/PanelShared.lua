@@ -369,10 +369,7 @@ end
 
 local function RefreshCDMPanelOrderRuntime()
     if CooldownCompanion.RefreshAllGroups then
-        CooldownCompanion:RefreshAllGroups()
-    end
-    if CooldownCompanion.EvaluateBarsAndFramesRuntime then
-        CooldownCompanion:EvaluateBarsAndFramesRuntime("cdm-panel-order")
+        CooldownCompanion:RefreshAllGroups("cdm-panel-order")
     end
 end
 

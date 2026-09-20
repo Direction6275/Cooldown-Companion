@@ -1104,6 +1104,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     end
 
     if applied then
+        local attachmentOperation = self:BeginPanelAttachmentRefresh()
         if self.RefreshAllGroups then
             self:RefreshAllGroups()
         end
@@ -1111,10 +1112,8 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         -- them from the migrated entries.
         if barsApplied and self.ApplyResourceBars then
             self:ApplyResourceBars()
-            if self.UpdateAnchorStacking then
-                self:UpdateAnchorStacking()
-            end
         end
+        self:EndPanelAttachmentRefresh(attachmentOperation)
     end
 
     if applied and not failed then

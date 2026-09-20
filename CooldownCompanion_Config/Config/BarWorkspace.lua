@@ -70,11 +70,7 @@ end
 
 local function SetAttachment(kind, value, panelId)
     if not Addon:SetModuleAttachment(kind, value, panelId) then return false end
-    Addon:RefreshStableExternalAnchorCompactSuppression()
-    Addon:EvaluateResourceBars()
-    Addon:EvaluateCastBar()
-    Addon:EvaluateFrameAnchoring()
-    Addon:UpdateAnchorStacking()
+    Addon:EvaluateBarsAndFramesRuntime("module-attachment")
     OpenWorkspace(kind)
     Addon:RefreshConfigPanel()
     return true

@@ -42,16 +42,12 @@ function CooldownCompanion:RefreshAllMedia()
         return
     end
 
-    self:RefreshAllGroups()
-    self:EvaluateBarsAndFramesRuntime("shared-media")
+    self:RefreshAllGroups("shared-media")
 end
 
 local function RefreshProfileWideVisuals(addon, reason, opts, refreshAuraTextures)
     if addon.RefreshAllGroups then
-        addon:RefreshAllGroups()
-    end
-    if addon.EvaluateBarsAndFramesRuntime then
-        addon:EvaluateBarsAndFramesRuntime(reason)
+        addon:RefreshAllGroups(reason)
     end
     if refreshAuraTextures ~= false and addon.RefreshAllAuraTextureVisuals then
         addon:RefreshAllAuraTextureVisuals()

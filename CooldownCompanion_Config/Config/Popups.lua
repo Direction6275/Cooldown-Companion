@@ -1930,7 +1930,6 @@ local function ApplySetupImportData(data, existingPanelIds)
     -- section does.
     if resourcesSection or customBarsApplied then
         CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
         CooldownCompanion:RefreshConfigPanel()
     end
 
@@ -1988,7 +1987,6 @@ local function AcceptResourceSpecCopy(self, data)
     end
 
     CooldownCompanion:EvaluateResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
 end
 

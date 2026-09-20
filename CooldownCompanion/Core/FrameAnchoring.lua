@@ -515,11 +515,8 @@ end
 
 function CooldownCompanion:ApplyFrameAnchoring(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("frameAnchoring", "frame-anchoring-apply") then
-        self:RevertFrameAnchoring()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("frameAnchoring", "frame-anchoring-apply", true)
     end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("frameApply")
@@ -649,18 +646,12 @@ end
 
 function CooldownCompanion:EvaluateFrameAnchoring(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("frameAnchoring", opts.reason or "frame-anchoring-evaluate") then
-        self:RevertFrameAnchoring()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("frameAnchoring", opts.reason or "frame-anchoring-evaluate")
     end
-    -- The gate refreshes compact suppression only when a feature flag moved.
-    -- Anchor-eligibility and reorder edits change WHICH panel the unit frames
-    -- hang from without moving a flag, and when unit frames are the only
-    -- enabled feature this evaluate is the one pass those edits reach, so it
-    -- refreshes unconditionally like the bulk evaluate passes do.
-    if self.RefreshStableExternalAnchorCompactSuppression then
+    -- Direct internal callers retain suppression refresh; the completion
+    -- owner has already settled it before evaluating any of the modules.
+    if not opts.skipCompactSuppression and self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
     end
     if self.RecordBarsAndFramesRuntimeWork then
@@ -711,38 +702,6 @@ InstallHooks = function()
     if hooksInstalled then return end
     hooksInstalled = true
 
-    -- When anchor group refreshes — re-evaluate
-    hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
-        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-        local s = GetFrameAnchoringSettings()
-        if s and s.enabled then
-            C_Timer.After(0, function()
-                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-                CooldownCompanion:EvaluateFrameAnchoring()
-            end)
-        end
-    end)
-
-    local function QueueFrameAnchoringReevaluate()
-        C_Timer.After(0.1, function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-            CooldownCompanion:EvaluateFrameAnchoring()
-        end)
-    end
-
-    -- When all groups refresh — re-evaluate
-    hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
-        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-        QueueFrameAnchoringReevaluate()
-    end)
-
-    -- Visibility-only refresh path (zone/resting/pet-battle transitions)
-    -- still needs unit-frame anchoring re-evaluation.
-    hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
-        if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
-        QueueFrameAnchoringReevaluate()
-    end)
-
     hooksecurefunc(CooldownCompanion, "OnTargetChanged", function()
         if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
         local s = GetFrameAnchoringSettings()
@@ -750,17 +709,3 @@ InstallHooks = function()
         QueueInheritedUnitFrameAlphaResync()
     end)
 end
-
-------------------------------------------------------------------------
--- Initialization
-------------------------------------------------------------------------
-
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:SetScript("OnEvent", function(self, event)
-    self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-
-    C_Timer.After(0.5, function()
-        CooldownCompanion:EvaluateFrameAnchoring({ reason = "frame-anchoring-init" })
-    end)
-end)

@@ -816,10 +816,7 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         self:RefreshConfigPanel()
     end
     if self.RefreshAllGroups then
-        self:RefreshAllGroups()
-    end
-    if self.EvaluateBarsAndFramesRuntime then
-        self:EvaluateBarsAndFramesRuntime(options.runtimeReason or "profile-import")
+        self:RefreshAllGroups(options.runtimeReason or "profile-import")
     end
     if strippedCharacterEligibility > 0 and self.Print then
         self:Print("Character eligibility is local and was not imported.")

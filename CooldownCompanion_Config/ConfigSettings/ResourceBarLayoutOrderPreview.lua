@@ -3147,8 +3147,6 @@ local function CreateLayoutDragModel(preview)
 
         if changed then
             CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
         end
     end

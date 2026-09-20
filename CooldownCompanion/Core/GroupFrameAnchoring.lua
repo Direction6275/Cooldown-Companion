@@ -445,11 +445,11 @@ local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnc
         if wasCursorAnchored and not cursorAnchored then
             self:RefreshIndependentPanelMoverChrome(groupId)
         end
-        if self.EvaluateBarsAndFramesRuntime then
-            self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
-        end
         if transferSelection then
             self:ActivateArrangePanel(group.parentContainerId, groupId, false)
+        end
+        if self.EvaluateBarsAndFramesRuntime then
+            self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
         end
     end
 end

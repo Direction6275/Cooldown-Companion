@@ -126,7 +126,6 @@ local function ApplyExternalAnchor(descriptor, target)
         CooldownCompanion:ApplyCastBarSettings()
     else
         CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:UpdateAnchorStacking()
     end
     CooldownCompanion:RefreshConfigPanel()
     return true

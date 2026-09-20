@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Core/BarsAndFramesRuntime.lua
-    Derived CPU gate for Bars & Frames runtime work.
+    Bars & Frames runtime gate and panel attachment completion.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -114,24 +114,6 @@ local function FlagsEqual(a, b)
         and (a and a.frameAnchoring == true or false) == (b and b.frameAnchoring == true or false)
 end
 
--- Per-feature gate: every EvaluateCastBar / EvaluateResourceBars /
--- ApplyResourceBars entry passes through here. The compact-suppression
--- refresh it used to run unconditionally resolves the first available anchor
--- panel (a walk over every panel) each time, and the inputs it takes from
--- this gate are the feature flags, so it re-runs only when those moved. The
--- bulk evaluate passes below still refresh it unconditionally.
-function CooldownCompanion:RefreshBarsAndFramesRuntimeFeatureGate(feature, reason)
-    local previousEnabled = runtime.enabled
-    local previousFlags = runtime.flags
-    local wasInitialized = runtime.initialized == true
-    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
-    local featureEnabled = enabled == true and flags and flags[feature] == true or false
-    if not wasInitialized or previousEnabled ~= enabled or not FlagsEqual(previousFlags, flags) then
-        CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
-    end
-    return featureEnabled, flags
-end
-
 function CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled(feature)
     return runtime.enabled == true and runtime.flags and runtime.flags[feature] == true
 end
@@ -141,52 +123,137 @@ function CooldownCompanion:RecordBarsAndFramesRuntimeWork(kind)
     runtime.counters.work[kind] = (runtime.counters.work[kind] or 0) + 1
 end
 
-function CooldownCompanion:EvaluateBarsAndFramesRuntime(reason)
-    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
-    CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
-    if not enabled then
-        runtime.counters.skippedEvaluate = runtime.counters.skippedEvaluate + 1
-        return false
-    end
+-- This context lives only for the synchronous operation. Inner panel refreshes,
+-- including compact-suppression rebuilds, finish with their outer operation.
+-- Native aura binding and its cast-only tail notification retain their own
+-- asynchronous lifecycle; neither can request Resources through this context.
+local attachmentRefresh
+local featureMethods = {
+    resourceBars = { evaluate = "EvaluateResourceBars", apply = "ApplyResourceBars" },
+    castBar = { evaluate = "EvaluateCastBar", apply = "ApplyCastBarSettings" },
+    frameAnchoring = { evaluate = "EvaluateFrameAnchoring", apply = "ApplyFrameAnchoring" },
+}
 
-    runtime.counters.evaluate = runtime.counters.evaluate + 1
-    local opts = { skipRuntimeGate = true }
-
-    if flags.resourceBars then
-        CallIfAvailable("EvaluateResourceBars", opts)
-    end
-
-    if flags.castBar then
-        CallIfAvailable("EvaluateCastBar", opts)
-    end
-
-    if flags.frameAnchoring then
-        CallIfAvailable("EvaluateFrameAnchoring", opts)
-    end
-
-    return true
+function CooldownCompanion:BeginPanelAttachmentRefresh()
+    if attachmentRefresh then return nil end
+    attachmentRefresh = { panels = {} }
+    return attachmentRefresh
 end
 
-function CooldownCompanion:EvaluateBarsAndFramesStackingRuntime(reason)
-    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate(reason)
-    CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
-    if not enabled or not (flags.resourceBars or flags.castBar) then
-        runtime.counters.skippedEvaluate = runtime.counters.skippedEvaluate + 1
-        return false
+local function IncludePanel(groupId, geometryKind, checkResources)
+    if not groupId then return end
+    local panel = attachmentRefresh.panels[groupId] or {}
+    panel.geometryKind = geometryKind or panel.geometryKind
+    panel.checkResources = checkResources or panel.checkResources
+    attachmentRefresh.panels[groupId] = panel
+end
+
+function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
+    local refresh = attachmentRefresh
+    if changed then refresh.full = true end
+    if reason then refresh.reason = reason end
+    if operation ~= refresh then return end
+
+    -- Panel construction alone must not start modules before initialization.
+    -- Explicit module requests can start them; the shared login settle also
+    -- evaluates everything once at the existing 0.5-second boundary.
+    local evaluate = refresh.requested or (refresh.full and runtime.initialized)
+    local flags = runtime.flags
+    if evaluate then
+        local previousFlags = flags
+        local enabled
+        enabled, flags = self:RefreshBarsAndFramesRuntimeGate(refresh.reason)
+        local flagsChanged = not FlagsEqual(previousFlags, flags)
+        if flagsChanged then refresh.full = true end
+        if refresh.full or refresh.frameAnchoring then
+            -- This can refresh panels. Keep the operation open until those
+            -- frames and their suppression geometry have finished too.
+            CallIfAvailable("RefreshStableExternalAnchorCompactSuppression")
+        end
+        if enabled then
+            runtime.counters.evaluate = runtime.counters.evaluate + 1
+        else
+            runtime.counters.skippedEvaluate = runtime.counters.skippedEvaluate + 1
+        end
     end
 
-    runtime.counters.evaluate = runtime.counters.evaluate + 1
-    local opts = { skipRuntimeGate = true }
-
-    if flags.resourceBars then
-        CallIfAvailable("EvaluateResourceBars", opts)
+    local opts = { skipRuntimeGate = true, skipCompactSuppression = true }
+    local resourceMethod = evaluate and (refresh.full and "evaluate" or refresh.resourceBars)
+    if resourceMethod and flags.resourceBars then
+        CallIfAvailable(featureMethods.resourceBars[resourceMethod], opts)
+    else
+        -- A standalone resize retains the existing fitted-length check. It
+        -- never becomes an unconditional resource evaluation.
+        for groupId, panel in pairs(refresh.panels) do
+            if panel.checkResources and flags.resourceBars then
+                CallIfAvailable("RefreshResourceBarAnchorGeometry", groupId)
+            end
+        end
     end
 
-    if flags.castBar then
-        CallIfAvailable("EvaluateCastBar", opts)
+    -- Resource apply/revert contributes both its old and new host here. Lay
+    -- out each once, after Resources has published its final live blocks.
+    for groupId, panel in pairs(refresh.panels) do
+        local frame = self.groupFrames and self.groupFrames[groupId]
+        local group = self.db and self.db.profile.groups[groupId]
+        if frame and group and ST.LayoutAttachedBars then
+            ST.LayoutAttachedBars(groupId, frame, group, panel.geometryKind)
+        end
     end
 
-    return true
+    local castMethod = evaluate and (refresh.full and "evaluate" or refresh.castBar)
+    if castMethod and flags.castBar then
+        CallIfAvailable(featureMethods.castBar[castMethod], opts)
+    elseif flags.castBar and (refresh.resourceChanged
+        or (next(refresh.panels) and refresh.panels[self:GetModuleAnchorPanelId("castbar")])) then
+        CallIfAvailable("RepositionCastBar")
+    end
+    local frameMethod = evaluate and (refresh.full and "evaluate" or refresh.frameAnchoring)
+    if frameMethod and flags.frameAnchoring then
+        CallIfAvailable(featureMethods.frameAnchoring[frameMethod], opts)
+    elseif refresh.frameAnchoring then
+        -- A disabled feature can still own protected frames: its combat-end
+        -- callback must finish the teardown even though the gate is off.
+        CallIfAvailable("RevertFrameAnchoring")
+    end
+    if evaluate and not flags.resourceBars and not flags.castBar then
+        CallIfAvailable("RefreshUnlockToolbar")
+    end
+    attachmentRefresh = nil
+    return evaluate == true and runtime.enabled == true
+end
+
+function CooldownCompanion:RefreshPanelAttachmentGeometry(groupId, geometryKind)
+    local operation = self:BeginPanelAttachmentRefresh()
+    IncludePanel(groupId, geometryKind, true)
+    self:EndPanelAttachmentRefresh(operation)
+end
+
+function CooldownCompanion:FinishResourceBarLayout(previousPanel, panelId)
+    local operation = self:BeginPanelAttachmentRefresh()
+    IncludePanel(previousPanel)
+    IncludePanel(panelId)
+    attachmentRefresh.resourceChanged = true
+    self:EndPanelAttachmentRefresh(operation)
+end
+
+function CooldownCompanion:RefreshBarsAndFramesRuntimeFeature(feature, reason, applyOnly)
+    local operation = self:BeginPanelAttachmentRefresh()
+    local refresh = attachmentRefresh
+    refresh.requested = true
+    -- An evaluate also owns feature lifecycle activation; an apply cannot
+    -- replace one that the same operation already requested.
+    if not applyOnly or not refresh[feature] then
+        refresh[feature] = applyOnly and "apply" or "evaluate"
+    end
+    if feature == "resourceBars" then refresh.castBar = "evaluate" end
+    return self:EndPanelAttachmentRefresh(operation, false, reason)
+end
+
+function CooldownCompanion:EvaluateBarsAndFramesRuntime(reason)
+    local operation = self:BeginPanelAttachmentRefresh()
+    attachmentRefresh.requested = true
+    return self:EndPanelAttachmentRefresh(operation, true, reason)
 end
 
 function CooldownCompanion:GetBarsAndFramesRuntimeDebugInfo()
@@ -210,3 +277,12 @@ function CooldownCompanion:GetBarsAndFramesRuntimeDebugInfo()
         moduleAnchoring = CallIfAvailable("GetModuleAnchoringDebugInfo"),
     }
 end
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+initFrame:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    C_Timer.After(0.5, function()
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("bars-and-frames-init")
+    end)
+end)

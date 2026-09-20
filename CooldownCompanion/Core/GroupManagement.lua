@@ -621,6 +621,7 @@ local function RefreshCopiedPanelLayout(self, groupId, position)
         self._pendingFullRefresh = true
         return
     end
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     if position then
         if self.ClearCursorAnchorLayoutPreviewOffset then
             self:ClearCursorAnchorLayoutPreviewOffset(groupId)
@@ -632,6 +633,7 @@ local function RefreshCopiedPanelLayout(self, groupId, position)
     end
     -- The standard refresh also owns the pinned mirror and Aura rebind.
     self:RefreshGroupFrame(groupId)
+    self:EndPanelAttachmentRefresh(attachmentOperation)
 end
 
 -- The one writer behind Copy Panel Settings and Panel Templates
@@ -1105,6 +1107,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     local db = self.db.profile
     if not db.groupContainers[containerId] then return end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     -- Delete all child panels first
     local panelIds = {}
     local deletedGroupIds = {}
@@ -1139,6 +1142,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")
     self:RefreshCursorAnchorLayoutPreview()
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-container")
 end
 
 local function GetStandalonePanelAnchorSettings(panel)
@@ -1273,6 +1277,7 @@ function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
     local sourceContainer = db.groupContainers[containerId]
     if not sourceContainer then return nil end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local newContainerId = db.nextContainerId
     db.nextContainerId = newContainerId + 1
 
@@ -1337,11 +1342,13 @@ function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
         RefreshPanelAlphaDependencyTargets(self)
     end
 
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "duplicate-container")
     return newContainerId
 end
 
 -- Batch duplicate: one global anchor-finalize pass instead of one per copy.
 function CooldownCompanion:DuplicateContainers(containerIds)
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local duplicatedAny = false
     for _, containerId in ipairs(containerIds) do
         if self:DuplicateContainer(containerId, true) then
@@ -1354,6 +1361,7 @@ function CooldownCompanion:DuplicateContainers(containerIds)
         end
         RefreshPanelAlphaDependencyTargets(self)
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, duplicatedAny, "duplicate-containers")
 end
 
 ------------------------------------------------------------------------
@@ -1392,6 +1400,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local isRotationAssistant = ST.IsRotationAssistantDisplayMode
         and ST.IsRotationAssistantDisplayMode(displayMode)
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
 
@@ -1530,6 +1539,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "create-panel")
     return groupId
 end
 
@@ -1538,6 +1548,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     local group = db.groups[groupId]
     if not group or group.parentContainerId ~= containerId then return false end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     ClearCursorPanelMoverBeforeMutation(self, groupId)
     ResetStandalonePanelAnchorsTargeting(db.groups, { [groupId] = true })
     self:UnloadGroup(groupId)
@@ -1553,6 +1564,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
     -- The rebind pass parks every record and re-registers from current config.
     self:RequestAuraRebind("delete")
     self:RefreshCursorAnchorLayoutPreview()
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-panel")
     return true
 end
 
@@ -1562,6 +1574,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     if not sourcePanel or sourcePanel.parentContainerId ~= containerId then return nil end
     local container = db.groupContainers[containerId]
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local newGroupId = db.nextGroupId
     db.nextGroupId = newGroupId + 1
 
@@ -1575,6 +1588,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     db.groups[newGroupId] = newPanel
     self:CreateGroupFrame(newGroupId)
     RefreshPanelAlphaDependencyTargets(self)
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "duplicate-panel")
     return newGroupId
 end
 
@@ -1606,6 +1620,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
         if group.parentContainerId == targetContainerId then return false end
     end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local sourceContainerId = group.parentContainerId
     local wasCursorAnchored = self:IsGroupCursorAnchored(group)
     local preview = self._cursorAnchorLayoutPreview
@@ -1652,6 +1667,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     if restoreCursorSelection then
         self:ActivateArrangePanel(targetContainerId, groupId, false)
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "move-panel")
     return true, sourceDeleted
 end
 
@@ -1835,6 +1851,7 @@ function CooldownCompanion:DeleteGroup(id)
     local group = self.db.profile.groups[id]
     if not group then return end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local parentId = group.parentContainerId
 
     ClearCursorPanelMoverBeforeMutation(self, id)
@@ -1853,6 +1870,7 @@ function CooldownCompanion:DeleteGroup(id)
     RefreshPanelAlphaDependencyTargets(self)
     self:RequestAuraRebind("delete")
     self:RefreshCursorAnchorLayoutPreview()
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-group")
 end
 
 function CooldownCompanion:DuplicateGroup(id)
@@ -1871,6 +1889,7 @@ function CooldownCompanion:DuplicateGroup(id)
     end
 
     -- Legacy path (no container) — should not happen post-migration
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local newGroupId = self.db.profile.nextGroupId
     self.db.profile.nextGroupId = newGroupId + 1
 
@@ -1884,6 +1903,7 @@ function CooldownCompanion:DuplicateGroup(id)
     self.db.profile.groups[newGroupId] = newGroup
     self:CreateGroupFrame(newGroupId)
     RefreshPanelAlphaDependencyTargets(self)
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "duplicate-group")
     return newGroupId
 end
 
