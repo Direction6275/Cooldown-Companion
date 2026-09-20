@@ -1179,7 +1179,6 @@ local function BuildResourceBarAnchoringPanel(container)
                 settings.enabled = val
                 if val then ST._PrepareBarWorkspaceEnable("resources") end
                 CooldownCompanion:EvaluateResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
@@ -1198,7 +1197,6 @@ local function BuildResourceBarAnchoringPanel(container)
                 onChange = function(val)
                     settings.hideManaForNonHealer = val
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -1213,7 +1211,6 @@ local function BuildResourceBarAnchoringPanel(container)
                 onChange = function(val)
                     settings.keepSpecResourcesInAllForms = val == true
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                     RefreshLayoutOrderPreview()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
@@ -1252,7 +1249,6 @@ local function BuildResourceBarAnchoringPanel(container)
                     end
                     settings.resources[pt].enabled = val
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -1348,8 +1344,6 @@ local function BuildResourceBarPositioningPanel(container)
             onChange = function(val)
                 layout.orientation = val
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })
@@ -1369,8 +1363,6 @@ local function BuildResourceBarPositioningPanel(container)
             onChange = function(val)
                 layout.verticalFillDirection = val
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
                 -- The canvas fills its vertical bars in this direction too,
                 -- and nothing here rebuilds the settings column.
                 RefreshLayoutOrderPreview()
@@ -1419,8 +1411,6 @@ local function BuildResourceBarPositioningPanel(container)
             set = function(val) layout.barSpacing = val end,
             apply = function()
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RepositionCastBar()
-                CooldownCompanion:UpdateAnchorStacking()
             end,
             stateOwner = layout,
             stateKeys = "barSpacing",
@@ -1454,7 +1444,6 @@ local function BuildResourceBarPositioningPanel(container)
 
             local function refreshResourceBarAnchor()
                 CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
             end
 
             -- A frame name needs the whole 140px control column to stay
@@ -1512,7 +1501,6 @@ local function BuildResourceBarPositioningPanel(container)
                 set = function(val) layout.independentWidth = val end,
                 apply = function()
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                 end,
                 stateOwner = layout,
                 stateKeys = "independentWidth",
@@ -1530,7 +1518,6 @@ local function BuildResourceBarPositioningPanel(container)
                 onRelease = function(val)
                     anchor.x = val
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                 end,
             })
 
@@ -1543,7 +1530,6 @@ local function BuildResourceBarPositioningPanel(container)
                 onRelease = function(val)
                     anchor.y = val
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:UpdateAnchorStacking()
                 end,
             })
         end
@@ -1581,8 +1567,6 @@ local function BuildResourceBarPositioningPanel(container)
                 onRelease = function(val)
                     layout[gapField] = val
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RepositionCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
                 end,
             })
 
@@ -1636,8 +1620,6 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
         set = function(val) layout[thicknessField] = val end,
         apply = function()
             CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
         end,
         stateOwner = layout,
         stateKeys = thicknessField,
@@ -1654,8 +1636,6 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
         onChange = function(val)
             layout.customBarHeights = val
             CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
@@ -1721,8 +1701,6 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
                 end,
                 apply = function()
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RepositionCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
                 end,
                 captureState = function()
                     local current = layout.resources[capturedPt]
@@ -1756,8 +1734,6 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
                 run = function()
                     layout.customBarHeights = true
                     CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RepositionCastBar()
-                    CooldownCompanion:UpdateAnchorStacking()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             },

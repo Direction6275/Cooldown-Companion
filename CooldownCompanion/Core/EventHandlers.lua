@@ -104,6 +104,7 @@ local function GroupHasEquipmentSlotEntries(group)
 end
 
 function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     self:MarkCooldownsDirty("equipment-slots")
     if self.db and self.db.profile and self.db.profile.groups then
         for groupId, group in pairs(self.db.profile.groups) do
@@ -113,6 +114,7 @@ function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
         end
     end
     self:RefreshConfigPanel()
+    self:EndPanelAttachmentRefresh(attachmentOperation, false, "equipment-slots")
 end
 
 function CooldownCompanion:OnEquipmentChanged(event, equipmentSlot)
@@ -148,6 +150,7 @@ end
 
 function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     opts = opts or {}
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     self:CachePlayerState()
     self:CacheCurrentSpec()
     self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
@@ -188,6 +191,7 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     if not opts.skipSettlingRefresh then
         QueueSpellAvailabilitySettlingRefresh(self)
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, false, "spell-availability")
 end
 
 function CooldownCompanion:OnSpellAvailabilityChanged()
@@ -514,8 +518,7 @@ function CooldownCompanion:OnRestingChanged()
     local isResting = IsResting()
     if isResting == self._isResting then return end
     self._isResting = isResting
-    self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("resting-changed")
+    self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "resting-changed" })
     self:RefreshConfigPanel()
 end
 
@@ -529,15 +532,13 @@ end
 
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
-    self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("pet-battle-start")
+    self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "pet-battle-start" })
     self:RefreshConfigPanel()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
-    self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("pet-battle-end")
+    self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "pet-battle-end" })
     self:RefreshConfigPanel()
 end
 
@@ -546,8 +547,7 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
     self._inVehicleUI = IsPlayerInVehicleUI()
     self:RefreshAuraIdentityVisibility()
     self:RequestAuraRebind("vehicle-ui")
-    self:RefreshAllGroupsVisibilityOnly()
-    self:EvaluateBarsAndFramesRuntime("vehicle-ui-changed")
+    self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "vehicle-ui-changed" })
     self:RefreshConfigPanel()
 end
 
@@ -624,29 +624,13 @@ function CooldownCompanion:OnActionBarLayoutChanged(event)
     if self._inVehicleUI ~= wasInVehicleUI then
         self:RefreshAuraIdentityVisibility()
         self:RequestAuraRebind("vehicle-actionbar")
-        self:RefreshAllGroupsVisibilityOnly()
-        self:EvaluateBarsAndFramesRuntime("actionbar-layout-vehicle-state")
+        self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "actionbar-layout-vehicle-state" })
     end
 end
 
 ------------------------------------------------------------------------
 -- Stacking coordination (CastBar + ResourceBars on same anchor group)
 ------------------------------------------------------------------------
-local pendingStackUpdate = false
-
-function CooldownCompanion:UpdateAnchorStacking()
-    local enabled, flags = self:RefreshBarsAndFramesRuntimeGate("anchor-stacking-check")
-    if not enabled or not (flags.resourceBars or flags.castBar) then
-        return
-    end
-    if pendingStackUpdate then return end
-    pendingStackUpdate = true
-    C_Timer.After(0, function()
-        pendingStackUpdate = false
-        CooldownCompanion:EvaluateBarsAndFramesStackingRuntime("anchor-stacking")
-    end)
-end
-
 -- Cast-bar-only stacking leg, for the aura rebind pass. The pass moves the
 -- block chain TAIL the cast bar hangs from, and the cast bar is pinned to the
 -- stack end, so resource bars never move in response to a tail change. The
@@ -667,7 +651,7 @@ function CooldownCompanion:UpdateCastBarStackAnchor()
     pendingCastBarStackUpdate = true
     C_Timer.After(0, function()
         pendingCastBarStackUpdate = false
-        -- Re-check at fire time, mirroring EvaluateBarsAndFramesStackingRuntime:
+        -- Re-check at fire time:
         -- the gate can flip between the queue and the callback.
         local enabledNow, flagsNow = CooldownCompanion:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor")
         if not enabledNow or not flagsNow.castBar then return end

@@ -60,7 +60,6 @@ local function EnableResourceBarsModule()
         CS.castFramesSelectedItem = nil
     end
     CooldownCompanion:EvaluateResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
 end
 
@@ -73,7 +72,6 @@ local function EnableCastBarModule()
     ST._PrepareBarWorkspaceEnable("castbar")
     SelectBarsCastFramesItem("castbar")
     CooldownCompanion:EvaluateCastBar()
-    CooldownCompanion:UpdateAnchorStacking()
     CooldownCompanion:RefreshConfigPanel()
 end
 

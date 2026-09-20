@@ -1226,10 +1226,7 @@ local function BuildLayoutTab(container)
                 else
                     group.anchorEligible = false
                 end
-                CooldownCompanion:EvaluateResourceBars()
-                CooldownCompanion:UpdateAnchorStacking()
-                CooldownCompanion:EvaluateCastBar()
-                CooldownCompanion:EvaluateFrameAnchoring()
+                CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })

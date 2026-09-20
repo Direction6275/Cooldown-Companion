@@ -256,10 +256,7 @@ function CooldownCompanion:RunProfileMigrationAndRefresh(reason)
         addon:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
     end
     addon:RefreshConfigPanel()
-    addon:RefreshAllGroups()
-    if addon.EvaluateBarsAndFramesRuntime then
-        addon:EvaluateBarsAndFramesRuntime(reason)
-    end
+    addon:RefreshAllGroups(reason)
 end
 
 local function CreateSettingsLauncherFrame(addon)

@@ -2010,11 +2010,8 @@ end
 ------------------------------------------------------------------------
 function CooldownCompanion:ApplyCastBarSettings(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("castBar", "castbar-apply") then
-        self:RevertCastBar()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("castBar", "castbar-apply", true)
     end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("castApply")
@@ -2136,12 +2133,8 @@ end
 ------------------------------------------------------------------------
 function CooldownCompanion:EvaluateCastBar(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("castBar", opts.reason or "castbar-evaluate") then
-        self:RevertCastBar()
-        self:RefreshUnlockToolbar()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("castBar", opts.reason or "castbar-evaluate")
     end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("castEvaluate")
@@ -2250,61 +2243,6 @@ end
 InstallHooks = function()
     if not hooksInstalled then
         hooksInstalled = true
-
-        -- When anchor group refreshes (visibility changes) — re-evaluate
-        hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-            local s = GetCastBarSettings()
-            if s and s.enabled then
-                C_Timer.After(0, function()
-                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-                    CooldownCompanion:EvaluateCastBar()
-                end)
-            end
-        end)
-
-        local function QueueCastBarReevaluate()
-            C_Timer.After(0.1, function()
-                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-                CooldownCompanion:EvaluateCastBar()
-            end)
-        end
-
-        -- When all groups refresh (profile switch, zone change) — re-evaluate
-        hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-            QueueCastBarReevaluate()
-        end)
-
-        -- Visibility-only refresh path (zone/resting/pet-battle transitions)
-        -- still needs cast bar anchoring re-evaluation.
-        hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-            QueueCastBarReevaluate()
-        end)
-
-        -- Shared handler: the attached bar takes its width from the anchor
-        -- group, so a group resize is a cast bar reposition.
-        local function RepositionFromHook(groupId)
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar") then return end
-            if not isApplied then return end
-            local s = GetCastBarSettings()
-            if not s or not s.enabled then return end
-            if CooldownCompanion:IsModuleAnchorIndependent("castbar") then return end  -- independent: width not tied to group
-            if GetEffectiveAnchorGroupId(s) ~= groupId then return end
-            CooldownCompanion:RepositionCastBar()
-        end
-
-        -- When compact layout changes visible buttons — re-measure
-        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
-            RepositionFromHook(groupId)
-        end)
-
-        -- When icon size / spacing / buttons-per-row changes — re-measure
-        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId, deferAttachments)
-            if deferAttachments then return end -- Reposition after UpdateGroupLayout finishes.
-            RepositionFromHook(groupId)
-        end)
 
         -- Yield only to Blizzard's ApplyingTalents overlay. Other contextual
         -- overlays use the same frame, but CC remains the cast-bar owner and
@@ -2416,18 +2354,3 @@ InstallHooks = function()
         EventRegistry:RegisterCallback("EditMode.Exit", ReassertBlizzardCastBarSuppression, CooldownCompanion)
     end
 end
-
-------------------------------------------------------------------------
--- Initialization
-------------------------------------------------------------------------
-
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-initFrame:SetScript("OnEvent", function(self, event)
-    self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-
-    -- Delay to ensure group frames are created first
-    C_Timer.After(0.5, function()
-        CooldownCompanion:EvaluateCastBar({ reason = "castbar-init" })
-    end)
-end)

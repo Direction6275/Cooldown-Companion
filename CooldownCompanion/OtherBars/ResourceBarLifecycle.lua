@@ -7,7 +7,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 
 local math_abs = math.abs
-local ipairs = ipairs
 
 local RB = ST._RB
 
@@ -51,7 +50,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
             if not rebuilt then
                 CooldownCompanion:EvaluateResourceBars()
             end
-            CooldownCompanion:UpdateAnchorStacking()
             if refreshConfig and CooldownCompanion.RefreshConfigPanel then
                 CooldownCompanion:RefreshConfigPanel()
             end
@@ -83,12 +81,11 @@ function RB.CreateResourceBarLifecycleModule(deps)
                     -- A form only concerns the bars when it changes WHICH
                     -- bars show (druid forms swap resources). A form that
                     -- keeps the set (Stealth, the all-forms union) skips the
-                    -- full re-apply and the stacking pass it queues; bars
+                    -- full re-apply and downstream attachment work; bars
                     -- that reverted because their panel hid read as changed
                     -- and still come back here.
                     if not CooldownCompanion:ResourceBarsActiveSetUnchanged() then
                         CooldownCompanion:EvaluateResourceBars()
-                        CooldownCompanion:UpdateAnchorStacking()
                     end
                 elseif event == "ACTIVE_TALENT_GROUP_CHANGED"
                     or event == "PLAYER_SPECIALIZATION_CHANGED" then
@@ -104,8 +101,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
                             if not rebuilt then
                                 CooldownCompanion:EvaluateResourceBars()
                             end
-                            CooldownCompanion:RepositionCastBar()
-                            CooldownCompanion:UpdateAnchorStacking()
                         end)
                     end
                 elseif event == "PLAYER_TALENT_UPDATE" then
@@ -168,6 +163,25 @@ function RB.CreateResourceBarLifecycleModule(deps)
     end
 
 
+    function CooldownCompanion:RefreshResourceBarAnchorGeometry(groupId)
+        local s = GetResourceBarSettings()
+        if not s or not s.enabled then return end
+        local layout = GetSpecLayoutOrder(s)
+        if layout and CooldownCompanion:IsResourceBarAnchorIndependent() then return end  -- independent stack: width not tied to group
+        local anchorGroupId = GetEffectiveAnchorGroupId(s)
+        if anchorGroupId ~= groupId then return end
+        local groupFrame = CooldownCompanion.groupFrames[groupId]
+        local lastLength = GetLastAppliedPrimaryLength()
+        if not groupFrame or not lastLength then return end
+        local newLength = GetResourcePrimaryLength(groupFrame, s)
+        local geometry = RB.GetBarAnchorGeometry(groupFrame, RB.GetBarAnchorGroup())
+        if math_abs(newLength - lastLength) < 0.1
+            and geometry == RB._lastAppliedAnchorGeometry then
+            return
+        end
+        CooldownCompanion:ApplyResourceBars({ skipRuntimeGate = true })
+    end
+
     ------------------------------------------------------------------------
     -- Hook installation (same pattern as CastBar)
     ------------------------------------------------------------------------
@@ -175,73 +189,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
     InstallHooks = function()
         if hooksInstalled then return end
         hooksInstalled = true
-
-        -- When anchor group refreshes — re-evaluate
-        hooksecurefunc(CooldownCompanion, "RefreshGroupFrame", function(self, groupId)
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-            local s = GetResourceBarSettings()
-            if s and s.enabled then
-                C_Timer.After(0, function()
-                    if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-                    CooldownCompanion:EvaluateResourceBars()
-                end)
-            end
-        end)
-
-        local function QueueResourceBarReevaluate()
-            C_Timer.After(0.1, function()
-                if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-                CooldownCompanion:EvaluateResourceBars()
-            end)
-        end
-
-        -- When all groups refresh — re-evaluate
-        hooksecurefunc(CooldownCompanion, "RefreshAllGroups", function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-            QueueResourceBarReevaluate()
-        end)
-
-        -- Visibility-only refresh path (zone/resting/pet-battle transitions)
-        -- still needs resource bar anchoring re-evaluation.
-        hooksecurefunc(CooldownCompanion, "RefreshAllGroupsVisibilityOnly", function()
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-            -- A pass that loaded, unloaded or repopulated nothing left every
-            -- anchor panel exactly where it was.
-            if CooldownCompanion._lastVisibilityPassChanged == false then return end
-            QueueResourceBarReevaluate()
-        end)
-
-        local function ReapplyIfPrimaryLengthChanged(groupId)
-            local s = GetResourceBarSettings()
-            if not s or not s.enabled then return end
-            local layout = GetSpecLayoutOrder(s)
-            if layout and CooldownCompanion:IsResourceBarAnchorIndependent() then return end  -- independent stack: width not tied to group
-            local anchorGroupId = GetEffectiveAnchorGroupId(s)
-            if anchorGroupId ~= groupId then return end
-            local groupFrame = CooldownCompanion.groupFrames[groupId]
-            local lastLength = GetLastAppliedPrimaryLength()
-            if not groupFrame or not lastLength then return end
-            local newLength = GetResourcePrimaryLength(groupFrame, s)
-            local geometry = RB.GetBarAnchorGeometry(groupFrame, RB.GetBarAnchorGroup())
-            if math_abs(newLength - lastLength) < 0.1
-                and geometry == RB._lastAppliedAnchorGeometry then
-                return
-            end
-            CooldownCompanion:ApplyResourceBars()
-        end
-
-        -- When compact layout changes visible buttons — re-apply if primary length changed
-        hooksecurefunc(CooldownCompanion, "UpdateGroupLayout", function(self, groupId)
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-            ReapplyIfPrimaryLengthChanged(groupId)
-        end)
-
-        -- When icon size / spacing / buttons-per-row changes — re-apply if primary length changed
-        hooksecurefunc(CooldownCompanion, "ResizeGroupFrame", function(self, groupId, deferAttachments)
-            if deferAttachments then return end -- UpdateGroupLayout finishes the attachment pass.
-            if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
-            ReapplyIfPrimaryLengthChanged(groupId)
-        end)
 
         local function QueueResourceBarApply()
             C_Timer.After(0, function()
@@ -267,21 +214,6 @@ function RB.CreateResourceBarLifecycleModule(deps)
             end)
         end
     end
-
-    ------------------------------------------------------------------------
-    -- Initialization
-    ------------------------------------------------------------------------
-
-    local initFrame = CreateFrame("Frame")
-    initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    initFrame:SetScript("OnEvent", function(self, event)
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-
-        C_Timer.After(0.5, function()
-            CooldownCompanion:EvaluateBarsAndFramesRuntime("resource-init")
-        end)
-    end)
-
 
     return {
         EnableLifecycleEvents = EnableLifecycleEvents,

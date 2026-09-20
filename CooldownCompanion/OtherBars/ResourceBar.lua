@@ -653,8 +653,6 @@ local function CreateIndependentWrapperFrame()
         end,
         apply = function()
             CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RepositionCastBar()
-            CooldownCompanion:UpdateAnchorStacking()
         end,
         isUnlocked = function()
             local settings = GetResourceBarSettings()
@@ -2335,11 +2333,8 @@ end
 
 function CooldownCompanion:ApplyResourceBars(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", "resource-apply") then
-        self:RevertResourceBars()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("resourceBars", "resource-apply", true)
     end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("resourceApply")
@@ -3006,10 +3001,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     self:RequestAuraRebind("resources")
     local previousPanel = RB._attachedPanelId
     RB._attachedPanelId = groupId
-    if ST.RefreshPanelAttachments then
-        if previousPanel and previousPanel ~= groupId then ST.RefreshPanelAttachments(previousPanel) end
-        if groupId then ST.RefreshPanelAttachments(groupId) end
-    end
+    self:FinishResourceBarLayout(previousPanel, groupId)
 end
 
 ------------------------------------------------------------------------
@@ -3094,7 +3086,7 @@ function CooldownCompanion:RevertResourceBars()
     activeResources = {}
     local previousPanel = RB._attachedPanelId
     RB._attachedPanelId = nil
-    if previousPanel and ST.RefreshPanelAttachments then ST.RefreshPanelAttachments(previousPanel) end
+    self:FinishResourceBarLayout(previousPanel, nil)
 end
 
 function CooldownCompanion:DisableResourceBarRuntime()
@@ -3196,12 +3188,8 @@ end
 
 function CooldownCompanion:EvaluateResourceBars(opts)
     opts = opts or {}
-    if not opts.skipRuntimeGate
-        and self.RefreshBarsAndFramesRuntimeFeatureGate
-        and not self:RefreshBarsAndFramesRuntimeFeatureGate("resourceBars", opts.reason or "resource-evaluate") then
-        self:DisableResourceBarRuntime()
-        self:RefreshUnlockToolbar()
-        return
+    if not opts.skipRuntimeGate then
+        return self:RefreshBarsAndFramesRuntimeFeature("resourceBars", opts.reason or "resource-evaluate")
     end
     if self.RecordBarsAndFramesRuntimeWork then
         self:RecordBarsAndFramesRuntimeWork("resourceEvaluate")

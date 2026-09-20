@@ -73,6 +73,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
+
     -- Create main container frame
     local frameName = "CooldownCompanionGroup" .. groupId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
@@ -528,6 +530,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         self:RefreshAlphaUpdateDriver()
     end
 
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "create-panel")
     return frame
 end
 
@@ -549,9 +552,11 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         return
     end
 
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     if not group then
         self:UnloadGroup(groupId)
         self:DiscardDormantFrame(groupId)
+        self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-panel-frame")
         return
     end
 
@@ -728,6 +733,7 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, true, "refresh-panel")
 end
 
 function CooldownCompanion:UpdateGroupClickthrough(groupId)

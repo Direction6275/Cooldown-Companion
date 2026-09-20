@@ -860,7 +860,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     -- grip resize mid-gesture keeps them glued to the rects they name.
     ST.UpdateSectionMoverOverlays(self, frame, group)
     ST.UpdatePanelMoverBounds(frame, group, geometryKind)
-    if ST.LayoutAttachedBars and not deferAttachments then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
+    if not deferAttachments then self:RefreshPanelAttachmentGeometry(groupId, geometryKind) end
     return true
 end
 
@@ -878,7 +878,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
             ClearButtonCompactSlotCache(button)
         end
         frame._layoutDirty = false
-        if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
+        self:RefreshPanelAttachmentGeometry(groupId, geometryKind)
         return
     end
 
@@ -998,7 +998,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
         self:ResizeGroupFrame(groupId, true, geometryKind)
     end
 
-    if ST.LayoutAttachedBars then ST.LayoutAttachedBars(groupId, frame, group, geometryKind) end
+    self:RefreshPanelAttachmentGeometry(groupId, geometryKind)
     frame._layoutDirty = false
 end
 
@@ -1020,10 +1020,12 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     end
 
     if ST.IsTotemPanelGroup(group) then
+        local attachmentOperation = self:BeginPanelAttachmentRefresh()
         self:PopulateTotemPanel(groupId)
         self:ResizeGroupFrame(groupId)
         ST.UpdateGroupSizeLabel(frame)
         UpdateResizedPanelContainerWrapper(groupId)
+        self:EndPanelAttachmentRefresh(attachmentOperation)
         return
     end
 
@@ -1031,12 +1033,14 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
         self._pendingFullRefresh = true
         return
     end
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     ST.UpdateGroupSizeLabel(frame)
 
     local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
     if not entries then
         self:PopulateGroupButtons(groupId)
         UpdateResizedPanelContainerWrapper(groupId)
+        self:EndPanelAttachmentRefresh(attachmentOperation)
         return
     end
 
@@ -1071,4 +1075,5 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
     -- the composed aura visuals track style edits too. The groupId scopes the
     -- in-combat defer note to edits that actually touch an aura display.
     self:RequestAuraRebind("style", groupId)
+    self:EndPanelAttachmentRefresh(attachmentOperation)
 end

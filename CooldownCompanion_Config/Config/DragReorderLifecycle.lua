@@ -313,9 +313,7 @@ local function ApplyCol1Drop(state)
     end
 
     -- Container order may have changed — re-evaluate auto-anchored bars
-    CooldownCompanion:EvaluateResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
-    CooldownCompanion:EvaluateCastBar()
+    CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
 end
 
 ------------------------------------------------------------------------
@@ -769,6 +767,7 @@ local function FinishRailPanelDrag(state)
         return
     end
 
+    local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
     local db = CooldownCompanion.db.profile
     local targetContainerId = dropTarget.targetContainerId
     local sourceContainers = {}
@@ -783,6 +782,7 @@ local function FinishRailPanelDrag(state)
         local panel = db.groups[panelId]
         if panel and panel.parentContainerId ~= targetContainerId then
             if CooldownCompanion:MovePanel(panelId, targetContainerId) == false then
+                CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
                 return
             end
@@ -824,9 +824,8 @@ local function FinishRailPanelDrag(state)
         end
     end
 
-    CooldownCompanion:EvaluateResourceBars()
-    CooldownCompanion:UpdateAnchorStacking()
-    CooldownCompanion:EvaluateCastBar()
+    CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
+    CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
     CooldownCompanion:RefreshConfigPanel()
 end
 
