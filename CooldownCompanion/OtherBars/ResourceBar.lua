@@ -833,67 +833,52 @@ end
 
 --- Re-anchor drag handle and coord label to frame the bar content.
 --- Called after containers are positioned and RelayoutBars() completes.
-local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings)
+local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings, primaryLength, gap, aboveThickness, belowThickness)
     if not independentWrapperFrame then return end
     if not containerFrameAbove or not containerFrameBelow then return end
     local frame = independentWrapperFrame
 
-    -- Anchor chrome to the containers that actually have bars to avoid dead space.
-    -- When all bars are on one side, the empty container is hidden (height/width=1).
+    -- The containers forbid untrusted layout scripts. Keep the mover anchored
+    -- to its ordinary 1x1 position frame, using the dimensions RelayoutBars just
+    -- supplied, so its backdrop scripts and snap/resize geometry remain usable.
     local aboveShown = containerFrameAbove:IsShown()
     local belowShown = containerFrameBelow:IsShown()
-
     local snapRect = frame._dragSnapRectFrame
-    if snapRect then
-        snapRect:ClearAllPoints()
-        if not aboveShown and not belowShown then
-            snapRect:Hide()
-        elseif isVerticalLayout then
-            local leftRef = aboveShown and containerFrameAbove or containerFrameBelow
-            local rightRef = belowShown and containerFrameBelow or containerFrameAbove
-            snapRect:SetPoint("TOPLEFT", leftRef, "TOPLEFT")
-            snapRect:SetPoint("BOTTOMRIGHT", rightRef, "BOTTOMRIGHT")
-            snapRect:Show()
-        else
-            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
-            local bottomRef = belowShown and containerFrameBelow or containerFrameAbove
-            snapRect:SetPoint("TOPLEFT", topRef, "TOPLEFT")
-            snapRect:SetPoint("BOTTOMRIGHT", bottomRef, "BOTTOMRIGHT")
-            snapRect:Show()
-        end
+    if not snapRect then return end
+    snapRect:ClearAllPoints()
+    if not aboveShown and not belowShown then
+        snapRect:Hide()
+        return
     end
+
+    -- Include the half-pixel from the wrapper's center to its anchoring edge.
+    local edgeOffset = 0.5 + gap
+    local left, right, top, bottom
+    if isVerticalLayout then
+        left = aboveShown and -edgeOffset - aboveThickness or edgeOffset
+        right = belowShown and edgeOffset + belowThickness or -edgeOffset
+        top, bottom = primaryLength / 2, -primaryLength / 2
+    else
+        left, right = -primaryLength / 2, primaryLength / 2
+        top = aboveShown and edgeOffset + aboveThickness or -edgeOffset
+        bottom = belowShown and -edgeOffset - belowThickness or edgeOffset
+    end
+    snapRect:SetPoint("TOPLEFT", frame, "CENTER", left, top)
+    snapRect:SetPoint("BOTTOMRIGHT", frame, "CENTER", right, bottom)
+    snapRect:Show()
 
     local dragHandle = frame._dragHandle
     if dragHandle then
         dragHandle:ClearAllPoints()
-        if isVerticalLayout then
-            -- Vertical: bars are left/right of wrapper — span across both containers
-            local topLeft = aboveShown and containerFrameAbove or containerFrameBelow
-            local topRight = belowShown and containerFrameBelow or containerFrameAbove
-            dragHandle:SetPoint("BOTTOMLEFT", topLeft, "TOPLEFT", 0, 2)
-            dragHandle:SetPoint("BOTTOMRIGHT", topRight, "TOPRIGHT", 0, 2)
-        else
-            -- Horizontal: anchor above whichever container is the topmost with bars
-            local topRef = aboveShown and containerFrameAbove or containerFrameBelow
-            dragHandle:SetPoint("BOTTOMLEFT", topRef, "TOPLEFT", 0, 2)
-            dragHandle:SetPoint("BOTTOMRIGHT", topRef, "TOPRIGHT", 0, 2)
-        end
+        dragHandle:SetPoint("BOTTOMLEFT", snapRect, "TOPLEFT", 0, 2)
+        dragHandle:SetPoint("BOTTOMRIGHT", snapRect, "TOPRIGHT", 0, 2)
     end
 
     local coordLabel = frame._coordLabel
     if coordLabel then
         coordLabel:ClearAllPoints()
-        if isVerticalLayout then
-            local botLeft = aboveShown and containerFrameAbove or containerFrameBelow
-            local botRight = belowShown and containerFrameBelow or containerFrameAbove
-            coordLabel:SetPoint("TOPLEFT", botLeft, "BOTTOMLEFT", 0, -2)
-            coordLabel:SetPoint("TOPRIGHT", botRight, "BOTTOMRIGHT", 0, -2)
-        else
-            -- Horizontal: anchor below whichever container is the bottommost with bars
-            local botRef = belowShown and containerFrameBelow or containerFrameAbove
-            coordLabel:SetPoint("TOPLEFT", botRef, "BOTTOMLEFT", 0, -2)
-            coordLabel:SetPoint("TOPRIGHT", botRef, "BOTTOMRIGHT", 0, -2)
-        end
+        coordLabel:SetPoint("TOPLEFT", snapRect, "BOTTOMLEFT", 0, -2)
+        coordLabel:SetPoint("TOPRIGHT", snapRect, "BOTTOMRIGHT", 0, -2)
 
         local settings = GetResourceBarSettings()
         placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
@@ -1888,7 +1873,9 @@ RelayoutBars = function()
         local rightWidth = currentX > 0 and (currentX - barSpacing) or 1
         containerFrameBelow:SetWidth(rightWidth)
         if #rightBars > 0 then containerFrameBelow:Show() else containerFrameBelow:Hide() end
+        return leftWidth, rightWidth
     else
+        local aboveHeight, belowHeight = 1, 1
         for _, lane in ipairs(RB.ATTACHED_BAR_LANES) do
             local container = RB._barContainers[lane]
             local bars = {}
@@ -1910,9 +1897,13 @@ RelayoutBars = function()
                 barInfo.frame:SetHeight(h)
                 currentY = currentY + h + barSpacing
             end
-            container:SetHeight(currentY > 0 and currentY - barSpacing or 1)
+            local height = currentY > 0 and currentY - barSpacing or 1
+            container:SetHeight(height)
             container:SetShown(#bars > 0)
+            if lane == "above" then aboveHeight = height end
+            if lane == "below" then belowHeight = height end
         end
+        return aboveHeight, belowHeight
     end
 end
 
@@ -2903,7 +2894,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     end
 
     -- Position bars within containers (reusable for relayout on visibility change)
-    RelayoutBars()
+    local aboveThickness, belowThickness = RelayoutBars()
 
     -- Hand the aura block to its mount every pass, empty sides included, so
     -- the mount can park a container the stack no longer feeds. Guarded: the
@@ -2911,7 +2902,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
-        UpdateIndependentStackChrome(isVerticalLayout, layout)
+        UpdateIndependentStackChrome(isVerticalLayout, layout, totalPrimaryLength, gap, aboveThickness, belowThickness)
     end
 
     -- Enable OnUpdate
