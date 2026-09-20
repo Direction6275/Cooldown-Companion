@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.7.1",
         "2.7",
         "2.6.3",
         "2.6.2",
@@ -43,6 +44,13 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.7.1"] = {
+            markdown = [[
+## Bug Fixes
+
+- **Independent resource bars:** Fixed an anchoring error that could leave resource bars frozen on login or when enabling Independent mode.
+]],
+        },
         ["2.7"] = {
             markdown = [[
 ## New Features
