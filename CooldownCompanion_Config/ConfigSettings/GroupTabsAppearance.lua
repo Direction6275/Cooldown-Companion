@@ -90,26 +90,20 @@ local TURNON_KEYBIND_TEXT = { label = "Enable Keybind/Custom Text", key = "showK
 -- text" (owner ruling), so two toggles modeled four states where only three
 -- exist. One dropdown states the ladder directly; both storage keys stay
 -- (whileAuraActive section, Defaults.lua), written as normalized combinations
--- so the redundant state is unrepresentable from the UI. The tooltip also
--- covers the section's other two rows (Show Aura Icon, Desaturate Icon), which
--- share the one info button rather than growing a badge each.
+-- so the redundant state is unrepresentable from the UI. The tooltip explains
+-- these three choices and the positioning/layering caveats that affect them.
 local WHILE_AURA_ACTIVE_TOOLTIP = {
     "Cooldown While Aura Active",
-    {"Hidden by Aura: the aura duration swipe and text take over the icon. Cooldown text placed outside the icon is not covered, so both timers show while both run.", 1, 1, 1, true},
+    {"Hidden by Aura", 1, 0.82, 0},
+    {"The aura's timer and swipe replace the cooldown display. Cooldown text outside the icon stays visible.", 1, 1, 1, true},
     " ",
-    {"Show Text: the cooldown countdown and charge count draw above the aura display. The aura duration text moves to its own position.", 1, 1, 1, true},
+    {"Show Text", 1, 0.82, 0},
+    {"Keep cooldown and charge text visible. The aura timer uses its own position.", 1, 1, 1, true},
     " ",
-    {"Show Swipe and Text: the icon and cooldown swipe stay, replacing the aura duration swipe. All texts show.", 1, 1, 1, true},
+    {"Show Swipe and Text", 1, 0.82, 0},
+    {"Also keep the cooldown swipe, replacing the aura swipe.", 1, 1, 1, true},
     " ",
-    {"Stack text and glows always follow their own settings.", 1, 1, 1, true},
-    " ",
-    {"With Show Aura Icon on, the aura icon covers the swipe unless Layer Order raises Cooldown Swipe above it. The icon keeps its own tint.", 1, 1, 1, true},
-    " ",
-    {"Show Aura Icon swaps the live aura's own icon in while it runs. Standalone and passive entries always do this.", 1, 1, 1, true},
-    " ",
-    {"Desaturate Icon grays the aura display. Passives gray while the aura is missing by default, so this inverts them.", 1, 1, 1, true},
-    " ",
-    {"Cooldown applies to icon panels only.", 1, 1, 1, true},
+    {"If Show Aura Icon covers the cooldown swipe, raise Cooldown Swipe in Layer Order.", 0.7, 0.7, 0.7, true},
 }
 
 local WHILE_AURA_ACTIVE_LIST = {

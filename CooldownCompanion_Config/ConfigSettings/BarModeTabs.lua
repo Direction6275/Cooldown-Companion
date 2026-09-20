@@ -1539,10 +1539,6 @@ local function BuildBarAppearanceTab(container, group, style)
                     enable = auraStackSec.read.showAuraStackText == false and TURNON_BAR_AURA_STACK_TEXT or nil },
             })
         end
-        AnchorRowBadge(auraStackRow, CreateInfoButton(auraStackRow.frame, auraStackRow.frame, "LEFT", "LEFT", 0, 0, {
-            "Aura Stack Text",
-            {"Shows the live stack count while the aura is active, drawn by the game so it stays accurate in combat. Stack counts cannot drive the bar fill; the count is hidden from addons during combat.", 1, 1, 1, true},
-        }, auraStackRow))
         auraStackSec:Chrome(auraStackRow)
 
         auraStackSec:Finish()
