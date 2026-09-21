@@ -1768,6 +1768,54 @@ function ST.OnButtonCooldownDone(cooldown)
     CooldownCompanion:MarkCooldownsDirty("cd-done")
 end
 
+-- Common FULL icon/bar restyle state. Creation starts fresh; narrow decoration
+-- and interaction edits never call this. Pool release owns broader teardown,
+-- including timers, bindings, sound history and preview state.
+function ST.ResetButtonFullStyleState(button)
+    button._desaturated = nil
+    button._iconTintIntent = nil
+    button._desatCooldownActive = nil
+    button._readyGlowStartTime = nil
+    button._readyGlowMaxChargesStartTime = nil
+    button._readyGlowMaxChargesActive = nil
+    button._readyGlowMaxChargesSpellID = nil
+    button._noCooldown = nil
+    button._noCooldownSpellId = nil
+    button._baseNoCooldown = nil
+    button._baseNoCooldownSpellId = nil
+    button._resourceGateCost = nil
+    button._resourceGateCostSpellId = nil
+    button._baseResourceGateCost = nil
+    button._baseResourceGateCostSpellId = nil
+    button._vertexR = nil
+    button._vertexG = nil
+    button._vertexB = nil
+    button._vertexA = nil
+    button._chargeText = nil
+    button._chargeCountReadable = nil
+    button._zeroChargesConfirmed = nil
+    button._nilConfirmPending = nil
+    button._displaySpellId = nil
+    button._liveOverrideSpellId = nil
+    button._itemCount = nil
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+end
+
+-- Common CC-owned shell regions. Each lane resolves alpha and retains its own
+-- exceptional regions, especially the bar stack backgrounds and borders.
+function ST.ApplyButtonShellAlpha(button, alpha)
+    if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
+    -- SetVertexColor(r,g,b,a) also replaces icon alpha. Hide by shown-state;
+    -- dimmed shells pass this multiplier to the existing tint owner.
+    button._auraShellIconAlpha = alpha
+    button.icon:SetShown(alpha > 0)
+    button.cooldown:SetAlpha(alpha)
+    if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
+    if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
+end
+
 -- Exports
 ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR

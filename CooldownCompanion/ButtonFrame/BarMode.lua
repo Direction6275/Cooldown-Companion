@@ -436,7 +436,7 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     local parent = button:GetParent()
     local alpha = parent and parent._auraPanelChromeSuppressed and 1
         or CooldownCompanion:GetAuraShellAlpha(button, buttonData)
-    if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
+    ST.ApplyButtonShellAlpha(button, alpha)
     -- While per-stack blocks are up, UpdateBarStackBlocks owns bg and the
     -- whole-bar ring (both suppressed to 0) and is the only thing that
     -- restores them; the preview and per-tick paths that reach here never
@@ -446,12 +446,6 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
         button.bg:SetAlpha(alpha)
     end
     if button.iconBg then button.iconBg:SetAlpha(alpha) end
-    -- The icon must be hidden by shown-state, not alpha: the per-tick tint
-    -- pipeline's 4-arg SetVertexColor overwrites the texture's alpha through
-    -- a non-SetAlpha C path (Phase 2 gotcha). Nothing else Shows the icon.
-    -- Dimmed shells keep it shown; the tint pipeline applies the stamp.
-    button._auraShellIconAlpha = alpha
-    button.icon:SetShown(alpha > 0)
     if button.borderTextures and not button._stackBlocksActive then
         for _, tex in ipairs(button.borderTextures) do
             tex:SetAlpha(alpha)
@@ -465,10 +459,7 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     if button.statusBar then button.statusBar:SetAlpha(alpha) end
     if button.barTextFrame then button.barTextFrame:SetAlpha(alpha) end
     if button.barNameFrame then button.barNameFrame:SetAlpha(alpha) end
-    button.cooldown:SetAlpha(alpha)
-    if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
     if button.iconGCDCooldown then button.iconGCDCooldown:SetAlpha(alpha) end
-    if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
 end
 
 -- True-widget stack rendering (tracker C2): a standalone aura entry in
@@ -569,344 +560,9 @@ local function UpdateBarStackBlocks(button, style)
     end
 end
 
-function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, attached)
-    local barLength = style.barLength or 180
-    local barHeight = style.barHeight or 20
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local showIcon = style.showBarIcon ~= false
-    local isVertical = style.barFillVertical or false
-    local iconReverse = showIcon and (style.barIconReverse or false)
-
-    local iconSize = (style.barIconSizeOverride and style.barIconSize) or barHeight
-    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
-    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
-    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
-
-    -- Main bar frame
-    local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent,
-        attached and "DisableUntrustedLayoutScriptsTemplate" or nil)
-    if isVertical then
-        button:SetSize(barHeight, barLength)
-    else
-        button:SetSize(barLength, barHeight)
-    end
-    button._isBar = true
-    button._isVertical = isVertical
-    button.buttonData = buttonData
-
-    -- F6: flatten this bar's render layers into one render pass
-    -- (owner-validated V1-V10: no visual difference).
-    button:SetFlattensRenderLayers(true)
-
-    -- Background — covers bar area only when icon is shown (icon has its own iconBg)
-    local bgColor = style.barBgColor or {0.1, 0.1, 0.1, 0.8}
-    button.bg = button:CreateTexture(nil, "BACKGROUND")
-    if showIcon then
-        SetBarAreaPoints(button.bg, button, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-    else
-        button.bg:SetAllPoints()
-    end
-    button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-
-    -- Icon
-    button.icon = button:CreateTexture(nil, "ARTWORK")
-    if showIcon then
-        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
-        ST._ApplyIconTexCoord(button.icon, iconSize, iconSize, style.iconZoom)
-    else
-        -- Hidden 1x1 icon (still needed for UpdateButtonIcon)
-        button.icon:SetPoint("TOPLEFT", 0, 0)
-        button.icon:SetSize(1, 1)
-        button.icon:SetAlpha(0)
-    end
-
-    -- Icon background + border (always shown when icon visible)
-    button.iconBg = button:CreateTexture(nil, "BACKGROUND")
-    SetIconAreaPoints(button.iconBg, button, isVertical, iconReverse, iconSize, 0)
-    button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-    if not showIcon then button.iconBg:Hide() end
-
-    button._iconBounds = CreateFrame("Frame", nil, button)
-    button._iconBounds:EnableMouse(false)
-    SetIconAreaPoints(button._iconBounds, button, isVertical, iconReverse, iconSize, 0)
-
-    button.iconBorderTextures = {}
-    local borderColor = style.borderColor or {0, 0, 0, 1}
-    for i = 1, 4 do
-        local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetColorTexture(unpack(borderColor))
-        if not showIcon then tex:Hide() end
-        button.iconBorderTextures[i] = tex
-    end
-    ApplyBorderEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize, borderRenderMode)
-
-    -- Bar area bounds (for border positioning separate from icon)
-    button._barBounds = CreateFrame("Frame", nil, button)
-    button._barBounds:EnableMouse(false)
-    if showIcon then
-        SetBarAreaPoints(button._barBounds, button, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-    else
-        button._barBounds:SetAllPoints()
-    end
-
-    button._barBounds._ccKitRectW = isVertical and barHeight or math.max(1, barLength - barAreaLeft)
-    button._barBounds._ccKitRectH = isVertical and math.max(1, barLength - barAreaTop) or barHeight
-
-    -- StatusBar
-    button.statusBar = CreateFrame("StatusBar", nil, button)
-    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
-    if isVertical then
-        button.statusBar:SetOrientation("VERTICAL")
-    end
-    SetStatusBarImmediateRange(button.statusBar, 0, 1)
-    SetStatusBarImmediateValue(button.statusBar, 1)
-    button.statusBar:SetReverseFill(style.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
-    local barColor = style.barColor or DEFAULT_BAR_COLOR
-    button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
-    button.statusBar:EnableMouse(false)
-
-    -- Dedicated text layer above custom segment holders.
-    button.barTextFrame = CreateFrame("Frame", nil, button)
-    SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode))
-    button.barTextFrame:EnableMouse(false)
-
-    -- Name and cooldown text have different covering rules. Keep their
-    -- parents separate without reparenting text when the entry changes.
-    button.barNameFrame = CreateFrame("Frame", nil, button)
-    button.barNameFrame:SetAllPoints(button.barTextFrame)
-    button.barNameFrame:EnableMouse(false)
-    button.nameText = button.barNameFrame:CreateFontString(nil, "OVERLAY")
-    ApplyFontStyle(button.nameText, style, "barName", 10)
-    ST.BarTextLayout.Apply(button.nameText, button.barTextFrame,
-        ST.BarTextLayout.Resolve(style, "name", isVertical))
-    if style.showBarNameText ~= false or buttonData.customName then
-        button.nameText:SetText(buttonData.customName or buttonData.name or "")
-    else
-        button.nameText:Hide()
-    end
-
-    -- Time text
-    button.timeText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
-    ApplyFontStyle(button.timeText, style, "cooldown")
-    ApplyBarTextPlacement(button, style, "time")
-
-    -- Border textures (around bar area, not full button)
-    button.borderTextures = {}
-    for i = 1, 4 do
-        local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetColorTexture(unpack(borderColor))
-        button.borderTextures[i] = tex
-    end
-    ApplyBorderEdgePositions(button.borderTextures, button._barBounds, borderSize, borderRenderMode)
-
-    -- Loss of control cooldown frame (red swipe over the bar icon)
-    button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
-    button.locCooldown:SetAllPoints(button.icon)
-    button.locCooldown:SetDrawEdge(true)
-    button.locCooldown:SetDrawSwipe(true)
-    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
-    button.locCooldown:SetHideCountdownNumbers(true)
-    SetFrameClickThroughRecursive(button.locCooldown, true, true)
-
-    -- Icon-only GCD swipe frame for bar mode.
-    button.iconGCDCooldown = CreateFrame("Cooldown", button:GetName() .. "IconGCDCooldown", button, "CooldownFrameTemplate")
-    button.iconGCDCooldown:SetAllPoints(button.icon)
-    button.iconGCDCooldown:SetDrawEdge(style.cooldownSwipeEdgeEnabled == true)
-    button.iconGCDCooldown:SetDrawSwipe(true)
-    button.iconGCDCooldown:SetReverse(style.cooldownSwipeReverse or false)
-    button.iconGCDCooldown:SetHideCountdownNumbers(true)
-    button.iconGCDCooldown:Hide()
-    SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
-
-    -- Hidden cooldown frame for GetCooldownTimes() reads
-    button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
-    button.cooldown:SetSize(1, 1)
-    button.cooldown:SetPoint("CENTER")
-    button.cooldown:SetDrawSwipe(false)
-    button.cooldown:SetHideCountdownNumbers(true)
-    button.cooldown:Hide()
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
-
-    -- Suppress bling (cooldown-end flash) on all bar buttons
-    button.cooldown:SetDrawBling(false)
-    button.locCooldown:SetDrawBling(false)
-    button.iconGCDCooldown:SetDrawBling(false)
-
-    -- Charge/item count text (overlay)
-    button.overlayFrame = CreateFrame("Frame", nil, button)
-    button.overlayFrame:SetAllPoints()
-    button.overlayFrame:EnableMouse(false)
-    button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.count:SetText("")
-
-    -- Apply count text font/anchor settings
-    ApplyBarCountTextStyle(button, style)
-
-    -- Store button data
-    button.index = index
-    button.style = style
-
-    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
-    if buttonData.type == "spell" then
-        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
-    end
-
-    -- Bar text refresh / fallback fill OnUpdate. Native timers drive DurationObject fills.
-    button._barFillElapsed = 0
-    button._barTextUpdateInterval = BAR_TEXT_UPDATE_INTERVAL
-    button:SetScript("OnUpdate", BarModeOnUpdate)
-
-    if IsEntryItemLike(buttonData) then
-        local effectiveItem = ResolveEffectiveItem(buttonData, true)
-        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
-        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
-        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
-        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry(buttonData)
-            and effectiveItem and effectiveItem.trackable == true or nil
-    end
-
-    -- Per-button visibility runtime state
-    button._visibilityHidden = false
-    button._prevVisibilityHidden = false
-    button._visibilityAlphaOverride = nil
-    button._lastVisAlpha = 1
-    button._groupId = parent.groupId
-
-    -- Set icon
-    self:UpdateButtonIcon(button)
-
-    -- Set name text from resolved spell/item name
-    if style.showBarNameText ~= false or buttonData.customName then
-        local displayName = buttonData.customName or buttonData.name
-        if not buttonData.customName then
-            if buttonData.type == "spell" then
-                local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
-                if spellName then displayName = spellName end
-            elseif IsEntryItemLike(buttonData) then
-                local itemID = button._resolvedItemId or buttonData.id
-                local itemName = itemID and C_Item.GetItemNameByID(itemID)
-                if itemName then displayName = itemName end
-            end
-        end
-        button.nameText:SetText(displayName or "")
-    end
-
-    -- Methods
-    button.UpdateCooldown = function(self)
-        CooldownCompanion:UpdateButtonCooldown(self)
-    end
-
-    button.UpdateStyle = function(self, newStyle)
-        CooldownCompanion:UpdateBarStyle(self, newStyle)
-    end
-
-    -- Click-through
-    local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = style.showTooltips == true and not cursorAnchored
-    local iconTooltips = showTooltips and showIcon
-    -- Pings share the icon-only hover surface; the bar body stays pass-through.
-    local iconPings = style.allowPings == true and not cursorAnchored and showIcon
-        and IsEntryPingEligible(buttonData)
-
-    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
-    SetFrameClickThroughRecursive(button, true, true)
-    -- Prevent child frames from stealing hover.
-    if button.statusBar then
-        SetFrameClickThroughRecursive(button.statusBar, true, true)
-    end
-    if button.barTextFrame then
-        SetFrameClickThroughRecursive(button.barTextFrame, true, true)
-    end
-    if button._barBounds then
-        SetFrameClickThroughRecursive(button._barBounds, true, true)
-    end
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    if button.iconGCDCooldown then
-        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
-    end
-    if button.locCooldown then
-        SetFrameClickThroughRecursive(button.locCooldown, true, true)
-    end
-    if button.overlayFrame then
-        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
-    end
-
-    if button._iconBounds then
-        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
-        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
-    end
-    SetBarIconTooltipScripts(button, iconTooltips)
-    button:SetScript("OnEnter", nil)
-    button:SetScript("OnLeave", nil)
-    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
-    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
-    button._ccTooltipMotion = false
-    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
-    button._ccPingSurface = iconPings and button._iconBounds or nil
-    -- A button restyled from icon mode may still carry its own receiver.
-    SetEntryPingReceiver(button, false)
-
-    ST.BarLayers.Apply(button)
-    ApplyBarAuraShellVisuals(button, buttonData)
-    UpdateBarStackBlocks(button, style)
-
-    return button
-end
-
-function CooldownCompanion:UpdateBarInteraction(button, newStyle)
-    button.style = newStyle
-    local showIcon = newStyle.showBarIcon ~= false
-    -- Update click-through
-    local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
-    local iconTooltips = showTooltips and showIcon
-    -- Pings share the icon-only hover surface; the bar body stays pass-through.
-    local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
-        and IsEntryPingEligible(button.buttonData)
-
-    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
-    SetFrameClickThroughRecursive(button, true, true)
-    -- Prevent child frames from stealing hover.
-    if button.statusBar then
-        SetFrameClickThroughRecursive(button.statusBar, true, true)
-    end
-    if button.barTextFrame then
-        SetFrameClickThroughRecursive(button.barTextFrame, true, true)
-    end
-    if button._barBounds then
-        SetFrameClickThroughRecursive(button._barBounds, true, true)
-    end
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    if button.iconGCDCooldown then
-        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
-    end
-    if button.locCooldown then
-        SetFrameClickThroughRecursive(button.locCooldown, true, true)
-    end
-    if button.overlayFrame then
-        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
-    end
-
-    if button._iconBounds then
-        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
-        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
-    end
-    SetBarIconTooltipScripts(button, iconTooltips)
-    button:SetScript("OnEnter", nil)
-    button:SetScript("OnLeave", nil)
-    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
-    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
-    button._ccTooltipMotion = false
-    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
-    button._ccPingSurface = iconPings and button._iconBounds or nil
-    -- A button restyled from icon mode may still carry its own receiver.
-    SetEntryPingReceiver(button, false)
-end
-
-function CooldownCompanion:UpdateBarStyle(button, newStyle)
+-- Saved presentation only. Initial fill values, charge invalidation, text-mode
+-- caches and the running update driver belong to their lifecycle callers.
+local function ApplyBarFrameStyle(button, newStyle)
     local barLength = newStyle.barLength or 180
     local barHeight = newStyle.barHeight or 20
     local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
@@ -920,54 +576,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
     local barAreaTop = showIcon and (iconSize + iconOffset) or 0
 
-    ST.ChargeBarSegments.Invalidate(button.statusBar)
-    button.style = newStyle
-    if ClearButtonVisualState then
-        ClearButtonVisualState(button)
-    end
     button._isVertical = isVertical
-
-    -- Update bar text/fallback fill OnUpdate interval
-    button._barFillElapsed = 0
-    button._barTextUpdateInterval = BAR_TEXT_UPDATE_INTERVAL
-    button:SetScript("OnUpdate", BarModeOnUpdate)
-
-    -- Invalidate cached state
-    button._desaturated = nil
-    button._iconTintIntent = nil
-    button._desatCooldownActive = nil
-    button._readyGlowStartTime = nil
-    button._readyGlowMaxChargesStartTime = nil
-    button._readyGlowMaxChargesActive = nil
-    button._readyGlowMaxChargesSpellID = nil
-    button._noCooldown = nil
-    button._noCooldownSpellId = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
-    button._resourceGateCost = nil
-    button._resourceGateCostSpellId = nil
-    button._baseResourceGateCost = nil
-    button._baseResourceGateCostSpellId = nil
-    button._vertexR = nil
-    button._vertexG = nil
-    button._vertexB = nil
-    button._vertexA = nil
-    button._chargeText = nil
-    button._chargeRenderCount = nil
-    button._chargeCountReadable = nil
-    button._zeroChargesConfirmed = nil
-    button._nilConfirmPending = nil
-    button._displaySpellId = nil
-    button._liveOverrideSpellId = nil
-    button._itemCount = nil
-    button._visibilityHidden = false
-    button._prevVisibilityHidden = false
-    button._visibilityAlphaOverride = nil
-    button._barCdColor = nil
-    button._chargeRecharging = nil
-    button._chargesSpent = nil
-    button._barReadyTextColor = nil
-    button.statusBar:SetAlpha(1.0)
 
     if isVertical then
         button:SetSize(barHeight, barLength)
@@ -1072,28 +681,20 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         end
     end
 
-    -- Update name text font and position
+    -- Text regions keep their independent parents and shared placement owner.
+    ApplyFontStyle(button.nameText, newStyle, "barName", 10)
     local hasCustomName = button.buttonData and button.buttonData.customName
     if newStyle.showBarNameText ~= false or hasCustomName then
-        ApplyFontStyle(button.nameText, newStyle, "barName", 10)
         button.nameText:Show()
     else
         button.nameText:Hide()
     end
-
-    -- Update time text font (default state; per-tick logic handles aura mode)
     ApplyFontStyle(button.timeText, newStyle, "cooldown")
-    -- Clear cached text mode so per-tick logic re-applies the correct font and color
-    button._barTextMode = nil
-    button._barTextColorDirty = true
-
     ApplyBarTextPlacement(button, newStyle, "time")
-
-    -- Update charge/item count font and anchor to icon or bar area
     ApplyBarCountTextStyle(button, newStyle)
+end
 
-    -- Update spell name text
-    self:UpdateButtonIcon(button)
+local function ApplyBarNameText(button, newStyle)
     if newStyle.showBarNameText ~= false or (button.buttonData and button.buttonData.customName) then
         local displayName = button.buttonData.customName or button.buttonData.name
         if not button.buttonData.customName then
@@ -1108,6 +709,220 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         end
         button.nameText:SetText(displayName or "")
     end
+end
+
+local function StartBarUpdates(button)
+    button._barFillElapsed = 0
+    button._barTextUpdateInterval = BAR_TEXT_UPDATE_INTERVAL
+    button:SetScript("OnUpdate", BarModeOnUpdate)
+end
+
+function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, attached)
+    local button = CreateFrame("Frame", parent:GetName() .. "Bar" .. index, parent,
+        attached and "DisableUntrustedLayoutScriptsTemplate" or nil)
+    button._isBar = true
+    button.buttonData = buttonData
+    button.index = index
+    button.style = style
+    button:SetFlattensRenderLayers(true)
+
+    button.bg = button:CreateTexture(nil, "BACKGROUND")
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.iconBg = button:CreateTexture(nil, "BACKGROUND")
+    button._iconBounds = CreateFrame("Frame", nil, button)
+    button._iconBounds:EnableMouse(false)
+    button.iconBorderTextures = {}
+    for i = 1, 4 do
+        button.iconBorderTextures[i] = button:CreateTexture(nil, "OVERLAY")
+    end
+    button._barBounds = CreateFrame("Frame", nil, button)
+    button._barBounds:EnableMouse(false)
+
+    button.statusBar = CreateFrame("StatusBar", nil, button)
+    SetStatusBarImmediateRange(button.statusBar, 0, 1)
+    SetStatusBarImmediateValue(button.statusBar, 1)
+    button.statusBar:EnableMouse(false)
+
+    -- Name and timer text have different aura-covering rules. These parents
+    -- are stable across restyles and entry reassignment.
+    button.barTextFrame = CreateFrame("Frame", nil, button)
+    button.barTextFrame:EnableMouse(false)
+    button.barNameFrame = CreateFrame("Frame", nil, button)
+    button.barNameFrame:SetAllPoints(button.barTextFrame)
+    button.barNameFrame:EnableMouse(false)
+    button.nameText = button.barNameFrame:CreateFontString(nil, "OVERLAY")
+    button.timeText = button.barTextFrame:CreateFontString(nil, "OVERLAY")
+    button.borderTextures = {}
+    for i = 1, 4 do
+        button.borderTextures[i] = button:CreateTexture(nil, "OVERLAY")
+    end
+
+    -- Loss of control cooldown frame (red swipe over the bar icon)
+    button.locCooldown = CreateFrame("Cooldown", button:GetName() .. "LocCooldown", button, "CooldownFrameTemplate")
+    button.locCooldown:SetAllPoints(button.icon)
+    button.locCooldown:SetDrawEdge(true)
+    button.locCooldown:SetDrawSwipe(true)
+    button.locCooldown:SetSwipeColor(0.17, 0, 0, 0.8)
+    button.locCooldown:SetHideCountdownNumbers(true)
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
+
+    -- Icon-only GCD swipe frame for bar mode.
+    button.iconGCDCooldown = CreateFrame("Cooldown", button:GetName() .. "IconGCDCooldown", button, "CooldownFrameTemplate")
+    button.iconGCDCooldown:SetAllPoints(button.icon)
+    button.iconGCDCooldown:SetDrawSwipe(true)
+    button.iconGCDCooldown:SetHideCountdownNumbers(true)
+    button.iconGCDCooldown:Hide()
+    SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+
+    -- Hidden cooldown frame for GetCooldownTimes() reads
+    button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
+    button.cooldown:SetSize(1, 1)
+    button.cooldown:SetPoint("CENTER")
+    button.cooldown:SetDrawSwipe(false)
+    button.cooldown:SetHideCountdownNumbers(true)
+    button.cooldown:Hide()
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    button.cooldown:SetScript("OnCooldownDone", ST.OnButtonCooldownDone)
+
+    -- Suppress bling (cooldown-end flash) on all bar buttons
+    button.cooldown:SetDrawBling(false)
+    button.locCooldown:SetDrawBling(false)
+    button.iconGCDCooldown:SetDrawBling(false)
+
+    -- Charge/item count text (overlay)
+    button.overlayFrame = CreateFrame("Frame", nil, button)
+    button.overlayFrame:SetAllPoints()
+    button.overlayFrame:EnableMouse(false)
+    button.count = button.overlayFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.count:SetText("")
+
+    ApplyBarFrameStyle(button, style)
+
+    -- Cache spell cooldown secrecy level (static per-spell: NeverSecret=0, ContextuallySecret=2)
+    if buttonData.type == "spell" then
+        buttonData._cooldownSecrecy = C_Secrets.GetSpellCooldownSecrecy(buttonData.id)
+    end
+
+    -- Native timers drive fills; this driver owns text and fallback updates.
+    StartBarUpdates(button)
+
+    if IsEntryItemLike(buttonData) then
+        local effectiveItem = ResolveEffectiveItem(buttonData, true)
+        button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
+        button._resolvedItemAvailableQuantity = effectiveItem and effectiveItem.availableQuantity or 0
+        button._resolvedItemQuantityKind = effectiveItem and effectiveItem.quantityKind or "stacks"
+        button._equipmentSlotTrackable = CooldownCompanion.IsEquipmentSlotEntry(buttonData)
+            and effectiveItem and effectiveItem.trackable == true or nil
+    end
+
+    -- Per-button visibility runtime state
+    button._visibilityHidden = false
+    button._prevVisibilityHidden = false
+    button._visibilityAlphaOverride = nil
+    button._lastVisAlpha = 1
+    button._groupId = parent.groupId
+
+    -- Set icon
+    self:UpdateButtonIcon(button)
+
+    ApplyBarNameText(button, style)
+
+    -- Methods
+    button.UpdateCooldown = function(self)
+        CooldownCompanion:UpdateButtonCooldown(self)
+    end
+
+    button.UpdateStyle = function(self, newStyle)
+        CooldownCompanion:UpdateBarStyle(self, newStyle)
+    end
+
+    self:UpdateBarInteraction(button, style)
+
+    ST.BarLayers.Apply(button)
+    ApplyBarAuraShellVisuals(button, buttonData)
+    UpdateBarStackBlocks(button, style)
+
+    return button
+end
+
+function CooldownCompanion:UpdateBarInteraction(button, newStyle)
+    button.style = newStyle
+    local showIcon = newStyle.showBarIcon ~= false
+    -- Update click-through
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
+    local iconTooltips = showTooltips and showIcon
+    -- Pings share the icon-only hover surface; the bar body stays pass-through.
+    local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
+        and IsEntryPingEligible(button.buttonData)
+
+    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
+    SetFrameClickThroughRecursive(button, true, true)
+    -- Prevent child frames from stealing hover.
+    if button.statusBar then
+        SetFrameClickThroughRecursive(button.statusBar, true, true)
+    end
+    if button.barTextFrame then
+        SetFrameClickThroughRecursive(button.barTextFrame, true, true)
+    end
+    if button._barBounds then
+        SetFrameClickThroughRecursive(button._barBounds, true, true)
+    end
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
+    if button.locCooldown then
+        SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    end
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+
+    if button._iconBounds then
+        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
+        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
+    end
+    SetBarIconTooltipScripts(button, iconTooltips)
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
+    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
+    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
+    button._ccTooltipMotion = false
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = iconPings and button._iconBounds or nil
+    -- A button restyled from icon mode may still carry its own receiver.
+    SetEntryPingReceiver(button, false)
+end
+
+local function ResetBarStyleState(button)
+    ST.ChargeBarSegments.Invalidate(button.statusBar)
+    if ClearButtonVisualState then
+        ClearButtonVisualState(button)
+    end
+
+    ST.ResetButtonFullStyleState(button)
+    -- Invalidate cached state
+    button._chargeRenderCount = nil
+    button._barCdColor = nil
+    button._chargeRecharging = nil
+    button._chargesSpent = nil
+    button._barReadyTextColor = nil
+    button.statusBar:SetAlpha(1.0)
+
+    button._barTextMode = nil
+    button._barTextColorDirty = true
+end
+
+function CooldownCompanion:UpdateBarStyle(button, newStyle)
+    button.style = newStyle
+    ResetBarStyleState(button)
+    -- Pool release and Totem consumers can remove this script; full restyle
+    -- restores the ordinary bar driver without changing its cadence.
+    StartBarUpdates(button)
+    ApplyBarFrameStyle(button, newStyle)
+    self:UpdateButtonIcon(button)
+    ApplyBarNameText(button, newStyle)
 
     self:UpdateBarInteraction(button, newStyle)
 
