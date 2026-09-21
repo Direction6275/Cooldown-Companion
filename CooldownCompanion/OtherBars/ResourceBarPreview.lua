@@ -106,7 +106,6 @@ end
 
 function RB.CreateResourceBarPreviewModule(deps)
     local HealthBar = deps.HealthBar
-    local HEALTH_EFFECTS = deps.HEALTH_EFFECTS
     local GetUnlockAssistActive = deps.GetUnlockAssistActive
     local SetUnlockAssistActive = deps.SetUnlockAssistActive
     local GetMWMaxStacks = deps.GetMWMaxStacks
@@ -127,7 +126,7 @@ function RB.CreateResourceBarPreviewModule(deps)
     local ResourceOverlayFillSupportsBarType = RB.ResourceOverlayFillSupportsBarType
 
     function RB.IsHealthEffectPreviewAnimated()
-        return HEALTH_EFFECTS.preview.lowHealthAlert == true
+        return ST._ConfigPreview.GetHealthEffects().lowHealthAlert == true
     end
 
     -- Resolved once at build time, not per tick: HealthBar.GetConfig runs
@@ -142,7 +141,7 @@ function RB.CreateResourceBarPreviewModule(deps)
     function RB.AnimatePreviewHealthEffects(barInfo, config)
         local bar = barInfo and barInfo.frame
         if not (bar and bar:IsShown()) then return end
-        HealthBar.UpdateEffectBars(bar, config, UnitHealthMax("player"), HEALTH_EFFECTS.preview)
+        HealthBar.UpdateEffectBars(bar, config, UnitHealthMax("player"), ST._ConfigPreview.GetHealthEffects())
     end
 
     ------------------------------------------------------------------------
@@ -327,7 +326,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetStatusBarSmoothValue(barInfo.frame, health)
             HealthBar.ApplyFillColor(barInfo.frame, config, fraction)
             HealthBar.ApplyBackgroundColor(barInfo.frame, config, fraction)
-            HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, staticPreview and {} or HEALTH_EFFECTS.preview)
+            HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, staticPreview and {} or ST._ConfigPreview.GetHealthEffects())
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
                 local textFormat = barInfo.frame._textFormat
                 local abbreviated = AbbreviateNumbers(health)

@@ -55,7 +55,6 @@ local blizzardSuppressionYielded = false
 -- positioned; the command-center preview is a config-canvas state and never
 -- touches the world.
 local isUnlockAssistActive = false
-local isCanvasPreviewActive = false
 -- Blizzard's talent UI replaces the player cast bar with its ApplyingTalents
 -- overlay. CC yields only to that overlay; other contextual overlays stay
 -- hidden while CC owns the player cast bar.
@@ -1978,7 +1977,7 @@ local function TearDownCastBarDisplay()
     -- It keeps rendering from saved settings through transient frame
     -- availability, the same reason RevertResourceBars leaves canvas state
     -- alone. Ownership sits with
-    -- ClearAllConfigPreviews and the command center's stranded-preview stop,
+    -- ClearAllConfigPreviews and the command center's enablement check,
     -- which ask whether the cast bar is configured at all rather than whether
     -- it happens to be drawable this instant.
     isUnlockAssistActive = false
@@ -2220,16 +2219,8 @@ end
 
 -- The command-center cast preview: state only. The cast it stands for is
 -- animated on the config canvas's cast facsimile, never on the real bar.
-function CooldownCompanion:StartCastBarPreview()
-    isCanvasPreviewActive = true
-end
-
-function CooldownCompanion:StopCastBarPreview()
-    isCanvasPreviewActive = false
-end
-
 function CooldownCompanion:IsCastBarPreviewActive()
-    return isCanvasPreviewActive
+    return ST._ConfigPreview.GetSample("cast") ~= nil
 end
 
 ------------------------------------------------------------------------

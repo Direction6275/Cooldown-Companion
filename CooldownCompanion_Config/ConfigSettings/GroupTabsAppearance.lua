@@ -790,10 +790,6 @@ local function BuildAppearanceTab(container, settingsGroup)
         ST._CompleteConfigEdit(editTarget, "style-settings")
     end
 
-    CooldownCompanion:ClearAllTextureIndicatorPreviews()
-    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-    end
 
     if group.displayMode == "trigger" then
         local displayAction = AddTriggerDisplayTypeDropdown(container, group)

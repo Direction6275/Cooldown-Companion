@@ -32,6 +32,7 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 local RB = ST._RB
+local Preview = ST._ConfigPreview
 
 local BAR_HEIGHT = 20
 local BAR_BOTTOM_INSET = 3
@@ -75,106 +76,30 @@ local SPELLBOOK_RIGHT_INSET = 4
 local BAR_RESERVE = BAR_HEIGHT + BAR_BOTTOM_INSET
 
 ------------------------------------------------------------------------
--- Preview state adapters
---
--- Three families reach three different runtime surfaces, but each one
--- reduces to the same pair: "is this preview on for the target" and "turn
--- it on/off for the target". Flag and conditional previews accept an
--- entry index; texture and trigger previews are panel-wide only.
+-- Renderer inputs for each semantic command. They describe a composite, never
+-- mutable flags or independent activations. The session is the only writer.
 ------------------------------------------------------------------------
 
-local function FlagPreview(flag, buttonSetter, groupSetter)
-    return {
-        IsActive = function(panelId, buttonIndex)
-            return CooldownCompanion:IsPreviewFlagActive(panelId, buttonIndex, flag) == true
-        end,
-        SetActive = function(panelId, buttonIndex, show)
-            if buttonIndex then
-                local setter = CooldownCompanion[buttonSetter]
-                if setter then setter(CooldownCompanion, panelId, buttonIndex, show) end
-                return
-            end
-            local setter = CooldownCompanion[groupSetter]
-            if setter then setter(CooldownCompanion, panelId, show) end
-        end,
-    }
+local function FlagPreview(flag, conditional)
+    return { owner = "panel", flag = flag, conditional = conditional }
 end
 
 local function ConditionalPreview(kind)
-    return {
-        IsActive = function(panelId, buttonIndex)
-            return CooldownCompanion:IsConditionalVisualPreviewActive(panelId, buttonIndex, kind) == true
-        end,
-        SetActive = function(panelId, buttonIndex, show)
-            CooldownCompanion:SetConditionalVisualPreviewActive(panelId, buttonIndex, kind, show)
-        end,
-    }
+    return { owner = "panel", conditional = kind }
 end
 
-local function TextureIndicatorPreview(indicatorKey)
-    return {
-        groupScoped = true,
-        IsActive = function(panelId)
-            return CooldownCompanion:IsGroupTextureIndicatorPreviewActive(panelId, indicatorKey) == true
-        end,
-        SetActive = function(panelId, _, show)
-            CooldownCompanion:SetGroupTextureIndicatorPreview(panelId, indicatorKey, show)
-        end,
-    }
+local function TextureIndicatorPreview(key)
+    return { owner = "panel", groupScoped = true, textureIndicator = key,
+        flag = "_texture" .. key:gsub("^%l", string.upper) .. "Preview" }
 end
 
-local TriggerEffectsPreview = {
-    groupScoped = true,
-    IsActive = function(panelId)
-        return CooldownCompanion:IsTriggerPanelEffectsPreviewActive(panelId) == true
-    end,
-    SetActive = function(panelId, _, show)
-        CooldownCompanion:SetTriggerPanelEffectsPreview(panelId, show)
-    end,
-}
-
--- Previews owned by one config object rather than by a panel: they always
--- run on the bar they belong to, so neither the selected panel nor the
--- selected entry can narrow them (hence groupScoped - they never follow a
--- selection). What makes them worth a control is that the resting bar
--- cannot show them at all: absorbs and a cast in progress only exist for a
--- moment, so the canvas has to be told to stage one.
-local function HealthEffectPreview(effectKey)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:IsHealthEffectPreviewActive(effectKey) == true
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetHealthEffectPreview(effectKey, show)
-        end,
-    }
+local TriggerEffectsPreview = { owner = "panel", groupScoped = true, triggerEffects = true }
+local function HealthEffectPreview(key)
+    return { owner = "health", groupScoped = true, healthEffect = key }
 end
-
-local CastBarPreview = {
-    groupScoped = true,
-    IsActive = function()
-        return CooldownCompanion:IsCastBarPreviewActive() == true
-    end,
-    SetActive = function(_, _, show)
-        if show then
-            CooldownCompanion:StartCastBarPreview()
-        else
-            CooldownCompanion:StopCastBarPreview()
-        end
-    end,
-}
-
+local CastBarPreview = { owner = "cast", groupScoped = true }
 local function ResourceAuraPreview(powerType)
-    return {
-        groupScoped = true,
-        IsActive = function()
-            return CooldownCompanion:IsResourceAuraActivePreviewActive(powerType) == true
-        end,
-        SetActive = function(_, _, show)
-            CooldownCompanion:SetResourceAuraActivePreview(powerType, show)
-        end,
-    }
+    return { owner = "resource", groupScoped = true, powerType = powerType }
 end
 
 ------------------------------------------------------------------------
@@ -564,7 +489,7 @@ local CONTROLS = {
         section = "procGlow",
         glowStyleKey = "procGlowStyle",
         settings = { tab = "effects", key = "procGlow" },
-        preview = FlagPreview("_procGlowPreview", "SetProcGlowPreview", "SetGroupProcGlowPreview"),
+        preview = FlagPreview("_procGlowPreview"),
     },
     {
         id = "auraGlow",
@@ -575,7 +500,7 @@ local CONTROLS = {
         section = "auraIndicator",
         glowStyleKey = "auraGlowStyle",
         settings = { tab = "effects", key = "auraGlow" },
-        preview = FlagPreview("_auraGlowPreview", "SetAuraGlowPreview", "SetGroupAuraGlowPreview"),
+        preview = FlagPreview("_auraGlowPreview"),
     },
     {
         id = "pandemicGlow",
@@ -586,7 +511,7 @@ local CONTROLS = {
         section = "pandemic",
         requiresPandemicEffect = true,
         settings = { tab = "effects", key = "pandemicGlow" },
-        preview = FlagPreview("_pandemicPreview", "SetPandemicPreview", "SetGroupPandemicPreview"),
+        preview = FlagPreview("_pandemicPreview"),
     },
     {
         id = "readyGlow",
@@ -597,7 +522,7 @@ local CONTROLS = {
         section = "readyGlow",
         glowStyleKey = "readyGlowStyle",
         settings = { tab = "effects", key = "readyGlow" },
-        preview = FlagPreview("_readyGlowPreview", "SetReadyGlowPreview", "SetGroupReadyGlowPreview"),
+        preview = FlagPreview("_readyGlowPreview"),
     },
     {
         id = "keyPressHighlight",
@@ -608,7 +533,7 @@ local CONTROLS = {
         section = "keyPressHighlight",
         glowStyleKey = "keyPressHighlightStyle",
         settings = { tab = "effects", key = "keyPressHighlight" },
-        preview = FlagPreview("_keyPressHighlightPreview", "SetButtonKeyPressHighlightPreview", "SetGroupKeyPressHighlightPreview"),
+        preview = FlagPreview("_keyPressHighlightPreview"),
     },
     {
         id = "barActiveAura",
@@ -619,7 +544,7 @@ local CONTROLS = {
         section = "barActiveAura",
         requiresBarAuraIndicator = true,
         settings = { tab = "effects", key = "barActiveAura" },
-        preview = FlagPreview("_barAuraEffectPreview", "SetBarAuraEffectPreview", "SetGroupBarAuraEffectPreview"),
+        preview = FlagPreview("_barAuraEffectPreview", "aura_duration_bar"),
     },
     {
         id = "barPandemic",
@@ -636,7 +561,7 @@ local CONTROLS = {
         -- own. The section constant is GroupTabs' (EFFECTS_AURA_SECTION); bars
         -- shares it.
         settings = { tab = "effects", uncollapse = "effects_aura" },
-        preview = FlagPreview("_pandemicPreview", "SetBarPandemicPreview", "SetGroupBarPandemicPreview"),
+        preview = FlagPreview("_pandemicPreview", "aura_duration_bar"),
     },
     {
         id = "textureProc",
@@ -991,31 +916,6 @@ local function PresentationControl(control, presentation)
     variant.baseControl = control
     local prefix = presentation == "bars" and "Bars: " or "Icons: "
     variant.label, variant.menuLabel = prefix .. control.label, prefix .. (control.menuLabel or control.label):gsub("^Preview%s+", "")
-    local function Visit(panelId, buttonIndex, action)
-        local owner = CooldownCompanion.db.profile.groups[panelId]
-        if not owner then return false end
-        local group = ST._CreatePanelSettingsContext(owner, presentation).group
-        local found = false
-        for index, entry in ipairs(owner.buttons or {}) do
-            if (not buttonIndex or index == buttonIndex) and ST.GetEntryPresentation(owner, entry) == presentation then
-                if action(index, entry, group) then found = true end
-            end
-        end
-        return found
-    end
-    variant.preview = {
-        IsActive = function(panelId, buttonIndex)
-            return Visit(panelId, buttonIndex, function(index) return control.preview.IsActive(panelId, index) == true end)
-        end,
-        SetActive = function(panelId, buttonIndex, show)
-            Visit(panelId, buttonIndex, function(index, entry, group)
-                if not show or (ST.IsPanelLayoutEntryEligible(group._settingsOwner, entry)
-                    and ControlApplies(control, group, presentation, index)) then
-                    control.preview.SetActive(panelId, index, show)
-                end
-            end)
-        end,
-    }
     presentationControls[id] = variant
     return variant
 end
@@ -1112,20 +1012,6 @@ local function CastBarEnabled()
     return settings ~= nil and settings.enabled == true
 end
 
--- Both attached and independent cast bars have a preview destination.
--- Only disabling the module invalidates it; transient attachment changes
--- are handled by the current canvas's offer gate.
-local function HasCastPreviewDestination()
-    return CastBarEnabled()
-end
-
-local function StopStrandedCastPreview()
-    if HasCastPreviewDestination() then return end
-    if CooldownCompanion:IsCastBarPreviewActive() then
-        CooldownCompanion:StopCastBarPreview()
-    end
-end
-
 local OBJECT_CONTROLS = {
     {
         id = "healthAbsorbs",
@@ -1182,11 +1068,15 @@ local OBJECT_CONTROLS = {
 -- bar's settings can be open below the divider there.
 local function CollectObjectControls(objects)
     local applicable = {}
-    StopStrandedCastPreview()
     -- Resolved once and handed to the gates that want it, since resolving
     -- deep-copies the resource table. Skipped entirely on a surface that
     -- hosts no health entries.
-    local healthConfig = objects.health and GetHealthEffectConfig() or nil
+    local running = Preview.Get()
+    local command = running and running.command.object and running.command
+    local healthConfig = (objects.health or (command and command.object == "health"))
+        and GetHealthEffectConfig() or nil
+    local settings = (objects.resourceAuras or (command and command.preview.owner == "resource"))
+        and CooldownCompanion.GetResourceBarSettings and CooldownCompanion:GetResourceBarSettings()
     for _, control in ipairs(OBJECT_CONTROLS) do
         if objects[control.object] and control.Applies(healthConfig) then
             applicable[#applicable + 1] = control
@@ -1194,8 +1084,6 @@ local function CollectObjectControls(objects)
     end
 
     if objects.resourceAuras then
-        local settings = CooldownCompanion.GetResourceBarSettings
-            and CooldownCompanion:GetResourceBarSettings()
         -- Lazy: this file loads before the ConfigSettings modules.
         local LanePowerTypes = ST._ResourcesPreviewResourceLanePowerTypes
         if settings and settings.enabled == true and LanePowerTypes then
@@ -1213,13 +1101,25 @@ local function CollectObjectControls(objects)
             end
         end
     end
+    -- Menu offers can disappear while spec data is loading. The running
+    -- object keeps its sample through that gap; its saved enablement owns
+    -- cancellation, and selection owns leaving its workspace.
+    if command and not CS.settingsPreviewInProgress then
+        local enabled
+        if command.preview.owner == "resource" then
+            enabled = settings and settings.enabled == true
+                and ResourceAuraOverlayConfigured(settings, command.preview.powerType)
+        else
+            enabled = command.Applies(healthConfig)
+        end
+        if not enabled then Preview.Stop() end
+    end
     return applicable
 end
 
 ------------------------------------------------------------------------
 -- Context: which panel the bar acts on, and whether a single selected
--- entry narrows it. A multi-select keeps panel scope (the setters take
--- one entry, and "nothing narrowed" is the ruled fallback).
+-- entry narrows it. A multi-select keeps panel scope.
 ------------------------------------------------------------------------
 
 local function ResolveContext(presentation)
@@ -1317,11 +1217,34 @@ local RESOURCES_SURFACE = {
 -- one clears every other.
 ------------------------------------------------------------------------
 
-local function SetPreviewRunning(surface, control, panelId, buttonIndex, show)
-    if show and CooldownCompanion.ClearAllConfigPreviews then
-        CooldownCompanion:ClearAllConfigPreviews()
+local function ResolvePreviewTargets(control, panelId, buttonIndex)
+    if control.object or control.preview.groupScoped then return nil end
+    local owner = CooldownCompanion.db.profile.groups[panelId]
+    if not owner then return {} end
+    local presentation = control.presentation or owner.displayMode or "icons"
+    local group = control.presentation and ST._CreatePanelSettingsContext(owner, presentation).group or owner
+    -- The rotation assistant's recommendation is one synthetic slot.
+    if CooldownCompanion.IsRotationAssistantGroup and CooldownCompanion:IsRotationAssistantGroup(owner) then
+        return nil
     end
-    control.preview.SetActive(panelId, buttonIndex, show)
+    local targets = {}
+    for index, entry in ipairs(owner.buttons or {}) do
+        if (not buttonIndex or index == buttonIndex)
+            and (not control.presentation or (ST.GetEntryPresentation(owner, entry) == presentation
+                and ST.IsPanelLayoutEntryEligible(owner, entry)))
+            and ControlApplies(control.baseControl or control, group, presentation, index) then
+            targets[index] = entry
+        end
+    end
+    return targets
+end
+
+local function SetPreviewRunning(surface, control, panelId, buttonIndex, show)
+    if show then
+        Preview.Start(control, panelId, buttonIndex, ResolvePreviewTargets(control, panelId, buttonIndex))
+    else
+        Preview.StopCommand(control.id)
+    end
     surface.Repaint()
 end
 
@@ -1361,12 +1284,12 @@ end
 -- Objects live on the two homes rather than in the buttons workspace, so
 -- their routes select a destination first. Returns the surface whose canvas
 -- shows the destination, which is the one to repaint afterwards.
-local function ApplyObjectRoute(route)
+local function ApplyObjectRoute(route, running)
     local RBP = ST._RBP
 
     if route.object == "cast" then
         if ST._SelectConfigCastFramesItem then
-            ST._SelectConfigCastFramesItem("castbar")
+            ST._SelectConfigCastFramesItem("castbar", { previewSession = running })
         end
         CS.castBarHomeTab = "appearance"
         SetRowScope("detail")
@@ -1376,7 +1299,7 @@ local function ApplyObjectRoute(route)
     -- Everything else is a Resources-home object. Selecting the home first
     -- matters: it always drops any object selection, so a bar selected below
     -- would be cleared right after we made it.
-    ST._OpenBarWorkspace("resources")
+    ST._OpenBarWorkspace("resources", { previewSession = running })
 
     if route.object == "health" then
         -- A module tab rather than a bar: at primary scope it owns the
@@ -1564,9 +1487,9 @@ end
 -- the caller - passed in so the uncollapse below only opens the section whose
 -- gear actually has to build, not one the route merely names. `sectionId` is
 -- the style section the preview shows, when it is one.
-local function ApplyGearRoute(route, queueKey, sectionId)
+local function ApplyGearRoute(route, queueKey, sectionId, running)
     if route.object then
-        return ApplyObjectRoute(route)
+        return ApplyObjectRoute(route, running)
     end
 
     -- The panel and its attached modules share one chooser. A panel gear
@@ -1701,11 +1624,9 @@ local function NavigateToPreviewSettings(bar)
         return
     end
 
-    -- Read BEFORE navigating. Every seam below clears previews - the panel
-    -- and entry tab switches both do, and so do the two home selectors - so
-    -- a live check afterwards always reports "not running" and the preview
-    -- the user was studying would silently die on the way to its settings.
-    local wasRunning = control.preview.IsActive(panelId, buttonIndex) == true
+    -- Pass the actual session through object navigation. It remains alive;
+    -- there is no saved "was running" value and no restart after rebuilding.
+    local running = Preview.IsCommand(control, panelId, buttonIndex) and Preview.Get() or nil
 
     -- The preview target is the selected object, so its entry/panel ownership
     -- is already settled. Resolve customization scope before choosing the
@@ -1734,7 +1655,7 @@ local function NavigateToPreviewSettings(bar)
         rowKey = settingsKey,
     }
 
-    local destination = ApplyGearRoute(route, queueKey, sectionId)
+    ApplyGearRoute(route, queueKey, sectionId, running)
 
     -- Queued last, with every navigation write already made, so the context
     -- it snapshots is the one the rebuild will consume it under. The
@@ -1750,12 +1671,6 @@ local function NavigateToPreviewSettings(bar)
     CooldownCompanion:RefreshConfigPanel()
     if ST._ScheduleNavSettingHighlight then
         ST._ScheduleNavSettingHighlight()
-    end
-
-    -- Put the preview back if a seam took it. Guarded on live state so a
-    -- route that crossed nothing does not flicker through a clear/set cycle.
-    if wasRunning and control.preview.IsActive(panelId, buttonIndex) ~= true then
-        SetPreviewRunning(destination, control, panelId, buttonIndex, true)
     end
 end
 
@@ -1809,8 +1724,7 @@ local function CustomizePreviewSection(bar)
 
     -- Promotion refreshes the pinned mirror immediately, but leaves the config
     -- pane in place. NavigateToPreviewSettings then prepares the destination,
-    -- queues the now-live advanced gear, refreshes once, and restores a running
-    -- preview if crossing the tab seam cleared it.
+    -- queues the now-live advanced gear, and refreshes with the same session.
     if promote(lens, group, sectionId, { deferRefresh = true }) then
         NavigateToPreviewSettings(bar)
     end
@@ -1831,91 +1745,30 @@ end
 -- Re-scoping must invalidate the slot visuals for the latter path too.
 ------------------------------------------------------------------------
 
-local function FindControlById(controlId)
-    if not controlId then
-        return nil
-    end
-    if presentationControls[controlId] then return presentationControls[controlId] end
-    for _, control in ipairs(CONTROLS) do
-        if control.id == controlId then
-            return control
-        end
-    end
-    return nil
-end
-
-local function IsControlApplicable(control, applicable)
-    for _, candidate in ipairs(applicable) do
-        if candidate == control then
-            return true
-        end
-    end
-    return false
-end
-
--- Reconcile the running command, not every control that shares its stored
--- flag or staged aura state. Ordinary panel previews own individual targets;
--- one target losing eligibility must not stop the other presentation or an
--- entry whose customization still enables the effect. This runs even when
--- the settings section is collapsed or a different tab is open.
+-- Selection and committed edits reconcile the active command directly. A
+-- temporary color/slider render may show a candidate, but cannot cancel intent.
 local function ReconcileRunningPreview(panelId, group, buttonIndex)
-    local control = FindControlById(CS.previewCommandCenterSelection)
-    if not control then return end
-    local preview = (control.baseControl or control).preview
-    if preview.IsActive(panelId, nil) ~= true then return end
-    local owner = group._settingsOwner or group
-    local function StopIfInapplicable(index, applies)
-        if not applies and preview.IsActive(panelId, index) == true then
-            preview.SetActive(panelId, index, false)
-            CS.panelPreviewVisualsNeedReconcile = true
-        end
+    if CS.settingsPreviewInProgress then return end
+    local running = Preview.Get()
+    if not running then Preview.Stop(); return end
+    if running.hostPanelId ~= panelId then Preview.Stop(); return end
+    local control = running.command
+    if control.object then return end
+    if not group then Preview.Stop(); return end
+    if control.preview.owner == "totem" then
+        if not ST.IsTotemPanelGroup(group) then Preview.Stop() end
+        return
     end
-    if control.presentation then
-        local view = ST._CreatePanelSettingsContext(owner, control.presentation).group
-        for index, entry in ipairs(owner.buttons or {}) do
-            StopIfInapplicable(index,
-                ST.GetEntryPresentation(owner, entry) == control.presentation
-                and ST.IsPanelLayoutEntryEligible(owner, entry)
-                and ControlApplies(control.baseControl, view, control.presentation, index))
-        end
-    else
-        StopIfInapplicable(buttonIndex,
-            ControlApplies(control, group, group.displayMode or "icons", buttonIndex))
+    local targets = ResolvePreviewTargets(control, panelId, buttonIndex)
+    if not targets and not ControlApplies(control, group, group.displayMode or "icons", buttonIndex) then
+        Preview.Stop()
+        return
     end
+    Preview.Retarget(buttonIndex, targets)
 end
 
-local function MigrateRunningPreview(panelId, buttonIndex, applicable)
-    local lastPanelId = CS.previewCommandCenterLastPanel
-    local lastButtonIndex = CS.previewCommandCenterLastButton
-    CS.previewCommandCenterLastPanel = panelId
-    CS.previewCommandCenterLastButton = buttonIndex
-
-    -- Only within one panel: a preview belongs to the panel it was
-    -- started on, and following the user across panels would be a
-    -- surprise rather than a convenience.
-    if lastPanelId ~= panelId or lastButtonIndex == buttonIndex then
-        return
-    end
-
-    local control = FindControlById(CS.previewCommandCenterSelection)
-    if not control or control.preview.groupScoped then
-        return
-    end
-    -- Gate on what was running at the LAST update, not on live state:
-    -- SelectConfigButton (State.lua) calls ClearAllConfigPreviews on every
-    -- entry selection, so by the time this runs the preview we mean to
-    -- carry over has already been wiped and a live check always says no.
-    -- That is why entry -> entry did nothing while deselecting worked.
-    if not CS.previewCommandCenterWasRunning then
-        return
-    end
-
-    -- No-op when the seam already cleared it; a real move otherwise.
-    control.preview.SetActive(panelId, lastButtonIndex, false)
-    if IsControlApplicable(control, applicable) then
-        control.preview.SetActive(panelId, buttonIndex, true)
-    end
-    CS.panelPreviewVisualsNeedReconcile = true
+function ST._ReconcileConfigPreviewSelection()
+    ReconcileRunningPreview(ResolveContext())
 end
 
 ------------------------------------------------------------------------
@@ -2223,7 +2076,7 @@ local function EnsureBar(host, surface)
         if not ok then
             return
         end
-        SetPreviewRunning(bar._surface, control, panelId, buttonIndex, not self._running)
+        SetPreviewRunning(bar._surface, control, panelId, buttonIndex, not Preview.IsCommand(control, panelId, buttonIndex))
     end)
     bar.play = play
 
@@ -2488,24 +2341,14 @@ local function UpdateBar(host, surface, applicable, group, displayMode)
         return nil, false
     end
 
-    -- Whatever is actually running wins the selection, so a preview
-    -- started elsewhere still reads correctly here. Otherwise keep the
-    -- remembered choice, falling back to the first applicable one when it
-    -- does not apply to this surface.
-    local selected, running
-    local remembered
-    for _, control in ipairs(applicable) do
-        if control.preview.IsActive(panelId, buttonIndex) == true then
-            selected, running = control, true
-            break
-        end
-        if control.id == CS[surface.selectionKey] then
-            remembered = control
-        end
-    end
-    if not selected then
-        selected, running = remembered or applicable[1], false
-    end
+    -- Command identity is authoritative. This lookup only resolves its menu
+    -- label; it never discovers playback by probing every renderer's flags.
+    local byId = {}
+    for _, control in ipairs(applicable) do byId[control.id] = control end
+    local session = Preview.Get()
+    local selected = session and byId[session.command.id]
+        or byId[CS[surface.selectionKey]] or applicable[1]
+    local running = Preview.IsCommand(selected, panelId, buttonIndex)
     CS[surface.selectionKey] = selected.id
 
     local bar = EnsureBar(host, surface)
@@ -2527,14 +2370,7 @@ end
 -- reserve.
 ------------------------------------------------------------------------
 
-local TOTEM_ACTIVE_CONTROL = {
-    id = "totemActive", label = "Preview Active Totems",
-    preview = {
-        groupScoped = true,
-        IsActive = function(panelId) return CooldownCompanion:IsTotemPanelPreviewPlaying(panelId) end,
-        SetActive = function(panelId, _, show) CooldownCompanion:SetTotemPanelPreviewPlaying(panelId, show) end,
-    },
-}
+local TOTEM_ACTIVE_CONTROL = ST._TotemPreviewCommand
 
 local function UpdatePreviewCommandCenter(host)
     if not host then
@@ -2542,23 +2378,18 @@ local function UpdatePreviewCommandCenter(host)
     end
 
     local panelId, group, buttonIndex = ResolveContext()
+    ReconcileRunningPreview(panelId, group, buttonIndex)
     if not panelId then
         HideBar(host)
-        -- Same bookkeeping the empty-band teardown does: with no surface up
-        -- there is nothing to carry forward, and leaving this set lets the
-        -- next pass migrate a preview the user has already left.
-        CS.previewCommandCenterWasRunning = false
         return
     end
 
     local displayMode = group.displayMode or "icons"
     if ST.IsTotemPanelGroup(group) then
         UpdateBar(host, BUTTONS_SURFACE, {TOTEM_ACTIVE_CONTROL}, group, displayMode)
-        CS.previewCommandCenterWasRunning = false
         return
     end
     local applicable = CollectPanelControls(group, buttonIndex)
-    ReconcileRunningPreview(panelId, group, buttonIndex)
 
     -- Attached modules are edited here too. Reuse their existing commands,
     -- with the same visibility gate as the lanes this canvas is about to draw.
@@ -2574,8 +2405,8 @@ local function UpdatePreviewCommandCenter(host)
     })) do
         if barsVisible then
             applicable[#applicable + 1] = control
-        elseif control.preview.IsActive(panelId, buttonIndex) == true then
-            control.preview.SetActive(panelId, buttonIndex, false)
+        elseif Preview.IsCommand(control, panelId, buttonIndex) then
+            Preview.StopCommand(control.id)
         end
     end
 
@@ -2587,16 +2418,10 @@ local function UpdatePreviewCommandCenter(host)
         else
             HideBar(host)
         end
-        CS.previewCommandCenterWasRunning = false
         return
     end
 
-    MigrateRunningPreview(panelId, buttonIndex, applicable)
-
-    local _, running = UpdateBar(host, BUTTONS_SURFACE, applicable, group, displayMode)
-    -- Read by the migration above on the next pass, since the selection
-    -- seam clears previews before we get to look at live state.
-    CS.previewCommandCenterWasRunning = running
+    UpdateBar(host, BUTTONS_SURFACE, applicable, group, displayMode)
 end
 
 ------------------------------------------------------------------------

@@ -27,7 +27,8 @@ local function OpenWorkspace(kind, opts)
         if CS.barsEntrySelected or CS.selectedGroup ~= panelId or CS.otherClassLibraryActive then
             ST._ClearConfigFinderText({ preservePrimarySelection = true })
             if ST._ResetOtherClassLibraryState then ST._ResetOtherClassLibraryState() end
-            ST._SelectConfigPanel(panelId, { containerId = panel.parentContainerId })
+            ST._SelectConfigPanel(panelId, { containerId = panel.parentContainerId,
+                previewSession = opts and opts.previewSession })
         else
             ST._ClearConfigButtonSelection()
         end
@@ -40,7 +41,8 @@ local function OpenWorkspace(kind, opts)
         local switchingFrames = (kind == "player" or kind == "target")
             and (CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target")
         if not CS.barsEntrySelected or (CS.barWorkspaceKind ~= kind and not switchingFrames) then
-            ST._SelectConfigBarsEntry({ standalone = true, kind = kind })
+            ST._SelectConfigBarsEntry({ standalone = true, kind = kind,
+                previewSession = opts and opts.previewSession })
             CS.standalonePanelsCollapsed = false
         else
             ST._ClearConfigBarsHomeSelection()

@@ -6,15 +6,19 @@ local Addon = ST.Addon
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 local PREVIEW_SLOT_COUNT, PREVIEW_DURATION, PREVIEW_INITIAL_ELAPSED = 3, 20, 8
 ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT = PREVIEW_SLOT_COUNT
-local playback, playbackSurface
+local playbackSurface
+ST._TotemPreviewCommand = { id = "totemActive", label = "Preview Active Totems",
+    preview = { owner = "totem", groupScoped = true,
+        initialElapsed = PREVIEW_INITIAL_ELAPSED, duration = PREVIEW_DURATION } }
 
 local function PreviewElapsed(groupId)
-    if not playback or playback.groupId ~= groupId then return PREVIEW_INITIAL_ELAPSED end
-    return playback.elapsed + (playback.startedAt and (GetTime() - playback.startedAt) or 0)
+    local sample = ST._ConfigPreview.GetTotemSample(groupId)
+    return sample and sample.elapsed + (sample.startedAt and GetTime() - sample.startedAt or 0)
+        or PREVIEW_INITIAL_ELAPSED
 end
 
 function Addon:IsTotemPanelPreviewPlaying(groupId)
-    return groupId ~= nil and playback ~= nil and playback.groupId == groupId and playback.startedAt ~= nil
+    return groupId ~= nil and ST._ConfigPreview.GetSample("totem", groupId) ~= nil
 end
 
 -- One geometry contract for the live display, Arrange mode, and config mirror.
@@ -368,25 +372,10 @@ function Addon:SetTotemPanelPreviewShown(frame, shown)
     RefreshSurface(surface)
 end
 
--- Playback belongs exclusively to the focused config mirror. No live slot,
--- Arrange sample, or read-only overview consumes this editing clock.
-function Addon:SetTotemPanelPreviewPlaying(groupId, shown)
-    if not ST.IsTotemPanelGroup(self.db.profile.groups[groupId]) then return end
-    if not playback or playback.groupId ~= groupId then
-        playback = {groupId = groupId, elapsed = PREVIEW_INITIAL_ELAPSED}
-    end
-    local elapsed = PreviewElapsed(groupId)
-    playback.elapsed = elapsed % PREVIEW_DURATION
-    playback.startedAt = shown and GetTime() or nil
+-- Frame release/repaint belongs to this renderer; playback and the paused
+-- sample belong to the config session. Arrange and read-only samples stay inert.
+function ST._RefreshTotemPreviewPlayback(groupId)
     if playbackSurface and playbackSurface.groupId == groupId and playbackSurface:IsVisible() then
         RefreshSurface(playbackSurface)
-    end
-end
-
-function Addon:ClearAllTotemPanelPreviews()
-    if playback and playback.startedAt then
-        local elapsed = PreviewElapsed(playback.groupId)
-        playback.elapsed, playback.startedAt = elapsed % PREVIEW_DURATION, nil
-        if playbackSurface and playbackSurface:IsVisible() then RefreshSurface(playbackSurface) end
     end
 end

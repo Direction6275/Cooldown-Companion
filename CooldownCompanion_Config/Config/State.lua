@@ -2398,6 +2398,20 @@ local function CaptureLensTransition()
     end
 end
 
+-- Resolve the new selection while the actual command still exists. The
+-- explicit object-gear route may move that same session to its settings canvas.
+local function FinishPreviewSelection(keepSession)
+    if ST._ConfigPreview then ST._ConfigPreview.MoveHost(keepSession, CS.selectedGroup) end
+    if ST._ReconcileConfigPreviewSelection then
+        ST._ReconcileConfigPreviewSelection()
+        if CooldownCompanion.ClearCursorAnchorLayoutPreview then
+            CooldownCompanion:ClearCursorAnchorLayoutPreview()
+        end
+    else
+        CooldownCompanion:ClearAllConfigPreviews()
+    end
+end
+
 local function ClearSelectedButton(opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if ST._RememberPanelSettingsView then ST._RememberPanelSettingsView() end
@@ -2510,7 +2524,6 @@ local function SelectConfigPanel(panelId, opts)
         CS.panelAddPresentation = "icons"
         CS.panelAddModeQuery = nil
     end
-    CooldownCompanion:ClearAllConfigPreviews()
     CS.configFinderRestoredCollapsedContainerId = nil
     if opts and opts.containerId ~= nil then
         CS.selectedContainer = opts.containerId
@@ -2546,6 +2559,7 @@ local function SelectConfigPanel(panelId, opts)
     CS.unifiedBarKind = nil
     CS.unifiedRowScope = "primary"
     ClearSelectedButton({ preserveLensAnchor = preservePlace })
+    FinishPreviewSelection(opts and opts.previewSession)
 end
 
 local function ToggleConfigPanelMultiSelect(panelId)
@@ -2654,7 +2668,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         CS.unifiedRowScope = opts.scope
     end
 
-    CooldownCompanion:ClearAllConfigPreviews()
+    FinishPreviewSelection()
 end
 
 local function SelectConfigRotationAssistantEntry(panelId, opts)
@@ -2682,7 +2696,7 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.selectedTab = "loadconditions"
     CS.panelSettingsTab = "loadconditions"
     CS.panelSettingsTabExplicit = true
-    CooldownCompanion:ClearAllConfigPreviews()
+    FinishPreviewSelection()
 end
 
 local function SelectConfigButtonPanel(panelId, opts)
@@ -2819,7 +2833,7 @@ local function SelectConfigBarsEntry(opts)
     end
     local kind = opts and opts.kind or "resources"
     CS.barWorkspaceKind = kind
-    CooldownCompanion:ClearAllConfigPreviews()
+    CooldownCompanion:ClearAllConfigPreviews(opts and opts.previewSession)
     ResetOtherClassLibraryState()
     -- Destination navigation exits the temporary filtered-tree view.
     ClearConfigFinderText({ preservePrimarySelection = true })
@@ -2834,17 +2848,18 @@ local function SelectConfigBarsEntry(opts)
     wipe(CS.selectedPanels)
     wipe(CS.selectedGroups)
     ClearConfigBarsHomeSelection()
+    FinishPreviewSelection(opts and opts.previewSession)
 end
 
 -- A cast/frames item belongs to the same mutually exclusive family as the
 -- resources and custom bars beside it, so selecting one drops any bar.
-local function SelectConfigCastFramesItem(item)
+local function SelectConfigCastFramesItem(item, opts)
     if item ~= "castbar" and item ~= "player" and item ~= "target" then
         return false
     end
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local changed = CS.castFramesSelectedItem ~= item
-    if ST._OpenBarWorkspace then ST._OpenBarWorkspace(item) end
+    if ST._OpenBarWorkspace then ST._OpenBarWorkspace(item, opts) end
     ClearConfigResourceSelection()
     CS.castFramesSelectedItem = item
     return changed

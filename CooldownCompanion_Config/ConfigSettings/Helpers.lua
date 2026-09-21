@@ -81,11 +81,14 @@ function ST._WithSettingsPreview(tbl, keys, apply, preview)
     local restore = target and target.capture(keys) or ST._CaptureRawSettingsFields(tbl, keys)
     -- This exception boundary guarantees rollback before propagating a failed
     -- preview; errors are never swallowed or used to select a fallback path.
+    local previousPreview = CS.settingsPreviewInProgress
+    CS.settingsPreviewInProgress = true
     local ok, failure = xpcall(function()
         apply()
         if preview then preview() end
     end, function(err) return err end)
     restore()
+    CS.settingsPreviewInProgress = previousPreview
     if not ok then error(failure, 0) end
 end
 

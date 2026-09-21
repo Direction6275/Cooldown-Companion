@@ -1753,18 +1753,17 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     -- The cast bar's preview state: a cast in progress, looping. Nothing on
     -- the resting bar can stand in for one, which is what makes it worth a
     -- control in the first place.
-    if CooldownCompanion:IsCastBarPreviewActive() then
-        castPreview.startedAt = GetTime()
+    local sample = not preview.readOnly and ST._ConfigPreview.GetSample("cast")
+    if sample then
         table_insert(preview.animated, {
-            castPreview = castPreview,
+            castPreview = castPreview, sample = sample,
             Tick = function(entry, now)
-                local elapsed = (now - entry.castPreview.startedAt) % CAST_PREVIEW_DURATION
+                local elapsed = (now - entry.sample.startedAt) % CAST_PREVIEW_DURATION
                 SetCastPreviewProgress(entry.castPreview, elapsed / CAST_PREVIEW_DURATION)
             end,
         })
-        SetCastPreviewProgress(castPreview, 0)
+        SetCastPreviewProgress(castPreview, ((GetTime() - sample.startedAt) % CAST_PREVIEW_DURATION) / CAST_PREVIEW_DURATION)
     else
-        castPreview.startedAt = nil
         SetCastPreviewProgress(castPreview, CAST_PREVIEW_REST_FILL)
     end
 end

@@ -245,13 +245,8 @@ function CooldownCompanion:CancelIndependentResourceStackDrag()
     UpdateIndependentStackDragState(settings, settings and GetSpecLayoutOrder(settings))
 end
 
--- Resource aura overlay previews, keyed by POWER TYPE. Never by barInfo or
--- frame: a form change rebuilds the positional bar array, and the power
--- type is the only identity that survives it.
-local activeResourceAuraPreviews = {}
 local segmentedUpdateScratch = {}
 local HealthBar = RB.HealthBar
-local HEALTH_EFFECTS = RB.HealthEffects
 local lifecycleModule = nil
 
 local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
@@ -3080,7 +3075,7 @@ function CooldownCompanion:RevertResourceBars()
     -- teardown runs for transient live conditions — no anchor group yet, an
     -- anchor that is not icon-like, an anchor frame that is momentarily
     -- hidden — and the canvas keeps rendering from saved data through all of
-    -- them. Wiping the maps made a running command-center preview die
+    -- them. Clearing command state made a running command-center preview die
     -- because of live-frame availability it has nothing to do with.
     -- Ownership sits with ClearAllConfigPreviews and the explicit stops.
     activeResources = {}
@@ -3106,53 +3101,28 @@ function CooldownCompanion:GetSpecLayoutOrder()
     return GetSpecLayoutOrder(settings)
 end
 
--- Resource aura overlay preview (the aura pass, Phase 2): which resources
--- have their Active Aura stand-in armed. State only, same as the custom-bar
--- previews above — the stand-in renders on the config canvas and the live
--- bar is never touched (owner ruling 2026-07-26).
-function CooldownCompanion:SetResourceAuraActivePreview(powerType, active)
-    powerType = tonumber(powerType)
-    if not powerType then return end
-    activeResourceAuraPreviews[powerType] = active and true or nil
-end
-
+-- These queries project the config session; transient live-bar teardown does
+-- not own its lifetime. A true feature disable still performs matching stops.
 function CooldownCompanion:IsResourceAuraActivePreviewActive(powerType)
-    powerType = tonumber(powerType)
-    return powerType ~= nil and activeResourceAuraPreviews[powerType] == true
+    local running = ST._ConfigPreview.Get()
+    return running ~= nil and running.command.preview.owner == "resource"
+        and running.command.preview.powerType == tonumber(powerType)
 end
 
 function CooldownCompanion:ClearAllResourceAuraPreviews()
-    wipe(activeResourceAuraPreviews)
+    ST._ConfigPreview.StopOwner("resource")
 end
 
 function HealthBar.HasActiveEffectPreview()
-    local preview = HEALTH_EFFECTS.preview
-    return preview.absorbs == true
-        or preview.healAbsorbs == true
-        or preview.incomingHeals == true
-        or preview.lowHealthAlert == true
-end
-
--- Health-effect previews are state only, like the custom-bar aura previews:
--- absorbs, incoming heals and the low-health alert render on the config
--- canvas's health facsimile, never on the real bar.
-function CooldownCompanion:SetHealthEffectPreview(effectKey, show)
-    if effectKey ~= "absorbs"
-        and effectKey ~= "healAbsorbs"
-        and effectKey ~= "incomingHeals"
-        and effectKey ~= "lowHealthAlert" then
-        return
-    end
-
-    HEALTH_EFFECTS.preview[effectKey] = show and true or nil
+    return next(ST._ConfigPreview.GetHealthEffects()) ~= nil
 end
 
 function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
-    return HEALTH_EFFECTS.preview[effectKey] == true
+    return ST._ConfigPreview.GetHealthEffects()[effectKey] == true
 end
 
 function CooldownCompanion:ClearAllHealthEffectPreviews()
-    wipe(HEALTH_EFFECTS.preview)
+    ST._ConfigPreview.StopOwner("health")
 end
 
 function CooldownCompanion:GetResourceBarRuntimeDebugInfo()
@@ -3272,7 +3242,6 @@ end
 
 RB.CreateResourceBarPreviewModule({
     HealthBar = HealthBar,
-    HEALTH_EFFECTS = HEALTH_EFFECTS,
     GetUnlockAssistActive = function()
         return isUnlockAssistActive
     end,
