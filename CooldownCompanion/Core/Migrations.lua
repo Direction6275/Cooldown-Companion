@@ -1227,9 +1227,8 @@ local function StripUnplayableAuraSoundForms(self, dataTable)
             stripped = stripped + 1
         end
     end
-    -- Prune what the strip emptied, the same as the setter paths
-    -- (SetButtonSoundAlertEvent / SetCustomBarSoundAlertEvent): an entry
-    -- left holding soundAlerts = { events = {} } still counts as configured
+    -- Prune what the strip emptied, the same as SetButtonSoundAlertEvent:
+    -- an entry left holding soundAlerts = { events = {} } still counts as configured
     -- content, so it survives normalization and ships in every export.
     if stripped > 0 and not next(events) then
         dataTable.soundAlerts.events = nil

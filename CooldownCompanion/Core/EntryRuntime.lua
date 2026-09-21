@@ -92,14 +92,6 @@ local function SetAuraStackCountText(fontString, value)
 end
 EntryRuntime.SetAuraStackCountText = SetAuraStackCountText
 
--- Reset the live aura fields on recycled custom-bar owners.
-function EntryRuntime.ClearTrackedAuraOwnerState(owner, configUnit)
-    if not owner then return end
-    owner._auraActive = nil
-    owner._auraHasTimer = nil
-    owner._auraUnit = configUnit
-end
-
 local function IsSpellCooldownDeferred(info)
     if not info or info.isEnabled ~= false or info.isActive == true then
         return false
