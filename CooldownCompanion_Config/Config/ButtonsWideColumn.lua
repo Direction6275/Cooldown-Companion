@@ -2200,7 +2200,7 @@ end
 
 -- Pinned preview of the selected Panel, or an organized navigation overview
 -- when a single editable Group is selected with no child Panel selected.
-local function UpdatePanelPreview(col3, selectionOnly)
+local function UpdatePanelPreview(col3, selectionOnly, edit)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     local panelId = CS.selectedGroup
     local containerId = not panelId and CS.selectedContainer or nil
@@ -2217,6 +2217,12 @@ local function UpdatePanelPreview(col3, selectionOnly)
     end
 
     local host = col3.buttonsPreviewHost
+    -- A settings-only rebuild keeps the saved design and the preview's owner.
+    -- Never reuse this path for selection changes or a newly materialized host.
+    if edit and edit.preservePreview and edit.panelId == panelId
+        and host and host:IsShown() and col3._cdcActiveWideHost == host then
+        return
+    end
     if not host then
         host = CreateFrame("Frame", nil, col3.content)
         host:SetClipsChildren(false)
@@ -2295,6 +2301,9 @@ local function UpdatePanelPreview(col3, selectionOnly)
     end
     host:Show()
     BuildPreview(host)
+    if edit and edit.panelId == panelId then
+        edit.previewBuilt = true
+    end
     UpdatePreviewDropOverlay()
 end
 
@@ -2781,7 +2790,7 @@ local function CollectSelection(set)
     return count, ids
 end
 
-local function RefreshButtonsWideColumn(selectionOnly)
+local function RefreshButtonsWideColumn(selectionOnly, edit)
     local col3 = CS.configFrame and CS.configFrame.col3
     if not col3 then return end
 
@@ -2834,7 +2843,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
             if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
             HideEntrySurfaces(col3)
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
-            UpdatePanelPreview(col3, selectionOnly)
+            UpdatePanelPreview(col3, selectionOnly, edit)
             UpdateAddBox(col3)
             UpdateQuietRow(col3)
             UpdateEditingContext(col3)
@@ -2855,7 +2864,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
     local unifiedBarKind = GetValidatedUnifiedBarKind()
     if unifiedBarKind then
         HideEntrySurfaces(col3)
-        UpdatePanelPreview(col3, selectionOnly)
+        UpdatePanelPreview(col3, selectionOnly, edit)
         UpdateAddBox(col3)
         UpdateQuietRow(col3)
         UpdateEditingContext(col3)
@@ -2883,7 +2892,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
     -- Entry selected: the entry tabs join the panel tabs in one row, and
     -- whichever scope owns the surface builds its content there.
     if IsEntrySelectionActive() then
-        UpdatePanelPreview(col3, selectionOnly)
+        UpdatePanelPreview(col3, selectionOnly, edit)
         UpdateAddBox(col3)
         UpdateQuietRow(col3)
         UpdateEditingContext(col3)
@@ -2908,7 +2917,7 @@ local function RefreshButtonsWideColumn(selectionOnly)
     -- Otherwise the group-side surfaces (panel and Group settings,
     -- placeholders) own the settings area
     HideEntrySurfaces(col3)
-    UpdatePanelPreview(col3, selectionOnly)
+    UpdatePanelPreview(col3, selectionOnly, edit)
     UpdateAddBox(col3)
     UpdateQuietRow(col3)
     UpdateEditingContext(col3)

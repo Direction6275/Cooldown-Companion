@@ -766,8 +766,6 @@ if ST._DefineSettingRoute then
 end
 
 local function BuildAppearanceTab(container, settingsGroup)
-    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-
     -- Clean up elements from previous build
     if not settingsGroup then
     for _, elem in ipairs(appearanceTabElements) do
@@ -784,6 +782,13 @@ local function BuildAppearanceTab(container, settingsGroup)
     if not settingsGroup and ST._BuildCompletePanelStyleTab(container, group, "appearance", BuildAppearanceTab) then return end
     group = ST._ResolveStylingGroup(group)
     local style = group.style
+    local editTarget = ST._CaptureConfigEditTarget(CS.selectedGroup, group._settingsContext)
+    local function refreshStyle()
+        ST._CompleteConfigEdit(editTarget, "style")
+    end
+    local function refreshStyleSettings()
+        ST._CompleteConfigEdit(editTarget, "style-settings")
+    end
 
     CooldownCompanion:ClearAllTextureIndicatorPreviews()
     if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
@@ -830,8 +835,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                     style.iconWidth = style.iconWidth or size
                     style.iconHeight = style.iconHeight or size
                 end
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyleSettings()
             end,
         })
 
@@ -882,6 +886,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         -- The border builder has no second-column split of its own, so its
         -- whole block heads the right column.
         BuildBorderControls(assistRight, style, refreshStyle, {
+            completeEdit = function(operation) ST._CompleteConfigEdit(editTarget, operation) end,
             row = true,
             settings = {
                 thickness = APPEARANCE_FINDER.assistant.thickness,
@@ -891,6 +896,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         })
 
         BuildKeybindTextControls(assistLeft, style, refreshStyle, {
+            completeEdit = function(operation) ST._CompleteConfigEdit(editTarget, operation) end,
             row = true,
             rightColumn = assistRight,
             label = "Show Keybind Text",
@@ -1041,8 +1047,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                 style.iconWidth = style.iconWidth or size
                 style.iconHeight = style.iconHeight or size
             end
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
 
@@ -1106,9 +1111,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- would go nowhere anyway).
     local zoomSec = BeginLensSection(lens, group, "iconZoom", { column = iconLeft })
 
-    local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomSec.tbl, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, {
+    local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomSec.tbl, refreshStyle, {
         setting = APPEARANCE_FINDER.icons.zoom,
         disabled = group.masqueEnabled == true or zoomSec.disabled,
         previewRefresh = function()
@@ -1367,8 +1370,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                 and IconsDrawAuraDurationLowTimeRows(group, (lens and lens.effective) or group.style),
             infoButtons = tabInfoButtons,
             rebuild = function()
-                refreshStyle()
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyleSettings()
             end,
         })
         if rows and rows[1] then
@@ -1394,8 +1396,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         onChange = function(val)
             if not cdTextSec.write then return end
             cdTextSec.write.showCooldownText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
 
@@ -1422,9 +1423,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                             threshold = APPEARANCE_FINDER.text.cooldownLast,
                         },
                         infoButtons = CS.advancedSettingsInfoButtons,
-                        rebuild = function()
-                            CooldownCompanion:RefreshConfigPanel()
-                        end,
+                        completeEdit = refreshStyleSettings,
                     })
                 cdTextAdvanced.build(panel)
             end,
@@ -1460,8 +1459,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         onChange = function(val)
             if not chargeSec.write then return end
             chargeSec.write.showChargeText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
 
@@ -1547,8 +1545,7 @@ local function BuildAppearanceTab(container, settingsGroup)
             onChange = function(val)
                 if not auraTextSec.write then return end
                 auraTextSec.write.showAuraText = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyleSettings()
             end,
         })
 
@@ -1565,9 +1562,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                         threshold = APPEARANCE_FINDER.text.auraLast,
                     },
                     infoButtons = CS.advancedSettingsInfoButtons,
-                    rebuild = function()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
+                    completeEdit = refreshStyleSettings,
                 })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
                 row = true,
@@ -1695,8 +1690,7 @@ local function BuildAppearanceTab(container, settingsGroup)
             onChange = function(val)
                 if not auraStackSec.write then return end
                 auraStackSec.write.showAuraStackText = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyleSettings()
             end,
         })
 
@@ -1753,8 +1747,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         onChange = function(val)
             if not kbSec.write then return end
             kbSec.write.showKeybindText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
 
@@ -1894,13 +1887,12 @@ local function BuildAppearanceTab(container, settingsGroup)
             -- just makes the stored state say so.
             whileAuraSec.write.auraKeepSpellCooldownSwipe = whileAuraSec:BoolValue(val == "swipeText")
             whileAuraSec.write.separateTextPositions = whileAuraSec:BoolValue(val ~= "hidden")
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            -- Full rebuild: the entry-tab desaturate row and the aura text
+            -- Settings rebuild: the entry-tab desaturate row and the aura text
             -- advanced panel's position rows both gate on these keys. The
             -- control lives outside that advanced panel now, so closing an
             -- open one is acceptable where it wasn't for the old in-panel
             -- checkbox.
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
@@ -1927,10 +1919,9 @@ local function BuildAppearanceTab(container, settingsGroup)
         onChange = function(val)
             if not whileAuraSec.write then return end
             whileAuraSec.write.auraShowAuraIcon = whileAuraSec:BoolValue(val)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            -- Full rebuild: the Cooldown tooltip's icon-cover interaction and
+            -- Settings rebuild: the Cooldown tooltip's icon-cover interaction and
             -- the keep-swipe composition both turn on this flag.
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
     end -- aura icon not forced for this entry
@@ -1953,10 +1944,9 @@ local function BuildAppearanceTab(container, settingsGroup)
         onChange = function(val)
             if not whileAuraSec.write then return end
             whileAuraSec.write.invertAuraDesaturationLogic = whileAuraSec:BoolValue(val)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            -- Full rebuild: passives read the same key for their missing-state
+            -- Settings rebuild: passives read the same key for their missing-state
             -- default on the entry tab.
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyleSettings()
         end,
     })
     end -- desaturate has a visible aura-layer icon to gray
@@ -2006,8 +1996,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         unlock = { sec = borderSec },
         build = function(panel)
             local renderMode = AddBorderRenderModeDropdown(panel, borderSec.tbl, "borderRenderMode", function()
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyleSettings()
             end, group.masqueEnabled or borderSec.disabled, {
                 row = true,
                 indent = false,
@@ -2034,7 +2023,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                         borderSec.write.borderSize = val
                     end, function()
                         if borderThicknessLocked then return end
-                        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                        refreshStyle()
                     end, nil, borderSec.write, "borderSize")
                 end
             end
@@ -2076,10 +2065,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     tintSec:HeadingChrome(iconTintHeading)
 
     if not iconTintCollapsed then
-        local tintRefresh = function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end
-
         -- LEFT column: the always-on colors plus the cooldown tint pair.
         -- RIGHT column: the conditional state tints.
         local tintLeft, tintRight = BeginRowGrid(container)
@@ -2095,7 +2080,7 @@ local function BuildAppearanceTab(container, settingsGroup)
             settings = APPEARANCE_FINDER.tint,
             hasAuraEntry = groupHasAuraEntry,
             hasCooldownState = CanGroupUseOverrideSection(group, "desaturation"),
-            refresh = tintRefresh,
+            refresh = refreshStyle,
         })
 
         tintSec:Finish()

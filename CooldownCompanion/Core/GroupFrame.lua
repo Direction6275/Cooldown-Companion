@@ -542,6 +542,11 @@ function CooldownCompanion:RefreshGroupFrame(groupId)
         ST._RefreshButtonsPreviewMirror(groupId)
     end
 
+    return GF.RefreshGroupFrameRuntime(self, groupId)
+end
+
+-- Config completion owns the mirror; standalone callers retain the wrapper.
+function GF.RefreshGroupFrameRuntime(self, groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 

@@ -422,7 +422,7 @@ local function GetRevertTooltipText(sectionId, buttonData)
     return GetRevertTooltipTextForLabel(GetOverrideSectionLabel(sectionId))
 end
 
-local function PerformSectionRevert(buttonData, sectionId)
+local function PerformSectionRevert(buttonData, sectionId, target)
     local context = buttonData and buttonData._geometryContext
     if context then
         if not context:IsCurrent() then return end
@@ -431,11 +431,11 @@ local function PerformSectionRevert(buttonData, sectionId)
         CooldownCompanion:RefreshConfigPanel()
         return
     end
-    local group = CooldownCompanion.db and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not (group and group.buttons and group.buttons[CS.selectedButton] == buttonData) then return end
+    if not ST._IsConfigEditTargetCurrent(target) or CS.selectedGroup ~= target.panelId then return end
+    local group = target.panel
+    if not (group.buttons and group.buttons[CS.selectedButton] == buttonData) then return end
     CooldownCompanion:RevertSection(buttonData, sectionId)
-    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    CooldownCompanion:RefreshConfigPanel()
+    ST._CompleteConfigEdit(target, "style-settings")
 end
 
 -- The revert glyph's LOOK and its HOVER/CLICK contract, split so a revert that
@@ -462,9 +462,10 @@ end
 -- ROW reverts (the heading uses the text affordance below). The caller owns
 -- creating and placing the button.
 local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
+    local target = ST._CaptureConfigEditTarget(CS.selectedGroup)
     ApplyRevertGlyphLook(icon)
     BindRevertGlyph(revertBtn, GetRevertTooltipText(sectionId, buttonData), function()
-        PerformSectionRevert(buttonData, sectionId)
+        PerformSectionRevert(buttonData, sectionId, target)
     end)
 end
 
@@ -557,8 +558,8 @@ end
 -- The preview command center is the one caller that defers the config rebuild:
 -- it has to prepare the destination and queue the section's advanced panel
 -- first, then its existing navigation path performs the one refresh that
--- consumes both. The pinned mirror still updates immediately through
--- UpdateGroupStyle, so the preview never waits on that navigation.
+-- consumes both. Style completion still updates the pinned mirror immediately,
+-- so the preview never waits on that navigation.
 local function PromoteLensSection(lens, group, sectionId, opts)
     group = ST._ResolveStylingGroup(group)
     if group and group._settingsContext and not group._settingsContext:IsCurrent() then return false end
@@ -567,11 +568,14 @@ local function PromoteLensSection(lens, group, sectionId, opts)
     if not (buttonData and groupStyle and sectionId) then
         return false
     end
+    local context = group._settingsContext
+    local target = ST._CaptureConfigEditTarget(context and context.panelId or CS.selectedGroup, context)
     CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
-    if buttonData._geometryContext then buttonData._geometryContext:Refresh()
-    else CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-    if not (opts and opts.deferRefresh) then
-        CooldownCompanion:RefreshConfigPanel()
+    if buttonData._geometryContext then
+        buttonData._geometryContext:Refresh()
+        if not (opts and opts.deferRefresh) then CooldownCompanion:RefreshConfigPanel() end
+    else
+        ST._CompleteConfigEdit(target, opts and opts.deferRefresh and "style" or "style-settings")
     end
     return true
 end
@@ -607,9 +611,8 @@ end
 -- keeps no gear at all.
 local ADVANCED_UNLOCK_REFRESH = {
     -- The styling tabs' standard write-then-rebuild pair.
-    groupStyle = function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
+    groupStyle = function(target)
+        ST._CompleteConfigEdit(target, "style-settings")
     end,
     -- Resource settings: apply the module, then rebuild.
     resourceBars = function()
@@ -641,6 +644,8 @@ local function ResolveAdvancedUnlock(spec)
         return nil
     end
     local sec = spec.sec
+    local context = sec and sec.group and sec.group._settingsContext
+    local target = ST._CaptureConfigEditTarget(context and context.panelId or CS.selectedGroup, context)
     local enable = spec.enable
     if not sec then
         -- Non-lens: no enable means the toggle is on, so the panel is live.
@@ -653,8 +658,9 @@ local function ResolveAdvancedUnlock(spec)
         return {
             label = enable.label,
             onClick = function()
+                if spec.refreshKind == "groupStyle" and not ST._IsConfigEditTargetCurrent(target) then return end
                 ApplyAdvancedUnlockEnable(enable, spec.target)
-                ADVANCED_UNLOCK_REFRESH[spec.refreshKind]()
+                ADVANCED_UNLOCK_REFRESH[spec.refreshKind](target)
             end,
         }
     end
@@ -684,8 +690,14 @@ local function ResolveAdvancedUnlock(spec)
         return {
             label = enable.label,
             onClick = function()
+                if context and not context:IsCurrent() then return end
+                if target and not ST._IsConfigEditTargetCurrent(target) then return end
                 ApplyAdvancedUnlockEnable(enable, sec.write)
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                if target and not enable.after then
+                    ST._CompleteConfigEdit(target, "style-settings")
+                    return
+                end
+                CooldownCompanion:UpdateGroupStyle(target and target.panelId or CS.selectedGroup)
                 -- The one seam for a section whose checkbox path runs an
                 -- extra step between style apply and the config rebuild (the
                 -- icon fill timer's cooldown rewalk) - the two entrances of
@@ -1003,9 +1015,10 @@ end
 -- glyph (both go through GetRevertTooltipText / PerformSectionRevert); only the
 -- shape differs, so a heading's pair of controls reads as one line.
 local function WireScopeRevertAction(action, buttonData, sectionId)
+    local target = ST._CaptureConfigEditTarget(CS.selectedGroup)
     WireScopeTextHover(action, GetRevertTooltipText(sectionId, buttonData))
     action:SetScript("OnClick", function()
-        PerformSectionRevert(buttonData, sectionId)
+        PerformSectionRevert(buttonData, sectionId, target)
     end)
 end
 

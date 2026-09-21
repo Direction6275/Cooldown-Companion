@@ -360,6 +360,7 @@ end
 local function BuildCollapsibleSection(container, title, key, store, refreshFn, opts)
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(container)
     if context then key = ST._SettingsContextKey(context, key) end
+    local editTarget = context and ST._CaptureConfigEditTarget(context.panelId, context)
     store = store or CS.collapsedSections
     local heading = AceGUI:Create("Heading")
     heading:SetText(title)
@@ -379,9 +380,12 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
         RegisterLensAnchorHeading(heading, key)
     end
     local btn = AttachCollapseButton(heading, collapsed, function()
+        if editTarget and not ST._IsConfigEditTargetCurrent(editTarget) then return end
         store[key] = not store[key]
         if refreshFn then
             refreshFn()
+        elseif editTarget then
+            ST._CompleteConfigEdit(editTarget, "settings")
         else
             CooldownCompanion:RefreshConfigPanel()
         end
@@ -1264,9 +1268,9 @@ end
 -- same values. Commit is therefore detected by picker CLOSE. Every close
 -- path (OK, Cancel, Esc, any click outside the picker â€” including on
 -- another swatch, which cancels via GLOBAL_MOUSE_DOWN before its own click
--- lands) runs through OnHide, and the cancel paths restore the original
--- color into the bound table via OnValueChanged before hiding â€” so flushing
--- the armed commit on hide applies the right value on every path.
+-- lands) runs through OnHide. Cancel delivers the original swatch through
+-- OnValueChanged first; its preview repaints without changing saved storage,
+-- and the close callback recognizes that no new value needs committing.
 local pendingColorCommit
 local colorCommitHookInstalled
 local function ArmColorCommitOnClose(onConfirmedFn)
@@ -1294,25 +1298,32 @@ function ST._FlushSettingsEdits()
 end
 
 -- Preview color drags temporarily; only picker close/confirmation saves the value.
-local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn, context)
+local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn, context, initialColor)
+    -- Candidates never change storage. Returning to the opening color (Cancel
+    -- included) must therefore leave absent/inherited fields absent as well.
+    local original = initialColor or tbl[key]
+    local baseline = original and { original[1], original[2], original[3],
+        widget.HasAlpha == false and 1 or original[4] or 1 }
+    local function Commit(pending)
+        if context and not context:IsCurrent() then return end
+        if baseline and pending[1] == baseline[1] and pending[2] == baseline[2]
+            and pending[3] == baseline[3] and pending[4] == baseline[4] then return end
+        tbl[key] = pending
+        baseline = pending
+        if onConfirmedFn then onConfirmedFn() end
+    end
     widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
         if context and not context:IsCurrent() then return end
         local pending = {r, g, b, a}
         -- Arm first so closing still commits if the preview refresh fails.
-        ArmColorCommitOnClose(function()
-            if context and not context:IsCurrent() then return end
-            tbl[key] = pending
-            if onConfirmedFn then onConfirmedFn() end
-        end)
+        ArmColorCommitOnClose(function() Commit(pending) end)
         PreviewScalarSetting(tbl, key, pending, onPreviewFn)
     end)
-    -- Kept wired so nothing double-fires if a future Ace3 update restores
-    -- OnValueConfirmed: disarm the pending close commit before running it here.
+    -- A future Ace3 confirmation event and the close hook must still apply once.
     widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
         if context and not context:IsCurrent() then return end
         pendingColorCommit = nil
-        tbl[key] = {r, g, b, a}
-        if onConfirmedFn then onConfirmedFn() end
+        Commit({r, g, b, a})
     end)
 end
 

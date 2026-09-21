@@ -2502,11 +2502,11 @@ function ST.ExpandConfigAfterLock()
 end
 
 ------------------------------------------------------------------------
--- Refresh only the editing workspace after an in-preview selection change.
--- The Navigator's structure and selected panel do not change, so rebuilding
--- it here is both unnecessary and the largest remaining source of click work.
+-- Refresh the editing workspace after an in-preview selection change or a
+-- panel/entry settings edit. These operations retain the Navigator because
+-- neither its structure nor the selected panel changes.
 ------------------------------------------------------------------------
-function CooldownCompanion:RefreshConfigSelection()
+local function RefreshConfigWorkspace(selectionOnly, edit)
     if not (CS.configFrame and CS.configFrame.frame:IsShown()) then return end
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
@@ -2520,7 +2520,7 @@ function CooldownCompanion:RefreshConfigSelection()
     if ClearConfigShiftTooltipHover then
         ClearConfigShiftTooltipHover()
     end
-    RefreshColumn3(true)
+    RefreshColumn3(selectionOnly, edit)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
     FinishConfigRefresh()
@@ -2533,6 +2533,19 @@ function CooldownCompanion:RefreshConfigSelection()
     if ST.UpdateArrangeBadge then
         ST.UpdateArrangeBadge()
     end
+    return true
+end
+
+function CooldownCompanion:RefreshConfigSelection()
+    return RefreshConfigWorkspace(true)
+end
+
+-- Only a completed matching build delivers the edit's mirror. A guard's early
+-- return is not completion, and a pending edit may name the previous panel.
+function ST._RefreshConfigEditWorkspace(edit)
+    if CS.selectedGroup ~= edit.panelId or CS.barsEntrySelected or CS.unifiedBarKind
+        or CS.exportMode or CS.importMode then return false end
+    return RefreshConfigWorkspace(false, edit)
 end
 
 ------------------------------------------------------------------------

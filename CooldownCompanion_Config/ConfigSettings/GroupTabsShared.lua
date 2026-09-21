@@ -22,9 +22,11 @@ local AddColorRow = ST._AddColorRow
 -- back would silently materialize an override before the user commits.
 local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, stateOwner, stateKeys)
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(slider)
+    local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
 
     slider:SetCallback("OnValueChanged", function(_, _, value)
-        if context and not context:IsCurrent() then return end
+        if (context and not context:IsCurrent())
+            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
         ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function()
             if previewFn == false then
                 -- Some sliders change screen-space placement, which the pinned
@@ -32,15 +34,18 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
             elseif previewFn then
                 previewFn()
             elseif ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
+                ST._RefreshButtonsPreviewMirror(target and target.panelId or CS.selectedGroup)
             end
         end)
     end)
     slider:SetCallback("OnMouseUp", function(_, _, value)
-        if context and not context:IsCurrent() then return end
+        if (context and not context:IsCurrent())
+            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
         applyValue(value)
         if commitFn then
             commitFn()
+        elseif target then
+            ST._CompleteConfigEdit(target, "style")
         else
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end
@@ -86,10 +91,6 @@ end
 -- which the tab builders do, and the command center's tab-less opens do not.
 ------------------------------------------------------------------------
 
-local function RefreshSelectedGroupStyle()
-    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-end
-
 local function ResolveSelectedGroupStyle()
     local groupId = CS.selectedGroup
     local profile = groupId and CooldownCompanion.db and CooldownCompanion.db.profile
@@ -105,6 +106,11 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
             local style = styleTable or ResolveSelectedGroupStyle()
             if not style then
                 return
+            end
+            local context = ST._GetSettingsWidgetContext(panel)
+            local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
+            local function RefreshSelectedGroupStyle()
+                ST._CompleteConfigEdit(target, "style")
             end
 
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
@@ -145,6 +151,11 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
             if not style then
                 return
             end
+            local context = ST._GetSettingsWidgetContext(panel)
+            local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
+            local function RefreshSelectedGroupStyle()
+                ST._CompleteConfigEdit(target, "style")
+            end
 
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
             -- column, so the rows go straight onto the panel scroll and the two
@@ -173,8 +184,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
                 value = style.showCooldownSwipeFill ~= false,
                 onChange = function(val)
                     style.showCooldownSwipeFill = val
-                    RefreshSelectedGroupStyle()
-                    RefreshActiveAdvancedSettingsPanel()
+                    ST._CompleteConfigEdit(target, "style-advanced")
                 end,
             })
 
@@ -201,8 +211,7 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
                 value = style.cooldownSwipeEdgeEnabled == true,
                 onChange = function(val)
                     style.cooldownSwipeEdgeEnabled = val
-                    RefreshSelectedGroupStyle()
-                    RefreshActiveAdvancedSettingsPanel()
+                    ST._CompleteConfigEdit(target, "style-advanced")
                 end,
             })
 
