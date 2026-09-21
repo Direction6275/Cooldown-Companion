@@ -538,12 +538,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
     end
 
-    -- Park one resource's overlay holder as soon as a recycled slot changes
-    -- identity. The apply-wide reconciliation above covers resources that
-    -- disappear without an incoming occupant; this fast path covers a
-    -- mutually exclusive pair swapping in place. Hiding a plain CC frame is
-    -- legal in combat; BINDING a never-seen incoming holder is not, and
-    -- deliberately stays with the deferred rebind.
+    -- Active-list removal parks the departing resource's holder immediately.
+    -- Showing an existing incoming binding is separate from creating one:
+    -- a never-bound holder still waits for the restriction-gated rebind.
     function RB.HideResourceAuraHolder(powerType)
         local holder = powerType ~= nil and resourceHolders[powerType]
         if holder then
@@ -551,9 +548,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
     end
 
-    -- Addon methods rather than module-locals on purpose: ApplyResourceBars
-    -- sits at Lua 5.1's 60-upvalue ceiling, and `self` reaches these for
-    -- free from its call sites.
+    -- Addon methods expose the aura host's lifecycle without sharing its state.
     function CooldownCompanion:GetResourceAuraHostRoot()
         return GetAuraHostRoot()
     end

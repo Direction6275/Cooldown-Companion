@@ -444,18 +444,13 @@ local function CreateSegmentedBar(parent, numSegments)
 
     holder._barType = "segmented"
     holder._numSegments = numSegments
+    holder._activeSegments = numSegments
     return holder
 end
 
--- Re-segment an existing segmented holder in place. WoW never destroys a
--- frame, so a shape whose segment count MOVES at runtime — the aura-stack
--- family, whose maximum follows talents and the Devourer meta swap — cannot
--- rebuild its holder on every change without accumulating orphans for the
--- session. The holder instead grows to its high-water mark and parks the
--- rest: LayoutSegments already lays out `_activeSegments` and hides every
--- segment past it, so only the growth and the bookkeeping live here.
--- Shapes whose count is effectively fixed (Maelstrom Weapon, the plain
--- segmented resources) never call this and keep their rebuild.
+-- A resource retains one segmented holder across talent and maximum changes.
+-- Grow to the high-water mark; LayoutSegments parks excess capacity and live
+-- updates use the active count. Preview holders can use the same contract.
 local function EnsureSegmentCount(holder, n)
     if not holder or not holder.segments then return end
     n = math_floor(tonumber(n) or 0)
