@@ -256,10 +256,10 @@ end
 -- calls ST._ReleaseTextFormatTabEditor before it builds anything, which flushes
 -- the pending write and drops the timer. No guard, because there is nothing
 -- reachable to guard against.
-local function PerformFormatRevert(buttonData)
+local function PerformFormatRevert(buttonData, target)
+    if not ST._IsConfigEditTargetCurrent(target) then return end
     buttonData.textFormat = nil
-    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-    CooldownCompanion:RefreshConfigPanel()
+    ST._CompleteConfigEdit(target, "frame-settings")
 end
 
 -- Every customization on one entry, in one pass. Deliberately NOT a loop over
@@ -267,13 +267,14 @@ end
 -- rebuild, and paying for both once per section would rebuild the pane N times
 -- to arrive exactly where one rebuild lands.
 --
--- Resolved from ids rather than handed live tables: this runs behind a confirm
--- popup, and the entry it names can be gone by the time the click comes back.
-local function RevertAllEntryCustomizations(groupId, buttonIndex)
-    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = profile and profile.groups and profile.groups[groupId]
-    local buttonData = group and group.buttons and group.buttons[buttonIndex]
-    if not buttonData then
+-- Revalidate the captured profile, panel and entry when the confirm returns:
+-- the original owner or entry may have been removed or replaced meanwhile.
+local function RevertAllEntryCustomizations(groupId, buttonIndex, target, expectedEntry)
+    target = target or ST._CaptureConfigEditTarget(groupId)
+    if not ST._IsConfigEditTargetCurrent(target) then return end
+    local group = target.panel
+    local buttonData = group.buttons and group.buttons[buttonIndex]
+    if not buttonData or (expectedEntry and buttonData ~= expectedEntry) then
         return
     end
 
@@ -299,14 +300,9 @@ local function RevertAllEntryCustomizations(groupId, buttonIndex)
         formatCleared = true
     end
 
-    CooldownCompanion:UpdateGroupStyle(groupId)
-    -- The format is re-parsed on the way through PopulateGroupButtons, which
-    -- only the frame refresh reaches. Paid once, and only when a format was
-    -- actually cleared.
-    if formatCleared then
-        CooldownCompanion:RefreshGroupFrame(groupId)
-    end
-    CooldownCompanion:RefreshConfigPanel()
+    -- Frame population applies style and reparses format; do not style first
+    -- and then repeat it. Both operations deliver one final workspace mirror.
+    ST._CompleteConfigEdit(target, formatCleared and "frame-settings" or "style-settings")
 end
 
 local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons)
@@ -392,6 +388,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     -- time. Attached whether or not the section is collapsed - the whole point
     -- of a folded list is still being able to empty it.
     local groupId, buttonIndex = CS.selectedGroup, CS.selectedButton
+    local editTarget = ST._CaptureConfigEditTarget(groupId)
     local headingFrame = heading.frame
     local revertAll = EnsureScopeText(headingFrame, "_cdcCustomizationsRevertAll", true)
     SetScopeText(revertAll, "Revert All", SCOPE_CHROME_GOLD)
@@ -412,7 +409,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         local showPopup = ST._ShowPopupAboveConfig
         if showPopup then
             showPopup("CDC_REVERT_ENTRY_CUSTOMIZATIONS", entryName or "this entry",
-                { groupId = groupId, buttonIndex = buttonIndex })
+                { groupId = groupId, buttonIndex = buttonIndex, target = editTarget, entry = buttonData })
         end
     end)
     ChainHeadingBadges(heading, revertAll)
@@ -520,7 +517,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         if item.format then
             ApplyRevertGlyphLook(revert.icon)
             BindRevertGlyph(revert, GetRevertTooltipTextForLabel(label), function()
-                PerformFormatRevert(buttonData)
+                PerformFormatRevert(buttonData, editTarget)
             end)
         else
             WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)

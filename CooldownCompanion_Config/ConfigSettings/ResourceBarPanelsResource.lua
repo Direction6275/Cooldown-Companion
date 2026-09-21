@@ -2070,8 +2070,26 @@ local function WriteThresholdTickEntries(settings, powerType, specID, entriesKey
     end
 end
 
+-- The writer replaces the list, so only its spec map needs a detached branch.
+-- Restore the original map (including absence) through the shared exception-safe
+-- preview boundary; never restore a normalized list into inherited storage.
+local function PreviewThresholdTickEntries(settings, powerType, specID, entriesKey, clearedKey, entries, preview)
+    local resource = settings.resources and settings.resources[powerType]
+    if not resource then return end
+    ST._WithSettingsPreview(resource, "specOverrides", function()
+        local overrides, spec = {}, {}
+        for id, values in pairs(resource.specOverrides or {}) do overrides[id] = values end
+        for key, value in pairs(overrides[specID] or {}) do spec[key] = value end
+        overrides[specID] = spec
+        resource.specOverrides = overrides
+        WriteThresholdTickEntries(settings, powerType, specID, entriesKey, clearedKey, entries)
+    end, preview)
+end
+
 local function AddThresholdTickEntryEditor(panel, options)
-    local entries = options.entries
+    -- This snapshot only renders rows. Every action reads the current list so
+    -- a color commit cannot be lost when another still-mounted row is edited.
+    local entries = options.readEntries()
     local rowCount = #entries
     local draftKey = options.draftKey
     local draftActive = thresholdTickDraftRows[draftKey] == true
@@ -2082,6 +2100,8 @@ local function AddThresholdTickEntryEditor(panel, options)
     end
 
     local function commitValue(index, text, widget)
+        local entries = options.readEntries()
+        if index and not entries[index] then return end
         local parsed = options.clampValue(text, nil)
         local errorKey = options.errorPrefix .. "_" .. tostring(index or "new")
         if parsed == nil then
@@ -2122,7 +2142,8 @@ local function AddThresholdTickEntryEditor(panel, options)
                 commitValue(index, text, widget)
             end,
             function()
-                local updated = CopyThresholdTickEntryList(entries)
+                local updated = CopyThresholdTickEntryList(options.readEntries())
+                if not updated[index] then return end
                 table.remove(updated, index)
                 thresholdTickEditorErrors[errorKey] = nil
                 options.writeEntries(updated)
@@ -2150,25 +2171,20 @@ local function AddThresholdTickEntryEditor(panel, options)
             default = options.defaultColor,
             hasAlpha = options.hasAlpha,
             onConfirm = function()
-                local updated = CopyThresholdTickEntryList(entries)
+                local updated = CopyThresholdTickEntryList(options.readEntries())
                 if updated[index] then
                     updated[index].color = proxy[proxyKey]
                     options.writeEntries(updated)
                     options.applyBars()
                 end
             end,
-            -- options.previewRefresh is supplied only by the editor whose
-            -- markers actually render on the canvas (tick markers; threshold
-            -- colours only show below maximum, and the canvas previews every
-            -- bar at maximum). The entry is already written above, so the
-            -- repaint has something to read.
+            -- Only tick markers render on the maximum-value canvas. Their
+            -- preview owner rolls back actual spec storage, not this proxy.
             onPreview = function()
-                local updated = options.previewRefresh and CopyThresholdTickEntryList(entries) or nil
+                local updated = options.previewEntries and CopyThresholdTickEntryList(options.readEntries()) or nil
                 if updated and updated[index] then
                     updated[index].color = proxy[proxyKey]
-                    options.writeEntries(updated)
-                    options.previewRefresh()
-                    options.writeEntries(CopyThresholdTickEntryList(entries))
+                    options.previewEntries(updated)
                 end
             end,
         })
@@ -3227,10 +3243,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     )
 
                     local function BuildSegmentedThresholdAdvanced(panel)
-                        local entries = GetConfigSegmentedThresholdEntries(settings, capturedPt, _colorSpecID)
                         AddThresholdTickEntryEditor(panel, {
                             heading = "Threshold Colors",
-                            entries = entries,
+                            readEntries = function()
+                                return GetConfigSegmentedThresholdEntries(settings, capturedPt, _colorSpecID)
+                            end,
                             draftKey = thresholdAdvKey,
                             errorPrefix = thresholdAdvKey,
                             valueLabel = resourceName .. " Threshold Value (>=)",
@@ -3344,12 +3361,13 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             end,
                         })
 
-                        local tickEntries = GetConfigContinuousTickEntries(settings, capturedPt, _colorSpecID, tickMode)
                         local tickEntriesKey = tickMode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
                         local tickClearedKey = tickMode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
                         AddThresholdTickEntryEditor(panel, {
                             heading = "Tick Markers",
-                            entries = tickEntries,
+                            readEntries = function()
+                                return GetConfigContinuousTickEntries(settings, capturedPt, _colorSpecID, tickMode)
+                            end,
                             draftKey = tickAdvKey .. "_" .. tickMode,
                             errorPrefix = tickAdvKey .. "_" .. tickMode,
                             valueLabel = tickMode == "absolute" and (resourceName .. " Tick Absolute Value") or (resourceName .. " Tick Percent"),
@@ -3378,7 +3396,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, tickEntriesKey, tickClearedKey, updated)
                             end,
                             applyBars = applyBars,
-                            previewRefresh = previewOnly,
+                            previewEntries = function(updated)
+                                PreviewThresholdTickEntries(settings, capturedPt, _colorSpecID,
+                                    tickEntriesKey, tickClearedKey, updated, previewOnly)
+                            end,
                         })
 
                         local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)

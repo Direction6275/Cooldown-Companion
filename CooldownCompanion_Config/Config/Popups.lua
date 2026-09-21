@@ -461,7 +461,7 @@ StaticPopupDialogs["CDC_REVERT_ENTRY_CUSTOMIZATIONS"] = {
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.groupId and data.buttonIndex and ST._RevertAllEntryCustomizations then
-            ST._RevertAllEntryCustomizations(data.groupId, data.buttonIndex)
+            ST._RevertAllEntryCustomizations(data.groupId, data.buttonIndex, data.target, data.entry)
         end
     end,
     timeout = 0,

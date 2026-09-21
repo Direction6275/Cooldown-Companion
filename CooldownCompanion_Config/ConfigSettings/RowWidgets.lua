@@ -1770,7 +1770,7 @@ local function AddColorRow(container, opts)
 
     if opts.tbl and opts.key and SetupColorCallbacks then
         SetupColorCallbacks(row.colorPicker, opts.tbl, opts.key,
-            opts.onConfirm, opts.onPreview or ST._RefreshActiveConfigPreview, row._cdcSettingsContext)
+            opts.onConfirm, opts.onPreview or ST._RefreshActiveConfigPreview, row._cdcSettingsContext, color)
     end
 
     container:AddChild(row)

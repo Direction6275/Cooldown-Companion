@@ -51,6 +51,7 @@ Config\ProfileBar.lua
 Config\ProfileWelcome.lua
 Config\PanelChangelogOverlay.lua
 Config\Panel.lua
+Config\EditCompletion.lua
 # Settings navigation and controls before style scopes and consumers
 ConfigSettings\SettingsNavigation.lua
 ConfigSettings\Helpers.lua

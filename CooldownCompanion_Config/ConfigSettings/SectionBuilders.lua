@@ -540,8 +540,12 @@ local function AddDurationTextVisibilityRows(container, readSettings, writeSetti
     local disabled = opts.disabled == true or writeSettings == nil
 
     local function commitAndRebuild()
-        if commitCallback then commitCallback() end
-        if opts.rebuild then opts.rebuild() end
+        if opts.completeEdit then
+            opts.completeEdit()
+        else
+            if commitCallback then commitCallback() end
+            if opts.rebuild then opts.rebuild() end
+        end
     end
 
     local rows = {}
@@ -1051,8 +1055,12 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
     local tooltip = opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
     local function ApplyShowKeybindText(val)
         styleTable.showKeybindText = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        if opts.completeEdit then
+            opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
+        else
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end
     end
 
     local kbRow = AddCheckboxRow(container, {
@@ -1108,8 +1116,12 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
     local function ApplyRenderModeChanged()
-        refreshCallback()
-        RefreshStructuralControls(container)
+        if opts.completeEdit then
+            opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
+        else
+            refreshCallback()
+            RefreshStructuralControls(container)
+        end
     end
     local colorRow = AddColorRow(container, {
         label = "Border Color",

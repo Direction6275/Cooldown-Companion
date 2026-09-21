@@ -1011,6 +1011,11 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
         ST._RefreshButtonsPreviewMirror(groupId)
     end
 
+    return GF.UpdateGroupStyleRuntime(self, groupId)
+end
+
+-- Config completion owns the mirror; standalone callers retain the wrapper.
+function GF.UpdateGroupStyleRuntime(self, groupId)
     local frame = self.groupFrames[groupId]
     local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
