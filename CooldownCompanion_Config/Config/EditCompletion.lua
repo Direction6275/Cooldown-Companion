@@ -18,23 +18,35 @@ local function IsValidTarget(target)
 end
 ST._IsConfigEditTargetCurrent = IsValidTarget
 
+-- Capture once while the control is built. Shared builders may ask this
+-- callback to finish their settings/advanced rebuild as part of the same edit.
+-- Its true receipt means they must not run a second completion afterward.
+function ST._MakeConfigEditRefresh(group)
+    local context = group and group._settingsContext
+    local target = ST._CaptureConfigEditTarget(context and context.panelId or CS.selectedGroup, context)
+    return function(operation, outcome)
+        return ST._CompleteConfigEdit(target, operation or "style", outcome)
+    end
+end
+
 -- Callers choose a known edit outcome, not arbitrary refresh flags/callbacks.
-function ST._CompleteConfigEdit(target, operation)
+function ST._CompleteConfigEdit(target, operation, effect)
     if not IsValidTarget(target) then return false end
     local settingsOnly = operation == "settings"
     local settings = settingsOnly or operation == "style-settings" or operation == "frame-settings"
-    assert(settings or operation == "style" or operation == "style-advanced", "Unknown config edit completion")
+    local frame = operation == "frame" or operation == "frame-settings"
+    assert(settings or frame or operation == "style" or operation == "style-advanced", "Unknown config edit completion")
 
-    if operation == "frame-settings" then
+    if frame then
         ST._GroupFrame.RefreshGroupFrameRuntime(Addon, target.panelId)
     elseif not settingsOnly then
-        ST._GroupFrame.UpdateGroupStyleRuntime(Addon, target.panelId)
+        ST._GroupFrame.UpdateGroupStyleRuntime(Addon, target.panelId, effect, target.context)
     end
 
     -- A style completion can change geometry and presentation, but does not
     -- declare new membership. The mirror verifies its bindings before reuse.
-    local outcome = not settingsOnly and operation ~= "frame-settings" and "geometry" or nil
-    local edit = { panelId = target.panelId, preservePreview = settingsOnly, previewOutcome = outcome }
+    local outcome = not settingsOnly and not frame and ((effect == "appearance" or effect == "interaction") and "appearance" or "geometry") or nil
+    local edit = { panelId = target.panelId, preservePreview = settingsOnly, previewOutcome = outcome, refreshNavigator = frame }
     if settings then
         ST._RefreshConfigEditWorkspace(edit)
     elseif operation == "style-advanced" and CS.selectedGroup == target.panelId

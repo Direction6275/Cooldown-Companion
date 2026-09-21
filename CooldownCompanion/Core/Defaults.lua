@@ -1159,8 +1159,8 @@ function CooldownCompanion:RefreshRotationAssistantButton(button)
         if self.RefreshResolvedItemKeybindState then
             self:RefreshResolvedItemKeybindState(button, buttonData)
         end
-        if self.UpdateRangeCheckRegistrations then
-            self:UpdateRangeCheckRegistrations()
+        if self.RequestRangeCheckRegistrationRefresh then
+            self:RequestRangeCheckRegistrationRefresh()
         end
     end
 

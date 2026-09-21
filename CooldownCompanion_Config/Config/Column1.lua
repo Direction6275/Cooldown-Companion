@@ -1991,6 +1991,82 @@ local function RenderImportModeNavigator()
     PopulateImportModeButtonBar()
 end
 
+local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
+    panelEntry:SetText(panel.name or ("Panel " .. tostring(panelId)))
+    panelEntry:SetFullWidth(true)
+    panelEntry:SetFontObject(GameFontHighlight)
+
+    local iconTexture = 134400
+    local iconAtlas
+    local vertexColor
+    local texCoord
+    local desaturated = isInactive or panel.enabled == false
+    if ST.IsTotemPanelGroup(panel) then
+        iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+        vertexColor = ST.TOTEM_PANEL_BADGE_TINT
+        desaturated = true
+    elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
+        iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
+        texCoord = { 0.08, 0.92, 0.08, 0.92 }
+    else
+        iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+        local auraTint = GetConfigAuraPanelBadgeTint(panel)
+        if panel.displayMode == "trigger" then
+            vertexColor = { 1.0, 0.18, 0.78, 1 }
+            desaturated = true
+        elseif auraTint then
+            -- Aura Panel polarity: green tracks the player's buffs,
+            -- red tracks target debuffs. Desaturated so the tint is
+            -- the badge's whole color, not a wash over its gold.
+            vertexColor = auraTint
+            desaturated = true
+        end
+    end
+    -- Pack visible badges next to the count, without leaving a
+    -- vacant warning slot in normal or compact rows.
+    local metaReserve = 4 + ConfigureTreePanelMeta(
+        panelEntry,
+        GetConfigPanelEntryCount(panel),
+        panel.enabled == false,
+        panel.enabled ~= false and ConfigPanelHasWarning(panel)
+    )
+    local resourceReserve = SetupPanelResourceIndicator(
+        panelEntry, panelId, metaReserve + 2
+    )
+    local renameReserve = ConfigureGenericRenameBadge(
+        panelEntry, panel.name, IsGenericPanelName(panel.name),
+        { groupId = panelId }, metaReserve + resourceReserve
+    )
+    ApplyConfigRowIcon(panelEntry, iconTexture, {
+        atlas = iconAtlas,
+        desaturated = desaturated,
+        indent = TREE.PANEL_INDENT,
+        iconSize = TREE.PANEL_ICON_SIZE,
+        iconGap = TREE.ICON_GAP,
+        rowHeight = TREE.PANEL_ROW_HEIGHT,
+        compactRowHeight = 24,
+        texCoord = texCoord,
+        vertexColor = vertexColor,
+        rightPad = metaReserve + 4 + resourceReserve + renameReserve,
+    })
+    panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    SetNavigatorRowTooltip(panelEntry,
+        panel.name or ("Panel " .. tostring(panelId)), ST._GetPanelTypeLabel(panel))
+
+    if CS.selectedPanels[panelId] then
+        panelEntry:SetColor(0.4, 0.7, 1.0)
+    elseif CS.selectedGroup == panelId
+        and CS.selectedButton == nil
+        and CS.selectedRotationAssistantEntry ~= true
+        and not next(CS.selectedButtons) then
+        panelEntry:SetColor(0, 1, 0)
+    elseif panel.enabled == false or isInactive then
+        panelEntry:SetColor(0.5, 0.5, 0.5)
+    else
+        panelEntry:SetColor(1, 1, 1)
+    end
+end
+
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
     CS.col1ResourcesButton = nil
@@ -2239,61 +2315,69 @@ local function RefreshColumn1(preserveDrag)
 
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
-        local groupName = container.name or "New Group"
-        local countLabel = panelCount == 1 and "1 panel" or (tostring(panelCount) .. " panels")
-        local isEmpty = not stats or stats.entryCount == 0
-        entry:SetText(groupName)
-        entry:SetFullWidth(true)
-        entry:SetFontObject(GameFontHighlight)
-        ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db), {
-            indent = 2,
-            iconSize = TREE.GROUP_ICON_SIZE,
-            iconGap = TREE.ICON_GAP,
-            rowHeight = TREE.GROUP_ROW_HEIGHT,
-            compactRowHeight = 30,
-            texCoord = { 0.08, 0.92, 0.08, 0.92 },
-        })
-        entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        local function RefreshContainerRowAppearance(newStats, inactive)
+            stats, isInactive = newStats, inactive
+            panelCount = stats and stats.panelCount or 0
+            groupUnit.frame:SetAlpha(isInactive and 0.58 or 1)
+            local groupName = container.name or "New Group"
+            local countLabel = panelCount == 1 and "1 panel" or (tostring(panelCount) .. " panels")
+            local isEmpty = not stats or stats.entryCount == 0
+            entry:SetText(groupName)
+            entry:SetFullWidth(true)
+            entry:SetFontObject(GameFontHighlight)
+            ApplyConfigRowIcon(entry, GetContainerIcon(containerId, db), {
+                indent = 2,
+                iconSize = TREE.GROUP_ICON_SIZE,
+                iconGap = TREE.ICON_GAP,
+                rowHeight = TREE.GROUP_ROW_HEIGHT,
+                compactRowHeight = 30,
+                texCoord = { 0.08, 0.92, 0.08, 0.92 },
+            })
+            entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+            SetupGroupRowIndicators(entry, container, isEmpty)
+            local expandReserve = 0
+            if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
+                expandReserve = ConfigureTreeExpandButton(
+                    entry,
+                    isExpanded,
+                    CS.peekedContainers[containerId] == true,
+                    function()
+                        ToggleContainerPeek(containerId)
+                    end
+                )
+                OffsetGroupStatusBadges(entry, expandReserve)
+            end
+            local rightReserve = expandReserve + GetConfigRowBadgeReserve(entry.frame) + 4
+            rightReserve = rightReserve
+                + ConfigureGenericRenameBadge(
+                    entry, container.name, IsGenericGroupName(container.name),
+                    { containerId = containerId }, rightReserve
+                )
+            ConfigureGroupHeaderLayout(entry, rightReserve, groupName, not isEmpty and countLabel or nil)
+            entry:SetCallback("OnEnter", function(widget)
+                GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(groupName, 1, 1, 1, true)
+                GameTooltip:AddLine(countLabel, 0.7, 0.7, 0.7)
+                if isEmpty then GameTooltip:AddLine("Contains no entries.", 0.7, 0.7, 0.7) end
+                GameTooltip:Show()
+            end)
+            entry:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+
+            if CS.selectedGroups[containerId] then
+                entry:SetColor(0.4, 0.7, 1.0)
+            elseif CS.selectedContainer == containerId
+                and not CS.selectedGroup
+                and not CS.barsEntrySelected then
+                entry:SetColor(0, 1, 0)
+            elseif isInactive then
+                entry:SetColor(0.55, 0.55, 0.55)
+            else
+                entry:SetColor(1, 1, 1)
+            end
+        end
+        RefreshContainerRowAppearance(stats, isInactive)
         groupUnit:AddChild(entry)
-
-        SetupGroupRowIndicators(entry, container, isEmpty)
-        local expandReserve = 0
-        if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
-            expandReserve = ConfigureTreeExpandButton(
-                entry,
-                isExpanded,
-                CS.peekedContainers[containerId] == true,
-                function()
-                    ToggleContainerPeek(containerId)
-                end
-            )
-            OffsetGroupStatusBadges(entry, expandReserve)
-        end
-        local rightReserve = expandReserve + GetConfigRowBadgeReserve(entry.frame) + 4
-        rightReserve = rightReserve
-            + ConfigureGenericRenameBadge(
-                entry, container.name, IsGenericGroupName(container.name),
-                { containerId = containerId }, rightReserve
-            )
-        ConfigureGroupHeaderLayout(entry, rightReserve, groupName, not isEmpty and countLabel or nil)
-        entry:SetCallback("OnEnter", function(widget)
-            GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(groupName, 1, 1, 1, true)
-            GameTooltip:AddLine(countLabel, 0.7, 0.7, 0.7)
-            if isEmpty then GameTooltip:AddLine("Contains no entries.", 0.7, 0.7, 0.7) end
-            GameTooltip:Show()
-        end)
-        entry:SetCallback("OnLeave", function() GameTooltip:Hide() end)
-
-        if CS.selectedGroups[containerId] then
-            entry:SetColor(0.4, 0.7, 1.0)
-        elseif CS.selectedContainer == containerId
-            and not CS.selectedGroup
-            and not CS.barsEntrySelected then
-            entry:SetColor(0, 1, 0)
-        elseif isInactive then
-            entry:SetColor(0.55, 0.55, 0.55)
-        end
 
         entry.frame:SetScript("OnMouseUp", function(_, button)
             if CS.dragState and CS.dragState.phase == "active" then return end
@@ -2371,6 +2455,11 @@ local function RefreshColumn1(preserveDrag)
             kind = "container",
             id = containerId,
             widget = entry,
+            owner = container,
+            ownerProfile = db,
+            panelCount = panelCount,
+            inactive = isInactive,
+            refreshAppearance = RefreshContainerRowAppearance,
             section = sectionTag,
             loadBucket = loadBucket or "loaded",
             acceptsDrop = not disableDrag,
@@ -2402,77 +2491,7 @@ local function RefreshColumn1(preserveDrag)
                 local searchPanelResult = visiblePanel.searchResult
                 local panelEntry = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(panelEntry)
-                panelEntry:SetText(panel.name or ("Panel " .. tostring(panelId)))
-                panelEntry:SetFullWidth(true)
-                panelEntry:SetFontObject(GameFontHighlight)
-
-                local iconTexture = 134400
-                local iconAtlas
-                local vertexColor
-                local texCoord
-                local desaturated = isInactive or panel.enabled == false
-                if ST.IsTotemPanelGroup(panel) then
-                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
-                    vertexColor = ST.TOTEM_PANEL_BADGE_TINT
-                    desaturated = true
-                elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-                    iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
-                    texCoord = { 0.08, 0.92, 0.08, 0.92 }
-                else
-                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
-                    local auraTint = GetConfigAuraPanelBadgeTint(panel)
-                    if panel.displayMode == "trigger" then
-                        vertexColor = { 1.0, 0.18, 0.78, 1 }
-                        desaturated = true
-                    elseif auraTint then
-                        -- Aura Panel polarity: green tracks the player's buffs,
-                        -- red tracks target debuffs. Desaturated so the tint is
-                        -- the badge's whole color, not a wash over its gold.
-                        vertexColor = auraTint
-                        desaturated = true
-                    end
-                end
-                -- Pack visible badges next to the count, without leaving a
-                -- vacant warning slot in normal or compact rows.
-                local metaReserve = 4 + ConfigureTreePanelMeta(
-                    panelEntry,
-                    GetConfigPanelEntryCount(panel),
-                    panel.enabled == false,
-                    panel.enabled ~= false and ConfigPanelHasWarning(panel)
-                )
-                local resourceReserve = SetupPanelResourceIndicator(
-                    panelEntry, panelId, metaReserve + 2
-                )
-                local renameReserve = ConfigureGenericRenameBadge(
-                    panelEntry, panel.name, IsGenericPanelName(panel.name),
-                    { groupId = panelId }, metaReserve + resourceReserve
-                )
-                ApplyConfigRowIcon(panelEntry, iconTexture, {
-                    atlas = iconAtlas,
-                    desaturated = desaturated,
-                    indent = TREE.PANEL_INDENT,
-                    iconSize = TREE.PANEL_ICON_SIZE,
-                    iconGap = TREE.ICON_GAP,
-                    rowHeight = TREE.PANEL_ROW_HEIGHT,
-                    compactRowHeight = 24,
-                    texCoord = texCoord,
-                    vertexColor = vertexColor,
-                    rightPad = metaReserve + 4 + resourceReserve + renameReserve,
-                })
-                panelEntry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-                SetNavigatorRowTooltip(panelEntry,
-                    panel.name or ("Panel " .. tostring(panelId)), ST._GetPanelTypeLabel(panel))
-
-                if CS.selectedPanels[panelId] then
-                    panelEntry:SetColor(0.4, 0.7, 1.0)
-                elseif CS.selectedGroup == panelId
-                    and CS.selectedButton == nil
-                    and CS.selectedRotationAssistantEntry ~= true
-                    and not next(CS.selectedButtons) then
-                    panelEntry:SetColor(0, 1, 0)
-                elseif panel.enabled == false or isInactive then
-                    panelEntry:SetColor(0.5, 0.5, 0.5)
-                end
+                RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
 
                 groupUnit:AddChild(panelEntry)
                 firstPanelEntry = firstPanelEntry or panelEntry
@@ -2639,6 +2658,9 @@ local function RefreshColumn1(preserveDrag)
                     rowType = "panel",
                     id = panelId,
                     widget = panelEntry,
+                    owner = panel,
+                    ownerProfile = db,
+                    entryCount = GetConfigPanelEntryCount(panel),
                     section = sectionTag,
                     loadBucket = "aux",
                     acceptsDrop = false,
@@ -2695,6 +2717,8 @@ local function RefreshColumn1(preserveDrag)
                         rowType = "finder-entry",
                         id = buttonIndex,
                         widget = buttonEntry,
+                        owner = buttonData,
+                        ownerProfile = db,
                         section = sectionTag,
                         loadBucket = "aux",
                         acceptsDrop = false,
@@ -3450,5 +3474,52 @@ end
 ------------------------------------------------------------------------
 -- ST._ exports
 ------------------------------------------------------------------------
+-- Refresh the edited panel and its containing header without releasing rows.
+-- A load-bucket or binding change belongs to the structural Navigator owner.
+function ST._RefreshConfigEditNavigator(panelId)
+    local db = CooldownCompanion.db.profile
+    local panel = db.groups[panelId]
+    local containerId = panel and panel.parentContainerId
+    local container = containerId and db.groupContainers[containerId]
+    local rows = CS.lastCol1RenderedRows
+    if not container or not rows then return false end
+    local stats = BuildColumn1ContainerStats(db, { [containerId] = true })[containerId]
+    local inactive = IsNavigatorContainerInactive(container, stats)
+    local header
+    for _, row in ipairs(rows) do
+        if row.kind == "container" and row.id == containerId then
+            if row.ownerProfile ~= db or row.owner ~= container
+                or row.panelCount ~= (stats and stats.panelCount or 0)
+                or row.inactive ~= inactive then return false end
+            header = row
+        elseif row.rowType == "panel" and row.ownerId == containerId then
+            local owner = db.groups[row.id]
+            if row.ownerProfile ~= db or row.owner ~= owner or not owner
+                or owner.parentContainerId ~= containerId
+                or row.entryCount ~= GetConfigPanelEntryCount(owner) then return false end
+        elseif row.rowType == "finder-entry" and row.ownerPanelId == panelId then
+            if row.ownerProfile ~= db or row.owner ~= panel.buttons[row.id] then return false end
+        end
+    end
+    if not header then return false end
+    header.refreshAppearance(stats, inactive)
+    for _, row in ipairs(rows) do
+        if row.rowType == "panel" and row.id == panelId then
+            RefreshPanelRowAppearance(row.widget, panelId, panel, inactive)
+        elseif row.rowType == "finder-entry" and row.ownerPanelId == panelId then
+            local disabled = inactive or not CooldownCompanion:IsButtonEnabled(row.owner, panel)
+            local icon = row.widget._cdcConfigRow
+            if icon then
+                icon.desaturated = disabled
+                ApplyConfigRowIcon(row.widget, icon.texture, icon)
+            end
+            if disabled then row.widget:SetColor(0.5, 0.5, 0.5)
+            elseif CS.selectedGroup == panelId and CS.selectedButton == row.id then row.widget:SetColor(0, 1, 0)
+            else row.widget:SetColor(1, 1, 1) end
+        end
+    end
+    return true
+end
+
 ST._RefreshColumn1 = RefreshColumn1
 ST._CreateConfigGroup = CreateGroupFromRail

@@ -510,8 +510,8 @@ ST._SECTION_HOME.text = {
 }
 
 local function BuildTextAppearanceTab(container, group, style)
-    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
-    local refreshFrame = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
+    local refreshFrame = function() return refreshStyle("frame") end
 
     -- STYLE LENS (Helpers.lua). With an entry selected the sections below stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
@@ -717,7 +717,7 @@ local function BuildTextAppearanceTab(container, group, style)
         end,
         onRelease = function(val)
             style.textPadding = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
 
@@ -748,7 +748,7 @@ local function BuildTextAppearanceTab(container, group, style)
             end,
             onRelease = function(val)
                 style.buttonSpacing = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
     end
@@ -760,8 +760,7 @@ local function BuildTextAppearanceTab(container, group, style)
         disabled = panelSec.disabled,
         onChange = function(val)
             style.showTextGroupHeader = val or false
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("frame-settings")
         end,
     })
 
@@ -769,7 +768,7 @@ local function BuildTextAppearanceTab(container, group, style)
         unlock = { sec = panelSec, enable = not style.showTextGroupHeader and {
             label = "Enable Group Header",
             apply = function(write) write.showTextGroupHeader = true end,
-            after = function() CooldownCompanion:RefreshGroupFrame(CS.selectedGroup) end,
+            after = function() refreshFrame() end,
         } or nil },
         build = function(panel)
             AddSliderRow(panel, {
@@ -784,7 +783,7 @@ local function BuildTextAppearanceTab(container, group, style)
                 end,
                 onRelease = function(val)
                     style.textHeaderFontSize = val
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    refreshFrame()
                 end,
             })
 

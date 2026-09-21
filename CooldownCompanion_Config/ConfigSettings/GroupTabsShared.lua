@@ -20,7 +20,7 @@ local AddColorRow = ST._AddColorRow
 -- snapshotted on every preview tick instead of restoring slider:GetValue(): a
 -- slider can display a fallback for an absent field, and writing that fallback
 -- back would silently materialize an override before the user commits.
-local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, stateOwner, stateKeys)
+local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, stateOwner, stateKeys, outcome)
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(slider)
     local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
 
@@ -45,7 +45,7 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
         if commitFn then
             commitFn()
         elseif target then
-            ST._CompleteConfigEdit(target, "style")
+            ST._CompleteConfigEdit(target, "style", outcome)
         else
             CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
         end
@@ -55,13 +55,6 @@ end
 local function RefreshActiveAdvancedSettingsPanel()
     if CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
-    end
-end
-
-local function UpdateSelectedGroupStyle(refreshConfig)
-    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    if refreshConfig then
-        CooldownCompanion:RefreshConfigPanel()
     end
 end
 
@@ -234,6 +227,5 @@ end
 
 ST._WireMirrorFirstSlider = WireMirrorFirstSlider
 ST._RefreshActiveAdvancedSettingsPanel = RefreshActiveAdvancedSettingsPanel
-ST._UpdateSelectedGroupStyle = UpdateSelectedGroupStyle
 ST._MakeCooldownTextAdvancedDescriptor = MakeCooldownTextAdvancedDescriptor
 ST._MakeCooldownSwipeAdvancedDescriptor = MakeCooldownSwipeAdvancedDescriptor

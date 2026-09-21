@@ -2515,6 +2515,10 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
 
+    if edit and edit.refreshNavigator and ST._RefreshConfigEditNavigator
+        and not ST._RefreshConfigEditNavigator(edit.panelId) then
+        return CooldownCompanion:_configRefreshPanelImpl(edit)
+    end
     CS.configRefreshInProgress = true
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     if ST._BeginNavSettingHighlightRefresh then
@@ -2528,7 +2532,7 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
     FinishConfigRefresh()
-    if RebuildTutorialAnchors then
+    if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()
     end
     if RefreshTutorialPlacement then
@@ -2555,7 +2559,7 @@ end
 ------------------------------------------------------------------------
 -- Refresh entire panel
 ------------------------------------------------------------------------
-function CooldownCompanion:_configRefreshPanelImpl()
+function CooldownCompanion:_configRefreshPanelImpl(edit)
     if not CS.configFrame then return end
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
@@ -2607,7 +2611,7 @@ function CooldownCompanion:_configRefreshPanelImpl()
     if CS.configFrame.UpdateCompactConfigRows then
         CS.configFrame.UpdateCompactConfigRows()
     end
-    RefreshColumn3()
+    RefreshColumn3(nil, edit)
     ApplyConfigColumnTitles(CS.configFrame)
 
     -- Restore AceGUI scroll state.
@@ -2619,7 +2623,7 @@ function CooldownCompanion:_configRefreshPanelImpl()
         RestoreScrollState(buttonSettingsScroll, savedBtn)
     end
 
-    if RebuildTutorialAnchors then
+    if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()
     end
     if RefreshTutorialPlacement then

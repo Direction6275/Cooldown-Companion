@@ -1230,7 +1230,7 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     end
 end
 
-function CooldownCompanion:UpdateButtonStyle(button, style)
+local function GetIconStyleDimensions(style)
     local width, height
 
     if style.maintainAspectRatio then
@@ -1243,6 +1243,121 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
     end
+
+    return width, height
+end
+
+-- These writes do not reset cooldown, charge, visibility or event-owned state.
+-- Only audited decoration controls use this entry point.
+function CooldownCompanion:UpdateButtonAppearance(button, style)
+    button.style = style
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    -- Layout may have applied section dimensions that differ from panel style.
+    local width, height = button:GetSize()
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
+    -- Update border textures
+    local borderColor = style.borderColor or {0, 0, 0, 1}
+    if button.borderTextures then
+        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
+        for _, tex in ipairs(button.borderTextures) do
+            tex:SetColorTexture(unpack(borderColor))
+        end
+    end
+
+    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
+    button.bg:SetColorTexture(unpack(bgColor))
+end
+
+function CooldownCompanion:UpdateButtonInteraction(button, style)
+    button.style = style
+    -- Click-through is always enabled (clicks always pass through for camera movement)
+    -- Motion (hover) is only enabled when tooltips or entry pings are on
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local allowPings = style.allowPings == true and not cursorAnchored
+        and IsEntryPingEligible(button.buttonData)
+        and not IsStandaloneTexturePanelButton(button)
+    local disableClicks = true
+    local disableMotion = not (showTooltips or allowPings)
+
+    -- Apply to the button frame and all children recursively
+    SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
+    -- Re-apply full click-through on overlay frames (the recursive call above
+    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconFill then
+        SetFrameClickThroughRecursive(button.iconFill, true, true)
+    end
+    SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    if button.procGlow then
+        SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
+        SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
+    end
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+    if button.pinnedTextFrame then
+        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
+    end
+    if button.assistedHighlight then
+        if button.assistedHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.solidFrame, true, true)
+        end
+        if button.assistedHighlight.blizzardFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
+        end
+        if button.assistedHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
+        end
+    end
+    if button.readyGlow then
+        if button.readyGlow.solidFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
+        end
+        if button.readyGlow.procFrame then
+            SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
+        end
+    end
+    if button.keyPressHighlight then
+        if button.keyPressHighlight.solidFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
+        end
+        if button.keyPressHighlight.procFrame then
+            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
+        end
+    end
+    if button._cooldownPressFlash then
+        SetFrameClickThroughRecursive(button._cooldownPressFlash.frame, true, true)
+    end
+
+    -- (Ready glow and key press highlight used to be re-pinned to cooldown+1
+    -- here, silently overwriting the levels
+    -- ApplyStrataOrder had just assigned. ApplyStrataOrder owns them now.)
+
+    -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
+    if showTooltips then
+        SetupTooltipScripts(button)
+    elseif allowPings then
+        -- Motion is on for pings only; keep tooltip scripts off.
+        button:SetScript("OnEnter", nil)
+        button:SetScript("OnLeave", nil)
+    end
+    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
+    -- the click-through motion state, which entry pings widen without wanting
+    -- tooltips.
+    button._ccTooltipMotion = showTooltips
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = allowPings and button or nil
+    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
+    -- A button restyled from bar mode may still carry the bar icon's receiver.
+    if button._iconBounds then
+        SetEntryPingReceiver(button._iconBounds, false)
+    end
+end
+
+function CooldownCompanion:UpdateButtonStyle(button, style)
+    local width, height = GetIconStyleDimensions(style)
 
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local borderRenderMode = ST.GetBorderRenderMode(style)
@@ -1314,8 +1429,6 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
     button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
 
-    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
-
     if button.iconFill then
         AnchorIconFill(button)
         button.iconFill:SetMinMaxValues(0, 1)
@@ -1327,17 +1440,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button.iconFill:Hide()
     end
 
-    -- Update border textures
-    local borderColor = style.borderColor or {0, 0, 0, 1}
-    if button.borderTextures then
-        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
-        for _, tex in ipairs(button.borderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
-        end
-    end
-
-    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
-    button.bg:SetColorTexture(unpack(bgColor))
+    self:UpdateButtonAppearance(button, style)
 
     -- The countdown FontString is reparented outside the Cooldown frame, so
     -- SetCooldown(0, 0) can leave its last rendered value behind. A restyle
@@ -1436,89 +1539,7 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     ApplyStrataOrder(button, style.strataOrder)
     CooldownCompanion:UpdateAuraTextureVisual(button)
 
-    -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips or entry pings are on
-    local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = style.showTooltips == true and not cursorAnchored
-    local allowPings = style.allowPings == true and not cursorAnchored
-        and IsEntryPingEligible(button.buttonData)
-        and not IsStandaloneTexturePanelButton(button)
-    local disableClicks = true
-    local disableMotion = not (showTooltips or allowPings)
-
-    -- Apply to the button frame and all children recursively
-    SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
-    -- Re-apply full click-through on overlay frames (the recursive call above
-    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    if button.iconFill then
-        SetFrameClickThroughRecursive(button.iconFill, true, true)
-    end
-    SetFrameClickThroughRecursive(button.locCooldown, true, true)
-    if button.procGlow then
-        SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
-        SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
-    end
-    if button.overlayFrame then
-        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
-    end
-    if button.pinnedTextFrame then
-        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
-    end
-    if button.assistedHighlight then
-        if button.assistedHighlight.solidFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.solidFrame, true, true)
-        end
-        if button.assistedHighlight.blizzardFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
-        end
-        if button.assistedHighlight.procFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
-        end
-    end
-    if button.readyGlow then
-        if button.readyGlow.solidFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
-        end
-        if button.readyGlow.procFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
-        end
-    end
-    if button.keyPressHighlight then
-        if button.keyPressHighlight.solidFrame then
-            SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
-        end
-        if button.keyPressHighlight.procFrame then
-            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
-        end
-    end
-    if button._cooldownPressFlash then
-        SetFrameClickThroughRecursive(button._cooldownPressFlash.frame, true, true)
-    end
-
-    -- (Ready glow and key press highlight used to be re-pinned to cooldown+1
-    -- here, silently overwriting the levels
-    -- ApplyStrataOrder had just assigned. ApplyStrataOrder owns them now.)
-
-    -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
-    if showTooltips then
-        SetupTooltipScripts(button)
-    elseif allowPings then
-        -- Motion is on for pings only; keep tooltip scripts off.
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-    end
-    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
-    -- the click-through motion state, which entry pings widen without wanting
-    -- tooltips.
-    button._ccTooltipMotion = showTooltips
-    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
-    button._ccPingSurface = allowPings and button or nil
-    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
-    -- A button restyled from bar mode may still carry the bar icon's receiver.
-    if button._iconBounds then
-        SetEntryPingReceiver(button._iconBounds, false)
-    end
+    self:UpdateButtonInteraction(button, style)
 
     ApplyAuraShellVisuals(button, button.buttonData)
 end

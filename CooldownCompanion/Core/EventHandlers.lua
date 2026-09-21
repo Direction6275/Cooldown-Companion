@@ -259,6 +259,13 @@ local function GetRangeCheckSpellID(buttonData)
     return buttonData.id
 end
 
+-- No persisted interest cache: nested panel edits reconcile the final live
+-- set once, before the outer operation returns. Standalone identity changes
+-- (including Rotation Assistant) retain immediate reconciliation.
+function CooldownCompanion:RequestRangeCheckRegistrationRefresh()
+    if not self:DeferPanelRangeCheckRefresh() then self:UpdateRangeCheckRegistrations() end
+end
+
 function CooldownCompanion:UpdateRangeCheckRegistrations()
     local newSet = {}
     self:ForEachButton(function(button, bd)

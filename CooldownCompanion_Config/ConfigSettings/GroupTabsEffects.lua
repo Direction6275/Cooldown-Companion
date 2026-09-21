@@ -47,7 +47,6 @@ local BeginRowGrid = ST._BeginRowGrid
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
 local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPanel
-local UpdateSelectedGroupStyle = ST._UpdateSelectedGroupStyle
 local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
@@ -110,11 +109,6 @@ local TURNON_ASSISTED_HIGHLIGHT = { label = "Enable Assisted Highlight", key = "
 local TURNON_ICON_FILL_TIMER = {
     label = "Enable Icon Fill Timer",
     key = "iconFillEnabled",
-    -- The checkbox path (ApplyIconFillEnabled, SectionBuilders.lua) rewalks
-    -- cooldowns after the style apply: style application resets the fill,
-    -- and only the cooldown pass shows it again on already-running
-    -- cooldowns. The footer entrance must match.
-    after = function() CooldownCompanion:UpdateAllCooldowns() end,
 }
 local TURNON_COOLDOWN_SWIPE = { label = "Enable Cooldown Swipe", key = "showCooldownSwipe" }
 local TURNON_AURA_DURATION_SWIPE = { label = "Enable Aura Duration Swipe", key = "showAuraDurationSwipe" }
@@ -204,6 +198,7 @@ end
 -- nil write table is the inert marker, and the scope chrome attached last is
 -- the only way back out of it.
 local function BuildProcGlowSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     -- Passive entries are not special-cased here. The retired promote badge on
     -- this row skipped itself for them, which no other surface did:
     -- CanButtonUseConfigOverrideSection allows Proc Glow on a passive entry.
@@ -220,7 +215,7 @@ local function BuildProcGlowSection(container, group, style, lens)
         onChange = function(val)
             if not procSec.write then return end
             procSec.write.procGlowStyle = val and "glow" or "none"
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -238,11 +233,11 @@ local function BuildProcGlowSection(container, group, style, lens)
             value = procSec.tbl.procGlowCombatOnly or false,
             onChange = function(val)
                 procSec.write.procGlowCombatOnly = val
-                UpdateSelectedGroupStyle()
+                refreshStyle()
             end,
         })
 
-        BuildProcGlowControls(panel, procSec.tbl, UpdateSelectedGroupStyle, {
+        BuildProcGlowControls(panel, procSec.tbl, refreshStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.proc,
         })
@@ -266,6 +261,7 @@ end
 -- while the tracked aura is active. Shown only when the group has an
 -- aura-tracking entry (Phase 3 gating pattern).
 local function BuildAuraGlowSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     -- The gate stays on the GROUP: with an entry selected that tracks no aura
     -- the row is still drawn and the lens resolves it "not available" for that
     -- entry, which states the reason rather than hiding it.
@@ -292,7 +288,7 @@ local function BuildAuraGlowSection(container, group, style, lens)
             else
                 auraSec.write.auraGlowStyle = "none"
             end
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -300,7 +296,7 @@ local function BuildAuraGlowSection(container, group, style, lens)
     -- panel captures the section's resolved table (sec.tbl), read-only behind
     -- the unlock strip while the section is inherited or the glow is off.
     local function BuildAuraGlowAdvanced(panel)
-        BuildAuraGlowControls(panel, auraSec.tbl, UpdateSelectedGroupStyle, {
+        BuildAuraGlowControls(panel, auraSec.tbl, refreshStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.auraGlow,
         })
@@ -336,6 +332,7 @@ end
 -- the same "pandemic" section and flip together, silently. The bars twin makes
 -- the same ruling with the chrome on its enable row.
 local function BuildPandemicGlowSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
@@ -352,7 +349,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
         onChange = function(val)
             if not pandemicSec.write then return end
             pandemicSec.write.pandemicEffectEnabled = val and true or false
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -363,7 +360,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
     -- panel's. The section's enable toggle lives on the row above, never in
     -- the shared builder.
     local function BuildPandemicAdvanced(panel)
-        BuildPandemicGlowControls(panel, pandemicSec.tbl, UpdateSelectedGroupStyle, {
+        BuildPandemicGlowControls(panel, pandemicSec.tbl, refreshStyle, {
             row = true,
             fallbackStyle = pandemicSec.fallbackStyle,
             settings = EFFECTS_FINDER.advanced.pandemicGlow,
@@ -396,6 +393,7 @@ end
 -- Hide this half while that effective text surface is off; the glow half above
 -- remains live because it does not depend on duration text.
 local function BuildPandemicMarkerSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
         if CS.CloseAdvancedSettingsPanel then
@@ -412,9 +410,9 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     -- the chrome for it is on the Pandemic subheading.
     local markerSec = BeginLensSection(lens, group, "pandemic", { column = container })
 
-    local applyStyle = function() UpdateSelectedGroupStyle(false) end
+    local applyStyle = refreshStyle
     local markerRow = AddPandemicMarkerControls(container, markerSec.tbl, applyStyle, function()
-        CooldownCompanion:RefreshConfigPanel()
+        refreshStyle("settings")
     end, {
         enableOnly = true,
         setting = EFFECTS_FINDER.icons.aura.pandemicMarker,
@@ -447,6 +445,7 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
 end
 
 local function BuildReadyGlowSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local readySec = BeginLensSection(lens, group, "readyGlow", { column = container })
 
     local readyEnableCb = AddCheckboxRow(container, {
@@ -457,7 +456,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
         onChange = function(val)
             if not readySec.write then return end
             readySec.write.readyGlowStyle = val and "solid" or "none"
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -486,8 +485,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
             },
             onChange = function(val)
                 readySec.write.readyGlowOnlyWhileUsable = val == true
-                UpdateSelectedGroupStyle()
-                CooldownCompanion:UpdateAllCooldowns()
+                refreshStyle()
             end,
         })
 
@@ -497,7 +495,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
             value = readySec.tbl.readyGlowCombatOnly or false,
             onChange = function(val)
                 readySec.write.readyGlowCombatOnly = val
-                UpdateSelectedGroupStyle()
+                refreshStyle()
             end,
         })
 
@@ -511,7 +509,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
             tooltip = { "Glow When Charges Are Capped" },
             onChange = function(val)
                 readySec.write.readyGlowOnlyAtMaxCharges = val == true
-                UpdateSelectedGroupStyle()
+                refreshStyle()
                 if (readySec.write.readyGlowDuration or 0) > 0 then
                     if val then
                         PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup, primeTarget)
@@ -535,7 +533,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
             value = (readySec.tbl.readyGlowDuration or 0) > 0,
             onChange = function(val)
                 readySec.write.readyGlowDuration = val and 3 or 0
-                UpdateSelectedGroupStyle()
+                refreshStyle()
                 if val then
                     if readySec.write.readyGlowOnlyAtMaxCharges then
                         PrimeReadyGlowCappedChargeTransitions(CS.selectedGroup, primeTarget)
@@ -560,10 +558,10 @@ local function BuildReadyGlowSection(container, group, style, lens)
             })
             WireMirrorFirstSlider(durationRow, function(val)
                 readySec.write.readyGlowDuration = val
-            end, UpdateSelectedGroupStyle, nil, readySec.tbl, "readyGlowDuration")
+            end, refreshStyle, nil, readySec.tbl, "readyGlowDuration")
         end
 
-        BuildReadyGlowControls(panel, readySec.tbl, UpdateSelectedGroupStyle, {
+        BuildReadyGlowControls(panel, readySec.tbl, refreshStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.ready,
         })
@@ -591,6 +589,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
 end
 
 local function BuildKeyPressHighlightSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local kphSec = BeginLensSection(lens, group, "keyPressHighlight", { column = container })
 
     local kphEnableCb = AddCheckboxRow(container, {
@@ -601,7 +600,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
         onChange = function(val)
             if not kphSec.write then return end
             kphSec.write.keyPressHighlightStyle = val and "solid" or "none"
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -615,11 +614,11 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
             value = kphSec.tbl.keyPressHighlightCombatOnly or false,
             onChange = function(val)
                 kphSec.write.keyPressHighlightCombatOnly = val
-                UpdateSelectedGroupStyle()
+                refreshStyle()
             end,
         })
 
-        BuildKeyPressHighlightControls(panel, kphSec.tbl, UpdateSelectedGroupStyle, {
+        BuildKeyPressHighlightControls(panel, kphSec.tbl, refreshStyle, {
             row = true,
             settings = EFFECTS_FINDER.advanced.keyPress,
         })
@@ -647,6 +646,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
 end
 
 local function BuildCooldownPressFlashSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local flashSec = BeginLensSection(lens, group, "cooldownPressFlash", { column = container })
 
     local flashEnableCb = AddCheckboxRow(container, {
@@ -657,7 +657,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
         onChange = function(val)
             if not flashSec.write then return end
             flashSec.write.cooldownPressFlashEnabled = val == true
-            UpdateSelectedGroupStyle(true)
+            refreshStyle("style-settings")
         end,
     })
 
@@ -671,7 +671,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
             value = flashSec.tbl.cooldownPressFlashCombatOnly or false,
             onChange = function(val)
                 flashSec.write.cooldownPressFlashCombatOnly = val
-                UpdateSelectedGroupStyle()
+                refreshStyle()
             end,
         })
 
@@ -682,7 +682,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
             key = "cooldownPressFlashColor",
             default = {1, 0.25, 0.25, 0.6},
             hasAlpha = true,
-            onConfirm = UpdateSelectedGroupStyle,
+            onConfirm = refreshStyle,
         })
 
         local durationRow = AddSliderRow(panel, {
@@ -693,7 +693,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
         })
         WireMirrorFirstSlider(durationRow, function(val)
             flashSec.write.cooldownPressFlashDuration = val
-        end, UpdateSelectedGroupStyle, nil, flashSec.tbl, "cooldownPressFlashDuration")
+        end, refreshStyle, nil, flashSec.tbl, "cooldownPressFlashDuration")
     end
 
     if flashSec.scope ~= "denied" then
@@ -840,6 +840,7 @@ local function BuildEffectsTab(container, settingsGroup)
     if not settingsGroup and ST._BuildCompletePanelStyleTab(container, group, "effects", BuildEffectsTab) then return end
     group = ST._ResolveStylingGroup(group)
     local style = group.style
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
 
     local displayMode = group.displayMode
 
@@ -871,12 +872,8 @@ local function BuildEffectsTab(container, settingsGroup)
         -- rows across two columns the way the icons tab's fuller set does.
         local raTimerLeft = BeginRowGrid(container)
 
-        BuildCooldownSwipeControls(raTimerLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, settings = EFFECTS_FINDER.assistant.cooldownSwipe })
-        BuildShowGCDSwipeControls(raTimerLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.gcd })
+        BuildCooldownSwipeControls(raTimerLeft, style, refreshStyle, { row = true, settings = EFFECTS_FINDER.assistant.cooldownSwipe })
+        BuildShowGCDSwipeControls(raTimerLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.gcd })
 
         AddSettingsSubheading(container, "States")
         -- A single left rail, for the same reason as Timers above: the four
@@ -885,13 +882,8 @@ local function BuildEffectsTab(container, settingsGroup)
         -- two-column split the icons States subheading makes of the same set.
         local raStateLeft = BeginRowGrid(container)
 
-        BuildDesaturationControls(raStateLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.desaturate })
-        BuildUnusableDimmingControls(raStateLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end, {
+        BuildDesaturationControls(raStateLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.desaturate })
+        BuildUnusableDimmingControls(raStateLeft, style, function(operation) return refreshStyle(operation or "style-settings") end, {
             row = true,
             advanced = true,
             setting = EFFECTS_FINDER.assistant.spell.unusable,
@@ -902,13 +894,8 @@ local function BuildEffectsTab(container, settingsGroup)
             advancedUnlock = { target = style, refreshKind = "groupStyle",
                 enable = style.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
         })
-        BuildShowOutOfRangeControls(raStateLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.outOfRange })
-        BuildLossOfControlControls(raStateLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, setting = EFFECTS_FINDER.assistant.spell.lossOfControl })
+        BuildShowOutOfRangeControls(raStateLeft, style, function(operation) return refreshStyle(operation or "style-settings") end, { row = true, setting = EFFECTS_FINDER.assistant.spell.outOfRange })
+        BuildLossOfControlControls(raStateLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.lossOfControl })
         end -- not raSpellCollapsed
 
         -- Interaction: the same split-out the icons and bars tabs make, under
@@ -920,10 +907,7 @@ local function BuildEffectsTab(container, settingsGroup)
         if not raInteractionCollapsed then
         local raInteractionLeft, raInteractionRight = BeginRowGrid(container)
 
-        BuildShowTooltipsControls(raInteractionLeft, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end, {
+        BuildShowTooltipsControls(raInteractionLeft, style, function(operation) return refreshStyle(operation or "style-settings", "interaction") end, {
             row = true,
             advanced = true,
             -- Non-lens lazy spec, same shape as Show Unusable above.
@@ -932,9 +916,7 @@ local function BuildEffectsTab(container, settingsGroup)
             setting = EFFECTS_FINDER.assistant.interaction.tooltips,
             settings = EFFECTS_FINDER.assistant.tooltipAdvanced,
         })
-        BuildAllowPingsControls(raInteractionRight, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, setting = EFFECTS_FINDER.assistant.interaction.pings })
+        BuildAllowPingsControls(raInteractionRight, style, function(operation) return refreshStyle(operation or "style", "interaction") end, { row = true, setting = EFFECTS_FINDER.assistant.interaction.pings })
         end -- not raInteractionCollapsed
         return
     end
@@ -1069,8 +1051,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not assistedSec.write then return end
             assistedSec.write.showAssistedHighlight = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1085,13 +1066,11 @@ local function BuildEffectsTab(container, settingsGroup)
             value = assistedSec.tbl.assistedHighlightCombatOnly or false,
             onChange = function(val)
                 assistedSec.write.assistedHighlightCombatOnly = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
 
-        BuildAssistedHighlightControls(panel, assistedSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, { row = true, settings = EFFECTS_FINDER.advanced.assisted })
+        BuildAssistedHighlightControls(panel, assistedSec.tbl, refreshStyle, { row = true, settings = EFFECTS_FINDER.advanced.assisted })
     end
 
     if assistedSec.scope ~= "denied" then
@@ -1149,9 +1128,7 @@ local function BuildEffectsTab(container, settingsGroup)
     local fillSec = BeginLensSection(lens, group, "iconFillTimer", { column = timerLeft })
 
     iconFillTimerActive = fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true
-    local iconFillCb = BuildIconFillTimerControls(timerLeft, fillSec.tbl, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, {
+    local iconFillCb = BuildIconFillTimerControls(timerLeft, fillSec.tbl, refreshStyle, {
         row = true,
         setting = EFFECTS_FINDER.icons.spell.iconFill,
         settings = EFFECTS_FINDER.advanced.iconFill,
@@ -1169,9 +1146,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- the unlock strip while the section is inherited or the timer is off.
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
-            BuildIconFillTimerAdvancedControls(panel, fillSec.tbl, function()
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end, {
+            BuildIconFillTimerAdvancedControls(panel, fillSec.tbl, refreshStyle, {
                 row = true,
                 indent = false,
                 -- The builder's own enabled gate is an inline-children rule;
@@ -1219,8 +1194,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not swipeSec.write or iconFillTimerActive then return end
             swipeSec.write.showCooldownSwipe = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1263,7 +1237,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not gcdSec.write then return end
             gcdSec.write.showGCDSwipe = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     gcdSec:Chrome(gcdCb)
@@ -1302,7 +1276,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not desatSec.write then return end
             desatSec.write.desaturateOnCooldown = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     desatSec:Chrome(desatCb)
@@ -1314,10 +1288,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- opens the panel read-only like every hand-written section's.
     if CanGroupUseOverrideSection(group, "unusableDimming") then
     local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
-    local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end, {
+    local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function(operation) return refreshStyle(operation or "style-settings") end, {
         row = true,
         advanced = unusableSec.scope ~= "denied",
         advancedUnlock = { sec = unusableSec,
@@ -1344,8 +1315,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not oorSec.write then return end
             oorSec.write.showOutOfRange = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
     oorSec:Chrome(oorCb)
@@ -1364,7 +1334,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not locSec.write then return end
             locSec.write.showLossOfControl = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     locSec:Chrome(locCb)
@@ -1412,9 +1382,7 @@ local function BuildEffectsTab(container, settingsGroup)
     if GroupHasAuraTrackingEntry(group) then
         local auraSwipeSec = BeginLensSection(lens, group, "auraDurationSwipe", { column = auraLeft })
 
-        local auraDurationCb = BuildAuraDurationSwipeControls(auraLeft, auraSwipeSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, {
+        local auraDurationCb = BuildAuraDurationSwipeControls(auraLeft, auraSwipeSec.tbl, refreshStyle, {
             row = true,
             setting = EFFECTS_FINDER.icons.aura.auraSwipe,
             settings = EFFECTS_FINDER.advanced.auraSwipe,
@@ -1426,9 +1394,7 @@ local function BuildEffectsTab(container, settingsGroup)
         -- behind the unlock strip while the section is inherited or the swipe
         -- is off.
         local function BuildAuraDurationSwipeAdvanced(panel)
-            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.tbl, function()
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            end, { row = true, settings = EFFECTS_FINDER.advanced.auraSwipe })
+            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.tbl, refreshStyle, { row = true, settings = EFFECTS_FINDER.advanced.auraSwipe })
         end
         if auraSwipeSec.scope ~= "denied" then
             AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, true, {
@@ -1464,7 +1430,7 @@ local function BuildEffectsTab(container, settingsGroup)
         onChange = function(val)
             if not missingSec.write then return end
             missingSec.write.desaturateWhileAuraNotActive = missingSec:BoolValue(val)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
@@ -1539,10 +1505,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- the section is not denied, opening read-only behind the Turn On footer
     -- when the toggle is off - see the Unusable Visual note in States above.
     local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })
-    local tooltipCb = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        CooldownCompanion:RefreshConfigPanel()
-    end, {
+    local tooltipCb = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function(operation) return refreshStyle(operation or "style-settings", "interaction") end, {
         row = true,
         advanced = tooltipSec.scope ~= "denied",
         advancedUnlock = { sec = tooltipSec,
@@ -1571,9 +1534,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- rather than CanGroupUseOverrideSection.
     if not CooldownCompanion:IsAuraPanel(group) then
     local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
-    BuildAllowPingsControls(interactionRight, style, function()
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-    end, { row = true, setting = EFFECTS_FINDER.icons.interaction.pings })
+    BuildAllowPingsControls(interactionRight, style, function(operation) return refreshStyle(operation or "style", "interaction") end, { row = true, setting = EFFECTS_FINDER.icons.interaction.pings })
     pingsSec:Finish()
     end
     end -- not interactionCollapsed

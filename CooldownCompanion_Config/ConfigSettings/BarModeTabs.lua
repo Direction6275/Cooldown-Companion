@@ -439,7 +439,6 @@ local function ResolveSelectedGroupStyle()
 end
 
 local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
-    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
     return {
         settingKey = "barCooldownText",
         title = "Cooldown Text Advanced",
@@ -448,6 +447,8 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
             if not style then
                 return
             end
+
+            local refreshStyle = ST._MakeConfigEditRefresh({ _settingsContext = ST._GetSettingsWidgetContext(panel) })
 
             AddFontControls(panel, style, "cooldown", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
                 row = true,
@@ -478,7 +479,7 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
 end
 
 local function BuildBarAppearanceTab(container, group, style)
-    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
 
     -- STYLE LENS (Helpers.lua). With an entry selected the sections below stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
@@ -555,7 +556,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
         onRelease = function(val)
             shapeStyle.barLength = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
 
@@ -572,7 +573,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
         onRelease = function(val)
             shapeStyle.barHeight = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     end
@@ -589,8 +590,7 @@ local function BuildBarAppearanceTab(container, group, style)
         disabled = barSettingsSec.disabled,
         onChange = function(val)
             shapeStyle.barFillVertical = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("frame-settings")
         end,
     })
 
@@ -602,7 +602,7 @@ local function BuildBarAppearanceTab(container, group, style)
         disabled = barSettingsSec.disabled,
         onChange = function(val)
             shapeStyle.barReverseFill = val
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            refreshStyle("frame")
         end,
     })
 
@@ -622,7 +622,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
             onRelease = function(val)
                 style.buttonSpacing = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle("style", "layout")
             end,
         })
     end
@@ -649,7 +649,7 @@ local function BuildBarAppearanceTab(container, group, style)
     barTexRow:SetValue(shapeStyle.barTexture or "Solid")
     CS.SetBarTextureDropdownCallback(barTexRow, function(widget, event, val)
         shapeStyle.barTexture = val
-        CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        refreshStyle()
     end)
 
     if group._attachedBarOwner then
@@ -726,7 +726,7 @@ local function BuildBarAppearanceTab(container, group, style)
             tbl = sec.tbl, key = key,
             default = default, hasAlpha = true,
             disabled = sec.disabled,
-            onConfirm = refreshStyle,
+            onConfirm = function() return refreshStyle("style", "appearance") end,
         })
         sec:Chrome(row)
         return row
@@ -952,8 +952,7 @@ local function BuildBarAppearanceTab(container, group, style)
             infoButtons = tabInfoButtons,
             settings = BAR_FINDER.appearance.lowTime,
             rebuild = function()
-                refreshStyle()
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
         if rows and rows[1] then
@@ -976,8 +975,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not iconSec.write then return end
             iconSec.write.showBarIcon = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1000,8 +998,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 -- that has it on. Panel scope keeps nil-for-false (the lean
                 -- saved default).
                 iconSec.write.barIconReverse = iconSec:BoolValue(val)
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("frame-settings")
             end,
         })
 
@@ -1015,7 +1012,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
             onRelease = function(val)
                 iconSec.write.barIconOffset = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
 
@@ -1025,8 +1022,7 @@ local function BuildBarAppearanceTab(container, group, style)
             value = iconSec.read.barIconSizeOverride or false,
             onChange = function(val)
                 iconSec.write.barIconSizeOverride = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
 
@@ -1042,7 +1038,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 end,
                 onRelease = function(val)
                     iconSec.write.barIconSize = val
-                    CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                    refreshStyle()
                 end,
             })
         end
@@ -1054,9 +1050,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- the entry inherits it the row shows the effective zoom read-only, and
         -- the row's own scope chrome below is the way to take that section over.
         local zoomSec = BeginLensSection(lens, group, "iconZoom", { column = panel })
-        local zoomRow = ST._BuildIconZoomControls(panel, zoomSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, {
+        local zoomRow = ST._BuildIconZoomControls(panel, zoomSec.tbl, refreshStyle, {
             disabled = zoomSec.disabled,
             setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.zoom,
             previewRefresh = ST._RefreshSelectedButtonsPreview,
@@ -1106,8 +1100,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not nameSec.write then return end
             nameSec.write.showBarNameText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1163,8 +1156,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not cdTextSec.write then return end
             cdTextSec.write.showCooldownText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1187,9 +1179,7 @@ local function BuildBarAppearanceTab(container, group, style)
                         explicitOff = cdTextSec.scope == "customized",
                         disabled = cdTextSec.disabled,
                         infoButtons = CS.advancedSettingsInfoButtons,
-                        rebuild = function()
-                            CooldownCompanion:RefreshConfigPanel()
-                        end,
+                        completeEdit = function() return refreshStyle("style-advanced") end,
                         settings = BAR_FINDER.appearance.cooldownVisibility,
                     })
                     barCdTextAdvanced.build(panel)
@@ -1231,8 +1221,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not chargeSec.write then return end
             chargeSec.write.showChargeText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1301,8 +1290,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not readySec.write then return end
             readySec.write.showBarReadyText = val
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1316,7 +1304,7 @@ local function BuildBarAppearanceTab(container, group, style)
             value = readySec.read.barReadyText or "Ready",
             onEnterPressed = function(val)
                 readySec.write.barReadyText = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
         if readyRow.editbox and readyRow.editbox.Instructions then
@@ -1376,8 +1364,7 @@ local function BuildBarAppearanceTab(container, group, style)
             onChange = function(val)
                 if not auraTextSec.write then return end
                 auraTextSec.write.showAuraText = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
 
@@ -1389,9 +1376,7 @@ local function BuildBarAppearanceTab(container, group, style)
                     explicitOff = auraTextSec.scope == "customized",
                     disabled = auraTextSec.disabled,
                     infoButtons = CS.advancedSettingsInfoButtons,
-                    rebuild = function()
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
+                    completeEdit = function() return refreshStyle("style-advanced") end,
                     settings = BAR_FINDER.appearance.auraVisibility,
                 })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
@@ -1421,8 +1406,7 @@ local function BuildBarAppearanceTab(container, group, style)
                         if not auraTextSec.write then return end
                         ST.BarTextLayout.SetAuraIndependent(auraTextSec.write,
                             auraTextSec.read, group.style.barFillVertical, value)
-                        refreshStyle()
-                        CooldownCompanion:RefreshConfigPanel()
+                        refreshStyle("style-settings")
                     end,
                 })
             end
@@ -1497,8 +1481,7 @@ local function BuildBarAppearanceTab(container, group, style)
             onChange = function(val)
                 if not auraStackSec.write then return end
                 auraStackSec.write.showAuraStackText = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
 
@@ -1598,8 +1581,7 @@ local function BuildBarAppearanceTab(container, group, style)
             onChange = function(val)
                 if not whileAuraSec.write then return end
                 whileAuraSec.write.auraShowAuraIcon = whileAuraSec:BoolValue(val)
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
     end
@@ -1612,8 +1594,7 @@ local function BuildBarAppearanceTab(container, group, style)
         onChange = function(val)
             if not whileAuraSec.write then return end
             whileAuraSec.write.invertAuraDesaturationLogic = whileAuraSec:BoolValue(val)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1640,6 +1621,7 @@ end
 -- actually renders (enabled AND a visible effect chosen); checking it with
 -- no visible effect forces the pulse border, mirroring the icon aura glow.
 local function BuildBarActiveAuraSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
@@ -1671,8 +1653,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
             else
                 auraSec.write.barAuraIndicatorEnabled = false
             end
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
 
@@ -1686,9 +1667,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- section passes. The section's enable toggle lives on the row above,
     -- never in the shared builder.
     local function BuildBarActiveAuraAdvanced(panel)
-        BuildBarActiveAuraControls(panel, auraSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-        end, {
+        BuildBarActiveAuraControls(panel, auraSec.tbl, refreshStyle, {
             row = true,
             singleRail = true,
             infoButtons = tabInfoButtons,
@@ -1725,6 +1704,7 @@ end
 -- section, with the marker below - so this row carries the section's ONE scope
 -- chrome and the marker row follows the same scope silently.
 local function BuildBarPandemicSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     if not container or not GroupHasAuraTrackingEntry(group) then
         return
     end
@@ -1741,8 +1721,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
         onChange = function(val)
             if not pandemicSec.write then return end
             pandemicSec.write.pandemicEffectEnabled = val and true or false
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            refreshStyle("style-settings")
         end,
     })
     AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -1772,7 +1751,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
                 default = {1, 0.5, 0, 1},
                 hasAlpha = false,
                 disabled = pandemicSec.disabled,
-                onConfirm = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end,
+                onConfirm = refreshStyle,
                 onPreview = ST._RefreshSelectedButtonsPreview,
             })
         end,
@@ -1786,6 +1765,7 @@ end
 -- draws in both modes) but had no group-level control anywhere - the only way
 -- to reach it was a per-entry override of Aura Duration Text.
 local function BuildBarPandemicMarkerSection(container, group, style, lens)
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
         if CS.CloseAdvancedSettingsPanel then
@@ -1802,9 +1782,9 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     -- the chrome for it is on the enable row beside this one.
     local markerSec = BeginLensSection(lens, group, "pandemic", { column = container })
 
-    local applyStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local applyStyle = refreshStyle
     local markerRow = AddPandemicMarkerControls(container, markerSec.tbl, applyStyle, function()
-        CooldownCompanion:RefreshConfigPanel()
+        refreshStyle("settings")
     end, {
         setting = BAR_FINDER.effects.aura.pandemicMarker,
         enableOnly = true,
@@ -1842,7 +1822,7 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
 end
 
 local function BuildBarEffectsTab(container, group, style)
-    local refreshStyle = function() CooldownCompanion:UpdateGroupStyle(CS.selectedGroup) end
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
 
     -- STYLE LENS (Helpers.lua), resolved ONCE for the whole tab and handed to
     -- every section below - see the note at the top of BuildBarAppearanceTab
@@ -1920,7 +1900,7 @@ local function BuildBarEffectsTab(container, group, style)
         onChange = function(val)
             if not missingSec.write then return end
             missingSec.write.desaturateWhileAuraNotActive = missingSec:BoolValue(val)
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+            refreshStyle()
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button
@@ -2020,7 +2000,7 @@ local function BuildBarEffectsTab(container, group, style)
             onChange = function(val)
                 if not gcdSec.write then return end
                 gcdSec.write.showGCDSwipe = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
         gcdSec:Chrome(gcdRow)
@@ -2055,7 +2035,7 @@ local function BuildBarEffectsTab(container, group, style)
             onChange = function(val)
                 if not desatSec.write then return end
                 desatSec.write.desaturateOnCooldown = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+                refreshStyle()
             end,
         })
         desatSec:Chrome(desatRow)
@@ -2067,10 +2047,7 @@ local function BuildBarEffectsTab(container, group, style)
         -- the panel read-only like every hand-written section's.
         if barIconShown and CanGroupUseOverrideSection(group, "unusableDimming") then
         local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
-        local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
-        end, {
+        local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, refreshStyle, {
             row = true,
             advanced = unusableSec.scope ~= "denied",
             advancedUnlock = { sec = unusableSec,
@@ -2096,8 +2073,7 @@ local function BuildBarEffectsTab(container, group, style)
             onChange = function(val)
                 if not oorSec.write then return end
                 oorSec.write.showOutOfRange = val
-                CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings")
             end,
         })
         oorSec:Chrome(oorRow)
@@ -2139,9 +2115,8 @@ local function BuildBarEffectsTab(container, group, style)
         local interactionLeft, interactionRight = BeginRowGrid(container)
 
         local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })
-        local tooltipRow = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+        local tooltipRow = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function(operation)
+            return refreshStyle(operation or "style-settings", "interaction")
         end, {
             row = true,
             advanced = tooltipSec.scope ~= "denied",
@@ -2165,8 +2140,8 @@ local function BuildBarEffectsTab(container, group, style)
         -- entries added as auras cannot be pinged, and every entry here is one.
         if not CooldownCompanion:IsAuraPanel(group) then
         local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
-        BuildAllowPingsControls(interactionRight, style, function()
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
+        BuildAllowPingsControls(interactionRight, style, function(operation)
+            return refreshStyle(operation or "style", "interaction")
         end, {
             row = true,
             setting = BAR_FINDER.effects.interaction.pings,
