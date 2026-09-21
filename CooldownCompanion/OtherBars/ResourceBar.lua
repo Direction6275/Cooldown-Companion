@@ -157,10 +157,7 @@ local UpdateContinuousTickMarker = RB.UpdateContinuousTickMarker
 local ApplyContinuousFillColor = RB.ApplyContinuousFillColor
 local ApplyPixelBorders = RB.ApplyPixelBorders
 local HidePixelBorders = RB.HidePixelBorders
-local CreateContinuousBar = RB.CreateContinuousBar
-local CreateSegmentedBar = RB.CreateSegmentedBar
 local LayoutSegments = RB.LayoutSegments
-local CreateOverlayBar = RB.CreateOverlayBar
 local LayoutOverlaySegments = RB.LayoutOverlaySegments
 
 -- Shared helper from ButtonFrame/Helpers.lua
@@ -178,9 +175,7 @@ local mwMaxStacks = 5
 -- Runtime state for the aura-stack members whose shape can change while the
 -- bars are already up: the Devourer pair, which swaps in place on the Void
 -- Metamorphosis transition, and its dynamic maximums, which move with
--- talents and with what Collapsing Star costs. Held in one table rather than
--- three file locals — this chunk sits at Lua 5.1's 200-local ceiling and
--- ApplyResourceBars at its 60-upvalue ceiling.
+-- talents and with what Collapsing Star costs.
 --   watch    a suppressible member is enabled in this spec's list, so the
 --            tick is worth the one aura read (armed by ApplyResourceBars,
 --            from the unfiltered list, so the hidden half still arms it)
@@ -196,8 +191,10 @@ local lastAppliedPrimaryLength = nil
 local lastAppliedOrientation = nil
 local lastAppliedLayout = nil
 local lastAppliedIndependentStack = false
-local resourceBarFrames = {}   -- array of bar frame objects (ordered by stacking)
-local activeResources = {}     -- array of power type ints currently displayed
+-- The aura host captures this table. Rebuild its active entries in place;
+-- retained renderers belong to actual resources, never to list positions.
+local resourceBarFrames = {}
+local ResourceBars = { instances = {} }
 -- Unlock-to-position assist, not a preview: the real bars are forced visible
 -- so an independent stack can be dragged. Their data stays real (owner
 -- ruling 2026-07-26 — previews live in the config canvas and nowhere else).
@@ -248,7 +245,7 @@ local segmentedUpdateScratch = {}
 local HealthBar = RB.HealthBar
 local lifecycleModule = nil
 
-local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
+local function ResetResourceBarRuntimeState(frame, keepBorderVisuals)
     if not frame then return end
     ST.ChargeBarSegments.End(frame)
     UnbindFrameDurationText(frame)
@@ -257,33 +254,14 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     frame:EnableMouse(false)
     frame:RegisterForDrag()
 
-    -- Max-stack border: invalidated so a recycled frame that stops being a
-    -- stack-counted shape never keeps a lit border (no stack tick runs on it
-    -- to clear it). A frame that is still one re-lights on its next poll
-    -- tick — the key mismatch makes that one restyle, and the dash engine's
-    -- clock-locked phases make the restyle seamless (Glows.lua,
-    -- StyleDashPerimeter). keepBorderVisuals is passed only by the apply
-    -- loop's in-place reuse, and only for a visible same-resource reflow:
-    -- an eager visual clear there rendered one dark frame before the poll
-    -- tick re-lit the border (a visible blink at max stacks), so the
-    -- visuals keep running under the stale key until that restyle lands.
-    -- An identity change (the Devourer pair swap) or a hidden holder
-    -- being reactivated clears eagerly, so the incoming resource never
-    -- wears the outgoing one's border for a tick. Every other caller
-    -- hides the frame right after this, so those keep the eager clear
-    -- and a reused frame always comes up dark. One pool field
-    -- for Maelstrom Weapon, the aura-stack family and the native segmented
-    -- resources alike: a frame only ever renders one resource at a time,
-    -- so they share the cleanup.
-    local mwBorder = frame._ccMWMaxBorder
-    if mwBorder and mwBorder.key ~= "off" then
-        if keepBorderVisuals then
-            mwBorder.key = "border-stale"
-        else
-            mwBorder.key = "off"
-            if mwBorder.glow then
-                ST._StyleKitBarGlowRegions(mwBorder.glow, nil, mwBorder.host, false)
-            end
+    -- A visible renderer still belongs to the same resource. Its border
+    -- already compares style and explicit geometry on update, so keep both
+    -- the running effect and its key. Retirement stops the effect eagerly.
+    local border = frame._ccMWMaxBorder
+    if not keepBorderVisuals and border and border.key ~= "off" then
+        border.key = "off"
+        if border.glow then
+            ST._StyleKitBarGlowRegions(border.glow, nil, border.host, false)
         end
     end
     frame:SetAlpha(1)
@@ -1076,6 +1054,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     end
 
     local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+    local segmentCount = holder._activeSegments or #holder.segments
     -- Recharge text exists only on runes with the option on (StyleRechargeTexts
     -- owns _showRechargeText). Everywhere else the clear has to run once after
     -- the style pass and never again, so the poll stops rewriting six blank
@@ -1087,7 +1066,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     if powerType == 5 then
         -- DK Runes: sorted by readiness (ready left, longest CD right)
         local now = GetTime()
-        local numSegs = math_min(#holder.segments, 6)
+        local numSegs = math_min(segmentCount, 6)
         local runeData = segmentedUpdateScratch.GetRuneData(holder)
         runeData.soundReadable = true
         for i = 1, 6 do
@@ -1195,7 +1174,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
                 shardsAtMax = isMax
                 local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, filled, holder)
                 local activeReadyColor = isMax and maxColor or (thresholdActive and thresholdColor or readyColor)
-                for i = 1, math_min(#holder.segments, max) do
+                for i = 1, math_min(segmentCount, max) do
                     local seg = holder.segments[i]
                     if i <= filled then
                         SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
@@ -1255,7 +1234,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         -- the color path's 0/0 case paints zero segments, but a border has
         -- no segment count to hide behind.
         UpdateMaxStackBorder(holder, settings, isMax and max > 0, powerType)
-        for i = 1, math_min(#holder.segments, max) do
+        for i = 1, math_min(segmentCount, max) do
             local seg = holder.segments[i]
             if i <= filled then
                 SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
@@ -1304,7 +1283,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
             chargedPoints = GetUnitChargedPowerPoints("player")
         end
 
-        for i = 1, math_min(#holder.segments, max) do
+        for i = 1, math_min(segmentCount, max) do
             local seg = holder.segments[i]
             if i <= current then
                 SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
@@ -1350,7 +1329,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
     UpdateMaxStackBorder(holder, settings, isMax, powerType)
-    for i = 1, math_min(#holder.segments, max) do
+    for i = 1, math_min(segmentCount, max) do
         local seg = holder.segments[i]
         if i <= current then
             SetStatusBarSegmentedValue(seg, 1, segmentedSmoothing)
@@ -1400,7 +1379,7 @@ end
 -- Runs on every stack update tick, so restyling is keyed: only a real change
 -- (lit flips, style or colour edited, bar shape swapped) touches regions.
 -- The pool hangs off the bar frame and is reset by
--- ClearStaleRecycledBarRuntimeState when the frame is recycled.
+-- ResetResourceBarRuntimeState when the renderer is retired.
 function UpdateMaxStackBorder(holder, settings, isMax, powerType)
     local style, color, resource, keys
     if isMax then
@@ -1565,9 +1544,8 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     end
 
     if barType == "mw_segments" then
-        -- One segment per stack: each fills whole, like every other
-        -- discrete resource.
-        for i = 1, #holder.segments do
+        -- Capacity is retained when the talent lowers the active count.
+        for i = 1, holder._activeSegments or #holder.segments do
             local seg = holder.segments[i]
             SetStatusBarSegmentedValue(seg, i <= stacks and 1 or 0, segmentedSmoothing)
             seg:SetStatusBarColor(activeColor[1], activeColor[2], activeColor[3], 1)
@@ -1641,7 +1619,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     -- talent changes the cap, or the API had no answer yet and what got
     -- built is the fallback. Re-segmenting the widget is ApplyResourceBars'
     -- job and it must not run from inside the tick's loop over the very
-    -- list it recycles, so ask for one and let the end of the tick do it.
+    -- active list it rebuilds, so ask for one and let the end of the tick do it.
     -- The rendering below clamps to the segments that exist until it lands.
     if not isContinuous and segCount ~= maxStacks then
         stackSwapState.reapply = true
@@ -1724,29 +1702,121 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
 end
 
 ------------------------------------------------------------------------
--- Resource frame reuse and overlay lifecycle.
+-- Resource owners, active membership, and renderer lifetime.
 ------------------------------------------------------------------------
 local RelayoutBars
-local function FinalizeAppliedBarVisibility(barInfo)
-    barInfo.frame:Show()
-    if RB.SyncResourceBarAuraHostAnchor then RB.SyncResourceBarAuraHostAnchor(barInfo) end
+
+function ResourceBars.Update(barInfo, settings)
+    local frame, powerType, barType = barInfo.frame, barInfo.powerType, barInfo.barType
+    if barType == "continuous" then
+        UpdateContinuousBar(frame, powerType, settings)
+    elseif barType == "health_continuous" then
+        HealthBar.Update(frame, settings)
+    elseif barType == "segmented" then
+        UpdateSegmentedBar(frame, powerType, settings)
+    elseif barType == "mw_segmented" or barType == "mw_segments" or barType == "mw_continuous" then
+        UpdateMaelstromWeaponBar(frame, settings, barType)
+    elseif barType == "stackaura_segments" or barType == "stackaura_continuous" then
+        UpdateAuraStackResourceBar(frame, settings, barType, powerType)
+    elseif barType == "stagger_continuous" then
+        UpdateStaggerBar(frame, settings)
+    end
 end
-local function HideUnusedResourceBarFrames(firstHiddenIndex)
-    for i = firstHiddenIndex, #resourceBarFrames do
-        local barInfo = resourceBarFrames[i]
-        if barInfo and barInfo.frame then
-            ClearStaleRecycledBarRuntimeState(barInfo.frame)
-            barInfo.frame:Hide()
-            barInfo.powerType, barInfo._side, barInfo._order, barInfo._effectiveThickness = nil, nil, nil, nil
-            if barInfo.frame.brightnessOverlay then barInfo.frame.brightnessOverlay:Hide() end
+
+-- Settle native interpolation without reading back a possibly secret value.
+-- Hidden renderers do no animation work; activation starts at the freshly
+-- painted value. Visible reflows keep their existing interpolation.
+function ResourceBars.FinishMotion(frame)
+    if frame.segments then
+        for _, segment in ipairs(frame.segments) do segment:SetToTargetValue() end
+        for _, segment in ipairs(frame.overlaySegments or {}) do segment:SetToTargetValue() end
+    else
+        frame:SetToTargetValue()
+        for _, key in ipairs({ "lowHealthAlertBar", "incomingHealBar",
+            "absorbOverflowBar", "absorbBar", "healAbsorbBar" }) do
+            if frame[key] then frame[key]:SetToTargetValue() end
         end
     end
 end
 
--- Custom-bar aura hosting (the aura pass): stable holders + adapters for
--- the AuraContainer display in Core/AuraDisplay.lua. Reached via
--- CooldownCompanion methods, not locals: ApplyResourceBars sits at the
--- 60-upvalue ceiling.
+function ResourceBars.Park(frame)
+    frame:Hide()
+    ResetResourceBarRuntimeState(frame)
+    ResourceBars.FinishMotion(frame)
+    if frame.brightnessOverlay then frame.brightnessOverlay:Hide() end
+end
+
+function ResourceBars.Deactivate(barInfo)
+    ResourceBars.Park(barInfo.frame)
+    RB.HideResourceAuraHolder(barInfo.powerType)
+end
+
+function ResourceBars.BeginApply(filtered)
+    local wanted = {}
+    for _, powerType in ipairs(filtered) do wanted[powerType] = true end
+    for _, barInfo in ipairs(resourceBarFrames) do
+        if not wanted[barInfo.powerType] then ResourceBars.Deactivate(barInfo) end
+    end
+    wipe(resourceBarFrames)
+end
+
+function ResourceBars.ResolveRenderer(powerType, settings)
+    if powerType == RESOURCE_HEALTH then
+        return "continuous", "health_continuous"
+    elseif powerType == 101 then
+        return "continuous", "stagger_continuous"
+    elseif powerType == RESOURCE_MAELSTROM_WEAPON then
+        local style = RB.GetMWDisplayStyle(settings)
+        if style == "continuous" then return style, "mw_continuous" end
+        if style == "segments" then return style, "mw_segments", mwMaxStacks end
+        -- Both supported maxima (5 and 10) use the same five-segment overlay.
+        return "overlay", "mw_segmented", 5
+    elseif RB.AURA_STACK_RESOURCES[powerType] then
+        local style = RB.GetAuraStackDisplayStyle(settings, powerType)
+        if style == "continuous" then return style, "stackaura_continuous" end
+        return "segments", "stackaura_segments", RB.GetAuraStackResourceMax(powerType)
+    elseif SEGMENTED_TYPES[powerType] then
+        local count = powerType == 5 and 6 or UnitPowerMax("player", powerType)
+        return "segments", "segmented", math_max(count, 1)
+    end
+    return "continuous", "continuous"
+end
+
+function ResourceBars.Acquire(powerType, settings, parent)
+    local barInfo = ResourceBars.instances[powerType]
+    if not barInfo then
+        barInfo = { powerType = powerType, renderers = {} }
+        ResourceBars.instances[powerType] = barInfo
+    end
+    local shape, barType, count = ResourceBars.ResolveRenderer(powerType, settings)
+    local frame = barInfo.renderers[shape]
+    local sameVisibleRenderer = frame ~= nil and frame == barInfo.frame and frame:IsShown()
+    if barInfo.frame and barInfo.frame ~= frame then ResourceBars.Park(barInfo.frame) end
+    if not frame then
+        if shape == "continuous" then
+            frame = RB.CreateContinuousBar(parent)
+        elseif shape == "segments" then
+            frame = RB.CreateSegmentedBar(parent, count)
+        else
+            frame = RB.CreateOverlayBar(parent, count)
+        end
+        frame:Hide()
+        barInfo.renderers[shape] = frame
+    end
+    local countChanged = shape == "segments" and frame._numSegments ~= count
+    if shape == "segments" then RB.EnsureSegmentCount(frame, count) end
+    barInfo.frame, barInfo.barType, barInfo.shape = frame, barType, shape
+    RB.ClearCompiledResourceBarConfig(frame)
+    return barInfo, sameVisibleRenderer, countChanged
+end
+
+local function FinalizeAppliedBarVisibility(barInfo)
+    barInfo.frame:Show()
+    if RB.SyncResourceBarAuraHostAnchor then RB.SyncResourceBarAuraHostAnchor(barInfo) end
+end
+
+-- Native aura holders and adapters keep their separate binding lifecycle.
+-- They capture the stable active-list table, not a renderer cache.
 RB.CreateResourceBarAuraHostModule({
     resourceBarFrames = resourceBarFrames,
 })
@@ -1883,30 +1953,14 @@ local function OnUpdate(self, elapsed)
     for _, barInfo in ipairs(resourceBarFrames) do
         RB.ResourceSounds.BeginSample(barInfo.frame, barInfo.powerType)
         if barInfo.frame and barInfo.frame:IsShown() then
-            if barInfo.barType == "continuous" then
-                UpdateContinuousBar(barInfo.frame, barInfo.powerType, settings)
-            elseif barInfo.barType == "health_continuous" then
-                HealthBar.Update(barInfo.frame, settings)
-            elseif barInfo.barType == "segmented" then
-                UpdateSegmentedBar(barInfo.frame, barInfo.powerType, settings)
-            elseif barInfo.barType == "mw_segmented"
-                or barInfo.barType == "mw_segments"
-                or barInfo.barType == "mw_continuous" then
-                UpdateMaelstromWeaponBar(barInfo.frame, settings, barInfo.barType)
-            elseif barInfo.barType == "stackaura_segments"
-                or barInfo.barType == "stackaura_continuous" then
-                UpdateAuraStackResourceBar(barInfo.frame, settings, barInfo.barType, barInfo.powerType)
-            elseif barInfo.barType == "stagger_continuous" then
-                UpdateStaggerBar(barInfo.frame, settings)
-
-            end
+            ResourceBars.Update(barInfo, settings)
         end
         RB.ResourceSounds.EndSample(barInfo.frame, barInfo.powerType)
     end
     RB.ResourceSounds.RetainFrames(resourceBarFrames)
 
     -- Re-materialization runs after the loop, never inside it:
-    -- ApplyResourceBars recycles and reorders the very list this tick just
+    -- ApplyResourceBars rebuilds the active list this tick just
     -- walked. Both requesters land on the same flag — the meta flip above
     -- and a drifted dynamic maximum spotted during the loop — so a tick
     -- where both happen at once still costs exactly one rebuild, and that
@@ -1960,9 +2014,7 @@ local function StackSwapWatchOnUpdate(self, elapsed)
     end
 end
 
--- Hung off stackSwapState rather than kept as file-level locals: this is
--- reached from ApplyResourceBars, which sits at Lua 5.1's 60-upvalue ceiling
--- and already holds stackSwapState.
+-- The empty-list watcher shares the same transition state as the active tick.
 function stackSwapState.SetWatcher(enabled)
     if not enabled then
         if stackSwapState.frame then
@@ -2082,8 +2134,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     -- must not quietly change what the readout is. So they resolve exactly as
     -- StyleSegmentedText resolves them. Every other continuous bar, Maelstrom
     -- Weapon and Stagger included, keeps the default-on contract it shipped
-    -- with. _hideTextAtZero is written on both paths so a recycled frame
-    -- never carries the previous resource's flag.
+    -- with. Restyling writes _hideTextAtZero explicitly on both paths.
     local showText = true
     bar._hideTextAtZero = false
     if RB.AURA_STACK_RESOURCES[powerType] then
@@ -2370,7 +2421,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         RB._barContainers[lane]:Hide()
     end
 
-    -- Create or recycle bar frames
+    -- Resolve shared geometry before materializing the active resource owners
     local geometryHost = not isIndependentStack and ST.GetModuleGeometryHost("resources") or nil
     local sharedGeometry = ST.ResolveResourceBarGeometry(settings, layout, nil, geometryHost)
     local globalBarThickness = sharedGeometry.thickness
@@ -2403,8 +2454,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             -- Placement identity, not the power type: a mutually exclusive
             -- pair shares one slot, so the half that is up reads the
             -- canonical half's side and order and lands where the pair
-            -- lives. Reached through RB rather than a new file-level local:
-            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
+            -- lives.
             local res = layout and layout.resources
                 and layout.resources[RB.GetCanonicalPowerType(powerType)]
             region = res and res.anchorRegion
@@ -2436,345 +2486,68 @@ function CooldownCompanion:ApplyResourceBars(opts)
         orderList[idx] = order
     end
 
-    -- Hide existing bars that we don't need
-    HideUnusedResourceBarFrames(#filtered + 1)
-
-    for idx, entry in ipairs(filtered) do
-        local powerType = entry
-        local isSegmented = SEGMENTED_TYPES[powerType]
-        local barInfo = resourceBarFrames[idx]
-        -- Captured before the per-type branches overwrite barInfo.powerType:
-        -- visuals survive an in-place re-apply only for a visible
-        -- same-resource reflow. An identity change (the Devourer pair swap
-        -- reuses this slot's frame) or a hidden holder being reactivated
-        -- must come up rendered for the incoming resource, not wearing the
-        -- outgoing one's colors or border for a poll tick.
-        local prevPowerType = barInfo and barInfo.powerType
-        local wasShown = barInfo and barInfo.frame and barInfo.frame:IsShown() or false
-        local samePowerReflow = wasShown and prevPowerType ~= nil and prevPowerType == powerType
-        -- Derived config compiled by the PREVIOUS pass is dropped before this
-        -- one styles or initially paints anything, so a commit that changed
-        -- thresholds or tick markers can never be read back through a stale
-        -- list for a frame. The recompile at the end of this slot restores it.
-        if barInfo and barInfo.frame then
-            RB.ClearCompiledResourceBarConfig(barInfo.frame)
-        end
+    ResourceBars.BeginApply(filtered)
+    for idx, powerType in ipairs(filtered) do
         local firstSide = isVerticalLayout and "left" or "above"
         local targetContainer = isVerticalLayout
             and (sideList[idx] == firstSide and containerFrameAbove or containerFrameBelow)
             or RB._barContainers[sideList[idx]]
         local region = isVerticalLayout and RB.GetResourceBlockRegion(layout, sideList[idx], true)
             or ((sideList[idx] == "aboveMain" or sideList[idx] == "belowMain") and "main" or "outer")
-        local totalPrimaryLength = isIndependentStack and totalPrimaryLength
+        local primaryLength = isIndependentStack and totalPrimaryLength
             or GetResourcePrimaryLength(groupFrame, settings, region == "main" and "main" or "outer")
-
-        -- Resolve per-bar thickness override
         local effectiveThickness = ST.ResolveResourceBarGeometry(settings, layout,
             RB.GetCanonicalPowerType(powerType), geometryHost).thickness
-        local effectiveWidth = isVerticalLayout and effectiveThickness or totalPrimaryLength
-        local effectiveHeight = isVerticalLayout and totalPrimaryLength or effectiveThickness
+        local width = isVerticalLayout and effectiveThickness or primaryLength
+        local height = isVerticalLayout and primaryLength or effectiveThickness
+
+        local barInfo, sameVisibleRenderer, countChanged = ResourceBars.Acquire(powerType, settings, targetContainer)
+        local frame = barInfo.frame
+        local geometryChanged = frame._ccResourceWidth ~= width or frame._ccResourceHeight ~= height
+            or frame._isVertical ~= isVerticalLayout or frame._reverseFill ~= reverseVerticalFill
+        resourceBarFrames[idx] = barInfo
+        ResetResourceBarRuntimeState(frame, sameVisibleRenderer)
+        if frame:GetParent() ~= targetContainer then frame:SetParent(targetContainer) end
+        RB.SetResourceBarSize(frame, width, height)
 
         if powerType == RESOURCE_HEALTH then
-            if not barInfo or barInfo.barType ~= "health_continuous" then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    barInfo.frame:Hide()
-                end
-                local bar = CreateContinuousBar(targetContainer)
-                barInfo = { frame = bar, barType = "health_continuous", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
-            else
-                barInfo.powerType = powerType
-            end
-
-            RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-            HealthBar.Style(barInfo.frame, settings)
-
-        elseif powerType == 101 then  -- Stagger
-            -- Stagger: continuous bar with dedicated update (health-based max, threshold colors)
-            if not barInfo or barInfo.barType ~= "stagger_continuous" then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    barInfo.frame:Hide()
-                end
-                local bar = CreateContinuousBar(targetContainer)
-                barInfo = { frame = bar, barType = "stagger_continuous", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
-            else
-                barInfo.powerType = powerType
-            end
-
-            RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-            StyleContinuousBar(barInfo.frame, powerType, settings)
-
-        elseif powerType == RESOURCE_MAELSTROM_WEAPON then
-            -- Maelstrom Weapon renders in one of three shapes (see
-            -- GetMWDisplayStyle). The stack source is the same in all of
-            -- them; only the widget differs, so each style materializes the
-            -- matching bar frame here and UpdateMaelstromWeaponBar renders
-            -- to it. The style is read once per apply, never per tick, and
-            -- reached through RB rather than a new file-level local:
-            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
-            local mwStyle = RB.GetMWDisplayStyle(settings)
-
-            if mwStyle == "continuous" then
-                local createdBar = false
-                if not barInfo or barInfo.barType ~= "mw_continuous" then
-                    if barInfo and barInfo.frame then
-                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                        barInfo.frame:Hide()
-                    end
-                    local bar = CreateContinuousBar(targetContainer)
-                    barInfo = { frame = bar, barType = "mw_continuous", powerType = powerType }
-                    resourceBarFrames[idx] = barInfo
-                    createdBar = true
-                else
-                    barInfo.powerType = powerType
-                end
-
-                RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-                -- Shares the continuous styling path, so texture, borders,
-                -- background, and the bar text all follow the same resource
-                -- settings every other continuous bar uses.
-                StyleContinuousBar(barInfo.frame, powerType, settings,
-                    not createdBar and samePowerReflow)
-
-            elseif mwStyle == "segments" then
-                -- One segment per stack, no overlay layer: the plain
-                -- segmented widget every other discrete resource uses.
-                local createdHolder = false
-                if not barInfo or barInfo.barType ~= "mw_segments"
-                    or #barInfo.frame.segments ~= mwMaxStacks then
-                    if barInfo and barInfo.frame then
-                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                        barInfo.frame:Hide()
-                    end
-                    local holder = CreateSegmentedBar(targetContainer, mwMaxStacks)
-                    barInfo = { frame = holder, barType = "mw_segments", powerType = powerType }
-                    resourceBarFrames[idx] = barInfo
-                    createdHolder = true
-                else
-                    barInfo.powerType = powerType
-                end
-
-                RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
-
-                -- Initial paint for a freshly built or non-reflow holder
-                -- only, mirroring the aura-stack branch: a visible reused
-                -- holder is repainted every poll tick with the live
-                -- precedence colour, and painting base here flashed an
-                -- at-max bar the wrong colour for a frame per re-apply.
-                if createdHolder or not samePowerReflow then
-                    local baseColor = GetResourceColors(100, settings)
-                    for i = 1, mwMaxStacks do
-                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                    end
-                end
-                StyleSegmentedText(barInfo.frame, powerType, settings)
-
-            else
-                -- Overlay: five segments carrying a second colour layer for
-                -- stacks past five (the default shape).
-                local halfSegments = mwMaxStacks <= 5 and mwMaxStacks or (mwMaxStacks / 2)
-
-                local createdHolder = false
-                if not barInfo or barInfo.barType ~= "mw_segmented"
-                    or #barInfo.frame.segments ~= halfSegments then
-                    if barInfo and barInfo.frame then
-                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                        barInfo.frame:Hide()
-                    end
-                    local holder = CreateOverlayBar(targetContainer, halfSegments)
-                    barInfo = { frame = holder, barType = "mw_segmented", powerType = powerType }
-                    resourceBarFrames[idx] = barInfo
-                    createdHolder = true
-                else
-                    barInfo.powerType = powerType
-                end
-
-                RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-                LayoutOverlaySegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings, halfSegments)
-
-                -- Initial colors for a freshly built or non-reflow holder
-                -- only, mirroring the aura-stack branch: a visible reused
-                -- holder's base/overlay colours and overlay alpha are all
-                -- rewritten every poll tick, and painting base here flashed
-                -- an at-max bar the wrong colour for a frame per re-apply.
-                if createdHolder or not samePowerReflow then
-                    local baseColor, overlayColor = GetResourceColors(100, settings)
-                    for i = 1, halfSegments do
-                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                        barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
-                        barInfo.frame.overlaySegments[i]:Show()
-                    end
-                end
-                StyleSegmentedText(barInfo.frame, powerType, settings)
-            end
-
-        elseif RB.AURA_STACK_RESOURCES[powerType] then
-            -- The aura-stack resource family (Icicles, Tip of the Spear,
-            -- the Devourer pair). Same shape-per-style materialization as
-            -- Maelstrom Weapon above, with two shapes instead of three;
-            -- UpdateAuraStackResourceBar renders to whichever is built.
-            -- Read through RB rather than new file-level locals:
-            -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
-            -- The resolver, not the raw field: a member whose maximum is
-            -- read live must build the segment count it will render to,
-            -- or the tick would ask for a rebuild forever.
-            local stackMax = RB.GetAuraStackResourceMax(powerType)
-
-            -- A mutually exclusive pair swapping halves reuses this slot's
-            -- frame and only changes barInfo.powerType — but the aura
-            -- OVERLAY holders are keyed by power type and reconciled by the
-            -- rebind pass, which is out-of-combat only. So the outgoing
-            -- half's holder would sit lit over the incoming half's bar for
-            -- the rest of the fight. Park it here; hiding a plain CC frame
-            -- is legal in combat. Narrow on purpose: only a family member
-            -- that is NOW the suppressed half is parked, so a holder whose
-            -- bar merely moved slots is never darkened. An already-bound
-            -- incoming holder can be shown by the finalizer below; creating
-            -- a new binding stays with the deferred rebind.
-            if barInfo and barInfo.powerType ~= powerType
-                and RB.AURA_STACK_RESOURCES[barInfo.powerType]
-                and RB.IsAuraStackResourceSuppressed(barInfo.powerType) then
-                RB.HideResourceAuraHolder(barInfo.powerType)
-            end
-
-            if RB.GetAuraStackDisplayStyle(settings, powerType) == "continuous" then
-                local createdBar = false
-                if not barInfo or barInfo.barType ~= "stackaura_continuous" then
-                    if barInfo and barInfo.frame then
-                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                        barInfo.frame:Hide()
-                    end
-                    local bar = CreateContinuousBar(targetContainer)
-                    barInfo = { frame = bar, barType = "stackaura_continuous", powerType = powerType }
-                    resourceBarFrames[idx] = barInfo
-                    createdBar = true
-                else
-                    barInfo.powerType = powerType
-                end
-
-                RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-                -- Shares the continuous styling path, so texture, borders,
-                -- background, and the bar text all follow the same resource
-                -- settings every other continuous bar uses.
-                StyleContinuousBar(barInfo.frame, powerType, settings,
-                    not createdBar and samePowerReflow)
-
-            else
-                -- One segment per stack (the default shape). The count moves
-                -- with a dynamic maximum and with the meta swap, so the
-                -- holder is RE-SEGMENTED in place rather than rebuilt: a
-                -- rebuild abandons the old holder every time and WoW never
-                -- destroys a frame, so a session of talent changes and meta
-                -- swaps accumulated orphans. Only a real barType change
-                -- builds a new one now.
-                local createdHolder = false
-                if not barInfo or barInfo.barType ~= "stackaura_segments" then
-                    if barInfo and barInfo.frame then
-                        ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                        barInfo.frame:Hide()
-                    end
-                    local holder = CreateSegmentedBar(targetContainer, stackMax)
-                    barInfo = { frame = holder, barType = "stackaura_segments", powerType = powerType }
-                    resourceBarFrames[idx] = barInfo
-                    createdHolder = true
-                else
-                    barInfo.powerType = powerType
-                end
-
-                RB.EnsureSegmentCount(barInfo.frame, stackMax)
-                RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-                LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
-
-                -- Initial paint for a freshly built holder, an identity
-                -- change, or a hidden holder coming back — every reuse that
-                -- must not wear the previous occupant's colors. A visible
-                -- same-resource reflow skips it: that holder is repainted
-                -- every poll tick with the live precedence colour (max,
-                -- then threshold, then base), and painting the base colour
-                -- here flashed an at-max bar base-coloured for a frame on
-                -- every in-place re-apply — a visible blink, since the
-                -- group reflow at max stacks re-applies exactly when the
-                -- max colour is showing.
-                if createdHolder or not samePowerReflow then
-                    local baseColor = GetResourceColors(powerType, settings)
-                    for i = 1, stackMax do
-                        barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
-                    end
-                end
-                StyleSegmentedText(barInfo.frame, powerType, settings)
-            end
-
-        elseif isSegmented then
-            local max = UnitPowerMax("player", powerType)
-            if powerType == 5 then max = 6 end  -- Runes always 6
-            if max < 1 then max = 1 end
-
-            -- Need to recreate if segment count changed or type changed
-            if not barInfo or barInfo.barType ~= "segmented"
-                or barInfo.frame._numSegments ~= max then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    barInfo.frame:Hide()
-                end
-                local holder = CreateSegmentedBar(targetContainer, max)
-                barInfo = { frame = holder, barType = "segmented", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
-            else
-                barInfo.powerType = powerType
-            end
-
-            RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-            LayoutSegments(barInfo.frame, effectiveWidth, effectiveHeight, segmentGap, settings)
-            StyleSegmentedBar(barInfo.frame, powerType, settings)
-            UpdateSegmentedBar(barInfo.frame, powerType, settings, {})
+            HealthBar.Style(frame, settings)
+        elseif barInfo.shape == "continuous" then
+            local stackCounted = powerType == RESOURCE_MAELSTROM_WEAPON or RB.AURA_STACK_RESOURCES[powerType]
+            StyleContinuousBar(frame, powerType, settings, stackCounted and sameVisibleRenderer)
+        elseif barInfo.shape == "overlay" then
+            LayoutOverlaySegments(frame, width, height, segmentGap, settings, 5)
+            StyleSegmentedText(frame, powerType, settings)
         else
-            -- Continuous bar
-            if not barInfo or barInfo.barType ~= "continuous" then
-                if barInfo and barInfo.frame then
-                    ClearStaleRecycledBarRuntimeState(barInfo.frame)
-                    barInfo.frame:Hide()
-                end
-                local bar = CreateContinuousBar(targetContainer)
-                barInfo = { frame = bar, barType = "continuous", powerType = powerType }
-                resourceBarFrames[idx] = barInfo
+            LayoutSegments(frame, width, height, segmentGap, settings)
+            if barInfo.barType == "segmented" then
+                StyleSegmentedBar(frame, powerType, settings)
             else
-                barInfo.powerType = powerType
+                StyleSegmentedText(frame, powerType, settings)
             end
-
-            RB.SetResourceBarSize(barInfo.frame, effectiveWidth, effectiveHeight)
-            StyleContinuousBar(barInfo.frame, powerType, settings)
         end
-
-        ClearStaleRecycledBarRuntimeState(barInfo.frame, samePowerReflow)
-        if barInfo.frame:GetParent() ~= targetContainer then
-            barInfo.frame:SetParent(targetContainer)
-        end
-        barInfo._side = sideList[idx]
-        barInfo._order = orderList[idx]
-        barInfo._regionRank = regionRanks[idx]
+        frame._isVertical, frame._reverseFill = isVerticalLayout, reverseVerticalFill
+        barInfo._side, barInfo._order, barInfo._regionRank = sideList[idx], orderList[idx], regionRanks[idx]
         barInfo._effectiveThickness = effectiveThickness
-        -- Threshold and tick-marker lists for this slot's final identity,
-        -- compiled once here so the poll body reads them instead of
-        -- re-normalizing (fresh tables plus a sort comparator) every tick.
-        -- Reached through RB rather than a new file-level local:
-        -- ApplyResourceBars sits at Lua 5.1's 60-upvalue ceiling.
-        RB.CompileResourceBarConfig(barInfo.frame, powerType, settings)
+        RB.CompileResourceBarConfig(frame, powerType, settings)
 
+        -- A retained renderer must not show its dormant values or border.
+        -- Count/geometry changes also repaint against the finished layout.
+        -- Ordinary segmented bars keep their existing synchronous apply paint.
+        -- These paints are outside sound sampling: only the regular tick
+        -- observes threshold crossings, with history still owned by power type.
+        if not sameVisibleRenderer or countChanged or geometryChanged or barInfo.barType == "segmented" then
+            ResourceBars.Update(barInfo, settings)
+        end
+        if not sameVisibleRenderer or countChanged then ResourceBars.FinishMotion(frame) end
         FinalizeAppliedBarVisibility(barInfo)
     end
 
-    -- Aura overlays live under a separate stable root, not under the recycled
-    -- bar frames. Reconcile after all slots have their final identities so a
-    -- form-hidden resource cannot leave its holder glowing at the old slot.
+    -- Aura overlays retain their separate root and binding lifecycle.
+    -- Reconcile after active membership and renderer selection are final.
     if RB.ReconcileResourceAuraHolders then
         RB.ReconcileResourceAuraHolders()
     end
-
-    activeResources = filtered
 
     -- Layout: per-element positioning using side containers
     local gap = GetResourceAnchorGap(settings, layout)
@@ -2941,9 +2714,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
         end
     end
 
-    -- Custom-bar aura displays (the aura pass): holders re-anchor to the
-    -- frames this apply may have recreated, and slot filters re-bind, in
-    -- the coalesced OOC rebind pass.
+    -- Native resource overlays keep their restriction-gated binding owner.
+    -- Renderer retention does not change the coalesced OOC rebind boundary.
     self:SetResourceAuraHostApplied(true)
     self:RequestAuraRebind("resources")
     local previousPanel = RB._attachedPanelId
@@ -2998,16 +2770,8 @@ function CooldownCompanion:RevertResourceBars()
     -- Stop events
     DisableEventFrame()
 
-    -- Hide all bars
-    for _, barInfo in ipairs(resourceBarFrames) do
-        if barInfo.frame then
-            ClearStaleRecycledBarRuntimeState(barInfo.frame)
-            barInfo.frame:Hide()
-            if barInfo.frame.brightnessOverlay then
-                barInfo.frame.brightnessOverlay:Hide()
-            end
-        end
-    end
+    for _, barInfo in ipairs(resourceBarFrames) do ResourceBars.Deactivate(barInfo) end
+    wipe(resourceBarFrames)
 
     if RB._barContainers then
         RB._barContainers.aboveMain:Hide()
@@ -3030,7 +2794,7 @@ function CooldownCompanion:RevertResourceBars()
     -- them. Clearing command state made a running command-center preview die
     -- because of live-frame availability it has nothing to do with.
     -- Ownership sits with ClearAllConfigPreviews and the explicit stops.
-    activeResources = {}
+
     local previousPanel = RB._attachedPanelId
     RB._attachedPanelId = nil
     self:FinishResourceBarLayout(previousPanel, nil)
@@ -3100,7 +2864,7 @@ function CooldownCompanion:GetResourceBarRuntimeState()
         lifecycleEventsActive = lifecycleDebug.lifecycleEventsActive == true,
         updateEventsActive = lifecycleDebug.updateEventsActive == true,
         hooksInstalled = lifecycleDebug.hooksInstalled == true,
-        activeBarCount = #activeResources,
+        activeBarCount = #resourceBarFrames,
     }
 end
 
