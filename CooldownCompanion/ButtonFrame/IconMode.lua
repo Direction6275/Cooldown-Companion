@@ -520,25 +520,14 @@ end
 
 local function ApplyAuraShellVisuals(button, buttonData)
     local alpha = CooldownCompanion:GetAuraShellAlpha(button, buttonData)
-    if button._missingAuraReminder then button._missingAuraReminder:SetAlpha(alpha) end
+    ST.ApplyButtonShellAlpha(button, alpha)
     button.bg:SetAlpha(alpha)
-    -- The icon must be hidden by shown-state, not alpha: the per-tick tint
-    -- pipeline writes icon:SetVertexColor(r,g,b,a) on every intent change,
-    -- and the 4-arg form overwrites the texture's alpha through a different
-    -- C entry point than SetAlpha — it silently undid an alpha-0 shell on
-    -- the next tick. Nothing else Shows the icon. Dimmed shells keep the
-    -- icon shown and hand the tint pipeline this multiplier instead.
-    button._auraShellIconAlpha = alpha
-    button.icon:SetShown(alpha > 0)
     if button.borderTextures then
         for _, tex in ipairs(button.borderTextures) do
             tex:SetAlpha(alpha)
         end
     end
-    button.cooldown:SetAlpha(alpha)
-    if button.locCooldown then button.locCooldown:SetAlpha(alpha) end
     if button.iconFill then button.iconFill:SetAlpha(alpha) end
-    if button.overlayFrame then button.overlayFrame:SetAlpha(alpha) end
     -- The pinned host hides with the rest of CC's chrome. A shell shows
     -- nothing until the aura is up, and CC cannot read aura state to re-show
     -- it, so the kit's shell keybind replica (Core/AuraDisplay.lua) stays the
@@ -589,7 +578,7 @@ local function ApplyCooldownTextHost(button, buttonData, style)
         style.cooldownTextXOffset or 0, style.cooldownTextYOffset or 0)
 end
 
-function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
+local function GetIconStyleDimensions(style)
     local width, height
 
     if style.maintainAspectRatio then
@@ -603,9 +592,77 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
     end
 
+    return width, height
+end
+
+-- These writes do not reset cooldown, charge, visibility or event-owned state.
+-- Only audited decoration controls use this entry point.
+function CooldownCompanion:UpdateButtonAppearance(button, style)
+    button.style = style
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    -- Layout may have applied section dimensions that differ from panel style.
+    local width, height = button:GetSize()
+    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
+    -- Update border textures
+    local borderColor = style.borderColor or {0, 0, 0, 1}
+    if button.borderTextures then
+        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
+        for _, tex in ipairs(button.borderTextures) do
+            tex:SetColorTexture(unpack(borderColor))
+        end
+    end
+
+    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
+    button.bg:SetColorTexture(unpack(bgColor))
+end
+
+-- Repeatable geometry/paint only; timer values, visibility and effects belong
+-- to construction or the full-restyle reset below.
+local function ApplyIconFrameStyle(button, style)
+    local width, height = GetIconStyleDimensions(style)
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local borderRenderMode = ST.GetBorderRenderMode(style)
+    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
+    button:SetSize(width, height)
+    button.icon:ClearAllPoints()
+    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
+    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
+    if button.iconFill then
+        AnchorIconFill(button)
+        ApplyIconFillGeometry(button, style)
+        button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
+    end
+    CooldownCompanion:UpdateButtonAppearance(button, style)
+end
+
+local function ApplyIconTextStyle(button, style)
+    ApplyDurationFormatToCooldown(button.cooldown, style)
+    ApplyDefaultCooldownSwipeStyle(button, style)
+    local region = button._cdTextRegion
+    if region and region.SetFont then
+        ApplyFontStyle(region, style, "cooldown")
+    end
+    -- Both hosts and the count must exist before this can lift their parents.
+    ApplyCooldownTextHost(button, button.buttonData, style)
+    ApplyCountTextStyle(button, style)
+end
+
+local function ApplyKeybindTextStyle(button, style)
+    if not button.keybindText then return end
+    ApplyFontStyle(button.keybindText, style, "keybind", 10)
+    local anchor = style.keybindAnchor or "TOPRIGHT"
+    local xOff = style.keybindXOffset or -2
+    local yOff = style.keybindYOffset or -2
+    ST.TextAnchorLayout.Apply(button.keybindText, button.pinnedTextFrame, anchor, xOff, yOff)
+    local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId, button)
+    button.keybindText:SetText(text or "")
+    button.keybindText:SetShown(style.showKeybindText and text ~= nil)
+end
+
+function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Create main button frame
     local button = CreateFrame("Frame", parent:GetName() .. "Button" .. index, parent)
-    button:SetSize(width, height)
 
     -- F6: flatten this button's render layers into one render pass
     -- (owner-validated V1-V10: no visual difference).
@@ -614,40 +671,26 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Background
     button.bg = button:CreateTexture(nil, "BACKGROUND")
     button.bg:SetAllPoints()
-    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
-    button.bg:SetColorTexture(unpack(bgColor))
 
     -- Icon
     button.icon = button:CreateTexture(nil, "ARTWORK")
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
-    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
-
-    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
 
     button.iconFill = CreateFrame("StatusBar", button:GetName() .. "IconFill", button)
     button.iconFill._owner = button
-    AnchorIconFill(button)
     button.iconFill:SetMinMaxValues(0, 1)
     button.iconFill:SetValue(0)
-    ApplyIconFillGeometry(button, style)
-    button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
     button.iconFill:Hide()
     SetFrameClickThroughRecursive(button.iconFill, true, true)
 
     -- Border using textures (not BackdropTemplate which captures mouse)
-    local borderColor = style.borderColor or {0, 0, 0, 1}
     button.borderTextures = {}
 
     -- Create 4 edge textures for border using shared anchor spec
     for i = 1, 4 do
         local tex = button:CreateTexture(nil, "OVERLAY")
-        tex:SetColorTexture(unpack(borderColor))
         button.borderTextures[i] = tex
     end
-    ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
+    ApplyIconFrameStyle(button, style)
 
     -- Assisted highlight overlays (multiple styles, all hidden by default)
     button.assistedHighlight = CreateAssistedHighlight(button, style)
@@ -655,9 +698,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Cooldown frame (standard radial swipe)
     button.cooldown = CreateFrame("Cooldown", button:GetName() .. "Cooldown", button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints(button.icon)
-    ApplyDefaultCooldownSwipeStyle(button, style)
     button.cooldown:SetHideCountdownNumbers(false) -- Initial state; the per-tick update owns visibility.
-    ApplyDurationFormatToCooldown(button.cooldown, style)
     -- Recursively disable mouse on cooldown and all its children (CooldownFrameTemplate has children)
     -- Always fully non-interactive: disable both clicks and motion
     SetFrameClickThroughRecursive(button.cooldown, true, true)
@@ -693,11 +734,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     -- Apply custom cooldown text font settings
     local region = button.cooldown:GetRegions()
     if region and region.SetFont then
-        ApplyFontStyle(region, style, "cooldown")
-        local cdAnchor = style.cooldownTextAnchor or "CENTER"
-        local cdXOff = style.cooldownTextXOffset or 0
-        local cdYOff = style.cooldownTextYOffset or 0
-        ST.TextAnchorLayout.Apply(region, button.cooldown, cdAnchor, cdXOff, cdYOff)
         button._cdTextRegion = region
     end
 
@@ -721,8 +757,6 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.count:SetText("")
     button.buttonData = buttonData
 
-    ApplyCooldownTextHost(button, buttonData, style)
-
     if IsEntryItemLike(buttonData) then
         local effectiveItem = ResolveEffectiveItem(buttonData, true)
         button._resolvedItemId = effectiveItem and effectiveItem.itemID or buttonData.id
@@ -732,23 +766,14 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
             and effectiveItem and effectiveItem.trackable == true or nil
     end
 
-    ApplyCountTextStyle(button, style)
+    ApplyIconTextStyle(button, style)
 
     -- Keybind text: on the pinned host, never the Text Overlay layer. It tells
     -- you what to press, so it stays readable whatever is drawn over the icon
     -- (owner ruling). The kit's replica covers shells only, where CC's chrome
     -- including this host is hidden outright.
     button.keybindText = button.pinnedTextFrame:CreateFontString(nil, "OVERLAY")
-    do
-        ApplyFontStyle(button.keybindText, style, "keybind", 10)
-        local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = style.keybindXOffset or -2
-        local yOff = style.keybindYOffset or -2
-        ST.TextAnchorLayout.Apply(button.keybindText, button.pinnedTextFrame, anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
-        button.keybindText:SetText(text or "")
-        button.keybindText:SetShown(style.showKeybindText and text ~= nil)
-    end
+    ApplyKeybindTextStyle(button, style)
 
     -- Store button data before resolving style-dependent layer positions.
     button.index = index
@@ -789,80 +814,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
         CooldownCompanion:UpdateButtonStyle(self, newStyle)
     end
 
-    -- Click-through is always enabled (clicks always pass through for camera movement)
-    -- Motion (hover) is only enabled when tooltips or entry pings are on
-    local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = style.showTooltips == true and not cursorAnchored
-    local allowPings = style.allowPings == true and not cursorAnchored
-        and IsEntryPingEligible(buttonData)
-        and not IsStandaloneTexturePanelButton(button)
-    local disableClicks = true
-    local disableMotion = not (showTooltips or allowPings)
-
-    -- Apply to the button frame and all children recursively
-    SetFrameClickThroughRecursive(button, disableClicks, disableMotion)
-    -- Re-apply full click-through on overlay frames (the recursive call above
-    -- re-enables motion on them when tooltips are on, causing them to steal hover events)
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    if button.iconFill then
-        SetFrameClickThroughRecursive(button.iconFill, true, true)
-    end
-    SetFrameClickThroughRecursive(button.locCooldown, true, true)
-    if button.procGlow then
-        SetFrameClickThroughRecursive(button.procGlow.solidFrame, true, true)
-        SetFrameClickThroughRecursive(button.procGlow.procFrame, true, true)
-    end
-    if button.overlayFrame then
-        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
-    end
-    if button.pinnedTextFrame then
-        SetFrameClickThroughRecursive(button.pinnedTextFrame, true, true)
-    end
-    if button.assistedHighlight then
-        if button.assistedHighlight.solidFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.solidFrame, true, true)
-        end
-        if button.assistedHighlight.blizzardFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.blizzardFrame, true, true)
-        end
-        if button.assistedHighlight.procFrame then
-            SetFrameClickThroughRecursive(button.assistedHighlight.procFrame, true, true)
-        end
-    end
-    if button.readyGlow then
-        if button.readyGlow.solidFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.solidFrame, true, true)
-        end
-        if button.readyGlow.procFrame then
-            SetFrameClickThroughRecursive(button.readyGlow.procFrame, true, true)
-        end
-    end
-    if button.keyPressHighlight then
-        if button.keyPressHighlight.solidFrame then
-            SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
-        end
-        if button.keyPressHighlight.procFrame then
-            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
-        end
-    end
-    if button._cooldownPressFlash then
-        SetFrameClickThroughRecursive(button._cooldownPressFlash.frame, true, true)
-    end
-    -- Set tooltip scripts when tooltips are enabled (regardless of click-through)
-    if showTooltips then
-        SetupTooltipScripts(button)
-    elseif allowPings then
-        -- Motion is on for pings only; keep tooltip scripts off.
-        button:SetScript("OnEnter", nil)
-        button:SetScript("OnLeave", nil)
-    end
-    -- Tooltip intent for the aura slot bind (AuraDisplay). Kept separate from
-    -- the click-through motion state, which entry pings widen without wanting
-    -- tooltips.
-    button._ccTooltipMotion = showTooltips
-    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
-    button._ccPingSurface = allowPings and button or nil
-    SetEntryPingReceiver(button, allowPings and button._visibilityHidden ~= true)
+    self:UpdateButtonInteraction(button, style)
 
     ApplyAuraShellVisuals(button, buttonData)
 
@@ -1230,45 +1182,6 @@ local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     end
 end
 
-local function GetIconStyleDimensions(style)
-    local width, height
-
-    if style.maintainAspectRatio then
-        -- Square mode: use buttonSize for both dimensions
-        local size = style.buttonSize or ST.BUTTON_SIZE
-        width = size
-        height = size
-    else
-        -- Non-square mode: use separate width/height
-        width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
-
-    return width, height
-end
-
--- These writes do not reset cooldown, charge, visibility or event-owned state.
--- Only audited decoration controls use this entry point.
-function CooldownCompanion:UpdateButtonAppearance(button, style)
-    button.style = style
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    -- Layout may have applied section dimensions that differ from panel style.
-    local width, height = button:GetSize()
-    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
-    -- Update border textures
-    local borderColor = style.borderColor or {0, 0, 0, 1}
-    if button.borderTextures then
-        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
-        for _, tex in ipairs(button.borderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
-        end
-    end
-
-    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
-    button.bg:SetColorTexture(unpack(bgColor))
-end
-
 function CooldownCompanion:UpdateButtonInteraction(button, style)
     button.style = style
     -- Click-through is always enabled (clicks always pass through for camera movement)
@@ -1356,58 +1269,25 @@ function CooldownCompanion:UpdateButtonInteraction(button, style)
     end
 end
 
-function CooldownCompanion:UpdateButtonStyle(button, style)
-    local width, height = GetIconStyleDimensions(style)
-
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
-
-    -- Store updated style reference
-    button.style = style
+local function ResetIconStyleState(button)
     if ClearButtonVisualState then
         ClearButtonVisualState(button)
     end
 
+    ST.ResetButtonFullStyleState(button)
     -- Invalidate cached widget state so next tick reapplies everything
-    button._desaturated = nil
     button._iconDesaturationIntent = nil
-    button._iconTintIntent = nil
     button._iconFillIntent = nil
     button._iconGlowIntent = nil
-    button._desatCooldownActive = nil
-    button._readyGlowStartTime = nil
-    button._readyGlowMaxChargesStartTime = nil
-    button._readyGlowMaxChargesActive = nil
-    button._readyGlowMaxChargesSpellID = nil
-    button._noCooldown = nil
-    button._noCooldownSpellId = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
-    button._resourceGateCost = nil
-    button._resourceGateCostSpellId = nil
-    button._baseResourceGateCost = nil
-    button._baseResourceGateCostSpellId = nil
-    button._vertexR = nil
-    button._vertexG = nil
-    button._vertexB = nil
-    button._vertexA = nil
-    button._chargeText = nil
-    button._chargeCountReadable = nil
-    button._zeroChargesConfirmed = nil
     button._hideCooldownChargesActive = nil
     button._gcdSwipeDrawActive = nil
-    button._nilConfirmPending = nil
     -- Glow caches invalidate with false, not nil: the setters' off path
     -- no-ops on nil (Glows.lua MakeGlowSetter), so a nil here would let the
     -- SetXxxGlow(button, false) calls below strand a currently-shown glow.
     button._procGlowActive = false
     button._readyGlowActive = false
     button._keyPressHighlightActive = false
-    button._displaySpellId = nil
-    button._liveOverrideSpellId = nil
     button._spellOutOfRange = nil
-    button._itemCount = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
 
@@ -1417,30 +1297,24 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
     button._iconFillColorG = nil
     button._iconFillColorB = nil
     button._iconFillColorA = nil
-    button._visibilityHidden = false
-    button._prevVisibilityHidden = false
-    button._visibilityAlphaOverride = nil
     button._lastVisAlpha = 1
+end
 
-    button:SetSize(width, height)
+function CooldownCompanion:UpdateButtonStyle(button, style)
+    -- Store updated style reference
+    button.style = style
+    ResetIconStyleState(button)
 
-    -- Update icon position
-    button.icon:ClearAllPoints()
-    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
+    ApplyIconFrameStyle(button, style)
 
+    -- This is runtime teardown, not geometry: narrow paint must keep it running.
     if button.iconFill then
-        AnchorIconFill(button)
         button.iconFill:SetMinMaxValues(0, 1)
         button.iconFill:SetValue(0)
-        ApplyIconFillGeometry(button, style)
-        button.iconFill:SetStatusBarTexture(ICON_FILL_TEXTURE)
         button.iconFill:SetScript("OnUpdate", nil)
         button._iconFillOnUpdateInstalled = nil
         button.iconFill:Hide()
     end
-
-    self:UpdateButtonAppearance(button, style)
 
     -- The countdown FontString is reparented outside the Cooldown frame, so
     -- SetCooldown(0, 0) can leave its last rendered value behind. A restyle
@@ -1453,36 +1327,10 @@ function CooldownCompanion:UpdateButtonStyle(button, style)
         button._cdTextRegion:SetText("")
     end
 
-    -- Countdown number visibility is controlled per-tick by
-    -- UpdateIconModeVisuals. Do not unhide it during a restyle: the detached
-    -- FontString may still contain the widget's previous value until that pass.
-    ApplyDurationFormatToCooldown(button.cooldown, style)
-    ApplyDefaultCooldownSwipeStyle(button, style)
-
-    -- Update cooldown font settings. The countdown region is always hosted
-    -- outside the Cooldown frame now (overlay frame, or the pinned host when
-    -- separateTextPositions lifts it), so use the stored reference — the
-    -- Cooldown frame's region list can't be re-fetched.
-    local region = button._cdTextRegion
-    if region and region.SetFont then
-        ApplyFontStyle(region, style, "cooldown")
-    end
-    ApplyCooldownTextHost(button, button.buttonData, style)
+    -- Preserve countdown visibility until its runtime owner reapplies it.
+    ApplyIconTextStyle(button, style)
     button._cdTextHidden = nil
-    -- Update count text font/anchor settings from effective style
-    ApplyCountTextStyle(button, style)
-
-    -- Update keybind text overlay
-    if button.keybindText then
-        ApplyFontStyle(button.keybindText, style, "keybind", 10)
-        local anchor = style.keybindAnchor or "TOPRIGHT"
-        local xOff = style.keybindXOffset or -2
-        local yOff = style.keybindYOffset or -2
-        ST.TextAnchorLayout.Apply(button.keybindText, button.pinnedTextFrame, anchor, xOff, yOff)
-        local text = CooldownCompanion:GetDisplayedKeybindText(button.buttonData, button._resolvedItemId, button)
-        button.keybindText:SetText(text or "")
-        button.keybindText:SetShown(style.showKeybindText and text ~= nil)
-    end
+    ApplyKeybindTextStyle(button, style)
 
     -- Update highlight overlay positions and hide all
     if button.assistedHighlight then
