@@ -1076,7 +1076,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         local hasSoundConfig = soundCfg and type(soundCfg.events) == "table" and next(soundCfg.events) ~= nil
         if hasSoundConfig then
             local currentCharges
-            local maxCharges
             local chargeRecharging = false
             local chargeCooldownStartTime
             if usesChargeBehavior then
@@ -1085,12 +1084,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 elseif charges and charges.currentCharges ~= nil
                    and not issecretvalue(charges.currentCharges) then
                     currentCharges = charges.currentCharges
-                end
-
-                if charges then
-                    maxCharges = charges.maxCharges
-                elseif buttonData.maxCharges and buttonData.maxCharges > 0 then
-                    maxCharges = buttonData.maxCharges
                 end
 
                 chargeRecharging = button._chargeRecharging
@@ -1112,11 +1105,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             self:UpdateButtonSoundAlerts(
                 button,
                 cooldownSpellId,
-                isOnGCD or false,
                 cooldownActive,
-                false,
                 currentCharges,
-                maxCharges,
                 chargeRecharging,
                 chargeCooldownStartTime
             )

@@ -16,7 +16,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 local ClearStatusBarMotion = ST.ClearStatusBarMotion
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -254,32 +253,10 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
     ST.ChargeBarSegments.End(frame)
     UnbindFrameDurationText(frame)
     ClearStatusBarMotion(frame)
-    if frame._cdcCustomAuraAlphaModuleId then
-        CooldownCompanion:UnregisterModuleAlpha(frame._cdcCustomAuraAlphaModuleId)
-        frame._cdcCustomAuraAlphaModuleId = nil
-    end
     frame:SetMovable(false)
     frame:EnableMouse(false)
     frame:RegisterForDrag()
 
-    if frame._cdcIndependentDragHandle then
-        frame._cdcIndependentDragHandle:EnableMouse(false)
-        frame._cdcIndependentDragHandle:RegisterForDrag()
-        frame._cdcIndependentDragHandle:Hide()
-    end
-    if frame._cdcIndependentNudger then
-        if frame._cdcIndependentNudger._cdcButtons then
-            for _, btn in ipairs(frame._cdcIndependentNudger._cdcButtons) do
-                btn:EnableMouse(false)
-            end
-        end
-        frame._cdcIndependentNudger:EnableMouse(false)
-        frame._cdcIndependentNudger:Hide()
-    end
-
-    if frame._cdcIndependentAlphaSync then
-        frame._cdcIndependentAlphaSync:SetScript("OnUpdate", nil)
-    end
     -- Max-stack border: invalidated so a recycled frame that stops being a
     -- stack-counted shape never keeps a lit border (no stack tick runs on it
     -- to clear it). A frame that is still one re-lights on its next poll
@@ -309,31 +286,6 @@ local function ClearStaleRecycledBarRuntimeState(frame, keepBorderVisuals)
             end
         end
     end
-    -- Aura-pass absent-state blocks: hidden for the apply pass;
-    -- FinalizeAppliedBarVisibility re-lays them from the cached max for
-    -- bars that still want them (recycled frames stay clean).
-    if frame._ccCabStackBlocksActive then
-        frame._ccCabStackBlocksActive = nil
-        ST.HideStackBlocks(frame._ccCabStackBlocks)
-        ST.HideStackBlockBorders(frame._ccCabStackBlockBorders)
-        -- Blocks mode zeroes the background region (the blocks ARE the
-        -- background there). Restore it with the blocks: this frame may be
-        -- handed to a resource bar next, and only custom bars re-run the
-        -- absent-state pass that would otherwise repair it.
-        if frame.bg then
-            frame.bg:SetAlpha(1)
-        end
-    end
-    EntryRuntime.ClearTrackedAuraOwnerState(frame, nil)
-    frame._cooldownSecrecy = nil
-    frame._cooldownSecrecySpellID = nil
-    frame._noCooldown = nil
-    frame._noCooldownSpellId = nil
-    frame._baseNoCooldown = nil
-    frame._baseNoCooldownSpellId = nil
-    frame._chargeRecharging = nil
-    frame._chargesSpent = nil
-    frame._ccShellAlpha = nil
     frame:SetAlpha(1)
 end
 

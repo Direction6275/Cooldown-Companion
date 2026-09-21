@@ -15,7 +15,6 @@ local next = next
 local type = type
 local tostring = tostring
 local tonumber = tonumber
-local issecretvalue = issecretvalue
 local wipe = wipe
 
 local function UsesChargeBehavior(buttonData)
@@ -116,31 +115,6 @@ local function AddCooldownIDForSpell(spellToCooldownIDs, spellID, cooldownID)
         spellToCooldownIDs[spellID] = entry
     end
     entry[cooldownID] = true
-end
-
-local function IsSpellCustomBarChargeAlertMerged(customBar)
-    if type(customBar) ~= "table" or customBar.entryType ~= "spell" then
-        return false
-    end
-    if customBar.hasCharges == true or (tonumber(customBar.maxCharges) or 0) > 1 then
-        return true
-    end
-    local events = customBar.soundAlerts and customBar.soundAlerts.events
-    return type(events) == "table" and events.chargeGained ~= nil
-end
-
-local function NormalizeSpellCustomBarAlertEvents(scopedEvents)
-    if type(scopedEvents) ~= "table" then
-        return scopedEvents
-    end
-
-    if scopedEvents.chargeGained then
-        scopedEvents.available = true
-        scopedEvents.chargeGained = nil
-    end
-    -- Aura events stay in the set (the aura pass): custom bars ride the
-    -- same native AddAuraSound registration as panel entries at bind time.
-    return scopedEvents
 end
 
 local function ResolveGroup(groupOrId)
@@ -330,53 +304,6 @@ function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, s
     return scopedEvents
 end
 
-function CooldownCompanion:GetScopedValidSoundAlertEventsForCustomBar(customBar)
-    if type(customBar) ~= "table" or not customBar.spellID then
-        return nil
-    end
-
-    local entryType = customBar.entryType or "aura"
-    local scopedEvents = {}
-    if entryType == "aura" then
-        -- Aura custom bars (the aura pass): same event scoping as a
-        -- standalone panel aura entry — the native AddAuraSound triggers
-        -- registered at bind time are the only players.
-        local scoped = self:GetScopedValidSoundAlertEventsForButton({
-            type = "spell",
-            id = customBar.spellID,
-            addedAs = "aura",
-            auraTracking = true,
-            auraSpellID = customBar.auraSpellID,
-            auraUnit = customBar.auraUnit,
-        }, customBar.spellID)
-        if scoped and not next(scoped) then
-            return nil
-        end
-        return scoped
-    elseif entryType == "spell" then
-        local scoped = NormalizeSpellCustomBarAlertEvents(self:GetScopedValidSoundAlertEventsForButton({
-            type = "spell",
-            id = customBar.spellID,
-            hasCharges = customBar.hasCharges,
-            maxCharges = customBar.maxCharges,
-            auraTracking = customBar.auraTracking == true,
-            auraSpellID = customBar.auraSpellID,
-            auraUnit = customBar.auraUnit,
-        }, customBar.spellID))
-        -- Stripping the aura events can empty the set; keep the nil-when-none
-        -- contract so the config shows its "no alertable events" label.
-        if scoped and not next(scoped) then
-            return nil
-        end
-        return scoped
-    end
-
-    if not next(scopedEvents) then
-        return nil
-    end
-    return scopedEvents
-end
-
 function CooldownCompanion:GetButtonSoundAlertConfig(buttonData, createIfMissing)
     if not buttonData then return nil end
 
@@ -398,34 +325,8 @@ function CooldownCompanion:GetButtonSoundAlertConfig(buttonData, createIfMissing
     return cfg
 end
 
-function CooldownCompanion:GetCustomBarSoundAlertConfig(customBar, createIfMissing)
-    if type(customBar) ~= "table" then return nil end
-    local cfg = customBar.soundAlerts
-    if type(cfg) ~= "table" then
-        if not createIfMissing then return nil end
-        cfg = {}
-        customBar.soundAlerts = cfg
-    end
-    if createIfMissing and cfg.channel == nil then
-        cfg.channel = DEFAULT_SOUND_CHANNEL
-    end
-    if createIfMissing and type(cfg.events) ~= "table" then
-        cfg.events = {}
-    end
-    return cfg
-end
-
 function CooldownCompanion:GetButtonSoundAlertChannel(buttonData)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
-    local channel = cfg and cfg.channel
-    if channel and channel ~= "" then
-        return channel
-    end
-    return DEFAULT_SOUND_CHANNEL
-end
-
-function CooldownCompanion:GetCustomBarSoundAlertChannel(customBar)
-    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
     local channel = cfg and cfg.channel
     if channel and channel ~= "" then
         return channel
@@ -510,21 +411,6 @@ function CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey)
     return SOUND_NONE_KEY
 end
 
-function CooldownCompanion:GetCustomBarSoundAlertSelection(customBar, eventKey)
-    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
-    local events = cfg and cfg.events
-    if events and IsSpellCustomBarChargeAlertMerged(customBar) and eventKey == "available" then
-        local merged = events.available or events.chargeGained
-        if merged then
-            return merged
-        end
-    end
-    if events and events[eventKey] then
-        return events[eventKey]
-    end
-    return SOUND_NONE_KEY
-end
-
 function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundName)
     if not SOUND_ALERT_EVENT_LABELS[eventKey] then return end
 
@@ -555,42 +441,6 @@ function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundN
         cfg.events = nil
         if (cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL) then
             buttonData.soundAlerts = nil
-        end
-    end
-end
-
-function CooldownCompanion:SetCustomBarSoundAlertEvent(customBar, eventKey, soundName)
-    if not SOUND_ALERT_EVENT_LABELS[eventKey] then return end
-
-    local validEvents = self:GetScopedValidSoundAlertEventsForCustomBar(customBar)
-    if not (validEvents and validEvents[eventKey]) then return end
-
-    local cfg = self:GetCustomBarSoundAlertConfig(customBar, true)
-    local events = cfg.events
-    if customBar.entryType == "spell" and eventKey == "chargeGained" then
-        eventKey = "available"
-    end
-
-    if customBar.entryType == "spell" and eventKey == "available" then
-        if not soundName or soundName == SOUND_NONE_KEY then
-            events.available = nil
-            events.chargeGained = nil
-        else
-            events.available = soundName
-            events.chargeGained = nil
-        end
-    else
-        if not soundName or soundName == SOUND_NONE_KEY then
-            events[eventKey] = nil
-        else
-            events[eventKey] = soundName
-        end
-    end
-
-    if not next(events) then
-        cfg.events = nil
-        if cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL then
-            customBar.soundAlerts = nil
         end
     end
 end
@@ -691,13 +541,6 @@ function CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey
     return self:GetSoundAlertEventLabel(eventKey)
 end
 
-function CooldownCompanion:GetCustomBarSoundAlertEventLabel(customBar, eventKey)
-    if IsSpellCustomBarChargeAlertMerged(customBar) and eventKey == "available" then
-        return CHARGE_AVAILABLE_MERGED_LABEL
-    end
-    return self:GetSoundAlertEventLabel(eventKey)
-end
-
 local function ParseBlizzardSoundSelection(soundName)
     if type(soundName) ~= "string" then
         return nil, nil
@@ -723,22 +566,6 @@ local function GetButtonSpeechText(buttonData)
         end
     end
     return "Cooldown alert"
-end
-
-local function GetCustomBarSpeechText(customBar)
-    if type(customBar) == "table" then
-        local spellID = tonumber(customBar.spellID)
-        if spellID then
-            local spellInfo = C_Spell.GetSpellInfo(spellID)
-            if spellInfo and spellInfo.name then
-                return spellInfo.name
-            end
-        end
-        if type(customBar.label) == "string" and customBar.label ~= "" then
-            return customBar.label
-        end
-    end
-    return "Custom bar alert"
 end
 
 local function GetTriggerPanelSpeechText(group)
@@ -794,10 +621,6 @@ end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
-end
-
-function CooldownCompanion:PreviewCustomBarSoundAlertSelection(customBar, soundName)
-    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
 end
 
 -- Options list for the native aura sound events. C_UnitAuras.AddAuraSound
@@ -895,20 +718,6 @@ function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
-function CooldownCompanion:PlayCustomBarSoundAlertEvent(customBar, eventKey)
-    if customBar and customBar.entryType == "spell" and eventKey == "chargeGained" then
-        eventKey = "available"
-    end
-    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
-    local soundName = cfg and cfg.events and cfg.events[eventKey]
-    if (not soundName) and customBar and customBar.entryType == "spell" and eventKey == "available" then
-        soundName = cfg and cfg.events and cfg.events.chargeGained
-    end
-    if not soundName or soundName == SOUND_NONE_KEY then return false end
-
-    return PlaySharedMediaSound(soundName, self:GetCustomBarSoundAlertChannel(customBar), GetCustomBarSpeechText(customBar))
-end
-
 function CooldownCompanion:PlayTriggerPanelSoundAlertEvent(groupOrId, eventKey)
     if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
         return false
@@ -987,26 +796,6 @@ function CooldownCompanion:GetEnabledSoundAlertEventsForButton(buttonData, spell
     return CollectEnabledSoundAlertEvents(cfg.events, validEvents, UsesChargeBehavior(buttonData), scratch and scratch.enabled)
 end
 
-function CooldownCompanion:GetEnabledSoundAlertEventsForCustomBar(customBar)
-    local cfg = self:GetCustomBarSoundAlertConfig(customBar, false)
-    if not cfg or type(cfg.events) ~= "table" then
-        return nil
-    end
-
-    -- Same construction as the button path above: no spell-side sound selected
-    -- means nil whatever the scoped set holds, so it is never resolved.
-    if not HasAnySpellSoundSelection(cfg.events) then
-        return nil
-    end
-
-    local validEvents = self:GetScopedValidSoundAlertEventsForCustomBar(customBar)
-    if not validEvents then
-        return nil
-    end
-
-    return CollectEnabledSoundAlertEvents(cfg.events, validEvents, IsSpellCustomBarChargeAlertMerged(customBar))
-end
-
 local function DidGainChargeSincePreviousState(state, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime)
     if currentCharges and state._sndPrevCharges and currentCharges > state._sndPrevCharges then
         return true
@@ -1029,130 +818,17 @@ local function DidGainChargeSincePreviousState(state, cooldownActive, currentCha
     return false
 end
 
-local function PlayCustomBarTransitionSound(customBar, eventKey)
-    CooldownCompanion:PlayCustomBarSoundAlertEvent(customBar, eventKey)
-end
-
-local function PlayButtonTransitionSound(buttonData, eventKey)
-    CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
-end
-
-local function UpdateCooldownSoundAlertTransitions(state, enabledEvents, opts)
-    local cooldownActive = opts.cooldownActive and true or false
-    local auraActive = opts.auraActive and true or false
-    local chargeRecharging = opts.chargeRecharging and true or false
-    local currentCharges = opts.currentCharges
-    local chargeCooldownStartTime = opts.chargeCooldownStartTime
-
-    if not state._sndInitialized then
-        state._sndInitialized = true
-        state._sndPrevCooldownActive = cooldownActive
-        if opts.includeAuraEvents then
-            state._sndPrevAuraActive = auraActive
-        end
-        state._sndPrevCharges = currentCharges
-        state._sndPrevChargeRecharging = chargeRecharging
-        state._sndPrevChargeCooldownStart = chargeCooldownStartTime
-        return
-    end
-
-    if opts.includeAuraEvents then
-        if enabledEvents.onAuraApplied and auraActive and not state._sndPrevAuraActive then
-            opts.play(opts.playContext, "onAuraApplied")
-        end
-
-        if enabledEvents.onAuraRemoved and state._sndPrevAuraActive and not auraActive then
-            opts.play(opts.playContext, "onAuraRemoved")
-        end
-    end
-
-    if enabledEvents.onCooldown and cooldownActive and not state._sndPrevCooldownActive then
-        opts.play(opts.playContext, "onCooldown")
-    end
-
-    if enabledEvents.available then
-        if opts.usesChargeBehavior then
-            if DidGainChargeSincePreviousState(state, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime) then
-                opts.play(opts.playContext, "available")
-            end
-        elseif state._sndPrevCooldownActive and not cooldownActive then
-            opts.play(opts.playContext, "available")
-        end
-    end
-
-    state._sndPrevCooldownActive = cooldownActive
-    if opts.includeAuraEvents then
-        state._sndPrevAuraActive = auraActive
-    end
-    state._sndPrevChargeRecharging = chargeRecharging
-    if currentCharges ~= nil then
-        state._sndPrevCharges = currentCharges
-    end
-    if chargeCooldownStartTime ~= nil then
-        state._sndPrevChargeCooldownStart = chargeCooldownStartTime
-    end
-end
-
--- cooldownResult is a reused evaluation scratch: copy scalar fields only and
--- never store the table or read it after this call returns.
-function CooldownCompanion:UpdateCustomBarSoundAlerts(barInfo, auraActive, cooldownActive, cooldownResult)
-    local customBar = barInfo and barInfo.cabConfig
-    -- Aura custom bars have no CC-side transition legs on 12.1: their only
-    -- sound trigger is aura activity, which Blizzard owns (the native
-    -- AddAuraSound registrations made at bind time), and the addon never
-    -- evaluates aura state for them — auraActive is structurally false. So
-    -- the whole scan below is dead work, and this runs per bar at 30Hz.
-    if not customBar or customBar.entryType ~= "spell" then
-        if barInfo then
-            barInfo._sndInitialized = nil
-        end
-        return
-    end
-    local enabledEvents = self:GetEnabledSoundAlertEventsForCustomBar(customBar)
-    if not enabledEvents then
-        if barInfo then
-            barInfo._sndInitialized = nil
-        end
-        return
-    end
-
-    local chargeRecharging = cooldownResult and cooldownResult.chargeRecharging == true
-    local currentCharges = cooldownResult and cooldownResult.currentCharges
-    local chargeCooldownStartTime
-    local charges = cooldownResult and cooldownResult.charges
-    if charges and charges.cooldownStartTime ~= nil and not issecretvalue(charges.cooldownStartTime) then
-        chargeCooldownStartTime = charges.cooldownStartTime
-    end
-
-    local opts = barInfo._sndTransitionOptions
-    if not opts then
-        opts = {}
-        barInfo._sndTransitionOptions = opts
-    end
-    opts.cooldownActive = cooldownActive
-    opts.auraActive = auraActive
-    opts.currentCharges = currentCharges
-    opts.chargeRecharging = chargeRecharging
-    opts.chargeCooldownStartTime = chargeCooldownStartTime
-    opts.includeAuraEvents = customBar.auraTracking == true
-    opts.usesChargeBehavior = cooldownResult and cooldownResult.hasCharges == true
-    opts.play = PlayCustomBarTransitionSound
-    opts.playContext = customBar
-    UpdateCooldownSoundAlertTransitions(barInfo, enabledEvents, opts)
-end
-
--- Walk-path scratch. UpdateButtonSoundAlerts is its ONLY user: the sets it fills
--- are read by UpdateCooldownSoundAlertTransitions, which tests flags and stores
--- nothing, and are dead the moment that call returns. The walk cannot re-enter
--- itself. Any new caller must either keep the fresh-table contract or prove the
--- same non-escape.
+-- Walk-path scratch. UpdateButtonSoundAlerts is its ONLY user: it reads the
+-- flags without retaining the sets, which are dead when the call returns.
+-- The walk cannot re-enter itself. Any new caller must either keep the
+-- fresh-table contract or prove the same non-escape.
 local WALK_EVENT_SCRATCH = {
     valid = {},
     scoped = {},
     enabled = {},
 }
 
-function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isOnGCD, cooldownActive, auraActive, currentCharges, _maxCharges, chargeRecharging, chargeCooldownStartTime)
+function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime)
     local buttonData = button and button.buttonData
     if not buttonData or buttonData.type ~= "spell" then return end
 
@@ -1171,21 +847,40 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, _isO
         return
     end
 
-    local opts = button._sndTransitionOptions
-    if not opts then
-        opts = {}
-        button._sndTransitionOptions = opts
+    cooldownActive = cooldownActive and true or false
+    chargeRecharging = chargeRecharging and true or false
+
+    if not button._sndInitialized then
+        button._sndInitialized = true
+        button._sndPrevCooldownActive = cooldownActive
+        button._sndPrevCharges = currentCharges
+        button._sndPrevChargeRecharging = chargeRecharging
+        button._sndPrevChargeCooldownStart = chargeCooldownStartTime
+        return
     end
-    opts.cooldownActive = cooldownActive
-    opts.auraActive = auraActive
-    opts.currentCharges = currentCharges
-    opts.chargeRecharging = chargeRecharging
-    opts.chargeCooldownStartTime = chargeCooldownStartTime
-    opts.includeAuraEvents = true
-    opts.usesChargeBehavior = UsesChargeBehavior(buttonData)
-    opts.play = PlayButtonTransitionSound
-    opts.playContext = buttonData
-    UpdateCooldownSoundAlertTransitions(button, enabledEvents, opts)
+
+    if enabledEvents.onCooldown and cooldownActive and not button._sndPrevCooldownActive then
+        self:PlayButtonSoundAlertEvent(buttonData, "onCooldown")
+    end
+
+    if enabledEvents.available then
+        if UsesChargeBehavior(buttonData) then
+            if DidGainChargeSincePreviousState(button, cooldownActive, currentCharges, chargeRecharging, chargeCooldownStartTime) then
+                self:PlayButtonSoundAlertEvent(buttonData, "available")
+            end
+        elseif button._sndPrevCooldownActive and not cooldownActive then
+            self:PlayButtonSoundAlertEvent(buttonData, "available")
+        end
+    end
+
+    button._sndPrevCooldownActive = cooldownActive
+    button._sndPrevChargeRecharging = chargeRecharging
+    if currentCharges ~= nil then
+        button._sndPrevCharges = currentCharges
+    end
+    if chargeCooldownStartTime ~= nil then
+        button._sndPrevChargeCooldownStart = chargeCooldownStartTime
+    end
 end
 
 function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
