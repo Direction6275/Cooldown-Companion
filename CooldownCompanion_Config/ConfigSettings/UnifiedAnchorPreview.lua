@@ -336,7 +336,7 @@ end
 -- Transitions release whichever surface is being vacated (the release
 -- stops the conditional ticker, so it only runs when the surface actually
 -- changes hands).
-local function BuildAnchorAwarePanelPreview(host, groupId)
+local function BuildAnchorAwarePanelPreview(host, groupId, outcome)
     -- Resolved once: the eligibility chain ends in a full lane-slot collect,
     -- so the badge and the render branch share one answer per build.
     local eligible = IsUnifiedAnchorPreviewEligible(groupId)
@@ -365,7 +365,9 @@ local function BuildAnchorAwarePanelPreview(host, groupId)
     if lanes and lanes.root and lanes.root:IsShown() then
         lanes.root:Hide()
     end
-    ST._BuildButtonPanelPreview(host, groupId)
+    if not (outcome and ST._UpdateButtonPanelPreview(host, groupId, outcome)) then
+        ST._BuildButtonPanelPreview(host, groupId)
+    end
 end
 
 -- Full release for view switches and config close: both the plain mirror

@@ -31,7 +31,10 @@ function ST._CompleteConfigEdit(target, operation)
         ST._GroupFrame.UpdateGroupStyleRuntime(Addon, target.panelId)
     end
 
-    local edit = { panelId = target.panelId, preservePreview = settingsOnly }
+    -- A style completion can change geometry and presentation, but does not
+    -- declare new membership. The mirror verifies its bindings before reuse.
+    local outcome = not settingsOnly and operation ~= "frame-settings" and "geometry" or nil
+    local edit = { panelId = target.panelId, preservePreview = settingsOnly, previewOutcome = outcome }
     if settings then
         ST._RefreshConfigEditWorkspace(edit)
     elseif operation == "style-advanced" and CS.selectedGroup == target.panelId
@@ -42,7 +45,7 @@ function ST._CompleteConfigEdit(target, operation)
     -- Runtime absence/combat deferral and rejected UI rebuilds must still
     -- repaint saved design. This receipt belongs to this invocation only.
     if not settingsOnly and not edit.previewBuilt and ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror(target.panelId)
+        ST._RefreshButtonsPreviewMirror(target.panelId, false, outcome)
     end
     return true
 end

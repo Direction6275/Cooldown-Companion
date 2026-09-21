@@ -42,22 +42,49 @@ ST._COOLDOWN_VISIBILITY = {
 -- Continuous controls in the Buttons workspace render against the pinned
 -- mirror while they are being manipulated.  The mirror helper is published
 -- later in the config load order, so resolve it at call time.
-local function RefreshSelectedButtonsPreview()
+local function RefreshSelectedButtonsPreview(outcome)
     if ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror(CS.selectedGroup, true)
+        -- Module editors change their own lanes; keep their canvas path.
+        if CS.unifiedBarKind or CS.barsEntrySelected then outcome = nil end
+        ST._RefreshButtonsPreviewMirror(CS.selectedGroup, true, outcome)
     end
 end
 
-local function RefreshActiveConfigPreview()
+local function RefreshActiveConfigPreview(outcome)
     -- The Resources destination intentionally leaves selectedContainer in
     -- memory when it clears selectedGroup, so workspace ownership has to win
     -- over the stale Buttons selection here.
     if CS.barsEntrySelected and ST._RefreshResourcesLayoutPreview then
         ST._RefreshResourcesLayoutPreview()
     elseif CS.selectedGroup or CS.selectedContainer then
-        RefreshSelectedButtonsPreview()
+        RefreshSelectedButtonsPreview(outcome)
     end
 end
+
+-- Only audited scalar fields opt in. Unknown/multi-field edits keep the
+-- full build; colors, fonts and text positioning declare their outcome at
+-- their control boundary. This is not a parallel layout signature.
+local PREVIEW_SCALAR_OUTCOMES = {
+    buttonSize = "geometry", iconWidth = "geometry", iconHeight = "geometry",
+    buttonSpacing = "geometry", buttonsPerRow = "geometry", spacing = "geometry",
+    offsetX = "geometry", offsetY = "geometry", maxPerLine = "geometry",
+    barLength = "geometry", barHeight = "geometry", barChargeSegmentGap = "geometry",
+    barIconOffset = "geometry", barIconSize = "geometry", borderSize = "geometry",
+    textBorderSize = "geometry", textHeaderFontSize = "geometry", itemCountFontSize = "geometry",
+    iconZoom = "appearance", cooldownSwipeAlpha = "appearance", auraDurationSwipeAlpha = "appearance",
+    barAuraPulseSpeed = "appearance", barAuraColorShiftSpeed = "appearance",
+}
+local function GetSettingsPreviewOutcome(keys)
+    if type(keys) == "string" then return PREVIEW_SCALAR_OUTCOMES[keys] end
+    local outcome = "appearance"
+    for _, key in ipairs(keys or {}) do
+        local field = PREVIEW_SCALAR_OUTCOMES[key]
+        if not field then return end
+        if field == "geometry" then outcome = field end
+    end
+    return keys and #keys > 0 and outcome or nil
+end
+ST._GetSettingsPreviewOutcome = GetSettingsPreviewOutcome
 
 -- Snapshot storage, not effective values: nil and an inherited default are
 -- different saved states. Restoring bypasses editor guards so a selection
@@ -74,26 +101,33 @@ function ST._CaptureRawSettingsFields(tbl, keys)
     end
 end
 
-function ST._WithSettingsPreview(tbl, keys, apply, preview)
+-- Resource controls with nested owners supply their own capture/restore pair;
+-- share the same exception boundary with ordinary settings transactions.
+function ST._RunSettingsPreview(apply, preview, restore, outcome)
+    local previousPreview = CS.settingsPreviewInProgress
+    CS.settingsPreviewInProgress = true
+    local function preserveError(err) return err end
+    local ok, failure = xpcall(function()
+        apply()
+        if preview then preview(outcome) end
+    end, preserveError)
+    local restored, restoreFailure = xpcall(restore, preserveError)
+    CS.settingsPreviewInProgress = previousPreview
+    if not ok then error(failure, 0) end
+    if not restored then error(restoreFailure, 0) end
+end
+
+function ST._WithSettingsPreview(tbl, keys, apply, preview, outcome)
     if type(keys) == "string" then keys = { keys } end
     local target = ST._GetSettingsPreviewTarget and ST._GetSettingsPreviewTarget(tbl)
     if target and not target.isCurrent() then return end
     local restore = target and target.capture(keys) or ST._CaptureRawSettingsFields(tbl, keys)
-    -- This exception boundary guarantees rollback before propagating a failed
-    -- preview; errors are never swallowed or used to select a fallback path.
-    local previousPreview = CS.settingsPreviewInProgress
-    CS.settingsPreviewInProgress = true
-    local ok, failure = xpcall(function()
-        apply()
-        if preview then preview() end
-    end, function(err) return err end)
-    restore()
-    CS.settingsPreviewInProgress = previousPreview
-    if not ok then error(failure, 0) end
+    -- Errors propagate only after restoring the original saved owner.
+    ST._RunSettingsPreview(apply, preview, restore, outcome or GetSettingsPreviewOutcome(keys))
 end
 
-local function PreviewScalarSetting(tbl, key, value, previewFn)
-    ST._WithSettingsPreview(tbl, key, function() tbl[key] = value end, previewFn)
+local function PreviewScalarSetting(tbl, key, value, previewFn, outcome)
+    ST._WithSettingsPreview(tbl, key, function() tbl[key] = value end, previewFn, outcome)
 end
 
 -- Helper: tint AceGUI Heading labels with player class color.
@@ -1320,7 +1354,7 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn,
         local pending = {r, g, b, a}
         -- Arm first so closing still commits if the preview refresh fails.
         ArmColorCommitOnClose(function() Commit(pending) end)
-        PreviewScalarSetting(tbl, key, pending, onPreviewFn)
+        PreviewScalarSetting(tbl, key, pending, onPreviewFn, "appearance")
     end)
     -- A future Ace3 confirmation event and the close hook must still apply once.
     widget:SetCallback("OnValueConfirmed", function(_, _, r, g, b, a)
@@ -1399,7 +1433,7 @@ local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, re
         if opts.prepareKey then keys[#keys + 1] = opts.prepareKey end
         if opts.selfPointKey then keys[#keys + 1] = opts.selfPointKey end
         local previewRefresh = opts.previewRefresh or RefreshSelectedButtonsPreview
-        ST._WithSettingsPreview(tbl, keys, function() Set(key, value) end, previewRefresh)
+        ST._WithSettingsPreview(tbl, keys, function() Set(key, value) end, previewRefresh, "geometry")
     end
     local xRow, yRow
     local anchorRow = ST._AddDropdownRow(container, {
@@ -1473,7 +1507,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
         step = defaults.sizeStep or 1,
         value = tbl[sizeKey] or defaults.size or 12,
         onChange = function(val)
-            PreviewScalarSetting(tbl, sizeKey, val, previewRefresh)
+            PreviewScalarSetting(tbl, sizeKey, val, previewRefresh, "geometry")
         end,
         onRelease = function(val)
             tbl[sizeKey] = val

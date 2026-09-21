@@ -1703,20 +1703,15 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
                     CooldownCompanion:ApplyResourceBars()
                 end,
                 captureState = function()
-                    local current = layout.resources[capturedPt]
-                    return {
-                        owner = current,
-                        value = current and current[thicknessField] or nil,
-                    }
-                end,
-                restoreState = function(state)
-                    if state.owner then
-                        state.owner[thicknessField] = state.value
-                        layout.resources[capturedPt] = state.owner
-                    else
-                        layout.resources[capturedPt] = nil
+                    local current = rawget(layout.resources, capturedPt)
+                    local restoreOwner = ST._CaptureRawSettingsFields(layout.resources, { capturedPt })
+                    local restoreField = ST._CaptureRawSettingsFields(current, { thicknessField })
+                    return function()
+                        restoreField()
+                        restoreOwner()
                     end
                 end,
+                restoreState = function(restore) restore() end,
             })
         end
     end
@@ -3418,15 +3413,24 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             end,
                             apply = applyBars,
                             captureState = function()
-                                local resource = settings.resources and settings.resources[capturedPt]
-                                local specTable = resource and resource.specOverrides
-                                    and resource.specOverrides[_colorSpecID]
-                                return specTable and specTable.continuousTickWidth or nil
+                                local resources = rawget(settings, "resources")
+                                local resource = resources and rawget(resources, capturedPt)
+                                local specs = resource and rawget(resource, "specOverrides")
+                                local specTable = specs and rawget(specs, _colorSpecID)
+                                local restoreResources = ST._CaptureRawSettingsFields(settings, { "resources" })
+                                local restoreResource = ST._CaptureRawSettingsFields(resources, { capturedPt })
+                                local restoreSpecs = ST._CaptureRawSettingsFields(resource, { "specOverrides" })
+                                local restoreSpec = ST._CaptureRawSettingsFields(specs, { _colorSpecID })
+                                local restoreWidth = ST._CaptureRawSettingsFields(specTable, { "continuousTickWidth" })
+                                return function()
+                                    restoreWidth()
+                                    restoreSpec()
+                                    restoreSpecs()
+                                    restoreResource()
+                                    restoreResources()
+                                end
                             end,
-                            restoreState = function(value)
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID,
-                                    "continuousTickWidth", value)
-                            end,
+                            restoreState = function(restore) restore() end,
                         })
                     end
 

@@ -872,11 +872,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
         ST._BuildIconZoomControls(assistLeft, style, refreshStyle, {
             setting = APPEARANCE_FINDER.assistant.zoom,
-            previewRefresh = function()
-                if ST._RefreshButtonsPreviewMirror then
-                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-                end
-            end,
+            previewRefresh = ST._RefreshSelectedButtonsPreview,
         })
 
         -- The border builder has no second-column split of its own, so its
@@ -1110,11 +1106,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomSec.tbl, refreshStyle, {
         setting = APPEARANCE_FINDER.icons.zoom,
         disabled = group.masqueEnabled == true or zoomSec.disabled,
-        previewRefresh = function()
-            if ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-            end
-        end,
+        previewRefresh = ST._RefreshSelectedButtonsPreview,
     })
     zoomSec:Chrome(zoomRow)
 
