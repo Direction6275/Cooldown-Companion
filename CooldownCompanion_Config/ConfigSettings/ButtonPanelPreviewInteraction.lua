@@ -537,6 +537,82 @@ local function ResetGridDragPreview(preview, layoutDrag)
     end
 end
 
+-- Built once per layout model (and if its content dimensions change).
+-- All cell/section inputs are replaced together by a geometry update.
+local function BuildInsertionCandidates(layoutDrag, localW, localH)
+    local count = layoutDrag.count
+    local anchor = layoutDrag.anchor
+    local slotW, slotH = layoutDrag.slotW, layoutDrag.slotH
+    local centers = {}
+    for i = 1, count do
+        local x, y = layoutDrag.cellXY(i)
+        -- Resting centers in content-local top-left coordinates.
+        local tlX, tlY = SectionDrag.CellCenter(anchor, x, y,
+            slotW, slotH, localW, localH)
+        centers[i] = {
+            x = tlX,
+            y = tlY,
+        }
+    end
+
+    -- Consecutive centers share a run when they stay on the same row
+    -- line (small y delta) or column line (small x delta); a wrap jump
+    -- always moves a full cell on both axes.
+    local halfW = slotW / 2
+    local halfH = slotH / 2
+    local function sameRun(a, b)
+        return math.abs(centers[b].y - centers[a].y) < halfH
+            or math.abs(centers[b].x - centers[a].x) < halfW
+    end
+    -- Intra-run step at slot i; single-slot runs (e.g. a short last
+    -- row) borrow the first measurable step so their boundary anchors
+    -- still sit beside the slot instead of on top of it.
+    -- A one-cell base grid has no measurable step, and a section member
+    -- dropping back into it still has to land before or after that cell.
+    -- The builder's own in-line pitch answers that; with two cells or more
+    -- the loop below always measures a real step and overwrites it.
+    local globalStepX = (layoutDrag.cellStepX or 0)
+    local globalStepY = (layoutDrag.cellStepY or 0)
+    for i = 1, count - 1 do
+        if sameRun(i, i + 1) then
+            globalStepX = centers[i + 1].x - centers[i].x
+            globalStepY = centers[i + 1].y - centers[i].y
+            break
+        end
+    end
+    local function runStep(i)
+        if i < count and sameRun(i, i + 1) then
+            return centers[i + 1].x - centers[i].x, centers[i + 1].y - centers[i].y
+        end
+        if i > 1 and sameRun(i - 1, i) then
+            return centers[i].x - centers[i - 1].x, centers[i].y - centers[i - 1].y
+        end
+        return globalStepX, globalStepY
+    end
+
+    local candidates = {}
+    local function AddCandidate(x, y, insertIndex)
+        candidates[#candidates + 1] = { x = x, y = y, insertIndex = insertIndex }
+    end
+    local sx, sy = runStep(1)
+    AddCandidate(centers[1].x - sx / 2, centers[1].y - sy / 2, 1)
+    for i = 2, count do
+        if sameRun(i - 1, i) then
+            AddCandidate((centers[i - 1].x + centers[i].x) / 2,
+                (centers[i - 1].y + centers[i].y) / 2, i)
+        else
+            local ex, ey = runStep(i - 1)
+            AddCandidate(centers[i - 1].x + ex / 2, centers[i - 1].y + ey / 2, i)
+            local bx, by = runStep(i)
+            AddCandidate(centers[i].x - bx / 2, centers[i].y - by / 2, i)
+        end
+    end
+    local ex, ey = runStep(count)
+    AddCandidate(centers[count].x + ex / 2, centers[count].y + ey / 2, count + 1)
+
+    return candidates
+end
+
 local function CreatePreviewLayoutDrag(preview, panelId)
     -- Builders fill in count, slotW/H, scale, anchor, and cellXY (display
     -- cell index -> anchored x,y offset) after creating the model.
@@ -616,76 +692,15 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         local localW = content:GetWidth() or 1
         local localH = content:GetHeight() or 1
         local factor = (localW > 0) and (cWidth / localW) or 1
-        local anchor = layoutDrag.anchor
-        local slotW, slotH = layoutDrag.slotW, layoutDrag.slotH
-
-        local centers = {}
-        for i = 1, count do
-            local x, y = layoutDrag.cellXY(i)
-            -- Convert the anchored offset to top-left space, then to the
-            -- scaled screen coordinates raw cursor values live in.
-            local tlX, tlY = SectionDrag.CellCenter(anchor, x, y,
-                slotW, slotH, localW, localH)
-            centers[i] = {
-                x = cLeft + tlX * factor,
-                y = cBottom + cHeight + tlY * factor,
-            }
+        local candidates = layoutDrag.insertionCandidates
+        if not candidates or layoutDrag.insertionWidth ~= localW or layoutDrag.insertionHeight ~= localH then
+            candidates = BuildInsertionCandidates(layoutDrag, localW, localH)
+            layoutDrag.insertionCandidates = candidates
+            layoutDrag.insertionWidth, layoutDrag.insertionHeight = localW, localH
         end
-
-        -- Consecutive centers share a run when they stay on the same row
-        -- line (small y delta) or column line (small x delta); a wrap jump
-        -- always moves a full cell on both axes.
-        local halfW = slotW * factor / 2
-        local halfH = slotH * factor / 2
-        local function sameRun(a, b)
-            return math.abs(centers[b].y - centers[a].y) < halfH
-                or math.abs(centers[b].x - centers[a].x) < halfW
-        end
-        -- Intra-run step at slot i; single-slot runs (e.g. a short last
-        -- row) borrow the first measurable step so their boundary anchors
-        -- still sit beside the slot instead of on top of it.
-        -- A one-cell base grid has no measurable step, and a section member
-        -- dropping back into it still has to land before or after that cell.
-        -- The builder's own in-line pitch answers that; with two cells or more
-        -- the loop below always measures a real step and overwrites it.
-        local globalStepX = (layoutDrag.cellStepX or 0) * factor
-        local globalStepY = (layoutDrag.cellStepY or 0) * factor
-        for i = 1, count - 1 do
-            if sameRun(i, i + 1) then
-                globalStepX = centers[i + 1].x - centers[i].x
-                globalStepY = centers[i + 1].y - centers[i].y
-                break
-            end
-        end
-        local function runStep(i)
-            if i < count and sameRun(i, i + 1) then
-                return centers[i + 1].x - centers[i].x, centers[i + 1].y - centers[i].y
-            end
-            if i > 1 and sameRun(i - 1, i) then
-                return centers[i].x - centers[i - 1].x, centers[i].y - centers[i - 1].y
-            end
-            return globalStepX, globalStepY
-        end
-
-        local candidates = {}
-        local function AddCandidate(x, y, insertIndex)
-            candidates[#candidates + 1] = { x = x, y = y, insertIndex = insertIndex }
-        end
-        local sx, sy = runStep(1)
-        AddCandidate(centers[1].x - sx / 2, centers[1].y - sy / 2, 1)
-        for i = 2, count do
-            if sameRun(i - 1, i) then
-                AddCandidate((centers[i - 1].x + centers[i].x) / 2,
-                    (centers[i - 1].y + centers[i].y) / 2, i)
-            else
-                local ex, ey = runStep(i - 1)
-                AddCandidate(centers[i - 1].x + ex / 2, centers[i - 1].y + ey / 2, i)
-                local bx, by = runStep(i)
-                AddCandidate(centers[i].x - bx / 2, centers[i].y - by / 2, i)
-            end
-        end
-        local ex, ey = runStep(count)
-        AddCandidate(centers[count].x + ex / 2, centers[count].y + ey / 2, count + 1)
+        if factor <= 0 then return nil end
+        cursorX = (cursorX - cLeft) / factor
+        cursorY = (cursorY - cBottom - cHeight) / factor
 
         local bestIndex, bestDist
         for _, cand in ipairs(candidates) do
@@ -708,6 +723,27 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         local sourceCell = LayoutDragIndexCell(layoutDrag, sourceIndex)
         if not (sourceCell or layoutDrag.sectionDrag) then return nil end
         return sourceIndex, sourceCell
+    end
+
+    local lastState, lastTarget, lastHandle, lastSource, lastSectionModel, lastGesture
+    local lastLeft, lastBottom, lastWidth, lastHeight
+    local function TargetChanged(state, target)
+        local left, bottom, width, height = preview.content:GetScaledRect()
+        local same = lastState == state and lastHandle == state.sectionHandle
+            and lastSource == (state.slotData and state.slotData.index)
+            and lastSectionModel == layoutDrag.sectionDrag and lastGesture == preview.gestureKey
+            and lastLeft == left and lastBottom == bottom and lastWidth == width and lastHeight == height
+            and ((not lastTarget and not target) or (lastTarget and target
+                and lastTarget.insertIndex == target.insertIndex
+                and lastTarget.section == target.section and lastTarget.create == target.create
+                and lastTarget.memberPos == target.memberPos and lastTarget.rejectMessage == target.rejectMessage))
+        if same and preview.ghostActive then return false end
+        lastState, lastHandle, lastSource = state, state.sectionHandle, state.slotData and state.slotData.index
+        lastSectionModel = layoutDrag.sectionDrag
+        lastLeft, lastBottom, lastWidth, lastHeight = left, bottom, width, height
+        lastTarget = target and { insertIndex = target.insertIndex, section = target.section,
+            create = target.create, memberPos = target.memberPos, rejectMessage = target.rejectMessage } or nil
+        return true
     end
 
     -- The handle drag reuses this whole model; the marker on the state is the
@@ -736,9 +772,12 @@ local function CreatePreviewLayoutDrag(preview, panelId)
     end
 
     layoutDrag.onActivate = function(state)
+        lastState = nil
+        TargetChanged(state, state.dropTarget)
         GameTooltip:Hide()
         if state.sectionHandle then
             RunHandleDragFrame(state)
+            lastGesture = preview.gestureKey
             return
         end
         local sourceIndex, sourceCell = ResolveDragSource(state)
@@ -750,12 +789,15 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         ConfigurePreviewGhost(preview, layoutDrag, state.slotData and state.slotData.buttonData, slot)
         BeginEntryGesture(state, sourceIndex)
         UpdateGridDragPreview(preview, layoutDrag, sourceCell, state.dropTarget, sourceIndex)
+        lastGesture = preview.gestureKey
         StartPreviewTicker(preview)
     end
 
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
+        if not TargetChanged(state, dropTarget) then return end
         if state.sectionHandle then
             RunHandleDragFrame(state)
+            lastGesture = preview.gestureKey
             return
         end
         local sourceIndex, sourceCell = ResolveDragSource(state)
@@ -765,10 +807,12 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         if not preview.ghostActive then
             ConfigurePreviewGhost(preview, layoutDrag, state.slotData.buttonData, layoutDrag.slots[sourceIndex])
         end
+        lastGesture = preview.gestureKey
         StartPreviewTicker(preview)
     end
 
     layoutDrag.onCancel = function()
+        lastState, lastTarget, lastGesture = nil, nil, nil
         -- One exit for both gestures, which is what makes Escape work on the
         -- handle for free: the lanes go back to rest at full alpha, the trail
         -- and the ghost go, and nothing was ever written.
@@ -1056,130 +1100,171 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     GameTooltip:Show()
 end
 
+-- Raw preview slots own these scripts for their lifetime. Bindings are
+-- replaced on reuse; AceGUI widget scripts are never touched here.
+local function EntryOnMouseDown(self, mouseButton)
+    local context = self._cdcEntryInteraction
+    if not context then return end
+    local panelId, index, buttonData = context.panelId, context.index, context.buttonData
+    local layoutDrag = context.layoutDrag
+    if CooldownCompanion.db.profile ~= context.profile
+        or context.profile.groups[panelId] ~= context.group
+        or context.group.buttons[index] ~= buttonData then return end
+    if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
+    -- Armed copy mode: the press belongs to the copy click, not a drag.
+    if CS.copyCustomization then return end
+    if not (layoutDrag and StartDragTracking) then return end
+    local cursorX, cursorY = GetCursorPosition()
+    -- No `widget` field: the tracker's dim/restore would fight the
+    -- alpha choreography our layoutDrag callbacks run (dragged slot
+    -- goes fully invisible; disabled slots rest at reduced alpha).
+    CS.dragState = {
+        kind = "layout-slot",
+        phase = "pending",
+        previewSlot = self,
+        scrollWidget = UIParent,
+        startX = cursorX,
+        startY = cursorY,
+        layoutDrag = layoutDrag,
+        slotData = { index = index, buttonData = buttonData },
+    }
+    StartDragTracking()
+end
+
+local function EntryOnMouseUp(self, mouseButton)
+    local context = self._cdcEntryInteraction
+    if not context then return end
+    local panelId, index, buttonData = context.panelId, context.index, context.buttonData
+    if CooldownCompanion.db.profile ~= context.profile
+        or context.profile.groups[panelId] ~= context.group
+        or context.group.buttons[index] ~= buttonData then return end
+    if GetCursorInfo() then return end
+    if mouseButton == "LeftButton" then
+        -- Escape already cancelled this drag; the release the user is still
+        -- holding belongs to that cancel, never to a selection click.
+        if ST._ConsumeDragEscapeMouseUp() then return end
+        local state = CS.dragState
+        if state then
+            -- Only fall through to selection for our own still-pending
+            -- press; active drags finish through the tracker.
+            if state.kind ~= "layout-slot" or state.phase ~= "pending" or state.previewSlot ~= self then
+                return
+            end
+            if CancelDrag then CancelDrag() else CS.dragState = nil end
+        end
+        if CopyMode.HandleClick(panelId, index, buttonData) then return end
+        local spellbookDocked = CS.spellbookPanelDocked
+        SelectConfigButton(panelId, index, {
+            multi = IsControlKeyDown(),
+            force = spellbookDocked,
+        })
+        -- Only an explicit entry click exits the spellbook; additions and
+        -- drag/drop also select entries through the shared selection helper.
+        if spellbookDocked then CS.CloseSpellbookPanel() end
+        CooldownCompanion:RefreshConfigSelection()
+    elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
+        if CS.dragState and CS.dragState.phase == "active" then return end
+        -- Armed copy mode: right/middle-click is a cancel, never a menu.
+        if CS.copyCustomization then
+            CopyMode.Cancel()
+            return
+        end
+        if ShowEntryContextMenu then
+            ShowEntryContextMenu(panelId, index, buttonData)
+        end
+    end
+end
+
+local function EntryOnEnter(self)
+    local context = self._cdcEntryInteraction
+    if not context then return end
+    local panelId, index, buttonData = context.panelId, context.index, context.buttonData
+    local status, layoutDrag, visibility = context.status, context.layoutDrag, context.visibility
+    if CooldownCompanion.db.profile ~= context.profile
+        or context.profile.groups[panelId] ~= context.group
+        or context.group.buttons[index] ~= buttonData then return end
+    if CS.dragState and CS.dragState.phase == "active" then return end
+    if self._cdcBarIdentityPreview then
+        PP.SetBarIdentityLabelsShown(self._cdcBarIdentityPreview, true)
+    end
+    -- Hovering a section's own icons OFFERS the grab chip. Taking it back
+    -- is not this handler's job and never was: the chip watches the cursor
+    -- against its own section for as long as it is up (HandleWatch), which
+    -- is the only model that survives the cursor crossing the empty pixels
+    -- between an icon and the chip.
+    if layoutDrag and layoutDrag.preview and self._cdcSectionAnchor
+        and layoutDrag.sectionDrag then
+        SectionDrag.ShowHandle(layoutDrag.preview, layoutDrag,
+            self._cdcSectionAnchor)
+    end
+    if self._cdcBarPreviewVisibility then
+        self._cdcBarPreviewHovered = true
+        RefreshBarSlotWorkspacePresentation(self)
+    else
+        self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
+        self.hoverHighlight:Show()
+    end
+    -- Register with the shared Shift-tooltip controller; when Shift is
+    -- already held this shows the real tooltip immediately and the
+    -- decorated one is skipped. Later modifier changes are the
+    -- controller's MODIFIER_STATE_CHANGED handler's job.
+    local kind, id = ResolveSlotShiftTooltip(buttonData)
+    local activate = ST._ActivateConfigShiftTooltip
+    if kind and id and activate then
+        local adapter = EnsureSlotShiftTooltipAdapter(self)
+        adapter:SetUserData("cdcShiftTooltipKind", kind)
+        adapter:SetUserData("cdcShiftTooltipID", id)
+        adapter:SetUserData("cdcShiftTooltipOwner", self)
+        adapter:SetUserData("cdcShiftTooltipAnchor", "ANCHOR_RIGHT")
+        if activate(adapter) then
+            return
+        end
+    end
+    ShowEntrySlotTooltip(self, panelId, buttonData, status, visibility)
+end
+
+local function EntryOnLeave(self)
+    local context = self._cdcEntryInteraction
+    if not context then return end
+    local preview = self._cdcBarIdentityPreview
+    if preview then
+        -- Let the adjacent bar's enter event run before clearing the set.
+        C_Timer.After(0, function()
+            if self._cdcEntryInteraction == context and self._cdcBarIdentityPreview == preview then
+                PP.RefreshBarIdentityLabels(preview)
+            end
+        end)
+    end
+    if self._cdcBarPreviewVisibility then
+        self._cdcBarPreviewHovered = false
+        RefreshBarSlotWorkspacePresentation(self)
+    else
+        self.hoverHighlight:Hide()
+    end
+    if self._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
+        ST._ClearConfigShiftTooltipHover(self._cdcShiftTooltipAdapter)
+    end
+    GameTooltip:Hide()
+end
+
 local function WireEntryInteraction(slot, panelId, index, buttonData, status, layoutDrag, visibility)
+    local context = slot._cdcEntryInteraction or {}
+    slot._cdcEntryInteraction = context
+    context.profile = CooldownCompanion.db.profile
+    context.group = context.profile.groups[panelId]
+    context.panelId, context.index, context.buttonData = panelId, index, buttonData
+    context.status, context.layoutDrag, context.visibility = status, layoutDrag, visibility
     slot:EnableMouse(true)
     slot._cdcDraggable = layoutDrag ~= nil
-    -- Written here rather than at the call sites: icon slots are pooled across
-    -- every preview shape, and a slot recycled onto a panel with no anchors
-    -- must not keep advertising them.
     slot._cdcSectionDraggable = (layoutDrag and layoutDrag.sectionDrag) and true or nil
-    slot._cdcEntryIndex = index
-    slot._cdcEntryStatus = status
-    slot:SetScript("OnMouseDown", function(self, mouseButton)
-        if mouseButton ~= "LeftButton" or GetCursorInfo() then return end
-        -- Armed copy mode: the press belongs to the copy click, not a drag.
-        if CS.copyCustomization then return end
-        if not (layoutDrag and StartDragTracking) then return end
-        local cursorX, cursorY = GetCursorPosition()
-        -- No `widget` field: the tracker's dim/restore would fight the
-        -- alpha choreography our layoutDrag callbacks run (dragged slot
-        -- goes fully invisible; disabled slots rest at reduced alpha).
-        CS.dragState = {
-            kind = "layout-slot",
-            phase = "pending",
-            previewSlot = self,
-            scrollWidget = UIParent,
-            startX = cursorX,
-            startY = cursorY,
-            layoutDrag = layoutDrag,
-            slotData = { index = index, buttonData = buttonData },
-        }
-        StartDragTracking()
-    end)
-    slot:SetScript("OnMouseUp", function(self, mouseButton)
-        if GetCursorInfo() then return end
-        if mouseButton == "LeftButton" then
-            -- Escape already cancelled this drag; the release the user is still
-            -- holding belongs to that cancel, never to a selection click.
-            if ST._ConsumeDragEscapeMouseUp() then return end
-            local state = CS.dragState
-            if state then
-                -- Only fall through to selection for our own still-pending
-                -- press; active drags finish through the tracker.
-                if state.kind ~= "layout-slot" or state.phase ~= "pending" or state.previewSlot ~= self then
-                    return
-                end
-                if CancelDrag then CancelDrag() else CS.dragState = nil end
-            end
-            if CopyMode.HandleClick(panelId, index, buttonData) then return end
-            local spellbookDocked = CS.spellbookPanelDocked
-            SelectConfigButton(panelId, index, {
-                multi = IsControlKeyDown(),
-                force = spellbookDocked,
-            })
-            -- Only an explicit entry click exits the spellbook; additions and
-            -- drag/drop also select entries through the shared selection helper.
-            if spellbookDocked then CS.CloseSpellbookPanel() end
-            CooldownCompanion:RefreshConfigSelection()
-        elseif mouseButton == "RightButton" or mouseButton == "MiddleButton" then
-            if CS.dragState and CS.dragState.phase == "active" then return end
-            -- Armed copy mode: right/middle-click is a cancel, never a menu.
-            if CS.copyCustomization then
-                CopyMode.Cancel()
-                return
-            end
-            if ShowEntryContextMenu then
-                ShowEntryContextMenu(panelId, index, buttonData)
-            end
-        end
-    end)
-    slot:SetScript("OnEnter", function(self)
-        if CS.dragState and CS.dragState.phase == "active" then return end
-        if self._cdcBarIdentityPreview then
-            PP.SetBarIdentityLabelsShown(self._cdcBarIdentityPreview, true)
-        end
-        -- Hovering a section's own icons OFFERS the grab chip. Taking it back
-        -- is not this handler's job and never was: the chip watches the cursor
-        -- against its own section for as long as it is up (HandleWatch), which
-        -- is the only model that survives the cursor crossing the empty pixels
-        -- between an icon and the chip.
-        if layoutDrag and layoutDrag.preview and self._cdcSectionAnchor
-            and layoutDrag.sectionDrag then
-            SectionDrag.ShowHandle(layoutDrag.preview, layoutDrag,
-                self._cdcSectionAnchor)
-        end
-        if self._cdcBarPreviewVisibility then
-            self._cdcBarPreviewHovered = true
-            RefreshBarSlotWorkspacePresentation(self)
-        else
-            self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-            self.hoverHighlight:Show()
-        end
-        -- Register with the shared Shift-tooltip controller; when Shift is
-        -- already held this shows the real tooltip immediately and the
-        -- decorated one is skipped. Later modifier changes are the
-        -- controller's MODIFIER_STATE_CHANGED handler's job.
-        local kind, id = ResolveSlotShiftTooltip(buttonData)
-        local activate = ST._ActivateConfigShiftTooltip
-        if kind and id and activate then
-            local adapter = EnsureSlotShiftTooltipAdapter(self)
-            adapter:SetUserData("cdcShiftTooltipKind", kind)
-            adapter:SetUserData("cdcShiftTooltipID", id)
-            adapter:SetUserData("cdcShiftTooltipOwner", self)
-            adapter:SetUserData("cdcShiftTooltipAnchor", "ANCHOR_RIGHT")
-            if activate(adapter) then
-                return
-            end
-        end
-        ShowEntrySlotTooltip(self, panelId, buttonData, status, visibility)
-    end)
-    slot:SetScript("OnLeave", function(self)
-        local preview = self._cdcBarIdentityPreview
-        if preview then
-            -- Let the adjacent bar's enter event run before clearing the set.
-            C_Timer.After(0, function() PP.RefreshBarIdentityLabels(preview) end)
-        end
-        if self._cdcBarPreviewVisibility then
-            self._cdcBarPreviewHovered = false
-            RefreshBarSlotWorkspacePresentation(self)
-        else
-            self.hoverHighlight:Hide()
-        end
-        if self._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
-            ST._ClearConfigShiftTooltipHover(self._cdcShiftTooltipAdapter)
-        end
-        GameTooltip:Hide()
-    end)
+    slot._cdcEntryIndex, slot._cdcEntryStatus = index, status
+    if not slot._cdcEntryHandlersInstalled then
+        slot:SetScript("OnMouseDown", EntryOnMouseDown)
+        slot:SetScript("OnMouseUp", EntryOnMouseUp)
+        slot:SetScript("OnEnter", EntryOnEnter)
+        slot:SetScript("OnLeave", EntryOnLeave)
+        slot._cdcEntryHandlersInstalled = true
+    end
 end
 
 ------------------------------------------------------------------------

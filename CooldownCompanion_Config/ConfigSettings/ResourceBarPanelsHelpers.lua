@@ -639,32 +639,15 @@ local function AddMirrorFirstSliderRow(container, opts)
     opts.stateOwner = nil
     opts.stateKeys = nil
 
-    if type(stateKeys) == "string" then
-        stateKeys = { stateKeys }
-    end
-    if not captureState then
-        local nilSetting = {}
-        captureState = function()
-            local state = {}
-            for index, key in ipairs(stateKeys) do
-                local value = stateOwner[key]
-                state[index] = value == nil and nilSetting or value
-            end
-            return state
-        end
-        restoreState = function(state)
-            for index, key in ipairs(stateKeys) do
-                local value = state[index]
-                stateOwner[key] = value == nilSetting and nil or value
-            end
-        end
-    end
-
     opts.onChange = function(value)
-        local state = captureState()
-        set(value)
-        RefreshResourcesCanvasForDrag()
-        restoreState(state)
+        if captureState then
+            local state = captureState()
+            ST._RunSettingsPreview(function() set(value) end, RefreshResourcesCanvasForDrag,
+                function() restoreState(state) end)
+        else
+            ST._WithSettingsPreview(stateOwner, stateKeys, function() set(value) end,
+                RefreshResourcesCanvasForDrag)
+        end
     end
     opts.onRelease = function(value)
         set(value)

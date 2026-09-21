@@ -564,6 +564,25 @@ local ResetBarSlotWorkspaceState
 -- build invokes the customization-copy helpers.
 local CopyMode = {}
 
+local function ClearSlotInteraction(slot)
+    if slot._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
+        ST._ClearConfigShiftTooltipHover(slot._cdcShiftTooltipAdapter)
+    end
+    slot._cdcEntryInteraction = nil
+    slot._cdcPreviewButtonData = nil
+    if slot._cdcSpecialEntryHandlers then
+        slot:SetScript("OnMouseDown", nil)
+        slot:SetScript("OnMouseUp", nil)
+        slot:SetScript("OnEnter", nil)
+        slot:SetScript("OnLeave", nil)
+        slot._cdcSpecialEntryHandlers = nil
+    end
+    slot._cdcDraggable, slot._cdcSectionDraggable = false, nil
+    slot._cdcEntryIndex, slot._cdcEntryStatus = nil, nil
+    slot._cdcSectionAnchor, slot._cdcReorderPausedByFilter = nil, nil
+    slot:EnableMouse(false)
+end
+
 local function FinalizePreviewState(preview)
     for poolName, pool in pairs(preview.pools) do
         local used = preview.used[poolName] or 0
@@ -572,10 +591,7 @@ local function FinalizePreviewState(preview)
             ResetBarSlotWorkspaceState(frame)
             frame:Hide()
             frame:ClearAllPoints()
-            frame:SetScript("OnMouseDown", nil)
-            frame:SetScript("OnMouseUp", nil)
-            frame:SetScript("OnEnter", nil)
-            frame:SetScript("OnLeave", nil)
+            ClearSlotInteraction(frame)
         end
     end
     -- Every build path ends here, so the copy-customization banner follows
@@ -628,10 +644,7 @@ local function DisableReadOnlySlotInteraction(slot)
         ResetBarSlotWorkspaceState(slot)
     end
     slot:EnableMouse(false)
-    slot:SetScript("OnMouseDown", nil)
-    slot:SetScript("OnMouseUp", nil)
-    slot:SetScript("OnEnter", nil)
-    slot:SetScript("OnLeave", nil)
+    ClearSlotInteraction(slot)
     slot._cdcDraggable = false
     slot._cdcEntryIndex = nil
     slot._cdcEntryStatus = nil
@@ -823,6 +836,7 @@ local function AcquireSlot(preview, parent, poolName)
     end
     frame:SetParent(parent)
     RestoreMissingReminderPreview(frame)
+    ClearSlotInteraction(frame)
     ResetBarSlotWorkspaceState(frame)
     frame:Show()
     frame:SetAlpha(1)
@@ -1270,9 +1284,12 @@ local function TickPanelPreview(preview)
 end
 
 local function StartPreviewTicker(preview)
-    preview.root:SetScript("OnUpdate", function()
-        TickPanelPreview(preview)
-    end)
+    if not preview.tickHandler then
+        preview.tickHandler = function() TickPanelPreview(preview) end
+    end
+    if preview.root:GetScript("OnUpdate") ~= preview.tickHandler then
+        preview.root:SetScript("OnUpdate", preview.tickHandler)
+    end
 end
 
 -- Cursor-following ghost: icon artwork fills its configured footprint;
@@ -1772,3 +1789,5 @@ PP.ApplyMissingReminderPreview = ApplyMissingReminderPreview
 PP.ApplyBarSlotPreviewVisibility = ApplyBarSlotPreviewVisibility
 PP.GetPanelPreviewNaturalSize = GetPanelPreviewNaturalSize
 PP.ResetBarSlotWorkspaceState = ResetBarSlotWorkspaceState
+
+PP.ClearSlotInteraction = ClearSlotInteraction

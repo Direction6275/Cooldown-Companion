@@ -1059,11 +1059,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end, {
             disabled = zoomSec.disabled,
             setting = BAR_FINDER.advanced.icon and BAR_FINDER.advanced.icon.zoom,
-            previewRefresh = function()
-                if ST._RefreshButtonsPreviewMirror then
-                    ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
-                end
-            end,
+            previewRefresh = ST._RefreshSelectedButtonsPreview,
         })
         -- The row carries its own scope chrome, exactly as it does on the icons
         -- tab: it is the only affordance for this section here, and without it

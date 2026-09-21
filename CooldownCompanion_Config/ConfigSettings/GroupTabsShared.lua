@@ -27,14 +27,14 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
     slider:SetCallback("OnValueChanged", function(_, _, value)
         if (context and not context:IsCurrent())
             or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
-        ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function()
+        ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function(outcome)
             if previewFn == false then
                 -- Some sliders change screen-space placement, which the pinned
                 -- mirror intentionally does not represent.
             elseif previewFn then
-                previewFn()
+                previewFn(outcome)
             elseif ST._RefreshButtonsPreviewMirror then
-                ST._RefreshButtonsPreviewMirror(target and target.panelId or CS.selectedGroup)
+                ST._RefreshButtonsPreviewMirror(target and target.panelId or CS.selectedGroup, true, outcome)
             end
         end)
     end)

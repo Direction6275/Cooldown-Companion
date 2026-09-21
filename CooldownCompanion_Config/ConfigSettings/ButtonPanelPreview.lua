@@ -85,30 +85,137 @@ local StyleIconEntry = PP.StyleIconEntry
 local ResetSlotConditionalVisuals = PP.ResetSlotConditionalVisuals
 local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 
-function ST._BuildButtonPanelPreview(host, panelId, options)
-    options = type(options) == "table" and options or nil
-    local readOnly = options and options.readOnly == true
-    local dropGhostIndex = options and options.dropGhostIndex
-    -- Rebuilding pulls the slot frames out from under an in-flight drag
-    if not readOnly
-        and CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
-        CancelDrag()
+-- Build and retained updates use the same visual pass. Only composition owns
+-- acquisition, membership, placement and interaction models.
+local function RenderPreviewEntry(preview, group, binding, context)
+    local slot, buttonData, index = binding.slot, binding.buttonData, binding.index
+    local panelId, readOnly, isTextMode = preview.panelId, preview.readOnly, context.isTextMode
+    local scale, dropGhostIndex, placement = context.scale, context.dropGhostIndex, binding.placement
+    local poolName = binding.poolName
+    local isBarMode = poolName == "barSlots"
+    local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
+    PP.RestoreMissingReminderPreview(slot)
+    slot:SetAlpha(1)
+    local effectiveStyle
+    local barPreviewState
+    if isBarMode then
+        effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
+        if binding.attached then
+            local copy = CopyTable(ST.GetEntryBaseStyle(group, buttonData))
+            for key, value in pairs(effectiveStyle) do copy[key] = value end
+            copy.barFillVertical = placement.vertical
+            copy.barLength = placement.vertical and placement.height or placement.width
+            effectiveStyle = copy
+        end
+        if not readOnly then
+            barPreviewState = GetStoredBarPreviewState(panelId, index)
+        end
+        ResetBarSlotConditionalVisuals(slot)
+    end
+    styleFn(slot, buttonData, group, effectiveStyle)
+    if not readOnly and not isTextMode then
+        ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
+            effectiveStyle, barPreviewState)
+    elseif not isTextMode then
+        ClearSlotEffectPreviews(slot)
+    end
+    local status = not readOnly and (isBarMode and CollectBarEntryStatus(buttonData, group)
+        or CollectEntryStatus(buttonData, group)) or nil
+    local barVisibility
+    if isBarMode and not readOnly then
+        barVisibility = ResolveBarPreviewVisibility(buttonData, group, barPreviewState)
+    end
+    if slot.icon and not readOnly then
+        slot.icon:SetDesaturated(not status.usable)
+    elseif slot.icon then
+        slot.icon:SetDesaturated(false)
+        -- No conditional pass runs on a read-only mirror, so nothing else
+        -- would write the configured icon tint (same resolution the
+        -- focused mirror uses, base tint only - saved settings, no state).
+        local tintStyle = effectiveStyle or group.style or {}
+        if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
+            tintStyle = CooldownCompanion:GetEffectiveStyle(tintStyle, buttonData) or tintStyle
+        end
+        local baseTint = tintStyle.iconTintColor
+        slot.icon:SetVertexColor(baseTint and baseTint[1] or 1,
+            baseTint and baseTint[2] or 1,
+            baseTint and baseTint[3] or 1,
+            baseTint and baseTint[4] or 1)
+    end
+    if readOnly and isTextMode then
+        ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index, true)
+        slot._cdcCondAnim = nil
+    elseif readOnly then
+        ResetSlotConditionalVisuals(slot)
+    elseif isBarMode then
+        ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
+            effectiveStyle, barPreviewState)
+    elseif isTextMode then
+        ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
+    else
+        ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
+    end
+    if not readOnly and not isBarMode and status.disabled then
+        slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
+    end
+    slot._cdcBaseAlpha = readOnly and 1 or (isBarMode and 1
+        or (status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1))
+    if not readOnly and isBarMode then
+        ApplyBarSlotPreviewVisibility(slot, barVisibility, scale, IsEntrySelected(index))
+        if index ~= dropGhostIndex then
+            PP.ConfigureBarIdentityLabel(preview, slot, buttonData, scale, effectiveStyle.barFillVertical)
+        end
+    end
+    if readOnly then
+        ApplySlotBadges(slot, {}, scale, true)
+        DisableReadOnlySlotInteraction(slot)
+        if preview.groupOverview and isBarMode then
+            PP.ApplyOverviewBarPresentation(preview, slot, buttonData, group, effectiveStyle, scale)
+        end
+    else
+        ApplySlotBadges(slot, status, scale,
+            isBarMode and barVisibility.exactPreview == true)
+        ApplySelectionVisuals(slot, index)
+        CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
+        -- Pooled slots: written every build so a slot leaving a filtered
+        -- build does not keep advertising the pause.
+        slot._cdcReorderPausedByFilter = context.visibleIndices and true or nil
+        -- Which section's cluster this icon belongs to, for the hover
+        -- handle. Pooled like every flag above: a slot recycled onto a base
+        -- cell, a read-only mirror, or a filtered build must not keep
+        -- offering another panel's handle.
+        slot._cdcSectionAnchor = (context.dragModel and context.layoutDrag.sectionDrag and context.sections)
+            and ST.GetPanelSectionForEntry(group, buttonData) or nil
+        -- Section members drag like every other entry now: one model, and
+        -- the drop target decides what the gesture meant.
+        WireEntryInteraction(slot, panelId, index, buttonData, status,
+            binding.attached and context.attachmentDrag or context.dragModel, barVisibility)
+    end
+    if index == dropGhostIndex then
+        buttonData._previewAttachedVertical = placement and placement.vertical
+        DropGhost.StyleCell(slot, buttonData, group, poolName, panelId)
+    end
+end
+
+local function ReconcileConditionalTicker(preview)
+    -- Tick only while at least one slot is animating a conditional preview
+    -- (pairs, not 1..count: the session filter keys slots sparsely).
+    local anyAnimated = false
+    for _, s in pairs(preview.layoutDrag.slots) do
+        if s._cdcCondAnim then
+            anyAnimated = true
+            break
+        end
+    end
+    if not preview.readOnly and anyAnimated then
+        EnsureConditionalTicker(preview)
+    else
+        StopConditionalTicker(preview)
     end
 
-    local preview = EnsurePreviewState(host)
-    preview.panelId = panelId
-    preview.readOnly = readOnly
-    preview.groupOverview = readOnly and options and options.groupOverview == true or false
-    -- Copy-customization banner surface; nil means the preview's own root.
-    preview.copyBannerHost = options and options.bannerHost or nil
-    -- The Live Preview host whose attached bar lanes wrap this mirror; nil for
-    -- every mirror that is not inside the unified anchor composition.
-    preview.laneChromeHost = options and options.laneHost or nil
-    if not readOnly and panelId == CS.selectedGroup then
-        -- A full build reconciles the cleared stores by construction; do not
-        -- make the next selection-only pass repeat that work.
-        CS.panelPreviewVisualsNeedReconcile = nil
-    end
+end
+
+local function ResetPreviewLayout(preview)
     preview.layoutDrag = nil
     -- The cursor-drop model is rebuilt with the mirror it describes (or its
     -- build inputs are, when the model waits for first use); every other
@@ -145,91 +252,15 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     -- them through onCancel, and a rebuild with no drag in flight never faded
     -- them, but a mirror must never hand its host back a faded set of lanes.
     SectionDrag.SetLaneChromeFaded(preview, false)
-    if preview.textHeader then
-        preview.textHeader:Hide()
-    end
-    -- Hide the texture mirror up front so switching from a texture panel to any
-    -- other type never leaves a stale texture drawn over the new mirror; only
-    -- BuildTextureMirror re-shows it.
-    if preview.textureMirror then
-        preview.textureMirror.root:Hide()
-    end
-    if preview.totemSurface then preview.totemSurface:Hide() end
-    if preview.totemCaption then preview.totemCaption:Hide() end
-    ResetPreviewState(preview)
-    if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
-    HidePreviewMessage(preview)
-    preview.content:Hide()
-    -- Stop the animation ticker up front: the early exits below (no group,
-    -- empty panel) render no animated slots, and the main path re-arms it
-    -- only when a slot actually animates. The stored preview state the
-    -- ticker reads lives outside the ticker, so a stop/re-arm is seamless.
-    StopConditionalTicker(preview)
+end
 
-    -- options.groupData renders a detached panel table (an import payload's
-    -- incoming panel) instead of a saved panel. Read-only paths never touch
-    -- panelId after this resolution, so a nil id is safe with data supplied.
-    local group = options and type(options.groupData) == "table" and options.groupData or nil
-    if not group then
-        group = panelId and CooldownCompanion.db.profile.groups[panelId]
-    end
-    if not group then
-        SetPreviewMessage(preview, "Select a panel to preview it here.")
-        FinalizePreviewState(preview)
-        return
-    end
-    group = ST.GetPanelLayoutGroup(group)
-
-    if ST.IsTotemPanelGroup(group) then
-        local content = preview.content
-        local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
-        content:SetScale(GetHostFitScale(host, geo.panelWidth, geo.panelHeight + 24, readOnly))
-        content:SetSize(geo.panelWidth, geo.panelHeight)
-        content:ClearAllPoints()
-        content:SetPoint("CENTER", preview.root, "CENTER", 0, 8)
-        content:Show()
-        local surface = preview.totemSurface
-        if not surface then
-            surface = ST.CreateTotemPanelSurface(content, nil, true)
-            surface:SetAllPoints(content)
-            preview.totemSurface = surface
-        end
-        surface.groupId = not readOnly and panelId or nil
-        ST.UpdateTotemPanelSurface(surface, group)
-        surface:Show()
-        preview.barBaseRect = {x = 0, y = 0, width = geo.panelWidth, height = geo.panelHeight}
-        if not readOnly then
-            local caption = preview.totemCaption
-            if not caption then
-                caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-                caption:SetPoint("TOP", content, "BOTTOM", 0, -5)
-                caption:SetText("Sample totems")
-                preview.totemCaption = caption
-            end
-            caption:Show()
-        end
-        FinalizePreviewState(preview)
-        return
-    end
-
-    local isBarMode = group.displayMode == "bars"
-    local isTextMode = group.displayMode == "text"
-    if not isBarMode and not isTextMode and not IsIconModePanel(group) then
-        -- Texture panels render their real texture; trigger panels stack
-        -- their display visual above the strip; rotation-assistant panels
-        -- keep the entry-icon selection strip alone.
-        if CooldownCompanion:IsTexturePanelGroup(group) then
-            return BuildTextureMirror(preview, host, panelId, group, readOnly)
-        end
-        if CooldownCompanion:IsTriggerPanelGroup(group) then
-            return BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
-        end
-        return BuildSelectionStrip(preview, host, panelId, group, readOnly)
-    end
-
+local function LayoutPreviewEntries(preview, host, panelId, group, options, reuseSlots, updateModules)
+    local readOnly = preview.readOnly
+    local dropGhostIndex = options and options.dropGhostIndex
+    local isBarMode, isTextMode = group.displayMode == "bars", group.displayMode == "text"
     local buttons = group.buttons or {}
     local count = #buttons
-    local modules = options and options.previewModules or (not readOnly and ST._GetPanelAttachmentPreviewModules
+    local modules = updateModules or (options and options.previewModules) or (not readOnly and ST._GetPanelAttachmentPreviewModules
         and ST._GetPanelAttachmentPreviewModules(panelId)) or {}
     if count == 0 and #modules == 0 then
         if readOnly then
@@ -490,7 +521,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     UpdateTextGroupHeader(preview, group, style, headerHeight)
 
     local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
-    local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
     -- The drop ghost (DropGhost) draws on this build's grid; read-only
     -- mirrors take no drop. The unified composition is in: the ghost claims
     -- no strip the bar lanes sit on, only the base row's next cell.
@@ -593,17 +623,37 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             for _, slot in ipairs(preview.modulePreview.pools.slots) do slot:EnableMouse(false) end
         end
     end
+    local context = {
+        isTextMode = isTextMode, scale = scale, dropGhostIndex = dropGhostIndex,
+        dragModel = dragModel, layoutDrag = layoutDrag, sections = sections,
+        visibleIndices = visibleIndices, attachmentDrag = attachmentDrag,
+        headerHeight = headerHeight, options = options, modules = modules,
+        hostWidth = host:GetWidth(), hostHeight = host:GetHeight(),
+        bottomReserve = host._cdcPreviewReserveBottom,
+    }
+    local bindings = reuseSlots and preview.entryBindings or {}
+    for index, buttonData in ipairs(buttons) do
+        local binding = bindings[index] or {}
+        bindings[index] = binding
+        binding.buttonData, binding.index = buttonData, index
+        binding.entryType, binding.entryId = buttonData.type, buttonData.id
+        binding.presentation = ST.GetEntryPresentation(group, buttonData)
+        binding.section = ST.GetPanelSectionForEntry(group, buttonData)
+        binding.side, binding.region, binding.resources = ST.GetAttachedBarPlacement(buttonData)
+    end
     for ordinal = 1, count do
         local index = visibleIndices and visibleIndices[ordinal] or ordinal
         local buttonData = buttons[index]
         local isBarMode = ST.GetEntryPresentation(group, buttonData) == "bars"
         local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
-        local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
         -- A section member's own icon size, and its position, come from the
         -- engine's layout table; nil means the entry is a base-grid cell.
         local placement = (attachedPositions and attachedPositions[index])
             or (sectionPlacement and sectionPlacement[index])
-        local slot = AcquireSlot(preview, content, poolName)
+        local binding = bindings[index]
+        local slot = reuseSlots and binding.slot or AcquireSlot(preview, content, poolName)
+        binding.slot, binding.poolName, binding.placement = slot, poolName, placement
+        binding.attached = ST.IsAttachedBarEntry(group, buttonData)
         if isTextMode then
             -- Cell placement stays on the uniform pitch below; only the slot's
             -- own footprint is per-entry, like the live text button.
@@ -628,122 +678,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
             ApplyPreviewSlotGeometry(preview, slot, growthAnchor, cx, cy)
         end
 
-        local effectiveStyle
-        local barPreviewState
-        if isBarMode then
-            effectiveStyle = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData)
-            if attachedPositions and attachedPositions[index] then
-                local copy = CopyTable(ST.GetEntryBaseStyle(group, buttonData))
-                for key, value in pairs(effectiveStyle) do copy[key] = value end
-                copy.barFillVertical = placement.vertical
-                copy.barLength = placement.vertical and placement.height or placement.width
-                effectiveStyle = copy
-            end
-            if not readOnly then
-                barPreviewState = GetStoredBarPreviewState(panelId, index)
-            end
-            ResetBarSlotConditionalVisuals(slot)
-        end
-        styleFn(slot, buttonData, group, effectiveStyle)
-        if not readOnly and not isTextMode then
-            ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
-                effectiveStyle, barPreviewState)
-        elseif not isTextMode then
-            ClearSlotEffectPreviews(slot)
-        end
-        local status = not readOnly and (isBarMode and CollectBarEntryStatus(buttonData, group)
-            or CollectEntryStatus(buttonData, group)) or nil
-        local barVisibility
-        if isBarMode and not readOnly then
-            barVisibility = ResolveBarPreviewVisibility(buttonData, group, barPreviewState)
-        end
-        if slot.icon and not readOnly then
-            slot.icon:SetDesaturated(not status.usable)
-        elseif slot.icon then
-            slot.icon:SetDesaturated(false)
-            -- No conditional pass runs on a read-only mirror, so nothing else
-            -- would write the configured icon tint (same resolution the
-            -- focused mirror uses, base tint only - saved settings, no state).
-            local tintStyle = effectiveStyle or group.style or {}
-            if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-                tintStyle = CooldownCompanion:GetEffectiveStyle(tintStyle, buttonData) or tintStyle
-            end
-            local baseTint = tintStyle.iconTintColor
-            slot.icon:SetVertexColor(baseTint and baseTint[1] or 1,
-                baseTint and baseTint[2] or 1,
-                baseTint and baseTint[3] or 1,
-                baseTint and baseTint[4] or 1)
-        end
-        if readOnly and isTextMode then
-            ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index, true)
-            slot._cdcCondAnim = nil
-        elseif readOnly then
-            ResetSlotConditionalVisuals(slot)
-        elseif isBarMode then
-            ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
-                effectiveStyle, barPreviewState)
-        elseif isTextMode then
-            ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
-        else
-            ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
-        end
-        if not readOnly and not isBarMode and status.disabled then
-            slot:SetAlpha(PANEL_PREVIEW_DISABLED_ALPHA)
-        end
-        slot._cdcBaseAlpha = readOnly and 1 or (isBarMode and 1
-            or (status.disabled and PANEL_PREVIEW_DISABLED_ALPHA or 1))
-        if not readOnly and isBarMode then
-            ApplyBarSlotPreviewVisibility(slot, barVisibility, scale, IsEntrySelected(index))
-            if index ~= dropGhostIndex then
-                PP.ConfigureBarIdentityLabel(preview, slot, buttonData, scale, effectiveStyle.barFillVertical)
-            end
-        end
-        if readOnly then
-            ApplySlotBadges(slot, {}, scale, true)
-            DisableReadOnlySlotInteraction(slot)
-            if preview.groupOverview and isBarMode then
-                PP.ApplyOverviewBarPresentation(preview, slot, buttonData, group, effectiveStyle, scale)
-            end
-        else
-            ApplySlotBadges(slot, status, scale,
-                isBarMode and barVisibility.exactPreview == true)
-            ApplySelectionVisuals(slot, index)
-            CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
-            -- Pooled slots: written every build so a slot leaving a filtered
-            -- build does not keep advertising the pause.
-            slot._cdcReorderPausedByFilter = visibleIndices and true or nil
-            -- Which section's cluster this icon belongs to, for the hover
-            -- handle. Pooled like every flag above: a slot recycled onto a base
-            -- cell, a read-only mirror, or a filtered build must not keep
-            -- offering another panel's handle.
-            slot._cdcSectionAnchor = (dragModel and layoutDrag.sectionDrag and sections)
-                and ST.GetPanelSectionForEntry(group, buttonData) or nil
-            -- Section members drag like every other entry now: one model, and
-            -- the drop target decides what the gesture meant.
-            WireEntryInteraction(slot, panelId, index, buttonData, status,
-                ST.IsAttachedBarEntry(group, buttonData) and attachmentDrag or dragModel, barVisibility)
-        end
-        if index == dropGhostIndex then
-            buttonData._previewAttachedVertical = placement and placement.vertical
-            DropGhost.StyleCell(slot, buttonData, group, poolName, panelId)
-        end
+        RenderPreviewEntry(preview, group, binding, context)
         layoutDrag.slots[index] = slot
     end
 
-    -- Tick only while at least one slot is animating a conditional preview
-    -- (pairs, not 1..count: the session filter keys slots sparsely).
-    local anyAnimated = false
-    for _, s in pairs(layoutDrag.slots) do
-        if s._cdcCondAnim then
-            anyAnimated = true
-            break
-        end
-    end
-    if not readOnly and anyAnimated then
-        EnsureConditionalTicker(preview)
-    else
-        StopConditionalTicker(preview)
-    end
+    ReconcileConditionalTicker(preview)
 
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, guidanceReserve / 2)
@@ -758,6 +697,211 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     FinalizePreviewState(preview)
+    preview.entryBindings, preview.renderContext = bindings, context
+    preview.displayMode = group.displayMode
+    preview.geometryKind = ST.GetPanelGeometryKind(group)
+    preview.sectionOwners = {}
+    for anchor, section in pairs(group.sections or {}) do preview.sectionOwners[anchor] = section end
+    preview.updateReady = true
+
+end
+
+function ST._BuildButtonPanelPreview(host, panelId, options)
+    options = type(options) == "table" and options or nil
+    local readOnly = options and options.readOnly == true
+    local dropGhostIndex = options and options.dropGhostIndex
+    -- Rebuilding pulls the slot frames out from under an in-flight drag
+    if not readOnly
+        and CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then
+        CancelDrag()
+    end
+
+    local preview = EnsurePreviewState(host)
+    preview.updateReady, preview.entryBindings, preview.renderContext = nil, nil, nil
+    preview.ownerProfile, preview.ownerGroup, preview.sectionOwners = nil, nil, nil
+    preview.panelId = panelId
+    preview.readOnly = readOnly
+    preview.groupOverview = readOnly and options and options.groupOverview == true or false
+    -- Copy-customization banner surface; nil means the preview's own root.
+    preview.copyBannerHost = options and options.bannerHost or nil
+    -- The Live Preview host whose attached bar lanes wrap this mirror; nil for
+    -- every mirror that is not inside the unified anchor composition.
+    preview.laneChromeHost = options and options.laneHost or nil
+    if not readOnly and panelId == CS.selectedGroup then
+        -- A full build reconciles the cleared stores by construction; do not
+        -- make the next selection-only pass repeat that work.
+        CS.panelPreviewVisualsNeedReconcile = nil
+    end
+    ResetPreviewLayout(preview)
+    if preview.textHeader then
+        preview.textHeader:Hide()
+    end
+    -- Hide the texture mirror up front so switching from a texture panel to any
+    -- other type never leaves a stale texture drawn over the new mirror; only
+    -- BuildTextureMirror re-shows it.
+    if preview.textureMirror then
+        preview.textureMirror.root:Hide()
+    end
+    if preview.totemSurface then preview.totemSurface:Hide() end
+    if preview.totemCaption then preview.totemCaption:Hide() end
+    ResetPreviewState(preview)
+    if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
+    HidePreviewMessage(preview)
+    preview.content:Hide()
+    -- Stop the animation ticker up front: the early exits below (no group,
+    -- empty panel) render no animated slots, and the main path re-arms it
+    -- only when a slot actually animates. The stored preview state the
+    -- ticker reads lives outside the ticker, so a stop/re-arm is seamless.
+    StopConditionalTicker(preview)
+
+    -- options.groupData renders a detached panel table (an import payload's
+    -- incoming panel) instead of a saved panel. Read-only paths never touch
+    -- panelId after this resolution, so a nil id is safe with data supplied.
+    local group = options and type(options.groupData) == "table" and options.groupData or nil
+    if not group then
+        group = panelId and CooldownCompanion.db.profile.groups[panelId]
+    end
+    if not group then
+        SetPreviewMessage(preview, "Select a panel to preview it here.")
+        FinalizePreviewState(preview)
+        return
+    end
+    preview.ownerProfile, preview.ownerGroup = CooldownCompanion.db.profile, group
+    group = ST.GetPanelLayoutGroup(group)
+
+    if ST.IsTotemPanelGroup(group) then
+        local content = preview.content
+        local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
+        content:SetScale(GetHostFitScale(host, geo.panelWidth, geo.panelHeight + 24, readOnly))
+        content:SetSize(geo.panelWidth, geo.panelHeight)
+        content:ClearAllPoints()
+        content:SetPoint("CENTER", preview.root, "CENTER", 0, 8)
+        content:Show()
+        local surface = preview.totemSurface
+        if not surface then
+            surface = ST.CreateTotemPanelSurface(content, nil, true)
+            surface:SetAllPoints(content)
+            preview.totemSurface = surface
+        end
+        surface.groupId = not readOnly and panelId or nil
+        ST.UpdateTotemPanelSurface(surface, group)
+        surface:Show()
+        preview.barBaseRect = {x = 0, y = 0, width = geo.panelWidth, height = geo.panelHeight}
+        if not readOnly then
+            local caption = preview.totemCaption
+            if not caption then
+                caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                caption:SetPoint("TOP", content, "BOTTOM", 0, -5)
+                caption:SetText("Sample totems")
+                preview.totemCaption = caption
+            end
+            caption:Show()
+        end
+        FinalizePreviewState(preview)
+        return
+    end
+
+    local isBarMode = group.displayMode == "bars"
+    local isTextMode = group.displayMode == "text"
+    if not isBarMode and not isTextMode and not IsIconModePanel(group) then
+        -- Texture panels render their real texture; trigger panels stack
+        -- their display visual above the strip; rotation-assistant panels
+        -- keep the entry-icon selection strip alone.
+        if CooldownCompanion:IsTexturePanelGroup(group) then
+            return BuildTextureMirror(preview, host, panelId, group, readOnly)
+        end
+        if CooldownCompanion:IsTriggerPanelGroup(group) then
+            return BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
+        end
+        return BuildSelectionStrip(preview, host, panelId, group, readOnly)
+    end
+
+    LayoutPreviewEntries(preview, host, panelId, group, options)
+end
+
+-- An explicit settings outcome licenses reuse, never a count/layout fingerprint.
+-- Check the actual bindings so a replaced/reordered entry, moved section or
+-- changed module identity cannot accidentally inherit another object's slot.
+local function GetPreviewUpdateGroup(preview, panelId)
+    local profile = CooldownCompanion.db.profile
+    local owner = profile.groups[panelId]
+    if not (preview and preview.updateReady and preview.panelId == panelId
+        and preview.ownerProfile == profile and preview.ownerGroup == owner
+        and not preview.readOnly and preview.root:IsShown()) then return end
+    local group = ST.GetPanelLayoutGroup(owner)
+    if group.displayMode ~= preview.displayMode
+        or ST.GetPanelGeometryKind(group) ~= preview.geometryKind then return end
+    local bindings, buttons = preview.entryBindings, group.buttons or {}
+    if #bindings ~= #buttons then return end
+    for anchor, section in pairs(group.sections or {}) do
+        if preview.sectionOwners[anchor] ~= section then return end
+    end
+    for anchor, section in pairs(preview.sectionOwners) do
+        if not group.sections or group.sections[anchor] ~= section then return end
+    end
+    local filtered = group.displayMode ~= "bars" and CS.panelPreviewUnavailableHidden
+        and not CS.otherClassLibraryActive
+    for index, buttonData in ipairs(buttons) do
+        local binding = bindings[index]
+        local side, region, resources = ST.GetAttachedBarPlacement(buttonData)
+        local visible = not filtered or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
+        if binding.buttonData ~= buttonData
+            or binding.entryType ~= buttonData.type or binding.entryId ~= buttonData.id
+            or binding.presentation ~= ST.GetEntryPresentation(group, buttonData)
+            or binding.section ~= ST.GetPanelSectionForEntry(group, buttonData)
+            or binding.side ~= side or binding.region ~= region or binding.resources ~= resources
+            or (binding.slot and binding.attached ~= ST.IsAttachedBarEntry(group, buttonData))
+            or (binding.slot ~= nil) ~= (visible == true) then return end
+    end
+    local modules = ST._GetPanelAttachmentPreviewModules(panelId)
+    local previous = preview.renderContext.modules
+    if #modules ~= #previous then return end
+    for index, module in ipairs(modules) do
+        local old = previous[index]
+        if old.kind ~= module.kind or old.side ~= module.side or old.region ~= module.region
+            or old.layout ~= module.layout or #old.slots ~= #module.slots then return end
+        for ordinal, slot in ipairs(module.slots) do
+            if old.slots[ordinal].id ~= slot.id then return end
+        end
+    end
+    return group, modules
+end
+
+function ST._UpdateButtonPanelPreview(host, panelId, outcome)
+    if outcome ~= "appearance" and outcome ~= "geometry" then return false end
+    local preview = host and host._cdcPanelPreview
+    local group, modules = GetPreviewUpdateGroup(preview, panelId)
+    if not group then return false end
+    -- A failed callback cannot license reuse of a partially rendered preview.
+    -- The settings transaction owns exception propagation and raw rollback.
+    preview.updateReady = nil
+    local context = preview.renderContext
+    if context.hostWidth ~= host:GetWidth() or context.hostHeight ~= host:GetHeight()
+        or context.bottomReserve ~= host._cdcPreviewReserveBottom then outcome = "geometry" end
+    if outcome == "geometry" then
+        EnsurePreviewState(host)
+        if CS.dragState and CS.dragState.kind == "layout-slot" and CancelDrag then CancelDrag() end
+        ResetPreviewLayout(preview)
+        LayoutPreviewEntries(preview, host, panelId, group, preview.renderContext.options, true, modules)
+    else
+        local context = preview.renderContext
+        UpdateTextGroupHeader(preview, group, group.style or {}, context.headerHeight)
+        for _, binding in ipairs(preview.entryBindings) do
+            if binding.slot then
+                -- An unrelated paint must not unhide the lifted entry or undo
+                -- the lane fading that belongs to an active drag.
+                local dragging = preview.ghostActive
+                local alpha = dragging and binding.slot:GetAlpha()
+                RenderPreviewEntry(preview, group, binding, context)
+                if dragging then binding.slot:SetAlpha(alpha) end
+            end
+        end
+        ReconcileConditionalTicker(preview)
+        FinalizePreviewState(preview)
+        preview.updateReady = true
+    end
+    CS.panelPreviewVisualsNeedReconcile = nil
+    return true
 end
 
 -- Entry selection normally does not change saved panel geometry or mirrored
@@ -894,6 +1038,8 @@ end
 function ST._ReleaseReadOnlyPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if not preview then return end
+    preview.updateReady, preview.entryBindings, preview.renderContext = nil, nil, nil
+    preview.ownerProfile, preview.ownerGroup, preview.sectionOwners = nil, nil, nil
     StopConditionalTicker(preview)
     StopTextureMirrorEffects(preview.textureMirror)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
@@ -951,6 +1097,11 @@ end
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
+        preview.updateReady, preview.entryBindings, preview.renderContext = nil, nil, nil
+        preview.ownerProfile, preview.ownerGroup, preview.sectionOwners = nil, nil, nil
+        for _, pool in pairs(preview.pools) do
+            for _, slot in ipairs(pool) do PP.ClearSlotInteraction(slot) end
+        end
         StopConditionalTicker(preview)
         if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
         StopTextureMirrorEffects(preview.textureMirror)

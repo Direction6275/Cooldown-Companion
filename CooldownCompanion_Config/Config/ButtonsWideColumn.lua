@@ -2232,7 +2232,7 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         containerId, container)
     col3._cdcEmptyGroupPreviewTakeover = emptyGroupTakeover
     AnchorWidePreviewHost(col3, host)
-    local function BuildPreview(hostFrame)
+    local function BuildPreview(hostFrame, outcome)
         -- Owns the host's bottom reserve, so it must settle before either
         -- renderer measures itself. Sits inside the build closure so every
         -- rebuild path (selection, resize, divider drag, preview toggle)
@@ -2247,9 +2247,12 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
             -- Anchor-aware build: the unified preview (real mirror + attached
             -- bar lanes) on the anchor panel, the plain mirror elsewhere.
             if ST._BuildAnchorAwarePanelPreview then
-                ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId)
+                ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId, outcome)
             elseif ST._BuildButtonPanelPreview then
-                ST._BuildButtonPanelPreview(hostFrame, activePanelId)
+                if not (outcome and ST._UpdateButtonPanelPreview
+                    and ST._UpdateButtonPanelPreview(hostFrame, activePanelId, outcome)) then
+                    ST._BuildButtonPanelPreview(hostFrame, activePanelId)
+                end
             end
             UpdatePanelWorkspaceChips(col3)
             return
@@ -2300,7 +2303,7 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         host:SetHeight(ComputePreviewHostHeight(col3))
     end
     host:Show()
-    BuildPreview(host)
+    BuildPreview(host, edit and edit.previewOutcome)
     if edit and edit.panelId == panelId then
         edit.previewBuilt = true
     end
@@ -2954,7 +2957,7 @@ end
 -- from UpdateGroupStyle so style edits reflect immediately) without a full
 -- config refresh. An optional groupId scopes the rebuild: updates to a
 -- panel other than the mirrored one are skipped.
-local function RefreshButtonsPreviewMirror(groupId, visualOnly)
+local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
     if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return end
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3.buttonsPreviewHost
@@ -2963,7 +2966,7 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly)
     if CS.selectedGroup then
         if groupId and groupId ~= CS.selectedGroup then return end
         if col3._cdcActiveWideRebuild then
-            col3._cdcActiveWideRebuild(host)
+            col3._cdcActiveWideRebuild(host, outcome)
         end
         if not visualOnly then
             -- Discrete edits can change identity/status chrome. Continuous

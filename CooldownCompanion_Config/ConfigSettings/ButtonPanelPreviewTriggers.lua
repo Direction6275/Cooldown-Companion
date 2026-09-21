@@ -154,7 +154,10 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
             -- The assistant pseudo-entry is never a copy target, and the
             -- recycled slot may carry a ring from a grid render.
             if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
-            -- Recycled slots may carry a drag handler from a grid render
+            -- This pseudo-entry has its own click semantics. The next grid
+            -- binding must reinstall the shared handlers after this override.
+            slot._cdcEntryHandlersInstalled = nil
+            slot._cdcSpecialEntryHandlers = true
             slot:SetScript("OnMouseDown", nil)
             ApplySelectionVisuals(slot, 1, CS.selectedRotationAssistantEntry == true)
             slot:SetScript("OnMouseUp", function(self, mouseButton)
