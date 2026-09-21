@@ -856,6 +856,56 @@ function CooldownCompanion:CreateBarFrame(parent, index, buttonData, style, atta
     return button
 end
 
+function CooldownCompanion:UpdateBarInteraction(button, newStyle)
+    button.style = newStyle
+    local showIcon = newStyle.showBarIcon ~= false
+    -- Update click-through
+    local cursorAnchored = IsCursorAnchoredButton(button)
+    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
+    local iconTooltips = showTooltips and showIcon
+    -- Pings share the icon-only hover surface; the bar body stays pass-through.
+    local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
+        and IsEntryPingEligible(button.buttonData)
+
+    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
+    SetFrameClickThroughRecursive(button, true, true)
+    -- Prevent child frames from stealing hover.
+    if button.statusBar then
+        SetFrameClickThroughRecursive(button.statusBar, true, true)
+    end
+    if button.barTextFrame then
+        SetFrameClickThroughRecursive(button.barTextFrame, true, true)
+    end
+    if button._barBounds then
+        SetFrameClickThroughRecursive(button._barBounds, true, true)
+    end
+    SetFrameClickThroughRecursive(button.cooldown, true, true)
+    if button.iconGCDCooldown then
+        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
+    end
+    if button.locCooldown then
+        SetFrameClickThroughRecursive(button.locCooldown, true, true)
+    end
+    if button.overlayFrame then
+        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
+    end
+
+    if button._iconBounds then
+        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
+        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
+    end
+    SetBarIconTooltipScripts(button, iconTooltips)
+    button:SetScript("OnEnter", nil)
+    button:SetScript("OnLeave", nil)
+    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
+    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
+    button._ccTooltipMotion = false
+    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
+    button._ccPingSurface = iconPings and button._iconBounds or nil
+    -- A button restyled from icon mode may still carry its own receiver.
+    SetEntryPingReceiver(button, false)
+end
+
 function CooldownCompanion:UpdateBarStyle(button, newStyle)
     local barLength = newStyle.barLength or 180
     local barHeight = newStyle.barHeight or 20
@@ -1059,51 +1109,7 @@ function CooldownCompanion:UpdateBarStyle(button, newStyle)
         button.nameText:SetText(displayName or "")
     end
 
-    -- Update click-through
-    local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
-    local iconTooltips = showTooltips and showIcon
-    -- Pings share the icon-only hover surface; the bar body stays pass-through.
-    local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
-        and IsEntryPingEligible(button.buttonData)
-
-    -- Disable hover on the full bar; tooltip hover is icon-only via _iconBounds.
-    SetFrameClickThroughRecursive(button, true, true)
-    -- Prevent child frames from stealing hover.
-    if button.statusBar then
-        SetFrameClickThroughRecursive(button.statusBar, true, true)
-    end
-    if button.barTextFrame then
-        SetFrameClickThroughRecursive(button.barTextFrame, true, true)
-    end
-    if button._barBounds then
-        SetFrameClickThroughRecursive(button._barBounds, true, true)
-    end
-    SetFrameClickThroughRecursive(button.cooldown, true, true)
-    if button.iconGCDCooldown then
-        SetFrameClickThroughRecursive(button.iconGCDCooldown, true, true)
-    end
-    if button.locCooldown then
-        SetFrameClickThroughRecursive(button.locCooldown, true, true)
-    end
-    if button.overlayFrame then
-        SetFrameClickThroughRecursive(button.overlayFrame, true, true)
-    end
-
-    if button._iconBounds then
-        SetFrameClickThroughRecursive(button._iconBounds, true, not (iconTooltips or iconPings))
-        SetEntryPingReceiver(button._iconBounds, iconPings and button._visibilityHidden ~= true, button)
-    end
-    SetBarIconTooltipScripts(button, iconTooltips)
-    button:SetScript("OnEnter", nil)
-    button:SetScript("OnLeave", nil)
-    -- Tooltip intent for the aura slot bind (AuraDisplay): bar-mode slot
-    -- tooltips stay off; hover tooltips are CC's own scripts on _iconBounds.
-    button._ccTooltipMotion = false
-    -- Visibility hide/show edges (CooldownUpdate) arm and disarm this surface.
-    button._ccPingSurface = iconPings and button._iconBounds or nil
-    -- A button restyled from icon mode may still carry its own receiver.
-    SetEntryPingReceiver(button, false)
+    self:UpdateBarInteraction(button, newStyle)
 
     ST.BarLayers.Apply(button)
     ApplyBarAuraShellVisuals(button, button.buttonData)

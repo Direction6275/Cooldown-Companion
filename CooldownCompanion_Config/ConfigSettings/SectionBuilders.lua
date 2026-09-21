@@ -418,7 +418,15 @@ local function IsAdvancedSettingsPanelContainer(container)
     return container and container._isAdvancedSettingsPanel == true
 end
 
-local function RefreshStructuralControls(container)
+local function RefreshStructuralControls(container, refreshCallback, refreshCooldowns)
+    if refreshCallback then
+        local operation = IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings"
+        local completed = refreshCallback(operation)
+        -- Ordinary panel controls own runtime, editor and mirror completion.
+        -- Specialized editors keep their existing callback and fallback tail.
+        if completed ~= nil then return end
+        if refreshCooldowns then CooldownCompanion:UpdateAllCooldowns() end
+    end
     if IsAdvancedSettingsPanelContainer(container) and CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
     elseif CooldownCompanion.RefreshConfigPanel then
@@ -982,8 +990,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
             value = mode,
             onChange = function(val)
                 styleTable.pandemicMarkerMode = val
-                refreshCallback()
-                rebuildCallback()
+                if refreshCallback("style-settings") == nil then rebuildCallback() end
             end,
         })
         -- Anchor args are a placeholder - AnchorRowBadge re-points the button
@@ -1025,8 +1032,8 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         value = styleTable.pandemicMarkerColorMode or "marker",
         onChange = function(val)
             styleTable.pandemicMarkerColorMode = val
-            refreshCallback()
-            rebuildCallback()
+            local operation = IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings"
+            if refreshCallback(operation) == nil then rebuildCallback() end
         end,
     })
 
@@ -1058,8 +1065,7 @@ local function BuildKeybindTextControls(container, styleTable, refreshCallback, 
         if opts.completeEdit then
             opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
         else
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end
     end
 
@@ -1119,8 +1125,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         if opts.completeEdit then
             opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
         else
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end
     end
     local colorRow = AddColorRow(container, {
@@ -1131,7 +1136,7 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
         key = "borderColor",
         default = {0, 0, 0, 1},
         hasAlpha = true,
-        onConfirm = refreshCallback,
+        onConfirm = function() return refreshCallback(nil, "appearance") end,
     })
     ST._AddAdvancedToggle(colorRow, "panelBorder", {}, not opts.sec or opts.sec.scope ~= "denied", {
         unlock = opts.sec and { sec = opts.sec } or nil,
@@ -1194,7 +1199,7 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
         onRelease = function(val)
             if locked then return end
             styleTable.iconZoom = val
-            refreshCallback()
+            refreshCallback(nil, "appearance")
         end,
     })
 end
@@ -1248,7 +1253,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             tbl = tintTbl, key = "backgroundColor",
             default = {0, 0, 0, 0.5}, hasAlpha = true,
             disabled = sec.disabled,
-            onConfirm = refresh,
+            onConfirm = function() return refresh(nil, "appearance") end,
         })
     end
 
@@ -1263,8 +1268,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             onChange = function(val)
                 if not sec.write then return end
                 sec.write.iconCooldownTintEnabled = val
-                refresh()
-                CooldownCompanion:RefreshConfigPanel()
+                RefreshStructuralControls(rightColumn, refresh)
             end,
         })
 
@@ -1295,8 +1299,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             onChange = function(val)
                 if not sec.write then return end
                 sec.write.iconAuraTintEnabled = val
-                refresh()
-                CooldownCompanion:RefreshConfigPanel()
+                RefreshStructuralControls(rightColumn, refresh)
             end,
         })
 
@@ -1336,8 +1339,7 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
             sec.write.iconCooldownTintColor = {1, 0, 0.102, 1}
             sec.write.iconAuraTintColor = {0, 0.925, 1, 1}
             sec.write.backgroundColor = {0, 0, 0, 0.5}
-            CooldownCompanion:UpdateGroupStyle(CS.selectedGroup)
-            CooldownCompanion:RefreshConfigPanel()
+            RefreshStructuralControls(rightColumn, refresh)
         end)
         rightColumn:AddChild(resetTintBtn)
     end
@@ -1534,8 +1536,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     local function ApplyShowFill(val)
         if disabledByIconFill then return end
         styleTable.showCooldownSwipeFill = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        RefreshStructuralControls(container, refreshCallback)
     end
     local function ApplyFillAlpha(val)
         if disabledByIconFill then return end
@@ -1544,8 +1545,7 @@ local function BuildCooldownSwipeControls(container, styleTable, refreshCallback
     local function ApplyShowEdge(val)
         if disabledByIconFill then return end
         styleTable.cooldownSwipeEdgeEnabled = val
-        refreshCallback()
-        RefreshStructuralControls(container)
+        RefreshStructuralControls(container, refreshCallback)
     end
 
     local childIndent = opts.indent
@@ -1657,8 +1657,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         indent = childIndent,
         onChange = function(val)
             styleTable.auraUseBlizzardSwipe = val == true
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button
@@ -1688,8 +1687,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         onChange = function(val)
             if blizzardStyleActive then return end
             styleTable.showAuraDurationSwipeFill = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -1724,8 +1722,7 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         onChange = function(val)
             if blizzardStyleActive then return end
             styleTable.auraDurationSwipeEdgeEnabled = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -1759,8 +1756,7 @@ local function BuildAuraDurationSwipeControls(container, styleTable, refreshCall
         indent = opts.indent,
         onChange = function(val)
             styleTable.showAuraDurationSwipe = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -1784,9 +1780,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         if styleTable.iconFillEnabled and type(opts.onEnabled) == "function" then
             opts.onEnabled()
         end
-        refreshCallback()
-        CooldownCompanion:UpdateAllCooldowns()
-        CooldownCompanion:RefreshConfigPanel()
+        RefreshStructuralControls(container, refreshCallback, true)
     end
 
     local cb = AddCheckboxRow(container, {
@@ -1843,9 +1837,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         value = iconFillOrientation,
         onChange = function(val)
             styleTable.iconFillOrientation = val == "vertical" and "vertical" or "horizontal"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback, true)
         end,
     })
 
@@ -1864,8 +1856,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         value = styleTable.iconFillReverse == true and "reverse" or "default",
         onChange = function(val)
             styleTable.iconFillReverse = val == "reverse"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
+            if refreshCallback() == nil then CooldownCompanion:UpdateAllCooldowns() end
         end,
     })
 
@@ -1879,8 +1870,7 @@ BuildIconFillTimerAdvancedControls = function(container, styleTable, refreshCall
         value = styleTable.iconFillTimerBehavior == "fill" and "fill" or "drain",
         onChange = function(val)
             styleTable.iconFillTimerBehavior = val == "drain" and "drain" or "fill"
-            refreshCallback()
-            CooldownCompanion:UpdateAllCooldowns()
+            if refreshCallback() == nil then CooldownCompanion:UpdateAllCooldowns() end
         end,
     })
 
@@ -1922,8 +1912,7 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
         value = ST.UnusableVisualUsesDimTint(styleTable),
         onChange = function(val)
             ST.SetUnusableVisualMode(styleTable, val == true, ST.UnusableVisualUsesDesaturation(styleTable))
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -1956,8 +1945,7 @@ local function BuildUnusableVisualModeControls(container, styleTable, refreshCal
         value = ST.UnusableVisualUsesDesaturation(styleTable),
         onChange = function(val)
             ST.SetUnusableVisualMode(styleTable, ST.UnusableVisualUsesDimTint(styleTable), val == true)
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 end
@@ -1974,8 +1962,7 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
         indent = opts.indent,
         onChange = function(val)
             styleTable.showUnusable = val == true
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -2034,8 +2021,7 @@ local function BuildAssistedHighlightControls(container, styleTable, refreshCall
         value = styleTable.assistedHighlightStyle or "blizzard",
         onChange = function(val)
             styleTable.assistedHighlightStyle = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -2274,8 +2260,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
         if cfg.onStyleChanged then
             cfg.onStyleChanged(styleTable, val)
         end
-        refreshCallback()
-        RefreshStructuralControls(container)
+        RefreshStructuralControls(container, refreshCallback)
     end
 
     if styleTable[cfg.styleKey] == "lcgProc" then
@@ -2603,8 +2588,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         value = styleTable.barAuraPulseEnabled == true,
         onChange = function(val)
             styleTable.barAuraPulseEnabled = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
     -- Anchor args are a placeholder - AnchorRowBadge re-points the button
@@ -2640,8 +2624,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             unlock = styleTable.barAuraPulseEnabled ~= true and { enable = {
                 label = "Enable Bar Fill Pulse", run = function()
                     styleTable.barAuraPulseEnabled = true
-                    refreshCallback()
-                    RefreshStructuralControls(container)
+                    RefreshStructuralControls(container, refreshCallback)
                 end,
             } } or nil,
             build = BuildPulseDetails,
@@ -2654,8 +2637,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         value = styleTable.barAuraColorShiftEnabled == true,
         onChange = function(val)
             styleTable.barAuraColorShiftEnabled = val
-            refreshCallback()
-            RefreshStructuralControls(container)
+            RefreshStructuralControls(container, refreshCallback)
         end,
     })
 
@@ -2695,8 +2677,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             unlock = styleTable.barAuraColorShiftEnabled ~= true and { enable = {
                 label = "Enable Bar Fill Color Shift", run = function()
                     styleTable.barAuraColorShiftEnabled = true
-                    refreshCallback()
-                    RefreshStructuralControls(container)
+                    RefreshStructuralControls(container, refreshCallback)
                 end,
             } } or nil,
             build = BuildShiftDetails,
@@ -2757,8 +2738,7 @@ local function BuildTextBackgroundControls(container, styleTable, refreshCallbac
         unlock = opts.sec and { sec = opts.sec } or nil,
         build = function(panel)
             local renderMode = AddBorderRenderModeDropdown(panel, styleTable, "textBorderRenderMode", function()
-                refreshCallback()
-                RefreshStructuralControls(container)
+                RefreshStructuralControls(container, refreshCallback)
             end, nil, {
                 row = true,
                 indent = opts.indent,

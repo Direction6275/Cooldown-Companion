@@ -783,11 +783,11 @@ local function BuildAppearanceTab(container, settingsGroup)
     group = ST._ResolveStylingGroup(group)
     local style = group.style
     local editTarget = ST._CaptureConfigEditTarget(CS.selectedGroup, group._settingsContext)
-    local function refreshStyle()
-        ST._CompleteConfigEdit(editTarget, "style")
+    local function refreshStyle(operation, outcome)
+        return ST._CompleteConfigEdit(editTarget, operation or "style", outcome)
     end
     local function refreshStyleSettings()
-        ST._CompleteConfigEdit(editTarget, "style-settings")
+        return ST._CompleteConfigEdit(editTarget, "style-settings")
     end
 
 
@@ -1126,7 +1126,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         })
         WireMirrorFirstSlider(spacingRow, function(val)
             style.buttonSpacing = val
-        end, nil, nil, style, "buttonSpacing")
+        end, nil, nil, style, "buttonSpacing", "layout")
     end
 
     -- Compact Mode used to close this column. It is packing, not look, so it
@@ -1976,7 +1976,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         default = {0, 0, 0, 1},
         hasAlpha = true,
         disabled = borderSec.disabled or group.masqueEnabled == true,
-        onConfirm = refreshStyle,
+        onConfirm = function() return refreshStyle("style", "appearance") end,
     })
     borderSec:DirectColorControl(borderColorRow, "borderColor", group.masqueEnabled == true)
 

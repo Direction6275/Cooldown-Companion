@@ -148,9 +148,15 @@ local function IncludePanel(groupId, geometryKind, checkResources)
     attachmentRefresh.panels[groupId] = panel
 end
 
+function CooldownCompanion:DeferPanelRangeCheckRefresh()
+    if not attachmentRefresh then return false end
+    attachmentRefresh.rangeChanged = true
+    return true
+end
+
 function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     local refresh = attachmentRefresh
-    if changed then refresh.full = true end
+    if changed then refresh.full, refresh.rangeChanged = true, true end
     if reason then refresh.reason = reason end
     if operation ~= refresh then return end
 
@@ -220,6 +226,7 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
         CallIfAvailable("RefreshUnlockToolbar")
     end
     attachmentRefresh = nil
+    if refresh.rangeChanged then self:UpdateRangeCheckRegistrations() end
     return evaluate == true and runtime.enabled == true
 end
 

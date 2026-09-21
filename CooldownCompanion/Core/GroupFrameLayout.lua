@@ -488,7 +488,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     end
 
     -- Update event-driven range check registrations
-    self:UpdateRangeCheckRegistrations()
+    self:RequestRangeCheckRegistrationRefresh()
 end
 
 local function IsIconMasqueStyleRefreshUnsafe(self, group)
@@ -1002,6 +1002,83 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     frame._layoutDirty = false
 end
 
+-- An edit scope names saved entry identity/presentation, never a cached style.
+local function IsStyleEditEntry(button, scope)
+    if not scope then return true end
+    if scope.entry then return button.buttonData == scope.entry end
+    if scope.presentation == "bars" then return button._isBar == true end
+    if scope.presentation == "icons" then return not button._isBar and not button._isText end
+    return true
+end
+
+-- Reuse only fitted geometry, not the old appearance or effective-style table.
+-- A style edit otherwise writes the saved unfitted length, forcing the attachment
+-- finisher to destructively restyle and evaluate the same bar a second time.
+local function PreserveFittedBarGeometry(group, button, style)
+    if button._isBar and button.style and ST.IsAttachedBarEntry(group, button.buttonData) then
+        local fitted = {}
+        for key, value in pairs(ST.GetAttachedBarStyle(group)) do fitted[key] = value end
+        for key, value in pairs(style) do fitted[key] = value end
+        fitted.barLength = button.style.barLength
+        fitted.barFillVertical = button.style.barFillVertical
+        return fitted
+    end
+    return style
+end
+
+local function HasPanelAuraStyleConsumers(group)
+    if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
+        or group.displayMode == "textures" or group.displayMode == "trigger" then return true end
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.auraTracking or entry.addedAs == "aura" then return true end
+    end
+    return false
+end
+
+-- Narrow outcomes are opt-in at audited writes. Binding/mode/Masque checks run
+-- first; unsupported surfaces keep the existing full style completion.
+local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, buttonUsabilityOptions, effect, scope)
+    if ST.IsAuraPanelGroup(group) or group.displayMode == "textures"
+        or group.displayMode == "trigger" then return false end
+    if effect == "appearance" or effect == "interaction" then
+        for index = 1, entries.count do
+            local button = frame.buttons[index]
+            if IsStyleEditEntry(button, scope) and (button._isText
+                or (effect == "appearance" and button._isBar)) then return false end
+        end
+        for index = 1, entries.count do
+            local button = frame.buttons[index]
+            if IsStyleEditEntry(button, scope) then
+                local style = PreserveFittedBarGeometry(group, button, entries[index].style)
+                if effect == "appearance" then self:UpdateButtonAppearance(button, style)
+                elseif button._isBar then self:UpdateBarInteraction(button, style)
+                else self:UpdateButtonInteraction(button, style) end
+            end
+        end
+    elseif effect == "layout" then
+        local style = group.style or {}
+        local headerHeight = ApplyTextGroupHeader(self, frame, group, style, group.displayMode == "text")
+        local sizing = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
+        ApplyActiveButtonLayout(self, groupId, frame, group, sizing, headerHeight)
+        local compact = self:IsGroupCompactLayoutActive(groupId, group)
+        frame._deferPanelBaseAnchor = compact or nil
+        self:ResizeGroupFrame(groupId, compact)
+        frame._deferPanelBaseAnchor = nil
+        if compact then
+            frame._layoutDirty = true
+            self:UpdateGroupLayout(groupId, true)
+        end
+        UpdateResizedPanelContainerWrapper(groupId)
+    else
+        return false
+    end
+    -- Aura-owned regions consume crop, borders, hover intent and layout at bind
+    -- time. Keep their established restriction/defer lifecycle, including hidden
+    -- configured entries; current visibility is not a reason to skip this work.
+    if HasPanelAuraStyleConsumers(group) then self:RequestAuraRebind("style", groupId) end
+    return true
+end
+
 function CooldownCompanion:UpdateGroupStyle(groupId)
     -- The config's pinned mirror renders from saved settings, so it rides
     -- every style update — before the frame guard, because the mirror must
@@ -1015,7 +1092,7 @@ function CooldownCompanion:UpdateGroupStyle(groupId)
 end
 
 -- Config completion owns the mirror; standalone callers retain the wrapper.
-function GF.UpdateGroupStyleRuntime(self, groupId)
+function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     local frame = self.groupFrames[groupId]
     local group = ST.GetPanelLayoutGroup(self.db.profile.groups[groupId])
 
@@ -1049,6 +1126,11 @@ function GF.UpdateGroupStyleRuntime(self, groupId)
         return
     end
 
+    if ApplyNarrowStyleEdit(self, groupId, frame, group, entries, buttonUsabilityOptions, effect, scope) then
+        self:EndPanelAttachmentRefresh(attachmentOperation)
+        return
+    end
+
     local style = group.style or {}
     local isTextMode = group.displayMode == "text"
     local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
@@ -1057,7 +1139,8 @@ function GF.UpdateGroupStyleRuntime(self, groupId)
         local entry = entries[visibleIndex]
         local button = frame.buttons[visibleIndex]
         if button.UpdateStyle then
-            button:UpdateStyle(entry.style)
+            local effective = effect == "appearance" and PreserveFittedBarGeometry(group, button, entry.style) or entry.style
+            button:UpdateStyle(effective)
         end
         if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
             button:SetAlpha(0)

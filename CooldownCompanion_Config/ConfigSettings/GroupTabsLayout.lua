@@ -415,6 +415,7 @@ local appearanceTabElements = CS.appearanceTabElements
 local function BuildGridArrangement(container, group, layoutCount)
     local tabInfoButtons = CS.tabInfoButtons
     local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
+    local refreshStyle = ST._MakeConfigEditRefresh(group)
     local style = group.style
     local displayMode = group.displayMode or "icons"
     local isIconsMode, isBarMode, isTextMode = displayMode == "icons", displayMode == "bars", displayMode == "text"
@@ -466,8 +467,7 @@ local function BuildGridArrangement(container, group, layoutCount)
                 onChange = function(val)
                     style.barOrientation = val and "horizontal" or "vertical"
                     SwapCenteredGrowthAxis()
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
+                    refreshStyle("style-settings", "layout")
                 end,
             })
         end
@@ -488,8 +488,7 @@ local function BuildGridArrangement(container, group, layoutCount)
                     style.orientation = val
                 end
                 SwapCenteredGrowthAxis()
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings", "layout")
             end,
         })
     end
@@ -533,8 +532,7 @@ local function BuildGridArrangement(container, group, layoutCount)
             value = shownValue,
             onChange = function(val)
                 style.growthOrigin = val
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
+                refreshStyle("style-settings", "layout")
             end,
         })
     end
@@ -595,7 +593,7 @@ local function BuildGridArrangement(container, group, layoutCount)
         WireMirrorFirstSlider(wrapRow, function(val)
             style.buttonsPerRow = val
         end, function()
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            return refreshStyle("style", "layout")
         end, nil, style, "buttonsPerRow")
     end
 
