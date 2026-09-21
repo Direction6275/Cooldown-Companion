@@ -1380,7 +1380,7 @@ end
 -- Show or hide the drag handle on a container frame to match its lock state.
 function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     local cFrame = self.containerFrames and self.containerFrames[containerId]
-    if cFrame and cFrame.dragHandle then
+    if cFrame then
         local effectiveLocked = locked or self._combatForcedLock
         if effectiveLocked then
             if self.ClearContainerUnlockState then
@@ -1397,7 +1397,7 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
             end
         elseif self.RefreshContainerWrapper then
             self:RefreshContainerWrapper(containerId)
-        else
+        elseif cFrame.dragHandle then
             cFrame.dragHandle:Show()
         end
     end

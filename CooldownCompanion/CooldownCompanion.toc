@@ -36,6 +36,7 @@ Core\Utils.lua
 Core\ChargeBarSegments.lua
 Core\EditableCoordLabel.lua
 Core\Init.lua
+Core\MoverChrome.lua
 Core\ConfigLoader.lua
 Core\AnchorPolicy.lua
 Core\EntryRuntime.lua

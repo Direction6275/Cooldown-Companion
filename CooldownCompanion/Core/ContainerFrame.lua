@@ -1039,45 +1039,33 @@ function CooldownCompanion:UpdateContainerWrapperUnion(containerId, previewRects
     return visibleRectCount, minLeft, minBottom, CONTAINER_WRAPPER_PADDING
 end
 
+local EnsureContainerMoverChrome
+
 function CooldownCompanion:RefreshContainerWrapper(containerId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     local container = self.db and self.db.profile and self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
-    if not (frame and container and frame.dragHandle) or frame._isRefreshingContainerWrapper then
-        return
-    end
-
+    if not (frame and container) or frame._isRefreshingContainerWrapper then return end
     frame._isRefreshingContainerWrapper = true
-    local wrapper = frame.dragHandle
-    local header = wrapper.header
-    -- Same fade target as ApplyMoverChromeFadeState: the WRAPPER. Fading the
-    -- header here would zero its own alpha, which the end-of-fade restore
-    -- (wrapper-level) never puts back.
-    self:ApplyMoverChromeFadeToFrames(wrapper, frame.coordLabel, frame.nudger)
-    HideContainerPanelLabels(frame)
-    UpdateContainerWrapperLevels(frame)
-
-    if self._combatForcedLock
+    if self._combatForcedLock or InCombatLockdown()
         or container.locked ~= false
         or self:IsContainerArrangeChromeHidden(containerId)
         or not self:IsContainerVisibleToCurrentChar(containerId) then
-        if self.UpdateContainerDragHandle then
-            self:UpdateContainerDragHandle(containerId, true)
-        else
-            self:ClearContainerUnlockState(containerId)
-            wrapper:Hide()
-            if header then
-                header:Hide()
-            end
-            if frame.coordLabel then
-                frame.coordLabel:Hide()
-            end
-            if frame.nudger then
-                frame.nudger:Hide()
-            end
-        end
+        self:UpdateContainerDragHandle(containerId, true)
         frame._isRefreshingContainerWrapper = nil
         return
     end
+
+    EnsureContainerMoverChrome(frame)
+    if not frame.dragHandle then
+        frame._isRefreshingContainerWrapper = nil
+        return
+    end
+    local wrapper = frame.dragHandle
+    local header = wrapper.header
+    -- Fade the wrapper, including its outline, while other movers are active.
+    self:ApplyMoverChromeFadeToFrames(wrapper, frame.coordLabel, frame.nudger)
+    HideContainerPanelLabels(frame)
+    UpdateContainerWrapperLevels(frame)
 
     -- Below the locked-container return above: GetPanels walks every group and
     -- allocates, and no reader of it is reachable before that return.
@@ -1295,98 +1283,33 @@ local function ApplyContainerCoordinates(frame, containerId, x, y)
 end
 
 local function CreateContainerNudger(frame, containerId)
-    local NUDGE_GAP = 2
-
     local nudgerAnchor = frame.dragHandle.header or frame.dragHandle
-    local nudger = CreateFrame("Frame", nil, nudgerAnchor, "BackdropTemplate")
-    nudger.buttons = {}
-    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", nudgerAnchor, "TOP", 0, 2)
+    local nudger = ST.MoverChrome.CreateNudger(nudgerAnchor, NUDGE_BTN_SIZE, function(dx, dy)
+        CancelCoordinateEdit(frame.coordLabel)
+        CooldownCompanion:FocusArrangeContainer(containerId)
+        local container = CooldownCompanion.db.profile.groupContainers[containerId]
+        if not container then return end
+        container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+        local cFrame = CooldownCompanion.containerFrames[containerId]
+        if cFrame then
+            local oldX = tonumber(container.anchor.x) or 0
+            local oldY = tonumber(container.anchor.y) or 0
+            cFrame:AdjustPointsOffset(dx, dy)
+            local _, _, _, x, y = cFrame:GetPoint()
+            container.anchor.x = math_floor(x * 10 + 0.5) / 10
+            container.anchor.y = math_floor(y * 10 + 0.5) / 10
+            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
+                CooldownCompanion:SyncGroupedStandalonePreviewSettings(
+                    containerId,
+                    container.anchor.x - oldX,
+                    container.anchor.y - oldY
+                )
+            end
+            UpdateCoordLabel(cFrame, x, y)
+        end
+    end, function() CooldownCompanion:SaveContainerPosition(containerId) end)
     nudger:SetFrameStrata(nudgerAnchor:GetFrameStrata())
     nudger:SetFrameLevel(nudgerAnchor:GetFrameLevel() + 5)
-    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(nudger)
-    nudger:SetScript("OnEnter", function(self)
-        CooldownCompanion:BeginMoverChromeHoverFade(self)
-    end)
-    nudger:SetScript("OnLeave", function(self)
-        if not self:IsMouseOver() then
-            CooldownCompanion:EndMoverChromeFade(self)
-        end
-    end)
-    nudger:SetScript("OnHide", function(self)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
-
-    local directions = {
-        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
-        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },
-        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },
-        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },
-    }
-
-    for _, dir in ipairs(directions) do
-        local btn = CreateFrame("Button", nil, nudger)
-        nudger.buttons[#nudger.buttons + 1] = btn
-        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
-        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
-        btn:EnableMouse(true)
-
-        local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetAtlas(dir.atlas)
-        arrow:SetAllPoints()
-        arrow:SetRotation(dir.rotation)
-        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        btn.arrow = arrow
-
-        btn:SetScript("OnEnter", function(self)
-            self.arrow:SetVertexColor(1, 1, 1, 1)
-            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            CooldownCompanion:SaveContainerPosition(containerId)
-            if not nudger:IsMouseOver() then
-                CooldownCompanion:EndMoverChromeFade(nudger)
-            end
-        end)
-
-        local function DoNudge()
-            local container = CooldownCompanion.db.profile.groupContainers[containerId]
-            if not container then return end
-            container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
-            local cFrame = CooldownCompanion.containerFrames[containerId]
-            if cFrame then
-                local oldX = tonumber(container.anchor.x) or 0
-                local oldY = tonumber(container.anchor.y) or 0
-                cFrame:AdjustPointsOffset(dir.dx, dir.dy)
-                local _, _, _, x, y = cFrame:GetPoint()
-                container.anchor.x = math_floor(x * 10 + 0.5) / 10
-                container.anchor.y = math_floor(y * 10 + 0.5) / 10
-                if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                    CooldownCompanion:SyncGroupedStandalonePreviewSettings(
-                        containerId,
-                        container.anchor.x - oldX,
-                        container.anchor.y - oldY
-                    )
-                end
-                UpdateCoordLabel(cFrame, x, y)
-            end
-        end
-
-        btn:SetScript("OnMouseDown", function(self)
-            CancelCoordinateEdit(frame.coordLabel)
-            CooldownCompanion:FocusArrangeContainer(containerId)
-            DoNudge()
-            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
-        end)
-
-        btn:SetScript("OnMouseUp", function(self)
-            CooldownCompanion:SaveContainerPosition(containerId)
-        end)
-    end
-
     return nudger
 end
 
@@ -1409,32 +1332,48 @@ function ST.LockContainerFromMover(containerId)
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
-function CooldownCompanion:CreateContainerFrame(containerId)
-    -- Prevent duplicates
-    if self.containerFrames[containerId] then
-        return self.containerFrames[containerId]
+local function BeginContainerDrag(frame, dragRegion)
+    CancelCoordinateEdit(frame.coordLabel)
+    local c = CooldownCompanion.db.profile.groupContainers[frame.containerId]
+    if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(frame.containerId) then
+        if dragRegion then dragRegion._suppressClick = true end
+        CooldownCompanion:SelectContainerWrapper(frame.containerId)
+        if dragRegion then CooldownCompanion:SetArrangeSoloContainer(frame.containerId) end
+        frame._dragCancelPending = nil
+        frame._dragInProgress = true
+        frame:StartMoving()
+        CooldownCompanion:BeginMoverChromeFade(frame)
+        BeginContainerDragSnapSession(frame)
+        StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
     end
+end
 
-    local container = self.db.profile.groupContainers[containerId]
+local function FinishContainerDrag(frame, dragRegion)
+    if dragRegion then
+        -- Preserve suppression through this release, never the next click.
+        C_Timer.After(0, function() dragRegion._suppressClick = nil end)
+    end
+    local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+    frame._dragCancelPending = nil
+    frame._dragInProgress = nil
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    ApplyEndedDragSnapSession(frame, not cancelSave)
+    StopCoordinateDragUpdates(frame)
+    if cancelSave then
+        CooldownCompanion:EndMoverChromeFade(frame)
+        return
+    end
+    CooldownCompanion:SaveContainerPosition(frame.containerId)
+    CooldownCompanion:EndMoverChromeFade(frame)
+end
+
+EnsureContainerMoverChrome = function(frame)
+    if frame.dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
+    local containerId = frame.containerId
+    local container = CooldownCompanion.db.profile.groupContainers[containerId]
     if not container then return end
-    container.anchor = self:NormalizeContainerAnchor(container.anchor)
-
-    local frameName = "CooldownCompanionContainer" .. containerId
-    local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
-    frame.containerId = containerId
-
-    -- Container frames are invisible — just an anchor point.
-    -- Size is minimal; panels anchor to it but define their own size.
-    frame:SetSize(1, 1)
-
-    -- Position the frame
-    self:AnchorContainerFrame(frame, container.anchor)
-
-    -- Make it movable when unlocked
-    frame:SetMovable(true)
-    frame:EnableMouse(not container.locked)
-    frame:RegisterForDrag("LeftButton")
-
     -- Wrapper outline (visible when unlocked)
     frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.dragHandle:SetPoint("CENTER", frame, "CENTER", 0, 0)
@@ -1490,16 +1429,9 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     frame.nudger = CreateContainerNudger(frame, containerId)
 
     -- Coordinate label
-    frame.coordLabel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    frame.coordLabel:SetHeight(15)
+    frame.coordLabel = ST.MoverChrome.CreateLabel(frame)
     frame.coordLabel:SetPoint("TOPLEFT", frame.dragHandle, "BOTTOMLEFT", 0, -2)
     frame.coordLabel:SetPoint("TOPRIGHT", frame.dragHandle, "BOTTOMRIGHT", 0, -2)
-    frame.coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    frame.coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(frame.coordLabel)
-    frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.coordLabel.text:SetPoint("CENTER")
-    frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
     CreateEditableCoordLabel(
         frame.coordLabel,
         function()
@@ -1526,131 +1458,48 @@ function CooldownCompanion:CreateContainerFrame(containerId)
         frame.dragHandle:Hide()
     end
 
-    -- Drag scripts
-    frame:SetScript("OnDragStart", function(self)
-        CancelCoordinateEdit(self.coordLabel)
-        local c = CooldownCompanion.db.profile.groupContainers[self.containerId]
-        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(self.containerId) then
-            CooldownCompanion:SelectContainerWrapper(self.containerId)
-            self._dragCancelPending = nil
-            self._dragInProgress = true
-            self:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(self)
-            BeginContainerDragSnapSession(self)
-            StartCoordinateDragUpdates(self, UpdateContainerDragCoordinate)
-        end
-    end)
-    frame:SetScript("OnDragStop", function(self)
-        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        self._dragCancelPending = nil
-        self._dragInProgress = nil
-        if not (InCombatLockdown() and self:IsProtected()) then
-            self:StopMovingOrSizing()
-        end
-        ApplyEndedDragSnapSession(self, not cancelSave)
-        StopCoordinateDragUpdates(self)
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(self)
-            return
-        end
-        CooldownCompanion:SaveContainerPosition(self.containerId)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
-
-    frame.dragHandle:EnableMouse(true)
-    frame.dragHandle:RegisterForDrag("LeftButton")
-    frame.dragHandle:SetScript("OnEnter", function()
-        CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
-    end)
-    frame.dragHandle:SetScript("OnDragStart", function()
-        CancelCoordinateEdit(frame.coordLabel)
-        local c = CooldownCompanion.db.profile.groupContainers[containerId]
-        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
-            frame.dragHandle._suppressClick = true
-            CooldownCompanion:SelectContainerWrapper(containerId)
-            CooldownCompanion:SetArrangeSoloContainer(containerId)
-            frame._dragCancelPending = nil
-            frame._dragInProgress = true
-            frame:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(frame)
-            BeginContainerDragSnapSession(frame)
-            StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
-        end
-    end)
-    frame.dragHandle:SetScript("OnDragStop", function()
-        -- Preserve suppression through this release cycle, but do not let a
-        -- missing OnMouseUp consume the player's next intentional click.
-        C_Timer.After(0, function()
-            frame.dragHandle._suppressClick = nil
+    for _, region in ipairs({frame.dragHandle, frame.dragHandle.header}) do
+        region:EnableMouse(true)
+        region:RegisterForDrag("LeftButton")
+        region:SetScript("OnEnter", function()
+            CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
         end)
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        if not (InCombatLockdown() and frame:IsProtected()) then
-            frame:StopMovingOrSizing()
-        end
-        ApplyEndedDragSnapSession(frame, not cancelSave)
-        StopCoordinateDragUpdates(frame)
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(frame)
-            return
-        end
-        CooldownCompanion:SaveContainerPosition(containerId)
-        CooldownCompanion:EndMoverChromeFade(frame)
-    end)
-    frame.dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "LeftButton" and frame.dragHandle._suppressClick then
-            frame.dragHandle._suppressClick = nil
-        end
-    end)
-
-    frame.dragHandle.header:EnableMouse(true)
-    frame.dragHandle.header:RegisterForDrag("LeftButton")
-    frame.dragHandle.header:SetScript("OnEnter", function()
-        CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
-    end)
-    frame.dragHandle.header:SetScript("OnDragStart", function()
-        CancelCoordinateEdit(frame.coordLabel)
-        local c = CooldownCompanion.db.profile.groupContainers[containerId]
-        if c and not CooldownCompanion._combatForcedLock and CooldownCompanion:IsContainerUnlockPreviewActive(containerId) then
-            frame.dragHandle.header._suppressClick = true
-            CooldownCompanion:SelectContainerWrapper(containerId)
-            CooldownCompanion:SetArrangeSoloContainer(containerId)
-            frame._dragCancelPending = nil
-            frame._dragInProgress = true
-            frame:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(frame)
-            BeginContainerDragSnapSession(frame)
-            StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
-        end
-    end)
-    frame.dragHandle.header:SetScript("OnDragStop", function()
-        -- Preserve suppression through this release cycle, but do not let a
-        -- missing OnMouseUp consume the player's next intentional click.
-        C_Timer.After(0, function()
-            frame.dragHandle.header._suppressClick = nil
+        region:SetScript("OnDragStart", function() BeginContainerDrag(frame, region) end)
+        region:SetScript("OnDragStop", function() FinishContainerDrag(frame, region) end)
+        region:SetScript("OnMouseUp", function(self, button)
+            if button == "LeftButton" then self._suppressClick = nil end
         end)
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        if not (InCombatLockdown() and frame:IsProtected()) then
-            frame:StopMovingOrSizing()
-        end
-        ApplyEndedDragSnapSession(frame, not cancelSave)
-        StopCoordinateDragUpdates(frame)
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(frame)
-            return
-        end
-        CooldownCompanion:SaveContainerPosition(containerId)
-        CooldownCompanion:EndMoverChromeFade(frame)
-    end)
+    end
+end
 
-    frame.dragHandle.header:SetScript("OnMouseUp", function(_, btn)
-        if btn == "LeftButton" and frame.dragHandle.header._suppressClick then
-            frame.dragHandle.header._suppressClick = nil
-        end
-    end)
+function CooldownCompanion:CreateContainerFrame(containerId)
+    -- Prevent duplicates
+    if self.containerFrames[containerId] then
+        return self.containerFrames[containerId]
+    end
+
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    container.anchor = self:NormalizeContainerAnchor(container.anchor)
+
+    local frameName = "CooldownCompanionContainer" .. containerId
+    local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    frame.containerId = containerId
+
+    -- Container frames are invisible — just an anchor point.
+    -- Size is minimal; panels anchor to it but define their own size.
+    frame:SetSize(1, 1)
+
+    -- Position the frame
+    self:AnchorContainerFrame(frame, container.anchor)
+
+    -- Make it movable when unlocked
+    frame:SetMovable(true)
+    frame:EnableMouse(not container.locked)
+    frame:RegisterForDrag("LeftButton")
+
+    frame:SetScript("OnDragStart", function(self) BeginContainerDrag(self) end)
+    frame:SetScript("OnDragStop", function(self) FinishContainerDrag(self) end)
 
     self.containerFrames[containerId] = frame
     UpdateContainerWrapperLevels(frame)

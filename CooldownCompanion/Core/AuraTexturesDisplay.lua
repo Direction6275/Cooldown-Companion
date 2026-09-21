@@ -13,7 +13,6 @@ local UIParent = UIParent
 local ipairs = ipairs
 local math_floor = math.floor
 local math_max = math.max
-local math_pi = math.pi
 local pairs = pairs
 local string_find = string.find
 local string_trim = strtrim
@@ -35,7 +34,6 @@ local ApplyTextureIndicatorEffects = AT.ApplyTextureIndicatorEffects
 local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
 local NUDGE_BTN_SIZE = 12
-local NUDGE_GAP = 2
 local PANEL_HIGHLIGHT_R = 0.6
 local PANEL_HIGHLIGHT_G = 0.8
 local PANEL_HIGHLIGHT_B = 1
@@ -694,39 +692,9 @@ local function SetTextureHostMouseEnabled(host, enabled)
 end
 
 local function EnsureAuraTextureNudger(host)
-    if host.nudger then
-        return
-    end
-
-    local nudger = CreateFrame("Frame", nil, host.dragHandle, "BackdropTemplate")
-    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", host.dragHandle, "TOP", 0, 2)
-    nudger:SetFrameStrata(host.dragHandle:GetFrameStrata())
-    nudger:SetFrameLevel(host.dragHandle:GetFrameLevel() + 5)
-    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(nudger)
-    nudger.buttons = {}
-    nudger:SetScript("OnEnter", function(self)
-        CooldownCompanion:BeginMoverChromeHoverFade(self)
-    end)
-    nudger:SetScript("OnLeave", function(self)
-        if not self:IsMouseOver() then
-            CooldownCompanion:EndMoverChromeFade(self)
-        end
-    end)
-    nudger:SetScript("OnHide", function(self)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
-
-    local directions = {
-        { atlas = "common-dropdown-icon-back", rotation = -math_pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },
-        { atlas = "common-dropdown-icon-next", rotation = -math_pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },
-        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },
-        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },
-    }
-
-    local function DoNudge(dx, dy)
+    if host.nudger then return end
+    local nudger = ST.MoverChrome.CreateNudger(host.dragHandle, NUDGE_BTN_SIZE, function(dx, dy)
+        CancelCoordinateEdit(host.coordLabel)
         do
             local owner = host._ownerButton
             local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
@@ -780,45 +748,9 @@ local function EnsureAuraTextureNudger(host)
         if group and group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
             CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
         end
-    end
-
-    for _, dir in ipairs(directions) do
-        local btn = CreateFrame("Button", nil, nudger)
-        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
-        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
-        btn:EnableMouse(true)
-        nudger.buttons[#nudger.buttons + 1] = btn
-
-        local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetAtlas(dir.atlas)
-        arrow:SetAllPoints()
-        arrow:SetRotation(dir.rotation)
-        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        btn.arrow = arrow
-
-        btn:SetScript("OnEnter", function(self)
-            self.arrow:SetVertexColor(1, 1, 1, 1)
-            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            SaveTextureHostPosition(host)
-            if not nudger:IsMouseOver() then
-                CooldownCompanion:EndMoverChromeFade(nudger)
-            end
-        end)
-
-        btn:SetScript("OnMouseDown", function(self)
-            CancelCoordinateEdit(host.coordLabel)
-            DoNudge(dir.dx, dir.dy)
-            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
-        end)
-
-        btn:SetScript("OnMouseUp", function(self)
-            SaveTextureHostPosition(host)
-        end)
-    end
-
+    end, function() SaveTextureHostPosition(host) end)
+    nudger:SetFrameStrata(host.dragHandle:GetFrameStrata())
+    nudger:SetFrameLevel(host.dragHandle:GetFrameLevel() + 5)
     host.nudger = nudger
 end
 
@@ -843,62 +775,28 @@ local function LockAuraTexturePanelFromMover(host)
 end
 
 local function EnsureAuraTextureDragHandle(host)
-    if host.dragHandle then
-        return
-    end
+    if host.dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
 
-    local dragHandle = CreateFrame("Frame", nil, host, "BackdropTemplate")
+    local dragHandle = ST.MoverChrome.CreateHeader(host, "", function()
+        LockAuraTexturePanelFromMover(host)
+    end, function()
+        local groupId = host._ownerButton and host._ownerButton._groupId
+        local group = groupId and CooldownCompanion.db.profile.groups[groupId]
+        return groupId and {
+            kind = "panel",
+            id = groupId,
+            containerId = group and group.parentContainerId,
+            focusId = group and group.parentContainerId,
+        } or nil
+    end)
     dragHandle:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 2)
     dragHandle:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 2)
-    dragHandle:SetHeight(15)
-    dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(dragHandle)
     dragHandle:RegisterForDrag("LeftButton")
     dragHandle:EnableMouse(true)
 
-    local text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    text:SetPoint("CENTER")
-    text:SetTextColor(1, 1, 1, 1)
-    dragHandle.text = text
-
-    dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
-        LockAuraTexturePanelFromMover(host)
-    end)
-    dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
-    dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
-        dragHandle,
-        12,
-        function()
-            local groupId = host._ownerButton and host._ownerButton._groupId
-            local group = groupId and CooldownCompanion.db.profile.groups[groupId]
-            return groupId and {
-                kind = "panel",
-                id = groupId,
-                containerId = group and group.parentContainerId,
-                focusId = group and group.parentContainerId,
-            } or nil
-        end,
-        dragHandle
-    )
-    dragHandle.menuButton:SetPoint("RIGHT", dragHandle.lockButton, "LEFT", -2, 0)
-    -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = dragHandle.lockButton:GetWidth() + dragHandle.menuButton:GetWidth() + 8
-    text:ClearAllPoints()
-    text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
-    text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
-    text:SetJustifyH("CENTER")
-
-    local coordLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
-    coordLabel:SetHeight(15)
+    local coordLabel = ST.MoverChrome.CreateLabel(dragHandle)
     coordLabel:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, -2)
     coordLabel:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, -2)
-    coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(coordLabel)
-    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    coordLabel.text:SetPoint("CENTER")
-    coordLabel.text:SetTextColor(1, 1, 1, 1)
 
     dragHandle:SetScript("OnDragStart", function()
         BeginTextureHostDrag(host, false)
@@ -927,6 +825,10 @@ local function EnsureAuraTextureDragHandle(host)
         end
     )
     EnsureAuraTextureNudger(host)
+    local _, group, settings = GetTextureHostPositionContext(host)
+    dragHandle.text:SetText(group and group.name or "Texture Panel")
+    local anchor = group and CooldownCompanion:IsGroupCursorAnchored(group) and group.anchor or settings
+    UpdateTextureHostCoordLabel(host, anchor and anchor.x, anchor and anchor.y)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(host.dragHandle, host.coordLabel, host.nudger)
 end
 
@@ -962,6 +864,8 @@ end
 
 local function SetAuraTextureDragControlsShown(host, shown, unlockGhost)
     if not host then return end
+    shown = shown == true and not InCombatLockdown() and not CooldownCompanion._combatForcedLock
+    if shown then EnsureAuraTextureDragHandle(host) end
     if host.dragHandle then
         host.dragHandle:SetIgnoreParentAlpha(shown and unlockGhost == true)
         host.dragHandle:SetShown(shown)
@@ -1053,7 +957,6 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
     end)
 
     CreateAuraTextureOutline(host)
-    EnsureAuraTextureDragHandle(host)
     button.auraTextureHost = host
     return host
 end
@@ -1746,6 +1649,8 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         visibilityState.isGroupedPreview and isGroupedPreviewSelected or false,
         visibilityState.isGroupedPreview and isGroupedPreviewHovered or false
     )
+    local showHeader = host._dragEnabled == true and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
+    if showHeader then EnsureAuraTextureDragHandle(host) end
     if host.dragHandle and host.coordLabel then
         host.dragHandle.text:SetText(group and group.name or "Texture Panel")
         if isCursorPreviewSelected then
@@ -1776,7 +1681,6 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         else
             UpdateTextureHostCoordLabel(host, sharedSettings.x, sharedSettings.y)
         end
-        local showHeader = host._dragEnabled == true and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
         SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
         SetAuraTextureDragControlsShown(host, showHeader, frame and frame._unlockGhost)
     end
@@ -1811,6 +1715,8 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
     host._dragEnabled = showControls
     SetTextureHostMouseEnabled(host, showControls or active == true)
     if showControls then
+        EnsureAuraTextureDragHandle(host)
+        SyncAuraTextureControlLevels(host, false)
         local anchor = group and group.anchor
         UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
     end
@@ -1835,6 +1741,7 @@ function CooldownCompanion:SetIndependentStandalonePanelMoverShown(groupId, show
     host._dragEnabled = shown
     SetTextureHostMouseEnabled(host, shown)
     SetAuraTextureOutlineShown(host, false)
+    if shown then EnsureAuraTextureDragHandle(host) end
     SyncAuraTextureControlLevels(host, false)
     SetAuraTextureDragControlsShown(host, shown, groupFrame and groupFrame._unlockGhost)
 end
@@ -1862,6 +1769,7 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
         and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
 
     host._dragEnabled = showControls
+    if showControls then EnsureAuraTextureDragHandle(host) end
     SyncAuraTextureControlLevels(host, showControls)
     -- Once a panel is selected, its title-bar mover and information rows are
     -- the only visible arrange chrome; the selection itself is already clear

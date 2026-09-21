@@ -17,7 +17,6 @@ local InCombatLockdown = InCombatLockdown
 local SetFrameClickThrough = ST.SetFrameClickThrough
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
-local CreatePixelBorders = ST.CreatePixelBorders
 
 local GF = ST._GroupFrame
 
@@ -63,110 +62,119 @@ local function ShouldShowGroupFrameForRuntime(addon, groupId, group)
     })
 end
 
-function CooldownCompanion:CreateGroupFrame(groupId)
-    -- Return existing frame to prevent duplicates (SharedMedia callbacks
-    -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
-    if self.groupFrames[groupId] then
-        return self.groupFrames[groupId]
+local function BeginPanelDrag(frame, surfaceDrag)
+    frame._arrangePanelSurfaceDrag = nil
+    CancelCoordinateEdit(frame.coordLabel)
+    CancelCoordinateEdit(frame.sizeLabel)
+    local locked = GetContainerState(frame.groupId)
+    local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(frame.groupId)
+    local dragGroup = CooldownCompanion.db.profile.groups[frame.groupId]
+    if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+        -- A drag on a parked-but-unselected panel selects it first.
+        if not CooldownCompanion:ActivateArrangePanel(dragGroup.parentContainerId, frame.groupId, false) then
+            return
+        end
+        frame._arrangePanelSurfaceDrag = surfaceDrag and true or nil
+        BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, frame.groupId)
+        return
+    end
+    if CooldownCompanion._combatForcedLock then
+        return
+    elseif previewActive then
+        if not selectedInContainer then
+            return
+        end
+        if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
+            CooldownCompanion:StartContainerMemberPreviewTracking(containerId, frame.groupId)
+        end
+        frame._dragCancelPending = nil
+        frame._dragInProgress = true
+        frame:StartMoving()
+        CooldownCompanion:BeginMoverChromeFade(frame)
+        BeginSelfExcludedDragSnapSession(frame)
+    elseif not locked then
+        if dragGroup and dragGroup.parentContainerId
+            and not CooldownCompanion:ActivateArrangePanel(
+                dragGroup.parentContainerId,
+                frame.groupId,
+                false
+            ) then
+            return
+        end
+        frame._arrangePanelSurfaceDrag = surfaceDrag and true or nil
+        frame._dragCancelPending = nil
+        frame._dragInProgress = true
+        frame:StartMoving()
+        CooldownCompanion:BeginMoverChromeFade(frame)
+        BeginSelfExcludedDragSnapSession(frame)
+        StartGroupCoordinateDragUpdates(frame)
+    end
+end
+
+local function FinishPanelDrag(frame)
+    local dragGroup = CooldownCompanion.db.profile.groups[frame.groupId]
+    if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+        if frame._arrangePanelSurfaceDrag then
+            -- A body-drag release also fires the body's OnMouseUp; a title
+            -- drag does not consume the next deliberate body click.
+            frame._arrangeSelectClickSuppressed = true
+        end
+        frame._arrangePanelSurfaceDrag = nil
+        EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, frame.groupId, cancelSave)
+        return
     end
 
-    local group = self.db.profile.groups[groupId]
+    local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(frame.groupId)
+    local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+    if frame._arrangePanelSurfaceDrag then
+        frame._arrangeSelectClickSuppressed = true
+    end
+    frame._arrangePanelSurfaceDrag = nil
+    frame._dragCancelPending = nil
+    frame._dragInProgress = nil
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    ApplyEndedDragSnapSession(frame, not cancelSave)
+    StopCoordinateDragUpdates(frame)
+    if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
+        CooldownCompanion:StopContainerMemberPreviewTracking(containerId, frame.groupId)
+    end
+    if cancelSave then
+        CooldownCompanion:EndMoverChromeFade(frame)
+        return
+    end
+    CooldownCompanion:SaveGroupPosition(frame.groupId)
+    CooldownCompanion:EndMoverChromeFade(frame)
+end
+
+-- Controls outlive individual reveals; callbacks resolve the current profile.
+function GF.EnsureMoverChrome(frame)
+    if frame.dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
+    local groupId = frame.groupId
+    local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
-
-    local attachmentOperation = self:BeginPanelAttachmentRefresh()
-
-    -- Create main container frame
-    local frameName = "CooldownCompanionGroup" .. groupId
-    local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
-    frame.groupId = groupId
-    frame.buttons = {}
-    frame._containerUnlockPreviewActive = group.parentContainerId
-        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
-        and not self:IsArrangePanelSuppressed(groupId)
-        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
-        or nil
-    frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
-
-    -- Set initial size (will be updated when buttons are added)
-    frame:SetSize(100, 50)
-
-    -- Apply per-group frame strata if configured
-    local strata = group.frameStrata
-    if strata then
-        frame:SetFrameStrata(strata)
-        frame:SetFixedFrameStrata(true)
-    end
-
-    -- Position the frame
-    self:AnchorGroupFrame(frame, group.anchor)
-
-    -- Resolve locked state from container (or group for legacy)
-    local isLocked, baseAlpha = GetContainerState(groupId)
-    if self:IsArrangePanelSuppressed(groupId)
-        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
-        isLocked = true
-    end
-
-    -- Make it movable when unlocked. Texture panels use direct texture dragging
-    -- instead of the standard panel drag handle.
-    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
-    frame:SetMovable(true)
-    frame:EnableMouse((not isLocked) and (not isTextureMode))
-    frame:RegisterForDrag("LeftButton")
-
     -- Drag handle (visible when unlocked)
-    frame.dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    frame.dragHandle = ST.MoverChrome.CreateHeader(frame, group.name, function()
+        ST.LockPanelFromMover(groupId)
+    end, function()
+        local current = CooldownCompanion.db.profile.groups[groupId]
+        return {
+            kind = "panel",
+            id = groupId,
+            containerId = current and current.parentContainerId,
+            focusId = current and current.parentContainerId,
+        }
+    end)
     frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
     frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
-    frame.dragHandle:SetHeight(15)
-    frame.dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    frame.dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(frame.dragHandle)
-
-    frame.dragHandle.text = frame.dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.dragHandle.text:SetPoint("CENTER")
-    frame.dragHandle.text:SetText(group.name)
-    frame.dragHandle.text:SetTextColor(1, 1, 1, 1)
-
-    -- Pixel nudger (parented to dragHandle, inherits show/hide)
     frame.nudger = CreateNudger(frame, groupId)
-    frame.dragHandle.lockButton = ST.CreateMoverLockBadge(frame.dragHandle, 12, function()
-        ST.LockPanelFromMover(groupId)
-    end)
-    frame.dragHandle.lockButton:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -2, 0)
-    frame.dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
-        frame.dragHandle,
-        12,
-        function()
-            local current = CooldownCompanion.db.profile.groups[groupId]
-            return {
-                kind = "panel",
-                id = groupId,
-                containerId = current and current.parentContainerId,
-                focusId = current and current.parentContainerId,
-            }
-        end,
-        frame.dragHandle
-    )
-    frame.dragHandle.menuButton:SetPoint("RIGHT", frame.dragHandle.lockButton, "LEFT", -2, 0)
-    -- Symmetric insets matching the badge cluster keep the name centered on the bar
-    local headerTextInset = frame.dragHandle.lockButton:GetWidth() + frame.dragHandle.menuButton:GetWidth() + 8
-    frame.dragHandle.text:ClearAllPoints()
-    frame.dragHandle.text:SetPoint("LEFT", frame.dragHandle, "LEFT", headerTextInset, 0)
-    frame.dragHandle.text:SetPoint("RIGHT", frame.dragHandle, "RIGHT", -headerTextInset, 0)
-    frame.dragHandle.text:SetJustifyH("CENTER")
 
     -- Coordinate label (parented to dragHandle so it hides when locked)
-    frame.coordLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
-    frame.coordLabel:SetHeight(15)
+    frame.coordLabel = ST.MoverChrome.CreateLabel(frame.dragHandle)
     frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
     frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
-    frame.coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    frame.coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(frame.coordLabel)
-    frame.coordLabel.text = frame.coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.coordLabel.text:SetPoint("CENTER")
-    frame.coordLabel.text:SetTextColor(1, 1, 1, 1)
     CreateEditableCoordLabel(
         frame.coordLabel,
         function()
@@ -207,16 +215,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     )
     UpdateCoordLabel(frame)
 
-    frame.sizeLabel = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
-    frame.sizeLabel:SetHeight(15)
+    frame.sizeLabel = ST.MoverChrome.CreateLabel(frame.dragHandle)
     frame.sizeLabel:SetPoint("TOPLEFT", frame.coordLabel, "BOTTOMLEFT", 0, -2)
     frame.sizeLabel:SetPoint("TOPRIGHT", frame.coordLabel, "BOTTOMRIGHT", 0, -2)
-    frame.sizeLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    frame.sizeLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(frame.sizeLabel)
-    frame.sizeLabel.text = frame.sizeLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.sizeLabel.text:SetPoint("CENTER")
-    frame.sizeLabel.text:SetTextColor(1, 1, 1, 1)
     CreateEditableCoordLabel(
         frame.sizeLabel,
         function()
@@ -303,6 +304,63 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame.sizeLabel._exclusiveEditLabel = frame.coordLabel
     ST.UpdateGroupSizeLabel(frame)
 
+    frame.dragHandle:EnableMouse(true)
+    frame.dragHandle:RegisterForDrag("LeftButton")
+    frame.dragHandle:SetScript("OnDragStart", function() BeginPanelDrag(frame, false) end)
+    frame.dragHandle:SetScript("OnDragStop", function() FinishPanelDrag(frame) end)
+end
+
+function CooldownCompanion:CreateGroupFrame(groupId)
+    -- Return existing frame to prevent duplicates (SharedMedia callbacks
+    -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
+    if self.groupFrames[groupId] then
+        return self.groupFrames[groupId]
+    end
+
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
+
+    -- Create main container frame
+    local frameName = "CooldownCompanionGroup" .. groupId
+    local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    frame.groupId = groupId
+    frame.buttons = {}
+    frame._containerUnlockPreviewActive = group.parentContainerId
+        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
+        and not self:IsArrangePanelSuppressed(groupId)
+        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
+        or nil
+    frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
+
+    -- Set initial size (will be updated when buttons are added)
+    frame:SetSize(100, 50)
+
+    -- Apply per-group frame strata if configured
+    local strata = group.frameStrata
+    if strata then
+        frame:SetFrameStrata(strata)
+        frame:SetFixedFrameStrata(true)
+    end
+
+    -- Position the frame
+    self:AnchorGroupFrame(frame, group.anchor)
+
+    -- Resolve locked state from container (or group for legacy)
+    local isLocked, baseAlpha = GetContainerState(groupId)
+    if self:IsArrangePanelSuppressed(groupId)
+        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
+        isLocked = true
+    end
+
+    -- Make it movable when unlocked. Texture panels use direct texture dragging
+    -- instead of the standard panel drag handle.
+    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    frame:SetMovable(true)
+    frame:EnableMouse((not isLocked) and (not isTextureMode))
+    frame:RegisterForDrag("LeftButton")
+
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     -- An Aura Panel is exempt alongside the Rotation Assistant: it holds a
     -- reserved one-cell footprint while empty precisely so it can be placed
@@ -314,92 +372,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
-    frame:SetScript("OnDragStart", function(self)
-        self._arrangePanelSurfaceDrag = nil
-        CancelCoordinateEdit(self.coordLabel)
-        CancelCoordinateEdit(self.sizeLabel)
-        local locked = GetContainerState(self.groupId)
-        local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
-        local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
-        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
-            -- A drag on a parked-but-unselected panel selects it first.
-            if not CooldownCompanion:ActivateArrangePanel(dragGroup.parentContainerId, self.groupId, false) then
-                return
-            end
-            self._arrangePanelSurfaceDrag = true
-            BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId)
-            return
-        end
-        if CooldownCompanion._combatForcedLock then
-            return
-        elseif previewActive then
-            if not selectedInContainer then
-                return
-            end
-            if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
-                CooldownCompanion:StartContainerMemberPreviewTracking(containerId, self.groupId)
-            end
-            self._dragCancelPending = nil
-            self._dragInProgress = true
-            self:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(self)
-            BeginSelfExcludedDragSnapSession(self)
-        elseif not locked then
-            if dragGroup and dragGroup.parentContainerId
-                and not CooldownCompanion:ActivateArrangePanel(
-                    dragGroup.parentContainerId,
-                    self.groupId,
-                    false
-                ) then
-                return
-            end
-            self._arrangePanelSurfaceDrag = true
-            self._dragCancelPending = nil
-            self._dragInProgress = true
-            self:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(self)
-            BeginSelfExcludedDragSnapSession(self)
-            StartGroupCoordinateDragUpdates(self)
-        end
-    end)
-
-    frame:SetScript("OnDragStop", function(self)
-        local dragGroup = CooldownCompanion.db.profile.groups[self.groupId]
-        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
-            local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
-            if self._arrangePanelSurfaceDrag then
-                -- A body-drag release also fires the body's OnMouseUp; a title
-                -- drag does not consume the next deliberate body click.
-                self._arrangeSelectClickSuppressed = true
-            end
-            self._arrangePanelSurfaceDrag = nil
-            EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, self, self.groupId, cancelSave)
-            return
-        end
-
-        local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(self.groupId)
-        local cancelSave = self._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        if self._arrangePanelSurfaceDrag then
-            self._arrangeSelectClickSuppressed = true
-        end
-        self._arrangePanelSurfaceDrag = nil
-        self._dragCancelPending = nil
-        self._dragInProgress = nil
-        if not (InCombatLockdown() and self:IsProtected()) then
-            self:StopMovingOrSizing()
-        end
-        ApplyEndedDragSnapSession(self, not cancelSave)
-        StopCoordinateDragUpdates(self)
-        if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
-            CooldownCompanion:StopContainerMemberPreviewTracking(containerId, self.groupId)
-        end
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(self)
-            return
-        end
-        CooldownCompanion:SaveGroupPosition(self.groupId)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
+    frame:SetScript("OnDragStart", function(self) BeginPanelDrag(self, true) end)
+    frame:SetScript("OnDragStop", FinishPanelDrag)
 
     -- Every interactive panel body uses the shared toggle/solo grammar.
     -- SetFrameClickThrough WIPES OnMouseUp scripts whenever the frame goes
@@ -417,82 +391,6 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         end
     end
     frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
-
-    -- Also allow dragging from the handle
-    frame.dragHandle:EnableMouse(true)
-    frame.dragHandle:RegisterForDrag("LeftButton")
-    frame.dragHandle:SetScript("OnDragStart", function()
-        frame._arrangePanelSurfaceDrag = nil
-        CancelCoordinateEdit(frame.coordLabel)
-        CancelCoordinateEdit(frame.sizeLabel)
-        local locked = GetContainerState(groupId)
-        local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
-        local dragGroup = CooldownCompanion.db.profile.groups[groupId]
-        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
-            if not CooldownCompanion:ActivateArrangePanel(dragGroup.parentContainerId, groupId, false) then
-                return
-            end
-            BeginCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, groupId)
-            return
-        end
-        if CooldownCompanion._combatForcedLock then
-            return
-        elseif previewActive then
-            if not selectedInContainer then
-                return
-            end
-            if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
-                CooldownCompanion:StartContainerMemberPreviewTracking(containerId, groupId)
-            end
-            frame._dragCancelPending = nil
-            frame._dragInProgress = true
-            frame:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(frame)
-            BeginSelfExcludedDragSnapSession(frame)
-        elseif not locked then
-            if dragGroup and dragGroup.parentContainerId
-                and not CooldownCompanion:ActivateArrangePanel(
-                    dragGroup.parentContainerId,
-                    groupId,
-                    false
-                ) then
-                return
-            end
-            frame._dragCancelPending = nil
-            frame._dragInProgress = true
-            frame:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(frame)
-            BeginSelfExcludedDragSnapSession(frame)
-            StartGroupCoordinateDragUpdates(frame)
-        end
-    end)
-    frame.dragHandle:SetScript("OnDragStop", function()
-        local dragGroup = CooldownCompanion.db.profile.groups[groupId]
-        if dragGroup and IsCursorAnchor(dragGroup.anchor) then
-            local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-            EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, groupId, cancelSave)
-            return
-        end
-
-        local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(groupId)
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        if not (InCombatLockdown() and frame:IsProtected()) then
-            frame:StopMovingOrSizing()
-        end
-        ApplyEndedDragSnapSession(frame, not cancelSave)
-        StopCoordinateDragUpdates(frame)
-        if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
-            CooldownCompanion:StopContainerMemberPreviewTracking(containerId, groupId)
-        end
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(frame)
-            return
-        end
-        CooldownCompanion:SaveGroupPosition(groupId)
-        CooldownCompanion:EndMoverChromeFade(frame)
-    end)
 
     -- Update functions
     frame.UpdateCooldowns = function(self)
