@@ -436,10 +436,10 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 local rechargeState = {
                     kind = "cooldown",
                     duration = rechargeDuration,
-                    startTime = now - rechargeElapsed,
+                    startTime = state.startedAt - rechargeElapsed,
                     loop = true,
                     loopDuration = rechargeDuration,
-                    loopStartTime = now - rechargeElapsed,
+                    loopStartTime = state.startedAt - rechargeElapsed,
                 }
                 slot.statusBar._cdcOwner = slot
                 slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
@@ -449,7 +449,8 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                     local tt = EnsureBarSlotTimeText(slot)
                     CooldownCompanion.ApplyFontStyle(tt, style, "cooldown")
                     AnchorBarSlotTimeText(slot, style)
-                    tt:SetText(CooldownCompanion.FormatCooldownTime(rechargeRemaining, style))
+                    local _, _, remaining = GetConditionalPreviewTiming(rechargeState, now)
+                    tt:SetText(CooldownCompanion.FormatCooldownTime(remaining, style))
                     tt:Show()
                 end
             end

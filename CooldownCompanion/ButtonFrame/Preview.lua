@@ -1,147 +1,120 @@
---[[
-    CooldownCompanion - ButtonFrame/Preview
-    Config panel preview methods for proc glow, aura glow, bar aura effect,
-    bar aura active, bar pulse, bar color shift, pandemic, ready glow, and
-    key press highlight.
-]]
+-- Config-only command state. Renderers own their frames and animations; this
+-- owner holds the one playing command, its targets and its sample clock.
+-- Base-loaded so teardown and module queries work before the config addon loads.
+local _, ST = ...
+local Addon = ST.Addon
+local Preview = {}
+ST._ConfigPreview = Preview
+local session, totemResume
+local EMPTY_EFFECTS = {}
 
-local ADDON_NAME, ST = ...
-local CooldownCompanion = ST.Addon
-
-local pairs = pairs
-local ipairs = ipairs
-local tonumber = tonumber
-local wipe = wipe
-local GetTime = GetTime
-
-local activeGroupPreviewFlags = {}
-local activeButtonPreviewFlags = {}
-local activeTriggerPanelEffectPreviews = {}
-local activeConditionalGroupPreviews = {}
-local activeConditionalButtonPreviews = {}
-
---------------------------------------------------------------------------------
--- Shared Helpers
---------------------------------------------------------------------------------
-
-local function CopyPreviewState(state)
-    if not state then
-        return nil
-    end
-    local copy = {}
-    for key, value in pairs(state) do
-        copy[key] = value
-    end
-    return copy
+local function MarkVisualsChanged()
+    if ST._configState then ST._configState.panelPreviewVisualsNeedReconcile = true end
 end
 
-local function SetActiveGroupPreviewFlag(groupId, previewFlag, show)
-    if not (groupId and previewFlag) then return end
-    local groupFlags = activeGroupPreviewFlags[groupId]
-    if show then
-        if not groupFlags then
-            groupFlags = {}
-            activeGroupPreviewFlags[groupId] = groupFlags
-        end
-        groupFlags[previewFlag] = true
-    elseif groupFlags then
-        groupFlags[previewFlag] = nil
-        if not next(groupFlags) then
-            activeGroupPreviewFlags[groupId] = nil
-        end
-    end
+local function OwnerIsCurrent(value)
+    local profile = Addon.db and Addon.db.profile
+    return value and value.profile == profile
+        and (not value.groupId or (profile.groups and profile.groups[value.groupId] == value.group))
+        and (not value.buttonIndex or not value.targets
+            or value.group.buttons[value.buttonIndex] == value.targets[value.buttonIndex])
 end
 
-local function SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
-    if not (groupId and buttonIndex and previewFlag) then return end
-    local groupButtons = activeButtonPreviewFlags[groupId]
-    local buttonFlags = groupButtons and groupButtons[buttonIndex]
-    if show then
-        if not groupButtons then
-            groupButtons = {}
-            activeButtonPreviewFlags[groupId] = groupButtons
-        end
-        if not buttonFlags then
-            buttonFlags = {}
-            groupButtons[buttonIndex] = buttonFlags
-        end
-        buttonFlags[previewFlag] = true
-    elseif buttonFlags then
-        buttonFlags[previewFlag] = nil
-        if not next(buttonFlags) then
-            groupButtons[buttonIndex] = nil
-            if not next(groupButtons) then
-                activeButtonPreviewFlags[groupId] = nil
-            end
-        end
-    end
+function Preview.Get()
+    return OwnerIsCurrent(session) and session or nil
 end
 
-local function ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
-    local groupButtons = activeButtonPreviewFlags[groupId]
-    if not (groupButtons and previewFlag) then return end
-    for buttonIndex, buttonFlags in pairs(groupButtons) do
-        buttonFlags[previewFlag] = nil
-        if not next(buttonFlags) then
-            groupButtons[buttonIndex] = nil
-        end
-    end
-    if not next(groupButtons) then
-        activeButtonPreviewFlags[groupId] = nil
-    end
+function Preview.IsCurrent(value)
+    return value ~= nil and Preview.Get() == value
 end
 
-local function ClearActivePreviewFlag(previewFlag)
-    for groupId in pairs(activeGroupPreviewFlags) do
-        SetActiveGroupPreviewFlag(groupId, previewFlag, false)
-    end
-    for groupId in pairs(activeButtonPreviewFlags) do
-        ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
-    end
-end
-
-local function IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag)
-    if not (groupId and previewFlag) then
-        return false
-    end
-    local groupFlags = activeGroupPreviewFlags[groupId]
-    if groupFlags and groupFlags[previewFlag] then
-        return true
-    end
-    local groupButtons = activeButtonPreviewFlags[groupId]
-    if not groupButtons then
-        return false
-    end
+local function MatchesTarget(value, groupId, buttonIndex)
+    if not value or value.groupId ~= groupId then return false end
+    if not value.targets then return true end
     if buttonIndex then
-        local buttonFlags = groupButtons[buttonIndex]
-        return buttonFlags and buttonFlags[previewFlag] == true or false
+        return value.targets[buttonIndex] ~= nil
+            and value.group.buttons[buttonIndex] == value.targets[buttonIndex]
     end
-    for _, buttonFlags in pairs(groupButtons) do
-        if buttonFlags[previewFlag] then
-            return true
-        end
+    for index, entry in pairs(value.targets) do
+        if value.group.buttons[index] == entry then return true end
     end
     return false
 end
 
--- Stored-only mirror seam. Unlike IsPreviewFlagActive, this never falls
--- through to live button fields, so config mirrors remain independent of
--- runtime activity.
-ST._IsStoredPreviewFlagActive = IsActivePreviewFlagStored
-
--- Config previews are state for the pinned mirror only. They never write to,
--- repaint, or enroll live runtime buttons.
-local function SetButtonPreview(self, groupId, buttonIndex, show, previewFlag)
-    SetActiveButtonPreviewFlag(groupId, buttonIndex, previewFlag, show)
+function Preview.IsCommand(command, groupId, buttonIndex)
+    local value = Preview.Get()
+    return value ~= nil and value.command.id == command.id
+        and (value.command.object ~= nil or MatchesTarget(value, groupId, buttonIndex))
 end
 
-local function SetGroupPreview(self, groupId, show, previewFlag)
-    SetActiveGroupPreviewFlag(groupId, previewFlag, show)
-    ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
+function Preview.GetSample(owner, groupId)
+    local value = Preview.Get()
+    return value and value.command.preview.owner == owner
+        and (not groupId or value.groupId == groupId) and value.sample or nil
 end
 
-local function ClearAllPreviews(self, previewFlag)
-    ClearActivePreviewFlag(previewFlag)
+function Preview.GetTotemSample(groupId)
+    local sample = Preview.GetSample("totem", groupId)
+    if sample then return sample end
+    return OwnerIsCurrent(totemResume) and totemResume.groupId == groupId and totemResume.sample or nil
+end
+
+function Preview.Stop()
+    local previous = session
+    if not previous then return end
+    session = nil
+    MarkVisualsChanged()
+    local visual = previous.command.preview
+    if visual.owner == "totem" then
+        local sample = previous.sample
+        totemResume = { profile = previous.profile, groupId = previous.groupId, group = previous.group,
+            sample = { elapsed = (sample.elapsed + GetTime() - sample.startedAt) % sample.duration } }
+        if ST._RefreshTotemPreviewPlayback then ST._RefreshTotemPreviewPlayback(previous.groupId) end
+    elseif visual.textureIndicator and ST._StopTextureIndicatorPreviewMirror then
+        ST._StopTextureIndicatorPreviewMirror(previous.groupId)
+    elseif visual.triggerEffects and ST._StopTriggerPanelEffectsPreviewMirror then
+        ST._StopTriggerPanelEffectsPreviewMirror(previous.groupId)
+    end
+end
+
+function Preview.StopOwner(owner)
+    if session and session.command.preview.owner == owner then Preview.Stop() end
+end
+
+-- Settings cancellation names the command, so a composite's effect and
+-- duration always disappear together.
+function Preview.StopCommand(commandId, groupId)
+    local value = Preview.Get()
+    if value and value.command.id == commandId
+        and (not groupId or value.groupId == groupId) then Preview.Stop() end
+end
+
+-- Recompute targets at selection/committed-config boundaries, without restarting
+-- the sample. Entry references prevent replacement data inheriting old indexes.
+function Preview.Retarget(buttonIndex, targets)
+    local value = Preview.Get()
+    if not value then Preview.Stop(); return end
+    if targets and not next(targets) then Preview.Stop(); return end
+    local changed = value.buttonIndex ~= buttonIndex or (value.targets == nil) ~= (targets == nil)
+    if not changed and targets then
+        for index, entry in pairs(targets) do
+            if value.targets[index] ~= entry then changed = true; break end
+        end
+        if not changed then
+            for index, entry in pairs(value.targets) do
+                if targets[index] ~= entry then changed = true; break end
+            end
+        end
+    end
+    if changed then
+        value.buttonIndex, value.targets = buttonIndex, targets
+        MarkVisualsChanged()
+    end
+end
+
+-- Only a gear route for this exact running object may move its canvas owner.
+function Preview.MoveHost(value, panelId)
+    if Preview.IsCurrent(value) and value.command.object then value.hostPanelId = panelId end
 end
 
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
@@ -175,21 +148,17 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     loss_of_control = { kind = "loss_of_control", duration = 12, remaining = 8, loop = true },
 }
 
-local function BuildConditionalVisualPreviewState(previewKind, sampleState)
+local function BuildConditionalVisualPreviewState(previewKind)
     local base = CONDITIONAL_VISUAL_PREVIEW_DEFAULTS[previewKind] or CONDITIONAL_VISUAL_PREVIEW_DEFAULTS.cooldown
     local state = {}
     for key, value in pairs(base) do
         state[key] = value
     end
-    if sampleState then
-        for key, value in pairs(sampleState) do
-            state[key] = value
-        end
-    end
 
     local duration = tonumber(state.duration)
     local remaining = tonumber(state.remaining)
     local now = GetTime()
+    state.startedAt = now
     if duration and duration > 0 then
         if not remaining or remaining <= 0 or remaining > duration then
             remaining = duration
@@ -205,8 +174,7 @@ local function BuildConditionalVisualPreviewState(previewKind, sampleState)
     return state
 end
 
--- Shared timing contract for the config mirror's animated stand-ins. Exported
--- directly to avoid consuming another Lua 5.1 file-local in this large module.
+-- Shared timing contract for the config mirror's animated stand-ins.
 function ST._GetConditionalPreviewTiming(preview, now)
     local duration = tonumber(preview and preview.duration)
     local startTime = tonumber(preview and preview.startTime)
@@ -246,374 +214,69 @@ function ST._GetConditionalPreviewTiming(preview, now)
     return startTime, duration, remaining
 end
 
--- Stored conditional-preview state for (group, button): the per-button
--- entry wins, else the group-wide entry (the setters keep the two
--- mutually exclusive per group). Read by the config mirror, which renders
--- CC-side stand-ins from the same state.
-local function GetStoredConditionalPreviewState(groupId, buttonIndex)
-    if not groupId then
-        return nil
+function Preview.Start(command, panelId, buttonIndex, targets)
+    local profile = Addon.db and Addon.db.profile
+    local groupId = not command.object and panelId or nil
+    local group = groupId and profile and profile.groups[groupId]
+    if not profile or (not command.object and not group) or (targets and not next(targets)) then return false end
+    Addon:ClearAllConfigPreviews()
+    local visual = command.preview
+    local sample = visual.conditional and BuildConditionalVisualPreviewState(visual.conditional)
+        or { startedAt = GetTime() }
+    if visual.owner == "totem" then
+        local resume = Preview.GetTotemSample(groupId)
+        sample.elapsed, sample.duration = resume and resume.elapsed or visual.initialElapsed, visual.duration
     end
-    local groupButtons = activeConditionalButtonPreviews[groupId]
-    local buttonState = groupButtons and buttonIndex and groupButtons[buttonIndex] or nil
-    return buttonState or activeConditionalGroupPreviews[groupId]
+    session = { command = command, profile = profile, groupId = groupId, group = group,
+        hostPanelId = panelId, buttonIndex = buttonIndex, targets = targets, sample = sample }
+    if visual.healthEffect then session.healthEffects = { [visual.healthEffect] = true } end
+    MarkVisualsChanged()
+    if visual.owner == "totem" and ST._RefreshTotemPreviewPlayback then
+        ST._RefreshTotemPreviewPlayback(groupId)
+    end
+    return true
 end
 
-ST._GetStoredConditionalPreviewState = GetStoredConditionalPreviewState
+local function IsStoredPreviewFlagActive(groupId, buttonIndex, flag)
+    local value = Preview.Get()
+    return value ~= nil and flag ~= nil and value.command.preview.flag == flag
+        and MatchesTarget(value, groupId, buttonIndex)
+end
+ST._IsStoredPreviewFlagActive = IsStoredPreviewFlagActive
 
-function CooldownCompanion:IsPreviewFlagActive(groupId, buttonIndex, previewFlag)
-    return previewFlag ~= nil
-        and IsActivePreviewFlagStored(groupId, buttonIndex, previewFlag)
-        or false
+function Addon:IsPreviewFlagActive(groupId, buttonIndex, flag)
+    return IsStoredPreviewFlagActive(groupId, buttonIndex, flag)
 end
 
---- Entry-scoped ONLY: true when this exact button carries its own conditional
---- preview of `previewKind`. The general query below deliberately answers true
---- for a panel-wide preview too, which is right for the chooser but wrong for
---- a per-entry setting deciding whether to cancel something — passing a
---- buttonIndex to SetConditionalVisualPreviewActive clears the panel-wide
---- preview as a side effect of the entry/panel exclusivity rule, so one entry
---- opting out would silently stop a preview covering the whole panel.
-function CooldownCompanion:IsButtonConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    if not (groupId and buttonIndex) then
-        return false
-    end
-    local groupButtons = activeConditionalButtonPreviews[groupId]
-    local buttonState = groupButtons and groupButtons[buttonIndex]
-    return (buttonState and buttonState.kind == previewKind) and true or false
+function ST._GetStoredConditionalPreviewState(groupId, buttonIndex)
+    local value = Preview.Get()
+    return value and value.command.preview.conditional and MatchesTarget(value, groupId, buttonIndex)
+        and value.sample or nil
 end
 
-function CooldownCompanion:IsConditionalVisualPreviewActive(groupId, buttonIndex, previewKind)
-    local groupState = activeConditionalGroupPreviews[groupId]
-    if groupState and groupState.kind == previewKind then
-        return true
-    end
-    local groupButtons = activeConditionalButtonPreviews[groupId]
-    if groupButtons then
-        if buttonIndex then
-            local buttonState = groupButtons[buttonIndex]
-            return buttonState and buttonState.kind == previewKind or false
-        end
-        for _, buttonState in pairs(groupButtons) do
-            if buttonState and buttonState.kind == previewKind then
-                return true
-            end
-        end
-    end
-    return false
+function Addon:IsConditionalVisualPreviewActive(groupId, buttonIndex, kind)
+    local sample = ST._GetStoredConditionalPreviewState(groupId, buttonIndex)
+    return sample ~= nil and sample.kind == kind
 end
 
-function CooldownCompanion:SetConditionalVisualPreviewActive(groupId, buttonIndex, previewKind, show, sampleState)
-    if not groupId then
-        return
-    end
-
-    local state = show and BuildConditionalVisualPreviewState(previewKind, sampleState) or nil
-    if buttonIndex then
-        activeConditionalGroupPreviews[groupId] = nil
-        if state then
-            if not activeConditionalButtonPreviews[groupId] then
-                activeConditionalButtonPreviews[groupId] = {}
-            end
-            activeConditionalButtonPreviews[groupId][buttonIndex] = CopyPreviewState(state)
-        elseif activeConditionalButtonPreviews[groupId] then
-            activeConditionalButtonPreviews[groupId][buttonIndex] = nil
-            if not next(activeConditionalButtonPreviews[groupId]) then
-                activeConditionalButtonPreviews[groupId] = nil
-            end
-        end
-        return
-    end
-
-    activeConditionalButtonPreviews[groupId] = nil
-    activeConditionalGroupPreviews[groupId] = CopyPreviewState(state)
+function Addon:IsGroupTextureIndicatorPreviewActive(groupId, key)
+    local value = Preview.Get()
+    return value ~= nil and value.groupId == groupId and value.command.preview.textureIndicator == key
 end
 
-function CooldownCompanion:ClearAllConditionalVisualPreviews()
-    wipe(activeConditionalGroupPreviews)
-    wipe(activeConditionalButtonPreviews)
+function Addon:IsTriggerPanelEffectsPreviewActive(groupId)
+    local value = Preview.Get()
+    return value ~= nil and value.groupId == groupId and value.command.preview.triggerEffects == true
 end
 
---------------------------------------------------------------------------------
--- Proc Glow Preview
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetProcGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_procGlowPreview")
+function Preview.GetHealthEffects()
+    local value = Preview.Get()
+    return value and value.healthEffects or EMPTY_EFFECTS
 end
 
-function CooldownCompanion:SetGroupProcGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_procGlowPreview")
-end
-
-function CooldownCompanion:ClearAllProcGlowPreviews()
-    ClearAllPreviews(self, "_procGlowPreview")
-end
-
---------------------------------------------------------------------------------
--- Aura Glow Preview
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetAuraGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_auraGlowPreview")
-end
-
-function CooldownCompanion:SetGroupAuraGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_auraGlowPreview")
-end
-
-function CooldownCompanion:ClearAllAuraGlowPreviews()
-    ClearAllPreviews(self, "_auraGlowPreview")
-end
-
---------------------------------------------------------------------------------
--- Pandemic Preview (PTR 8 visuals)
--- The config mirror renders icon and bar replicas from the same pandemic
--- style keys the live kit consumes, without touching live buttons or the
--- aura slot subtree.
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetPandemicPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview")
-end
-
-function CooldownCompanion:SetGroupPandemicPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_pandemicPreview")
-end
-
--- Bar variants: same flag, plus the fake aura drain the barActiveAura
--- preview stages — the mirror's pandemic recolor rides the drained fill, so
--- without the conditional there would be nothing to recolor. Live bar
--- buttons render nothing from the flag (kit-fill-only feature).
---
--- The "aura_duration_bar" conditional store is SHARED with the barActiveAura
--- preview, so a clear may only touch it while this preview's own flag holds
--- it — reconciliation clears fire on every Effects-tab rebuild, and an
--- unconditional wipe here would kill a running barActiveAura drain while its
--- flag still reports the preview as playing (same gate on its setters).
--- The gate protects only the not-holding case; both-flags-at-once never
--- happens because the preview command center is globally mutually exclusive
--- (ClearAllConfigPreviews on every start). A future preview starter that
--- bypasses the command center must preserve that exclusivity.
-function CooldownCompanion:SetBarPandemicPreview(groupId, buttonIndex, show)
-    if show or self:IsPreviewFlagActive(groupId, buttonIndex, "_pandemicPreview") then
-        self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
-    end
-    SetButtonPreview(self, groupId, buttonIndex, show, "_pandemicPreview")
-end
-
-function CooldownCompanion:SetGroupBarPandemicPreview(groupId, show)
-    if show or self:IsPreviewFlagActive(groupId, nil, "_pandemicPreview") then
-        self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
-    end
-    SetGroupPreview(self, groupId, show, "_pandemicPreview")
-end
-
-function CooldownCompanion:ClearAllPandemicPreviews()
-    ClearAllPreviews(self, "_pandemicPreview")
-end
-
---------------------------------------------------------------------------------
--- Bar Aura Effect Preview (barActiveAura)
---------------------------------------------------------------------------------
-
--- Same shared-conditional ownership rule as the bar pandemic setters below:
--- a clear may only wipe the "aura_duration_bar" store while this preview's
--- own flag holds it, or the sections' rebuild-time reconciliation clears
--- kill each other's running drain.
-function CooldownCompanion:SetBarAuraEffectPreview(groupId, buttonIndex, show)
-    if show or self:IsPreviewFlagActive(groupId, buttonIndex, "_barAuraEffectPreview") then
-        self:SetConditionalVisualPreviewActive(groupId, buttonIndex, "aura_duration_bar", show)
-    end
-    SetButtonPreview(self, groupId, buttonIndex, show, "_barAuraEffectPreview")
-end
-
-function CooldownCompanion:SetGroupBarAuraEffectPreview(groupId, show)
-    if show or self:IsPreviewFlagActive(groupId, nil, "_barAuraEffectPreview") then
-        self:SetConditionalVisualPreviewActive(groupId, nil, "aura_duration_bar", show)
-    end
-    SetGroupPreview(self, groupId, show, "_barAuraEffectPreview")
-end
-
--- The fake drain is cleared by ClearAllConditionalVisualPreviews; every
--- caller of this (ClearAllConfigPreviews) runs both.
-function CooldownCompanion:ClearAllBarAuraEffectPreviews()
-    ClearAllPreviews(self, "_barAuraEffectPreview")
-end
-
---------------------------------------------------------------------------------
--- Ready Glow Preview
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetReadyGlowPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_readyGlowPreview")
-end
-
-function CooldownCompanion:SetGroupReadyGlowPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_readyGlowPreview")
-end
-
-function CooldownCompanion:ClearAllReadyGlowPreviews()
-    ClearAllPreviews(self, "_readyGlowPreview")
-end
-
---------------------------------------------------------------------------------
--- Key Press Highlight Preview
---------------------------------------------------------------------------------
-
-function CooldownCompanion:SetButtonKeyPressHighlightPreview(groupId, buttonIndex, show)
-    SetButtonPreview(self, groupId, buttonIndex, show, "_keyPressHighlightPreview")
-end
-
-function CooldownCompanion:SetGroupKeyPressHighlightPreview(groupId, show)
-    SetGroupPreview(self, groupId, show, "_keyPressHighlightPreview")
-end
-
-function CooldownCompanion:ClearAllKeyPressHighlightPreviews()
-    ClearAllPreviews(self, "_keyPressHighlightPreview")
-end
-
---------------------------------------------------------------------------------
--- Texture Indicator Previews
---------------------------------------------------------------------------------
-
-local TEXTURE_INDICATOR_PREVIEW_FLAGS = {
-    proc = "_textureProcPreview",
-    aura = "_textureAuraPreview",
-    ready = "_textureReadyPreview",
-    unusable = "_textureUnusablePreview",
-}
-
-function CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, show)
-    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
-    if not previewFlag then
-        return
-    end
-
-    -- Texture effects are config-mirror state even while the mirror is hidden.
-    SetActiveGroupPreviewFlag(groupId, previewFlag, show)
-    ClearActiveButtonPreviewFlagForGroup(groupId, previewFlag)
-end
-
-function CooldownCompanion:IsGroupTextureIndicatorPreviewActive(groupId, indicatorKey)
-    local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
-    return previewFlag and IsActivePreviewFlagStored(groupId, nil, previewFlag) or false
-end
-
-function CooldownCompanion:ClearAllTextureIndicatorPreviews()
-    local hadPreview = false
-    for indicatorKey in pairs(TEXTURE_INDICATOR_PREVIEW_FLAGS) do
-        local previewFlag = TEXTURE_INDICATOR_PREVIEW_FLAGS[indicatorKey]
-        for groupId in pairs(activeGroupPreviewFlags) do
-            if IsActivePreviewFlagStored(groupId, nil, previewFlag) then
-                hadPreview = true
-                break
-            end
-        end
-        if not hadPreview then
-            for groupId in pairs(activeButtonPreviewFlags) do
-                if IsActivePreviewFlagStored(groupId, nil, previewFlag) then
-                    hadPreview = true
-                    break
-                end
-            end
-        end
-        ClearActivePreviewFlag(previewFlag)
-    end
-
-    if hadPreview and ST._StopTextureIndicatorPreviewMirror then
-        ST._StopTextureIndicatorPreviewMirror()
-    end
-end
-
-function CooldownCompanion:SetTriggerPanelEffectsPreview(groupId, show)
-    if not groupId then
-        return
-    end
-    activeTriggerPanelEffectPreviews[groupId] = show or nil
-    -- Trigger effect previews belong exclusively to the pinned config mirror.
-    -- Never write preview flags onto live/runtime buttons.
-    if ST._RefreshTriggerDisplayVisual then
-        ST._RefreshTriggerDisplayVisual(groupId)
-    end
-end
-
-function CooldownCompanion:IsTriggerPanelEffectsPreviewActive(groupId)
-    if activeTriggerPanelEffectPreviews[groupId] then
-        return true
-    end
-    return false
-end
-
-function CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-    local activeGroups = {}
-    for groupId in pairs(activeTriggerPanelEffectPreviews) do
-        activeGroups[#activeGroups + 1] = groupId
-    end
-    wipe(activeTriggerPanelEffectPreviews)
-    for _, groupId in ipairs(activeGroups) do
-        if ST._StopTriggerPanelEffectsPreviewMirror then
-            ST._StopTriggerPanelEffectsPreviewMirror(groupId)
-        elseif ST._RefreshTriggerDisplayVisual then
-            ST._RefreshTriggerDisplayVisual(groupId)
-        end
-    end
-end
-
-function CooldownCompanion:ClearAllConfigPreviews()
-    if self.ClearAllTotemPanelPreviews then self:ClearAllTotemPanelPreviews() end
-    -- The editable mirror only needs to walk and reconcile every slot when
-    -- this clear actually removed a panel visual. Preserve an already-issued
-    -- ticket across duplicate clears until the config mirror consumes it.
-    if next(activeGroupPreviewFlags)
-        or next(activeButtonPreviewFlags)
-        or next(activeConditionalGroupPreviews)
-        or next(activeConditionalButtonPreviews)
-        or next(activeTriggerPanelEffectPreviews) then
-        local configState = ST._configState
-        if configState then
-            configState.panelPreviewVisualsNeedReconcile = true
-        end
-    end
-    if self.ClearAllProcGlowPreviews then
-        self:ClearAllProcGlowPreviews()
-    end
-    if self.ClearAllAuraGlowPreviews then
-        self:ClearAllAuraGlowPreviews()
-    end
-    if self.ClearAllPandemicPreviews then
-        self:ClearAllPandemicPreviews()
-    end
-    if self.ClearAllBarAuraEffectPreviews then
-        self:ClearAllBarAuraEffectPreviews()
-    end
-    if self.ClearAllReadyGlowPreviews then
-        self:ClearAllReadyGlowPreviews()
-    end
-    if self.ClearAllKeyPressHighlightPreviews then
-        self:ClearAllKeyPressHighlightPreviews()
-    end
-    if self.ClearAllConditionalVisualPreviews then
-        self:ClearAllConditionalVisualPreviews()
-    end
-    if self.ClearAllTextureIndicatorPreviews then
-        self:ClearAllTextureIndicatorPreviews()
-    end
-    if self.ClearAllTriggerPanelEffectPreviews then
-        self:ClearAllTriggerPanelEffectPreviews()
-    end
-    if self.ClearAllResourceAuraPreviews then
-        self:ClearAllResourceAuraPreviews()
-    end
-    if self.ClearAllHealthEffectPreviews then
-        self:ClearAllHealthEffectPreviews()
-    end
-    if self.ClearCursorAnchorLayoutPreview then
-        self:ClearCursorAnchorLayoutPreview()
-    end
-    if self.StopCastBarPreview then
-        self:StopCastBarPreview()
-    end
-    -- Unlock assists are explicit layout tools and are deliberately not
-    -- cleared here.
+function Addon:ClearAllConfigPreviews(keepSession)
+    if not Preview.IsCurrent(keepSession) then Preview.Stop() end
+    -- Cursor positioning has a separate lifetime. Preserve its existing cleanup
+    -- (including explicit unlock/Arrange retention) at broad clear boundaries.
+    if self.ClearCursorAnchorLayoutPreview then self:ClearCursorAnchorLayoutPreview() end
 end

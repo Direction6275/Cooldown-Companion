@@ -2113,8 +2113,12 @@ local function CreateConfigPanel()
         end
         wipe(CS.buttonSettingsInfoButtons)
 
-        if tabChanged or scopeChanged then
+        -- A programmatic rebuild already resolved its navigation intent. Only
+        -- a manual tab change ends playback here.
+        if (tabChanged or scopeChanged) and not CS.configRefreshInProgress then
+            local wasPlaying = ST._ConfigPreview.Get() ~= nil
             CooldownCompanion:ClearAllConfigPreviews()
+            if wasPlaying and ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror() end
         end
         widget:ReleaseChildren()
 

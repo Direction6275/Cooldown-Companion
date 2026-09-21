@@ -240,7 +240,7 @@ local function SetTexturePanelAuraDisplayEnabled(group, buttonData, value, group
         -- Texture preview flag now so a hidden command-center control cannot
         -- leave the config-mirror animation armed or resume it later.
         for _, indicatorKey in ipairs(TEXTURE_INDICATOR_PREVIEW_KEYS) do
-            CooldownCompanion:SetGroupTextureIndicatorPreview(groupId, indicatorKey, false)
+            ST._ConfigPreview.StopCommand("texture" .. indicatorKey:gsub("^%l", string.upper), groupId)
         end
     end
     if enabled then

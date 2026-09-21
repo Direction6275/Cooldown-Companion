@@ -309,8 +309,12 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             container._activePanelSettingsTab = tab
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
-            if tabChanged or scopeChanged then
+            -- A programmatic rebuild already resolved its navigation intent. Only
+            -- a manual tab change ends playback here.
+            if (tabChanged or scopeChanged) and not CS.configRefreshInProgress then
+                local wasPlaying = ST._ConfigPreview.Get() ~= nil
                 CooldownCompanion:ClearAllConfigPreviews()
+                if wasPlaying and ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror() end
             end
             -- Clean up raw (?) info buttons BEFORE releasing children, so they
             -- don't leak onto recycled AceGUI frames when switching tabs

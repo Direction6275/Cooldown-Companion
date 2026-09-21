@@ -1117,7 +1117,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     end -- container
 
     if not config.enabled and CS.selectedGroup then
-        CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, false)
+        ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
     end
 end
 
@@ -1236,7 +1236,7 @@ local function BuildTriggerEffectsTab(container, group)
     end
 
     if not anyEnabled and CS.selectedGroup then
-        CooldownCompanion:SetTriggerPanelEffectsPreview(CS.selectedGroup, false)
+        ST._ConfigPreview.StopCommand("triggerEffects", CS.selectedGroup)
     end
 end
 
@@ -1255,7 +1255,7 @@ local function BuildTextureEffectsTab(container, group)
     local buttonData = group.buttons and group.buttons[1] or nil
     if CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData) then
         for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
-            CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, sectionKey, false)
+            ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
         end
         local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Texture Indicators",
             EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
@@ -1273,7 +1273,7 @@ local function BuildTextureEffectsTab(container, group)
         return
     end
 
-    CooldownCompanion:SetGroupTextureIndicatorPreview(CS.selectedGroup, "aura", false)
+    ST._ConfigPreview.StopCommand("textureAura", CS.selectedGroup)
 
     -- One row-grammar section. Its three gears queue advanced keys, so the
     -- collapse key is declared in ST._INDICATORS_SECTION_BY_ADVANCED_KEY below

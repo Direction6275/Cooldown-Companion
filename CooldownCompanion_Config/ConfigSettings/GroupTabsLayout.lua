@@ -651,10 +651,6 @@ local function BuildLayoutTab(container)
     end
     local style = group.style
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
-    CooldownCompanion:ClearAllTextureIndicatorPreviews()
-    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-    end
 
     if group.displayMode == "textures" or group.displayMode == "trigger" then
         local settings = GetStandaloneTextureSettings(group, true)

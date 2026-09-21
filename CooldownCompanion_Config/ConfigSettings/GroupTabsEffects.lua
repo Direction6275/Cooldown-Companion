@@ -192,33 +192,6 @@ local function ClearEffectsTabWidgets()
     wipe(appearanceTabElements)
 end
 
-local function ResetEffectsTabPreviews()
-    CooldownCompanion:ClearAllTextureIndicatorPreviews()
-    if CooldownCompanion.ClearAllTriggerPanelEffectPreviews then
-        CooldownCompanion:ClearAllTriggerPanelEffectPreviews()
-    end
-end
-
--- Arriving at a different panel or display mode must not inherit the last
--- one's running glow preview. Rebuilds of the SAME tab must NOT stop it:
--- these previews are started from the preview command center, and
--- previewing is a "turn it on, then adjust until it looks right"
--- workflow - so any settings change that refreshes the config would
--- otherwise kill the preview mid-adjustment. Same context gate the
--- texture/trigger reset above uses.
-local function BuildBarModeEffects(container, group, style, previewContextChanged)
-    if previewContextChanged then
-        CooldownCompanion:SetGroupProcGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupAuraGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupReadyGlowPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupKeyPressHighlightPreview(CS.selectedGroup, false)
-        CooldownCompanion:SetGroupBarAuraEffectPreview(CS.selectedGroup, false)
-        -- The bar variant also owns the staged aura drain conditional.
-        CooldownCompanion:SetGroupBarPandemicPreview(CS.selectedGroup, false)
-    end
-    BuildBarEffectsTab(container, group, style)
-end
-
 -- The four glow sections below are icons-mode only and are each called exactly
 -- once, from BuildEffectsTab's icons path, so they were converted to the row
 -- grammar outright rather than growing an opts.row mode. `container` is the
@@ -869,14 +842,6 @@ local function BuildEffectsTab(container, settingsGroup)
     local style = group.style
 
     local displayMode = group.displayMode
-    local previewMode = group._settingsContext and "ordinary" or displayMode
-    local previewContextChanged = CS.lastEffectsPreviewGroup ~= CS.selectedGroup
-        or CS.lastEffectsPreviewMode ~= previewMode
-    if previewContextChanged then
-        ResetEffectsTabPreviews()
-        CS.lastEffectsPreviewGroup = CS.selectedGroup
-        CS.lastEffectsPreviewMode = previewMode
-    end
 
     if displayMode == "trigger" then
         BuildTriggerEffectsTab(container, group)
@@ -980,7 +945,7 @@ local function BuildEffectsTab(container, settingsGroup)
     end
 
     if displayMode == "bars" then
-        BuildBarModeEffects(container, group, style, previewContextChanged)
+        BuildBarEffectsTab(container, group, style)
         return
     end
 

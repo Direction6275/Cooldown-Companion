@@ -60,7 +60,6 @@ HEALTH_EFFECTS = {
     standaloneHealingCalc = CreateUnitHealPredictionCalculator(),
     absorbMissingCalc = CreateUnitHealPredictionCalculator(),
     absorbOverflowCalc = CreateUnitHealPredictionCalculator(),
-    preview = {},
 }
 HEALTH_EFFECTS.netHealingCalc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
 HEALTH_EFFECTS.netHealingCalc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.CurrentHealth)
