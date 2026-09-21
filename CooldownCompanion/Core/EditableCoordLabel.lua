@@ -405,16 +405,9 @@ function ST.AttachMoverWidthResize(frame, opts)
         return opts.isVertical ~= nil and opts.isVertical() == true
     end
 
-    local sizeLabel = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
-    sizeLabel:SetHeight(15)
+    local sizeLabel = ST.MoverChrome.CreateLabel(dragHandle)
     sizeLabel:SetPoint("TOPLEFT", coordLabel, "BOTTOMLEFT", 0, -2)
     sizeLabel:SetPoint("TOPRIGHT", coordLabel, "BOTTOMRIGHT", 0, -2)
-    sizeLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    sizeLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(sizeLabel)
-    sizeLabel.text = sizeLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sizeLabel.text:SetPoint("CENTER")
-    sizeLabel.text:SetTextColor(1, 1, 1, 1)
 
     local RepositionGrip
 

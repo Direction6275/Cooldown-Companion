@@ -205,36 +205,6 @@ local PANEL_RESIZE_GRIP_SIZE = 16
 local PANEL_RESIZE_REFRESH_INTERVAL = 0
 
 local function CreateNudger(frame, groupId)
-    local NUDGE_GAP = 2
-
-    local nudger = CreateFrame("Frame", nil, frame.dragHandle, "BackdropTemplate")
-    nudger.buttons = {}
-    nudger:SetSize(NUDGE_BTN_SIZE * 2 + NUDGE_GAP, NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", frame.dragHandle, "TOP", 0, 2)
-    nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
-    nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
-    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    CreatePixelBorders(nudger)
-    nudger:SetScript("OnEnter", function(self)
-        CooldownCompanion:BeginMoverChromeHoverFade(self)
-    end)
-    nudger:SetScript("OnLeave", function(self)
-        if not self:IsMouseOver() then
-            CooldownCompanion:EndMoverChromeFade(self)
-        end
-    end)
-    nudger:SetScript("OnHide", function(self)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
-
-    local directions = {
-        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx =  0, dy =  1, ox = 0,         oy = NUDGE_GAP },   -- up
-        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP",    dx =  0, dy = -1, ox = 0,         oy = -NUDGE_GAP },  -- down
-        { atlas = "common-dropdown-icon-back", rotation = 0,            anchor = "RIGHT",  dx = -1, dy =  0, ox = -NUDGE_GAP, oy = 0 },          -- left
-        { atlas = "common-dropdown-icon-next", rotation = 0,            anchor = "LEFT",   dx =  1, dy =  0, ox = NUDGE_GAP,  oy = 0 },          -- right
-    }
-
     local function IsCursorPreviewNudge()
         local group = CooldownCompanion.db.profile.groups[groupId]
         return group
@@ -256,90 +226,55 @@ local function CreateNudger(frame, groupId)
         return math_max(-100, math_min(100, value))
     end
 
-    for _, dir in ipairs(directions) do
-        local btn = CreateFrame("Button", nil, nudger)
-        nudger.buttons[#nudger.buttons + 1] = btn
-        btn:SetSize(NUDGE_BTN_SIZE, NUDGE_BTN_SIZE)
-        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
-        btn:EnableMouse(true)
-
-        local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetAtlas(dir.atlas)
-        arrow:SetAllPoints()
-        arrow:SetRotation(dir.rotation)
-        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        btn.arrow = arrow
-
-        -- Hover highlight
-        btn:SetScript("OnEnter", function(self)
-            self.arrow:SetVertexColor(1, 1, 1, 1)
-            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if nudger.RefreshSectionTint then nudger.RefreshSectionTint() end
-            if not IsCursorPreviewNudge() and not IsSectionNudge() then
-                CooldownCompanion:SaveGroupPosition(groupId)
+    local nudger = ST.MoverChrome.CreateNudger(frame.dragHandle, NUDGE_BTN_SIZE, function(dx, dy)
+        CancelCoordinateEdit(frame.coordLabel)
+        CancelCoordinateEdit(frame.sizeLabel)
+        local group = CooldownCompanion.db.profile.groups[groupId]
+        if not group then return end
+        local gFrame = CooldownCompanion.groupFrames[groupId]
+        if gFrame then
+            -- A selected SECTION takes the nudge as its own X/Y offset;
+            -- the panel does not move (owner grammar: select it, then
+            -- adjust it). offsetY is positive-up, matching dy.
+            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+            if section then
+                section.offsetX = RoundAndClampSectionOffset(
+                    (tonumber(section.offsetX) or 0) + dx)
+                section.offsetY = RoundAndClampSectionOffset(
+                    (tonumber(section.offsetY) or 0) + dy)
+                CooldownCompanion:UpdateGroupStyle(groupId)
+                UpdateCoordLabel(gFrame,
+                    tonumber(section.offsetX) or 0,
+                    tonumber(section.offsetY) or 0)
+                return
             end
-            if not nudger:IsMouseOver() then
-                CooldownCompanion:EndMoverChromeFade(nudger)
+
+            if IsCursorAnchor(group.anchor)
+                and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId) then
+                group.anchor.x = math_floor(((group.anchor.x or CURSOR_ANCHOR_X) + dx) * 10 + 0.5) / 10
+                group.anchor.y = math_floor(((group.anchor.y or CURSOR_ANCHOR_Y) + dy) * 10 + 0.5) / 10
+                CooldownCompanion:AnchorGroupFrame(gFrame, group.anchor)
+                UpdateCoordLabel(gFrame, group.anchor.x, group.anchor.y)
+                if CooldownCompanion.UpdateCursorAnchoredFrames then
+                    CooldownCompanion:UpdateCursorAnchoredFrames()
+                end
+                return
             end
-        end)
 
-        local function DoNudge()
-            local group = CooldownCompanion.db.profile.groups[groupId]
-            if not group then return end
-            local gFrame = CooldownCompanion.groupFrames[groupId]
-            if gFrame then
-                -- A selected SECTION takes the nudge as its own X/Y offset;
-                -- the panel does not move (owner grammar: select it, then
-                -- adjust it). offsetY is positive-up, matching dir.dy.
-                local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
-                if section then
-                    section.offsetX = RoundAndClampSectionOffset(
-                        (tonumber(section.offsetX) or 0) + dir.dx)
-                    section.offsetY = RoundAndClampSectionOffset(
-                        (tonumber(section.offsetY) or 0) + dir.dy)
-                    CooldownCompanion:UpdateGroupStyle(groupId)
-                    UpdateCoordLabel(gFrame,
-                        tonumber(section.offsetX) or 0,
-                        tonumber(section.offsetY) or 0)
-                    return
-                end
-
-                if IsCursorAnchor(group.anchor)
-                    and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId) then
-                    group.anchor.x = math_floor(((group.anchor.x or CURSOR_ANCHOR_X) + dir.dx) * 10 + 0.5) / 10
-                    group.anchor.y = math_floor(((group.anchor.y or CURSOR_ANCHOR_Y) + dir.dy) * 10 + 0.5) / 10
-                    CooldownCompanion:AnchorGroupFrame(gFrame, group.anchor)
-                    UpdateCoordLabel(gFrame, group.anchor.x, group.anchor.y)
-                    if CooldownCompanion.UpdateCursorAnchoredFrames then
-                        CooldownCompanion:UpdateCursorAnchoredFrames()
-                    end
-                    return
-                end
-
-                gFrame:AdjustPointsOffset(dir.dx, dir.dy)
-                -- Save the base-grid position, not the outer frame offsets.
-                CooldownCompanion:SaveGroupPosition(groupId)
-                if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
-                    CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
-                end
+            gFrame:AdjustPointsOffset(dx, dy)
+            -- Save the base-grid position, not the outer frame offsets.
+            CooldownCompanion:SaveGroupPosition(groupId)
+            if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+                CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
             end
         end
-
-        btn:SetScript("OnMouseDown", function(self)
-            CancelCoordinateEdit(frame.coordLabel)
-            CancelCoordinateEdit(frame.sizeLabel)
-            DoNudge()
-            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
-        end)
-
-        btn:SetScript("OnMouseUp", function(self)
-            if not IsCursorPreviewNudge() and not IsSectionNudge() then
-                CooldownCompanion:SaveGroupPosition(groupId)
-            end
-        end)
-    end
+    end, function()
+        if not IsCursorPreviewNudge() and not IsSectionNudge() then
+            CooldownCompanion:SaveGroupPosition(groupId)
+        end
+    end)
+    nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
+    nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
 
     -- Gold arrows while a section is selected: the nudger is shared chrome,
     -- and the tint is what says it is currently driving the section.
@@ -1071,7 +1006,8 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         return
     end
 
-    shown = not not shown
+    shown = not not shown and not InCombatLockdown() and not CooldownCompanion._combatForcedLock
+    if shown then GF.EnsureMoverChrome(frame) end
     local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
     local containerPreviewActive = frame.groupId and GetContainerPreviewSelectionState(frame.groupId) or false
     if frame.dragHandle then
@@ -1097,6 +1033,10 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
         or false
     if resizeShown and not frame.resizeGrip then
         frame.resizeGrip = CreatePanelResizeGrip(frame)
+    end
+    if shown then
+        local _, selected = GetContainerPreviewSelectionState(frame.groupId)
+        SyncGroupControlLevels(frame, selected or IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, frame.groupId))
     end
     if frame.resizeGrip then
         if resizeShown then

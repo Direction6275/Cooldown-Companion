@@ -291,21 +291,19 @@ local function CreateCastBarMoverFrame()
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
 
+    independentMoverFrame = frame
+end
+
+local function EnsureCastBarMoverChrome(frame)
+    if frame._dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
     -- Drag handle (full-width, two-point anchored to mover frame)
-    local dragHandle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local dragHandle = ST.MoverChrome.CreateHeader(frame, "Cast Bar", function()
+        ST.LockIndependentCastBarFromMover(frame)
+    end, function() return { kind = "cast", focusId = "cast" } end)
     dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
     dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
-    dragHandle:SetHeight(15)
-    dragHandle:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    dragHandle:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(dragHandle)
     dragHandle:EnableMouse(false)
     dragHandle:RegisterForDrag()
-
-    dragHandle.text = dragHandle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    dragHandle.text:SetPoint("CENTER")
-    dragHandle.text:SetText("Cast Bar")
-    dragHandle.text:SetTextColor(1, 1, 1, 1)
 
     -- Hovering the name bar reveals precise controls. Selection belongs to
     -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
@@ -320,115 +318,28 @@ local function CreateCastBarMoverFrame()
         end
     end)
 
-    dragHandle.lockButton = ST.CreateMoverLockBadge(dragHandle, 12, function()
-        ST.LockIndependentCastBarFromMover(frame)
-    end)
-    dragHandle.lockButton:SetPoint("RIGHT", dragHandle, "RIGHT", -2, 0)
-    dragHandle.menuButton = ST.CreateMoverQuickMenuButton(
-        dragHandle,
-        12,
-        function() return { kind = "cast", focusId = "cast" } end,
-        dragHandle
-    )
-    dragHandle.menuButton:SetPoint("RIGHT", dragHandle.lockButton, "LEFT", -2, 0)
-    -- Symmetric insets matching the lock button keep the name centered on the bar
-    local headerTextInset = dragHandle.lockButton:GetWidth() + dragHandle.menuButton:GetWidth() + 8
-    dragHandle.text:ClearAllPoints()
-    dragHandle.text:SetPoint("LEFT", dragHandle, "LEFT", headerTextInset, 0)
-    dragHandle.text:SetPoint("RIGHT", dragHandle, "RIGHT", -headerTextInset, 0)
-    dragHandle.text:SetJustifyH("CENTER")
-
     -- Nudger (4-direction pixel nudge, matches icon panel pattern)
-    local NUDGE_GAP = 2
-    local nudger = CreateFrame("Frame", nil, dragHandle, "BackdropTemplate")
-    nudger:SetSize(CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP, CAST_NUDGE_BTN_SIZE * 2 + NUDGE_GAP)
-    nudger:SetPoint("BOTTOM", dragHandle, "TOP", 0, 2)
-    nudger:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    nudger:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(nudger)
+    local nudger = ST.MoverChrome.CreateNudger(dragHandle, CAST_NUDGE_BTN_SIZE, function(dx, dy)
+        CancelCoordinateEdit(frame._coordLabel)
+        CancelCoordinateEdit(frame._sizeLabel)
+        local settings = GetCastBarSettings()
+        if not settings or settings.independentAnchorLocked then return end
+        frame:AdjustPointsOffset(dx, dy)
+        -- Write position per step and update coord label (GroupFrame pattern)
+        local _, _, _, x, y = frame:GetPoint()
+        if x and y then
+            EnsureIndependentCastBarConfig(settings)
+            settings.independentAnchor.x = RoundToTenths(x)
+            settings.independentAnchor.y = RoundToTenths(y)
+            UpdateIndependentCastBarCoordLabel(frame, x, y)
+        end
+    end, function() SaveIndependentCastBarAnchor(true) end)
     nudger:EnableMouse(false)
-    nudger._cdcButtons = {}
-    nudger:SetScript("OnEnter", function(self)
-        CooldownCompanion:BeginMoverChromeHoverFade(self)
-    end)
-    nudger:SetScript("OnLeave", function(self)
-        if not self:IsMouseOver() then
-            CooldownCompanion:EndMoverChromeFade(self)
-        end
-    end)
-    nudger:SetScript("OnHide", function(self)
-        CooldownCompanion:EndMoverChromeFade(self)
-    end)
-
-    local directions = {
-        { atlas = "common-dropdown-icon-back", rotation = -math.pi / 2, anchor = "BOTTOM", dx = 0, dy = 1, ox = 0, oy = NUDGE_GAP },
-        { atlas = "common-dropdown-icon-next", rotation = -math.pi / 2, anchor = "TOP", dx = 0, dy = -1, ox = 0, oy = -NUDGE_GAP },
-        { atlas = "common-dropdown-icon-back", rotation = 0, anchor = "RIGHT", dx = -1, dy = 0, ox = -NUDGE_GAP, oy = 0 },
-        { atlas = "common-dropdown-icon-next", rotation = 0, anchor = "LEFT", dx = 1, dy = 0, ox = NUDGE_GAP, oy = 0 },
-    }
-
-    for _, dir in ipairs(directions) do
-        local btn = CreateFrame("Button", nil, nudger)
-        btn:SetSize(CAST_NUDGE_BTN_SIZE, CAST_NUDGE_BTN_SIZE)
-        btn:SetPoint(dir.anchor, nudger, "CENTER", dir.ox, dir.oy)
-        btn:EnableMouse(true)
-
-        local arrow = btn:CreateTexture(nil, "OVERLAY")
-        arrow:SetAtlas(dir.atlas, false)
-        arrow:SetAllPoints()
-        arrow:SetRotation(dir.rotation)
-        arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-        btn.arrow = arrow
-
-        local function DoNudge()
-            local settings = GetCastBarSettings()
-            if not settings or settings.independentAnchorLocked then return end
-            frame:AdjustPointsOffset(dir.dx, dir.dy)
-            -- Write position per step and update coord label (GroupFrame pattern)
-            local _, _, _, x, y = frame:GetPoint()
-            if x and y then
-                EnsureIndependentCastBarConfig(settings)
-                settings.independentAnchor.x = RoundToTenths(x)
-                settings.independentAnchor.y = RoundToTenths(y)
-                UpdateIndependentCastBarCoordLabel(frame, x, y)
-            end
-        end
-
-        btn:SetScript("OnEnter", function(self)
-            self.arrow:SetVertexColor(1, 1, 1, 1)
-            CooldownCompanion:BeginMoverChromeHoverFade(nudger)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            self.arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
-            SaveIndependentCastBarAnchor(true)
-            if not nudger:IsMouseOver() then
-                CooldownCompanion:EndMoverChromeFade(nudger)
-            end
-        end)
-        btn:SetScript("OnMouseDown", function(self)
-            CancelCoordinateEdit(frame._coordLabel)
-            CancelCoordinateEdit(frame._sizeLabel)
-            DoNudge()
-            CooldownCompanion:VerifyMoverChromeHoverFade(nudger)
-        end)
-        btn:SetScript("OnMouseUp", function(self)
-            SaveIndependentCastBarAnchor(true)
-        end)
-
-        nudger._cdcButtons[#nudger._cdcButtons + 1] = btn
-    end
 
     -- Coordinate label (parented to mover frame, below bar content)
-    local coordLabel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    local coordLabel = ST.MoverChrome.CreateLabel(frame)
     coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
     coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
-    coordLabel:SetHeight(15)
-    coordLabel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    coordLabel:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    ST.CreatePixelBorders(coordLabel)
-    coordLabel.text = coordLabel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    coordLabel.text:SetPoint("CENTER")
-    coordLabel.text:SetTextColor(1, 1, 1, 1)
     CreateEditableCoordLabel(
         coordLabel,
         function()
@@ -540,7 +451,9 @@ local function CreateCastBarMoverFrame()
     frame._dragHandle = dragHandle
     frame._nudger = nudger
     frame._coordLabel = coordLabel
-    independentMoverFrame = frame
+    local settings = GetCastBarSettings()
+    local anchor = settings and settings.independentAnchor
+    UpdateIndependentCastBarCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
 end
 
@@ -551,59 +464,15 @@ UpdateIndependentCastBarDragState = function(settings)
         and CooldownCompanion:IsModuleAnchorIndependent("castbar")
         and not settings.independentAnchorLocked
         and not CooldownCompanion._combatForcedLock
+        and not InCombatLockdown()
     if not unlocked and frame._dragInProgress then
         CooldownCompanion:CancelIndependentCastBarDrag()
     end
 
-    -- The toolbar's checkbox/solo can tuck this mover's chrome away for the
-    -- session while it stays unlocked; the unlock-assist display stays up.
-    local chromeHidden = CooldownCompanion.IsContainerArrangeChromeHidden
-        and CooldownCompanion:IsContainerArrangeChromeHidden("cast")
-    local chromeShown = (unlocked and not chromeHidden) or false
-    -- Quiet-chrome grammar in arrange: the name bar rests alone; nudger,
-    -- labels, and grip reveal on hover or while this mover holds focus.
-    local revealed = not CooldownCompanion._arrangeModeActive
-        or CooldownCompanion._arrangeFocusContainerId == "cast"
-        or frame._arrangeChromeHover == true
-    local toolsShown = (chromeShown and revealed) or false
-
-    frame:SetMovable(unlocked or false)
-
-    if frame._dragHandle then
-        frame._dragHandle:SetShown(chromeShown)
-        frame._dragHandle:EnableMouse(chromeShown)
-        if chromeShown then
-            frame._dragHandle:RegisterForDrag("LeftButton")
-        else
-            frame._dragHandle:RegisterForDrag()
-        end
+    if unlocked and not CooldownCompanion:IsContainerArrangeChromeHidden("cast") then
+        EnsureCastBarMoverChrome(frame)
     end
-
-    if frame._nudger then
-        frame._nudger:SetShown(toolsShown)
-        frame._nudger:EnableMouse(toolsShown)
-        if frame._nudger._cdcButtons then
-            for _, btn in ipairs(frame._nudger._cdcButtons) do
-                btn:EnableMouse(toolsShown)
-            end
-        end
-    end
-
-    if frame._coordLabel then
-        frame._coordLabel:SetShown(toolsShown)
-    end
-    if frame._sizeLabel then
-        -- Explicit SetShown: mover teardown hides this label directly, so
-        -- parent visibility alone would leave it hidden on re-enable.
-        frame._sizeLabel:SetShown(toolsShown)
-        if toolsShown and frame._sizeLabel.UpdateText then
-            frame._sizeLabel.UpdateText()
-        end
-    end
-    if frame._resizeGrip then
-        frame._resizeGrip:SetShown(toolsShown)
-    end
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(frame._dragHandle, frame._coordLabel, frame._nudger, frame._resizeGrip, frame._sizeLabel)
+    ST.MoverChrome.UpdateIndependent(frame, "cast", unlocked)
 
     -- Show a stand-in cast while unlocked so the bar is visible for
     -- positioning. Unlike a resource bar, a cast bar that is not casting has
