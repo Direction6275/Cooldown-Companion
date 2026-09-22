@@ -143,14 +143,15 @@ end
 -- which composes Duration Format, Low Time Threshold, and Pandemic precedence.
 -- The marker's own descriptor is what keeps the sweep inside the window.
 local function IsAuraDurationTextKind(kind)
-    return kind == "aura_duration_text" or kind == "pandemic_marker"
+    return kind == "aura_duration_text" or kind == "pandemic_marker" or kind == "aura_active"
 end
 
 -- Honest about the entry's own switch: an entry with the marker turned off
 -- previews the low-time-aware bare countdown rather than a marker it will
 -- never draw.
-local function FormatAuraDurationPreviewText(remaining, kind, style, buttonData, allowLowTime)
-    local pandemicActive = kind == "pandemic_marker"
+local function FormatAuraDurationPreviewText(remaining, kind, style, buttonData, allowLowTime, duration)
+    local pandemicActive = (kind == "pandemic_marker"
+        or (kind == "aura_active" and ST._ConfigPreview.IsPandemicWindow(remaining, duration)))
         and CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style)
     return CooldownCompanion:FormatAuraDurationPreviewText(remaining, style, pandemicActive, allowLowTime)
 end
@@ -273,6 +274,67 @@ local function StyleSlotCooldownText(slot, style)
     end
 end
 
+local function ApplySlotChargeCount(slot, buttonData, style, kind, styleCount)
+    local maxCharges = buttonData.maxCharges or 2
+    if maxCharges < 2 then maxCharges = 2 end
+    local current = maxCharges
+    local colorKey = "chargeFontColor"
+    if kind == "charge_missing" then
+        current = math_max(1, maxCharges - 1)
+        colorKey = "chargeFontColorMissing"
+    elseif kind == "charge_zero" then
+        current = 0
+        colorKey = "chargeFontColorZero"
+    end
+
+    local count = EnsureSlotCountText(slot)
+    if styleCount then
+        styleCount(slot, style)
+    end
+    if style.showChargeText ~= false then
+        count:SetText(current)
+    end
+    -- CooldownUpdate.lua ApplyChargeTextColor: only recolor when
+    -- any charge color is configured at all.
+    if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
+        local cc = style[colorKey] or { 1, 1, 1, 1 }
+        count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
+    end
+    return current, maxCharges
+end
+
+local function ApplyIconAuraStackPreview(slot, buttonData, style, state)
+    if style.showAuraStackText ~= false then
+        local fs = EnsureSlotAuraStackText(slot)
+        CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
+        ST.TextAnchorLayout.Apply(fs, fs:GetParent(), style.auraStackAnchor or "BOTTOMLEFT",
+            style.auraStackXOffset or 2, style.auraStackYOffset or 2)
+        -- Threshold-aware stand-in (2026-08-15 program); helper lives in
+        -- ButtonFrame/Helpers.lua.
+        local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
+            buttonData, style, state.stackText)
+        fs:SetText(asText)
+        fs:SetTextColor(asR, asG, asB, asA)
+        fs:Show()
+    end
+end
+
+local function ApplyIconAuraSwipePreview(slot, buttonData, style, state, now)
+    if CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
+        local startTime, duration = GetConditionalPreviewTiming(state, now)
+        if startTime then
+            local widget = EnsureSlotAuraSwipe(slot)
+            if CooldownCompanion.ApplyAuraDurationSwipeStyle then
+                CooldownCompanion:ApplyAuraDurationSwipeStyle(widget, style)
+            end
+            widget:Show()
+            widget:SetCooldown(startTime, duration)
+            slot._cdcCondAnim = state
+            slot._cdcCondArmedStart = startTime
+        end
+    end
+end
+
 -- Renders the entry's active conditional preview (if any) onto its
 -- mirror slot, and always restores the baseline tint/desaturation a
 -- recycled slot may carry. Runs after the entry-status desaturation:
@@ -321,7 +383,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     -- assistant panels still fire it); "cooldown_swipe" is that state with
     -- the countdown numbers withheld; "cooldown_text" is the countdown text
     -- alone on an otherwise resting slot (no fill, no desaturation, no tint).
-    if (kind == "cooldown" or kind == "cooldown_swipe" or kind == "cooldown_text")
+    if (kind == "cooldown" or kind == "cooldown_swipe" or kind == "cooldown_text" or kind == "cooldown_active")
         and GetConditionalPreviewTiming then
         local startTime, duration = GetConditionalPreviewTiming(state, now)
         if startTime then
@@ -375,31 +437,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         end
     elseif kind == "charge_full" or kind == "charge_missing" or kind == "charge_zero" then
         if CooldownCompanion.UsesChargeBehavior and CooldownCompanion.UsesChargeBehavior(buttonData) then
-            local maxCharges = buttonData.maxCharges or 2
-            if maxCharges < 2 then maxCharges = 2 end
-            local current = maxCharges
-            local colorKey = "chargeFontColor"
-            if kind == "charge_missing" then
-                current = math_max(1, maxCharges - 1)
-                colorKey = "chargeFontColorMissing"
-            elseif kind == "charge_zero" then
-                current = 0
-                colorKey = "chargeFontColorZero"
-            end
-
-            local count = EnsureSlotCountText(slot)
-            if ApplyIconCountTextStyle then
-                ApplyIconCountTextStyle(slot, style)
-            end
-            if style.showChargeText ~= false then
-                count:SetText(current)
-            end
-            -- CooldownUpdate.lua ApplyChargeTextColor: only recolor when
-            -- any charge color is configured at all.
-            if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
-                local cc = style[colorKey] or { 1, 1, 1, 1 }
-                count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
-            end
+            ApplySlotChargeCount(slot, buttonData, style, kind, ApplyIconCountTextStyle)
 
             if kind == "charge_zero" then
                 -- Live zero charges sets _desatCooldownActive, so the
@@ -446,39 +484,15 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
                 local anchor, xOff, yOff = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
                 ST.TextAnchorLayout.Apply(fs, slot, anchor, xOff, yOff)
                 fs:SetText(FormatAuraDurationPreviewText(remaining, kind, style, buttonData,
-                    slot._cdcAuraLowTime))
+                    slot._cdcAuraLowTime, state.duration))
                 fs:Show()
                 slot._cdcCondAnim = state
             end
         end
     elseif kind == "aura_stack_text" then
-        if style.showAuraStackText ~= false then
-            local fs = EnsureSlotAuraStackText(slot)
-            CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
-            ST.TextAnchorLayout.Apply(fs, fs:GetParent(), style.auraStackAnchor or "BOTTOMLEFT",
-                style.auraStackXOffset or 2, style.auraStackYOffset or 2)
-            -- Threshold-aware stand-in (2026-08-15 program); helper lives in
-            -- ButtonFrame/Helpers.lua.
-            local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
-                buttonData, style, state.stackText)
-            fs:SetText(asText)
-            fs:SetTextColor(asR, asG, asB, asA)
-            fs:Show()
-        end
+        ApplyIconAuraStackPreview(slot, buttonData, style, state)
     elseif kind == "aura_duration_swipe" and GetConditionalPreviewTiming then
-        if CooldownCompanion:ShouldDrawAuraDurationSwipe(buttonData, style) then
-            local startTime, duration = GetConditionalPreviewTiming(state, now)
-            if startTime then
-                local widget = EnsureSlotAuraSwipe(slot)
-                if CooldownCompanion.ApplyAuraDurationSwipeStyle then
-                    CooldownCompanion:ApplyAuraDurationSwipeStyle(widget, style)
-                end
-                widget:Show()
-                widget:SetCooldown(startTime, duration)
-                slot._cdcCondAnim = state
-                slot._cdcCondArmedStart = startTime
-            end
-        end
+        ApplyIconAuraSwipePreview(slot, buttonData, style, state, now)
     elseif kind == "loss_of_control" and GetConditionalPreviewTiming then
         -- Runtime gate (Visibility.lua): spells only, never passives.
         if style.showLossOfControl and buttonData.type == "spell" and not buttonData.isPassive then
@@ -493,6 +507,29 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         end
     end
 
+    -- Combined commands add the other readouts without resetting the timer
+    -- or any visual already painted by the shared component paths above.
+    if kind == "cooldown_active" and CooldownCompanion.UsesChargeBehavior(buttonData) then
+        ApplySlotChargeCount(slot, buttonData, style, "charge_zero", ApplyIconCountTextStyle)
+        if buttonData.desaturateWhileZeroCharges
+            and not (CooldownCompanion.HasItemFallbacks and CooldownCompanion.HasItemFallbacks(buttonData)) then
+            forceDesat = true
+        end
+    elseif kind == "aura_active" then
+        -- Live tint belongs to the visible aura icon/cover. Keep-swipe
+        -- leaves the base icon exposed unless an aura icon or the missing
+        -- indicator's active cover takes over (AuraDisplay StyleSlotKit).
+        local auraTint = style.iconAuraTintEnabled and style.iconAuraTintColor
+        if auraTint and (not CooldownCompanion:IsKeepSpellCooldownSwipeEntry(buttonData, style)
+            or style.auraShowAuraIcon == true
+            or CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)) then
+            tintR, tintG, tintB, tintA = auraTint[1] or 1, auraTint[2] or 1, auraTint[3] or 1, auraTint[4] or 1
+        end
+        ApplyIconAuraStackPreview(slot, buttonData, style, state)
+        ApplyIconAuraSwipePreview(slot, buttonData, style, state, now)
+        slot._cdcCondAnim = state -- Glow-only compositions still cross the pandemic window.
+    end
+
     slot.icon:SetVertexColor(tintR, tintG, tintB, tintA)
     if forceDesat then
         slot.icon:SetDesaturated(true)
@@ -502,6 +539,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
 end
 
 -- Private helpers consumed by later ButtonPanelPreview files.
+PP.ApplySlotChargeCount = ApplySlotChargeCount
 PP.FormatAuraDurationPreviewText = FormatAuraDurationPreviewText
 PP.IsAuraDurationTextKind = IsAuraDurationTextKind
 PP.EnsureSlotCountText = EnsureSlotCountText

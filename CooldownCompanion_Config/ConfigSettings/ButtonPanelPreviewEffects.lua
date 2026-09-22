@@ -16,6 +16,7 @@ local PP = ST._ButtonPanelPreview
 
 -- ButtonPanelPreviewBars.lua
 local IsPandemicPreviewEnabled = PP.IsPandemicPreviewEnabled
+local UpdateCombinedBarAuraEffects = PP.UpdateCombinedBarAuraEffects
 
 -- ButtonPanelPreviewShared.lua
 local GetStoredBarPreviewState = PP.GetStoredBarPreviewState
@@ -70,12 +71,13 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
         -- Live parity (AuraDisplay bind gate): the pandemic rig renders
         -- nothing while the effect is disabled for this entry. Live shows
         -- the aura glow OUTSIDE the window and the pandemic style inside
-        -- it (the window mask swaps them); the two exclusive PCC toggles
-        -- preview those two states one at a time. Resolved once here
+        -- it (the window mask swaps them). Individual commands isolate each
+        -- look; Aura Active transitions between them. Resolved once here
         -- because both auraGlow-container defs consult it.
         local pandemicWillRender = canQuery
             and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_pandemicPreview")
             and IsPandemicPreviewEnabled(style, buttonData) or false
+        slot._cdcAuraPandemicActive = pandemicWillRender
         for _, def in ipairs(EFFECT_PREVIEWS) do
             if def.setter then
                 local active
@@ -98,9 +100,9 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                         if active then
                             def.setter(slot, true, true)
                         end
-                    elseif def.yieldsToPandemic and not active and pandemicWillRender then
-                        -- Skip the off-call: the pandemic def owns the
-                        -- container this pass, and a hide here would
+                    elseif def.yieldsToPandemic and pandemicWillRender then
+                        -- Pandemic owns the container this pass. A normal
+                        -- glow or off-call here would
                         -- cold-reset its cache and restart its animations
                         -- on every rebuild.
                     else
@@ -135,6 +137,7 @@ end
 -- Strip slots recycle from the icon pool; a glow left by a grid render
 -- must not survive into a picker strip.
 local function ClearSlotEffectPreviews(slot)
+    slot._cdcAuraPandemicActive = nil
     for _, def in ipairs(EFFECT_PREVIEWS) do
         if slot[def.containerKey] and def.setter then
             def.setter(slot, false)
@@ -142,6 +145,18 @@ local function ClearSlotEffectPreviews(slot)
     end
     if slot.barAuraEffect and SetBarAuraEffect then
         SetBarAuraEffect(slot, false)
+    end
+end
+
+local function UpdateCombinedIconAuraEffects(slot, state, now)
+    local _, duration, remaining = GetConditionalPreviewTiming(state, now)
+    local pandemicActive = ST._ConfigPreview.IsPandemicWindow(remaining, duration)
+        and IsPandemicPreviewEnabled(slot.style, slot.buttonData) or false
+    if slot._cdcAuraPandemicActive == pandemicActive then return end
+    slot._cdcAuraPandemicActive = pandemicActive
+    if slot.auraGlow and ST._SetAuraGlow then
+        ST._SetAuraGlow(slot, true, pandemicActive)
+        ST.RefreshBorderTextureScale(slot.auraGlow.solidTextures)
     end
 end
 
@@ -169,17 +184,19 @@ local function EnsureConditionalTicker(preview)
             if state then
                 local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
                 if startTime then
+                    if state.kind == "aura_active" then UpdateCombinedIconAuraEffects(slot, state, now) end
                     if IsAuraDurationTextKind(state.kind) and slot.auraTextFS then
                         slot.auraTextFS:SetText(FormatAuraDurationPreviewText(
                             remaining, state.kind,
-                            slot.style or {}, slot.buttonData, slot._cdcAuraLowTime))
+                            slot.style or {}, slot.buttonData, slot._cdcAuraLowTime, duration))
                     end
                     local widget
                     if state.kind == "cooldown"
+                        or state.kind == "cooldown_active"
                         or state.kind == "cooldown_text"
                         or state.kind == "cooldown_swipe" then
                         widget = slot.cooldown
-                    elseif state.kind == "aura_duration_swipe" then
+                    elseif state.kind == "aura_duration_swipe" or state.kind == "aura_active" then
                         widget = slot.auraSwipe
                     elseif state.kind == "loss_of_control" then
                         widget = slot.locCooldown
@@ -191,7 +208,7 @@ local function EnsureConditionalTicker(preview)
                         -- cooldown_swipe keeps its numbers hidden across
                         -- re-arms (a widget flag, not a region style), so
                         -- only the text-bearing kinds restyle here.
-                        if state.kind == "cooldown" or state.kind == "cooldown_text" then
+                        if state.kind == "cooldown" or state.kind == "cooldown_text" or state.kind == "cooldown_active" then
                             StyleSlotCooldownText(slot, slot.style or {})
                         end
                     end
@@ -208,20 +225,22 @@ local function EnsureConditionalTicker(preview)
             if state then
                 local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
                 if startTime then
+                    if state.kind == "aura_active" then UpdateCombinedBarAuraEffects(slot, state, now) end
                     if slot.timeText
                         and (state.kind == "cooldown"
+                            or state.kind == "cooldown_active"
                             or state.kind == "cooldown_text"
                             or IsAuraDurationTextKind(state.kind)) then
                         local style = slot.style or {}
                         local showText = (IsAuraDurationTextKind(state.kind)
                                 and style.showAuraText ~= false)
-                            or ((state.kind == "cooldown" or state.kind == "cooldown_text")
+                            or ((state.kind == "cooldown" or state.kind == "cooldown_text" or state.kind == "cooldown_active")
                                 and style.showCooldownText)
                         if showText and CooldownCompanion.FormatTime then
                             if IsAuraDurationTextKind(state.kind) then
                                 slot.timeText:SetText(FormatAuraDurationPreviewText(
                                     remaining, state.kind, style, slot.buttonData,
-                                    slot._cdcAuraLowTime))
+                                    slot._cdcAuraLowTime, duration))
                             else
                                 slot.timeText:SetText(CooldownCompanion.FormatCooldownTime(
                                     remaining, style))

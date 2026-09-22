@@ -118,6 +118,10 @@ function Preview.MoveHost(value, panelId)
 end
 
 local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
+    cooldown_active = { kind = "cooldown_active", duration = 12, remaining = 8, loop = true,
+        onCooldown = true },
+    aura_active = { kind = "aura_active", duration = 12, remaining = 8, loop = true,
+        auraActive = true, stackText = "3" },
     aura_missing = { kind = "aura_missing", auraActive = false },
     cooldown = { kind = "cooldown", duration = 12, remaining = 8, loop = true },
     -- The icons/bars split of the cooldown state (owner ruling 2026-08-08):
@@ -214,6 +218,11 @@ function ST._GetConditionalPreviewTiming(preview, now)
     return startTime, duration, remaining
 end
 
+-- Ordinary sample numbers only; live aura timing remains owned by Blizzard.
+function Preview.IsPandemicWindow(remaining, duration)
+    return remaining ~= nil and duration ~= nil and remaining > 0 and remaining < duration * 0.3
+end
+
 function Preview.Start(command, panelId, buttonIndex, targets)
     local profile = Addon.db and Addon.db.profile
     local groupId = not command.object and panelId or nil
@@ -239,8 +248,16 @@ end
 
 local function IsStoredPreviewFlagActive(groupId, buttonIndex, flag)
     local value = Preview.Get()
-    return value ~= nil and flag ~= nil and value.command.preview.flag == flag
-        and MatchesTarget(value, groupId, buttonIndex)
+    if not value or not flag or not MatchesTarget(value, groupId, buttonIndex) then return false end
+    if value.command.preview.flag == flag then return true end
+    if value.sample.kind == "aura_active" then
+        if flag == "_auraGlowPreview" or flag == "_barAuraEffectPreview" then return true end
+        if flag == "_pandemicPreview" then
+            local _, duration, remaining = ST._GetConditionalPreviewTiming(value.sample, GetTime())
+            return Preview.IsPandemicWindow(remaining, duration)
+        end
+    end
+    return false
 end
 ST._IsStoredPreviewFlagActive = IsStoredPreviewFlagActive
 

@@ -9,7 +9,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local BarVisuals = ST._BarVisuals
-local math_max = math.max
 local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
@@ -29,7 +28,7 @@ local GetConfigOnlyBarPreviewName = PP.GetConfigOnlyBarPreviewName
 -- ButtonPanelPreviewIcons.lua
 local FormatAuraDurationPreviewText = PP.FormatAuraDurationPreviewText
 local IsAuraDurationTextKind = PP.IsAuraDurationTextKind
-local EnsureSlotCountText = PP.EnsureSlotCountText
+local ApplySlotChargeCount = PP.ApplySlotChargeCount
 local EnsureSlotLocCooldown = PP.EnsureSlotLocCooldown
 
 ------------------------------------------------------------------------
@@ -86,7 +85,7 @@ local function BarSlotFillOnUpdate(self)
     local startTime, duration, remaining = GetConditionalPreviewTiming(state, GetTime())
     if not (startTime and duration and duration > 0) then return end
     local frac
-    if state.kind == "aura_duration_bar" then
+    if state.kind == "aura_duration_bar" or state.kind == "aura_active" then
         frac = remaining / duration
     else
         frac = 1 - (remaining / duration)
@@ -163,9 +162,103 @@ local function ApplyBarSlotFillEffects(slot, style, auraColor, suppressShift)
     return false
 end
 
+-- Stack decorations belong to the combined sample, never to the pooled slot.
+-- Restore shown-state (not alpha) because workspace ghosting owns bar alpha.
+local function ResetBarAuraStackPreview(slot)
+    if slot._cdcAuraStackCount == nil then return end
+    slot._cdcAuraStackCount = nil
+    ST.HideStackBlocks(slot._cdcAuraStackBlocks)
+    ST.HideStackBlocks(slot._cdcAuraStackSegments)
+    ST.HideStackBlockBorders(slot._cdcAuraStackBorders)
+    if slot._cdcAuraStackWidget then
+        slot._cdcAuraStackWidget = nil
+        slot.statusBar:SetRotatesTexture(false)
+        local style = slot.style or {}
+        slot.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+        slot.bg:SetShown(slot._cdcAuraStackBgShown)
+        slot._cdcAuraStackBgShown = nil
+        for _, texture in ipairs(slot.borderTextures or {}) do
+            texture:SetShown(texture._cdcAuraStackWasShown)
+            texture._cdcAuraStackWasShown = nil
+        end
+    end
+end
+
+local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum)
+    -- Text-only threshold/max styling may select an interesting sample only
+    -- while its readout is visible. The fill and displayed count then agree.
+    local text = state.stackText
+    if style.showAuraStackText ~= false then
+        text = CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, text)
+    end
+    local count = math.min(maximum, math.max(0, tonumber(text) or 3))
+    slot._cdcAuraStackCount = count
+    slot.statusBar:SetScript("OnUpdate", nil)
+    slot.statusBar:SetValue(count / maximum)
+    if CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) ~= "segmented"
+        or maximum > ST.STACK_SEGMENT_ATLAS_MAX then return end
+
+    local vertical = style.barFillVertical == true
+    local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+    if buttonData.addedAs == "aura" then
+        -- The same atlas and measured block edges as the live aura kit:
+        -- true empty gaps and a separate border around every capacity block.
+        local blocks = slot._cdcAuraStackBlocks or {}
+        local borders = slot._cdcAuraStackBorders or {}
+        slot._cdcAuraStackBlocks, slot._cdcAuraStackBorders = blocks, borders
+        for i = #blocks + 1, maximum do
+            blocks[i] = slot.statusBar:CreateTexture(nil, "BACKGROUND")
+            borders[i] = {}
+            for edge = 1, 4 do
+                borders[i][edge] = slot.statusBar:CreateTexture(nil, "OVERLAY", nil, 3)
+            end
+        end
+        local gap = CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, maximum)
+        ST.LayoutStackBlocks(blocks, slot.statusBar, maximum, vertical, bg, bg[4] or 1, nil, gap / 512)
+        ST.LayoutStackBlockBorders(borders, blocks, maximum, style)
+        slot.statusBar:SetStatusBarTexture(ST.GetStackSegmentsTexture(maximum, gap))
+        slot.statusBar:SetRotatesTexture(vertical)
+        slot._cdcAuraStackWidget = true
+        slot._cdcAuraStackBgShown = slot.bg:IsShown()
+        slot.bg:Hide()
+        for _, texture in ipairs(slot.borderTextures or {}) do
+            texture._cdcAuraStackWasShown = texture:IsShown()
+            texture:Hide()
+        end
+    else
+        -- Spell entries keep their continuous background and whole-bar ring;
+        -- opaque dividers reproduce AuraDisplay's StyleStackSegments recipe.
+        local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+        local length = vertical and slot.statusBar:GetHeight() or slot.statusBar:GetWidth()
+        if gap <= 0 or length <= 0 then return end
+        local segments = slot._cdcAuraStackSegments or {}
+        slot._cdcAuraStackSegments = segments
+        for i = #segments + 1, maximum - 1 do
+            segments[i] = slot.statusBar:CreateTexture(nil, "OVERLAY", nil, 3)
+        end
+        for i = 1, maximum - 1 do
+            local texture = segments[i]
+            local offset = length * i / maximum
+            texture:SetColorTexture(bg[1], bg[2], bg[3], 1)
+            texture:ClearAllPoints()
+            if vertical then
+                texture:SetHeight(gap)
+                texture:SetPoint("LEFT", slot.statusBar, "BOTTOMLEFT", 0, offset)
+                texture:SetPoint("RIGHT", slot.statusBar, "BOTTOMRIGHT", 0, offset)
+            else
+                texture:SetWidth(gap)
+                texture:SetPoint("TOP", slot.statusBar, "TOPLEFT", offset, 0)
+                texture:SetPoint("BOTTOM", slot.statusBar, "BOTTOMLEFT", offset, 0)
+            end
+            texture:SetAlpha(1)
+        end
+    end
+end
+
 -- Cleanup runs before StyleBarEntry so its neutral texture tint cannot win
 -- over the final saved or simulated status-bar color.
 local function ResetBarSlotConditionalVisuals(slot)
+    ResetBarAuraStackPreview(slot)
     ST.ChargeBarSegments.Invalidate(slot.statusBar)
     slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     slot._cdcCondAnim = nil
@@ -190,7 +283,7 @@ local function ResetBarSlotConditionalVisuals(slot)
     end
 end
 
-local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
+local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData, duration)
     local tt = EnsureBarSlotTimeText(slot)
     AnchorBarSlotTimeText(slot, style, "aura")
     if style.showAuraText == false then
@@ -205,8 +298,63 @@ local function ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonD
     local color = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     tt:SetTextColor(color[1], color[2], color[3], color[4])
     tt:SetText(FormatAuraDurationPreviewText(remaining, kind, style, buttonData,
-        slot._cdcAuraLowTime))
+        slot._cdcAuraLowTime, duration))
     tt:Show()
+end
+
+local function ApplyBarAuraStackPreview(slot, buttonData, style, state)
+    if style.showAuraStackText ~= false then
+        local fs = EnsureBarSlotAuraStackText(slot)
+        CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
+        local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
+        local asX = style.auraStackXOffset or 2
+        local asY = style.auraStackYOffset or 2
+        if style.showBarIcon ~= false then
+            ST.TextAnchorLayout.Apply(fs, slot.icon, asAnchor, asX, asY)
+        else
+            ST.TextAnchorLayout.Apply(fs, slot.barTextFrame, asAnchor, asX, asY)
+        end
+        -- Threshold-aware stand-in (2026-08-15 program); helper lives in
+        -- ButtonFrame/Helpers.lua.
+        local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
+            buttonData, style, state.stackText)
+        fs:SetText(slot._cdcAuraStackCount ~= nil and tostring(slot._cdcAuraStackCount) or asText)
+        fs:SetTextColor(asR, asG, asB, asA)
+        fs:Show()
+    end
+end
+
+local function ApplyBarAuraFillPreview(slot, style, buttonData, isAuraPanel, pandemicActive, fxActive)
+    local shifted = false
+    local auraColor = ResolveBarAuraFillColor(style, buttonData, isAuraPanel)
+    if fxActive then
+        shifted = ApplyBarSlotFillEffects(slot, style, auraColor, pandemicActive)
+    end
+    if pandemicActive then
+        -- Forced opaque, matching the live clone (owner ruling: the
+        -- pandemic color replaces the aura fill color, never blends).
+        local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+        slot.statusBar:SetStatusBarColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
+    elseif shifted then
+        -- White base while the shift animation owns the color.
+        slot.statusBar:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
+    else
+        slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
+    end
+end
+
+-- Reconcile only the window transition; animation groups keep their phase
+-- between ticks. All fill/text/swipe timing comes from the same session sample.
+local function UpdateCombinedBarAuraEffects(slot, state, now)
+    local _, duration, remaining = GetConditionalPreviewTiming(state, now)
+    local style = slot.style or {}
+    local pandemicActive = ST._ConfigPreview.IsPandemicWindow(remaining, duration)
+        and IsPandemicPreviewEnabled(style, slot.buttonData) or false
+    if slot._cdcAuraPandemicActive == pandemicActive then return end
+    slot._cdcAuraPandemicActive = pandemicActive
+    StopBarSlotFillEffects(slot)
+    local fxActive = ST.IsBarAuraIndicatorEnabled and ST.IsBarAuraIndicatorEnabled(style) == true
+    ApplyBarAuraFillPreview(slot, style, slot.buttonData, slot._cdcAuraPanel, pandemicActive, fxActive)
 end
 
 local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
@@ -263,7 +411,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or kind == "cooldown_text" or IsAuraDurationTextKind(kind))
+    if (kind == "cooldown" or kind == "cooldown_active" or kind == "cooldown_text" or IsAuraDurationTextKind(kind))
         and slot.timeText then
         slot.timeText:SetText("")
     end
@@ -273,7 +421,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot._chargePreviewCount, slot._chargePreviewColor = nil, nil
     end
 
-    if kind == "aura_duration_bar" then
+    if kind == "aura_duration_bar" or kind == "aura_active" then
         local auraTint = style.iconAuraTintEnabled and style.iconAuraTintColor or baseTint
         tintR = auraTint and auraTint[1] or 1
         tintG = auraTint and auraTint[2] or 1
@@ -283,13 +431,13 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
     end
 
-    if IsAuraDurationTextKind(kind) and GetConditionalPreviewTiming then
+    if IsAuraDurationTextKind(kind) and kind ~= "aura_active" and GetConditionalPreviewTiming then
         local startTime, _, remaining = GetConditionalPreviewTiming(state, now)
         if startTime then
             slot._cdcCondAnim = state
             ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData)
         end
-    elseif kind == "aura_duration_bar" and GetConditionalPreviewTiming then
+    elseif (kind == "aura_duration_bar" or kind == "aura_active") and GetConditionalPreviewTiming then
         local startTime = GetConditionalPreviewTiming(state, now)
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
@@ -306,28 +454,23 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 and (effectFlags._barAuraEffectPreview == true or pandemicActive)
                 and ST.IsBarAuraIndicatorEnabled
                 and ST.IsBarAuraIndicatorEnabled(style) == true
-            local shifted = false
-            local auraColor = ResolveBarAuraFillColor(style, buttonData, isAuraPanel)
-            if fxActive then
-                shifted = ApplyBarSlotFillEffects(slot, style, auraColor, pandemicActive)
-            end
-            if pandemicActive then
-                -- Forced opaque, matching the live clone (owner ruling: the
-                -- pandemic color replaces the aura fill color, never blends).
-                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
-                slot.statusBar:SetStatusBarColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
-            elseif shifted then
-                -- White base while the shift animation owns the color.
-                slot.statusBar:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
-            else
-                slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
-            end
-            slot.statusBar._cdcOwner = slot
-            slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
+            local stackMax = kind == "aura_active"
+                and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
+                and CooldownCompanion:GetAuraStackBarMax(buttonData, true)
             slot._cdcCondAnim = state
-            BarSlotFillOnUpdate(slot.statusBar)
+            if stackMax then
+                ApplyBarAuraStackFill(slot, buttonData, style, state, stackMax)
+            else
+                -- Unknown/non-stacking capacities follow the live duration fallback.
+                slot.statusBar._cdcOwner = slot
+                slot.statusBar:SetScript("OnUpdate", BarSlotFillOnUpdate)
+                BarSlotFillOnUpdate(slot.statusBar)
+            end
+            ApplyBarAuraFillPreview(slot, style, buttonData, isAuraPanel, pandemicActive, fxActive)
+            slot._cdcAuraPandemicActive = pandemicActive and true or false
+            slot._cdcAuraPanel = isAuraPanel
         end
-    elseif kind == "cooldown" and GetConditionalPreviewTiming then
+    elseif (kind == "cooldown" or kind == "cooldown_active") and GetConditionalPreviewTiming then
         local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
         if startTime then
             if not buttonData.isPassive then
@@ -377,33 +520,11 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         or chargePresentationKind == "charge_missing"
         or chargePresentationKind == "charge_zero" then
         if UsesConfigOnlyBarChargeBehavior(buttonData) then
-            local maxCharges = buttonData.maxCharges or 2
-            if maxCharges < 2 then maxCharges = 2 end
-            local current = maxCharges
-            local colorKey = "chargeFontColor"
-            if chargePresentationKind == "charge_missing" then
-                current = math_max(1, maxCharges - 1)
-                colorKey = "chargeFontColorMissing"
-            elseif chargePresentationKind == "charge_zero" then
-                current = 0
-                colorKey = "chargeFontColorZero"
-            end
-
             if chargePresentationKind ~= "charge_full" and slot.timeText then
                 slot.timeText:SetText("")
             end
-
-            local count = EnsureSlotCountText(slot)
-            if ApplyBarCountTextStyle then
-                ApplyBarCountTextStyle(slot, style)
-            end
-            if style.showChargeText ~= false then
-                count:SetText(current)
-            end
-            if style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero then
-                local cc = style[colorKey] or { 1, 1, 1, 1 }
-                count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
-            end
+            local current, maxCharges = ApplySlotChargeCount(
+                slot, buttonData, style, chargePresentationKind, ApplyBarCountTextStyle)
 
             -- Bar color per UpdateBarDisplay's charge states
             if not buttonData.isPassive then
@@ -485,25 +606,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             tintR, tintG, tintB = 1, 0.2, 0.2
         end
     elseif kind == "aura_stack_text" then
-        if style.showAuraStackText ~= false then
-            local fs = EnsureBarSlotAuraStackText(slot)
-            CooldownCompanion.ApplyFontStyle(fs, style, "auraStack")
-            local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
-            local asX = style.auraStackXOffset or 2
-            local asY = style.auraStackYOffset or 2
-            if style.showBarIcon ~= false then
-                ST.TextAnchorLayout.Apply(fs, slot.icon, asAnchor, asX, asY)
-            else
-                ST.TextAnchorLayout.Apply(fs, slot.barTextFrame, asAnchor, asX, asY)
-            end
-            -- Threshold-aware stand-in (2026-08-15 program); helper lives in
-            -- ButtonFrame/Helpers.lua.
-            local asText, asR, asG, asB, asA = CooldownCompanion:GetAuraStackPreviewCountAndColor(
-                buttonData, style, state.stackText)
-            fs:SetText(asText)
-            fs:SetTextColor(asR, asG, asB, asA)
-            fs:Show()
-        end
+        ApplyBarAuraStackPreview(slot, buttonData, style, state)
     elseif kind == "loss_of_control" and GetConditionalPreviewTiming then
         if style.showLossOfControl and buttonData.type == "spell" and not buttonData.isPassive
             and style.showBarIcon ~= false then
@@ -516,6 +619,18 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 slot._cdcCondArmedStart = startTime
             end
         end
+    end
+
+    if kind == "cooldown_active" and UsesConfigOnlyBarChargeBehavior(buttonData) then
+        ApplySlotChargeCount(slot, buttonData, style, "charge_zero", ApplyBarCountTextStyle)
+        if buttonData.desaturateWhileZeroCharges
+            and not (CooldownCompanion.HasItemFallbacks and CooldownCompanion.HasItemFallbacks(buttonData)) then
+            forceDesat = true
+        end
+    elseif kind == "aura_active" then
+        local _, duration, remaining = GetConditionalPreviewTiming(state, now)
+        ApplyBarAuraTimeTextPreview(slot, style, remaining, kind, buttonData, duration)
+        ApplyBarAuraStackPreview(slot, buttonData, style, state)
     end
 
     if slot.icon then
@@ -591,6 +706,7 @@ local function ApplyOverviewBarPresentation(preview, slot, buttonData, group, st
 end
 
 -- Private helpers consumed by later ButtonPanelPreview files.
+PP.UpdateCombinedBarAuraEffects = UpdateCombinedBarAuraEffects
 PP.IsPandemicPreviewEnabled = IsPandemicPreviewEnabled
 PP.ResetBarSlotConditionalVisuals = ResetBarSlotConditionalVisuals
 PP.StyleBarEntry = StyleBarEntry
