@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local BarVisuals = ST._BarVisuals
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -15,14 +16,10 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 local GetTime = GetTime
 local pairs = pairs
 local ipairs = ipairs
-local unpack = unpack
 local issecretvalue = issecretvalue
 
 -- Imports from Helpers
-local SetIconAreaPoints = ST._SetIconAreaPoints
-local SetBarAreaPoints = ST._SetBarAreaPoints
 local AnchorBarCountText = ST._AnchorBarCountText
-local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
@@ -565,32 +562,19 @@ end
 local function ApplyBarFrameStyle(button, newStyle)
     local barLength = newStyle.barLength or 180
     local barHeight = newStyle.barHeight or 20
-    local borderSize = newStyle.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(newStyle)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
     local showIcon = newStyle.showBarIcon ~= false
     local isVertical = newStyle.barFillVertical or false
-    local iconReverse = showIcon and (newStyle.barIconReverse or false)
-    local iconSize = (newStyle.barIconSizeOverride and newStyle.barIconSize) or barHeight
-    local iconOffset = showIcon and (newStyle.barIconOffset or 0) or 0
-    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
-    local barAreaTop = showIcon and (iconSize + iconOffset) or 0
-
     button._isVertical = isVertical
+    local width, height = barLength, barHeight
+    if isVertical then width, height = barHeight, barLength end
+    button:SetSize(width, height)
+    BarVisuals.Apply(button, newStyle, width, height)
 
-    if isVertical then
-        button:SetSize(barHeight, barLength)
-    else
-        button:SetSize(barLength, barHeight)
-    end
-
-    -- Update icon
-    button.icon:ClearAllPoints()
+    -- Runtime visibility and cooldown widgets stay with their existing owner.
     if showIcon then
-        SetIconAreaPoints(button.icon, button, isVertical, iconReverse, iconSize, borderLayoutSize)
-        ST._ApplyIconTexCoord(button.icon, iconSize, iconSize, newStyle.iconZoom)
         button.icon:SetAlpha(1)
     else
+        button.icon:ClearAllPoints()
         button.icon:SetPoint("TOPLEFT", 0, 0)
         button.icon:SetSize(1, 1)
         button.icon:SetAlpha(0)
@@ -603,83 +587,10 @@ local function ApplyBarFrameStyle(button, newStyle)
             button.iconGCDCooldown:Hide()
         end
     end
-
-    button.bg:ClearAllPoints()
-    if showIcon then
-        SetBarAreaPoints(button.bg, button, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-    else
-        button.bg:SetAllPoints()
-    end
     button.bg:Show()
-
-    -- Icon bg + border: always shown when icon visible
-    if button.iconBg then
-        SetIconAreaPoints(button.iconBg, button, isVertical, iconReverse, iconSize, 0)
-        if showIcon then button.iconBg:Show() else button.iconBg:Hide() end
-    end
-    if button._iconBounds then
-        SetIconAreaPoints(button._iconBounds, button, isVertical, iconReverse, iconSize, 0)
-    end
-    if button.iconBorderTextures then
-        ApplyBorderEdgePositions(button.iconBorderTextures, button._iconBounds, borderSize, borderRenderMode)
-        for _, tex in ipairs(button.iconBorderTextures) do
-            if showIcon then tex:Show() else tex:Hide() end
-        end
-    end
-
-    -- Bar area bounds
-    if button._barBounds then
-        button._barBounds:ClearAllPoints()
-        if showIcon then
-            SetBarAreaPoints(button._barBounds, button, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-        else
-            button._barBounds:SetAllPoints()
-        end
-    end
-
-    if button._barBounds then
-        button._barBounds._ccKitRectW = isVertical and barHeight or math.max(1, barLength - barAreaLeft)
-        button._barBounds._ccKitRectH = isVertical and math.max(1, barLength - barAreaTop) or barHeight
-    end
-
-    -- Update status bar
-    SetBarAreaPoints(button.statusBar, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
-    if isVertical then
-        button.statusBar:SetOrientation("VERTICAL")
-    else
-        button.statusBar:SetOrientation("HORIZONTAL")
-    end
-    button.statusBar:SetReverseFill(newStyle.barReverseFill or false)
-    button.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(newStyle.barTexture or "Solid"))
-    local barColor = newStyle.barColor or {0.2, 0.6, 1.0, 1.0}
-    button.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
-
-    if button.barTextFrame then
-        button.barTextFrame:ClearAllPoints()
-        SetBarAreaPoints(button.barTextFrame, button, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
-    end
-
-    -- Update background
-    local bgColor = newStyle.barBgColor or {0.1, 0.1, 0.1, 0.8}
-    button.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-    if button.iconBg then
-        button.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-    end
-
-    -- Update border
-    local borderColor = newStyle.borderColor or {0, 0, 0, 1}
-    if button.borderTextures then
-        ApplyBorderEdgePositions(button.borderTextures, button._barBounds or button, borderSize, borderRenderMode)
-        for _, tex in ipairs(button.borderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
-            tex:Show()
-        end
-    end
-    if button.iconBorderTextures then
-        for _, tex in ipairs(button.iconBorderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
-        end
-    end
+    if button.iconBg then button.iconBg:SetShown(showIcon) end
+    for _, texture in ipairs(button.iconBorderTextures or {}) do texture:SetShown(showIcon) end
+    for _, texture in ipairs(button.borderTextures or {}) do texture:Show() end
 
     -- Text regions keep their independent parents and shared placement owner.
     ApplyFontStyle(button.nameText, newStyle, "barName", 10)

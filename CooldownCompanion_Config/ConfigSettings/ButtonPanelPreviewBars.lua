@@ -8,10 +8,8 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local BarVisuals = ST._BarVisuals
 local math_max = math.max
-local SetIconAreaPoints = ST._SetIconAreaPoints
-local SetBarAreaPoints = ST._SetBarAreaPoints
-local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
 local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local DEFAULT_BAR_CHARGE_COLOR = ST._DEFAULT_BAR_CHARGE_COLOR
@@ -41,14 +39,14 @@ local EnsureSlotLocCooldown = PP.EnsureSlotLocCooldown
 ------------------------------------------------------------------------
 local function EnsureBarSlotTimeText(slot)
     if not slot.timeText then
-        slot.timeText = slot.textFrame:CreateFontString(nil, "OVERLAY")
+        slot.timeText = slot.barTextFrame:CreateFontString(nil, "OVERLAY")
     end
     return slot.timeText
 end
 
 local function EnsureBarSlotAuraStackText(slot)
     if not slot.auraStackCount then
-        slot.auraStackCount = slot.textFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+        slot.auraStackCount = slot.barTextFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     end
     return slot.auraStackCount
 end
@@ -56,7 +54,7 @@ end
 -- Runtime and preview share the same placement and truncation rules.
 local function AnchorBarSlotTimeText(slot, style, lane)
     lane = lane or "time"
-    ST.BarTextLayout.ApplyBarTexts(slot.nameText, slot.timeText, slot.textFrame,
+    ST.BarTextLayout.ApplyBarTexts(slot.nameText, slot.timeText, slot.barTextFrame,
         style, style.barFillVertical, lane, slot._persistentAuraName and slot.buttonData)
 end
 
@@ -496,7 +494,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             if style.showBarIcon ~= false then
                 ST.TextAnchorLayout.Apply(fs, slot.icon, asAnchor, asX, asY)
             else
-                ST.TextAnchorLayout.Apply(fs, slot.textFrame, asAnchor, asX, asY)
+                ST.TextAnchorLayout.Apply(fs, slot.barTextFrame, asAnchor, asX, asY)
             end
             -- Threshold-aware stand-in (2026-08-15 program); helper lives in
             -- ButtonFrame/Helpers.lua.
@@ -544,77 +542,26 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     end
     slot.style = style
 
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(slot, borderSize, borderRenderMode)
+    local width, height = slot:GetSize()
+    BarVisuals.Apply(slot, style, width, height)
     local showIcon = style.showBarIcon ~= false
     local isVertical = style.barFillVertical or false
-    local iconReverse = showIcon and (style.barIconReverse or false)
-    local barHeight = style.barHeight or 20
-    local iconSize = (style.barIconSizeOverride and style.barIconSize) or barHeight
-    local iconOffset = showIcon and (style.barIconOffset or 0) or 0
-    local barAreaLeft = showIcon and (iconSize + iconOffset) or 0
-    local barAreaTop = barAreaLeft
-    local bgColor = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
-    local borderColor = style.borderColor or { 0, 0, 0, 1 }
-
-    slot.bg:ClearAllPoints()
     if showIcon then
-        SetBarAreaPoints(slot.bg, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-    else
-        slot.bg:SetAllPoints()
-    end
-    slot.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-
-    if showIcon then
-        SetIconAreaPoints(slot.icon, slot, isVertical, iconReverse, iconSize, borderLayoutSize)
-        ST._ApplyIconTexCoord(slot.icon, iconSize, iconSize, style.iconZoom)
         slot.icon:SetTexture(GetConfigOnlyBarPreviewIcon(buttonData))
-        slot.icon:Show()
-        SetIconAreaPoints(slot.iconBg, slot, isVertical, iconReverse, iconSize, 0)
-        slot.iconBg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-        slot.iconBg:Show()
-        SetIconAreaPoints(slot.iconBounds, slot, isVertical, iconReverse, iconSize, 0)
-        for i = 1, 4 do
-            slot.iconBorderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-        end
-        ApplyBorderEdgePositions(slot.iconBorderTextures, slot.iconBounds, borderSize, borderRenderMode)
-    else
-        slot.icon:Hide()
-        slot.iconBg:Hide()
-        for i = 1, 4 do
-            slot.iconBorderTextures[i]:Hide()
-        end
     end
+    slot.icon:SetShown(showIcon)
+    slot.iconBg:SetShown(showIcon)
+    for _, texture in ipairs(slot.iconBorderTextures) do texture:SetShown(showIcon) end
 
-    if showIcon then
-        SetBarAreaPoints(slot.barBounds, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, 0)
-    else
-        slot.barBounds:ClearAllPoints()
-        slot.barBounds:SetAllPoints()
-    end
-
-    slot._barBounds = slot.barBounds
-    local slotWidth, slotHeight = slot:GetSize()
-    slot.barBounds._ccKitRectW = math_max(1, slotWidth - (isVertical and 0 or barAreaLeft))
-    slot.barBounds._ccKitRectH = math_max(1, slotHeight - (isVertical and barAreaTop or 0))
-
-    SetBarAreaPoints(slot.statusBar, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
-    slot.statusBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    -- These are sample values and preview layers, never live timer state.
     slot.statusBar:SetMinMaxValues(0, 1)
     slot.statusBar:SetValue(1)
-    slot.statusBar:SetReverseFill(style.barReverseFill or false)
-    slot.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
-    local barColor = style.barColor or DEFAULT_BAR_COLOR
-    slot.statusBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4])
     slot.statusBar:Show()
-
-    SetBarAreaPoints(slot.textFrame, slot, isVertical, iconReverse, barAreaLeft, barAreaTop, borderLayoutSize)
-    slot.textFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 2)
+    slot.barTextFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 2)
 
     local nameText = slot.nameText
     CooldownCompanion.ApplyFontStyle(nameText, style, "barName", 10)
-    ST.BarTextLayout.Apply(nameText, slot.textFrame,
+    ST.BarTextLayout.Apply(nameText, slot.barTextFrame,
         ST.BarTextLayout.Resolve(style, "name", isVertical))
     if style.showBarNameText ~= false or buttonData.customName then
         nameText:SetText(GetConfigOnlyBarPreviewName(buttonData))
@@ -625,13 +572,9 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
 
     ApplyBarReadyPresentation(slot, buttonData, style)
 
-    for i = 1, 4 do
-        slot.borderTextures[i]:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-    end
-    ApplyBorderEdgePositions(slot.borderTextures, slot.barBounds, borderSize, borderRenderMode)
     if ST.ChargeBarSegments.PaintPanel(slot, buttonData.maxCharges, buttonData.maxCharges,
         nil, false, style.barChargeColor or DEFAULT_BAR_CHARGE_COLOR) then
-        slot.textFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 4)
+        slot.barTextFrame:SetFrameLevel(slot.statusBar:GetFrameLevel() + 4)
     end
 end
 

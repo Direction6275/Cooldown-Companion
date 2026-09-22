@@ -88,7 +88,9 @@ ButtonFrame\Visibility.lua
 ButtonFrame\Tracking.lua
 ButtonFrame\VisualState.lua
 ButtonFrame\VisualStateDiagnostics.lua
+ButtonFrame\IconVisuals.lua
 ButtonFrame\IconMode.lua
+ButtonFrame\BarVisuals.lua
 ButtonFrame\BarMode.lua
 ButtonFrame\TextFormat.lua
 ButtonFrame\TextMode.lua

@@ -13,7 +13,6 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
-local StyleMirroredIconFrame = ST._StyleMirroredIconFrame
 local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
 local IsStoredPreviewFlagActive = ST._IsStoredPreviewFlagActive
 local AuraTextures = ST._AT
@@ -22,6 +21,7 @@ local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureI
 local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllTextureIndicatorEffects
 
 local PP = ST._ButtonPanelPreview
+local StylePreviewIcon = PP.StylePreviewIcon
 
 -- ButtonPanelPreviewEffects.lua
 local StopConditionalTicker = PP.StopConditionalTicker
@@ -130,7 +130,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
         ApplyPreviewSlotGeometry(preview, slot, "TOPLEFT", cx, cy)
 
         local buttonData = entryInfo.buttonData
-        StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+        StylePreviewIcon(slot, buttonData, group)
         -- Selection strips are pickers, not mirrors: no conditional or
         -- effect previews here, and recycled grid slots keep neither.
         ResetSlotConditionalVisuals(slot)

@@ -21,7 +21,6 @@ local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
 local HideDragIndicator = ST._HideDragIndicator
-local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
@@ -282,75 +281,6 @@ local function AcquireContainer(preview, parent)
     frame:SetParent(parent)
     frame:Show()
     return frame
-end
-
-local function ApplyPreviewEdgeBorder(frame, size, color)
-    if not (frame and frame.borderTextures) then return end
-    local renderMode = ST.GetEffectiveBorderRenderMode(frame._previewBorderRenderMode, nil, size)
-    ST.ApplyBorderTextures(frame.borderTextures, frame, color or { 0, 0, 0, 1 }, size or 1, renderMode)
-end
-
-local function HidePreviewEdgeBorder(frame)
-    if not (frame and frame.borderTextures) then return end
-    for i = 1, 4 do
-        frame.borderTextures[i]:Hide()
-    end
-end
-
-local function GetSourceIconBorderSize(button, fallback)
-    -- Live icon geometry can be secret-sensitive in config context, so do not
-    -- derive inset size from GetLeft()/GetRight()-style measurements here.
-    -- Use the configured border size as the safe preview fallback instead.
-    return fallback
-end
-
-local function StyleMirroredIconFrame(iconFrame, button, group)
-    if not iconFrame then return end
-
-    local style = group and group.style or {}
-    if button and button.buttonData and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, button.buttonData) or style
-    end
-
-    local borderSize = GetSourceIconBorderSize(button, style.borderSize or ST.DEFAULT_BORDER_SIZE or 1)
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
-    local bgColor = CloneColor(style.backgroundColor, { 0, 0, 0, 0.5 })
-    local borderColor = CloneColor(style.borderColor, { 0, 0, 0, 1 })
-    local showBorder = (borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderRenderMode, nil, borderSize)) and ((borderColor[4] ~= nil and borderColor[4] > 0) or borderColor[4] == nil)
-
-    if button and button.borderTextures then
-        local anyShown = false
-        for i = 1, 4 do
-            local tex = button.borderTextures[i]
-            if tex and tex:IsShown() then
-                anyShown = true
-                break
-            end
-        end
-        showBorder = anyShown and showBorder
-    end
-
-    iconFrame.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] ~= nil and bgColor[4] or 1)
-    iconFrame.icon:ClearAllPoints()
-    iconFrame.icon:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", borderLayoutSize, -borderLayoutSize)
-    iconFrame.icon:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
-    iconFrame.icon:SetTexture((button and button.icon and button.icon:GetTexture()) or GetLayoutPreviewIcon(button and button.buttonData))
-    iconFrame.icon:Show()
-    iconFrame.countText:Hide()
-
-    if button and button.icon and button.icon.GetTexCoord then
-        iconFrame.icon:SetTexCoord(button.icon:GetTexCoord())
-    else
-        ApplyIconTexCoord(iconFrame.icon, iconFrame:GetWidth(), iconFrame:GetHeight(), style.iconZoom)
-    end
-
-    if showBorder then
-        iconFrame._previewBorderRenderMode = borderRenderMode
-        ApplyPreviewEdgeBorder(iconFrame, borderSize, borderColor)
-    else
-        HidePreviewEdgeBorder(iconFrame)
-    end
 end
 
 local function CreateSlotFrame(parent)
@@ -3431,12 +3361,8 @@ function ST._SetLayoutOrderLaneChromeFaded(host, faded)
     return true
 end
 
--- Shared with ButtonPanelPreview.lua: config-safe icon resolution and the
--- mirrored icon styling both previews use. StyleMirroredIconFrame expects an
--- icon frame carrying bg, icon, countText, and borderTextures[4]; pass
--- button as { buttonData = ... } to style purely from saved settings.
+-- Config-safe icon identity is also used by the button preview family.
 ST._GetLayoutPreviewIcon = GetLayoutPreviewIcon
-ST._StyleMirroredIconFrame = StyleMirroredIconFrame
 
 -- Owners that lend this canvas a real mirror wear the same "icons stay in
 -- place" refusal the canvas's own placeholder wears, so the strings have one

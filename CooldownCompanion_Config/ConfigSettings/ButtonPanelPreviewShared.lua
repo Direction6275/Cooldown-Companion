@@ -8,6 +8,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local IconVisuals = ST._IconVisuals
 local CS = ST._configState
 local math_floor = math.floor
 local math_min = math.min
@@ -519,14 +520,14 @@ local function ConfigureBarIdentityLabel(preview, slot, buttonData, scale, verti
     local layer = slot.identityLayer
     if not layer then
         layer = CreateFrame("Frame", nil, slot)
-        layer:SetAllPoints(slot.barBounds)
+        layer:SetAllPoints(slot._barBounds)
         layer:EnableMouse(false)
         layer.label = layer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         layer.label:SetWordWrap(false)
         layer.label:SetJustifyH("CENTER")
         slot.identityLayer = layer
     end
-    layer:SetFrameLevel(math_max(slot.textFrame:GetFrameLevel(),
+    layer:SetFrameLevel(math_max(slot.barTextFrame:GetFrameLevel(),
         slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET) + 1)
     local label = preview.groupOverview and slot.nameText:IsShown() and slot.nameText or layer.label
     local font = label:GetFont()
@@ -545,8 +546,8 @@ local function ConfigureBarIdentityLabel(preview, slot, buttonData, scale, verti
     label:SetWidth(0)
     label:SetPoint("CENTER", layer, "CENTER", 0, 0)
     if not vertical then
-        label:SetPoint("LEFT", slot.barBounds, "LEFT", 4, 0)
-        label:SetPoint("RIGHT", slot.barBounds, "RIGHT", -4, 0)
+        label:SetPoint("LEFT", slot._barBounds, "LEFT", 4, 0)
+        label:SetPoint("RIGHT", slot._barBounds, "RIGHT", -4, 0)
     end
     layer:Hide()
     slot._cdcBarIdentityPreview = preview
@@ -688,8 +689,26 @@ local function AttachSlotHighlights(frame)
     frame.selectedHighlight:Hide()
 end
 
--- Icon-mode slot: the frame shape ST._StyleMirroredIconFrame expects
--- (bg, icon, countText, borderTextures[4]).
+-- Saved-design identity and visibility stay here; the body recipe is shared
+-- with live icons. Only this preview slot's dimensions are read.
+local function StylePreviewIcon(slot, buttonData, group)
+    local style = group and group.style or {}
+    if buttonData and CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+    end
+    IconVisuals.Layout(slot, style)
+    local width, height = slot:GetSize()
+    local borderSize, borderMode, borderAlpha = IconVisuals.Paint(slot, style, width, height)
+    slot.icon:SetTexture(GetLayoutPreviewIcon(buttonData))
+    slot.icon:Show()
+    slot.countText:Hide()
+    local showBorder = (borderSize > 0 or ST.IsEffectiveCrispBorderRenderMode(borderMode, nil, borderSize))
+        and borderAlpha > 0
+    for _, texture in ipairs(slot.borderTextures) do texture:SetShown(showBorder) end
+end
+PP.StylePreviewIcon = StylePreviewIcon
+
+-- Icon-mode slot: owns its sample cooldown, selection chrome and input.
 local function CreateIconSlot(parent)
     local frame = CreateFrame("Button", nil, parent)
     frame:SetClipsChildren(false)
@@ -715,8 +734,8 @@ local function CreateIconSlot(parent)
     return frame
 end
 
--- Bar-mode slot: static twin of the frames BarMode.lua CreateBarFrame
--- builds (minus cooldowns, time text, and counts).
+-- Bar-mode slot: supplies the shared body regions, with preview-owned text
+-- layers and lazily created sample timers/counts. No live cooldown widgets.
 local function CreateBarSlot(parent)
     local frame = CreateFrame("Button", nil, parent)
     frame:SetClipsChildren(false)
@@ -725,17 +744,17 @@ local function CreateBarSlot(parent)
     frame.iconBg = frame:CreateTexture(nil, "BACKGROUND")
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
 
-    frame.iconBounds = CreateFrame("Frame", nil, frame)
-    frame.iconBounds:EnableMouse(false)
-    frame.barBounds = CreateFrame("Frame", nil, frame)
-    frame.barBounds:EnableMouse(false)
+    frame._iconBounds = CreateFrame("Frame", nil, frame)
+    frame._iconBounds:EnableMouse(false)
+    frame._barBounds = CreateFrame("Frame", nil, frame)
+    frame._barBounds:EnableMouse(false)
 
     frame.statusBar = CreateFrame("StatusBar", nil, frame)
     frame.statusBar:EnableMouse(false)
 
-    frame.textFrame = CreateFrame("Frame", nil, frame)
-    frame.textFrame:EnableMouse(false)
-    frame.nameText = frame.textFrame:CreateFontString(nil, "OVERLAY")
+    frame.barTextFrame = CreateFrame("Frame", nil, frame)
+    frame.barTextFrame:EnableMouse(false)
+    frame.nameText = frame.barTextFrame:CreateFontString(nil, "OVERLAY")
 
     frame.iconBorderTextures = {}
     frame.borderTextures = {}
@@ -762,7 +781,7 @@ local function ApplyBarSlotVisualAlpha(slot, alpha)
     SetAlpha(slot.iconBg)
     SetAlpha(slot.icon)
     SetAlpha(slot.statusBar)
-    SetAlpha(slot.textFrame)
+    SetAlpha(slot.barTextFrame)
     SetAlpha(slot.textOverlay)
     local barAuraEffect = slot.barAuraEffect
     if barAuraEffect then
@@ -1064,7 +1083,7 @@ local function ApplySlotBadges(slot, status, scale, suppress)
     local size = math_min(24,
         math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
     local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
-    local badgeAnchor = hasVisibilityBadge and slot.barBounds or slot
+    local badgeAnchor = hasVisibilityBadge and slot._barBounds or slot
     local cornerOffset = hasVisibilityBadge and -(size + 2) or 0
 
     local atlas
@@ -1151,7 +1170,7 @@ local function ApplyBarVisibilityBadge(slot, show, scale)
     badge:SetAtlas(PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS, false)
     badge:SetSize(size, size)
     badge:ClearAllPoints()
-    badge:SetPoint("RIGHT", slot.barBounds, "RIGHT", 0, 0)
+    badge:SetPoint("RIGHT", slot._barBounds, "RIGHT", 0, 0)
     badge:Show()
     slot._cdcVisibilityBadgeShown = true
 end
