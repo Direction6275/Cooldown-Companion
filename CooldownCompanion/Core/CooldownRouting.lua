@@ -19,16 +19,15 @@
         loaded (those are excluded from the index by design, so a drop could
         starve one -- SpellButtonIndex header).
 
-    Runs beside the refresh scheduler, never through it (CooldownRefresh.lua
-    header invariants): the mini-pass never marks dirty, never touches the
-    scheduler serial/queue/latch state, and never sets _cooldownUpdatePassActive.
+    CooldownRefresh owns the shared flush frame and broad fallback. The router
+    owns eligibility and batches; its mini-pass never marks dirty, satisfies
+    scheduler serials, or sets _cooldownUpdatePassActive.
     It does reach NoteButtonTimeState through the shared per-button pipeline,
     which may push the F2 accumulators (_passTimeStateSeen, _tickerIdleEligible)
     in the conservative direction (forcing an extra walk) for a forced routed
     button -- never the permissive one: only a completed broad walk latches
     _tickerIdleEligible true, so a mini-pass can never cause a false idle-skip.
-    The single sanctioned scheduler touch is the generation-escalation fail-open
-    in the flush.
+    A stale batch returns to the flush owner for a broad refresh.
 
     Fire->buttons resolution uses CooldownCompanion:ForEachIndexedSpellButton,
     keeping the router's lookup single-sourced by construction.
@@ -40,19 +39,17 @@ local CooldownCompanion = ST.Addon
 local issecretvalue = issecretvalue
 local type = type
 local wipe = wipe
-local CreateFrame = CreateFrame
 
 -- Pending routed batch: buttons to mini-pass at the next OnUpdate boundary.
 -- Same-frame fires coalesce with set semantics (a button appears once).
--- Persists until FlushRoutedCooldownBatch clears it.
-local batchButtons = {}     -- button -> true (dedup across the whole batch)
-local batchOrder = {}       -- ordered buttons (1..batchCount); stale tail ignored
-local batchCount = 0
-local batchGeneration = nil -- index.generation stamped when the batch was armed
+-- Two reusable batches keep requests raised during delivery separate from the
+-- batch being read, without allocating a table for each mini-pass.
+local pendingBatch = { buttons = {}, order = {}, count = 0 }
+local spareBatch = { buttons = {}, order = {}, count = 0 }
 
 -- Per-fire scratch: one fire's matched buttons (union of the spellID bucket and
 -- the distinct-baseID bucket), plus a panel-membership flag. A button in both
--- buckets is listed twice; the batch merge dedups via batchButtons, the
+-- buckets is listed twice; the pending batch deduplicates those matches, the
 -- fireCount == 0 drop check only needs "any match", and a duplicate panel check
 -- is harmless. Reset at the top of every RouteCooldownEventFire.
 local fireList = {}
@@ -83,45 +80,19 @@ local function CollectFireButton(button)
     end
 end
 
-local function ClearRoutedBatch()
-    wipe(batchButtons)
-    batchCount = 0
-    batchGeneration = nil
-    -- batchOrder entries beyond batchCount are never read; no need to wipe.
+local function ClearBatch(batch)
+    wipe(batch.buttons)
+    wipe(batch.order)
+    batch.count = 0
+    batch.generation = nil
 end
 
-local function RoutedBatchOnUpdate(frame)
-    local addon = frame._cooldownCompanion
-    if addon then
-        addon:FlushRoutedCooldownBatch()
-    end
-end
-
--- Dedicated parentless always-shown flush frame (mirrors the OnUpdate pattern
--- of EnsureCooldownRefreshQueueFrame -- NOT the scheduler's queue frame;
--- constraint 3). It disarms itself on flush and is re-armed by the next routed
--- fire, so an idle routing world costs no OnUpdate.
-function CooldownCompanion:EnsureRoutedBatchFrame()
-    if not self._routedBatchFrame then
-        local frame = CreateFrame("Frame")
-        frame._cooldownCompanion = self
-        self._routedBatchFrame = frame
-    end
-    if not self._routedBatchArmed then
-        self._routedBatchArmed = true
-        self._routedBatchFrame:SetScript("OnUpdate", RoutedBatchOnUpdate)
-    end
-end
-
--- OnDisable teardown: disarm the flush frame and drop any pending batch so a
--- fire routed just before disable cannot flush next frame and re-arm the
--- scheduler state OnDisable just reset.
+-- A broad pass covers requests already pending when it starts, including the
+-- remainder of a mini-pass if a button triggered a synchronous broad refresh.
+-- OnDisable uses the same cancellation through ResetCooldownRefreshState.
 function CooldownCompanion:ResetRoutedCooldownBatch()
-    if self._routedBatchFrame then
-        self._routedBatchFrame:SetScript("OnUpdate", nil)
-    end
-    self._routedBatchArmed = nil
-    ClearRoutedBatch()
+    ClearBatch(pendingBatch)
+    ClearBatch(spareBatch)
 end
 
 -- Dispatch classifier, called from OnCooldownStateChanged for readable-arg
@@ -191,69 +162,59 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
     -- guard pass on a stale batch. A later fire resolved under a newer
     -- generation still coalesces in; the guard then escalates the whole batch to
     -- broad, which is the correct fail-open.
-    if batchCount == 0 then
-        batchGeneration = index.generation
+    if pendingBatch.count == 0 then
+        pendingBatch.generation = index.generation
     end
     for i = 1, fireCount do
         local button = fireList[i]
-        if not batchButtons[button] then
-            batchButtons[button] = true
-            batchCount = batchCount + 1
-            batchOrder[batchCount] = button
+        if not pendingBatch.buttons[button] then
+            pendingBatch.buttons[button] = true
+            pendingBatch.count = pendingBatch.count + 1
+            pendingBatch.order[pendingBatch.count] = button
         end
     end
-    self:EnsureRoutedBatchFrame()
+    self:EnsureCooldownRefreshQueueFrame()
     return true
 end
 
--- The mini-pass: runs on the next OnUpdate boundary after one or more fires
--- routed. Never marks dirty and never touches scheduler serial/queue/latch
--- state; the generation-escalation fail-open is the one sanctioned scheduler
--- touch (the dispatch choosing the broad path, not the mini-pass).
+-- Called only by the shared flush owner. Return true when a stale batch needs
+-- broad fallback. An empty batch must not manufacture a cooldown-event refresh.
 function CooldownCompanion:FlushRoutedCooldownBatch()
-    -- Disarm first: one flush per armed batch (re-armed by the next routed fire).
-    if self._routedBatchFrame then
-        self._routedBatchFrame:SetScript("OnUpdate", nil)
-    end
-    self._routedBatchArmed = nil
-
-    -- 1. Supersede: a queued broad refresh flushes at this same boundary and
-    --    strictly covers the batch, so drop it. OnUpdate order between the two
-    --    frames is not guaranteed; if the broad flush already ran this is nil
-    --    and the mini-pass runs redundantly -- safe, just not free.
-    if self._queuedCooldownRefreshSource ~= nil then
-        ClearRoutedBatch()
+    if pendingBatch.count == 0 then
         return
     end
 
-    -- 2. Generation / pending rebuild: a structural rebuild landed between
-    --    enqueue and flush (generation bumped), OR one is queued but has not run
-    --    yet (buckets about to change, generation not yet bumped). The dispatch
-    --    index-trust gate blocks NEW fires while pending, but a batch armed
-    --    BEFORE the structural change still reaches here; without this the
-    --    generation compare passes (unchanged) and stale/pooled/removed frames
-    --    mini-pass. Either way the stamped buttons may be stale, so escalate to
-    --    the broad path (the one sanctioned scheduler touch) and drop the batch.
+    -- Recheck both sides of the coalesced index rebuild. Neither callback order
+    -- may allow a batch resolved before structural churn to use stale frames.
     local index = self:GetSpellButtonIndex()
-    if index.generation ~= batchGeneration or self:IsSpellButtonIndexRebuildPending() then
-        self:MarkCooldownsDirty("cooldown-event")
-        self:QueueCooldownRefresh("cooldown-event")
-        ClearRoutedBatch()
-        return
+    if index.generation ~= pendingBatch.generation or self:IsSpellButtonIndexRebuildPending() then
+        ClearBatch(pendingBatch)
+        return true
     end
 
-    -- 3. Mini-pass: shared A1 snapshot, then the full per-button pipeline on
-    --    exactly the matched buttons whose group frame is shown (mirrors the
-    --    broad walk's gate). button:UpdateCooldown delegates to
-    --    UpdateButtonCooldown in every display mode.
+    local batch = pendingBatch
+    pendingBatch, spareBatch = spareBatch, pendingBatch
+    ClearBatch(pendingBatch)
+
+    -- Detach before even the snapshot: synchronous requests from either the
+    -- snapshot or a button belong to the next batch, even for the same button.
     self:SnapshotCooldownPassContext()
-    for i = 1, batchCount do
-        local button = batchOrder[i]
+    local needsBroad
+    local i = 1
+    while i <= batch.count do
+        -- A callback may remove/reuse a later button while this batch is active.
+        if index.generation ~= batch.generation or self:IsSpellButtonIndexRebuildPending() then
+            needsBroad = true
+            break
+        end
+        local button = batch.order[i]
         local groupFrame = button:GetParent()
         if button.buttonData and groupFrame and groupFrame:IsShown() then
             button:UpdateCooldown()
         end
+        i = i + 1
     end
 
-    ClearRoutedBatch()
+    ClearBatch(batch)
+    return needsBroad
 end

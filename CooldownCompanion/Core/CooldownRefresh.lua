@@ -15,7 +15,7 @@
     - _cooldownImmediateRefreshThisFrame: latch allowing only the first
       immediate refresh in a frame to walk synchronously.
     - _cooldownRefreshQueueFrame/_cooldownRefreshQueueArmed: parentless helper
-      frame and arm flag used to flush queued work on the next OnUpdate
+      frame and arm flag used to flush broad or routed work on the next OnUpdate
       boundary. The frame must stay shown; hidden frames do not receive OnUpdate.
     - _tickerIdleEligible (set in GroupOperations.UpdateAllCooldowns): true after
       a completed walk that saw no time-animated button. Read by
@@ -65,10 +65,10 @@
       from immediate-broad to dirty-only. It never suppresses the mark itself
       and never touches SPELL_UPDATE_COOLDOWN. Bounded by the next ticker
       walk; dirty ticks always walk.
-    - Routed mini-passes (F1 3b) run beside the scheduler: they never mark
-      dirty, never touch serials/queue/latch state, never set
-      _cooldownUpdatePassActive, and their batch is dropped whenever a broad
-      refresh is queued at flush time. Their shared per-button pipeline still
+    - Broad and routed requests share one flush frame. Every broad pass consumes
+      the routed batch pending at its start; requests arriving during or after
+      that pass remain pending. Routed mini-passes never mark dirty, satisfy
+      serials, or set _cooldownUpdatePassActive. Their per-button pipeline still
       reaches NoteButtonTimeState, which may push the F2 accumulators
       (_passTimeStateSeen, _tickerIdleEligible) in the conservative direction
       (forcing an extra walk) for a forced routed button -- never the permissive
@@ -131,18 +131,46 @@ function CooldownCompanion:EnsureCooldownRefreshQueueFrame()
     end
 end
 
-function CooldownCompanion:FlushQueuedCooldownRefresh()
-    local queuedSource = self._queuedCooldownRefreshSource
-    local cooldownEventSerial = self._queuedCooldownRefreshCooldownEventSerial
-    self:ResetCooldownRefreshState()
+local function DisarmCooldownRefreshQueue(addon)
+    if addon._cooldownRefreshQueueFrame then
+        addon._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
+    end
+    addon._cooldownRefreshQueueArmed = nil
+end
 
-    if queuedSource then
-        local T = ST.RefreshTelemetry
-        T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
-        self:UpdateAllCooldowns()
-        if cooldownEventSerial then
-            self._cooldownRefreshSatisfiedSerial = cooldownEventSerial
-        end
+local function FlushBroadCooldownRefresh(addon)
+    local queuedSource = addon._queuedCooldownRefreshSource
+    local cooldownEventSerial = addon._queuedCooldownRefreshCooldownEventSerial
+    addon._queuedCooldownRefreshSource = nil
+    addon._queuedCooldownRefreshCooldownEventSerial = nil
+
+    local T = ST.RefreshTelemetry
+    T:SetPending("queue-flush", queuedSource, T:TakeQueueHistory(), nil)
+    addon:UpdateAllCooldowns()
+    if cooldownEventSerial then
+        addon._cooldownRefreshSatisfiedSerial = cooldownEventSerial
+    end
+end
+
+function CooldownCompanion:FlushQueuedCooldownRefresh()
+    -- Disarm before delivery so requests raised by a pass can re-arm the same
+    -- frame. Full cancellation belongs to ResetCooldownRefreshState only.
+    DisarmCooldownRefreshQueue(self)
+    self._cooldownImmediateRefreshThisFrame = nil
+
+    if self._queuedCooldownRefreshSource then
+        FlushBroadCooldownRefresh(self)
+    end
+
+    -- A broad pass consumed only its starting batch. Service any newer routed
+    -- requests at this boundary, after its broad-pass classifier has finished.
+    -- A mini-pass detaches its own batch; work raised during it stays pending.
+    if self:FlushRoutedCooldownBatch() then
+        -- Index churn invalidated the routed batch. Fail broad at this boundary
+        -- rather than introducing another frame of delay through the queue.
+        self:MarkCooldownsDirty("cooldown-event")
+        self:QueueCooldownRefresh("cooldown-event")
+        FlushBroadCooldownRefresh(self)
     end
 end
 
@@ -246,11 +274,9 @@ function CooldownCompanion:TickCooldownRefresh()
 end
 
 function CooldownCompanion:ResetCooldownRefreshState()
-    if self._cooldownRefreshQueueFrame then
-        self._cooldownRefreshQueueFrame:SetScript("OnUpdate", nil)
-    end
-    self._cooldownRefreshQueueArmed = nil
+    DisarmCooldownRefreshQueue(self)
     self._queuedCooldownRefreshSource = nil
     self._queuedCooldownRefreshCooldownEventSerial = nil
     self._cooldownImmediateRefreshThisFrame = nil
+    self:ResetRoutedCooldownBatch()
 end
