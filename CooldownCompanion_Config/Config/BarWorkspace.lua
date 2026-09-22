@@ -70,7 +70,11 @@ local function GetAttachmentValue(kind)
     return Addon:GetModuleAttachment(kind).mode
 end
 
-local function SetAttachment(kind, value, panelId)
+local function SetAttachment(kind, value, panelId, context)
+    if context then
+        return ST._CompleteConfigEdit(ST._CaptureConfigEditTarget(context.panelId, context), "attachment",
+            { mode = value, panelId = panelId })
+    end
     if not Addon:SetModuleAttachment(kind, value, panelId) then return false end
     Addon:EvaluateBarsAndFramesRuntime("module-attachment")
     OpenWorkspace(kind)

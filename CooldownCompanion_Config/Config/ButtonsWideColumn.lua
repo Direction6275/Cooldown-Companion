@@ -2220,7 +2220,9 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
     -- A settings-only rebuild keeps the saved design and the preview's owner.
     -- Never reuse this path for selection changes or a newly materialized host.
     if edit and edit.preservePreview and edit.panelId == panelId
+        and (not edit.moduleKind or edit.previewHost == host)
         and host and host:IsShown() and col3._cdcActiveWideHost == host then
+        edit.previewBuilt = true
         return
     end
     if not host then
@@ -2965,9 +2967,8 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
 
     if CS.selectedGroup then
         if groupId and groupId ~= CS.selectedGroup then return end
-        if col3._cdcActiveWideRebuild then
-            col3._cdcActiveWideRebuild(host, outcome)
-        end
+        if not col3._cdcActiveWideRebuild then return false end
+        col3._cdcActiveWideRebuild(host, outcome)
         if not visualOnly then
             -- Discrete edits can change identity/status chrome. Continuous
             -- controls pass visualOnly because repainting this metadata on
@@ -2975,7 +2976,7 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
             UpdateEditingContext(col3)
             UpdateQuietRow(col3)
         end
-        return
+        return true
     end
 
     local containerId = CS.selectedContainer
@@ -2992,6 +2993,7 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
     end
     if col3._cdcActiveWideRebuild then
         col3._cdcActiveWideRebuild(host)
+        return true
     end
 end
 

@@ -420,6 +420,63 @@ local function WriteSpecOverrideKey(settings, powerType, specID, key, value)
     end
 end
 
+-- Resources reuse the ordinary field-control contract. Only this adapter
+-- knows the nested spec store; preview rollback never writes effective values.
+function ST._ResourceSpecFields(container, settings, powerType, specID)
+    local context = ST._GetSettingsWidgetContext(container)
+    assert(context and context.kind == "resources" and context.settings == settings, "Missing resource edit context")
+    local resources = rawget(settings, "resources")
+    local resource = resources and rawget(resources, powerType)
+    local function IsCurrent()
+        return context:IsCurrent() and rawget(settings, "resources") == resources
+            and (not resources or rawget(resources, powerType) == resource)
+    end
+    local fields = setmetatable({}, {
+        __index = function(_, key)
+            local spec = GetSpecOverrideTable(settings, powerType, specID, false)
+            if spec and spec[key] ~= nil then return spec[key] end
+            if resource then return resource[key] end
+        end,
+        __newindex = function(_, key, value)
+            if not IsCurrent() then return end
+            WriteSpecOverrideKey(settings, powerType, specID, key, value)
+            resources = rawget(settings, "resources")
+            resource = resources and rawget(resources, powerType)
+        end,
+    })
+    getmetatable(fields)._settingsPreviewTarget = {
+        isCurrent = IsCurrent,
+        capture = function(keys)
+            local oldResources, oldResource = resources, resource
+            local specs = resource and rawget(resource, "specOverrides")
+            local spec = specs and rawget(specs, specID)
+            local restoreRoot = ST._CaptureRawSettingsFields(settings, { "resources" })
+            local restoreResource = ST._CaptureRawSettingsFields(resources, { powerType })
+            local restoreSpecs = ST._CaptureRawSettingsFields(resource, { "specOverrides" })
+            local restoreSpec = ST._CaptureRawSettingsFields(specs, { specID })
+            local restoreFields = ST._CaptureRawSettingsFields(spec, keys)
+            return function()
+                restoreFields()
+                restoreSpec()
+                restoreSpecs()
+                restoreResource()
+                restoreRoot()
+                resources, resource = oldResources, oldResource
+            end
+        end,
+    }
+    return fields
+end
+
+function ST._MakeResourceEditRefresh(container)
+    local context = ST._GetSettingsWidgetContext(container)
+    assert(context and context.kind == "resources", "Missing resource edit context")
+    local target = ST._CaptureConfigEditTarget(context.panelId, context)
+    return function(operation, effect)
+        return ST._CompleteConfigEdit(target, operation or "style", effect)
+    end
+end
+
 ------------------------------------------------------------------------
 -- More query functions
 ------------------------------------------------------------------------
@@ -650,6 +707,8 @@ local function AddMirrorFirstSliderRow(container, opts)
         end
     end
     opts.onRelease = function(value)
+        local target = stateOwner and ST._GetSettingsPreviewTarget(stateOwner)
+        if target and not target.isCurrent() then return end
         set(value)
         apply()
     end

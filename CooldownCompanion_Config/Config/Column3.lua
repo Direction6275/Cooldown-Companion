@@ -61,7 +61,7 @@ local function RefreshColumn3(selectionOnly, edit)
 
         -- One dispatcher for the whole destination: it picks the canvas,
         -- the overview pane, or the conflict gate on its own.
-        return ST._RefreshResourcesWideColumn(col3)
+        return ST._RefreshResourcesWideColumn(col3, edit)
     end
 
     -- Other Class browsing (and any residual state) uses the same merged wide

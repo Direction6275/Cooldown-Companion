@@ -371,10 +371,8 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
         else baseline = ST.ResolveBarGeometry(panel, { baseline = settings.height or 15 }).thickness end
         return { barHeight = baseline }
     end
-    function context:Refresh()
-        if kind == "resources" then Addon:ApplyResourceBars() else Addon:ApplyCastBarSettings() end
-        if Addon.RepositionCastBar then Addon:RepositionCastBar() end
-        if ST._RefreshResourcesCanvasForDrag then ST._RefreshResourcesCanvasForDrag() end
+    function context:Refresh(operation, effect)
+        return ST._CompleteConfigEdit(ST._CaptureConfigEditTarget(self.panelId, self), operation or "style", effect)
     end
     local metadata = { _geometryContext = context, _barGeometryKind = kind, displayAs = "bars",
         type = "module", name = kind == "resources" and (ST._RB.POWER_NAMES[powerType] or "Resource") or "Cast Bar" }

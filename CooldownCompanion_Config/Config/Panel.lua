@@ -2551,6 +2551,10 @@ end
 -- Only a completed matching build delivers the edit's mirror. A guard's early
 -- return is not completion, and a pending edit may name the previous panel.
 function ST._RefreshConfigEditWorkspace(edit)
+    if edit.moduleKind then
+        if CS.exportMode or CS.importMode or not ST._IsModuleEditWorkspaceCurrent(edit) then return false end
+        return CooldownCompanion:_configRefreshPanelImpl(edit)
+    end
     if CS.selectedGroup ~= edit.panelId or CS.barsEntrySelected or CS.unifiedBarKind
         or CS.exportMode or CS.importMode then return false end
     return RefreshConfigWorkspace(false, edit)

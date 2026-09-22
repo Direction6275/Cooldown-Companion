@@ -37,15 +37,8 @@ local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
--- The workspace Live Preview does not rebuild with the settings column, so
--- rows whose effect is visible on the canvas re-render it directly (the
--- custom-bars panel's pattern). Late-bound: the helper self-gates on view
--- state and may not exist in every load order.
-local function RefreshLayoutOrderPreview()
-    if ST._RefreshResourcesLayoutPreview then
-        ST._RefreshResourcesLayoutPreview()
-    end
-end
+-- Each Resources surface captures one guarded completion target.
+local MakeResourceEditRefresh = ST._MakeResourceEditRefresh
 
 -- Mirror-first slider wiring and its drag-tick repaint (owner ruling
 -- 2026-08-02, contract stated once in ResourceBarPanelsHelpers.lua). That file
@@ -380,8 +373,7 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
                 label = options.enableLabel,
                 run = function()
                     health[options.enabledKey] = true
-                    applyBars()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             },
         } or nil,
@@ -422,7 +414,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
         EnsureResourceSettings(settings, capturedPt)
     end
     local baseSettings = settings.resources[capturedPt]
-    local resSettings = SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys) or baseSettings
+    SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys)
+    local resSettings = displaySpecID and ST._ResourceSpecFields(container, settings, capturedPt, displaySpecID) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
     local finderText = isHealthResource
         and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthText
@@ -451,8 +444,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             if isHealthResource and not IsHealthTextFormat(resSettings.textFormat) then
                 resSettings.textFormat = "percent"
             end
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
 
@@ -460,10 +452,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     -- every row goes straight onto the panel scroll. The Show <resource> Text
     -- toggle these belong to lives back on the tab, so none of them indents.
     --
-    -- The font trio is hand-written rather than routed through AddFontControls:
-    -- these values read through ReadDisplaySetting (spec override first, then
-    -- the base resource table), which the shared helper's plain tbl[key] read
-    -- cannot express.
+    -- The field adapter provides inherited reads to the shared controls.
     local function BuildResourceTextAdvanced(panel)
         local textFormatOptions
         local textFormatOrder
@@ -543,51 +532,13 @@ local function BuildResourceTextControls(container, settings, powerType, display
             end,
         })
 
-        -- Font Size / Font / Font Outline, in that order and with those
-        -- labels: the shape AddFontControls emits in every other popout. The
-        -- trio stays hand-written here because these values read through
-        -- ReadDisplaySetting (spec override first, then the base resource
-        -- table), which the shared helper's flat tbl[key] read cannot express.
-        -- Every row from here down draws on the canvas: it renders these bars
-        -- with the real bar styler, which sets the value text's font, colour,
-        -- anchor and offsets from exactly these keys.
-        AddMirrorFirstSliderRow(panel, {
-            label = "Font Size",
-            setting = finderText and finderText.advanced and finderText.advanced.size,
-            min = 6, max = 24, step = 1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "textFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
-            set = function(val) resSettings.textFontSize = val end,
-            apply = applyBars,
-            stateOwner = resSettings,
-            stateKeys = "textFontSize",
+        ST._AddFontControls(panel, resSettings, "text", {
+            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24,
+            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
+        }, applyBars, {
+            settings = finderText and finderText.advanced,
+            previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
-
-        -- FONT ROW: created with a label and a widened pullout but NO list and
-        -- NO onChange, then handed to the shared font helpers exactly as a
-        -- stock Dropdown would be. The value is set AFTER SetupFontDropdown,
-        -- because SetList rebuilds the list the displayed text is read from.
-        local fontRow = AddDropdownRow(panel, {
-            label = "Font",
-            setting = finderText and finderText.advanced and finderText.advanced.font,
-            pulloutWidth = MEDIA_PULLOUT_WIDTH,
-        })
-        CS.SetupFontDropdown(fontRow)
-        fontRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFont", DEFAULT_RESOURCE_TEXT_FONT))
-        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
-            resSettings.textFont = val
-            applyBars()
-        end)
-
-        local outlineRow = AddDropdownRow(panel, {
-            label = "Font Outline",
-            setting = finderText and finderText.advanced and finderText.advanced.outline,
-        })
-        CS.SetupFontOutlineDropdown(outlineRow)
-        outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "textFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
-            resSettings.textFontOutline = val
-            applyBars()
-        end)
 
         AddColorRow(panel, {
             label = "Text Color",
@@ -662,8 +613,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         value = rechargeEnabled,
         onChange = function(val)
             resSettings.showRechargeText = val == true
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
 
@@ -695,54 +645,17 @@ local function BuildResourceTextControls(container, settings, powerType, display
             value = modeValue,
             onChange = function(val)
                 resSettings.rechargeTextMode = (val == "all") and "all" or "recharging"
-                CooldownCompanion:ApplyResourceBars()
-                if CS.RefreshAdvancedSettingsPanel then
-                    CS.RefreshAdvancedSettingsPanel()
-                end
+                applyBars("style-advanced")
             end,
         })
 
-        -- Same canonical trio order and labels as the resource text popout
-        -- above, and hand-written for the same ReadDisplaySetting reason.
-        AddSliderRow(panel, {
-            label = "Font Size",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.size,
-            min = 6, max = 24, step = 1,
-            value = ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontSize", DEFAULT_RESOURCE_TEXT_SIZE),
-            onChange = function(val)
-                ST._PreviewScalarSetting(resSettings, "rechargeTextFontSize", val, RefreshLayoutOrderPreviewForDrag)
-            end,
-            onRelease = function(val)
-                resSettings.rechargeTextFontSize = val
-                CooldownCompanion:ApplyResourceBars()
-            end,
+        ST._AddFontControls(panel, resSettings, "rechargeText", {
+            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24,
+            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
+        }, applyBars, {
+            settings = finderText and finderText.rechargeAdvanced,
+            previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
-
-        local fontRow = AddDropdownRow(panel, {
-            label = "Font",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.font,
-            pulloutWidth = MEDIA_PULLOUT_WIDTH,
-        })
-        CS.SetupFontDropdown(fontRow)
-        fontRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFont", DEFAULT_RESOURCE_TEXT_FONT))
-        CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
-            resSettings.rechargeTextFont = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
-
-        local outlineRow = AddDropdownRow(panel, {
-            label = "Font Outline",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.outline,
-        })
-        CS.SetupFontOutlineDropdown(outlineRow)
-        outlineRow:SetValue(ReadDisplaySetting(baseSettings, resSettings, "rechargeTextFontOutline", DEFAULT_RESOURCE_TEXT_OUTLINE))
-        CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
-            resSettings.rechargeTextFontOutline = val
-            CooldownCompanion:ApplyResourceBars()
-        end)
 
         AddColorRow(panel, {
             label = "Text Color",
@@ -802,6 +715,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         return
     end
     local health = HealthResource.EnsureDisplaySettings(settings, specID)
+    if specID then health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID) end
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
         fillGradientEnabled = DEFAULT_HEALTH_BAR_GRADIENT
@@ -828,8 +742,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
             value = fillGradientEnabled == true and "gradient" or "solid",
             onChange = function(val)
                 health.healthBarGradient = val == "gradient"
-                applyBars()
-                CooldownCompanion:RefreshConfigPanel()
+                applyBars("style-settings")
             end,
         })
 
@@ -871,8 +784,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
             value = gradientEnabled == true and "gradient" or "solid",
             onChange = function(val)
                 health.healthBackgroundGradient = val == "gradient"
-                applyBars()
-                CooldownCompanion:RefreshConfigPanel()
+                applyBars("style-settings")
             end,
         })
 
@@ -914,8 +826,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         value = health.showAbsorbs == true,
         onChange = function(val)
             health.showAbsorbs = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
     HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
@@ -939,8 +850,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         value = health.showHealAbsorbs == true,
         onChange = function(val)
             health.showHealAbsorbs = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
     HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
@@ -964,8 +874,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         value = health.showIncomingHeals == true,
         onChange = function(val)
             health.showIncomingHeals = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
     HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
@@ -989,8 +898,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         value = health.showLowHealthAlert == true,
         onChange = function(val)
             health.showLowHealthAlert = val == true
-            applyBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
     HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
@@ -1142,6 +1050,7 @@ end
 -- brackets each of this file's exported panes (ResourcesWideColumn builds
 -- exactly one per rebuild into a fresh scroll).
 local function BuildResourceBarAnchoringPanel(container)
+    local applyBars = MakeResourceEditRefresh(container)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
     end
@@ -1176,10 +1085,7 @@ local function BuildResourceBarAnchoringPanel(container)
                 and RESOURCE_FINDER.primary.toggles.enabled,
             value = settings.enabled,
             onChange = function(val)
-                settings.enabled = val
-                if val then ST._PrepareBarWorkspaceEnable("resources") end
-                CooldownCompanion:EvaluateResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
+                applyBars("enable", val)
             end,
         })
 
@@ -1196,8 +1102,7 @@ local function BuildResourceBarAnchoringPanel(container)
                 value = settings.hideManaForNonHealer ~= false,
                 onChange = function(val)
                     settings.hideManaForNonHealer = val
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             })
         end
@@ -1210,9 +1115,7 @@ local function BuildResourceBarAnchoringPanel(container)
                 value = settings.keepSpecResourcesInAllForms == true,
                 onChange = function(val)
                     settings.keepSpecResourcesInAllForms = val == true
-                    CooldownCompanion:ApplyResourceBars()
-                    RefreshLayoutOrderPreview()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             })
             AnchorRowBadge(keepSpecResourcesRow, CreateInfoButton(
@@ -1248,8 +1151,7 @@ local function BuildResourceBarAnchoringPanel(container)
                         settings.resources[pt] = {}
                     end
                     settings.resources[pt].enabled = val
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             })
         end
@@ -1269,8 +1171,7 @@ local function BuildResourceBarAnchoringPanel(container)
     -- ============ Alpha Section ============
     local group = db.groups[CS.selectedGroup]
     BuildAlphaControls(container, settings, function()
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
+        applyBars("style-settings")
     end, "rb_alpha", {
         row = true,
         isGlobal = group and group.isGlobal,
@@ -1283,6 +1184,7 @@ end
 ------------------------------------------------------------------------
 
 local function BuildResourceBarPositioningPanel(container)
+    local applyBars = MakeResourceEditRefresh(container)
     if BuildResourceBarConflictGate(container, "Resource Bars", true) then
         return
     end
@@ -1343,8 +1245,7 @@ local function BuildResourceBarPositioningPanel(container)
             value = layout.orientation or settings.orientation or "horizontal",
             onChange = function(val)
                 layout.orientation = val
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
+                applyBars("style-settings")
             end,
         })
 
@@ -1362,10 +1263,7 @@ local function BuildResourceBarPositioningPanel(container)
             disabled = not isVerticalLayout,
             onChange = function(val)
                 layout.verticalFillDirection = val
-                CooldownCompanion:ApplyResourceBars()
-                -- The canvas fills its vertical bars in this direction too,
-                -- and nothing here rebuilds the settings column.
-                RefreshLayoutOrderPreview()
+                applyBars()
             end,
         })
 
@@ -1377,8 +1275,7 @@ local function BuildResourceBarPositioningPanel(container)
                 value = layout.inheritAlpha,
                 onChange = function(val)
                     layout.inheritAlpha = val == true
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             })
         end
@@ -1410,7 +1307,7 @@ local function BuildResourceBarPositioningPanel(container)
             value = layout.barSpacing or settings.barSpacing or 3.6,
             set = function(val) layout.barSpacing = val end,
             apply = function()
-                CooldownCompanion:ApplyResourceBars()
+                applyBars()
             end,
             stateOwner = layout,
             stateKeys = "barSpacing",
@@ -1426,7 +1323,7 @@ local function BuildResourceBarPositioningPanel(container)
             value = layout.segmentGap or settings.segmentGap or 4,
             set = function(val) layout.segmentGap = val end,
             apply = function()
-                CooldownCompanion:ApplyResourceBars()
+                applyBars()
             end,
             stateOwner = layout,
             stateKeys = "segmentGap",
@@ -1443,7 +1340,7 @@ local function BuildResourceBarPositioningPanel(container)
             local anchor = layout.independentAnchor
 
             local function refreshResourceBarAnchor()
-                CooldownCompanion:ApplyResourceBars()
+                applyBars()
             end
 
             -- A frame name needs the whole 140px control column to stay
@@ -1471,7 +1368,7 @@ local function BuildResourceBarPositioningPanel(container)
                 value = not layout.independentAnchorLocked,
                 onChange = function(val)
                     layout.independentAnchorLocked = not val
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                     if not val then
                         CooldownCompanion:CheckArrangeModeAutoExit()
                     end
@@ -1500,7 +1397,7 @@ local function BuildResourceBarPositioningPanel(container)
                 value = layout.independentWidth or settings.independentWidth or 200,
                 set = function(val) layout.independentWidth = val end,
                 apply = function()
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
                 stateOwner = layout,
                 stateKeys = "independentWidth",
@@ -1517,7 +1414,7 @@ local function BuildResourceBarPositioningPanel(container)
                 value = anchor.x or 0,
                 onRelease = function(val)
                     anchor.x = val
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
             })
 
@@ -1529,7 +1426,7 @@ local function BuildResourceBarPositioningPanel(container)
                 value = anchor.y or 0,
                 onRelease = function(val)
                     anchor.y = val
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
             })
         end
@@ -1566,7 +1463,7 @@ local function BuildResourceBarPositioningPanel(container)
                 end,
                 onRelease = function(val)
                     layout[gapField] = val
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
             })
 
@@ -1594,6 +1491,7 @@ end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
 local function BuildLegacyBarHeightControls(container, settings, layout)
+    local applyBars = MakeResourceEditRefresh(container)
     layout = layout or settings
     local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
     local customHeightsAdvKey = "customResourceBarHeights"
@@ -1619,7 +1517,7 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
         disabled = layout.customBarHeights or false,
         set = function(val) layout[thicknessField] = val end,
         apply = function()
-            CooldownCompanion:ApplyResourceBars()
+            applyBars()
         end,
         stateOwner = layout,
         stateKeys = thicknessField,
@@ -1635,8 +1533,7 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
         value = layout.customBarHeights or false,
         onChange = function(val)
             layout.customBarHeights = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
 
@@ -1700,7 +1597,7 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
                     layout.resources[capturedPt][thicknessField] = val
                 end,
                 apply = function()
-                    CooldownCompanion:ApplyResourceBars()
+                    applyBars()
                 end,
                 captureState = function()
                     local current = rawget(layout.resources, capturedPt)
@@ -1728,8 +1625,7 @@ local function BuildLegacyBarHeightControls(container, settings, layout)
                 label = "Enable " .. customThicknessLabel,
                 run = function()
                     layout.customBarHeights = true
-                    CooldownCompanion:ApplyResourceBars()
-                    CooldownCompanion:RefreshConfigPanel()
+                    applyBars("style-settings")
                 end,
             },
         } or nil,
@@ -1755,7 +1651,7 @@ ST._BuildBarHeightControls = function(container, settings, layout)
         value = ST.ResolveResourceBarGeometry(settings, layout).thickness, min = 4, max = 100, step = 0.1,
         tooltip = { "Default thickness for this independent Resources stack. Individual thickness customizations override it." },
         set = function(value) layout[field] = value end, stateOwner = layout, stateKeys = field,
-        apply = function() CooldownCompanion:ApplyResourceBars(); CooldownCompanion:RepositionCastBar() end,
+        apply = function() context:Refresh() end,
     })
 end
 
@@ -1860,31 +1756,18 @@ local function BuildResourceColorControls(container, settings, powerType, specID
     for index, descriptor in ipairs(descriptors) do
         local capturedKey = descriptor.key
         local capturedDefault = descriptor.defaultColor
-        local proxy = {
-            [capturedKey] = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault),
-        }
+        local fields = ST._ResourceSpecFields(container, settings, powerType, specID)
         AddColorRow(index <= leftCount and colorLeft or colorRight, {
             label = descriptor.label,
             setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
                 and RESOURCE_FINDER.detail[powerType].colors
                 and RESOURCE_FINDER.detail[powerType].colors[capturedKey],
-            tbl = proxy,
+            tbl = fields,
             key = capturedKey,
             default = capturedDefault,
             hasAlpha = descriptor.hasAlpha,
-            onConfirm = function()
-                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
-                applyBars()
-            end,
-            -- The picker-open path already writes the override (the proxy is a
-            -- throwaway, so the store is the only place the canvas can read
-            -- it from); repainting here is what makes the swatch track live.
-            onPreview = function()
-                local committed = ReadSpecOverrideKey(settings, powerType, specID, capturedKey, capturedDefault)
-                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, proxy[capturedKey])
-                RefreshLayoutOrderPreviewForDrag()
-                WriteSpecOverrideKey(settings, powerType, specID, capturedKey, committed)
-            end,
+            onConfirm = applyBars,
+            onPreview = RefreshLayoutOrderPreviewForDrag,
         })
     end
 
@@ -1994,13 +1877,13 @@ end
 
 local function AddThresholdTickEnableCheckbox(container, settings, powerType, specID,
     settingKey, label, finderSetting)
+    local applyBars = MakeResourceEditRefresh(container)
     local enabled = ReadSpecOverrideKey(settings, powerType, specID, settingKey, false) == true
     -- One writer for both entrances (the checkbox and the gear panel's
     -- Turn On footer), so the two can never drift apart.
     local function SetEnabled(val)
         WriteSpecOverrideKey(settings, powerType, specID, settingKey, val == true)
-        CooldownCompanion:ApplyResourceBars()
-        CS.RefreshAdvancedSettingsPanelSoon(true)
+        applyBars("style-settings-soon")
     end
     local checkbox = AddCheckboxRow(container, {
         label = label,
@@ -2124,8 +2007,7 @@ local function AddThresholdTickEntryEditor(panel, options)
         end
         thresholdTickEditorErrors[errorKey] = nil
         options.writeEntries(updated)
-        options.applyBars()
-        RefreshAdvancedSettingsPanelSoon()
+        options.applyBars("style-advanced-soon")
     end
 
     for index, entry in ipairs(entries) do
@@ -2142,8 +2024,7 @@ local function AddThresholdTickEntryEditor(panel, options)
                 table.remove(updated, index)
                 thresholdTickEditorErrors[errorKey] = nil
                 options.writeEntries(updated)
-                options.applyBars()
-                RefreshAdvancedSettingsPanelSoon()
+                options.applyBars("style-advanced-soon")
             end,
             valueSetting, draftKey .. ":value:" .. index)
 
@@ -2319,15 +2200,11 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
     -- Every handler in this section funnels through here: the border and
     -- lane render on the workspace Live Preview, which does not rebuild
     -- with the settings column, so the canvas re-renders on every edit.
-    local applyBars = function()
-        CooldownCompanion:ApplyResourceBars()
-        RefreshLayoutOrderPreview()
-    end
+    local applyBars = MakeResourceEditRefresh(container)
     -- Uncommitted edits (picker open, slider held) stop at the canvas.
     local previewOnly = RefreshLayoutOrderPreviewForDrag
     local function refresh()
-        applyBars()
-        CS.RefreshAdvancedSettingsPanelSoon(true)
+        applyBars("style-settings-soon")
     end
 
     local enabled = IsResourceAuraOverlayEnabledConfig(settings, powerType, specID)
@@ -2679,8 +2556,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 settings.resources[powerType] = {}
             end
             settings.resources[powerType][keys.enabled] = value == true or nil
-            applyRows()
-            CS.RefreshAdvancedSettingsPanelSoon(true)
+            applyRows("style-settings-soon")
         end,
     })
     AnchorRowBadge(borderToggleRow, CreateInfoButton(borderToggleRow.frame, borderToggleRow.frame, "LEFT", "LEFT", 0, 0, {
@@ -2693,8 +2569,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
             settings.resources = settings.resources or {}
             settings.resources[powerType] = settings.resources[powerType] or {}
             settings.resources[powerType][keys.enabled] = true
-            applyRows()
-            CooldownCompanion:RefreshConfigPanel()
+            applyRows("style-settings")
         end } } or nil,
         build = function(panel)
             local resource = resource or {}
@@ -2715,8 +2590,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                     resource[keys.speed] = value == "pixel" and 2 or 0.5
                     resource[keys.lines] = value == "pixel" and 5 or 2
                     resource[keys.thickness] = value == "pixel" and 3 or 4
-                    applyRows()
-                    CS.RefreshAdvancedSettingsPanelSoon(true)
+                    applyRows("style-settings-soon")
                 end,
             })
             AddColorRow(panel, {
@@ -2739,6 +2613,7 @@ end
 
 -- Resource sounds are spec-owned behavior, independent of the stack shape.
 function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
+    local applyBars = MakeResourceEditRefresh(container)
     if not RB.ResourceSounds.Supports(powerType) then return end
     local heading, collapsed = BuildCollapsibleSection(container, "Sound Alerts", "rb_resource_sounds",
         resourceBarCollapsedSections, nil, ROW_SECTION)
@@ -2757,7 +2632,7 @@ function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
     local function Write(key, value)
         WriteSpecOverrideKey(settings, powerType, specID, key, value)
         RB.ResourceSounds.Reset(powerType)
-        CooldownCompanion:RefreshConfigPanel()
+        applyBars("settings")
     end
     AddCheckboxRow(left, {
         label = "Enable Sound Alert", setting = finder.enabled, value = config.enabled,
@@ -2833,10 +2708,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     -- REAL bar code and does not rebuild with the settings column, so applying
     -- and repainting belong together - one closure, so no section can end up
     -- with only half of it.
-    local applyBars = function()
-        CooldownCompanion:ApplyResourceBars()
-        RefreshLayoutOrderPreview()
-    end
+    local applyBars = MakeResourceEditRefresh(container)
     -- Uncommitted edits (a picker still open, a slider still held) belong to
     -- the canvas alone; the live bars keep their committed look.
     local previewOnly = RefreshLayoutOrderPreviewForDrag
@@ -2885,13 +2757,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             -- other resources can only follow aura presence.
             local mwLeft, mwRight = BeginRowGrid(container)
 
-            -- Everything in this section renders on the workspace Live
-            -- Preview, which does not rebuild with the settings column.
-            local applyMWBars = function()
-                applyBars()
-                RefreshLayoutOrderPreview()
-            end
-
             AddDropdownRow(mwLeft, {
                 label = "Stack Display",
                 setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[100]
@@ -2908,11 +2773,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 onChange = function(val)
                     WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
                         val ~= "overlay" and val or nil)
-                    applyMWBars()
+                    applyBars()
                 end,
             })
 
-            BuildMaxStackBorderRows(mwRight, settings, 100, "Maelstrom Weapon", applyMWBars, previewOnly)
+            BuildMaxStackBorderRows(mwRight, settings, 100, "Maelstrom Weapon", applyBars, previewOnly)
         end
     end
 
@@ -2930,13 +2795,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             -- resources read their stacks the same way, so it works in
             -- combat too.
             local stackLeft, stackRight = BeginRowGrid(container)
-
-            -- Everything in this section renders on the workspace Live
-            -- Preview, which does not rebuild with the settings column.
-            local applyStackBars = function()
-                applyBars()
-                RefreshLayoutOrderPreview()
-            end
 
             -- Which shape counts as "untouched" is the member's own, not a
             -- fixed one: members with a large maximum ship Continuous.
@@ -2972,12 +2830,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     WriteSpecOverrideKey(settings, RB.GetCanonicalPowerType(resourceSettingsPowerType),
                         _colorSpecID, "stackDisplayStyle",
                         val ~= stackDefaultStyle and val or nil)
-                    applyStackBars()
+                    applyBars()
                 end,
             })
 
             BuildMaxStackBorderRows(stackRight, settings, resourceSettingsPowerType,
-                stackResourceName, applyStackBars, previewOnly)
+                stackResourceName, applyBars, previewOnly)
         end
     end
 
@@ -2994,15 +2852,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         if not borderCollapsed then
             local borderLeft = BeginRowGrid(container)
 
-            -- Everything in this section renders on the workspace Live
-            -- Preview, which does not rebuild with the settings column.
-            local applySegBars = function()
-                applyBars()
-                RefreshLayoutOrderPreview()
-            end
-
             BuildMaxStackBorderRows(borderLeft, settings, resourceSettingsPowerType,
-                segResourceName, applySegBars, previewOnly)
+                segResourceName, applyBars, previewOnly)
         end
     end
 
@@ -3034,9 +2885,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     texRow:SetValue(localBarTextureName)
     CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
         displayProfile.barTexture = val
-        CooldownCompanion:ApplyResourceBars()
-        -- Defer panel rebuild to next frame so it doesn't interfere with current callback
-        CS.RefreshAdvancedSettingsPanelSoon(true)
+        applyBars("style-settings-soon")
     end)
 
     -- Brightness slider (only for Blizzard Class texture)
@@ -3123,8 +2972,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         value = displayProfile.borderStyle or settings.borderStyle or "pixel",
         onChange = function(val)
             displayProfile.borderStyle = val
-            CooldownCompanion:ApplyResourceBars()
-            CooldownCompanion:RefreshConfigPanel()
+            applyBars("style-settings")
         end,
     })
 
@@ -3144,8 +2992,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             })
 
             local renderMode = ST._AddBorderRenderModeDropdown(panel, displayProfile, "borderRenderMode", function()
-                CooldownCompanion:ApplyResourceBars()
-                CooldownCompanion:RefreshConfigPanel()
+                applyBars("style-settings")
             end, nil, {
                 row = true,
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
@@ -3351,8 +3198,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                     val = DEFAULT_CONTINUOUS_TICK_MODE
                                 end
                                 WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
-                                applyBars()
-                                RefreshAdvancedSettingsPanelSoon()
+                                applyBars("style-advanced-soon")
                             end,
                         })
 
@@ -3397,7 +3243,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             end,
                         })
 
-                        local _tickWidthVal = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", nil)
+                        local tickFields = ST._ResourceSpecFields(panel, settings, capturedPt, _colorSpecID)
+                        local _tickWidthVal = tickFields.continuousTickWidth
                         local tickWidthLabel = resourceName .. " Tick Width"
                         AddMirrorFirstSliderRow(panel, {
                             label = tickWidthLabel,
@@ -3409,28 +3256,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             min = 1, max = 10, step = 1,
                             value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
                             set = function(val)
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickWidth", val)
+                                tickFields.continuousTickWidth = val
                             end,
                             apply = applyBars,
-                            captureState = function()
-                                local resources = rawget(settings, "resources")
-                                local resource = resources and rawget(resources, capturedPt)
-                                local specs = resource and rawget(resource, "specOverrides")
-                                local specTable = specs and rawget(specs, _colorSpecID)
-                                local restoreResources = ST._CaptureRawSettingsFields(settings, { "resources" })
-                                local restoreResource = ST._CaptureRawSettingsFields(resources, { capturedPt })
-                                local restoreSpecs = ST._CaptureRawSettingsFields(resource, { "specOverrides" })
-                                local restoreSpec = ST._CaptureRawSettingsFields(specs, { _colorSpecID })
-                                local restoreWidth = ST._CaptureRawSettingsFields(specTable, { "continuousTickWidth" })
-                                return function()
-                                    restoreWidth()
-                                    restoreSpec()
-                                    restoreSpecs()
-                                    restoreResource()
-                                    restoreResources()
-                                end
-                            end,
-                            restoreState = function(restore) restore() end,
+                            stateOwner = tickFields,
+                            stateKeys = "continuousTickWidth",
                         })
                     end
 
@@ -4807,12 +4637,22 @@ if ST._DefineSettingRoute then
     end
 end
 
--- Expose for ButtonSettings.lua and Config.lua
-ST._BuildResourceBarAnchoringPanel = BuildResourceBarAnchoringPanel
-ST._BuildResourceBarPositioningPanel = BuildResourceBarPositioningPanel
-ST._BuildResourceBarBarTextStylingPanel = BuildResourceBarBarTextStylingPanel
-ST._BuildResourceBarHealthStylingPanel = BuildResourceBarHealthStylingPanel
-ST._BuildResourceSettingsPanel = BuildResourceSettingsPanel
+-- Home and detail controls share the same profile/spec/selection lifetime.
+local function WithResourceEditContext(builder)
+    return function(container, powerType, specID)
+        if not ST._GetSettingsWidgetContext(container) then
+            local context = ST._CreateModuleSettingsContext("resources", powerType, specID)
+            if not context then return end
+            container = ST._NewPanelSettingsSectionHost(container, context)
+        end
+        return builder(container, powerType, specID)
+    end
+end
+ST._BuildResourceBarAnchoringPanel = WithResourceEditContext(BuildResourceBarAnchoringPanel)
+ST._BuildResourceBarPositioningPanel = WithResourceEditContext(BuildResourceBarPositioningPanel)
+ST._BuildResourceBarBarTextStylingPanel = WithResourceEditContext(BuildResourceBarBarTextStylingPanel)
+ST._BuildResourceBarHealthStylingPanel = WithResourceEditContext(BuildResourceBarHealthStylingPanel)
+ST._BuildResourceSettingsPanel = WithResourceEditContext(BuildResourceSettingsPanel)
 
 if ST._DefineSettingRoute then
 ST._ResourceThicknessSetting = ST._DefineSettingRoute({
