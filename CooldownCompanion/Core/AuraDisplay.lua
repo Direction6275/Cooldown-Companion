@@ -194,6 +194,9 @@ end
 local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
+local fullRebindRequested = false
+local blockRebindOwners = {} -- groupId -> live owner frame; detached before each pass
+local pendingConfigEdit = false
 
 -- Idle-health counters (2026-08-10 feedback-loop lesson): rebind work runs at
 -- config-change frequency, so these climbing on an idle session IS a feedback
@@ -202,6 +205,8 @@ local rebindQueued = false
 local rebindRequestCount = 0
 local rebindPassCount = 0
 local lastRebindPassAt = nil
+local blockRebindRequestCount = 0
+local blockRebindPassCount = 0
 
 -- A blocked rebind keeps its current bindings intact and retries after player
 -- combat or after a broader addon-restriction window deactivates. The gates
@@ -211,6 +216,7 @@ local lastRebindPassAt = nil
 local rebindDeferFrame = CreateFrame("Frame")
 
 local function ArmRebindRetry()
+    if pendingRebind then return end
     pendingRebind = true
     rebindDeferFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     rebindDeferFrame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
@@ -231,6 +237,8 @@ local petWatcher
 local identityWatcher
 local RunAuraRebind
 local RefreshIdentityVisibilityForToken
+local RequestBlockRebind
+local ScheduleAuraRebind
 
 -- Custom AuraButtons carry DenyTaintedAccessWhenAurasAreSecret, so use the
 -- matching global secrecy predicate. This pass also performs layout/topology
@@ -307,14 +315,9 @@ end
 -- Container-level refresh for records whose token may now resolve to a different
 -- person. Combat-safe (V13, re-validated V18). Shared by both watchers so a
 -- change to the refresh shape can never apply to only one token family.
--- Assigned in the AURA BLOCKS and AURA PANELS sections, where each record list
--- is in scope; the watcher must cover EVERY container family or a target-scoped
--- block or panel keeps the previous target's aura across a same-token swap.
-local RefreshBlockRecordsForToken
+-- The panel half is assigned where its record list is in scope. The shared
+-- walk must cover every container family to avoid retaining the old target.
 local RefreshPanelRecordsForToken
--- The relationship-only half of the same coverage rule (see
--- RefreshIdentityVisibilityForToken); assigned in the AURA PANELS section.
-local RefreshPanelIdentityVisibilityForToken
 
 -- The slot family's relationship-only half; the block and panel twins live
 -- with their own record lists. Hoisted above the watchers so the walk below can
@@ -332,28 +335,10 @@ local RefreshSlotIdentityVisibility
 -- BindAuraPanel/BindAuraSection's for blocks and panels. A skipped record can
 -- therefore never present a stale parse.
 --
--- Ordinary slots stay bound across relationship changes: their visibility
--- root and the container refresh below are enough to follow the new unit.
--- Their visibility changes (including parked slots) must not request a full
--- rebind. Blocks and Aura Panels can remain unbound on an incompatible unit,
--- so their identity changes still request the binding/layout pass.
+-- All token events use the same relationship decision. Slots and panels keep
+-- their bindings; only configured attached blocks can need chain reconstruction.
 local function RefreshRecordsForToken(isMatch)
-    local needsRebind = false
-    for _, record in ipairs(records) do
-        if isMatch(record.unit) then
-            RefreshSlotIdentityVisibility(record)
-            if not record.parked then
-                record.container:UpdateAllAuras()
-            end
-        end
-    end
-    if RefreshBlockRecordsForToken then
-        needsRebind = RefreshBlockRecordsForToken(isMatch) or needsRebind
-    end
-    if RefreshPanelRecordsForToken then
-        needsRebind = RefreshPanelRecordsForToken(isMatch) or needsRebind
-    end
-    return needsRebind
+    RefreshIdentityVisibilityForToken(isMatch, true)
 end
 
 local function IsTargetToken(unit) return unit == "target" end
@@ -383,11 +368,7 @@ local function EnsureIdentityWatcher()
         -- frame follows the same rule when reconfiguring its aura container.
         local refreshUnit = unit
         if unit == "player" then refreshUnit = nil end
-        if CooldownCompanion:RefreshAuraIdentityVisibility(refreshUnit) then
-            -- A block bucket suppressed by the previous relationship needs a
-            -- fresh topology pass before it can rejoin its side's chain.
-            CooldownCompanion:RequestAuraRebind("unit-faction")
-        end
+        CooldownCompanion:RefreshAuraIdentityVisibility(refreshUnit)
     end)
 end
 
@@ -401,9 +382,7 @@ local function EnsureTargetWatcher()
         -- Hidden hosts self-heal instead: OnShow_Intrinsic re-runs
         -- UpdateAllAuras, so a container that missed swaps while hidden
         -- catches up the moment its host shows again.
-        if RefreshRecordsForToken(IsTargetToken) then
-            CooldownCompanion:RequestAuraRebind("target-reaction")
-        end
+        RefreshRecordsForToken(IsTargetToken)
     end)
 end
 
@@ -455,9 +434,7 @@ local function EnsurePetWatcher()
     -- UNIT_PET carries the OWNER's token; only the player's pet matters.
     petWatcher:RegisterUnitEvent("UNIT_PET", "player")
     petWatcher:SetScript("OnEvent", function()
-        if RefreshRecordsForToken(IsPetToken) then
-            CooldownCompanion:RequestAuraRebind("pet-swap")
-        end
+        RefreshRecordsForToken(IsPetToken)
     end)
 end
 
@@ -3058,28 +3035,36 @@ local function RefreshBlockIdentityVisibility(record)
     local applicable = CanApplySpellIdentityFilter(record.unit)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
-    return SetIdentityVisibility(record, record.shown == true and applicable) or changed
+    SetIdentityVisibility(record, record.shown == true and applicable)
+    return changed
 end
 
--- Relationship-only refresh: no AuraButton reads or writes. UNIT_FACTION,
--- target swaps, roster remaps, and vehicle transitions can therefore suppress
--- an unsafe record immediately even while a full rebind is deferred.
-function RefreshIdentityVisibilityForToken(isMatch)
-    local changed = false
+-- Shared relationship decision: no AuraButton reads or writes. Visibility
+-- updates immediately even while topology work is deferred. Token remaps also
+-- refresh container contents; faction-only events keep their existing cadence.
+function RefreshIdentityVisibilityForToken(isMatch, refreshAuras)
     for _, record in ipairs(records) do
         if isMatch(record.unit) then
-            changed = RefreshSlotIdentityVisibility(record) or changed
+            RefreshSlotIdentityVisibility(record)
+            if refreshAuras and not record.parked then
+                record.container:UpdateAllAuras()
+            end
         end
     end
     for _, record in ipairs(blockRecords) do
         if isMatch(record.unit) then
-            changed = RefreshBlockIdentityVisibility(record) or changed
+            local changed = RefreshBlockIdentityVisibility(record)
+            if changed and record.configured then
+                RequestBlockRebind(record.owner)
+            end
+            if refreshAuras and record.shown then
+                record.container:UpdateAllAuras()
+            end
         end
     end
-    if RefreshPanelIdentityVisibilityForToken then
-        changed = RefreshPanelIdentityVisibilityForToken(isMatch) or changed
+    if RefreshPanelRecordsForToken then
+        RefreshPanelRecordsForToken(isMatch, refreshAuras)
     end
-    return changed
 end
 
 -- Reached from an UNFILTERED UNIT_FACTION registration, so it must stay
@@ -3091,30 +3076,11 @@ end
 -- matched nothing and returned false anyway.
 function CooldownCompanion:RefreshAuraIdentityVisibility(unit)
     if unit then
-        if not recordTokens[unit] then return false end
+        if not recordTokens[unit] then return end
         identityRefreshToken = unit
         return RefreshIdentityVisibilityForToken(IsIdentityRefreshToken)
     end
     return RefreshIdentityVisibilityForToken(MatchAnyToken)
-end
-
--- The watcher-side half of the token refresh (forward-declared above the
--- watchers). Both halves of a block record's refresh in ONE traversal, the same
--- fold the slot walk does. Same container-level call the slot loop makes:
--- sanctioned combat surface, and a hidden container self-heals on show
--- (`record.shown` is the CC-side truth for container:Show()/Hide(), and every
--- writer of it sits next to the matching call).
-function RefreshBlockRecordsForToken(isMatch)
-    local changed = false
-    for _, record in ipairs(blockRecords) do
-        if isMatch(record.unit) then
-            changed = RefreshBlockIdentityVisibility(record) or changed
-            if record.shown then
-                record.container:UpdateAllAuras()
-            end
-        end
-    end
-    return changed
 end
 
 -- Move only the plain CC parent. The AuraContainer is anchored to this root
@@ -3429,6 +3395,9 @@ local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
     -- the reaction watcher requests another topology pass if it becomes safe.
     local record = EnsureBlockContainer(side, unit, owner)
     if not record then return nil end
+    -- Membership survives relationship suppression, but not removal from the
+    -- owning layout. Retired append-only records must never request work.
+    record.configured = true
     record.identityApplicable = CanApplySpellIdentityFilter(unit)
     if not record.identityApplicable then return nil end
     local mounted
@@ -3439,7 +3408,8 @@ local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
             -- and an error inside the aura refresh pipeline freezes the whole
             -- display until reload. So this bucket simply does not render
             -- this session; /reload rebuilds every container chainable.
-            blockChainBlocked = blockChainBlocked + #entries
+            record.chainBlocked = #entries
+            blockChainBlocked = blockChainBlocked + record.chainBlocked
             return nil
         end
         mounted = ApplyBlockChainMount(record, anchorRecord)
@@ -3461,22 +3431,26 @@ local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
     return record
 end
 
--- Park everything, then bind — the same discipline (and the same coalescing
--- argument) as the slot pass above. OOC by RunAuraRebind's guarantee, which
--- is also what makes the chain anchor legal here: it is container geometry.
-local function RebindCustomBarAuraBlocks(self)
+-- Park then bind within the selected owners (nil means all owners). Both
+-- callers guard combat and aura secrecy before any chain geometry is changed.
+local function RebindCustomBarAuraBlocks(self, owners)
     for _, record in ipairs(blockRecords) do
-        for _, group in ipairs(record.groupList) do
-            ParkBlockGroup(group)
+        local owner = record.owner
+        if not owners or (owner and owners[owner.groupId] == owner.parent) then
+            record.configured = nil
+            blockChainBlocked = blockChainBlocked - (record.chainBlocked or 0)
+            record.chainBlocked = nil
+            for _, group in ipairs(record.groupList) do
+                ParkBlockGroup(group)
+            end
+            record.container:Hide()
+            record.shown = false
+            SetIdentityVisibility(record, false)
+            record.chainAnchor = nil
         end
-        record.container:Hide()
-        record.shown = false
-        SetIdentityVisibility(record, false)
-        record.chainAnchor = nil
     end
-    blockChainBlocked = 0
     local wants = {}
-    if ST.CollectAttachedBarAuraBlocks then ST.CollectAttachedBarAuraBlocks(wants) end
+    if ST.CollectAttachedBarAuraBlocks then ST.CollectAttachedBarAuraBlocks(wants, owners) end
     for _, want in ipairs(wants) do
         -- Split the side's ordered entry list into per-unit buckets. Appending
         -- in list order is what preserves each bucket's relative order; the
@@ -3670,32 +3644,17 @@ local function RefreshPanelIdentityVisibility(record)
     return SetPanelIdentityVisibility(record, record.shown == true and applicable) or changed
 end
 
--- The two watcher-side halves (both forward-declared above the watchers).
--- Identical in shape to the block versions on purpose: a panel tracking the
--- target has exactly the same same-token staleness problem a target-scoped
--- block does, and the same fail-closed relationship gate.
-function RefreshPanelIdentityVisibilityForToken(isMatch)
-    local changed = false
+-- Panel bindings and mounts are independent of the current unit relationship.
+-- The plain parent owns visibility; token swaps additionally refresh contents.
+function RefreshPanelRecordsForToken(isMatch, refreshAuras)
     for _, record in ipairs(panelRecords) do
         if isMatch(record.unit) then
-            changed = RefreshPanelIdentityVisibility(record) or changed
-        end
-    end
-    return changed
-end
-
--- Folded like the block twin above: identity then update, one traversal.
-function RefreshPanelRecordsForToken(isMatch)
-    local changed = false
-    for _, record in ipairs(panelRecords) do
-        if isMatch(record.unit) then
-            changed = RefreshPanelIdentityVisibility(record) or changed
-            if record.shown then
+            RefreshPanelIdentityVisibility(record)
+            if refreshAuras and record.shown then
                 record.container:UpdateAllAuras()
             end
         end
     end
-    return changed
 end
 
 -- The flow contract for one panel: mount corner + growth signs, the layout
@@ -4223,11 +4182,10 @@ local function BindAuraPanel(self, groupId, group, frame)
     -- so a pass that was deferred across a lock change converges on the frame's
     -- current answer instead of whatever the record last heard.
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
-    -- Mounting an incompatible unit would let Blizzard ignore includeSpellIDs
-    -- for every non-exempt aura candidate. Leave the whole panel parked; the
-    -- reaction watcher requests another pass if it becomes safe.
+    -- Configure while unrestricted even without a compatible target. The plain
+    -- visibility root suppresses incompatible units, just as ordinary slots do;
+    -- acquiring a target in combat must not require creating or rebinding groups.
     record.identityApplicable = CanApplySpellIdentityFilter(unit)
-    if not record.identityApplicable then return end
 
     -- The SAME metrics the frame was sized from and the placeholders were laid
     -- out from, so the container's cells land exactly on the CC-side grid.
@@ -4343,7 +4301,7 @@ local function BindAuraPanel(self, groupId, group, frame)
 
     record.container:Show()
     record.shown = true
-    SetPanelIdentityVisibility(record, true)
+    SetPanelIdentityVisibility(record, record.identityApplicable)
 end
 
 ------------------------------------------------------------------------
@@ -4414,7 +4372,6 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
     local record = EnsurePanelContainer(groupId, unit, host, anchor, frame)
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
     record.identityApplicable = CanApplySpellIdentityFilter(unit)
-    if not record.identityApplicable then return end
 
     local flow, axis, direction = SectionFlowSpec(info)
     ApplyPanelMount(record, flow, axis, direction)
@@ -4485,7 +4442,7 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
 
     record.container:Show()
     record.shown = true
-    SetPanelIdentityVisibility(record, true)
+    SetPanelIdentityVisibility(record, record.identityApplicable)
 end
 
 -- Every aura-only section this mixed panel currently lays out. Driven off the
@@ -4576,13 +4533,27 @@ local function NoteDeferredConfigEdit(reason, groupId)
     end
 end
 
-function RunAuraRebind()
+local function RefreshReboundBlockAttachments(self, owners)
+    if ST.LayoutAttachedBars then
+        for groupId, frame in pairs(owners or self.groupFrames) do
+            local group = self.db.profile.groups[groupId]
+            if group and ST.PanelSupportsAttachedBars(group) then
+                ST.LayoutAttachedBars(groupId, frame, group)
+            end
+        end
+        if self.RepositionCastBar then self:RepositionCastBar() end
+    end
+end
+
+function RunAuraRebind(configEdit)
     local self = CooldownCompanion
     if not (self.db and self.groupFrames) then return end
     -- Authoritative guard at the mutation boundary. Callers also check so they
     -- can coalesce/defer early, but no caller timing may reach the destructive
     -- park-all phase after the AuraButton subtree becomes inaccessible.
     if not CanRunRebindNow() then
+        fullRebindRequested = true
+        pendingConfigEdit = pendingConfigEdit or configEdit == true
         ArmRebindRetry()
         return
     end
@@ -4721,13 +4692,7 @@ function RunAuraRebind()
     -- park-then-bind pass over the group containers. Disjoint from the slot
     -- records above — no host button, no pool lock — so ordering is free.
     RebindCustomBarAuraBlocks(self)
-    if ST.LayoutAttachedBars then
-        for groupId, frame in pairs(self.groupFrames) do
-            local group = self.db.profile.groups[groupId]
-            if group and ST.PanelSupportsAttachedBars(group) then ST.LayoutAttachedBars(groupId, frame, group) end
-        end
-        if self.RepositionCastBar then self:RepositionCastBar() end
-    end
+    RefreshReboundBlockAttachments(self)
 
     -- Aura Panels (whole panels drawn by their own aura container): likewise a
     -- self-contained park-then-bind pass. Disjoint from both passes above — an
@@ -4746,12 +4711,6 @@ function RunAuraRebind()
         end
     end
 
-    -- A pass that reaches here bound everything it wanted: nothing is deferred, so
-    -- close any retry state a caller left armed rather than leaving pendingRebind
-    -- set (which would suppress later RequestAuraRebind bookkeeping).
-    DisarmRebindRetry()
-    pendingRebind = false
-
     -- The cast bar anchors to the block chain's TAIL, and this pass is the
     -- only writer of which container that is. Coalesced next-frame cast-bar
     -- re-evaluation, so the combat-deferred rebind cannot leave the cast bar
@@ -4768,37 +4727,59 @@ function RunAuraRebind()
     ST.EndAuraCandidatePass()
 end
 
-rebindDeferFrame:SetScript("OnEvent", function(_, event, restrictionType, restrictionState)
-    -- The restriction event also announces Activating/Active. It is sequenced
-    -- before activation and after deactivation, so only Inactive is a wakeup;
-    -- running on Activating could mutate the aura topology just as it seals.
-    if event == "ADDON_RESTRICTION_STATE_CHANGED"
-        and restrictionState ~= Enum.AddOnRestrictionState.Inactive then
+-- Only attached blocks can change their anchor chain with the relationship.
+-- The snapshot carries frame identity so a deferred request cannot bind a
+-- retired owner or a replacement that happens to reuse its group ID.
+local function RunBlockRebind(owners)
+    local self = CooldownCompanion
+    if not (self.db and self.groupFrames) then return end
+    for groupId, frame in pairs(owners) do
+        local group = self.db.profile.groups[groupId]
+        if self.groupFrames[groupId] ~= frame or not ST.PanelSupportsAttachedBars(group) then
+            owners[groupId] = nil
+        end
+    end
+    if not next(owners) then return end
+    -- Guard the mutation boundary as well as the scheduler.
+    if not CanRunRebindNow() then
+        for groupId, frame in pairs(owners) do
+            if not blockRebindOwners[groupId] then blockRebindOwners[groupId] = frame end
+        end
+        ArmRebindRetry()
         return
     end
-    -- Unregister BEFORE running so an error can't leave the events stuck
-    -- (FrameAnchoring's combat-defer pattern).
+    blockRebindPassCount = blockRebindPassCount + 1
+    ST.BeginAuraCandidatePass()
+    RebindCustomBarAuraBlocks(self, owners)
+    RefreshReboundBlockAttachments(self, owners)
+    if self.UpdateCastBarStackAnchor then self:UpdateCastBarStackAnchor() end
+    ST.EndAuraCandidatePass()
+end
+
+local function FlushAuraRebind()
+    if not fullRebindRequested and not next(blockRebindOwners) then return end
+    if not CanRunRebindNow() then
+        if pendingConfigEdit then NoteDeferredConfigEdit("config") end
+        ArmRebindRetry()
+        return
+    end
     DisarmRebindRetry()
     pendingRebind = false
-    if CanRunRebindNow() then
-        RunAuraRebind()
+    -- Consume only this batch. Requests made during a bind belong to the next
+    -- batch and must survive both normal completion and restriction deferral.
+    local full, owners, configEdit = fullRebindRequested, blockRebindOwners, pendingConfigEdit
+    fullRebindRequested, blockRebindOwners, pendingConfigEdit = false, {}, false
+    if full then
+        RunAuraRebind(configEdit)
     else
-        -- Combat lockdown or aura secrecy is still enforced (a pull may have
-        -- restarted before the retry landed).
-        ArmRebindRetry()
+        RunBlockRebind(owners)
     end
-end)
+    if fullRebindRequested or next(blockRebindOwners) then ScheduleAuraRebind() end
+end
 
--- Single entry point. Accessible requests coalesce into one next-frame pass (group
--- populates arrive once per group on a reload); the timer callback re-checks
--- combat lockdown and aura secrecy and re-defers if restrictions started in
--- between.
-function CooldownCompanion:RequestAuraRebind(reason, groupId)
-    if not self.db then return end
-    rebindRequestCount = rebindRequestCount + 1
+function ScheduleAuraRebind()
     if not CanRunRebindNow() then
-        NoteDeferredConfigEdit(reason, groupId)
-        if pendingRebind then return end
+        if pendingConfigEdit then NoteDeferredConfigEdit("config") end
         ArmRebindRetry()
         return
     end
@@ -4806,13 +4787,41 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId)
     rebindQueued = true
     C_Timer.After(0, function()
         rebindQueued = false
-        if CanRunRebindNow() then
-            RunAuraRebind()
-        elseif not pendingRebind then
-            NoteDeferredConfigEdit(reason, groupId)
-            ArmRebindRetry()
-        end
+        FlushAuraRebind()
     end)
+end
+
+rebindDeferFrame:SetScript("OnEvent", function(_, event, restrictionType, restrictionState)
+    -- Only Inactive is a wakeup; Activating must never enter topology mutation.
+    if event == "ADDON_RESTRICTION_STATE_CHANGED"
+        and restrictionState ~= Enum.AddOnRestrictionState.Inactive then
+        return
+    end
+    FlushAuraRebind()
+end)
+
+function RequestBlockRebind(owner)
+    local self = CooldownCompanion
+    local groupId = owner and owner.groupId
+    if not (self.db and groupId and self.groupFrames
+        and self.groupFrames[groupId] == owner.parent
+        and self.db.profile.groups[groupId]) then return end
+    blockRebindRequestCount = blockRebindRequestCount + 1
+    if not fullRebindRequested then blockRebindOwners[groupId] = owner.parent end
+    ScheduleAuraRebind()
+end
+
+-- Existing callers still request a full bind. Full work supersedes any pending
+-- block scope, but never clears requests made after the running batch started.
+function CooldownCompanion:RequestAuraRebind(reason, groupId)
+    if not self.db then return end
+    rebindRequestCount = rebindRequestCount + 1
+    fullRebindRequested = true
+    blockRebindOwners = {}
+    if reason == "config" or (reason == "style" and HasBoundSlots(groupId)) then
+        pendingConfigEdit = true
+    end
+    ScheduleAuraRebind()
 end
 
 -- Read-only status for validation/DevBridge (module state is otherwise local).
@@ -4925,6 +4934,8 @@ function CooldownCompanion:GetAuraDisplayStatus()
     -- mean something is re-requesting the pass without a real change.
     status.rebindRequests = rebindRequestCount
     status.rebindPasses = rebindPassCount
+    status.blockRebindRequests = blockRebindRequestCount
+    status.blockRebindPasses = blockRebindPassCount
     status.rebindPassAge = lastRebindPassAt and (GetTime() - lastRebindPassAt) or nil
     return status
 end
