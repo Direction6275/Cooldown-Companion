@@ -1189,6 +1189,9 @@ function CooldownCompanion:SnapshotCooldownPassContext()
 end
 
 function CooldownCompanion:UpdateAllCooldowns()
+    -- This pass covers only routed requests that existed before it began.
+    -- Clear them before any snapshot/button callback can enqueue newer work.
+    self:ResetRoutedCooldownBatch()
     local T = ST.RefreshTelemetry
     local telemetryOn = T and T.enabled
     local t0, frames, buttons

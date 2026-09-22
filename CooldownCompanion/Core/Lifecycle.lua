@@ -412,7 +412,6 @@ function CooldownCompanion:OnDisable()
         ST.RefreshTelemetry:ClearQueueHistory()
     end
     self:ResetCooldownRefreshState()
-    self:ResetRoutedCooldownBatch()
 
     -- Disable all range check registrations
     for spellId in pairs(self._rangeCheckSpells) do
