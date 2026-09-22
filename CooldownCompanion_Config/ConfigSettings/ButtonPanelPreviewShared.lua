@@ -245,7 +245,8 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         chargeState = "full"
     elseif kind == "charge_missing" then
         chargeState = "missing"
-    elseif kind == "charge_zero" then
+    elseif kind == "charge_zero"
+        or (kind == "cooldown_active" and UsesConfigOnlyBarChargeBehavior(buttonData)) then
         chargeState = "zero"
     end
     local onCooldown = conditional and conditional.onCooldown == true or false
@@ -799,6 +800,7 @@ end
 
 ResetBarSlotWorkspaceState = function(frame)
     if not frame.statusBar then return end
+    if frame._cdcAuraStackCount ~= nil then PP.ResetBarSlotConditionalVisuals(frame) end
     if frame._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
         ST._ClearConfigShiftTooltipHover(frame._cdcShiftTooltipAdapter)
     end

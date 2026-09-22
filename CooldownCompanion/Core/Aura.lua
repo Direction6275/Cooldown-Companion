@@ -1268,6 +1268,7 @@ end
 -- swipe and omitted the bar-only drain, which is the whole reason the two
 -- sets now live side by side where a mismatch is visible.
 local AURA_PREVIEW_SHELL_KINDS_ICON = {
+    aura_active = true,
     aura_duration_text = true,
     -- Same stand-in as the duration text, so the same shell has to open.
     pandemic_marker = true,
@@ -1276,6 +1277,7 @@ local AURA_PREVIEW_SHELL_KINDS_ICON = {
 }
 
 local AURA_PREVIEW_SHELL_KINDS_BAR = {
+    aura_active = true,
     aura_duration_bar = true,
     aura_duration_text = true,
     pandemic_marker = true,

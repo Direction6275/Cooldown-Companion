@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - PreviewCommandCenter
-    The preview command center: a chooser naming one preview state plus a
+    The preview command center: a chooser naming one preview command plus a
     play/stop button, pinned to the bottom-left of a workspace's pinned
     Live Preview surface, so the control that triggers a preview lives
     where the preview is actually visible.
@@ -18,8 +18,9 @@
     - Object previews (the resource/cast bars) are bound to the bar they
       belong to, so nothing narrows them and the chooser lists them under
       the object's own menu group.
-    Previews stay mutually exclusive across the whole config, exactly as
-    the settings-side badges they replaced always were.
+    Commands stay mutually exclusive across the whole config. A combined
+    command composes related visuals and spans eligible icons and bars;
+    individual commands retain their focused presentation and settings route.
 
     The bar is a child of the preview host, so every path that hides the
     host (view switches, talent picker, config close) takes the bar with
@@ -472,6 +473,27 @@ end
 
 local CONTROLS = {
     {
+        id = "cooldownActive",
+        label = "Preview Cooldown Active",
+        group = GROUP_COOLDOWNS_CHARGES,
+        menuOrder = 1,
+        modes = { icons = true, bars = true },
+        combined = true,
+        -- The cooldown-state eligibility gate also excludes spells with no cooldown.
+        section = "desaturation",
+        preview = ConditionalPreview("cooldown_active"),
+    },
+    {
+        id = "auraActive",
+        label = "Preview Aura Active",
+        group = GROUP_AURAS,
+        menuOrder = 1,
+        modes = { icons = true, bars = true },
+        combined = true,
+        section = "auraText",
+        preview = ConditionalPreview("aura_active"),
+    },
+    {
         id = "auraMissing",
         label = "Preview Missing Aura",
         group = GROUP_AURAS,
@@ -817,10 +839,12 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     -- name spells with cooldowns, charges, or cast feedback.
     local entry = buttonIndex and group.buttons and group.buttons[buttonIndex]
     local auraOnly = ST.IsAuraPanelGroup(group)
-        or (group._settingsContext and entry and entry.addedAs == "aura")
+        or (entry and entry.addedAs == "aura" and (control.combined or group._settingsContext))
+        or (control.combined and entry and ST.IsAuraSectionEntry(group, entry))
     if auraOnly and control.group ~= GROUP_AURAS then
         return false
     end
+    if control.id == "cooldownActive" and entry and entry.isPassive then return false end
     if not control.modes[displayMode] then
         return false
     end
@@ -925,12 +949,13 @@ local function CollectPanelControls(group, buttonIndex)
     local ordinary = ST.PanelSupportsAttachedBars(owner) and ST._CreatePanelSettingsContext
     local presentations = ordinary and { "icons", "bars" } or { group.displayMode or "icons" }
     local applicable = {}
+    local combinedAdded = {}
     for _, presentation in ipairs(presentations) do
         local view = ordinary and ST._CreatePanelSettingsContext(owner, presentation).group or group
         for _, control in ipairs(CONTROLS) do
-            local variant = ordinary and PresentationControl(control, presentation) or control
+            local variant = ordinary and not control.combined and PresentationControl(control, presentation) or control
             local applies = false
-            if ordinary then
+            if ordinary or control.combined then
                 for index, entry in ipairs(owner.buttons or {}) do
                     if (not buttonIndex or index == buttonIndex) and ST.GetEntryPresentation(owner, entry) == presentation
                         and ST.IsPanelLayoutEntryEligible(owner, entry) and ControlApplies(control, view, presentation, index) then
@@ -938,7 +963,10 @@ local function CollectPanelControls(group, buttonIndex)
                     end
                 end
             else applies = ControlApplies(control, view, presentation, buttonIndex) end
-            if applies then applicable[#applicable + 1] = variant end
+            if applies and not combinedAdded[control.id] then
+                applicable[#applicable + 1] = variant
+                if control.combined then combinedAdded[control.id] = true end
+            end
         end
     end
     return applicable
@@ -1148,7 +1176,7 @@ end
 -- name it statically; Cooldown Swipe resolves it from the same live ownership
 -- rule as its advanced-settings key.
 local function ControlSectionId(control)
-    if not control then
+    if not control or control.combined then
         return nil
     end
     if control.resolveSection then
@@ -1228,12 +1256,27 @@ local function ResolvePreviewTargets(control, panelId, buttonIndex)
         return nil
     end
     local targets = {}
+    -- Context construction inspects the whole panel. Share each presentation
+    -- within this resolution only; later selections/edits need fresh contexts.
+    local presentationGroups = control.combined and {}
     for index, entry in ipairs(owner.buttons or {}) do
-        if (not buttonIndex or index == buttonIndex)
-            and (not control.presentation or (ST.GetEntryPresentation(owner, entry) == presentation
-                and ST.IsPanelLayoutEntryEligible(owner, entry)))
-            and ControlApplies(control.baseControl or control, group, presentation, index) then
-            targets[index] = entry
+        if not buttonIndex or index == buttonIndex then
+            local entryPresentation = control.combined and ST.GetEntryPresentation(owner, entry) or presentation
+            if not (control.presentation or control.combined)
+                or (ST.GetEntryPresentation(owner, entry) == entryPresentation
+                    and ST.IsPanelLayoutEntryEligible(owner, entry)) then
+                local entryGroup = group
+                if control.combined and ST._CreatePanelSettingsContext then
+                    entryGroup = presentationGroups[entryPresentation]
+                    if not entryGroup then
+                        entryGroup = ST._CreatePanelSettingsContext(owner, entryPresentation).group
+                        presentationGroups[entryPresentation] = entryGroup
+                    end
+                end
+                if ControlApplies(control.baseControl or control, entryGroup, entryPresentation, index) then
+                    targets[index] = entry
+                end
+            end
         end
     end
     return targets
