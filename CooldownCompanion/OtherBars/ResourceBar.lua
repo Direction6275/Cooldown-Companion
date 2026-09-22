@@ -2204,6 +2204,55 @@ function CooldownCompanion:ResourceBarsActiveSetUnchanged()
     return BuildActiveBarSignature(filtered) == lastAppliedActiveBarSignature
 end
 
+-- Maximum events do not invalidate settings, attachment geometry or aura
+-- bindings. Keep their existing synchronous paints, and only enter the apply
+-- owner when the active resources or a readable native capacity changed.
+function CooldownCompanion:RefreshResourceBarMaximums()
+    if not isApplied then return end
+    local settings = GetResourceBarSettings()
+    if not settings or not settings.enabled then return end
+
+    if not self:ResourceBarsActiveSetUnchanged() then
+        self:ApplyResourceBars()
+        return
+    end
+
+    -- Scan the active native resources, not the event's power token: either
+    -- maximum event previously reconciled the entire applied set. Runes have
+    -- six slots regardless of UnitPowerMax; aura-stack maxima have other owners.
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local powerType = barInfo.powerType
+        if barInfo.barType == "segmented" and powerType ~= 5
+            and not IsUnitPowerMaxSecret("player", powerType) then
+            local maximum = UnitPowerMax("player", powerType)
+            if not (issecretvalue and issecretvalue(maximum)) then
+                local count = math_max(math_floor(maximum), 1)
+                if count ~= barInfo.frame._activeSegments then
+                    self:ApplyResourceBars()
+                    return
+                end
+            end
+        end
+    end
+
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local frame, powerType = barInfo.frame, barInfo.powerType
+        if barInfo.barType == "health_continuous" then
+            HealthBar.ApplyFillColor(frame, frame._ccHealthConfig)
+            HealthBar.ApplyBackgroundColor(frame, frame._ccHealthConfig)
+        elseif barInfo.barType == "continuous" then
+            local maximum = UnitPowerMax("player", powerType)
+            local maximumIsSecret = IsUnitPowerMaxSecret("player", powerType)
+                or (issecretvalue and issecretvalue(maximum))
+            UpdateContinuousTickMarker(frame, powerType, settings, maximum, maximumIsSecret)
+        elseif barInfo.barType == "segmented" then
+            -- Like apply-time painting, this is outside sound sampling. The
+            -- normal tick still owns threshold crossings and continuous values.
+            ResourceBars.Update(barInfo, settings)
+        end
+    end
+end
+
 function CooldownCompanion:ApplyResourceBars(opts)
     opts = opts or {}
     if not opts.skipRuntimeGate then

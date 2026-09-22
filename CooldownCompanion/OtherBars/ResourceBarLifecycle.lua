@@ -142,7 +142,7 @@ function RB.CreateResourceBarLifecycleModule(deps)
                 elseif event == "UNIT_MAXPOWER" or event == "UNIT_MAXHEALTH" then
                     local unit = ...
                     if unit == "player" then
-                        CooldownCompanion:ApplyResourceBars()
+                        CooldownCompanion:RefreshResourceBarMaximums()
                     end
                 end
             end)
@@ -150,8 +150,8 @@ function RB.CreateResourceBarLifecycleModule(deps)
         eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
         eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         eventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
-        -- UNIT_MAXHEALTH: stagger bar max is health-based; only matters for Brewmaster
-        -- but RegisterUnitEvent with "player" filter has negligible overhead for others
+        -- Retain the synchronous presentation paints; ranges/text/effects
+        -- continue to read their current maxima on the normal resource tick.
         eventFrame:RegisterUnitEvent("UNIT_MAXHEALTH", "player")
         eventFrameEnabled = true
     end
