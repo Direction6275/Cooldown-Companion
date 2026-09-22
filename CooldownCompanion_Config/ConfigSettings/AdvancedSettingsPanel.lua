@@ -377,7 +377,7 @@ local function BuildEditorContents(view, registration)
     local editor = view.widget
     CS.advancedSettingsInfoButtons = view.infoButtons
     descriptor._resolvedUnlock = descriptor.unlock
-        and ST._ResolveAdvancedUnlock(descriptor.unlock) or nil
+        and ST._ResolveAdvancedUnlock(descriptor.unlock, ST._GetSettingsWidgetContext(registration.row)) or nil
     if descriptor._resolvedUnlock then
         ST._BuildAdvancedUnlockStrip(editor, descriptor._resolvedUnlock)
     end
@@ -539,7 +539,7 @@ end
 
 -- The request is carried by this specific refresh, never left globally armed
 -- between frames. Neither the request nor the closure retains pooled widgets.
-local function RefreshAdvancedSettingsPanelSoon(fullPage)
+local function RefreshAdvancedSettingsPanelSoon(fullPage, edit)
     local request = editingRequest
     local generation, context = scrollGeneration, BuildContext()
     C_Timer.After(0, function()
@@ -551,7 +551,8 @@ local function RefreshAdvancedSettingsPanelSoon(fullPage)
         editingRequest = request
         local ok = xpcall(function()
             if fullPage then
-                CooldownCompanion:RefreshConfigPanel()
+                if edit then ST._RefreshConfigEditWorkspace(edit)
+                else CooldownCompanion:RefreshConfigPanel() end
             else
                 RefreshAdvancedSettingsPanel()
             end

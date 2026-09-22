@@ -427,8 +427,7 @@ local function PerformSectionRevert(buttonData, sectionId, target)
     if context then
         if not context:IsCurrent() then return end
         CooldownCompanion:RevertSection(buttonData, sectionId)
-        context:Refresh()
-        CooldownCompanion:RefreshConfigPanel()
+        context:Refresh("style-settings")
         return
     end
     if not ST._IsConfigEditTargetCurrent(target) or CS.selectedGroup ~= target.panelId then return end
@@ -572,8 +571,7 @@ local function PromoteLensSection(lens, group, sectionId, opts)
     local target = ST._CaptureConfigEditTarget(context and context.panelId or CS.selectedGroup, context)
     CooldownCompanion:PromoteSection(buttonData, groupStyle, sectionId)
     if buttonData._geometryContext then
-        buttonData._geometryContext:Refresh()
-        if not (opts and opts.deferRefresh) then CooldownCompanion:RefreshConfigPanel() end
+        buttonData._geometryContext:Refresh(opts and opts.deferRefresh and "style" or "style-settings")
     else
         ST._CompleteConfigEdit(target, opts and opts.deferRefresh and "style" or "style-settings")
     end
@@ -615,9 +613,8 @@ local ADVANCED_UNLOCK_REFRESH = {
         ST._CompleteConfigEdit(target, "style-settings")
     end,
     -- Resource settings: apply the module, then rebuild.
-    resourceBars = function()
-        CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
+    resourceBars = function(target)
+        ST._CompleteConfigEdit(target, "style-settings")
     end,
     -- Trigger-panel effects: restyle the texture visuals, then rebuild.
     auraTextures = function()
@@ -639,12 +636,12 @@ local function ApplyAdvancedUnlockEnable(enable, write)
     end
 end
 
-local function ResolveAdvancedUnlock(spec)
+local function ResolveAdvancedUnlock(spec, widgetContext)
     if not spec then
         return nil
     end
     local sec = spec.sec
-    local context = sec and sec.group and sec.group._settingsContext
+    local context = sec and sec.group and sec.group._settingsContext or widgetContext
     local target = ST._CaptureConfigEditTarget(context and context.panelId or CS.selectedGroup, context)
     local enable = spec.enable
     if not sec then
@@ -653,12 +650,15 @@ local function ResolveAdvancedUnlock(spec)
             return nil
         end
         if enable.run then
-            return { label = enable.label, onClick = enable.run }
+            return { label = enable.label, onClick = function()
+                if context and not context:IsCurrent() then return end
+                return enable.run()
+            end }
         end
         return {
             label = enable.label,
             onClick = function()
-                if spec.refreshKind == "groupStyle" and not ST._IsConfigEditTargetCurrent(target) then return end
+                if (context or spec.refreshKind == "groupStyle") and not ST._IsConfigEditTargetCurrent(target) then return end
                 ApplyAdvancedUnlockEnable(enable, spec.target)
                 ADVANCED_UNLOCK_REFRESH[spec.refreshKind](target)
             end,

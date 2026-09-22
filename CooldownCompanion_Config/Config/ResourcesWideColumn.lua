@@ -511,7 +511,7 @@ end
 -- the resources preview host holds it. Called from every view branch that
 -- takes col3 over (buttons wide view, cast frames, the normal fall-through,
 -- the talent picker) and at the top of this view's own refresh.
-local function HideResourcesWideSurfaces(col3, preserveFinderState)
+local function HideResourcesWideSurfaces(col3, preserveFinderState, preservePreview)
     HideWidgetFrame(col3._resourcesConflictScroll)
     HideWidgetFrame(col3._resourcesTabGroup)
     HideWidgetFrame(col3._resourceSettingsTabGroup)
@@ -523,7 +523,7 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState)
     end
     if col3._barWorkspaceIntroPane then col3._barWorkspaceIntroPane:Hide() end
     local host = col3._resourcesPreviewHost
-    if host then
+    if host and not preservePreview then
         ReleaseResourcesPanelMirrors(host)
         if col3.buttonsSplitDivider and col3._cdcActiveWideHost == host then
             if ST._HideWideEditingChrome then
@@ -608,7 +608,7 @@ end
 -- Pinned Layout & Order preview at the top of the wide column, registered
 -- as the active wide preview so the shared divider drags and the persisted
 -- split reapply rebuild it.
-local function UpdateResourcesPreviewHost(col3)
+local function UpdateResourcesPreviewHost(col3, edit, preservePreview)
     local host = col3._resourcesPreviewHost
     if not host then
         host = CreateFrame("Frame", nil, col3.content)
@@ -629,7 +629,13 @@ local function UpdateResourcesPreviewHost(col3)
         host:SetHeight(ST._ComputeWidePreviewHostHeight(col3))
     end
     host:Show()
-    BuildResourcesLayoutPreview(host)
+    if not preservePreview then
+        BuildResourcesLayoutPreview(host)
+    else
+        -- Controls teardown hides navigation even when its canvas stays mounted.
+        SetBarsOffCanvasChips(col3)
+    end
+    if edit and edit.moduleKind then edit.previewBuilt = true end
 end
 
 -- Targeted preview rebuild (value changes that only affect the layout
@@ -644,13 +650,14 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
         local host = col3 and col3._resourcesPreviewHost
         if host and host:IsShown() and ST._BuildLayoutOrderPanel then
             BuildResourcesLayoutPreview(host, mirrorReuse)
+            return true
         end
-        return
+        return false
     end
     -- Buttons view: the lanes live inside the unified anchor preview on
     -- the buttons preview host; the mirror refresh self-gates.
     if ST._RefreshButtonsPreviewMirror then
-        ST._RefreshButtonsPreviewMirror(CS.selectedGroup, mirrorReuse == true)
+        return ST._RefreshButtonsPreviewMirror(CS.selectedGroup, mirrorReuse == true)
     end
 end
 
@@ -933,14 +940,19 @@ end
 
 -- Disabled standalone features show their introduction. Enabled destinations
 -- build the preview and the selected object's settings beneath the divider.
-local function RefreshBarsWideColumn(col3)
-    -- Everything restarts hidden; the active surface re-shows below.
-    HideResourcesWideSurfaces(col3, true)
+local function RefreshBarsWideColumn(col3, edit)
+    local host = col3._resourcesPreviewHost
+    local preservePreview = edit and edit.preservePreview and edit.previewHost == host
+        and host and host:IsShown() and col3._cdcActiveWideHost == host
+    -- A completed edit may rebuild only its controls. Keep its delivered
+    -- canvas mounted; selection and topology changes still release it.
+    HideResourcesWideSurfaces(col3, true, preservePreview)
 
     if CS.barWorkspaceKind == "resources" and CooldownCompanion.GetCurrentResourceBarConflict and CooldownCompanion:GetCurrentResourceBarConflict() then
         if ST._ClearSettingsFinderActionRowState then
             ST._ClearSettingsFinderActionRowState(col3)
         end
+        if preservePreview then HideResourcesWideSurfaces(col3, true) end
         ShowResourcesConflictScroll(col3)
         return
     end
@@ -949,6 +961,7 @@ local function RefreshBarsWideColumn(col3)
         if ST._ClearSettingsFinderActionRowState then
             ST._ClearSettingsFinderActionRowState(col3)
         end
+        if preservePreview then HideResourcesWideSurfaces(col3, true) end
         ShowBarWorkspaceIntro(col3)
         return
     end
@@ -972,7 +985,7 @@ local function RefreshBarsWideColumn(col3)
         end)
     end
 
-    UpdateResourcesPreviewHost(col3)
+    UpdateResourcesPreviewHost(col3, edit, preservePreview)
 
     -- Import and export actions belong to the enabled Resources home.
     if item == nil and settings and settings.enabled == true then

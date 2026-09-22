@@ -10,11 +10,13 @@ end
 -- that picker filters automatic group eligibility and requires live frames.
 function ST._BuildModuleAnchoringControls(container, kind, finder)
     finder = finder or {}
+    local context = ST._GetSettingsWidgetContext(container)
+    if context and context.kind ~= kind then context = nil end
     local list, order = ST._GetBarAttachmentOptions(kind)
     local modeRow = ST._AddDropdownRow(container, {
         label = "Anchoring Mode", setting = finder.mode,
         list = list, order = order, value = ST._GetBarAttachmentValue(kind),
-        onChange = function(mode) ST._SetBarAttachment(kind, mode) end,
+        onChange = function(mode) ST._SetBarAttachment(kind, mode, nil, context) end,
     })
     AddHelp(modeRow, "Anchoring Mode", "Saved for this specialization. Automatic uses the first eligible panel. Choose Panel temporarily uses Automatic when your selected panel is unavailable, then returns when it becomes available.")
     local attachment = Addon:GetModuleAttachment(kind)
@@ -60,7 +62,7 @@ function ST._BuildModuleAnchoringControls(container, kind, finder)
             label = "Anchor Panel", setting = finder.panel,
             list = choices, order = keys, value = selected, pulloutWidth = 300,
             onChange = function(value)
-                if tonumber(value) then ST._SetBarAttachment(kind, "panel", tonumber(value)) end
+                if tonumber(value) then ST._SetBarAttachment(kind, "panel", tonumber(value), context) end
             end,
         })
         AddHelp(row, "Anchor Panel", "Explicit selections ignore Include in Auto-Anchoring. Aura Panels, cursor-attached panels, and non-icon panels cannot be selected.")

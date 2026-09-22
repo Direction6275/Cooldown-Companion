@@ -66,7 +66,9 @@ local function IsBarTextureControlLocked(opts)
 end
 
 local function SetLockedDropdownCallback(dropdown, callback, isLocked, opts)
+    local context = dropdown._cdcSettingsContext
     dropdown:SetCallback("OnValueChanged", function(widget, event, val, checked)
+        if context and (dropdown._cdcSettingsContext ~= context or not context:IsCurrent()) then return end
         if isLocked(opts) then
             return
         end

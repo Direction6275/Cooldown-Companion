@@ -117,6 +117,11 @@ function ST._RunSettingsPreview(apply, preview, restore, outcome)
     if not restored then error(restoreFailure, 0) end
 end
 
+local function IsSettingsTargetCurrent(tbl)
+    local target = ST._GetSettingsPreviewTarget and ST._GetSettingsPreviewTarget(tbl)
+    return not target or target.isCurrent()
+end
+
 function ST._WithSettingsPreview(tbl, keys, apply, preview, outcome)
     if type(keys) == "string" then keys = { keys } end
     local target = ST._GetSettingsPreviewTarget and ST._GetSettingsPreviewTarget(tbl)
@@ -1342,7 +1347,7 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn,
     local baseline = original and { original[1], original[2], original[3],
         widget.HasAlpha == false and 1 or original[4] or 1 }
     local function Commit(pending)
-        if context and not context:IsCurrent() then return end
+        if (context and not context:IsCurrent()) or not IsSettingsTargetCurrent(tbl) then return end
         if baseline and pending[1] == baseline[1] and pending[2] == baseline[2]
             and pending[3] == baseline[3] and pending[4] == baseline[4] then return end
         tbl[key] = pending
@@ -1350,7 +1355,7 @@ local function SetupColorCallbacks(widget, tbl, key, onConfirmedFn, onPreviewFn,
         if onConfirmedFn then onConfirmedFn() end
     end
     widget:SetCallback("OnValueChanged", function(_, _, r, g, b, a)
-        if context and not context:IsCurrent() then return end
+        if (context and not context:IsCurrent()) or not IsSettingsTargetCurrent(tbl) then return end
         local pending = {r, g, b, a}
         -- Arm first so closing still commits if the preview refresh fails.
         ArmColorCommitOnClose(function() Commit(pending) end)
@@ -1423,7 +1428,7 @@ local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, re
         tbl[key] = value
     end
     local function Commit(key, value)
-        if opts.disabled then return end
+        if opts.disabled or not IsSettingsTargetCurrent(tbl) then return end
         Set(key, value)
         refreshFn()
     end
@@ -1442,7 +1447,7 @@ local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, re
         tooltip = {"Text Anchor", "Corners keep text inside. Edge anchors center text on the border. Choosing a different anchor resets X and Y offsets."},
         list = list, order = order, value = point, disabled = opts.disabled,
         onChange = function(value)
-            if opts.disabled or value == point then return end
+            if opts.disabled or not IsSettingsTargetCurrent(tbl) or value == point then return end
             Set(anchorKey, value)
             tbl[xKey], tbl[yKey] = ST.TextAnchorLayout.GetOffsets(value)
             -- Explicit false also blocks inherited snapshot alignment.
@@ -1510,6 +1515,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
             PreviewScalarSetting(tbl, sizeKey, val, previewRefresh, "geometry")
         end,
         onRelease = function(val)
+            if not IsSettingsTargetCurrent(tbl) then return end
             tbl[sizeKey] = val
             refreshFn()
         end,
@@ -1535,6 +1541,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     CS.SetupFontDropdown(fontRow)
     fontRow:SetValue(tbl[fontKey] or defaults.font or "Friz Quadrata TT")
     CS.SetFontDropdownCallback(fontRow, function(widget, event, val)
+        if not IsSettingsTargetCurrent(tbl) then return end
         tbl[fontKey] = val
         refreshFn()
     end)
@@ -1547,6 +1554,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     CS.SetupFontOutlineDropdown(outlineRow)
     outlineRow:SetValue(tbl[outlineKey] or defaults.outline or "OUTLINE")
     CS.SetFontOutlineDropdownCallback(outlineRow, function(widget, event, val)
+        if not IsSettingsTargetCurrent(tbl) then return end
         tbl[outlineKey] = val
         refreshFn()
     end)
