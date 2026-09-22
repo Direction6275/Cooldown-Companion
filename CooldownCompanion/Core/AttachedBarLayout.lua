@@ -60,6 +60,7 @@ local function EnsureArea(frame, groupId, area)
             parent = frame, mount = mount }
         states[area.key] = state
     end
+    state.groupId = groupId
     return state
 end
 
@@ -364,10 +365,10 @@ function ST.RefreshPanelAttachments(groupId)
     Addon:RefreshPanelAttachmentGeometry(groupId)
 end
 
-function ST.CollectAttachedBarAuraBlocks(wants)
+function ST.CollectAttachedBarAuraBlocks(wants, owners)
     for groupId, frame in pairs(Addon.groupFrames or {}) do
         local group = Addon.db.profile.groups[groupId]
-        if ST.PanelHasAttachedBars(group) then
+        if (not owners or owners[groupId] == frame) and ST.PanelHasAttachedBars(group) then
             -- Restore the current owner mounts before the OOC bind pass. The
             -- collectors use saved eligibility, never aura activity.
             ST.LayoutAttachedBars(groupId, frame, group)
