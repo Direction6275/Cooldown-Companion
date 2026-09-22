@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local IconVisuals = ST._IconVisuals
 local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
 -- F2 canary sink (loaded before this file; dev-gated, observe-only).
@@ -15,7 +16,6 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 -- Localize frequently-used globals
 local pairs = pairs
 local ipairs = ipairs
-local unpack = unpack
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
 local issecretvalue = issecretvalue
@@ -23,8 +23,6 @@ local issecretvalue = issecretvalue
 -- Imports from Helpers
 local ApplyStrataOrder = ST._ApplyStrataOrder
 local ApplyEdgePositions = ST._ApplyEdgePositions
-local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
-local ApplyIconTexCoord = ST._ApplyIconTexCoord
 local FitHighlightFrame = ST._FitHighlightFrame
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
@@ -599,35 +597,17 @@ end
 -- Only audited decoration controls use this entry point.
 function CooldownCompanion:UpdateButtonAppearance(button, style)
     button.style = style
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
     -- Layout may have applied section dimensions that differ from panel style.
     local width, height = button:GetSize()
-    ApplyIconTexCoord(button.icon, width, height, style.iconZoom)
-    -- Update border textures
-    local borderColor = style.borderColor or {0, 0, 0, 1}
-    if button.borderTextures then
-        ApplyBorderEdgePositions(button.borderTextures, button, borderSize, borderRenderMode)
-        for _, tex in ipairs(button.borderTextures) do
-            tex:SetColorTexture(unpack(borderColor))
-        end
-    end
-
-    local bgColor = style.backgroundColor or {0, 0, 0, 0.5}
-    button.bg:SetColorTexture(unpack(bgColor))
+    IconVisuals.Paint(button, style, width, height)
 end
 
 -- Repeatable geometry/paint only; timer values, visibility and effects belong
 -- to construction or the full-restyle reset below.
 local function ApplyIconFrameStyle(button, style)
     local width, height = GetIconStyleDimensions(style)
-    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(button, borderSize, borderRenderMode)
     button:SetSize(width, height)
-    button.icon:ClearAllPoints()
-    button.icon:SetPoint("TOPLEFT", borderLayoutSize, -borderLayoutSize)
-    button.icon:SetPoint("BOTTOMRIGHT", -borderLayoutSize, borderLayoutSize)
+    IconVisuals.Layout(button, style)
     if button.iconFill then
         AnchorIconFill(button)
         ApplyIconFillGeometry(button, style)

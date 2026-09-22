@@ -9,7 +9,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local math_max = math.max
-local StyleMirroredIconFrame = ST._StyleMirroredIconFrame
 local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
 local GetConditionalPreviewTiming = ST._GetConditionalPreviewTiming
 local ApplyIconCountTextStyle = ST._ApplyIconCountTextStyle
@@ -19,10 +18,11 @@ local ApplyIconFillLayer = ST._ApplyIconFillLayer
 local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
 
 local PP = ST._ButtonPanelPreview
+local StylePreviewIcon = PP.StylePreviewIcon
 
 local function StyleIconEntry(slot, buttonData, group)
     PP.RestoreMissingReminderPreview(slot)
-    StyleMirroredIconFrame(slot, { buttonData = buttonData }, group)
+    StylePreviewIcon(slot, buttonData, group)
 
     -- Keybind label: live icon buttons pin this above every layer so it stays
     -- readable whatever is drawn over the icon (IconMode.lua). Same font keys,
@@ -99,8 +99,8 @@ local function GetSlotOverlayBaseLevel(slot)
     if slot.cooldown then
         return slot.cooldown:GetFrameLevel()
     end
-    if slot.textFrame then
-        return slot.textFrame:GetFrameLevel()
+    if slot.barTextFrame then
+        return slot.barTextFrame:GetFrameLevel()
     end
     return slot:GetFrameLevel()
 end
