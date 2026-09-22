@@ -5,12 +5,8 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local CooldownLogic = ST.CooldownLogic
 -- F2 canary sink (loaded before this file; dev-gated, observe-only).
 local RefreshTelemetry = ST.RefreshTelemetry
-local CHARGE_STATE_FULL = CooldownLogic.CHARGE_STATE_FULL
-local CHARGE_STATE_MISSING = CooldownLogic.CHARGE_STATE_MISSING
-local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local GetTime = GetTime
@@ -47,155 +43,16 @@ local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local FormatTime = CooldownCompanion.FormatTime
 local GetDurationSecretFormatSpec = CooldownCompanion.GetDurationSecretFormatSpec
 
--- Pre-defined color constant tables to avoid per-tick allocation.
--- These are used as fallbacks when style keys are nil (user hasn't customized).
--- IMPORTANT: These tables are read-only — never write to their indices.
-local DEFAULT_WHITE = {1, 1, 1, 1}
-local DEFAULT_CD_COLOR = {1, 0.3, 0.3, 1}
-local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
-local DEFAULT_AURA_COLOR = {0, 0.925, 1, 1}
-local DEFAULT_CUSTOM_COLOR = {1, 0.82, 0, 1}
-local DEFAULT_TEXT_FORMAT = "{name}  {status}"
-
-local function IsAuraOnlyEntry(buttonData)
-    return buttonData
-        and buttonData.type == "spell"
-        and buttonData.addedAs == "aura"
-        and buttonData.auraTracking == true
-end
-
-------------------------------------------------------------------------
--- FORMAT STRING PARSER
--- Parses "{name}  {status}" into a list of segments:
---   { {type="literal", value="  "}, {type="token", value="name"}, ... }
--- Parsed once at creation/style-change; per-tick substitution walks the list.
-------------------------------------------------------------------------
--- No pandemic token: it needed readable pandemic state, which 12.1 made
--- permanently secret (retired Phase 3; migrations scrub saved formats).
---
--- Aura tokens are CLIENT-RENDERED on 12.1. The addon can never read the
--- tracked aura's remaining time or application count, so {aura} (remaining
--- time) and {aurastacks} (application count) never reach SubstituteTokens:
--- BuildTextRenderPlan below cuts them out of the line as aura PIECES with
--- reserved widths, and Core/AuraDisplay's text host hands the client a
--- FontString per piece. {status} on a standalone aura entry is {aura}.
-local KNOWN_TOKENS = {
-    name = true,
-    time = true,
-    charges = true,
-    maxcharges = true,
-    missingcharges = true,
-    zerocharges = true,
-    stacks = true,
-    aura = true,
-    aurastacks = true,
-    proc = true,
-    unusable = true,
-    oor = true,
-    available = true,
-    incombat = true,
-    keybind = true,
-    status = true,
-    icon = true,
-    br = true,
-}
-
--- `aura` conditionals are resolved by the PLANNER, not at runtime: a
--- {?aura}...{/aura} region becomes client-rendered aura content that the
--- client shows only while the aura is active, and a {!aura}...{/aura} region
--- is dropped whole (the client cannot render "while inactive"). Neither ever
--- reaches EvaluateTokenPresence, which answers false for `aura` as a defined
--- fallback only.
-local KNOWN_CONDITIONAL_TOKENS = {
-    time = true,
-    charges = true,
-    maxcharges = true,
-    missingcharges = true,
-    zerocharges = true,
-    stacks = true,
-    aura = true,
-    keybind = true,
-    proc = true,
-    unusable = true,
-    oor = true,
-    available = true,
-    incombat = true,
-}
-
-local KNOWN_EFFECTS = {
-    pulse = true,
-}
-
-local KNOWN_COLORS = {
-    cooldown = true,
-    ready = true,
-    active = true,
-    custom = true,
-}
-
-local function ParseFormatString(fmt)
-    local segments = {}
-    local pos = 1
-    local len = #fmt
-    while pos <= len do
-        local openBrace = fmt:find("{", pos, true)
-        if not openBrace then
-            -- Rest is literal
-            segments[#segments + 1] = { type = "literal", value = fmt:sub(pos) }
-            break
-        end
-        -- Literal before the brace
-        if openBrace > pos then
-            segments[#segments + 1] = { type = "literal", value = fmt:sub(pos, openBrace - 1) }
-        end
-        local closeBrace = fmt:find("}", openBrace + 1, true)
-        if not closeBrace then
-            -- Unterminated brace — treat rest as literal
-            segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace) }
-            break
-        end
-        local inner = fmt:sub(openBrace + 1, closeBrace - 1):lower()
-
-        -- Conditional start: {?token} or {!token}
-        local condPrefix = inner:sub(1, 1)
-        if condPrefix == "?" or condPrefix == "!" then
-            local condToken = inner:sub(2)
-            if KNOWN_CONDITIONAL_TOKENS[condToken] then
-                segments[#segments + 1] = {
-                    type = "cond_start",
-                    value = condToken,
-                    negated = (condPrefix == "!"),
-                }
-            else
-                -- Unknown conditional token — treat as literal
-                segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace, closeBrace) }
-            end
-        -- Conditional / effect end: {/token} or {/effect}
-        elseif condPrefix == "/" then
-            local condToken = inner:sub(2)
-            if KNOWN_CONDITIONAL_TOKENS[condToken] then
-                segments[#segments + 1] = { type = "cond_end", value = condToken }
-            elseif KNOWN_EFFECTS[condToken] then
-                segments[#segments + 1] = { type = "effect_end", value = condToken }
-            elseif KNOWN_COLORS[condToken] then
-                segments[#segments + 1] = { type = "color_end", value = condToken }
-            else
-                segments[#segments + 1] = { type = "literal", value = fmt:sub(openBrace, closeBrace) }
-            end
-        elseif KNOWN_TOKENS[inner] then
-            segments[#segments + 1] = { type = "token", value = inner }
-        elseif KNOWN_EFFECTS[inner] then
-            segments[#segments + 1] = { type = "effect_start", value = inner }
-        elseif KNOWN_COLORS[inner] then
-            segments[#segments + 1] = { type = "color_start", value = inner }
-        else
-            -- Unknown token — render as empty
-            segments[#segments + 1] = { type = "token", value = inner, unknown = true }
-        end
-        pos = closeBrace + 1
-    end
-    return segments
-end
+-- Shared grammar/presentation; acquisition and native output stay in this file.
+local TextFormat = ST._TextFormat
+local ParseFormatString = TextFormat.Parse
+local IsAuraOnlyEntry = TextFormat.IsAuraOnlyEntry
+local DEFAULT_WHITE = TextFormat.DEFAULT_WHITE
+local DEFAULT_CD_COLOR = TextFormat.DEFAULT_CD_COLOR
+local DEFAULT_READY_COLOR = TextFormat.DEFAULT_READY_COLOR
+local DEFAULT_AURA_COLOR = TextFormat.DEFAULT_AURA_COLOR
+local DEFAULT_CUSTOM_COLOR = TextFormat.DEFAULT_CUSTOM_COLOR
+local DEFAULT_TEXT_FORMAT = TextFormat.DEFAULT_TEXT_FORMAT
 
 ------------------------------------------------------------------------
 -- EFFECT HELPERS
@@ -580,7 +437,7 @@ end
 -- Forward declaration: the memoized colour-escape helper is defined with the
 -- rest of the colour wrapping below, after the measurement section that
 -- bakes plans through it.
-local ColorPrefix
+local ColorPrefix = TextFormat.ColorPrefix
 
 local bakeParts = {}
 local bakeColorStack = {}
@@ -1635,43 +1492,6 @@ local function ComputePulse(now)
     return 0.7 + 0.3 * math_sin(now * 2 * math_pi)
 end
 
-------------------------------------------------------------------------
--- COLOR WRAPPING
-------------------------------------------------------------------------
--- The escape prefix is a pure function of the colour's first three components,
--- so it is memoized per colour table. Colour tables are mutated in place, so
--- the entry is revalidated component-wise and never by table identity. Weak
--- keys keep discarded colour tables collectable; nothing is written back onto
--- the colour table itself (they belong to persisted style data).
-local colorPrefixCache = setmetatable({}, { __mode = "k" })
-
--- Assigns the forward-declared local above the measurement section (the
--- plan baker resolves colour tags through it).
-function ColorPrefix(color)
-    local r, g, b = color[1], color[2], color[3]
-    local entry = colorPrefixCache[color]
-    if entry and entry.r == r and entry.g == g and entry.b == b then
-        return entry.prefix
-    end
-
-    local prefix = string_format("|cff%02x%02x%02x",
-        math_floor(r * 255),
-        math_floor(g * 255),
-        math_floor(b * 255))
-    if not entry then
-        entry = {}
-        colorPrefixCache[color] = entry
-    end
-    entry.r, entry.g, entry.b, entry.prefix = r, g, b, prefix
-    return prefix
-end
-
-local function WrapColor(text, color)
-    if not text or text == "" then return "" end
-    if not color then return text end
-    return ColorPrefix(color) .. text .. "|r"
-end
-
 local function ResolveTextModeStackDisplay(button)
     local itemCount = button._itemCount
     if itemCount and itemCount > 0 then
@@ -1770,91 +1590,34 @@ local function UpdateTextVisualAppliedPulse(button)
 end
 
 ------------------------------------------------------------------------
--- EVALUATE TOKEN PRESENCE
--- Returns true if the given token would produce non-empty output.
--- Used by conditional sections ({?token}...{/token}).
-------------------------------------------------------------------------
-local function EvaluateTokenPresence(button, tokenName, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret, stackDisplayKind)
-    if tokenName == "time" then
-        return timeIsSecret or (timeRemaining and timeRemaining > 0)
-    elseif tokenName == "charges" then
-        return UsesChargeBehavior(button.buttonData)
-    elseif tokenName == "maxcharges" then
-        if not UsesChargeBehavior(button.buttonData) then return false end
-        return button._chargeState == CHARGE_STATE_FULL
-    elseif tokenName == "missingcharges" then
-        if not UsesChargeBehavior(button.buttonData) then return false end
-        return button._chargeState == CHARGE_STATE_MISSING
-    elseif tokenName == "zerocharges" then
-        if not UsesChargeBehavior(button.buttonData) then return false end
-        return button._chargeState == CHARGE_STATE_ZERO
-    elseif tokenName == "stacks" then
-        return stackDisplayKind ~= nil
-    elseif tokenName == "aura" then
-        -- Never asked in practice: {?aura}/{!aura} regions are resolved by
-        -- BuildTextRenderPlan (client-rendered content / dropped) and never
-        -- reach SubstituteTokens. The aura's presence is the client's, not
-        -- the addon's, so the defined fallback answer is false.
-        return false
-    elseif tokenName == "keybind" then
-        local kb = CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
-        return kb and kb ~= ""
-    elseif tokenName == "proc" then
-        return button._procOverlayActive == true
-    elseif tokenName == "unusable" then
-        return button._isUnusable == true
-    elseif tokenName == "oor" then
-        return button._isOutOfRange == true
-    elseif tokenName == "available" then
-        return button._desatCooldownActive ~= true
-    elseif tokenName == "incombat" then
-        return UnitAffectingCombat("player") == true
-    end
-    return false
-end
-
-------------------------------------------------------------------------
--- COLOR TAG RESOLUTION
-------------------------------------------------------------------------
-local function ResolveColorName(name, cdColor, readyColor, auraColor, customColor)
-    if name == "cooldown" then return cdColor
-    elseif name == "ready" then return readyColor
-    elseif name == "active" then return auraColor
-    elseif name == "custom" then return customColor
-    end
-end
-
-------------------------------------------------------------------------
 -- SUBSTITUTE TOKENS
 -- Builds the final display string from pre-parsed segments.
 -- Returns: displayText, secretValue, secretColorToken, secretStackValue, secretNameValue, hasSecretNameValue
 ------------------------------------------------------------------------
+-- Fixed live adapter: only the caller can acquire runtime identity.
+local LIVE_TEXT_ADAPTER = {
+    Name = function(button)
+        local data = button.buttonData
+        local name = data.customName or data.name or ""
+        if not data.customName and data.type == "spell" then
+            local spellName = C_Spell.GetSpellName(button._displaySpellId or data.id)
+            if spellName then name = spellName end
+        elseif not data.customName and IsEntryItemLike(data) then
+            local itemID = button._resolvedItemId or data.id
+            local itemName = itemID and C_Item.GetItemNameByID(itemID)
+            if itemName then name = itemName end
+        end
+        return name
+    end,
+    Keybind = function(button)
+        return CooldownCompanion:GetKeybindText(button.buttonData, button._resolvedItemId, button)
+    end,
+    Icon = function(button) return button.icon and button.icon:GetTexture() end,
+    InCombat = function() return UnitAffectingCombat("player") end,
+}
+
 local function SubstituteTokens(button, segments, style, effectState, secretNameOverride, hasSecretNameOverride, shouldStoreTextVisualState)
     local buttonData = button.buttonData
-    local parts = button._textModeParts
-    if parts then
-        wipe(parts)
-    else
-        parts = {}
-        button._textModeParts = parts
-    end
-    local secretValue = nil
-    local secretColorToken = nil
-    local secretStackValue = nil
-    local secretNameValue = nil
-    local hasSecretNameValue = false
-
-    local baseColor = style.textFontColor or DEFAULT_WHITE
-    local cdColor = style.textCooldownColor or DEFAULT_CD_COLOR
-    local readyColor = style.textReadyColor or DEFAULT_READY_COLOR
-    local auraColor = style.textAuraColor or DEFAULT_AURA_COLOR
-    local customColor = style.textCustomColor or DEFAULT_CUSTOM_COLOR
-
-    -- Charge color resolution
-    local chargeFull = style.chargeFontColor or DEFAULT_WHITE
-    local chargeMissing = style.chargeFontColorMissing or DEFAULT_WHITE
-    local chargeZero = style.chargeFontColorZero or DEFAULT_WHITE
-
     -- Gather live state
     local auraOnlyEntry = IsAuraOnlyEntry(buttonData)
     local currentCharges = button._currentReadableCharges
@@ -1905,198 +1668,35 @@ local function SubstituteTokens(button, segments, style, effectState, secretName
         timeIsSecret = durationIsSecret
     end
 
-    -- Conditional skip state for {?token}...{/token} and {!token}...{/token}
-    local skipDepth = 0
-
-    -- Pulse effect depth counter for {pulse}...{/pulse} wrapper tags
-    local pulseDepth = 0
-
-    -- Color override state for {cooldown}...{/cooldown} etc.
-    local colorOverride = nil
-    local colorStack = button._textModeColorStack
-    if colorStack then
-        wipe(colorStack)
-    else
-        colorStack = {}
-        button._textModeColorStack = colorStack
+    local ctx = button._textFormatContext
+    if not ctx then
+        ctx = TextFormat.NewContext()
+        button._textFormatContext = ctx
     end
+    ctx.auraOnlyEntry, ctx.auraActive, ctx.auraHasTimer = auraOnlyEntry, auraActive, auraHasTimer
+    ctx.currentCharges, ctx.maxCharges = currentCharges, maxCharges
+    ctx.usesCharges, ctx.chargeState = UsesChargeBehavior(buttonData), button._chargeState
+    ctx.proc, ctx.unusable, ctx.outOfRange = button._procOverlayActive, button._isUnusable, button._isOutOfRange
+    ctx.available, ctx.deferred = button._desatCooldownActive ~= true, button._cooldownDeferred
+    ctx.timeIsSecret, ctx.auraIsSecret = timeIsSecret, auraIsSecret
+    -- Do not copy a secret operand into the shared formatter's context.
+    ctx.timeRemaining, ctx.auraRemaining = nil, nil
+    if not timeIsSecret then ctx.timeRemaining = timeRemaining end
+    if not auraIsSecret then ctx.auraRemaining = auraRemaining end
+    ctx.stackDisplayKind = stackDisplayKind
+    ctx.stackIsSecret = stackDisplayKind ~= nil and issecretvalue(stackDisplayText)
+    ctx.stackDisplayText = nil
+    if not ctx.stackIsSecret then ctx.stackDisplayText = stackDisplayText end
+    ctx.hasSecretName = not buttonData.customName and buttonData.type == "spell"
+        and auraActive and hasSecretNameOverride == true
 
-    for _, seg in ipairs(segments) do
-        -- Conditional section handling
-        if seg.type == "cond_start" then
-            if skipDepth > 0 then
-                skipDepth = skipDepth + 1
-            else
-                local present = EvaluateTokenPresence(button, seg.value, timeRemaining, timeIsSecret, auraRemaining, auraIsSecret, stackDisplayKind)
-                local shouldShow = (seg.negated and not present) or (not seg.negated and present)
-                if not shouldShow then
-                    skipDepth = 1
-                end
-            end
-        elseif seg.type == "cond_end" then
-            if skipDepth > 0 then
-                skipDepth = skipDepth - 1
-            end
-        elseif skipDepth > 0 then
-            -- Inside a false conditional — skip this segment
-
-        elseif seg.type == "effect_start" then
-            if effectState and seg.value == "pulse" then
-                pulseDepth = pulseDepth + 1
-            end
-
-        elseif seg.type == "effect_end" then
-            if effectState and seg.value == "pulse" and pulseDepth > 0 then
-                pulseDepth = pulseDepth - 1
-            end
-
-        elseif seg.type == "color_start" then
-            colorStack[#colorStack + 1] = colorOverride
-            colorOverride = ResolveColorName(seg.value, cdColor, readyColor, auraColor, customColor)
-
-        elseif seg.type == "color_end" then
-            colorOverride = colorStack[#colorStack]
-            colorStack[#colorStack] = nil
-
-        elseif seg.type == "literal" then
-            if colorOverride then
-                parts[#parts + 1] = WrapColor(seg.value, colorOverride)
-            else
-                parts[#parts + 1] = seg.value
-            end
-            if pulseDepth > 0 and effectState then
-                effectState.pulseActive = true
-            end
-
-        elseif seg.unknown then
-            -- Unknown tokens render as empty
-        else
-            local prevPartCount = #parts
-            local token = seg.value
-            if token == "name" then
-                local name = buttonData.customName or buttonData.name or ""
-                if not buttonData.customName and buttonData.type == "spell" then
-                    if button._auraActive and hasSecretNameOverride then
-                        secretNameValue = secretNameOverride
-                        hasSecretNameValue = true
-                        parts[#parts + 1] = WrapColor("%NAME%", colorOverride or baseColor)
-                        name = nil
-                    else
-                        local spellName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
-                        if spellName then name = spellName end
-                    end
-                elseif not buttonData.customName and IsEntryItemLike(buttonData) then
-                    local itemID = button._resolvedItemId or buttonData.id
-                    local itemName = itemID and C_Item.GetItemNameByID(itemID)
-                    if itemName then name = itemName end
-                end
-                if name then
-                    parts[#parts + 1] = WrapColor(name, colorOverride or baseColor)
-                end
-
-            elseif token == "time" then
-                if timeIsSecret then
-                    if not secretValue then
-                        secretValue = timeRemaining
-                        secretColorToken = "cd"
-                    end
-                    parts[#parts + 1] = WrapColor("%TIME%", colorOverride or cdColor)
-                elseif timeRemaining then
-                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style), colorOverride or cdColor)
-                end
-
-            elseif token == "charges" then
-                if currentCharges ~= nil then
-                    local cc
-                    if currentCharges == maxCharges then
-                        cc = chargeFull
-                    elseif currentCharges == 0 then
-                        cc = chargeZero
-                    else
-                        cc = chargeMissing
-                    end
-                    parts[#parts + 1] = WrapColor(tostring(currentCharges), colorOverride or cc)
-                end
-
-            elseif token == "maxcharges" then
-                if maxCharges and maxCharges > 1 then
-                    parts[#parts + 1] = WrapColor(tostring(maxCharges), colorOverride or baseColor)
-                end
-
-            elseif token == "stacks" then
-                if stackDisplayKind then
-                    if issecretvalue(stackDisplayText) then
-                        if not secretStackValue then
-                            secretStackValue = stackDisplayText
-                        end
-                        parts[#parts + 1] = WrapColor("%STACKS%", colorOverride or baseColor)
-                    else
-                        parts[#parts + 1] = WrapColor(stackDisplayText, colorOverride or baseColor)
-                    end
-                end
-
-            elseif token == "aura" or token == "aurastacks" then
-                -- Emits NOTHING here: the planner routes both tokens to
-                -- client-rendered aura pieces, so a segment list handed to
-                -- this walk never holds them. Kept as a defined no-op for
-                -- safety only.
-
-            elseif token == "keybind" then
-                local kb = CooldownCompanion:GetKeybindText(buttonData, button._resolvedItemId, button)
-                if kb and kb ~= "" then
-                    parts[#parts + 1] = WrapColor(kb, colorOverride or baseColor)
-                end
-
-            elseif token == "status" then
-                if auraActive then
-                    if not auraHasTimer then
-                        parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
-                    elseif auraIsSecret then
-                        if not secretValue then
-                            secretValue = auraRemaining
-                            secretColorToken = "aura"
-                        end
-                        parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or auraColor)
-                    elseif auraRemaining then
-                        parts[#parts + 1] = WrapColor(FormatTime(auraRemaining, style), colorOverride or auraColor)
-                    else
-                        parts[#parts + 1] = WrapColor("Active", colorOverride or auraColor)
-                    end
-                elseif auraOnlyEntry then
-                    -- Aura-only entries do not have a ready/cooldown fallback.
-                elseif timeIsSecret then
-                    if not secretValue then
-                        secretValue = timeRemaining
-                        secretColorToken = "cd"
-                    end
-                    parts[#parts + 1] = WrapColor("%STATUS%", colorOverride or cdColor)
-                elseif timeRemaining and timeRemaining > 0 then
-                    parts[#parts + 1] = WrapColor(FormatTime(timeRemaining, style), colorOverride or cdColor)
-                elseif button._cooldownDeferred then
-                    -- Deferred cooldown: timer hasn't started yet, show cooldown
-                    -- color with placeholder instead of "Ready".
-                    parts[#parts + 1] = WrapColor("...", colorOverride or cdColor)
-                else
-                    parts[#parts + 1] = WrapColor(style.textReadyText or "Ready", colorOverride or readyColor)
-                end
-
-            elseif token == "icon" then
-                local iconTex = button.icon and button.icon:GetTexture()
-                if iconTex then
-                    parts[#parts + 1] = string_format("|T%s:0|t", tostring(iconTex))
-                end
-            elseif token == "br" then
-                parts[#parts + 1] = "\n"
-            end
-
-            -- Mark pulse active when a token emitted content inside pulse region
-            if pulseDepth > 0 and effectState and #parts > prevPartCount then
-                effectState.pulseActive = true
-            end
-        end
-    end
-
-    local text = table_concat(parts)
+    local text, secretColorToken, hasSecretStack, hasSecretNameValue =
+        TextFormat.Substitute(segments, style, ctx, LIVE_TEXT_ADAPTER, button, effectState)
+    local secretValue, secretStackValue, secretNameValue
+    if secretColorToken == "cd" then secretValue = timeRemaining
+    elseif secretColorToken == "aura" then secretValue = auraRemaining end
+    if hasSecretStack then secretStackValue = stackDisplayText end
+    if hasSecretNameValue then secretNameValue = secretNameOverride end
     if shouldStoreTextVisualState then
         StoreTextVisualIntent(button, {
             auraOnlyEntry = auraOnlyEntry,
