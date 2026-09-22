@@ -90,6 +90,7 @@ ButtonFrame\VisualState.lua
 ButtonFrame\VisualStateDiagnostics.lua
 ButtonFrame\IconMode.lua
 ButtonFrame\BarMode.lua
+ButtonFrame\TextFormat.lua
 ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
@@ -108,6 +109,7 @@ Core\GroupFrame.lua
 OtherBars\ResourceBarConstants.lua
 OtherBars\ResourceBarHelpers.lua
 OtherBars\ResourceBarSoundAlerts.lua
+OtherBars\CastBarVisuals.lua
 OtherBars\CastBar.lua
 OtherBars\ResourceBarVisuals.lua
 OtherBars\ResourceBarHealth.lua

@@ -48,9 +48,6 @@ local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
-local CreatePixelBorders = RB.CreatePixelBorders
-local ApplyPixelBorders = RB.ApplyPixelBorders
-local HidePixelBorders = RB.HidePixelBorders
 local POWER_SHORT_NAMES = RB.POWER_SHORT_NAMES or {}
 
 -- The bars workspace draws ONE canvas for every object it configures: the
@@ -1497,258 +1494,50 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
     end
 end
 
+local CastBarVisuals = ST._CastBarVisuals
+
 local function EnsureCastPreview(frame)
-    local castPreview = frame.castPreview
-    if castPreview then
-        return castPreview
+    if not frame.castPreview then
+        local root = CreateFrame("Frame", nil, frame.previewCanvas)
+        root:SetClipsChildren(false)
+        CastBarVisuals.CreateContents(root)
+        frame.castPreview = { root = root }
     end
-
-    local root = CreateFrame("Frame", nil, frame.previewCanvas)
-    root:SetClipsChildren(false)
-
-    local bar = CreateFrame("StatusBar", nil, root)
-    bar:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-    bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", 0, 0)
-
-    local bg = bar:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bar.bg = bg
-
-    local spark = bar:CreateTexture(nil, "OVERLAY", nil, 2)
-    spark:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
-    spark:SetBlendMode("ADD")
-    bar.spark = spark
-
-    local nameText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    nameText:SetJustifyH("LEFT")
-    bar.nameText = nameText
-
-    local timeText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timeText:SetJustifyH("RIGHT")
-    bar.timeText = timeText
-
-    local iconFrame = CreateFrame("Frame", nil, root)
-    local icon = iconFrame:CreateTexture(nil, "ARTWORK")
-    icon:SetPoint("TOPLEFT", 1, -1)
-    icon:SetPoint("BOTTOMRIGHT", -1, 1)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    iconFrame.icon = icon
-
-    castPreview = {
-        root = root,
-        bar = bar,
-        iconFrame = iconFrame,
-        icon = icon,
-        border = bar:CreateTexture(nil, "ARTWORK", nil, 6),
-        pixelBorders = CreatePixelBorders(bar),
-        iconBorders = CreatePixelBorders(iconFrame),
-        channelTickMarks = {},
-    }
-    frame.castPreview = castPreview
-    return castPreview
+    return frame.castPreview
 end
 
 local function ConfigureCastPreviewChannelMarks(castPreview, settings)
-    for _, mark in ipairs(castPreview.channelTickMarks) do
-        mark:Hide()
-    end
+    local root = castPreview.root
+    CastBarVisuals.HideChannelTickMarks(root)
     if settings.showChannelTickMarks ~= true then return end
-
-    -- Five evenly-spaced end ticks make the feature and its penultimate
-    -- highlight legible without pretending the preview is a particular spell.
-    local markCount = 4
-    local normalColor = settings.channelTickColor or { 1, 1, 1, 0.8 }
-    local highlightColor = settings.penultimateChannelTickColor or { 1, 0.82, 0, 1 }
-    local highlightPenultimate = settings.highlightPenultimateChannelTick == true
-    local barLength = castPreview.barLength or 0
-    local markWidth = math_min(math_max(tonumber(settings.channelTickWidth) or 1, 1), 5)
-
-    for index = 1, markCount do
-        local mark = castPreview.channelTickMarks[index]
-        if not mark then
-            mark = castPreview.bar:CreateTexture(nil, "OVERLAY", nil, 1)
-            castPreview.channelTickMarks[index] = mark
-        end
-        local color = highlightPenultimate and index == markCount and highlightColor or normalColor
-        mark:SetColorTexture(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
-        mark:ClearAllPoints()
-        mark:SetPoint("TOP", castPreview.bar, "TOPRIGHT", -(barLength * index / 5), 0)
-        mark:SetPoint("BOTTOM", castPreview.bar, "BOTTOMRIGHT", -(barLength * index / 5), 0)
-        mark:SetWidth(markWidth)
-        mark:Show()
+    -- Five sample end ticks, not the cadence of a live spell.
+    for index = 1, 4 do
+        CastBarVisuals.SetChannelTickMark(root, settings, index, index / 5, index == 4)
     end
 end
 
-local function HideCastPixelBorders(castPreview)
-    if castPreview.pixelBorders then
-        HidePixelBorders(castPreview.pixelBorders)
-    end
-    if castPreview.iconBorders then
-        HidePixelBorders(castPreview.iconBorders)
-    end
-end
-
--- Place the fill, the spark and the countdown for one moment of a cast.
--- `progress` is 0..1; the resting facsimile sits at CAST_PREVIEW_REST_FILL
--- because a cast bar has no ready state to show and the slot still has to be
--- visible and draggable.
 local function SetCastPreviewProgress(castPreview, progress)
-    local bar = castPreview.bar
     local shownProgress = castPreview.isChannelPreview and (1 - progress) or progress
-    SetStatusBarSmoothRange(bar, 0, 100)
-    -- Immediate, not smoothed: the sweep advances every tick, and smoothing
-    -- toward a moving target would drag visibly backwards at the wrap.
-    SetStatusBarImmediateValue(bar, shownProgress * 100)
-    if bar.spark:IsShown() then
-        -- The measured length is the fallback, not the source: the slot is
-        -- built and laid out in the same frame, so the anchor chain may not
-        -- have resolved yet on the first pass.
-        local barLength = castPreview.barLength or bar:GetWidth() or 0
-        bar.spark:ClearAllPoints()
-        bar.spark:SetPoint("CENTER", bar, "LEFT", barLength * shownProgress, 0)
-    end
-    if bar.timeText:IsShown() then
-        bar.timeText:SetFormattedText("%.1f s", CAST_PREVIEW_DURATION * (1 - progress))
-    end
+    CastBarVisuals.SetFill(castPreview.root, shownProgress, true)
+    CastBarVisuals.SetTimeText(castPreview.root, CAST_PREVIEW_DURATION * (1 - progress))
 end
 
 local function ConfigureCastPreview(frame, slot, preview, width, height)
     HideUnusedSlotVisuals(frame)
-
     local settings = preview.cbSettings
     local castPreview = EnsureCastPreview(frame)
     local root = castPreview.root
-    local bar = castPreview.bar
-    local iconFrame = castPreview.iconFrame
-    local icon = castPreview.icon
-    local border = castPreview.border
-
     root:SetParent(frame.previewCanvas)
     root:ClearAllPoints()
     root:SetPoint("TOPLEFT", frame.previewCanvas, "TOPLEFT", 0, 0)
     root:SetPoint("BOTTOMRIGHT", frame.previewCanvas, "BOTTOMRIGHT", 0, 0)
-    root:Show()
-
-    -- Styling is always on for the CC-owned bar: the old Blizzard-visuals
-    -- fallback died with the frame replacement, so the facsimile paints the
-    -- configured settings unconditionally. The resolutions below keep
-    -- CastBar.lua's shape but are NOT pixel-exact: this facsimile pads an
-    -- inline icon with a 4px gap where the live bar uses none, reserves
-    -- in-bar footprint for an offset icon the live bar draws outside the
-    -- fill, and rings only the bar where the live pixel border wraps bar
-    -- and inline icon together.
-    local styled = true
-
-    local iconShown = styled and settings.showIcon ~= false
-    local iconSize = height
-    local iconGap = 4
-    local barLeft = 0
-    local barRight = 0
-
-    if iconShown then
-        if settings.iconOffset then
-            iconSize = math_min(height, settings.iconSize or height)
-        end
-        iconFrame:SetSize(iconSize, iconSize)
-        iconFrame:Show()
-        icon:SetTexture(slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
-        -- Zoom is a styling-layer setting like everything else here: with
-        -- Styling off the live bar wears Blizzard visuals, so the facsimile
-        -- falls back to the plain trim.
-        ApplyIconTexCoord(icon, 1, 1, styled and settings.iconZoom or 0)
-        if settings.iconFlipSide then
-            iconFrame:ClearAllPoints()
-            iconFrame:SetPoint("TOPRIGHT", root, "TOPRIGHT", 0, 0)
-            barRight = -(iconSize + iconGap)
-        else
-            iconFrame:ClearAllPoints()
-            iconFrame:SetPoint("TOPLEFT", root, "TOPLEFT", 0, 0)
-            barLeft = iconSize + iconGap
-        end
-    else
-        iconFrame:Hide()
-    end
-
-    bar:ClearAllPoints()
-    bar:SetPoint("TOPLEFT", root, "TOPLEFT", barLeft, 0)
-    bar:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", barRight, 0)
-    castPreview.barLength = math_max(0, width + barRight - barLeft)
+    CastBarVisuals.Layout(root, settings, width, height)
+    CastBarVisuals.Style(root, settings)
+    root.icon:SetTexture(slot.icon or LAYOUT_PREVIEW_ICON_FALLBACK)
+    root.nameText:SetText(CAST_PREVIEW_SPELL_NAME)
     castPreview.isChannelPreview = settings.showChannelTickMarks == true
-    bar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(
-        (styled and settings.barTexture) or "Solid"))
-    -- The configured colour, not the live cast bar's current one: this is the
-    -- cast bar as configured, and reading the world bar would mirror whatever
-    -- the last real cast happened to leave behind.
-    local barColor = (styled and settings.barColor) or { 1, 0.72, 0.18, 1 }
-    bar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] ~= nil and barColor[4] or 1)
-    local backgroundColor = (styled and settings.backgroundColor) or { 0, 0, 0, 0.5 }
-    bar.bg:SetColorTexture(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4] ~= nil and backgroundColor[4] or 1)
-
-    border:Hide()
-    HideCastPixelBorders(castPreview)
-
-    -- Mirrors CastBar.lua's own resolution verbatim.
-    local borderStyle = styled and (settings.borderStyle or "pixel") or "blizzard"
-    if borderStyle == "pixel" then
-        ApplyPixelBorders(castPreview.pixelBorders, bar, settings.borderColor or { 0, 0, 0, 1 }, settings.borderSize or 1, ST.GetBorderRenderMode(settings))
-        if iconFrame:IsShown() and settings.iconOffset then
-            ApplyPixelBorders(castPreview.iconBorders, iconFrame, settings.borderColor or { 0, 0, 0, 1 }, settings.iconBorderSize or 1, ST.GetBorderRenderMode(settings, "iconBorderRenderMode"))
-        else
-            HidePixelBorders(castPreview.iconBorders)
-        end
-    elseif borderStyle == "blizzard" then
-        border:SetAllPoints(bar)
-        border:SetAtlas("ui-castingbar-frame")
-        border:Show()
-    end
-
-    -- Text and spark visibility follow the live contract too: with Styling
-    -- off the real bar shows all three unconditionally (ApplyPreview and the
-    -- spark resolution in CastBar.lua), so the per-element toggles are
-    -- dormant along with the fonts.
-    if styled and settings.showNameText == false then
-        bar.nameText:Hide()
-    else
-        local font = CooldownCompanion:FetchFont(
-            (styled and settings.nameFont) or DEFAULT_RESOURCE_TEXT_FONT)
-        local nameOutline = ST.GetEffectiveFontOutline(
-            (styled and settings.nameFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE)
-        bar.nameText:SetFont(font,
-            (styled and settings.nameFontSize) or DEFAULT_RESOURCE_TEXT_SIZE, nameOutline)
-        ST.ApplyFontShadowForOutline(bar.nameText, nameOutline)
-        bar.nameText:ClearAllPoints()
-        bar.nameText:SetPoint("LEFT", bar, "LEFT", 4, 0)
-        bar.nameText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-        bar.nameText:SetText(CAST_PREVIEW_SPELL_NAME)
-        bar.nameText:Show()
-    end
-
-    if styled and settings.showCastTimeText == false then
-        bar.timeText:Hide()
-    else
-        local font = CooldownCompanion:FetchFont(
-            (styled and settings.castTimeFont) or DEFAULT_RESOURCE_TEXT_FONT)
-        local timeOutline = ST.GetEffectiveFontOutline(
-            (styled and settings.castTimeFontOutline) or DEFAULT_RESOURCE_TEXT_OUTLINE)
-        bar.timeText:SetFont(font,
-            (styled and settings.castTimeFontSize) or DEFAULT_RESOURCE_TEXT_SIZE, timeOutline)
-        ST.ApplyFontShadowForOutline(bar.timeText, timeOutline)
-        bar.timeText:ClearAllPoints()
-        bar.timeText:SetPoint("RIGHT", bar, "RIGHT",
-            -4 + (styled and settings.castTimeXOffset or 0),
-            styled and settings.castTimeYOffset or 0)
-        bar.timeText:Show()
-    end
-
-    if styled and settings.showSpark == false then
-        bar.spark:Hide()
-    else
-        bar.spark:SetWidth(8)
-        bar.spark:SetHeight(math_max(8, height * 1.66))
-        bar.spark:Show()
-    end
-
     ConfigureCastPreviewChannelMarks(castPreview, settings)
+    root:Show()
 
     -- The cast bar's preview state: a cast in progress, looping. Nothing on
     -- the resting bar can stand in for one, which is what makes it worth a
