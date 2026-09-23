@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.7.2",
         "2.7.1",
         "2.7",
         "2.6.3",
@@ -44,6 +45,21 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.7.2"] = {
+            markdown = [[
+## New Features
+
+- **Combined previews:** New Cooldown Active and Aura Active choices show your configured effects together in Live Preview. Preview one selected entry or the whole panel.
+
+## Performance
+
+- **Major optimization pass:** Simplified cooldown, charge, resource, and layout updates to reduce repeated work while preserving update timing. Resource bars and editing controls are reused where possible.
+- **Target and resource changes:** Target switches and maximum health or power changes cause fewer unnecessary display rebuilds. Hidden Aura Panels and sections stay ready to reappear.
+- **Settings and previews:** Less rebuilding while editing settings or dragging previews. Playback keeps its progress through supported navigation, and appearance edits preserve active cooldowns and effects.
+- **Display consistency:** Cast previews better match live bars, toggled bar icons regain their borders, and resource bars show current values immediately after form or display changes.
+- **Resource editing:** Canceling color previews preserves inherited settings and defaults. Tick-marker and threshold-color edits retain earlier changes.
+]],
+        },
         ["2.7.1"] = {
             markdown = [[
 ## Bug Fixes
