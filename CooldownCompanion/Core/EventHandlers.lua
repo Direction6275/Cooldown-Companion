@@ -361,12 +361,19 @@ function CooldownCompanion:OnPetChanged()
     self:RefreshConfigPanel()
 end
 
-function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
-    if not (buttonData and buttonData.type == "spell") then
-        return
+local function ReadSpellChargeMetadata(spellID)
+    local chargeInfo, chargeQueryID, maxCharges = ST.ResolveSpellChargeInfo(spellID)
+    if chargeInfo then
+        return true, maxCharges or chargeInfo.maxCharges, nil, false
     end
+    local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
+    if issecretvalue(rawDisplayCount) then
+        return false, nil, nil, true
+    end
+    return false, nil, tonumber(rawDisplayCount), false
+end
 
-    local chargeInfo, chargeQueryID, maxCharges = ST.ResolveSpellChargeInfo(spellID or buttonData.id)
+local function ApplySpellChargeMetadata(self, buttonData, opts, hasChargeInfo, maxCharges, displayCount, displayCountIsSecret)
     local hasRealCharges = buttonData.hasCharges and true or nil
     local hadDisplayCountBehavior = (buttonData._hasDisplayCount == true or hasRealCharges == true)
     local hadCastCountCandidate = (buttonData._castCountCandidate == true)
@@ -375,13 +382,13 @@ function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
     buttonData._castCountConfirmed = nil
     buttonData._castCountSeeded = nil
 
-    if chargeInfo then
+    if hasChargeInfo then
         buttonData._castCountCandidate = nil
         buttonData._castCountSelf = nil
         buttonData._castCountEventSpellID = nil
         buttonData._hasDisplayCount = nil
         buttonData._displayCountFamily = nil
-        local mc = maxCharges or chargeInfo.maxCharges
+        local mc = maxCharges
         if mc and mc > 1 then
             hasRealCharges = true
             if mc ~= buttonData.maxCharges then
@@ -403,9 +410,7 @@ function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
         -- "N" when the pool is active.
         hasRealCharges = nil
         self._hasDisplayCountCandidates = true
-        local rawDisplayCount = C_Spell.GetSpellDisplayCount(chargeQueryID)
-        if not issecretvalue(rawDisplayCount) then
-            local displayCount = tonumber(rawDisplayCount)
+        if not displayCountIsSecret then
             if displayCount ~= nil then
                 buttonData._hasDisplayCount = true
                 buttonData._displayCountFamily = true
@@ -454,16 +459,43 @@ function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
     buttonData.hasCharges = hasRealCharges
 end
 
+function CooldownCompanion:UpdateSpellChargeMetadata(buttonData, spellID, opts)
+    if not (buttonData and buttonData.type == "spell") then
+        return
+    end
+    ApplySpellChargeMetadata(self, buttonData, opts, ReadSpellChargeMetadata(spellID or buttonData.id))
+end
+
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
 function CooldownCompanion:RefreshChargeFlags(typeFilter)
+    local spellReads
     if typeFilter ~= "item" then
         self._hasDisplayCountCandidates = false
+        -- Share only this invocation's spell facts. Every entry still applies
+        -- its own history/defaults, including unloaded panels and aura entries.
+        -- Direct callers (Rotation Assistant) keep reading on every update.
+        spellReads = {}
     end
     for _, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
-                self:UpdateSpellChargeMetadata(buttonData, buttonData.id)
+                local spellID = buttonData.id
+                local facts = spellReads[spellID]
+                if not facts then
+                    local hasChargeInfo, maxCharges, displayCount, displayCountIsSecret = ReadSpellChargeMetadata(spellID)
+                    facts = {
+                        hasChargeInfo = hasChargeInfo,
+                        maxCharges = maxCharges,
+                        displayCount = displayCount,
+                        displayCountIsSecret = displayCountIsSecret,
+                    }
+                    if spellID ~= nil then
+                        spellReads[spellID] = facts
+                    end
+                end
+                ApplySpellChargeMetadata(self, buttonData, nil,
+                    facts.hasChargeInfo, facts.maxCharges, facts.displayCount, facts.displayCountIsSecret)
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items; unavailable charged items can
                 -- be indistinguishable from unowned items through count APIs.
