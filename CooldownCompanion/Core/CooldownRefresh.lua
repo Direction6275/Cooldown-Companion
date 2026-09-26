@@ -52,7 +52,9 @@
            GCD swipe on an icon or bar button no longer forces a walk because
            its swipe, numbers, and iconFill self-animate. Text mode, charge
            recharge, ready-glow windows, and hide-unusable fail-open state
-           still force walks.
+           still force walks. Standalone Indicator manual item timers/drains
+           register at their readout writer via PinCooldownTicker, since their
+           hidden source buttons bypass the ordinary classifier.
         2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
            Coupled to the hide-unusable floorFailOpen term in
@@ -86,6 +88,15 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+
+-- Register time-driven work at its owner, including standalone visuals whose
+-- backing buttons return early. Direct/routed updates may wake the ticker;
+-- only a completed full walk may restore idle eligibility.
+function CooldownCompanion:PinCooldownTicker(term)
+    self._passTimeStateSeen = true
+    self._tickerIdleEligible = false
+    if term then self:CountTickerForce(term) end
+end
 
 -- F2: while the idle skip is active, force a full walk at least once per this
 -- many ticks (1.0s at the 0.1s ticker) so nothing can go stale longer than the

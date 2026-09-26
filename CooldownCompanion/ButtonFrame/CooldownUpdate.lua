@@ -481,18 +481,7 @@ end
 -- every mode.
 -- Discrete edges (cooldown start/end) stay event-covered; the skip only
 -- suppresses the redundant continuous middle.
--- Pin the ticker: this pass saw time-driven state, so the next tick must walk
--- and idle-skip eligibility is lost. term (optional) names the forcing term
--- for the dev-gated attribution counters.
-local function PinTickerForce(term)
-    CooldownCompanion._passTimeStateSeen = true
-    CooldownCompanion._tickerIdleEligible = false
-    if term then
-        CooldownCompanion:CountTickerForce(term)
-    end
-end
-
-local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
+local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local readyGlow, forced
@@ -517,19 +506,6 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
         -- edges stay event-covered.
     end
 
-    -- Indicator item timers and drains use plain remaining seconds, so unlike
-    -- native spell/aura duration widgets they need the normal walk cadence.
-    local indicatorItem = false
-    if (not forced or telemetryOn) and button._cooldownState == COOLDOWN_STATE_COOLDOWN
-        and (button._itemCdDuration or 0) > 0 and not button._durationObj then
-        local settings = ST.Indicator.Settings(group)
-        if settings and settings.tracking ~= "aura" and ST.Indicator.Primary(group) == button.buttonData then
-            indicatorItem = settings.readouts.timer == true
-                or (settings.displayType == "texture" and settings.progress.enabled == true)
-            forced = forced or indicatorItem
-        end
-    end
-
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
     -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
     -- marks demoted), so it must force regardless of timeActive.
@@ -540,14 +516,13 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
     end
 
     if forced then
-        PinTickerForce()
+        CooldownCompanion:PinCooldownTicker()
         -- Forcing attribution (dev-gated, observe-only): name the term(s) that
         -- pinned this walk. Inert without the CC_DevBridge dev addon.
         if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
             if text then RefreshTelemetry:CountForce("text") end
-            if indicatorItem then RefreshTelemetry:CountForce("indicator-item") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
         end
     end
@@ -1237,7 +1212,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             -- pin the ticker here for hideWhileUnusable (the walk is what re-shows the
             -- button when usability flips).
             if floorFailOpen then
-                PinTickerForce(floorFailOpen)
+                CooldownCompanion:PinCooldownTicker(floorFailOpen)
             end
             return  -- Skip all visual updates
         else
@@ -1266,7 +1241,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             end
             -- Combat ticker floor fail-open: see the non-compact branch above.
             if floorFailOpen then
-                PinTickerForce(floorFailOpen)
+                CooldownCompanion:PinCooldownTicker(floorFailOpen)
             end
             return  -- Skip visual updates for hidden buttons
         else
@@ -1334,5 +1309,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
+    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
 end

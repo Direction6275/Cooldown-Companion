@@ -96,6 +96,7 @@ local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
 
 local function HasSavedSourceRestrictions(source)
     return type(source.loadConditions) == "table" and next(source.loadConditions) ~= nil
+        or type(source.talentConditions) == "table" and #source.talentConditions > 0
 end
 
 local indicatorSourceRestrictions = ST._DefineSettingRoute({
@@ -111,7 +112,8 @@ local indicatorSourceRestrictions = ST._DefineSettingRoute({
     end,
 }):Setting({key = "sources", label = "Source Restrictions",
     aliases = {"source load conditions", "entry load conditions", "source visibility",
-        "source dungeon", "source raid", "source open world", "clear source restrictions"}})
+        "source dungeon", "source raid", "source open world", "clear source restrictions",
+        "source talents", "talent conditions"}})
 
 local function PanelAlphaState(context)
     if context._ccPanelAlphaFinderState then
@@ -2880,23 +2882,33 @@ end
 ------------------------------------------------------------------------
 -- TALENT CONDITIONS (its own section, independent of the show/hide rules)
 ------------------------------------------------------------------------
-local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext)
+local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext, sourceIndex)
     -- Function-local, not upvalues: see the note by the row-grammar imports.
     local AddLabelRow = ST._AddLabelRow
     local BeginRowGrid = ST._BeginRowGrid
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local profile, groupId = CooldownCompanion.db.profile, CS.selectedGroup
+    local group = profile.groups[groupId]
     if not group then return end
 
     local isBatch = batchContext ~= nil
 
-    local function ApplyToSelected(field, value)
-        ApplyFieldToSelection(group, buttonData, field, value)
+    local function IsCurrentSource()
+        return not sourceIndex or (CooldownCompanion.db.profile == profile
+            and profile.groups[groupId] == group and group.buttons[sourceIndex] == buttonData)
     end
 
-    local talentKey = isBatch
+    local function ApplyToSelected(field, value)
+        if sourceIndex then buttonData[field] = value
+        else ApplyFieldToSelection(group, buttonData, field, value) end
+    end
+
+    local talentKey = sourceIndex and (groupId .. "_indicator_source_" .. sourceIndex .. "_talentcondition")
+        or isBatch
         and (CS.selectedGroup .. "_batch_talentcondition")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
-    local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, "Talent Conditions", talentKey,
+    local headingText = sourceIndex and ("Talents: " .. (buttonData.name or tostring(buttonData.id or sourceIndex)))
+        or "Talent Conditions"
+    local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, headingText, talentKey,
         nil, nil, ROW_SECTION)
 
     -- The heading's "?" chains off the end of its label; the fading rule
@@ -3005,6 +3017,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
+            if not IsCurrentSource() then return end
             if results then
                 local normalized, changed = CooldownCompanion:NormalizeTalentConditions(results)
                 if changed then
@@ -3013,7 +3026,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
             end
             if results then
                 -- Deep-copy each condition for batch mode safety
-                if CS.selectedButtons then
+                if CS.selectedButtons and not sourceIndex then
                     local count = 0
                     for _ in pairs(CS.selectedButtons) do count = count + 1 end
                     if count >= 2 then
@@ -3070,7 +3083,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
                 ApplyToSelected("talentName", nil)
                 ApplyToSelected("talentShow", nil)
             end
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end, initialConditions, group)
     end)
@@ -3101,13 +3114,14 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         clearBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
         clearBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
         clearBtn:SetCallback("OnClick", function()
+            if not IsCurrentSource() then return end
             ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
             ApplyToSelected("talentEntryID", nil)
             ApplyToSelected("talentSpellID", nil)
             ApplyToSelected("talentName", nil)
             ApplyToSelected("talentShow", nil)
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
         strip:AddChild(clearBtn)
@@ -3456,15 +3470,20 @@ local function BuildIndicatorSourceRestrictions(container, group)
                     if onRelease then onRelease(widget, event, ...) end
                 end)
             end
-            BuildEntryLoadConditionsTab(container, source, tabInfoButtons, {
-                -- Repeated source rows belong to one searchable section, not
-                -- the entry-scope descriptors used by ordinary panels.
-                settings = {},
-                headingText = "Source: " .. (source.name or tostring(source.id or index)),
-                collapseKey = "loadconditions_indicator_source_" .. index,
-                allowClear = true,
-                clearLabel = "Clear Source Restrictions",
-            })
+            if type(source.loadConditions) == "table" and next(source.loadConditions) then
+                BuildEntryLoadConditionsTab(container, source, tabInfoButtons, {
+                    -- Repeated source rows belong to one searchable section, not
+                    -- the entry-scope descriptors used by ordinary panels.
+                    settings = {},
+                    headingText = "Source: " .. (source.name or tostring(source.id or index)),
+                    collapseKey = "loadconditions_indicator_source_" .. index,
+                    allowClear = true,
+                    clearLabel = "Clear Load Conditions",
+                })
+            end
+            if type(source.talentConditions) == "table" and #source.talentConditions > 0 then
+                BuildEntryTalentConditionsSection(container, source, tabInfoButtons, nil, index)
+            end
         end
     end
 end

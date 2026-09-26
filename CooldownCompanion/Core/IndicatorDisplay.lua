@@ -140,6 +140,14 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
         local duration = driver and (driver._chargeRecharging and driver._chargeDurationObj or driver._durationObj)
         local itemDuration = driver and driver._itemCdDuration or 0
         local itemRemaining = itemDuration > 0 and math.max(0, itemDuration - (GetTime() - (driver._itemCdStart or 0))) or 0
+        -- Manual readouts need the normal walk cadence while they advance.
+        -- Register here: the source button is hidden even when this display is
+        -- visible, so its ordinary time-state classifier is never reached.
+        -- Native duration bindings and previews animate without this walk.
+        if not duration and itemRemaining > 0 and (options.timer
+            or (settings.displayType == "texture" and settings.progress.enabled)) then
+            Addon:PinCooldownTicker("indicator-item")
+        end
         if options.timer and duration then
             Addon.BindDurationText(readouts.timer, duration, options, false, "cooldown")
         else

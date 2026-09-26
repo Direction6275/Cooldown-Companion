@@ -1220,7 +1220,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     self:SnapshotCooldownPassContext()
     self._cooldownUpdatePassActive = true
     -- F2 idle skip: reset the per-pass time-animation flag. Any button that renders
-    -- time-driven state this walk sets it true (NoteButtonTimeState); a walk that
+    -- time-driven state this walk sets it true (PinCooldownTicker); a walk that
     -- ends with it still false latches idle-eligible below. Fail open.
     self._passTimeStateSeen = false
 
@@ -1237,7 +1237,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     self._cooldownUpdatePassActive = nil
     -- F2 idle-skip eligibility: a completed full walk that saw no time-animated
     -- button latches idle-eligible. Only this line may latch it true; every
-    -- other writer (NoteButtonTimeState) may only clear it to false. It is thus
+    -- other writer (PinCooldownTicker) may only clear it to false. It is thus
     -- never older than the last completed walk. Maintained unconditionally (not
     -- gated on telemetry) so the live-skip predicate (CanSkipIdleTickerRefresh)
     -- can read it. Fail open.
