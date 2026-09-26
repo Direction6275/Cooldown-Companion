@@ -20,15 +20,13 @@ local SelectConfigButton = ST._SelectConfigButton
 
 -- After a successful add, set selection state to the new button so the
 -- next RefreshConfigPanel shows its settings in the editing workspace.
--- Precondition: CS.selectedContainer is already set by the caller's
--- panel/container selection flow.
 local function SelectNewButton(panelId, buttonIndex)
     local group = panelId and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
         and CooldownCompanion.db.profile.groups[panelId]
     if group and group.displayMode == "textures" then
-        SelectConfigPanel(panelId)
+        SelectConfigPanel(panelId, { containerId = group.parentContainerId })
         CS.addingToPanelId = nil
         CS.pendingTexturePickerOpen = panelId
         return
@@ -39,7 +37,9 @@ local function SelectNewButton(panelId, buttonIndex)
     end
     -- scope: an entry that was just added is a named destination, so its own
     -- Settings tab wins over whatever panel tab happened to be open.
-    SelectConfigButton(panelId, buttonIndex, { force = true, scope = "detail" })
+    SelectConfigButton(panelId, buttonIndex, {
+        force = true, scope = "detail", containerId = group and group.parentContainerId,
+    })
 end
 
 local function GetTargetGroup(groupId)
@@ -438,8 +438,37 @@ local function GetAddPresentation(groupId)
         and CS.panelAddPresentation == "bars" and "bars" or "icons"
 end
 
+-- Capture add intent without changing navigation. Items retain this request
+-- while loading; a removed panel or a changed profile is not the same target.
+local function CreateAddRequest(opts)
+    opts = opts or {}
+    local groupId = opts.groupId or CS.selectedGroup
+    local profile = CooldownCompanion.db.profile
+    local group = groupId and profile.groups[groupId]
+    if not group then return nil end
+    return {
+        groupId = groupId, group = group, profile = profile,
+        section = opts.section, presentation = opts.presentation or GetAddPresentation(groupId),
+        autoSelect = opts.autoSelect ~= false,
+        tutorialInput = opts.tutorialInput, clearInput = opts.clearInput,
+    }
+end
+
+local function CompleteAdd(request, buttonIndex)
+    if request.autoSelect then SelectNewButton(request.groupId, buttonIndex) end
+    -- The tutorial selects its new entry when advancing. Do not let it undo
+    -- navigation during an item load or replace the Texture picker selection.
+    if request.autoSelect and request.tutorialInput and NotifyTutorialAction
+        and CS.selectedGroup == request.groupId and CS.selectedButton == buttonIndex then
+        NotifyTutorialAction("inline_add_succeeded", {
+            groupId = request.groupId, buttonIndex = buttonIndex, rawInput = request.tutorialInput,
+        })
+    end
+end
+
 local function TryAddSpell(input, isPetSpell, forceAura, opts)
-    if input == "" or not CS.selectedGroup then return false end
+    local request = CreateAddRequest(opts)
+    if input == "" or not request then return false end
 
     local spellId = tonumber(input)
     local spellName
@@ -464,7 +493,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
             return false
         end
         local route, reason, detail = ResolveSpellAddRoute(spellId, spellName, forceAura,
-            CS.selectedGroup)
+            request.groupId)
         if not route then
             if reason == "blocked" then
                 PrintBlockedSpellMessage(spellName)
@@ -479,12 +508,12 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
         end
         local addAsAura, routedToAura = route.addAsAura, route.routedToAura
         forceAura = route.forceAura
-        local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName,
-            isPetSpell, addAsAura or nil, forceAura, nil, nil, opts and opts.section, GetAddPresentation(CS.selectedGroup))
+        local idx, notified = CooldownCompanion:AddButtonToGroup(request.groupId, "spell", spellId, spellName,
+            isPetSpell, addAsAura or nil, forceAura, nil, nil, request.section, request.presentation)
         if not idx then
             return false
         end
-        SelectNewButton(CS.selectedGroup, idx)
+        CompleteAdd(request, idx)
         if routedToAura then
             CooldownCompanion:Print("You can't cast " .. spellName .. ", so it's tracked as a buff on you.")
         elseif not notified then
@@ -498,42 +527,42 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
 end
 
 ------------------------------------------------------------------------
--- Helper: Add item to selected group
+-- Helper: Add item to the captured destination
 ------------------------------------------------------------------------
 -- `section` (cursor drops only): the anchor the new entry lands in, handed
 -- to AddButtonToGroup exactly as TryAddSpell hands its own.
-local function FinalizeAddItem(itemId, groupId, autoSelect, section, presentation)
+local function FinalizeAddItem(itemId, request)
+    if CooldownCompanion.db.profile ~= request.profile
+        or request.profile.groups[request.groupId] ~= request.group then
+        return false
+    end
     local itemName = C_Item.GetItemNameByID(itemId) or "Unknown Item"
     local spellName = C_Item.GetItemSpell(itemId)
     if not spellName then
         CooldownCompanion:Print("Item has no usable effect: " .. itemName)
         return false
     end
-    local idx = CooldownCompanion:AddButtonToGroup(groupId, "item", itemId, itemName,
-        nil, nil, nil, nil, nil, section, presentation)
+    local idx = CooldownCompanion:AddButtonToGroup(request.groupId, "item", itemId, itemName,
+        nil, nil, nil, nil, nil, request.section, request.presentation)
     if not idx then
         return false
     end
-    if autoSelect ~= false then
-        SelectNewButton(groupId, idx)
-    end
+    CompleteAdd(request, idx)
     CooldownCompanion:Print("Added item: " .. itemName)
     return true
 end
 
 local function TryAddItem(input, opts)
-    if input == "" or not CS.selectedGroup then return false end
-    if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
-    local section = opts and opts.section
-    local presentation = GetAddPresentation(CS.selectedGroup)
+    local request = CreateAddRequest(opts)
+    if input == "" or not request then return false end
+    local rejection = CooldownCompanion:GetPanelManualEntryRejectMessage(request.group, AURA_PANEL_ITEM_PROBE)
+    if rejection then
+        CooldownCompanion:Print(rejection)
+        return false
+    end
 
     local itemId = tonumber(input)
-    local itemName
-
-    if itemId then
-        itemName = C_Item.GetItemNameByID(itemId)
-    else
-        itemName = input
+    if not itemId then
         itemId = C_Item.GetItemIDForItemInfo(input)
     end
 
@@ -543,7 +572,7 @@ local function TryAddItem(input, opts)
     end
 
     if C_Item.IsItemDataCachedByID(itemId) then
-        return FinalizeAddItem(itemId, CS.selectedGroup, nil, section, presentation)
+        return FinalizeAddItem(itemId, request)
     end
 
     -- Only do async loading for ID-based input (not name-based).
@@ -559,36 +588,44 @@ local function TryAddItem(input, opts)
         CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
         CooldownCompanion.pendingItemLoad = nil
     end
-    local capturedGroup = CS.selectedGroup
-    CooldownCompanion.pendingItemLoad = itemId
+    CooldownCompanion.pendingItemLoad = request
     CooldownCompanion:Print("Loading item data...")
-    C_Item.RequestLoadItemDataByID(itemId)
+    local requesting, completed, added = true, false, false
     CooldownCompanion:RegisterEvent("ITEM_DATA_LOAD_RESULT", function(_, loadedItemId, success)
-        if loadedItemId ~= CooldownCompanion.pendingItemLoad then return end
+        if CooldownCompanion.pendingItemLoad ~= request or loadedItemId ~= itemId then return end
         CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
         CooldownCompanion.pendingItemLoad = nil
+        completed = true
         if not success then
             CooldownCompanion:Print("Item not found: " .. input)
             return
         end
         -- Skip auto-select if the user navigated away during async load
-        local stillOnGroup = CS.selectedGroup == capturedGroup
+        local stillOnGroup = CS.selectedGroup == request.groupId
+        request.autoSelect = request.autoSelect and (requesting or stillOnGroup)
         -- The section rides the closure like the group does: the drop named a
         -- place in THAT panel, and the entry lands there whether or not the
         -- selection has moved on since.
-        if FinalizeAddItem(itemId, capturedGroup, stillOnGroup, section, presentation) then
-            if ST._ClearWideAddBoxAfterAdd then
-                ST._ClearWideAddBoxAfterAdd(input)
+        added = FinalizeAddItem(itemId, request)
+        if added and not requesting then
+            if stillOnGroup and request.clearInput and ST._ClearWideAddBoxAfterAdd then
+                ST._ClearWideAddBoxAfterAdd(request.clearInput)
             end
             CooldownCompanion:RefreshConfigPanel()
         end
     end)
-    return false
+    -- The generated live API marks ITEM_DATA_LOAD_RESULT synchronous: listen
+    -- first and let an immediate completion return normally to the caller.
+    C_Item.RequestLoadItemDataByID(itemId)
+    requesting = false
+    if completed then return added end
+    return false, "pending"
 end
 
-local function TryAddEquipmentSlot(itemSlot)
-    if not CS.selectedGroup then return false end
-    if IsTriggerPanelTarget(CS.selectedGroup) then return false end
+local function TryAddEquipmentSlot(itemSlot, opts)
+    local request = CreateAddRequest(opts)
+    if not request then return false end
+    if IsTriggerPanelTarget(request.groupId) then return false end
 
     local slotData = {
         type = CooldownCompanion.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
@@ -599,12 +636,12 @@ local function TryAddEquipmentSlot(itemSlot)
         and not CooldownCompanion.IsEquipmentSlotEntry(slotData) then
         return false
     end
-    if RejectNonAuraPanelAdd(CS.selectedGroup, slotData) then return false end
+    if RejectNonAuraPanelAdd(request.groupId, slotData) then return false end
 
     local slotName = CooldownCompanion.GetEquipmentSlotDisplayName
         and CooldownCompanion.GetEquipmentSlotDisplayName(slotData) or "Trinket Slot"
     local idx = CooldownCompanion:AddEquipmentSlotToGroup(
-        CS.selectedGroup,
+        request.groupId,
         itemSlot,
         slotData.itemSlotKind
     )
@@ -612,8 +649,8 @@ local function TryAddEquipmentSlot(itemSlot)
         return false
     end
 
-    if GetAddPresentation(CS.selectedGroup) == "bars" then CooldownCompanion:SetEntryPresentation(CS.selectedGroup, idx, "bars") end
-    SelectNewButton(CS.selectedGroup, idx)
+    if request.presentation == "bars" then CooldownCompanion:SetEntryPresentation(request.groupId, idx, "bars") end
+    CompleteAdd(request, idx)
     CooldownCompanion:Print("Added equipment slot: " .. slotName)
     return true
 end
@@ -644,95 +681,25 @@ end
 ------------------------------------------------------------------------
 -- Unified add: resolve input as spell or item automatically
 ------------------------------------------------------------------------
-local function TryAdd(input)
-    if input == "" or not CS.selectedGroup then return false end
+local function TryAdd(input, opts)
+    if input == "" or not GetTargetGroup(opts and opts.groupId or CS.selectedGroup) then return false end
 
     local equipmentSlot = ResolveEquipmentSlotInput(input)
     if equipmentSlot then
-        return TryAddEquipmentSlot(equipmentSlot)
+        return TryAddEquipmentSlot(equipmentSlot, opts)
     end
 
-    -- An Aura Panel takes aura entries only, so this resolver narrows to the
-    -- spell door: every spell hand-off goes through TryAddSpell, which owns the
-    -- aura routing and the reject, and the item doors refuse before they start.
-    local isAuraOnlyTarget = TargetPanelIsAuraOnly(CS.selectedGroup)
-
+    -- Resolve the input kind here; the typed doors own routing, acceptance,
+    -- presentation, selection and item loading for every source.
     local id = tonumber(input)
 
     if id then
         -- ID-based input: check both spell and item
         local spellInfo = C_Spell.GetSpellInfo(id)
-        local spellFound = spellInfo and spellInfo.name
-        if spellFound and IsBlockedSpellForTracking(id) then
-            PrintBlockedSpellMessage(spellInfo.name)
-            return false
+        if spellInfo and spellInfo.name then
+            return TryAddSpell(tostring(id), nil, nil, opts)
         end
-        local passiveOrProc = spellFound and IsPassiveOrProc(id)
-
-        -- Passive/proc spell → aura-tracking entry (12.1: no CDM requirement)
-        if spellFound and passiveOrProc then
-            return TryAddSpell(tostring(id))
-        end
-
-        -- Non-passive spell → add it
-        if spellFound and not passiveOrProc then
-            if isAuraOnlyTarget or not CanPlayerEverCastSpellCached(id) then
-                return TryAddSpell(tostring(id))
-            end
-            local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", id, spellInfo.name)
-            if not idx then
-                return false
-            end
-            SelectNewButton(CS.selectedGroup, idx)
-            if not notified then
-                CooldownCompanion:Print("Added spell: " .. spellInfo.name)
-            end
-            return true
-        end
-
-        -- Try as item
-        if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
-        local itemName = C_Item.GetItemNameByID(id)
-        local itemId = C_Item.GetItemIDForItemInfo(id)
-        if itemId then
-            if C_Item.IsItemDataCachedByID(itemId) then
-                local result = FinalizeAddItem(itemId, CS.selectedGroup)
-                if result then return true end
-                -- FinalizeAddItem already printed "no usable effect"
-                return false
-            end
-            -- Item not cached — request async load
-            if CooldownCompanion.pendingItemLoad then
-                CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
-                CooldownCompanion.pendingItemLoad = nil
-            end
-            local capturedGroup = CS.selectedGroup
-            CooldownCompanion.pendingItemLoad = itemId
-            CooldownCompanion:Print("Loading item data...")
-            C_Item.RequestLoadItemDataByID(itemId)
-            CooldownCompanion:RegisterEvent("ITEM_DATA_LOAD_RESULT", function(_, loadedItemId, success)
-                if loadedItemId ~= CooldownCompanion.pendingItemLoad then return end
-                CooldownCompanion:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
-                CooldownCompanion.pendingItemLoad = nil
-                if not success then
-                    CooldownCompanion:Print("Not found: " .. input)
-                    return
-                end
-                -- Skip auto-select if the user navigated away during async load
-                local stillOnGroup = CS.selectedGroup == capturedGroup
-                if FinalizeAddItem(itemId, capturedGroup, stillOnGroup) then
-                    if ST._ClearWideAddBoxAfterAdd then
-                        ST._ClearWideAddBoxAfterAdd(input)
-                    end
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end)
-            return false
-        end
-
-        -- No item match
-        CooldownCompanion:Print("Not found: " .. input)
-        return false
+        return TryAddItem(input, opts)
     else
         -- Name-based input: try spell first, then item
         local spellInfo = C_Spell.GetSpellInfo(input)
@@ -745,38 +712,11 @@ local function TryAdd(input)
         end
 
         if spellId and spellName then
-            if IsBlockedSpellForTracking(spellId) then
-                PrintBlockedSpellMessage(spellName)
-                return false
-            end
-            local passiveOrProc = IsPassiveOrProc(spellId)
-            if passiveOrProc then
-                return TryAddSpell(tostring(spellId))
-            else
-                if isAuraOnlyTarget or not CanPlayerEverCastSpellCached(spellId) then
-                    return TryAddSpell(tostring(spellId))
-                end
-                local idx, notified = CooldownCompanion:AddButtonToGroup(CS.selectedGroup, "spell", spellId, spellName)
-                if not idx then
-                    return false
-                end
-                SelectNewButton(CS.selectedGroup, idx)
-                if not notified then
-                    CooldownCompanion:Print("Added spell: " .. spellName)
-                end
-                return true
-            end
+            return TryAddSpell(tostring(spellId), nil, nil, opts)
         end
 
         -- Try as item
-        if RejectNonAuraPanelAdd(CS.selectedGroup, AURA_PANEL_ITEM_PROBE) then return false end
-        local itemId = C_Item.GetItemIDForItemInfo(input)
-        if itemId and C_Item.IsItemDataCachedByID(itemId) then
-            return FinalizeAddItem(itemId, CS.selectedGroup)
-        end
-
-        CooldownCompanion:Print("Not found: " .. input .. ". Try using the spell ID or drag from spellbook.")
-        return false
+        return TryAddItem(input, opts)
     end
 end
 
@@ -837,24 +777,25 @@ local function TryReceiveCursorDrop(opts)
     local cursorType, cursorID, _, cursorSpellID = GetCursorInfo()
     if not cursorType then return false end
 
-    if not CS.selectedGroup then
+    if not (opts and opts.groupId or CS.selectedGroup) then
         CooldownCompanion:Print("Select a group first before dropping spells or items.")
         ClearCursor()
         return false
     end
 
-    local added = false
+    local added, status = false, nil
     if cursorType == "spell" and cursorSpellID then
-        added = TryAddSpell(tostring(cursorSpellID), nil, nil, opts)
+        added, status = TryAddSpell(tostring(cursorSpellID), nil, nil, opts)
     elseif cursorType == "petaction" and cursorID then
-        added = TryAddSpell(tostring(cursorID), true, nil, opts)
+        added, status = TryAddSpell(tostring(cursorID), true, nil, opts)
     elseif cursorType == "item" and cursorID then
-        added = TryAddItem(tostring(cursorID), opts)
+        added, status = TryAddItem(tostring(cursorID), opts)
     end
 
-    if added then
+    if added or status == "pending" then
         ClearCursor()
-        CooldownCompanion:RefreshConfigPanel()
+        if added then CooldownCompanion:RefreshConfigPanel() end
+        return true
     end
     return added
 end
@@ -1553,27 +1494,22 @@ end
 -- Autocomplete: Select handler
 ------------------------------------------------------------------------
 local function OnAutocompleteSelect(entry)
+    local widget = autocompleteDropdown and autocompleteDropdown._anchorWidget
+    local originalInput = widget and widget:GetText()
     HideAutocomplete()
     local addTargetGroupId = CS.addingToPanelId or CS.selectedGroup
     if not addTargetGroupId then return end
 
-    CS.selectedGroup = addTargetGroupId
+    local opts = { groupId = addTargetGroupId, tutorialInput = entry.name, clearInput = originalInput }
     local added
     if entry.isEquipmentSlot then
-        added = TryAddEquipmentSlot(entry.itemSlot)
+        added = TryAddEquipmentSlot(entry.itemSlot, opts)
     elseif entry.isItem then
-        added = TryAddItem(tostring(entry.id))
+        added = TryAddItem(tostring(entry.id), opts)
     else
-        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura)
+        added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura, opts)
     end
     if added then
-        if NotifyTutorialAction and CS.selectedGroup and CS.selectedButton then
-            NotifyTutorialAction("inline_add_succeeded", {
-                groupId = CS.selectedGroup,
-                buttonIndex = CS.selectedButton,
-                rawInput = entry.name,
-            })
-        end
         CS.newInput = ""
         CS.pendingEditBoxFocus = true
         CooldownCompanion:RefreshConfigPanel()

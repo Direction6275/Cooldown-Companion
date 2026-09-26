@@ -2566,17 +2566,11 @@ local function RefreshColumn1(preserveDrag)
                     overlay:SetAlpha(1)
                     overlay:Hide()
                     overlay:SetScript("OnReceiveDrag", function()
-                        local previousPanelId = CS.selectedGroup
-                        CS.selectedGroup = panelId
-                        TryReceiveCursorDrop()
-                        CS.selectedGroup = previousPanelId
+                        TryReceiveCursorDrop({ groupId = panelId, autoSelect = CS.selectedGroup == panelId })
                     end)
                     overlay:SetScript("OnMouseUp", function(_, mouseButton)
                         if mouseButton == "LeftButton" and GetCursorInfo() then
-                            local previousPanelId = CS.selectedGroup
-                            CS.selectedGroup = panelId
-                            TryReceiveCursorDrop()
-                            CS.selectedGroup = previousPanelId
+                            TryReceiveCursorDrop({ groupId = panelId, autoSelect = CS.selectedGroup == panelId })
                         end
                     end)
                     CS._panelDropTargets[#CS._panelDropTargets + 1] = {
@@ -2611,10 +2605,9 @@ local function RefreshColumn1(preserveDrag)
                     end
                     if button == "LeftButton" then
                         if not searchResults and GetCursorInfo() then
-                            local previousPanelId = CS.selectedGroup
-                            CS.selectedGroup = panelId
-                            local received = TryReceiveCursorDrop()
-                            CS.selectedGroup = previousPanelId
+                            local received = TryReceiveCursorDrop({
+                                groupId = panelId, autoSelect = CS.selectedGroup == panelId,
+                            })
                             if received then return end
                         end
                         -- Only an actual navigation click dismisses browsing;

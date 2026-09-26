@@ -2047,6 +2047,7 @@ local function EnsurePreviewDropOverlay(host)
                 return
             end
             ST._TryReceiveCursorDrop({
+                groupId = CS.selectedGroup,
                 section = target and (target.create or target.section) or nil,
             })
         end
@@ -2348,14 +2349,7 @@ local function EnsureAddBox(col3)
         -- inline-add target left over from browse mode must not win.
         CS.addingToPanelId = nil
         local targetGroupId = CS.selectedGroup
-        if not ST._TryAdd(text) then return end
-        if ST._NotifyTutorialAction and CS.selectedButton then
-            ST._NotifyTutorialAction("inline_add_succeeded", {
-                groupId = targetGroupId,
-                buttonIndex = CS.selectedButton,
-                rawInput = text,
-            })
-        end
+        if not ST._TryAdd(text, { groupId = targetGroupId, tutorialInput = text, clearInput = text }) then return end
         widget:SetText("")
         local targetGroup = CooldownCompanion.db.profile.groups[targetGroupId]
         if not (targetGroup and targetGroup.displayMode == "textures") then
