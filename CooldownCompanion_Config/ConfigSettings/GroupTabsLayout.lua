@@ -65,75 +65,53 @@ local LAYOUT_FINDER = { sections = {}, layers = {} }
 -- remains panel-owned, and Settings Finder must not offer it in entry scope.
 local PRIMARY_LAYOUT_SCOPE = "panel"
 
-local function LayoutFinderGroup(context)
-    if context and context.group then return context.group end
-    return CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup] or nil
-end
-
--- Resolve the same structural choices BuildLayoutTab uses without opening the
--- tab or mutating its remembered target mode. Settings Finder prepares this
--- snapshot once per editing context, so every off-tab result is correct on the
--- first refresh and typing only reads the prepared descriptor booleans.
-local function GetLayoutFinderState(context)
-    if context and context._ccLayoutFinderState then
-        return context._ccLayoutFinderState
-    end
-
-    local group = LayoutFinderGroup(context)
-    if not group then return nil end
-    local owner = group._attachedBarOwner or group
-
-    local state = { sections = {} }
-    if context then context._ccLayoutFinderState = state end
-
-    local displayMode = group.displayMode or "icons"
-    local standalone = displayMode == "textures" or displayMode == "trigger"
+-- Shared decisions take the caller's actual editing group and target memory.
+-- Standalone settings preparation and all saved/UI-state writes stay outside.
+local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, settings)
     local isPanel = group.parentContainerId ~= nil
-    local groupId = (context and context.groupId) or CS.selectedGroup
     local anchor = group.anchor or {}
-    local targetMode
+    local panelContainerFrame, currentAnchor, currentAnchorGroupId, isCursorAnchor, canUseCursorAnchor, targetMode
 
-    if standalone then
-        local settings = GetStandaloneTextureSettings(group, false) or {}
-        local relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
+    if group.displayMode == "textures" or group.displayMode == "trigger" then
+        settings = settings or {}
+        currentAnchor = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
             and settings.relativeTo or "UIParent"
-        local isCursorAnchor = CooldownCompanion.IsCursorAnchor
+        isCursorAnchor = CooldownCompanion.IsCursorAnchor
             and CooldownCompanion:IsCursorAnchor(anchor) or false
-        local canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
+        canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
         if isCursorAnchor and not canUseCursorAnchor then
             isCursorAnchor = false
         end
-        local anchorKind = CooldownCompanion:ParseAddonAnchorFrameName(relativeTo)
+        local anchorKind
+        anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(currentAnchor)
         local currentAnchorIsPanel = anchorKind == "group"
             and isPanel
             and CooldownCompanion.IsPanelAnchoredToPanel
             and CooldownCompanion:IsPanelAnchoredToPanel(groupId)
             or false
-        local storedTargetMode = CS.layoutAnchorTargetMode
-            and CS.layoutAnchorTargetMode[groupId]
+        if not currentAnchorIsPanel then currentAnchorGroupId = nil end
 
         if isCursorAnchor then
             targetMode = "cursor"
         elseif currentAnchorIsPanel then
             targetMode = "panel"
-        elseif relativeTo ~= "UIParent" then
+        elseif currentAnchor ~= "UIParent" then
             targetMode = "frame"
-        elseif storedTargetMode == "panel" and isPanel then
+        elseif preferredTargetMode == "panel" and isPanel then
             targetMode = "panel"
-        elseif storedTargetMode == "frame" then
+        elseif preferredTargetMode == "frame" then
             targetMode = "frame"
         else
             targetMode = "group"
         end
     else
-        local currentAnchor = anchor.relativeTo
-        local panelContainerFrame = isPanel
-            and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
-        local isCursorAnchor = isPanel
+        panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
+        currentAnchor = anchor.relativeTo
+        isCursorAnchor = isPanel
             and CooldownCompanion.IsCursorAnchor
             and CooldownCompanion:IsCursorAnchor(anchor)
             or false
-        local currentAnchorGroupId = type(currentAnchor) == "string"
+        currentAnchorGroupId = type(currentAnchor) == "string"
             and currentAnchor:match("^CooldownCompanionGroup(%d+)$") or nil
 
         if isCursorAnchor then
@@ -147,8 +125,6 @@ local function GetLayoutFinderState(context)
             targetMode = "frame"
         end
 
-        local preferredTargetMode = CS.layoutAnchorTargetMode
-            and CS.layoutAnchorTargetMode[groupId]
         if (targetMode == "group" or targetMode == "cursor")
             and (preferredTargetMode == "frame"
                 or (isPanel and preferredTargetMode == "panel")) then
@@ -156,20 +132,100 @@ local function GetLayoutFinderState(context)
         end
     end
 
+    return {
+        targetMode = targetMode,
+        isPanel = isPanel,
+        panelContainerFrame = panelContainerFrame,
+        currentAnchor = currentAnchor,
+        currentAnchorGroupId = currentAnchorGroupId,
+        isCursorAnchor = isCursorAnchor,
+        canUseCursorAnchor = canUseCursorAnchor,
+    }
+end
+
+local function ResolveLayoutArrangementState(group, layoutCount)
+    local displayMode = group.displayMode or "icons"
+    local standalone = displayMode == "textures" or displayMode == "trigger"
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
-    local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
-    local allDefaults = group._settingsContext and group._settingsContext.mode ~= "entry"
+    local isTotemPanel = ST.IsTotemPanelGroup(group)
+    local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
     local isIconsMode = displayMode == "icons"
     local isBarMode = displayMode == "bars"
     local isTextMode = displayMode == "text"
     local auraBarPanel = isBarMode and isAuraPanel
 
+    return {
+        showAll = showAll,
+        isTextMode = isTextMode,
+        isTotemPanel = isTotemPanel,
+        auraBarPanel = auraBarPanel,
+        allowCentered = not isAuraPanel and not isTotemPanel,
+        horizontalBars = not standalone and isBarMode and (showAll or layoutCount > 1) and not auraBarPanel,
+        orientation = not standalone and not isBarMode,
+        growth = not standalone and (showAll or layoutCount > 1),
+        collapse = not standalone and (isAuraPanel or isTotemPanel),
+        buttonsPerLine = not standalone and not auraBarPanel and not isTextMode,
+        entriesPerLine = not standalone and isTextMode and layoutCount > 1,
+        compact = not standalone and not isAuraPanel and not isTotemPanel
+            and (isIconsMode or isBarMode or isTextMode),
+    }
+end
+
+local function HasLayoutIcons(group, groupId)
+    local owner = group._attachedBarOwner or group
+    return not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
+end
+
+local function HasCustomIconStrata(group, hasIcons)
+    return (group.displayMode or "icons") == "icons" and not CooldownCompanion:IsAuraPanel(group)
+        and not ST.IsTotemPanelGroup(group) and hasIcons
+end
+
+local function ResolveLayoutSectionState(group, sectionAnchor)
+    local memberCount = 0
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if ST.GetPanelSectionForEntry(group, buttonData) == sectionAnchor then
+            memberCount = memberCount + 1
+        end
+    end
+    local axis = ST.GetPanelSectionPlacement(group, sectionAnchor)
+    return {
+        auraOnly = true,
+        xOffset = true,
+        yOffset = true,
+        axis = axis,
+        memberCount = memberCount,
+        iconsPerRow = axis == "h" and memberCount > 1,
+        iconsPerColumn = axis == "v" and memberCount > 1,
+    }
+end
+
+-- Finder prepares all Layout facts once per editing context. Builders use the
+-- same decisions only where needed, without scanning sections just for Strata.
+-- Search keystrokes continue to read the prepared descriptor booleans.
+local function GetLayoutFinderState(context)
+    if context and context._ccLayoutFinderState then return context._ccLayoutFinderState end
+    local group = context and context.group
+    if not group then return nil end
+    local groupId = context.groupId
+    local owner = group._attachedBarOwner or group
+    local displayMode = group.displayMode or "icons"
+    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local anchorState = ResolveLayoutAnchorState(group, groupId,
+        CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId],
+        standalone and GetStandaloneTextureSettings(group, false) or nil)
+    local targetMode = anchorState.targetMode
+    local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
+    local state = ResolveLayoutArrangementState(group, buttonCount)
+    state.sections = {}
+    context._ccLayoutFinderState = state
+
     state.anchorTarget = true
-    state.anchorPanel = isPanel and targetMode == "panel"
+    state.anchorPanel = anchorState.isPanel and targetMode == "panel"
     state.anchorFrame = targetMode == "frame"
     state.autoAnchor = not standalone
         and CooldownCompanion:IsIconLikeDisplayMode(owner.displayMode)
-        and not isAuraPanel
+        and not CooldownCompanion:IsAuraPanel(group)
 
     state.panelPoint = targetMode == "cursor"
     state.anchorPoint = not standalone and targetMode ~= "cursor"
@@ -182,14 +238,6 @@ local function GetLayoutFinderState(context)
     state.xOffset = true
     state.yOffset = true
 
-    state.horizontalBars = not standalone and isBarMode and (allDefaults or buttonCount > 1) and not auraBarPanel
-    state.orientation = not standalone and not isBarMode
-    state.growth = not standalone and (allDefaults or buttonCount > 1)
-    state.collapse = not standalone and (isAuraPanel or ST.IsTotemPanelGroup(group))
-    state.buttonsPerLine = not standalone and not auraBarPanel and not isTextMode
-    state.entriesPerLine = not standalone and isTextMode and buttonCount > 1
-    state.compact = not standalone and not isAuraPanel and not ST.IsTotemPanelGroup(group)
-        and (isIconsMode or isBarMode or isTextMode)
     -- Structural, not compactLayout state: the gear now builds with Compact
     -- Mode off too, opening its panel read-only behind the Turn On footer, so
     -- the rows inside stay findable. Only the centered-growth restriction
@@ -202,14 +250,16 @@ local function GetLayoutFinderState(context)
             ST.GetPanelLayoutOrientation(group.displayMode, style)
         ) == nil
 
-    local hasIcons = not ST.PanelSupportsAttachedBars(owner) or ST._GetPanelSettingsContents(owner, groupId).icons
-    state.customStrata = not standalone and isIconsMode and not isAuraPanel and not ST.IsTotemPanelGroup(group) and hasIcons
+    local hasIcons = HasLayoutIcons(group, groupId)
+    state.customStrata = HasCustomIconStrata(group, hasIcons)
     state.customStrataLayers = state.customStrata
         and type(style.strataOrder) == "table"
     state.frameStrata = not standalone
 
-    -- Arrangement controls follow eligible contents, not inactive ghost geometry.
-    if (isIconsMode and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
+    -- Finder visits both presentations; EntryPresentation's builder dispatch
+    -- only calls BuildGridArrangement for the eligible grid presentation.
+    -- Keep that routing gate separate from the shared grid row decisions.
+    if (displayMode == "icons" and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
         or ST.GetPanelLayoutKind(owner) ~= "bars")) then
         for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
             "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
@@ -220,21 +270,7 @@ local function GetLayoutFinderState(context)
         for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
             local section = group.sections[sectionAnchor]
             if type(section) == "table" then
-                local sectionState = {
-                    auraOnly = true,
-                    xOffset = true,
-                    yOffset = true,
-                }
-                local memberCount = 0
-                for _, buttonData in ipairs(group.buttons or {}) do
-                    if ST.GetPanelSectionForEntry(group, buttonData) == sectionAnchor then
-                        memberCount = memberCount + 1
-                    end
-                end
-                local axis = ST.GetPanelSectionPlacement(group, sectionAnchor)
-                sectionState.iconsPerRow = axis == "h" and memberCount > 1
-                sectionState.iconsPerColumn = axis == "v" and memberCount > 1
-                state.sections[sectionAnchor] = sectionState
+                state.sections[sectionAnchor] = ResolveLayoutSectionState(group, sectionAnchor)
             end
         end
     end
@@ -414,11 +450,9 @@ local appearanceTabElements = CS.appearanceTabElements
 -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 local function BuildGridArrangement(container, group, layoutCount)
     local tabInfoButtons = CS.tabInfoButtons
-    local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
+    local state = ResolveLayoutArrangementState(group, layoutCount)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local style = group.style
-    local displayMode = group.displayMode or "icons"
-    local isIconsMode, isBarMode, isTextMode = displayMode == "icons", displayMode == "bars", displayMode == "text"
     -- Two settings have to be read together here whatever the mode: growth
     -- direction is relabelled by the orientation above it, so they always
     -- share a column and always sit adjacent.
@@ -432,7 +466,7 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- neither the orientation question nor the wrap count has an answer to give
     -- here. Aura ICON Panels keep both - their grid follows the same style keys
     -- an ordinary icon panel's does.
-    local auraBarPanel = isBarMode and CooldownCompanion:IsAuraPanel(group)
+    local auraBarPanel = state.auraBarPanel
 
     -- Orientation is remembered per display mode (bar and text panels own
     -- their keys, unset = vertical), so a mode swap keeps every mode's
@@ -450,7 +484,7 @@ local function BuildGridArrangement(container, group, layoutCount)
         end
     end
 
-    if isBarMode then
+    if state.horizontalBars then
         -- A bar panel's orientation is one question ("do the bars sit in a
         -- row?"), so it is a checkbox rather than the horizontal/vertical
         -- dropdown the other modes show. With a single bar there is nothing
@@ -459,19 +493,17 @@ local function BuildGridArrangement(container, group, layoutCount)
         -- Which way a single bar's own FILL runs is a different question - it
         -- is what the bar looks like, not where the bars sit - so those two
         -- rows live with the bar's shape on the Appearance tab (Bar Settings).
-        if (layoutCount > 1 or showAll) and not auraBarPanel then
-            AddCheckboxRow(arrangeLeft, {
-                label = "Horizontal Bar Layout",
-                setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
-                value = orientation == "horizontal",
-                onChange = function(val)
-                    style.barOrientation = val and "horizontal" or "vertical"
-                    SwapCenteredGrowthAxis()
-                    refreshStyle("style-settings", "layout")
-                end,
-            })
-        end
-    else
+        AddCheckboxRow(arrangeLeft, {
+            label = "Horizontal Bar Layout",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.horizontalBars,
+            value = orientation == "horizontal",
+            onChange = function(val)
+                style.barOrientation = val and "horizontal" or "vertical"
+                SwapCenteredGrowthAxis()
+                refreshStyle("style-settings", "layout")
+            end,
+        })
+    elseif state.orientation then
         AddDropdownRow(arrangeLeft, {
             label = "Orientation",
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.orientation,
@@ -482,7 +514,7 @@ local function BuildGridArrangement(container, group, layoutCount)
             list = { horizontal = "Horizontal", vertical = "Vertical" },
             value = orientation,
             onChange = function(val)
-                if isTextMode then
+                if state.isTextMode then
                     style.textOrientation = val
                 else
                     style.orientation = val
@@ -493,12 +525,12 @@ local function BuildGridArrangement(container, group, layoutCount)
         })
     end
 
-    if layoutCount > 1 or showAll then
+    if state.growth then
         local labels, order
         -- Aura panels delegate intra-line placement to Blizzard's flow
         -- container, so they fold centered values to TOPLEFT at runtime and
         -- this dropdown displays the same fold.
-        local allowCentered = not CooldownCompanion:IsAuraPanel(group) and not ST.IsTotemPanelGroup(group)
+        local allowCentered = state.allowCentered
         -- Same override the Collapse Direction row below applies: an Aura BAR
         -- Panel is one vertical column by construction, so its labels must not
         -- follow the barOrientation key (hidden for this subtype, still
@@ -545,7 +577,7 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- helpers - but here it is simply how the panel arranges itself, so it sits
     -- under Growth Direction rather than behind a compact toggle this panel
     -- subtype does not have (owner ruling 2026-08-15).
-    if CooldownCompanion:IsAuraPanel(group) or ST.IsTotemPanelGroup(group) then
+    if state.collapse then
         -- PanelFlowSpec hard-codes the Vertical axis for an Aura BAR Panel, so
         -- the labels follow that rather than the (gated-away, possibly stale)
         -- barOrientation key the row above still reads.
@@ -570,22 +602,22 @@ local function BuildGridArrangement(container, group, layoutCount)
         -- onto the end of the row's label.
         AnchorRowBadge(collapseRow, CreateInfoButton(collapseRow.frame, collapseRow.frame, "LEFT", "LEFT", 0, 0, {
             "Collapse Direction",
-            {ST.IsTotemPanelGroup(group) and "Occupied slots pack from the start of the panel, from its center, or from its end."
+            {state.isTotemPanel and "Occupied slots pack from the start of the panel, from its center, or from its end."
                 or "Active auras pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
             {" ", 1, 1, 1},
-            {ST.IsTotemPanelGroup(group) and "Empty slots take no space. Slots retain their numeric order."
+            {state.isTotemPanel and "Empty slots take no space. Slots retain their numeric order."
                 or "Inactive auras take no space here, so the block moves as auras come and go.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 
     -- Text mode calls its entries entries, and offers the wrap count only
     -- once there is something to wrap.
-    if not auraBarPanel and (not isTextMode or #group.buttons > 1) then
-        local numButtons = math.max(showAll and 100 or 1, layoutCount)
+    if state.buttonsPerLine or state.entriesPerLine then
+        local numButtons = math.max(state.showAll and 100 or 1, layoutCount)
         local wrapRow = AddSliderRow(arrangeRight, {
-            label = isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
+            label = state.isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
             setting = LAYOUT_FINDER.arrangement and (
-                isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
+                state.isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
                 or LAYOUT_FINDER.arrangement.buttonsPerLine),
             min = 1, max = numButtons, step = 1,
             value = math.min(style.buttonsPerRow or 12, numButtons),
@@ -602,13 +634,8 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- that always are - so it closes the right column rather than sitting with
     -- the look on the Appearance tab.
     --
-    -- The builder carries one gate of its own: it draws NOTHING on an Aura
-    -- Panel (Blizzard's aura container packs itself, and "which end" is the
-    -- Collapse Direction row above). The MODE gate is here, and it is the
-    -- three modes that have always offered it - texture and trigger panels
-    -- returned far above, but a rotation assistant panel reaches this section
-    -- and never had a Compact Mode row, so naming the three is what keeps this
-    -- move from handing it one.
+    -- Aura panels pack themselves (the Collapse Direction row above); only
+    -- icons, bars and text offer Compact Mode, never Rotation Assistant.
     --
     -- Panel-only data with no override section, and the Layout tab is panel
     -- scope throughout (no entry lens ever reaches it), so the row needs no
@@ -620,7 +647,7 @@ local function BuildGridArrangement(container, group, layoutCount)
     --
     -- Compact Mode copies with the Arrangement scope of
     -- "Copy Panel Settings To..." (ST.PANEL_COPY_SCOPES, Defaults.lua).
-    if not ST.IsTotemPanelGroup(group) and (isIconsMode or isBarMode or isTextMode) then
+    if state.compact then
         BuildCompactModeControls(arrangeRight, group, tabInfoButtons, {
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.compact,
             settings = LAYOUT_FINDER.compact,
@@ -664,16 +691,13 @@ local function BuildLayoutTab(container)
             and CooldownCompanion:GetCursorAnchorTargetName()
             or ST.CURSOR_ANCHOR_TARGET
             or "CooldownCompanionCursor"
-        local isCursorAnchor = CooldownCompanion.IsCursorAnchor
-            and CooldownCompanion:IsCursorAnchor(group.anchor)
-            or false
-        local canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
-        if isCursorAnchor and not canUseCursorAnchor then
-            isCursorAnchor = false
-        end
-
         settings.relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= "" and settings.relativeTo or "UIParent"
-        local isPanel = group.parentContainerId ~= nil
+        CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
+        local anchorState = ResolveLayoutAnchorState(group, textureGroupId,
+            CS.layoutAnchorTargetMode[textureGroupId], settings)
+        local isPanel, isCursorAnchor = anchorState.isPanel, anchorState.isCursorAnchor
+        local canUseCursorAnchor = anchorState.canUseCursorAnchor
+        local currentAnchorGroupId, targetMode = anchorState.currentAnchorGroupId, anchorState.targetMode
         local function ResetStandalonePosition(relativeTo, point, relativePoint, x, y)
             settings.point = point or "CENTER"
             settings.relativeTo = relativeTo or "UIParent"
@@ -715,33 +739,6 @@ local function BuildLayoutTab(container)
             ResetStandalonePosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
             return true
         end
-        local anchorKind, currentAnchorGroupId
-        anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(settings.relativeTo)
-        local currentAnchorIsPanel = anchorKind == "group"
-            and isPanel
-            and CooldownCompanion.IsPanelAnchoredToPanel
-            and CooldownCompanion:IsPanelAnchoredToPanel(textureGroupId)
-            or false
-        if not currentAnchorIsPanel then
-            currentAnchorGroupId = nil
-        end
-        CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
-        local storedTargetMode = CS.layoutAnchorTargetMode[textureGroupId]
-        local targetMode
-        if isCursorAnchor then
-            targetMode = "cursor"
-        elseif currentAnchorIsPanel then
-            targetMode = "panel"
-        elseif settings.relativeTo ~= "UIParent" then
-            targetMode = "frame"
-        elseif storedTargetMode == "panel" and isPanel then
-            targetMode = "panel"
-        elseif storedTargetMode == "frame" then
-            targetMode = "frame"
-        else
-            targetMode = "group"
-        end
-
         local function RefreshTextureVisual()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
@@ -1064,38 +1061,18 @@ local function BuildLayoutTab(container)
     -- would be the odd one out instead of Layout.
     AddLensPanelScopeNote(container, ResolveStyleLens(group), true)
 
-    local isPanel = group.parentContainerId ~= nil
-    local panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
-    local currentAnchor = group.anchor.relativeTo
+    CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
+    local anchorState = ResolveLayoutAnchorState(group, CS.selectedGroup,
+        CS.layoutAnchorTargetMode[CS.selectedGroup])
+    local isPanel, panelContainerFrame = anchorState.isPanel, anchorState.panelContainerFrame
+    local currentAnchor, currentAnchorGroupId = anchorState.currentAnchor, anchorState.currentAnchorGroupId
+    local isCursorAnchor, targetMode = anchorState.isCursorAnchor, anchorState.targetMode
+    CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
     local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
         and CooldownCompanion:GetCursorAnchorTargetName()
         or ST.CURSOR_ANCHOR_TARGET
         or "CooldownCompanionCursor"
-    local isCursorAnchor = isPanel
-        and CooldownCompanion.IsCursorAnchor
-        and CooldownCompanion:IsCursorAnchor(group.anchor)
-        or false
     local defaultFrame = isPanel and panelContainerFrame or "UIParent"
-    local currentAnchorGroupId = type(currentAnchor) == "string"
-        and currentAnchor:match("^CooldownCompanionGroup(%d+)$")
-        or nil
-    local targetMode
-    if isCursorAnchor then
-        targetMode = "cursor"
-    elseif currentAnchorGroupId and isPanel then
-        targetMode = "panel"
-    elseif currentAnchor == nil or currentAnchor == "UIParent" or (isPanel and currentAnchor == panelContainerFrame) then
-        targetMode = "group"
-    else
-        targetMode = "frame"
-    end
-    CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
-    local preferredTargetMode = CS.layoutAnchorTargetMode[CS.selectedGroup]
-    if (targetMode == "group" or targetMode == "cursor")
-        and (preferredTargetMode == "frame" or (isPanel and preferredTargetMode == "panel")) then
-        targetMode = preferredTargetMode
-    end
-    CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
     -- ================================================================
     -- The row grammar (RowWidgets.lua). The rules every row-grammar section
     -- follows are stated once, in the recipe comment at the top of
@@ -1111,13 +1088,6 @@ local function BuildLayoutTab(container)
     -- trigger panels returned far above - they anchor a single texture rather
     -- than a panel of entries.)
     -- ================================================================
-    -- nil displayMode means icons everywhere in the core, so it resolves to
-    -- icons here too - the same fallback BuildAppearanceTab's dispatch makes.
-    local displayMode = group.displayMode or "icons"
-    local isIconsMode = displayMode == "icons"
-    local isBarMode = displayMode == "bars"
-    local isTextMode = displayMode == "text"
-
     local iconAnchorTargetList = isPanel
         and {
             group = "Group",
@@ -1423,8 +1393,9 @@ local function BuildLayoutTab(container)
     -- placement, direction, and wrap are Layout's), and the aura toggle heads
     -- the block here because "only auras live here, and they pack" is a
     -- statement about the cluster's layout rather than its look.
+    local hasIcons = HasLayoutIcons(group, CS.selectedGroup)
     local panelSections = not ST._ResolveStylingGroup(group)._attachedBarOwner
-        and (not ST.PanelSupportsAttachedBars(group) or ST._GetPanelSettingsContents(group).icons)
+        and hasIcons
         and ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
@@ -1522,14 +1493,9 @@ local function BuildLayoutTab(container)
                 -- one line" must stay open-ended so a member added later
                 -- joins the line instead of wrapping under a count that
                 -- silently became a cap.
-                local axis = ST.GetPanelSectionPlacement(group, anchor)
-                local memberCount = 0
-                for _, buttonData in ipairs(group.buttons or {}) do
-                    if ST.GetPanelSectionForEntry(group, buttonData) == anchor then
-                        memberCount = memberCount + 1
-                    end
-                end
-                if axis and memberCount > 1 then
+                local sectionState = ResolveLayoutSectionState(group, anchor)
+                local axis, memberCount = sectionState.axis, sectionState.memberCount
+                if sectionState.iconsPerRow or sectionState.iconsPerColumn then
                     local wrapLabel = (axis == "h") and "Icons Per Row" or "Icons Per Column"
                     local sectionWrapRow = AddSliderRow(sectionLeft, {
                         label = wrapLabel,
@@ -1564,7 +1530,7 @@ local function BuildLayoutTab(container)
     -- timer, cooldown swipe, ready glow, key press highlight, text overlay,
     -- assisted highlight and proc glow - do not exist here, and the eighth (Aura
     -- Display) IS the panel. There is no stack left to reorder.
-    local showCustomStrata = GetLayoutFinderState({ group = group, groupId = CS.selectedGroup }).customStrata
+    local showCustomStrata = HasCustomIconStrata(group, hasIcons)
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
     -- LEFT column: the per-icon layer switch. RIGHT column: the whole
