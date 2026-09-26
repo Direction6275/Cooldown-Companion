@@ -809,6 +809,7 @@ end
 -- yet. A one-panel refresh checks only that panel unless membership changed;
 -- unchanged refreshes leave selection, staged offsets, and mover chrome alone.
 function CooldownCompanion:RefreshCursorAnchorLayoutPreview(groupId)
+    if self:DeferPanelRefreshCompletion("preview") then return false end
     local preview = self._cursorAnchorLayoutPreview
     local previous = preview and preview.activeGroupIds
     if groupId ~= nil then
@@ -1041,6 +1042,7 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
 end
 
 function CooldownCompanion:RefreshCursorAnchorTicker()
+    if self:DeferPanelRefreshCompletion("cursor") then return end
     if not self._cursorAnchorTicker then
         self._cursorAnchorTicker = CreateFrame("Frame")
     end

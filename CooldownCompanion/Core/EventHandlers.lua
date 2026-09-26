@@ -35,9 +35,27 @@ local function QueueTalentChargeRefresh(addon)
     local token = pendingTalentChargeRefreshToken
     C_Timer.After(0.2, function()
         if pendingTalentChargeRefreshToken ~= token then return end
-        addon:RefreshChargeFlags("spell")
-        addon:RefreshAllGroups()
+        local operation = addon:BeginPanelAttachmentRefresh()
+        local changedGroups = {}
+        addon:RefreshChargeFlags("spell", changedGroups)
+        if InCombatLockdown() then
+            -- The former full settle deferred protected panel work as a unit.
+            addon:RefreshAllGroups()
+            addon:RefreshConfigPanel()
+            addon:EndPanelAttachmentRefresh(operation)
+            return
+        end
+        -- Late charge metadata can require a different bar/text structure.
+        -- Rebuild those panels, then let the availability owner handle entry
+        -- additions/removals and repaint every spell at the same 0.2s boundary.
+        for groupId in pairs(changedGroups) do
+            if addon.groupFrames[groupId] then addon:RefreshGroupFrame(groupId) end
+        end
+        addon:RefreshAllGroupsForSpellAvailability({ perGroupRebuild = true })
+        addon:EvaluateBarsAndFramesRuntime("talent-charge-settle")
+        addon:RequestAuraRebind("talent-charge-settle")
         addon:RefreshConfigPanel()
+        addon:EndPanelAttachmentRefresh(operation)
     end)
 end
 
@@ -161,6 +179,10 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     -- and this pass must not evaluate talent conditions against the old tree.
     if not opts.skipTalentCache or self._talentNodeCacheSpecId ~= self._currentSpecId then
         self:RebuildTalentNodeCache()
+        -- Talent identity and stack maxima can change without changing a
+        -- panel's entry list. Do not rely on Resources' old global rebind
+        -- side effect to refresh those unrelated aura consumers.
+        self:RequestAuraRebind("talent-state")
     end
     if opts.refreshAllChargeTypes then
         self:RefreshChargeFlags()
@@ -468,7 +490,7 @@ end
 
 -- Re-evaluate hasCharges on every spell button (talents can add/remove charges).
 -- Treat a spell as charge-based only when max charges is greater than 1.
-function CooldownCompanion:RefreshChargeFlags(typeFilter)
+function CooldownCompanion:RefreshChargeFlags(typeFilter, changedGroups)
     local spellReads
     if typeFilter ~= "item" then
         self._hasDisplayCountCandidates = false
@@ -477,9 +499,14 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
         -- Direct callers (Rotation Assistant) keep reading on every update.
         spellReads = {}
     end
-    for _, group in pairs(self.db.profile.groups) do
+    for groupId, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
             if buttonData.type == "spell" and typeFilter ~= "item" then
+                local previousCharges, previousMax, previousText, previousDisplayCount
+                if changedGroups then
+                    previousCharges, previousMax = buttonData.hasCharges, buttonData.maxCharges
+                    previousText, previousDisplayCount = buttonData.showChargeText, buttonData._hasDisplayCount
+                end
                 local spellID = buttonData.id
                 local facts = spellReads[spellID]
                 if not facts then
@@ -496,6 +523,11 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter)
                 end
                 ApplySpellChargeMetadata(self, buttonData, nil,
                     facts.hasChargeInfo, facts.maxCharges, facts.displayCount, facts.displayCountIsSecret)
+                if changedGroups and (previousCharges ~= buttonData.hasCharges
+                    or previousMax ~= buttonData.maxCharges or previousText ~= buttonData.showChargeText
+                    or previousDisplayCount ~= buttonData._hasDisplayCount) then
+                    changedGroups[groupId] = true
+                end
             elseif buttonData.type == "item" and typeFilter ~= "spell" then
                 -- Never clear hasCharges for items; unavailable charged items can
                 -- be indistinguishable from unowned items through count APIs.
@@ -698,8 +730,8 @@ function CooldownCompanion:UpdateCastBarStackAnchor()
         -- the gate can flip between the queue and the callback.
         local enabledNow, flagsNow = CooldownCompanion:RefreshBarsAndFramesRuntimeGate("castbar-stack-anchor")
         if not enabledNow or not flagsNow.castBar then return end
-        if CooldownCompanion.EvaluateCastBar then
-            CooldownCompanion:EvaluateCastBar({ skipRuntimeGate = true })
+        if CooldownCompanion.RefreshCastBarAttachment then
+            CooldownCompanion:RefreshCastBarAttachment()
         end
     end)
 end

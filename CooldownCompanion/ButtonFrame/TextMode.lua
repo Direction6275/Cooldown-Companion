@@ -700,9 +700,9 @@ local function ResolveMeasureIdentity(buttonData, button, cached)
     return measureIdentity
 end
 
--- The two client-resolved strings a measurement consumes. They are the cache's
--- identity: everything else the mock renders is derived from style keys and the
--- format string, which the cache already compares.
+-- The two client-resolved strings a measurement consumes. Charge behavior and
+-- capacity are compared separately with the style and format inputs by the
+-- metrics cache.
 --
 -- Both lookups are cache reads (C_Spell.GetSpellName / C_Item.GetItemNameByID
 -- answer from the client's own name cache; GetKeybindText walks the addon's
@@ -1138,8 +1138,12 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
     local cacheKey = buttonData or style
     local cached = textMetricsCache[cacheKey]
     local now = GetTime()
+    local maxCharges = buttonData and buttonData.maxCharges
+    local usesCharges = UsesChargeBehavior(buttonData)
     local inputsMatch = cached
         and cached.fmt == fmt
+        and cached.maxCharges == maxCharges
+        and cached.usesCharges == usesCharges
         -- See the cache's INVARIANT: a baseline entry stores no style, because
         -- its key already IS the style table.
         and (cached.style or cacheKey) == style
@@ -1218,6 +1222,8 @@ local function GetTextEntryMetrics(style, buttonData, formatString, button, forc
     cached.plan = plan
     cached.lineHeight = lineHeight
     cached.fmt = fmt
+    cached.maxCharges = maxCharges
+    cached.usesCharges = usesCharges
     -- See the cache's INVARIANT: never store the style on the entry whose key
     -- it already is, or the weak key can never be collected.
     if cacheKey ~= style then
@@ -1486,6 +1492,27 @@ local function RefreshTextEntryLayout(button)
         groupFrame._layoutDirty = true
     end
     return button._groupId
+end
+
+-- Availability updates can change charge metadata without changing the entry
+-- set. Compare against the measured layout, not the last metadata read: another
+-- event or cooldown update may already have consumed the change before settling.
+function CooldownCompanion:RefreshTextEntryLayouts()
+    local changedGroups
+    self:ForEachButton(function(button)
+        local groupId = RefreshTextEntryLayout(button)
+        if groupId then
+            changedGroups = changedGroups or {}
+            changedGroups[groupId] = true
+        end
+    end)
+    -- Restyling can repopulate the button list, so finish the walk first. Each
+    -- affected panel settles its pitch and aura-piece anchors exactly once.
+    if changedGroups then
+        for groupId in pairs(changedGroups) do
+            self:UpdateGroupStyle(groupId)
+        end
+    end
 end
 
 local function ComputePulse(now)

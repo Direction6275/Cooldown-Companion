@@ -2641,7 +2641,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     -- Native resource overlays keep their restriction-gated binding owner.
     -- Renderer retention does not change the coalesced OOC rebind boundary.
     self:SetResourceAuraHostApplied(true)
-    self:RequestAuraRebind("resources")
+    self:RequestAuraRebind("resources", groupId, RB._attachedPanelId)
     local previousPanel = RB._attachedPanelId
     RB._attachedPanelId = groupId
     self:FinishResourceBarLayout(previousPanel, groupId)
@@ -2684,7 +2684,7 @@ function CooldownCompanion:RevertResourceBars()
     -- rebind request parks the custom-bar displays once OOC.
     self:SetResourceAuraHostApplied(false)
     self:GetResourceAuraHostRoot():SetAlpha(1)
-    self:RequestAuraRebind("resources")
+    self:RequestAuraRebind("resources", RB._attachedPanelId)
 
     -- Stop OnUpdate
     if onUpdateFrame then
