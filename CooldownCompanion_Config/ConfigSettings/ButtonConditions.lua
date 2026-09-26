@@ -93,6 +93,26 @@ local panelLoadConditionSettings = DefineLoadConditionFinderSettings(
     "panel.visibility.where", "panel", "primary", "loadconditions", "loadconditions_panel_local")
 local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
     "entry.visibility.where", "entry", "primary", "loadconditions", "loadconditions_entry_local")
+
+local function HasSavedSourceRestrictions(source)
+    return type(source.loadConditions) == "table" and next(source.loadConditions) ~= nil
+end
+
+local indicatorSourceRestrictions = ST._DefineSettingRoute({
+    idPrefix = "panel.indicator.visibility", scope = "panel", rowScope = "primary",
+    tab = "loadconditions", tabLabel = "Visibility",
+    section = "source_restrictions", sectionLabel = "Source Restrictions",
+    applies = function(context)
+        if not ST.IsIndicatorGroup(context.group) then return false end
+        for _, source in ipairs(context.group.buttons or {}) do
+            if HasSavedSourceRestrictions(source) then return true end
+        end
+        return false
+    end,
+}):Setting({key = "sources", label = "Source Restrictions",
+    aliases = {"source load conditions", "entry load conditions", "source visibility",
+        "source dungeon", "source raid", "source open world", "clear source restrictions"}})
+
 local function PanelAlphaState(context)
     if context._ccPanelAlphaFinderState then
         return context._ccPanelAlphaFinderState
@@ -3376,21 +3396,22 @@ local function BuildLoadConditionsTab(container)
     end
 end
 
-local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
+local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, opts)
     if not (CS.selectedGroup and buttonData) then return end
     local groupId = CS.selectedGroup
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
+    opts = opts or {}
 
     -- Entry scope mirrors the panel tab, minus the eligibility half: an entry
     -- inherits who its panel is for and can only add places to hide.
     local _, togglesRight = AddScopedLoadConditionToggles(container, {
         target = buttonData,
-        settings = entryLoadConditionSettings,
+        settings = opts.settings or entryLoadConditionSettings,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
-        headingText = "Where To Hide It",
-        localCollapsedKey = "loadconditions_entry_local",
+        headingText = opts.headingText or "Where To Hide It",
+        localCollapsedKey = opts.collapseKey or "loadconditions_entry_local",
         preserveMissing = true,
         row = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
@@ -3404,13 +3425,13 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         end,
     })
 
-    if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+    if opts.allowClear or CooldownCompanion:HasLocalLoadConditions(buttonData) then
         -- Compact and flush left, filling the shorter (4-row) right column's
         -- tail. With the section collapsed there is no grid to sit in, so it
         -- falls back to the tab surface - still reachable, still compact.
         local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Added Places")
+        clearBtn:SetText(opts.clearLabel or "Clear Added Places")
         clearBtn:SetAutoWidth(true)
         clearBtn:SetCallback("OnClick", function()
             buttonData.loadConditions = nil
@@ -3418,6 +3439,33 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
         clearHost:AddChild(clearBtn)
+    end
+end
+
+local function BuildIndicatorSourceRestrictions(container, group)
+    if not ST.IsIndicatorGroup(group) then return end
+    local heading
+    for index, source in ipairs(group.buttons or {}) do
+        if HasSavedSourceRestrictions(source) then
+            if not heading then
+                heading = AddFamilyHeading(container, "Source Restrictions")
+                ST._BindSettingWidget(heading, indicatorSourceRestrictions, "Source Restrictions")
+                local onRelease = heading.events and heading.events.OnRelease
+                heading:SetCallback("OnRelease", function(widget, event, ...)
+                    widget._cdcSettingDescriptor = nil
+                    if onRelease then onRelease(widget, event, ...) end
+                end)
+            end
+            BuildEntryLoadConditionsTab(container, source, tabInfoButtons, {
+                -- Repeated source rows belong to one searchable section, not
+                -- the entry-scope descriptors used by ordinary panels.
+                settings = {},
+                headingText = "Source: " .. (source.name or tostring(source.id or index)),
+                collapseKey = "loadconditions_indicator_source_" .. index,
+                allowClear = true,
+                clearLabel = "Clear Source Restrictions",
+            })
+        end
     end
 end
 
@@ -3477,6 +3525,7 @@ local function BuildVisibilityTab(container)
     end
 
     BuildLoadConditionsTab(container)
+    BuildIndicatorSourceRestrictions(container, group)
 end
 
 ------------------------------------------------------------------------
