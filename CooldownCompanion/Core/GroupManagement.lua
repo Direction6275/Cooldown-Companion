@@ -1210,10 +1210,15 @@ ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds, deleted
     end
 end
 
-local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap, containerIdMap)
-    local settings, relativeTo = GetStandalonePanelAnchorTarget(panel)
-    if not settings or not relativeTo or relativeTo == "UIParent" then
-        return
+-- Both panel anchor stores use the same IDs, but retain their own fallback
+-- when an addon target is outside the copy. Cursor anchors belong to panels.
+local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allowCursor)
+    local relativeTo = type(settings) == "table" and settings.relativeTo
+    if type(relativeTo) ~= "string" or relativeTo == "UIParent" then
+        return true
+    end
+    if allowCursor and CooldownCompanion:IsCursorAnchor(relativeTo) then
+        return true
     end
 
     local targetKind, targetId = ParseStandaloneAddonAnchorTarget(relativeTo)
@@ -1222,20 +1227,19 @@ local function RemapDuplicatedStandalonePanelAnchor(panel, groupIdMap, container
         if newTargetId then
             settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
         else
-            ResetStandalonePanelAnchor(panel)
+            return false
         end
     elseif targetKind == "container" then
         local newTargetId = targetId and containerIdMap and containerIdMap[targetId] or nil
         if newTargetId then
             settings.relativeTo = "CooldownCompanionContainer" .. tostring(newTargetId)
         else
-            ResetStandalonePanelAnchor(panel)
+            return false
         end
     elseif relativeTo:find("^CooldownCompanion") then
-        ResetStandalonePanelAnchor(panel)
-    else
-        return
+        return false
     end
+    return true
 end
 
 local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, sourceContainerId, targetContainerId)
@@ -1272,12 +1276,11 @@ local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, so
     end
 end
 
-function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
+local function DuplicateContainerRecords(self, containerId, groupIdMap, containerIdMap, newGroupIds)
     local db = self.db.profile
     local sourceContainer = db.groupContainers[containerId]
     if not sourceContainer then return nil end
 
-    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local newContainerId = db.nextContainerId
     db.nextContainerId = newContainerId + 1
 
@@ -1290,6 +1293,7 @@ function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
     NormalizeCopiedEntityForContainerScope(self, newContainer, newContainer)
 
     db.groupContainers[newContainerId] = newContainer
+    containerIdMap[containerId] = newContainerId
 
     -- Collect source panel IDs first (avoid modifying db.groups during pairs iteration)
     local sourcePanelIds = {}
@@ -1299,9 +1303,9 @@ function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
         end
     end
 
-    -- Deep copy all child panels, re-anchoring to new container
-    local containerFrameName = "CooldownCompanionContainer" .. newContainerId
-    local groupIdMap = {}
+    -- Keep placement intact until every target in this copy has a new ID.
+    -- Preserve ID tie-breaking for panels with equal saved order values.
+    table_sort(sourcePanelIds)
     for _, groupId in ipairs(sourcePanelIds) do
         local group = db.groups[groupId]
         if group then
@@ -1311,57 +1315,69 @@ function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
             local newPanel = CopyTable(group)
             newPanel.cdmPanelSource = nil
             newPanel.parentContainerId = newContainerId
-            newPanel.anchor = {
-                point = "CENTER",
-                relativeTo = containerFrameName,
-                relativePoint = "CENTER",
-                x = group.anchor and group.anchor.x or 0,
-                y = group.anchor and group.anchor.y or 0,
-            }
             NormalizeCopiedEntityForContainerScope(self, newPanel, newContainer)
 
             db.groups[newGroupId] = newPanel
             groupIdMap[groupId] = newGroupId
-            self:CreateGroupFrame(newGroupId)
+            newGroupIds[#newGroupIds + 1] = newGroupId
         end
     end
 
-    local containerIdMap = { [containerId] = newContainerId }
-    for _, newGroupId in pairs(groupIdMap) do
-        RemapDuplicatedStandalonePanelAnchor(db.groups[newGroupId], groupIdMap, containerIdMap)
-    end
-
-    -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
-    if self.CreateContainerFrame then
-        self:CreateContainerFrame(newContainerId)
-    end
-    if not skipFinalize then
-        if self.FinalizeContainerAnchorsToScreenOffsets then
-            self:FinalizeContainerAnchorsToScreenOffsets()
-        end
-        RefreshPanelAlphaDependencyTargets(self)
-    end
-
-    self:EndPanelAttachmentRefresh(attachmentOperation, true, "duplicate-container")
     return newContainerId
 end
 
--- Batch duplicate: one global anchor-finalize pass instead of one per copy.
-function CooldownCompanion:DuplicateContainers(containerIds)
+local function DuplicateContainerSet(self, containerIds, skipFinalize)
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
-    local duplicatedAny = false
+    local groupIdMap, containerIdMap, newGroupIds, newContainerIds = {}, {}, {}, {}
     for _, containerId in ipairs(containerIds) do
-        if self:DuplicateContainer(containerId, true) then
-            duplicatedAny = true
+        if not containerIdMap[containerId] then
+            local newId = DuplicateContainerRecords(self, containerId, groupIdMap, containerIdMap, newGroupIds)
+            if newId then newContainerIds[#newContainerIds + 1] = newId end
         end
     end
-    if duplicatedAny then
+    local db = self.db.profile
+    for _, groupId in ipairs(newGroupIds) do
+        local panel = db.groups[groupId]
+        if not panel.anchor or not RemapDuplicatedAnchor(panel.anchor, groupIdMap, containerIdMap, true) then
+            local anchor = panel.anchor
+            panel.anchor = {
+                point = "CENTER", relativePoint = "CENTER",
+                relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
+                x = anchor and anchor.x or 0, y = anchor and anchor.y or 0,
+            }
+        end
+        if not RemapDuplicatedAnchor(GetStandalonePanelAnchorSettings(panel), groupIdMap, containerIdMap) then
+            ResetStandalonePanelAnchor(panel)
+        end
+    end
+    for _, containerId in ipairs(newContainerIds) do
+        -- Container anchors retain their existing screen-finalization policy.
+        RemapDuplicatedAnchor(db.groupContainers[containerId].anchor, groupIdMap, containerIdMap)
+    end
+    for _, containerId in ipairs(newContainerIds) do
+        if self.CreateContainerFrame then self:CreateContainerFrame(containerId) end
+    end
+    for _, groupId in ipairs(newGroupIds) do self:CreateGroupFrame(groupId) end
+    -- Forward references can only resolve after all copied frames exist.
+    for _, groupId in ipairs(newGroupIds) do self:RefreshGroupFrame(groupId) end
+    local duplicatedAny = #newContainerIds > 0
+    if duplicatedAny and not skipFinalize then
         if self.FinalizeContainerAnchorsToScreenOffsets then
             self:FinalizeContainerAnchorsToScreenOffsets()
         end
         RefreshPanelAlphaDependencyTargets(self)
     end
     self:EndPanelAttachmentRefresh(attachmentOperation, duplicatedAny, "duplicate-containers")
+    return newContainerIds[1]
+end
+
+function CooldownCompanion:DuplicateContainer(containerId, skipFinalize)
+    return DuplicateContainerSet(self, { containerId }, skipFinalize)
+end
+
+-- Batch copies share the ID maps as well as the attachment/finalization pass.
+function CooldownCompanion:DuplicateContainers(containerIds)
+    DuplicateContainerSet(self, containerIds)
 end
 
 ------------------------------------------------------------------------

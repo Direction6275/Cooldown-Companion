@@ -130,6 +130,8 @@ local ARRANGE_PANEL_SIZE_KEYS = {
     "barHeight",
 }
 local ARRANGE_ATTACHED_BAR_SIZE_KEYS = { "barLength", "barHeight" }
+local ARRANGE_CAST_SIZE_KEYS = { "independentWidth", "height" }
+local ARRANGE_CAST_OVERRIDE_SIZE_KEYS = { "barHeight" }
 -- The section-owned geometry Arrange Mode can now edit (nudger/coord label
 -- write offsets, wheel/grip/size label write icon dimensions). Deliberately
 -- NOT spacing or maxPerLine: those are config-only, so Cancel must not
@@ -286,8 +288,8 @@ function CooldownCompanion:CaptureArrangeCastBarRecord()
         settings = settings,
         anchor = CopyArrangeTable(settings.independentAnchor),
         locked = settings.independentAnchorLocked,
-        width = settings.independentWidth,
-        height = settings.height,
+        size = CaptureArrangeFields(settings, ARRANGE_CAST_SIZE_KEYS),
+        overrideSize = CaptureArrangeFields(settings.styleOverrides or {}, ARRANGE_CAST_OVERRIDE_SIZE_KEYS),
     }
 end
 
@@ -403,8 +405,11 @@ local function RestoreArrangeSnapshot(addon, snapshot)
         local record = snapshot.castBar
         RestoreArrangeTable(record.settings, "independentAnchor", record.anchor)
         record.settings.independentAnchorLocked = record.locked
-        record.settings.independentWidth = record.width
-        record.settings.height = record.height
+        RestoreArrangeFields(record.settings, record.size, ARRANGE_CAST_SIZE_KEYS)
+        if type(record.settings.styleOverrides) == "table" or next(record.overrideSize.present) then
+            record.settings.styleOverrides = record.settings.styleOverrides or {}
+            RestoreArrangeFields(record.settings.styleOverrides, record.overrideSize, ARRANGE_CAST_OVERRIDE_SIZE_KEYS)
+        end
     end
     if snapshot.resource and snapshot.resource.settings then
         local record = snapshot.resource
