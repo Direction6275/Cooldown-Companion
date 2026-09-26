@@ -821,15 +821,15 @@ local function BuildTexturePanelSlotKit(slotButton)
     slotButton:SetMouseClickEnabled(false)
     slotButton:SetMouseMotionEnabled(false)
 
-    local visualRoot = CreateFrame("Frame", nil, slotButton)
+    local host = CreateFrame("Frame", nil, slotButton)
+    host:SetAllPoints(slotButton)
+    local visualRoot = CreateFrame("Frame", nil, host)
     visualRoot:SetAllPoints(slotButton)
     visualRoot:SetAlpha(0)
 
-    local host = {
-        visualRoot = visualRoot,
-        primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
-        secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
+    host.visualRoot = visualRoot
+    host.primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
+    host.secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
 
     host.pulseAG = visualRoot:CreateAnimationGroup()
     host.pulseAG:SetLooping("BOUNCE")
@@ -850,13 +850,23 @@ local function BuildTexturePanelSlotKit(slotButton)
     host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
     host.bounceAnim:SetSmoothing("OUT")
 
+    ST.Indicator.CreateVisual(host, slotButton)
     host.colorShift = {}
-    for index, texture in ipairs({ host.primaryTexture, host.secondaryTexture }) do
+    local colorRegions = {
+        {host.primaryTexture, "texture", true}, {host.secondaryTexture, "texture", true},
+        {host.indicatorProgress.foreground.primaryTexture, "texture"},
+        {host.indicatorProgress.foreground.secondaryTexture, "texture"},
+        {host.iconFrame.icon, "icon"},
+    }
+    for index, entry in ipairs(colorRegions) do
+        local texture = entry[1]
         local group = texture:CreateAnimationGroup()
         group:SetLooping("BOUNCE")
         host.colorShift[index] = {
             group = group,
             animation = group:CreateAnimation("VertexColor"),
+            displayType = entry[2],
+            dim = entry[3],
         }
         host.colorShift[index].animation:SetSmoothing("IN_OUT")
     end
@@ -1543,7 +1553,7 @@ local function StopTexturePanelSlotIndicator(host)
     end
 end
 
-local function StyleTexturePanelSlotKit(slot, settings, indicator)
+local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
     local host = slot.kit and slot.kit.texturePanelHost
     if not host then return end
 
@@ -1552,6 +1562,7 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
     StopTexturePanelSlotIndicator(host)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
+    host._indicatorDimAlpha = nil
 
     local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
     if not geometry then
@@ -1560,7 +1571,16 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
         return
     end
 
-    local shown = LayoutTexturePieces(host, settings, geometry, alpha)
+    local shown
+    if ST.IsIndicatorGroup(group) then
+        shown = ST.Indicator.StyleAura(slot, group)
+    else
+        CooldownCompanion.HideStandaloneDisplayVisuals(host)
+        slot.slotButton:ClearIcon()
+        host.indicatorReadouts.root:Hide()
+        host.indicatorProgress.clip:SetAlpha(0)
+        shown = LayoutTexturePieces(host, settings, geometry, alpha)
+    end
     host.visualRoot:SetAlpha(shown and 1 or 0)
     if not shown or type(indicator) ~= "table" or indicator.enabled ~= true then
         return
@@ -1582,15 +1602,19 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
         host.bounceAnim:SetDuration(speed / 2)
         host.bounceAG:Play()
     elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
+        local displayType = ST.IsIndicatorGroup(group) and group.indicatorSettings.displayType or "texture"
         local base = settings.color or { 1, 1, 1, 1 }
+        if displayType == "icon" then base = group.indicatorSettings.icon.iconTintColor or base end
         local shift = indicator.color or { 1, 1, 1, 1 }
-        local startColor = CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, alpha or 1)
-        local endColor = CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, shift[4] or 1)
         for _, colorShift in ipairs(host.colorShift) do
-            colorShift.animation:SetStartColor(startColor)
-            colorShift.animation:SetEndColor(endColor)
-            colorShift.animation:SetDuration(speed / 2)
-            colorShift.group:Play()
+            if colorShift.displayType == displayType then
+                local dim = colorShift.dim and host._indicatorDimAlpha or 1
+                local startAlpha = displayType == "icon" and (base[4] or 1) or (alpha or 1)
+                colorShift.animation:SetStartColor(CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, startAlpha * dim))
+                colorShift.animation:SetEndColor(CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, (shift[4] or 1) * dim))
+                colorShift.animation:SetDuration(speed / 2)
+                colorShift.group:Play()
+            end
         end
     end
 end
@@ -2885,7 +2909,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
     if record.hostKind == "texturePanel" then
-        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator)
+        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator,
+            CooldownCompanion.db.profile.groups[button._groupId])
     elseif isTextHost then
         StyleTextSlotKit(record, button, buttonData, style)
     else
@@ -4564,7 +4589,7 @@ end
 -- Read only CC-owned metadata, including records on pooled or replaced hosts.
 function CooldownCompanion:PanelNeedsAuraRebind(groupId, group)
     if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
-        or group.displayMode == "textures" or group.displayMode == "trigger" then return true end
+        or self:IsStandaloneTexturePanelGroup(group) then return true end
     for _, entry in ipairs(group.buttons or {}) do
         if entry.auraTracking or entry.addedAs == "aura" then return true end
     end
@@ -4657,13 +4682,14 @@ function RunAuraRebind(configEdit, panelIds, resources)
     for groupId, frame in pairs(owners or self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
-        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures" or displayMode == "text")
+        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures" or displayMode == "text"
+            or ST.Indicator.IsAura(group))
             and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
-                local textureAura = displayMode == "textures"
+                local textureAura = (displayMode == "textures" or ST.Indicator.IsAura(group))
                     and self:IsTexturePanelAuraDisplayEnabled(group, buttonData)
-                local standardAura = displayMode ~= "textures"
+                local standardAura = displayMode ~= "textures" and displayMode ~= "indicator"
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
                 if buttonData and buttonData.type == "spell" and (textureAura or standardAura)
@@ -4678,6 +4704,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                         spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
                     end
                     local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
+                    if ST.Indicator.IsAura(group) then textureSettings = ST.Indicator.NativeSettings(group) end
                     local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
                     if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
                         -- Stack fill (tracker C2): bar hosts only; the max is

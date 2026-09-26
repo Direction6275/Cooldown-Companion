@@ -113,6 +113,7 @@ end
 
 function ST.GetEntryPresentation(group, entry)
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    if ST.IsIndicatorGroup(group) then return "textures" end
     if ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" then
         return "bars"
     end

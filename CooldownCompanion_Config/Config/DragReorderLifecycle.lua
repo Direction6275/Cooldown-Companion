@@ -378,12 +378,14 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
         CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, buttonData)
     end
     local previousCount = #targetGroup.buttons
+    if ST.IsIndicatorGroup(targetGroup) then targetIndex = previousCount + 1 end
     if ST.IsAttachedBarEntry(targetGroup, buttonData) then targetIndex = previousCount + 1 end
     -- An entry arriving in a panel needs that panel's own key, not the one it
     -- wore where it came from: an Aura Panel mints it one, and anywhere else the
     -- stale key comes off rather than waiting to collide inside an aura section.
     CooldownCompanion:AdoptAuraEntryKey(targetGroup, buttonData)
     table.insert(targetGroup.buttons, targetIndex, buttonData)
+    ST.Indicator.OnSourceAdded(targetGroup, buttonData)
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     return buttonData
 end

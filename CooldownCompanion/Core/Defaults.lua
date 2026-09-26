@@ -957,6 +957,8 @@ function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entry
 end
 
 function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
+    local indicatorReason = ST.Indicator.AddRestriction(group, entryData)
+    if indicatorReason then return indicatorReason end
     if ST.IsTotemPanelGroup(group) then
         return "Totem Panels automatically display occupied totem slots."
     end
@@ -997,7 +999,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
     if entryData and group then
         local displayMode = group.displayMode or "icons"
         if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "textures"
-            and displayMode ~= "text" then
+            and displayMode ~= "text" and displayMode ~= "indicator" then
             local entries = entryData[1] and entryData or { entryData }
             for _, bd in ipairs(entries) do
                 if bd and bd.addedAs == "aura" then
@@ -1698,6 +1700,11 @@ local PANEL_VISIBILITY_COPY_SCOPE = {
 }
 
 ST.PANEL_COPY_SCOPES = {
+    indicator = {
+        appearance = {},
+        indicators = {styleKeys = {"textureIndicators"}},
+        visibility = PANEL_VISIBILITY_COPY_SCOPE,
+    },
     icons = {
         arrangement = { orientationKey = "orientation" },
         position = {},
@@ -1817,6 +1824,7 @@ ST.PANEL_TEMPLATE_SECTION_KEYS = {
 -- section participates; these are the additional PANEL-owned style fields.
 -- Selective quick-copy scopes above intentionally remain narrower.
 ST.PANEL_TEMPLATE_STYLE_KEYS = {
+    indicator = {"strataOrder", "textureIndicators"},
     icons = {
         "maintainAspectRatio", "buttonSize", "iconWidth", "iconHeight", "buttonSpacing",
         "durationFormat", "allowPings", "tooltipAnchor", "tooltipHideInCombat",

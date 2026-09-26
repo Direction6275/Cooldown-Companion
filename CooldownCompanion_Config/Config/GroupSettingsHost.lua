@@ -415,7 +415,13 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- not rebuild - collapsed sections, early-returned builders and
             -- gearless tabs alike.
             CS.RunAdvancedGearBuildPass(function()
-                if tab == "format" then
+                local selectedGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+                if selectedGroup and selectedGroup._indicatorLegacyReason then
+                    ST._AddLabelRow(scroll, {label = "Legacy panel: " .. selectedGroup._indicatorLegacyReason})
+                end
+                if ST.IsIndicatorGroup(selectedGroup) and (tab == "tracking" or tab == "appearance" or tab == "effects") then
+                    ST._BuildIndicatorTab(scroll, selectedGroup, tab)
+                elseif tab == "format" then
                     ST._BuildTextFormatTab(scroll)
                 elseif tab == "appearance" then
                     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
@@ -489,7 +495,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     container._settingsPresentations = presentations
     local selectionMode = isRotationEntry and "rotation-entry"
         or (isSingleEntry and "entry" or "panel")
-    local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode
+    local tabsMode = (ST.IsIndicatorGroup(group) and "indicator" or isTextMode and "text" or "standard") .. ":" .. selectionMode
     if availableTabs then
         tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
     end
@@ -508,7 +514,10 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
-        if isRotationEntry then
+        if ST.IsIndicatorGroup(group) then
+            tabs = {{value="tracking",text="Tracking"},{value="appearance",text="Appearance"},
+                {value="effects",text="Effects"},{value="layout",text="Layout"},{value="loadconditions",text="Visibility"}}
+        elseif isRotationEntry then
             -- The assistant's virtual entry owns Visibility alone. Its style
             -- and layout belong to the panel reached through the breadcrumb.
             tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
@@ -531,6 +540,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
 
     -- Migrate stale tab keys from previous layout
+    if not ST.IsIndicatorGroup(group) and CS.selectedTab == "tracking" then CS.selectedTab = "appearance" end
+    if ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group) then CS.selectedTab = "tracking" end
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
     -- Text mode has no Indicators tab — redirect to Appearance

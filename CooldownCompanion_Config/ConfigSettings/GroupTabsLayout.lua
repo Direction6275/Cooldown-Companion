@@ -72,7 +72,7 @@ local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, set
     local anchor = group.anchor or {}
     local panelContainerFrame, currentAnchor, currentAnchorGroupId, isCursorAnchor, canUseCursorAnchor, targetMode
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         settings = settings or {}
         currentAnchor = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
             and settings.relativeTo or "UIParent"
@@ -145,7 +145,7 @@ end
 
 local function ResolveLayoutArrangementState(group, layoutCount)
     local displayMode = group.displayMode or "icons"
-    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local standalone = displayMode == "textures" or displayMode == "trigger" or displayMode == "indicator"
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
     local isTotemPanel = ST.IsTotemPanelGroup(group)
     local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
@@ -210,7 +210,7 @@ local function GetLayoutFinderState(context)
     local groupId = context.groupId
     local owner = group._attachedBarOwner or group
     local displayMode = group.displayMode or "icons"
-    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local standalone = displayMode == "textures" or displayMode == "trigger" or displayMode == "indicator"
     local anchorState = ResolveLayoutAnchorState(group, groupId,
         CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId],
         standalone and GetStandaloneTextureSettings(group, false) or nil)
@@ -229,7 +229,7 @@ local function GetLayoutFinderState(context)
 
     state.panelPoint = targetMode == "cursor"
     state.anchorPoint = not standalone and targetMode ~= "cursor"
-    state.displayPoint = standalone and displayMode == "trigger" and targetMode ~= "cursor"
+    state.displayPoint = standalone and displayMode ~= "textures" and targetMode ~= "cursor"
     state.texturePoint = standalone and displayMode == "textures" and targetMode ~= "cursor"
     state.targetPoint = standalone and targetMode ~= "cursor"
         and (targetMode == "panel" or targetMode == "frame")
@@ -677,13 +677,13 @@ local function BuildLayoutTab(container)
     local style = group.style
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         local settings = GetStandaloneTextureSettings(group, true)
         if not settings then
             return
         end
         local textureGroupId = CS.selectedGroup
-        local isTriggerPanel = group.displayMode == "trigger"
+        local isTriggerPanel = group.displayMode ~= "textures"
         local positionHeadingText = isTriggerPanel and "Trigger Display Position" or "Texture Position"
         local anchorLabel = isTriggerPanel and "Display Point" or "Texture Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"

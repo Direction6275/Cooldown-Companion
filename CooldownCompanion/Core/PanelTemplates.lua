@@ -81,6 +81,7 @@ end
 -- for controls added after this particular snapshot was made.
 local function GetPanelTemplateFields(group, mode)
     local fields = { style = {}, group = {}, loadConditions = {}, section = {} }
+    if mode == "indicator" then fields.indicator = {appearance=true,effects=true} end
     for sectionId, section in pairs(ST.OVERRIDE_SECTIONS) do
         if section.modes and (section.modes[mode]
             or (mode == "bars" and ST.IsTotemPanelGroup(group) and sectionId == "auraIndicator")) then
@@ -270,6 +271,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     }
 
     for key in pairs(fields.style) do style[key] = ST._CopyPresetValue(sourceStyle[key]) end
+    if mode == "indicator" then template.indicatorSettings = ST.Indicator.CapturePresentation(group) end
     if fields.attachedBarStyle then
         template.attachedBarStyle, template.attachedBarLayout = {}, {}
         local attachedStyle = ST.GetAttachedBarStyle(group)

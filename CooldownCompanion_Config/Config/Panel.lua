@@ -2524,6 +2524,7 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     end
     CS.configRefreshInProgress = true
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
+    ST._NormalizeIndicatorConfigSelection()
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2576,6 +2577,7 @@ function CooldownCompanion:_configRefreshPanelImpl(edit)
         ST._ShowResourceBarConflictChooser()
     end
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
+    ST._NormalizeIndicatorConfigSelection()
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2585,7 +2587,7 @@ function CooldownCompanion:_configRefreshPanelImpl(edit)
     -- every selection path that could drop it self-heals here on refresh.
     local healGroup = CS.selectedGroup and self.db.profile.groups[CS.selectedGroup]
     if healGroup and not CS.selectedButton
-        and self.IsTexturePanelGroup and self:IsTexturePanelGroup(healGroup)
+        and healGroup.displayMode == "textures"
         and healGroup.buttons and healGroup.buttons[1] then
         wipe(CS.selectedButtons)
         CS.selectedButton = 1

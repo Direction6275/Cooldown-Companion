@@ -100,3 +100,4 @@ ConfigSettings\GroupTabsLayout.lua
 ConfigSettings\GroupTabsEffects.lua
 ConfigSettings\GroupTabsAppearance.lua
 ConfigSettings\GroupTabsContainer.lua
+ConfigSettings\IndicatorTabs.lua

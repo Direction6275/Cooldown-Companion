@@ -422,7 +422,7 @@ function CooldownCompanion:GetPanelCopyMode(group)
     if displayMode == nil or displayMode == "icons" then
         return "icons"
     end
-    if displayMode == "bars" or displayMode == "text" then
+    if displayMode == "bars" or displayMode == "text" or displayMode == "indicator" then
         return displayMode
     end
     return nil
@@ -493,6 +493,9 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
     local mode = self:GetPanelCopyMode(sourceGroup)
     local targetMode = self:GetPanelCopyMode(targetGroup)
     local portable = scope == "visibility" or scope == "position"
+    if scope == "position" and (mode == "indicator" or targetMode == "indicator") then
+        return false, "invalid_scope"
+    end
     if not mode or not targetMode or (not portable and mode ~= targetMode) then
         return false, "mode_mismatch"
     end
@@ -674,6 +677,19 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     local copiedVisibility = false
     local copiedArrangement = false
     local copiedPosition = false
+    if mode == "indicator" then
+        local appearance, effects = false, false
+        if templateFields then
+            appearance = templateFields.indicator and templateFields.indicator.appearance == true
+            effects = templateFields.indicator and templateFields.indicator.effects == true
+        else
+            for _, scope in ipairs(scopes) do
+                if scope == "appearance" then appearance = true end
+                if scope == "indicators" then effects = true end
+            end
+        end
+        ST.Indicator.ApplyPresentation(source, targetGroup, appearance, effects)
+    end
     if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
         local function CopyAttachedStyle(key)
@@ -1551,6 +1567,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         }
     end
 
+    ST.Indicator.Initialize(db.groups[groupId])
     self:CreateGroupFrame(groupId)
     if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
@@ -1688,6 +1705,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 end
 
 local DISPLAY_MODE_CHANGE_REFUSALS = {
+    indicator = "Create an Indicator to use the new display model. Existing panels retain their settings.",
     ["totem-panel-modes"] = "Totem Panels can only switch between icons and bars.",
     ["totem-panel-create-only"] = "Create a new Totem Panel to display totem slots.",
     assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
@@ -1723,6 +1741,9 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     end
 
     local oldMode = group.displayMode
+    if oldMode ~= newMode and (oldMode == "indicator" or newMode == "indicator") then
+        return false, "indicator"
+    end
     if oldMode ~= newMode
         and (ST.IsRotationAssistantDisplayMode(oldMode) or ST.IsRotationAssistantDisplayMode(newMode)) then
         return false, "assistant"
@@ -2205,11 +2226,17 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         )
     end
 
+    if ST.IsIndicatorGroup(group) and buttonIndex > 1 and newButton.addedAs == "aura" then
+        table.remove(group.buttons, buttonIndex)
+        self:Print("Aura displays cannot be combined with conditions. Create an aura Indicator instead.")
+        return nil
+    end
+    ST.Indicator.OnSourceAdded(group, newButton)
     if self.EnableTexturePanelAuraDisplayForEntry then
         self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
     end
 
-    if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
+    if self:IsTriggerPanelGroup(group) and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
@@ -2260,7 +2287,8 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = newButton
 
-    if group.displayMode == "trigger" and self.NormalizeTriggerConditionRowData then
+    ST.Indicator.OnSourceAdded(group, newButton)
+    if self:IsTriggerPanelGroup(group) and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 

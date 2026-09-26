@@ -3695,6 +3695,7 @@ function CooldownCompanion:RunAllMigrations()
     -- identities, including the legacy fallback when a conflict stays unresolved.
     self:PrepareResourceBarSettings()
     if not unifiedOK then return false end
+    self:RunIndicatorMigration()
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

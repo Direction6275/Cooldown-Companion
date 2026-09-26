@@ -99,20 +99,10 @@ local PANEL_TYPES = {
         description = "Automatically shows active totems and summons as timer bars, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
     },
     {
-        mode = "text",
+        mode = "indicator",
         startsMenuSection = true,
-        label = "Text Panel",
-        description = "Shows text-only entries for compact readouts and status lists.",
-    },
-    {
-        mode = "textures",
-        label = "Texture Panel",
-        description = "Shows one standalone texture for a single spell or item.",
-    },
-    {
-        mode = "trigger",
-        label = "Trigger Panel",
-        description = "Add spell or item entries, then set conditions on each one. The display appears only when every enabled entry meets its conditions.",
+        label = "Indicator",
+        description = "One spell, aura, or item shown as an icon, texture, or text, with optional conditions and readouts.",
     },
     {
         mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT,
@@ -124,6 +114,11 @@ local PANEL_TYPES = {
 local PANEL_TYPE_BY_MODE = {}
 for _, panelType in ipairs(PANEL_TYPES) do
     PANEL_TYPE_BY_MODE[panelType.mode] = panelType
+end
+
+for _, mode in ipairs({"text", "textures", "trigger"}) do
+    PANEL_TYPE_BY_MODE[mode] = {mode=mode,label=({text="Legacy Text Panel",textures="Legacy Texture Panel",trigger="Legacy Trigger Panel"})[mode],
+        description="Existing display preserved for compatibility. Remains fully editable."}
 end
 
 local function GetPanelTypeInfo(displayMode)
@@ -686,6 +681,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
         ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
+        ST.Indicator.OnSourceAdded(targetGroup, entry)
         results[i] = previousCount + i
     end
     for i = #snapshot.indices, 1, -1 do

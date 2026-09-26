@@ -31,6 +31,12 @@ local function SelectNewButton(panelId, buttonIndex)
         CS.pendingTexturePickerOpen = panelId
         return
     end
+    if ST.IsIndicatorGroup(group) then
+        SelectConfigPanel(panelId, { containerId = group.parentContainerId })
+        CS.addingToPanelId = nil
+        CS.selectedTab = "tracking"
+        return
+    end
     if not buttonIndex then
         CooldownCompanion:ClearAllConfigPreviews()
         return
@@ -52,14 +58,14 @@ end
 
 local function IsTriggerPanelTarget(groupId)
     local group = GetTargetGroup(groupId)
-    return group and group.displayMode == "trigger"
+    return CooldownCompanion:IsTriggerPanelGroup(group) and not ST.IsIndicatorGroup(group)
 end
 
 local function TargetPanelAcceptsAuraEntries(groupId)
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
     return displayMode == "icons" or displayMode == "bars" or displayMode == "textures"
-        or displayMode == "text"
+        or displayMode == "text" or (displayMode == "indicator" and not ST.Indicator.Primary(group))
 end
 
 -- An Aura Panel takes aura entries only, and only for the one unit it derived

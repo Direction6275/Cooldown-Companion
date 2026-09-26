@@ -1158,6 +1158,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
         self:EndMoverChromeFade(host)
     end
     CooldownCompanion:EndDragSnapSession(host, false)
+    ST.Indicator.ReleaseVisual(host)
     CooldownCompanion.HideStandaloneDisplayVisuals(host)
     if host.visualRoot then
         host.visualRoot:SetAlpha(1)
@@ -1207,6 +1208,7 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
 end
 
 local function GetStandaloneTextureSettings(group)
+    if ST.IsIndicatorGroup(group) then return ST.Indicator.Settings(group).signal end
     if CooldownCompanion:IsTriggerPanelGroup(group) then
         return CooldownCompanion:GetTriggerPanelSignalSettings(group)
     end
@@ -1219,6 +1221,7 @@ local function GetStandaloneTextureSettings(group)
 end
 
 function CooldownCompanion.GetStandaloneDisplayType(group)
+    if ST.IsIndicatorGroup(group) then return ST.Indicator.Settings(group).displayType end
     if CooldownCompanion:IsTriggerPanelGroup(group) then
         return CooldownCompanion:GetTriggerPanelDisplayType(group, true)
     end
@@ -1230,6 +1233,12 @@ end
 
 function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
     local group = button._groupId and ResolveGroup(button._groupId) or nil
+    if ST.IsIndicatorGroup(group) then
+        local settings = ST.Indicator.Settings(group)
+        if settings.displayType == "icon" then return "icon", ST.Indicator.IconSettings(group) end
+        if settings.displayType == "text" then return "text", settings.text end
+        return "texture", settings.signal
+    end
     if not CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         return nil, nil
     end
@@ -1407,6 +1416,12 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
 end
 
 function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, settings, displayType, isTriggerPanel, effectsActive)
+    if ST.IsIndicatorGroup(group) then
+        host._standaloneTeardownFor = nil
+        host:SetFrameStrata(driverButton:GetFrameStrata())
+        host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
+        return ST.Indicator.Render(host, driverButton, group, false, nil, effectsActive)
+    end
     local hostWidth, hostHeight
     local shown = false
 
@@ -1470,6 +1485,8 @@ end
 -- Blizzard's AuraButton. This prepares the safe outer shell without touching
 -- any AuraContainer descendant; AuraDisplay styles that subtree OOC.
 function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, settings, revealRuntime)
+    local group = driverButton._groupId and ResolveGroup(driverButton._groupId)
+    if ST.IsIndicatorGroup(group) then settings = ST.Indicator.NativeSettings(group) end
     local resolvedSourceType = self:ResolveAuraTextureAsset(
         settings.sourceType,
         settings.sourceValue,
@@ -1748,7 +1765,7 @@ end
 
 function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     local group = groupId and ResolveGroup(groupId) or nil
-    if not (group and group.parentContainerId and (group.displayMode == "textures" or group.displayMode == "trigger")) then
+    if not (group and group.parentContainerId and self:IsStandaloneTexturePanelGroup(group)) then
         return
     end
 
@@ -1848,12 +1865,12 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
     local panels = self:GetPanels(containerId)
     for _, panelInfo in ipairs(panels) do
         local group = panelInfo.group
-        if group and (group.displayMode == "textures" or group.displayMode == "trigger") then
+        if group and self:IsStandaloneTexturePanelGroup(group) then
             local groupFrame = self.groupFrames and self.groupFrames[panelInfo.groupId] or nil
             local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
             local host = driverButton and driverButton.auraTextureHost or nil
             local settings = nil
-            if group.displayMode == "trigger" then
+            if self:IsTriggerPanelGroup(group) then
                 settings = self:GetTriggerPanelSignalSettings(group)
             else
                 settings = self:GetTexturePanelSettings(group)
@@ -1926,7 +1943,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local host = self:EnsureAuraTextureHost(driverButton)
-    local auraControlled = displayType == "texture"
+    local auraControlled = (displayType == "texture" or ST.IsIndicatorGroup(group))
         and not isTriggerPanel
         and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
     -- The production artwork lives inside the slot kit, so the managed path
@@ -1942,7 +1959,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
     local useManagedRuntime = auraControlled
         and not visibilityState.bypassModuleAlpha
-        and (hasBoundSlot or self:CanRunAuraRebindNow())
+        and (ST.IsIndicatorGroup(group) or hasBoundSlot or self:CanRunAuraRebindNow())
     local shown
     if useManagedRuntime then
         shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, hasBoundSlot)

@@ -159,6 +159,9 @@ local function GetStandaloneTextureAnchorSettings(group)
     if type(group) ~= "table" then
         return nil
     end
+    if ST.IsIndicatorGroup(group) then
+        return group.indicatorSettings and group.indicatorSettings.signal
+    end
     if group.displayMode == "trigger" then
         return type(group.triggerSettings) == "table" and group.triggerSettings.signal or nil
     end
@@ -670,7 +673,7 @@ function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGrou
     if AnchorTargetsCursorRoot(profile, "CooldownCompanionGroup" .. tostring(targetGroupId)) then
         return false, "cursor-root-target"
     end
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if self:IsStandaloneTexturePanelGroup(group) then
         return false, "unsupported-display-mode"
     end
     if IsAuraPanelAnchorTarget(group) then
@@ -717,7 +720,9 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
     for id, group in pairs(profile.groups or {}) do
         if type(group) == "table" then
             local name = group.name or ("Panel " .. tostring(id))
-            if group.displayMode == "trigger" then
+            if ST.IsIndicatorGroup(group) then
+                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Indicator")
+            elseif group.displayMode == "trigger" then
                 AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Trigger Display")
             elseif group.displayMode == "textures" then
                 AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Texture Display")

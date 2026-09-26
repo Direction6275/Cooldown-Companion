@@ -2532,7 +2532,7 @@ local function UpdateQuietRow(col3)
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local buttonData = group and group.buttons and group.buttons[1]
     local show = host and host:IsShown()
-        and group and CooldownCompanion:IsTexturePanelGroup(group)
+        and group and group.displayMode == "textures"
         and buttonData ~= nil
     if not show then
         if col3.buttonsQuietRow then

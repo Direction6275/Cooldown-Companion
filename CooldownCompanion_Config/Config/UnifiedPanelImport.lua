@@ -8,7 +8,9 @@ function ST._ConvertUnifiedPanelImport(data)
     context.defaultClass = nil -- An export must identify its own class.
     local canonical = Migration.Fingerprint(data)
     context.originPrefix = ("import:%d:%08x:"):format(#canonical, LibDeflate:Adler32(canonical))
-    return Migration.ConvertImport(data, context)
+    local converted, report = Migration.ConvertImport(data, context)
+    if converted then converted = ST.IndicatorMigration.ConvertImport(converted) end
+    return converted, report
 end
 
 -- Normal imports remain additive. Converted legacy entries carry their

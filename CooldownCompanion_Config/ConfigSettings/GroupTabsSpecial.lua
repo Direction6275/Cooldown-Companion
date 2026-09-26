@@ -143,14 +143,18 @@ local function GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
     return used
 end
 
-local function GetTextureIndicatorEffectList(indicators, currentSectionKey)
+local function TextureEffectOffered(group, effectKey)
+    return not (ST.Indicator.IsAura(group) and group.indicatorSettings.displayType == "text" and effectKey == "colorShift")
+end
+
+local function GetTextureIndicatorEffectList(indicators, currentSectionKey, group)
     local used = GetTextureIndicatorUsedEffects(indicators, currentSectionKey)
     local list = {}
     local order = {}
     local current = indicators and indicators[currentSectionKey] and indicators[currentSectionKey].effectType or nil
 
     for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
-        if effectKey == current or not used[effectKey] then
+        if TextureEffectOffered(group, effectKey) and (effectKey == current or not used[effectKey]) then
             list[effectKey] = TEXTURE_INDICATOR_EFFECT_OPTIONS[effectKey]
             order[#order + 1] = effectKey
         end
@@ -159,8 +163,8 @@ local function GetTextureIndicatorEffectList(indicators, currentSectionKey)
     return list, order
 end
 
-local function GetFirstAvailableTextureIndicatorEffect(indicators, currentSectionKey)
-    local _, order = GetTextureIndicatorEffectList(indicators, currentSectionKey)
+local function GetFirstAvailableTextureIndicatorEffect(indicators, currentSectionKey, group)
+    local _, order = GetTextureIndicatorEffectList(indicators, currentSectionKey, group)
     return order[1]
 end
 
@@ -553,6 +557,8 @@ local TRIGGER_DISPLAY_TYPE_ORDER = {
 }
 
 local function RefreshStandaloneTriggerDisplay(groupId)
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if ST.Indicator.IsAura(group) then CooldownCompanion:RequestAuraRebind("style", groupId) end
     local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
     if button then
@@ -650,7 +656,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
     local groupId = CS.selectedGroup
 
-    local _, iconCollapsed = BuildCollapsibleSection(container, "Trigger Icon",
+    local _, iconCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Icon" or "Trigger Icon",
         "appearance_triggerIcon", nil, nil, ROW_SECTION)
 
     -- The icon renders in the Live Preview, which is also the picker: clicking
@@ -1007,7 +1013,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     -- two entrances.
     local function EnableTextureIndicator()
         local usedEffects = GetTextureIndicatorUsedEffects(indicators, sectionKey)
-        local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey)
+        local firstAvailable = GetFirstAvailableTextureIndicatorEffect(indicators, sectionKey, group)
         local currentEffect = config.effectType
         if currentEffect == "none" or usedEffects[currentEffect] then
             if firstAvailable then
@@ -1055,7 +1061,13 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             })
         end
 
-        local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey)
+        local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey, group)
+        local dormant = not TextureEffectOffered(group, config.effectType)
+        if dormant then
+            effectList.none = "No Artwork Effect"
+            table.insert(effectOrder, 1, "none")
+            ST._AddLabelRow(primary, {label="Color Shift is saved for icon and texture displays."})
+        end
         AddDropdownRow(primary, {
             label = "Effect Type",
             setting = finder and finder.effectType,
@@ -1063,14 +1075,14 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             pulloutWidth = WIDE_PULLOUT_WIDTH,
             list = effectList,
             order = effectOrder,
-            value = config.effectType,
+            value = dormant and "none" or config.effectType,
             onChange = function(value)
                 config.effectType = value or "none"
                 RefreshTextureIndicatorConfig(group, auraControlled)
             end,
         })
 
-        if config.effectType == "colorShift" then
+        if config.effectType == "colorShift" and not dormant then
             AddColorRow(details, {
                 label = "Shift Color",
                 setting = finder and finder.shiftColor,
@@ -1314,7 +1326,7 @@ end
 -- texture panel edits a copy until the interaction is confirmed, and the row
 -- conversion only changes which widget holds the control.
 local function BuildTexturePanelAppearanceTab(container, group)
-    local isTriggerPanel = group.displayMode == "trigger"
+    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
     local settings = GetStandaloneTextureSettings(group, true)
     if not settings then
         return
@@ -1635,11 +1647,11 @@ end
 local SPECIAL_FINDER_SCOPE = { "panel", "entry" }
 
 local function SpecialFinderTrigger(context)
-    return context and context.group and context.displayMode == "trigger"
+    return context and context.group and (context.displayMode == "trigger" or ST.IsIndicatorGroup(context.group))
 end
 
 local function SpecialFinderTriggerDisplayType(context)
-    local settings = context and context.group and context.group.triggerSettings
+    local settings = context and context.group and (context.group.indicatorSettings or context.group.triggerSettings)
     local displayType = settings and settings.displayType
     if displayType == "icon" or displayType == "text" then
         return displayType
@@ -1655,16 +1667,16 @@ local function SpecialFinderTriggerType(displayType)
 end
 
 local function SpecialFinderTexture(context)
-    return context and context.group and context.displayMode == "textures"
+    return context and context.group and (context.displayMode == "textures" or ST.Indicator.IsAura(context.group))
 end
 
 local function SpecialFinderTriggerIconSettings(context)
-    local trigger = context and context.group and context.group.triggerSettings
+    local trigger = context and context.group and (context.group.indicatorSettings or context.group.triggerSettings)
     return trigger and trigger.icon or nil
 end
 
 local function SpecialFinderTriggerTextSettings(context)
-    local trigger = context and context.group and context.group.triggerSettings
+    local trigger = context and context.group and (context.group.indicatorSettings or context.group.triggerSettings)
     return trigger and trigger.text or nil
 end
 
@@ -1687,6 +1699,7 @@ end
 local function SpecialFinderTextureSettings(context)
     local group = context and context.group
     if not group then return nil end
+    if ST.IsIndicatorGroup(group) then return group.indicatorSettings.signal end
     if group.displayMode == "trigger" then
         local trigger = group.triggerSettings
         return trigger and trigger.signal or nil
@@ -1696,7 +1709,7 @@ end
 
 local function SpecialFinderTextureAppearance(context)
     local group = context and context.group
-    local rightMode = SpecialFinderTexture(context)
+    local rightMode = context and context.displayMode == "textures"
         or (SpecialFinderTrigger(context) and SpecialFinderTriggerDisplayType(context) == "texture")
     if not rightMode or (group.displayMode == "textures" and not (group.buttons and group.buttons[1])) then
         return false
@@ -1731,7 +1744,7 @@ local function SpecialFinderTriggerIconCustomBorder(context)
 end
 
 local function SpecialFinderTriggerEffectOffered(context, effectKey)
-    if not SpecialFinderTrigger(context) then return false end
+    if not SpecialFinderTrigger(context) or ST.Indicator.IsAura(context.group) then return false end
     return effectKey ~= "shrinkExpand" or SpecialFinderTriggerDisplayType(context) ~= "text"
 end
 
@@ -1749,6 +1762,7 @@ local function SpecialFinderTextureEffectEnabled(context, sectionKey)
 end
 
 local function SpecialFinderTextureEffectType(context, sectionKey, effectType)
+    if not TextureEffectOffered(context and context.group, effectType) then return false end
     -- Standard indicators index structurally: their read-only panel draws the
     -- stored effect's rows while disabled, so those rows stay findable. The
     -- aura-controlled variant draws its options inline and only while
@@ -1773,7 +1787,7 @@ if ST._DefineSettingRoute then
         sectionLabel = "Trigger Display",
         collapseKeys = { "appearance_triggerDisplay" },
         rowScope = "primary",
-        applies = SpecialFinderTrigger,
+        applies = function(context) return context.displayMode == "trigger" end,
     }):Setting({ key = "type", label = "Display Type", aliases = { "trigger type" } })
 
     SPECIAL_FINDER.trigger.icon = ST._DefineSettingRoute({
@@ -1808,7 +1822,7 @@ if ST._DefineSettingRoute then
         sectionLabel = "Text Style",
         collapseKeys = { "appearance_triggerText" },
         rowScope = "primary",
-        applies = SpecialFinderTriggerType("text"),
+        applies = function(context) return context.displayMode == "trigger" and SpecialFinderTriggerDisplayType(context) == "text" end,
     }):Settings({
         value = { label = "Display Text", aliases = { "trigger text" }, collapseKeys = {}, sectionLabel = "Display Text" },
         fontSize = { label = "Font Size" },

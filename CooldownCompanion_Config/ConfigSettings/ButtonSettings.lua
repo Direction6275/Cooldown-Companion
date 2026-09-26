@@ -553,7 +553,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
-    if not (group and group.displayMode == "trigger") then
+    if not CooldownCompanion:IsTriggerPanelGroup(group) then
         return
     end
 
@@ -601,7 +601,7 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
         return
     end
 
-    if group and group.displayMode == "trigger" then
+    if CooldownCompanion:IsTriggerPanelGroup(group) then
         BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
         return
     end

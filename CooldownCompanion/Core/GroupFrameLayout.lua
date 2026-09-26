@@ -389,7 +389,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
-    local isTriggerMode = group.displayMode == "trigger"
+    local isTriggerMode = CooldownCompanion:IsTriggerPanelGroup(group)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local centeredEdge = not ST.IsAuraPanelGroup(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, orientation) or nil
@@ -1034,7 +1034,7 @@ end
 -- first; unsupported surfaces keep the existing full style completion.
 local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, buttonUsabilityOptions, effect, scope)
     if ST.IsAuraPanelGroup(group) or group.displayMode == "textures"
-        or group.displayMode == "trigger" then return false end
+        or group.displayMode == "trigger" or ST.IsIndicatorGroup(group) then return false end
     if effect == "appearance" or effect == "interaction" then
         for index = 1, entries.count do
             local button = frame.buttons[index]

@@ -336,10 +336,15 @@ end
 
 function CooldownCompanion:GetTriggerPanelSoundAlertConfig(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" or group.displayMode ~= "trigger" then
+    if not self:IsTriggerPanelGroup(group) then
         return nil
     end
 
+    if ST.IsIndicatorGroup(group) then
+        local settings = ST.Indicator.Initialize(group)
+        if not settings.soundAlerts and createIfMissing then settings.soundAlerts = {} end
+        return settings.soundAlerts
+    end
     if type(group.triggerSettings) ~= "table" then
         if not createIfMissing then
             return nil
@@ -372,7 +377,7 @@ function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, s
     end
 
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" or group.displayMode ~= "trigger" then
+    if not self:IsTriggerPanelGroup(group) then
         return
     end
 
@@ -388,7 +393,8 @@ function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, s
     end
 
     if not next(cfg) then
-        group.triggerSettings.soundAlerts = nil
+        local settings = ST.IsIndicatorGroup(group) and group.indicatorSettings or group.triggerSettings
+        settings.soundAlerts = nil
     end
 end
 
@@ -833,7 +839,7 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, cool
     if not buttonData or buttonData.type ~= "spell" then return end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if group and group.displayMode == "trigger" then
+    if self:IsTriggerPanelGroup(group) then
         button._sndInitialized = nil
         return
     end
@@ -884,7 +890,7 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, cool
 end
 
 function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
-    if not frame or type(group) ~= "table" or group.displayMode ~= "trigger" then
+    if not frame or not self:IsTriggerPanelGroup(group) then
         return
     end
 

@@ -175,7 +175,7 @@ local function DispatchStandaloneTextureVisual(button, group)
         group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
             and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     end
-    if group and group.displayMode == "trigger" then
+    if CooldownCompanion:IsTriggerPanelGroup(group) then
         local frame = button:GetParent()
         local runtimeButtons = frame and frame.buttons
         if type(runtimeButtons) == "table" and runtimeButtons[#runtimeButtons] == button then
@@ -1124,7 +1124,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     button._rawVisibilityReasonMode = button._visibilityReasonMode
 
     local group = buttonGroup
-    local isTriggerPanel = group and group.displayMode == "trigger"
+    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
     -- An unlocked panel shows every entry so there is something to grab and
     -- arrange, whether the whole Group is unlocked or just this panel. Read
     -- off the per-refresh cached frame flags (set in RefreshGroupFrame,

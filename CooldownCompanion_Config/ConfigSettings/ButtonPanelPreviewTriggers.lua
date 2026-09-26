@@ -21,6 +21,75 @@ local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureI
 local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllTextureIndicatorEffects
 
 local PP = ST._ButtonPanelPreview
+
+function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
+    local I = ST.Indicator
+    if not I.Primary(group) then
+        PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field below.", "Choose a source")
+        PP.FinalizePreviewState(preview)
+        return
+    end
+    -- Detached saved-design render: no production aura widgets are inspected.
+    local candidate = CopyTable(group)
+    I.Initialize(candidate)
+    local stage = CS.textureConfigPreviewStage
+    local pickerStage = CS.textureMirrorStage
+    if not readOnly and pickerStage and pickerStage.groupId == panelId and pickerStage.selection then
+        candidate.indicatorSettings.signal=CopyTable(pickerStage.selection)
+    elseif not readOnly and stage and stage.groupId == panelId then
+        candidate.indicatorSettings.signal=CopyTable(stage.settings)
+    end
+    local surface = preview.indicatorSurface
+    if not surface then
+        surface = CreateFrame("Frame",nil,preview.root)
+        surface:EnableMouse(false)
+        surface.visualRoot = CreateFrame("Frame",nil,surface)
+        surface.visualRoot:SetPoint("CENTER")
+        surface.primaryTexture = surface.visualRoot:CreateTexture(nil,"ARTWORK")
+        surface.secondaryTexture = surface.visualRoot:CreateTexture(nil,"ARTWORK")
+        preview.indicatorSurface = surface
+    end
+    local state = not readOnly and CS.indicatorPreviewState or "half"
+    local fraction = state == "full" and 1 or state == "empty" and 0 or 0.5
+    if state == "timeless" then fraction=1 end
+    if not I.Render(surface,nil,candidate,true,fraction) then
+        PP.SetPreviewMessage(preview,"Choose artwork in Appearance to preview this Indicator.")
+        PP.FinalizePreviewState(preview)
+        return
+    end
+    if state == "timeless" then surface.indicatorReadouts.timer:SetText("") end
+    if not readOnly then
+        candidate.locked = true
+        local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
+        if I.IsAura(candidate) then
+            local indicators=CooldownCompanion:GetTexturePanelIndicatorSettings(candidate)
+            -- Native text has no registered vertex-color artwork animation.
+            if candidate.indicatorSettings.displayType == "text" and indicators and indicators.aura
+                and indicators.aura.effectType == "colorShift" then indicators.aura.enabled=false end
+            ApplyTextureIndicatorEffects(surface,sample,candidate,"aura")
+        else
+            CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true)
+        end
+    end
+    local width,height=surface:GetSize()
+    surface:SetScale(PP.GetHostFitScale(host,width,height+28,readOnly))
+    surface:ClearAllPoints()
+    surface:SetPoint("CENTER",preview.root,"CENTER",0,10)
+    surface:Show()
+    preview.barBaseRect = {x=0,y=0,width=width,height=height}
+    if not readOnly then
+        local caption=preview.indicatorCaption
+        if not caption then
+            caption=preview.root:CreateFontString(nil,"OVERLAY","GameFontDisableSmall")
+            preview.indicatorCaption=caption
+        end
+        caption:ClearAllPoints()
+        caption:SetPoint("TOP",surface,"BOTTOM",0,-8)
+        caption:SetText("Sample display")
+        caption:Show()
+    end
+    PP.FinalizePreviewState(preview)
+end
 local StylePreviewIcon = PP.StylePreviewIcon
 
 -- ButtonPanelPreviewEffects.lua
@@ -913,7 +982,7 @@ function ST._RefreshTriggerDisplayVisual(groupId)
     local mirror = preview and preview.textureMirror
     if not (mirror and mirror.root:IsShown()) then return false end
     local group = CooldownCompanion.db.profile.groups[groupId]
-    if not (group and CooldownCompanion:IsTriggerPanelGroup(group)) then return false end
+    if not (group and CooldownCompanion:IsTriggerPanelGroup(group)) or ST.IsIndicatorGroup(group) then return false end
 
     local boxWidth, boxHeight = GetHostFitBox(host, false)
     RenderTriggerDisplayVisual(mirror, group, groupId, boxWidth,

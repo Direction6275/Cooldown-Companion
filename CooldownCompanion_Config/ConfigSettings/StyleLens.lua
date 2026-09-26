@@ -19,7 +19,7 @@ local SH = ST._SettingsHelpers
 local ChainHeadingBadges = ST._ChainHeadingBadges
 
 local function GroupSupportsPerButtonOverrides(group)
-    return group and (group.displayMode or "icons") ~= "textures"
+    return group and (group.displayMode or "icons") ~= "textures" and not ST.IsIndicatorGroup(group)
 end
 
 local function GetSelectedRuntimeButton(buttonData)

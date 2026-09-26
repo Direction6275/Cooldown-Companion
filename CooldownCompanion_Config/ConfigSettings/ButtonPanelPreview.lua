@@ -743,6 +743,11 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         preview.textureMirror.root:Hide()
     end
     if preview.totemSurface then preview.totemSurface:Hide() end
+    if preview.indicatorSurface then
+        ST.Indicator.ReleaseVisual(preview.indicatorSurface)
+        preview.indicatorSurface:Hide()
+    end
+    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
     if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
@@ -802,6 +807,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
 
     local isBarMode = group.displayMode == "bars"
+    if ST.IsIndicatorGroup(group) then
+        return ST._ButtonPanelPreview.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
+    end
     local isTextMode = group.displayMode == "text"
     if not isBarMode and not isTextMode and not IsIconModePanel(group) then
         -- Texture panels render their real texture; trigger panels stack
