@@ -492,7 +492,7 @@ local function PinTickerForce(term)
     end
 end
 
-local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
+local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local readyGlow, forced
@@ -517,6 +517,19 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
         -- edges stay event-covered.
     end
 
+    -- Indicator item timers and drains use plain remaining seconds, so unlike
+    -- native spell/aura duration widgets they need the normal walk cadence.
+    local indicatorItem = false
+    if (not forced or telemetryOn) and button._cooldownState == COOLDOWN_STATE_COOLDOWN
+        and (button._itemCdDuration or 0) > 0 and not button._durationObj then
+        local settings = ST.Indicator.Settings(group)
+        if settings and settings.tracking ~= "aura" and ST.Indicator.Primary(group) == button.buttonData then
+            indicatorItem = settings.readouts.timer == true
+                or (settings.displayType == "texture" and settings.progress.enabled == true)
+            forced = forced or indicatorItem
+        end
+    end
+
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
     -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
     -- marks demoted), so it must force regardless of timeActive.
@@ -534,6 +547,7 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
             if charge then RefreshTelemetry:CountForce("charge") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
             if text then RefreshTelemetry:CountForce("text") end
+            if indicatorItem then RefreshTelemetry:CountForce("indicator-item") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
         end
     end
@@ -1320,5 +1334,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
+    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen, group)
 end

@@ -71,6 +71,17 @@ function I.NormalizeSourceEnablement(group)
     end
 end
 
+local function NormalizeCountReadouts(group)
+    local settings, source = I.Settings(group), I.Primary(group)
+    if not settings or not source then return end
+    local count = I.IsAura(group) and "stacks" or source.type == "spell" and "charges" or "item"
+    local function adaptReadouts(readouts)
+        if readouts and readouts.count and readouts.count ~= "none" then readouts.count = count end
+    end
+    adaptReadouts(settings.readouts)
+    for _, readouts in pairs(settings.readoutsByDisplay or {}) do adaptReadouts(readouts) end
+end
+
 function I.OnSourceAdded(group, entry)
     local settings = I.Initialize(group)
     if not settings then return end
@@ -81,6 +92,7 @@ function I.OnSourceAdded(group, entry)
         if settings.tracking == "aura" then
             entry.textureAuraDisplayEnabled = true
         end
+        NormalizeCountReadouts(group)
     end
     if not I.IsAura(group) and entry.triggerConditions == nil then
         if entry.triggerCondition then
@@ -221,13 +233,7 @@ function I.CommitSourceReplacement(group, candidate)
     local settings = I.Settings(group)
     settings.primaryEntry = 1
     settings.tracking = I.Settings(candidate).tracking
-    local source = I.Primary(group)
-    local count = I.IsAura(group) and "stacks" or source.type == "spell" and "charges" or "item"
-    local function adaptReadouts(readouts)
-        if readouts and readouts.count and readouts.count ~= "none" then readouts.count = count end
-    end
-    adaptReadouts(settings.readouts)
-    for _, readouts in pairs(settings.readoutsByDisplay or {}) do adaptReadouts(readouts) end
+    NormalizeCountReadouts(group)
 end
 
 local SIGNAL_APPEARANCE = {"sourceType","sourceValue","mediaType","label","scale","alpha","blendMode",
@@ -261,4 +267,5 @@ function I.ApplyPresentation(source, destination, appearance, effects)
     end
     if effects then target.effects = CopyTable(saved.effects or {}) end
     I.Initialize(destination)
+    if appearance then NormalizeCountReadouts(destination) end
 end
