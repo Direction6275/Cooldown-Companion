@@ -424,7 +424,7 @@ local customKeybindSettings = ST._DefineSettingRoute({
 
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
-local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -502,9 +502,9 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-        local setting = soundSettings[eventKey]
+        local setting = (finderSettings or soundSettings)[eventKey]
         if eventKey == "available" and UsesChargeBehavior(buttonData) then
-            setting = soundSettings.availableWithCharges
+            setting = (finderSettings or soundSettings).availableWithCharges
         end
         AddSoundPreviewDropdownRow(column, {
             setting = setting,
@@ -549,7 +549,7 @@ end
 -- Row grammar (RowWidgets.lua): the same shape as the spell section above,
 -- with a single panel-level event instead of a filtered set. One row, so it
 -- takes the left column and the right one stays empty.
-local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -564,7 +564,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Plays when the trigger display appears. This is a panel alert, not an alert for any one condition.", 1, 1, 1, true},
+        {"Plays when the panel display appears after all its conditions match.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
     }, infoButtons)
@@ -578,7 +578,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     local soundLeft = BeginRowGrid(scroll)
 
     AddSoundPreviewDropdownRow(soundLeft, {
-        setting = triggerSoundSettings.triggered,
+        setting = (finderSettings or triggerSoundSettings).triggered,
         pulloutWidth = SOUND_PULLOUT_WIDTH,
         list = soundOptions,
         order = soundOptionOrder,
@@ -596,13 +596,13 @@ end
 -- trigger panels) on every panel type. Entries that never had a sound surface
 -- (equipment slots, and anything that is not a spell outside trigger panels)
 -- add nothing rather than a section that only says "not available".
-local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
 
     if CooldownCompanion:IsTriggerPanelGroup(group) then
-        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
         return
     end
 
@@ -610,7 +610,7 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
 
     -- Row grammar: the event rows sit in a BeginRowGrid the section opens on
     -- the scroll itself, so no Flow host is interposed any more.
-    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
+    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
 end
 
 -- Conditions stay in one vertical sequence. Each clause uses the shared

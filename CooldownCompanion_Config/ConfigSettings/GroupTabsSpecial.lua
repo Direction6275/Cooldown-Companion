@@ -1234,7 +1234,7 @@ local function BuildTriggerEffectsTab(container, group)
     -- keys but always force this section open first (collapseKeys names
     -- "effects_triggerEffects"), so the gear builds and consumes the queue.
     -- Any future entrance that queues one of these keys must do the same.
-    local _, effectsCollapsed = BuildCollapsibleSection(container, "Trigger Panel Effects",
+    local _, effectsCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Visual Effects" or "Trigger Panel Effects",
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
     if not effectsCollapsed then
@@ -1269,7 +1269,7 @@ local function BuildTextureEffectsTab(container, group)
         for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
             ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
         end
-        local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Texture Indicators",
+        local _, indicatorsCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Visual Effects" or "Texture Indicators",
             EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
         local indicatorLeft, indicatorRight
         if not indicatorsCollapsed then

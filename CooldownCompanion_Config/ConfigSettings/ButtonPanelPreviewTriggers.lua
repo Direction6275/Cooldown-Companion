@@ -21,8 +21,17 @@ local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureI
 local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllTextureIndicatorEffects
 
 local PP = ST._ButtonPanelPreview
+local AceGUI = LibStub("AceGUI-3.0")
+
+function PP.ReleaseIndicatorPreviewControls(preview)
+    if preview.indicatorDuration then
+        AceGUI:Release(preview.indicatorDuration)
+        preview.indicatorDuration = nil
+    end
+end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
+    if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     local I = ST.Indicator
     if not I.Primary(group) then
         PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field below.", "Choose a source")
@@ -72,7 +81,11 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         end
     end
     local width,height=surface:GetSize()
-    surface:SetScale(PP.GetHostFitScale(host,width,height+28,readOnly))
+    local settings = I.Settings(candidate)
+    local showDuration = not readOnly and (settings.readouts.timer
+        or settings.displayType == "texture" and settings.progress.enabled)
+    surface:SetScale(PP.GetHostFitScale(host,math_max(width,showDuration and 260 or 0),
+        height+(showDuration and 60 or 28),readOnly))
     surface:ClearAllPoints()
     surface:SetPoint("CENTER",preview.root,"CENTER",0,10)
     surface:Show()
@@ -87,6 +100,28 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         caption:SetPoint("TOP",surface,"BOTTOM",0,-8)
         caption:SetText("Sample display")
         caption:Show()
+        if showDuration then
+            local control = preview.indicatorDuration
+            if not control then
+                -- Use the shared row's dropdown geometry and pool cleanup.
+                control = AceGUI:Create("CDC-DropdownRow")
+                control:SetLabel("Sample display")
+                control:SetWidth(260)
+                control:SetList({full="Full",half="Half",empty="Empty",timeless="No Timer"},
+                    {"full","half","empty","timeless"})
+                control.frame:SetParent(preview.root)
+                preview.indicatorDuration = control
+            end
+            control.frame:ClearAllPoints()
+            control.frame:SetPoint("TOP",surface,"BOTTOM",0,-6)
+            control:SetValue(state)
+            control:SetCallback("OnValueChanged",function(_,_,value)
+                CS.indicatorPreviewState=value
+                ST._RefreshButtonsPreviewMirror(panelId)
+            end)
+            control.frame:Show()
+            caption:Hide()
+        end
     end
     PP.FinalizePreviewState(preview)
 end

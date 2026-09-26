@@ -2406,7 +2406,9 @@ end
 local function UpdateAddBox(col3)
     local host = col3.buttonsPreviewHost
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local canAddEntry = CanManuallyAddToPanel(group)
+    local replacement = CS.GetIndicatorSourceReplacement(CS.selectedGroup)
+    local indicator = ST.IsIndicatorGroup(group)
+    local canAddEntry = replacement or CanManuallyAddToPanel(group)
     if not (host and host:IsShown() and canAddEntry) then
         if col3.buttonsAddBox then col3.buttonsAddBox.frame:Hide() end
         UpdateEditingActionRow(col3)
@@ -2419,7 +2421,9 @@ local function UpdateAddBox(col3)
     local addBox = EnsureAddBox(col3)
     if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
     CS.panelAddModeQuery = nil
-    addBox._cdcInstructions:SetText(IsThreeColumnLayout() and "Add..." or CooldownCompanion:IsAuraPanel(group)
+    addBox._cdcInstructions:SetText(replacement and "Choose a replacement source..."
+        or indicator and (ST.Indicator.Primary(group) and "Add a condition source..." or "Choose a source...")
+        or IsThreeColumnLayout() and "Add..." or CooldownCompanion:IsAuraPanel(group)
         and "Add an aura spell or ID\226\128\166"
         or "Add a spell, item, trinket slot, or ID\226\128\166")
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)

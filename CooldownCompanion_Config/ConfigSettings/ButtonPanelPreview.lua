@@ -748,6 +748,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         preview.indicatorSurface:Hide()
     end
     if preview.indicatorCaption then preview.indicatorCaption:Hide() end
+    if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
@@ -1105,6 +1106,7 @@ end
 function ST._ReleaseButtonPanelPreview(host)
     local preview = host and host._cdcPanelPreview
     if preview then
+        PP.ReleaseIndicatorPreviewControls(preview)
         preview.updateReady, preview.entryBindings, preview.renderContext = nil, nil, nil
         preview.ownerProfile, preview.ownerGroup, preview.sectionOwners = nil, nil, nil
         for _, pool in pairs(preview.pools) do

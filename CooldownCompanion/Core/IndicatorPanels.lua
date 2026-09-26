@@ -61,11 +61,22 @@ function I.Initialize(group)
     return settings
 end
 
+-- The primary source follows panel enablement. Preserve an old disabled source
+-- as a disabled panel, so removing the redundant source toggle cannot trap it.
+function I.NormalizeSourceEnablement(group)
+    local source = I.Primary(group)
+    if source and source.enabled == false then
+        group.enabled = false
+        source.enabled = true
+    end
+end
+
 function I.OnSourceAdded(group, entry)
     local settings = I.Initialize(group)
     if not settings then return end
     if entry.enabled == nil then entry.enabled = true end
     if I.Primary(group) == entry then
+        I.NormalizeSourceEnablement(group)
         settings.tracking = entry.addedAs == "aura" and "aura" or "conditions"
         if settings.tracking == "aura" then
             entry.textureAuraDisplayEnabled = true
@@ -190,6 +201,33 @@ function I.ClearSource(group)
     group.buttons = {}
     local settings = I.Initialize(group)
     settings.primaryEntry, settings.tracking = 1, "conditions"
+end
+
+-- Build a replacement off to the side. Failed validation must leave the
+-- current source and its conditions intact until the add actually succeeds.
+function I.StageSourceReplacement(group, expectedSource)
+    if not ST.IsIndicatorGroup(group) or I.Primary(group) ~= expectedSource then return end
+    local candidate = {}
+    for key, value in pairs(group) do candidate[key] = value end
+    candidate.buttons = {}
+    candidate.indicatorSettings = CopyTable(I.Settings(group))
+    candidate.indicatorSettings.primaryEntry = 1
+    candidate.indicatorSettings.tracking = "conditions"
+    return candidate
+end
+
+function I.CommitSourceReplacement(group, candidate)
+    group.buttons = candidate.buttons
+    local settings = I.Settings(group)
+    settings.primaryEntry = 1
+    settings.tracking = I.Settings(candidate).tracking
+    local source = I.Primary(group)
+    local count = I.IsAura(group) and "stacks" or source.type == "spell" and "charges" or "item"
+    local function adaptReadouts(readouts)
+        if readouts and readouts.count and readouts.count ~= "none" then readouts.count = count end
+    end
+    adaptReadouts(settings.readouts)
+    for _, readouts in pairs(settings.readoutsByDisplay or {}) do adaptReadouts(readouts) end
 end
 
 local SIGNAL_APPEARANCE = {"sourceType","sourceValue","mediaType","label","scale","alpha","blendMode",

@@ -2568,6 +2568,7 @@ end
 -- Indicator sources are edited inside the panel's Tracking tab. Old texture
 -- selection and retained entry routes must not turn them into an entry scope.
 local function NormalizeIndicatorConfigSelection()
+    if CS.GetIndicatorSourceReplacement then CS.GetIndicatorSourceReplacement(CS.selectedGroup) end
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[CS.selectedGroup]
     if ST.IsIndicatorGroup(group) and (CS.selectedButton or next(CS.selectedButtons)

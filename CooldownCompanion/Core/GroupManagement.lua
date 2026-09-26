@@ -2003,9 +2003,15 @@ end
 -- `section` (optional): the anchor name of a section the new entry joins on
 -- a panel that supports sections. An aura-only section or a bad anchor is
 -- refused by the membership writer, and the entry stays in the base grid.
-function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section, presentation)
+function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPetSpell, isPassive, forceAura, cdmChildSlot, preserveSpellID, section, presentation, replaceIndicatorSource)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+    local replacementTarget
+    if replaceIndicatorSource then
+        replacementTarget = group
+        group = ST.Indicator.StageSourceReplacement(group, replaceIndicatorSource)
+        if not group then return end
+    end
 
     local rejectMessage = self:GetPanelManualEntryRejectMessage(group)
     if rejectMessage then
@@ -2246,14 +2252,21 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         ST.SetPanelSectionForEntry(group, newButton, section)
     end
 
+    if replacementTarget then ST.Indicator.CommitSourceReplacement(replacementTarget, group) end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex, transformNotified
 end
 
-function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKind)
+function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKind, replaceIndicatorSource)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+    local replacementTarget
+    if replaceIndicatorSource then
+        replacementTarget = group
+        group = ST.Indicator.StageSourceReplacement(group, replaceIndicatorSource)
+        if not group then return end
+    end
 
     local rejectMessage = self:GetPanelManualEntryRejectMessage(group)
     if rejectMessage then
@@ -2292,6 +2305,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
+    if replacementTarget then ST.Indicator.CommitSourceReplacement(replacementTarget, group) end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex

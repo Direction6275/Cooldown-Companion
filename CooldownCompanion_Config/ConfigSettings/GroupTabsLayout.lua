@@ -684,7 +684,8 @@ local function BuildLayoutTab(container)
         end
         local textureGroupId = CS.selectedGroup
         local isTriggerPanel = group.displayMode ~= "textures"
-        local positionHeadingText = isTriggerPanel and "Trigger Display Position" or "Texture Position"
+        local positionHeadingText = ST.IsIndicatorGroup(group) and "Indicator Position"
+            or isTriggerPanel and "Trigger Display Position" or "Texture Position"
         local anchorLabel = isTriggerPanel and "Display Point" or "Texture Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
         local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName

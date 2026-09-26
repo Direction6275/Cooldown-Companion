@@ -80,6 +80,7 @@ function M.Apply(profile)
         local mode = group.displayMode
         if mode == "indicator" then
             I.Initialize(group)
+            I.NormalizeSourceEnablement(group)
         elseif mode == "text" or mode == "textures" or mode == "trigger" then
             local reason, legacy = Convert(group)
             if legacy then
@@ -104,7 +105,11 @@ function M.ConvertImport(data)
     local function Visit(value)
         if type(value) ~= "table" then return end
         if type(value.buttons) == "table" and type(value.displayMode) == "string" then
-            if value.displayMode == "indicator" then I.Initialize(value); return end
+            if value.displayMode == "indicator" then
+                I.Initialize(value)
+                I.NormalizeSourceEnablement(value)
+                return
+            end
             local reason = Convert(value)
             if reason then value._indicatorLegacyReason = reason end
             return
