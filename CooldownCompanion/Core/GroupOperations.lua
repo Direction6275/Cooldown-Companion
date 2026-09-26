@@ -662,14 +662,18 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
         and self:AnyGroupButtonSetNeedsRebuild()
     self:ResetSpellAvailabilityButtonRuntime()
 
+    local changed
     if needsFullRefresh then
         self:RefreshAllGroups()
     else
-        self:RefreshAllGroupsVisibilityOnly()
+        changed = self:RefreshAllGroupsVisibilityOnly()
     end
+
+    if needsFullRefresh or changed then self:RequestAuraRebind("availability") end
 
     ST.TagRefreshPass("availability-rebuild")
     self:UpdateAllCooldowns()
+    self:RefreshTextEntryLayouts()
 
     -- D3: spec/talent/spell-availability churn can change override identity
     -- without repopulating buttons — refresh the identity index (coalesced).
@@ -681,13 +685,16 @@ function CooldownCompanion:CreateAllGroupFrames()
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local previousCreatingAllGroupFrames = self._creatingAllGroupFrames
     self._creatingAllGroupFrames = true
+    local sizedFrames = {}
     for groupId, _ in pairs(self.db.profile.groups) do
         if self:IsGroupVisibleToCurrentChar(groupId) then
+            local existing = self.groupFrames[groupId]
             self:CreateGroupFrame(groupId)
+            if not existing then sizedFrames[groupId] = self.groupFrames[groupId] end
         end
     end
     self._creatingAllGroupFrames = previousCreatingAllGroupFrames
-    self:FinalizePanelAnchors()
+    self:FinalizePanelAnchors(sizedFrames)
     self:FinalizeNonPanelGroupAnchors()
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
@@ -696,7 +703,7 @@ function CooldownCompanion:CreateAllGroupFrames()
     self:EndPanelAttachmentRefresh(attachmentOperation, true, "create-all-panels")
 end
 
-function CooldownCompanion:FinalizePanelAnchors()
+function CooldownCompanion:FinalizePanelAnchors(sizedFrames)
     local groups = self.db and self.db.profile and self.db.profile.groups
     if not (groups and self.groupFrames) then
         return
@@ -711,13 +718,20 @@ function CooldownCompanion:FinalizePanelAnchors()
     for groupId, group in pairs(groups) do
         local frame = self.groupFrames[groupId]
         if group and group.parentContainerId and group.anchor and frame then
+            local previousCount = frame.layoutButtonCount
             -- Totem surfaces own their live or three-slot editing footprint.
             if not ST.IsTotemPanelGroup(group) and not self:IsGroupCompactLayoutActive(groupId, group) then
                 frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
             else
                 frame.layoutButtonCount = nil
             end
-            self:ResizeGroupFrame(groupId)
+            -- Bulk construction/population already sized these exact frames.
+            -- A changed reservation or deferred resize still needs this pass;
+            -- all standalone finalization callers keep the full sizing walk.
+            if not sizedFrames or sizedFrames[groupId] ~= frame or frame._sizeDirty
+                or previousCount ~= frame.layoutButtonCount then
+                self:ResizeGroupFrame(groupId)
+            end
             panels[#panels + 1] = {
                 groupId = groupId,
                 group = group,
@@ -829,6 +843,7 @@ function CooldownCompanion:RefreshAllGroups(reason)
     end
 
     -- Refresh current profile's groups: load active ones, unload inactive ones
+    local sizedFrames = {}
     for groupId, group in pairs(self.db.profile.groups) do
         local visible = self:IsGroupVisibleToCurrentChar(groupId)
         if not visible then
@@ -840,13 +855,14 @@ function CooldownCompanion:RefreshAllGroups(reason)
             requireButtons = false,
         }) then
             self:RefreshGroupFrame(groupId)
+            sizedFrames[groupId] = self.groupFrames[groupId]
         else
             self:UnloadGroup(groupId)
         end
     end
 
     self:FinalizeContainerAnchorsToScreenOffsets()
-    self:FinalizePanelAnchors()
+    self:FinalizePanelAnchors(sizedFrames)
     if self.RefreshAllContainerWrappers then
         self:RefreshAllContainerWrappers()
     end
@@ -1008,6 +1024,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
     self:RefreshCursorAnchorLayoutPreview()
     self:EndPanelAttachmentRefresh(attachmentOperation,
         completed or (opts and opts.evaluateModules), opts and opts.reason or "panel-visibility")
+    return changed
 end
 
 -- Fully unload a group: save/clear button OnUpdate scripts, clear runtime

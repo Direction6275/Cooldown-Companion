@@ -598,6 +598,10 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local style = group.style or {}
     local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
 
+    -- Capture cleanup debt before releasing/reusing hosts. The final aura entry
+    -- may already be absent from saved settings while its old record is bound.
+    local auraRebindNeeded = self:PanelNeedsAuraRebind(groupId, group)
+
     -- Release existing buttons into bounded per-frame pools.
     for _, button in ipairs(frame.buttons) do
         ReleaseButtonToPool(self, frame, groupId, button)
@@ -708,9 +712,9 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     FinishGroupButtonRefresh(self, groupId, frame, group)
     -- D3: button population changed — refresh the identity index (coalesced).
     self:RequestSpellButtonIndexRebuild("populate")
-    -- Aura slots bind to materialized buttons: re-run the (coalesced,
-    -- OOC-deferred) rebind pass whenever population changes.
-    self:RequestAuraRebind("populate")
+    -- Keep the established coalesced, restriction-deferred boundary when this
+    -- panel has aura consumers or owes retirement of an old binding.
+    if auraRebindNeeded then self:RequestAuraRebind("populate", groupId) end
 end
 
 function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryKind)
@@ -1026,15 +1030,6 @@ local function PreserveFittedBarGeometry(group, button, style)
     return style
 end
 
-local function HasPanelAuraStyleConsumers(group)
-    if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
-        or group.displayMode == "textures" or group.displayMode == "trigger" then return true end
-    for _, entry in ipairs(group.buttons or {}) do
-        if entry.auraTracking or entry.addedAs == "aura" then return true end
-    end
-    return false
-end
-
 -- Narrow outcomes are opt-in at audited writes. Binding/mode/Masque checks run
 -- first; unsupported surfaces keep the existing full style completion.
 local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, buttonUsabilityOptions, effect, scope)
@@ -1075,7 +1070,7 @@ local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, button
     -- Aura-owned regions consume crop, borders, hover intent and layout at bind
     -- time. Keep their established restriction/defer lifecycle, including hidden
     -- configured entries; current visibility is not a reason to skip this work.
-    if HasPanelAuraStyleConsumers(group) then self:RequestAuraRebind("style", groupId) end
+    if self:PanelNeedsAuraRebind(groupId, group) then self:RequestAuraRebind("style", groupId) end
     return true
 end
 
@@ -1162,6 +1157,6 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     -- consumes style keys at bind time — re-request the (coalesced) rebind so
     -- the composed aura visuals track style edits too. The groupId scopes the
     -- in-combat defer note to edits that actually touch an aura display.
-    self:RequestAuraRebind("style", groupId)
+    if self:PanelNeedsAuraRebind(groupId, group) then self:RequestAuraRebind("style", groupId) end
     self:EndPanelAttachmentRefresh(attachmentOperation)
 end

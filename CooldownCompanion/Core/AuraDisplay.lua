@@ -195,6 +195,8 @@ local slotCounter = 0
 local pendingRebind = false
 local rebindQueued = false
 local fullRebindRequested = false
+local panelRebindIds = {} -- IDs also select retired/replaced hosts for cleanup
+local resourceRebindRequested = false
 local blockRebindOwners = {} -- groupId -> live owner frame; detached before each pass
 local pendingConfigEdit = false
 
@@ -2271,7 +2273,7 @@ end
 -- C_UnitAuras.AddAuraSound (PTR 6 rename of AddAuraAppliedSound, now with
 -- applied / stack gained / removed triggers) plays a sound file whenever
 -- the spellID's aura hits the trigger on the unit, entirely Blizzard-side
--- (validated in combat). Registered at bind, released at park. Refcounted
+-- (validated in combat). Reconciled at bind, released at park. Refcounted
 -- because entries can share candidate spellIDs (linked-aura sets) and the
 -- same trigger + sound.
 ------------------------------------------------------------------------
@@ -2287,8 +2289,20 @@ local AURA_SOUND_EVENT_TRIGGERS = {
     { eventKey = "onAuraRemoved", triggerName = "Removed" },
 }
 
+local function ReleaseAuraSoundKey(key)
+    local entry = auraSounds[key]
+    if not entry then return end
+    entry.count = entry.count - 1
+    if entry.count <= 0 then
+        auraSounds[key] = nil
+        C_UnitAuras.RemoveAuraSound(entry.id)
+    end
+end
+
 local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
     if not (C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound) then return end
+    local previous = {}
+    for _, key in ipairs(slot.auraSoundKeys or {}) do previous[key] = true end
     local keys
     for _, eventInfo in ipairs(AURA_SOUND_EVENT_TRIGGERS) do
         local soundFile, channel = CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventInfo.eventKey)
@@ -2297,7 +2311,9 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
             for spellID in pairs(spellSet) do
                 local key = slot.unit .. ":" .. spellID .. ":" .. trigger .. ":" .. soundFile .. ":" .. (channel or "")
                 local entry = auraSounds[key]
-                if entry then
+                if previous[key] then
+                    previous[key] = nil
+                elseif entry then
                     entry.count = entry.count + 1
                 else
                     local id = C_UnitAuras.AddAuraSound(trigger, {
@@ -2318,6 +2334,7 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
             end
         end
     end
+    for key in pairs(previous) do ReleaseAuraSoundKey(key) end
     slot.auraSoundKeys = keys
 end
 
@@ -2326,14 +2343,7 @@ local function ReleaseSlotAuraSounds(slot)
     if not keys then return end
     slot.auraSoundKeys = nil
     for _, key in ipairs(keys) do
-        local entry = auraSounds[key]
-        if entry then
-            entry.count = entry.count - 1
-            if entry.count <= 0 then
-                auraSounds[key] = nil
-                C_UnitAuras.RemoveAuraSound(entry.id)
-            end
-        end
+        ReleaseAuraSoundKey(key)
     end
 end
 
@@ -2607,6 +2617,7 @@ local function ParkDisplay(record)
         record.parked = true
         record.boundEntry = nil
         record.boundGroupScoped = nil
+        record.boundSpellSet = nil
         SetIdentityVisibility(record, false)
         -- CC-side tag only: the registered max stays whatever the last bind
         -- wrote (the fill is alpha-0; the next bind converges it).
@@ -2839,14 +2850,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- sees the finished state. OnShow_Intrinsic re-registers the container's
     -- events and refreshes it on its own.
     --
-    -- The pass parks everything then rebinds, so a record that stays bound is
-    -- hidden and re-shown every pass. That is free rather than clever: nothing
-    -- renders between the two calls (both happen inside one RunAuraRebind), and
-    -- each only sets the same FullAuraRebuild dirty flag that the
-    -- SetAuraSlotCandidateFilters below sets anyway, so it coalesces to the one
-    -- rebuild the bind already required. The guard exists only to skip a
-    -- pointless Show() on a first bind, where the container is already shown
-    -- from creation and was never parked.
+    -- Unchanged contracts stay bound. Removed or retargeted records still
+    -- take the complete park path; their next bind must restore the container.
     if wasParked then
         record.container:Show()
     end
@@ -2898,6 +2903,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- nothing was registered.
     if soundsAllowed then
         RegisterSlotAuraSounds(record, buttonData, spellSet)
+    else
+        ReleaseSlotAuraSounds(record)
     end
     -- Tooltip suppression follows the button's recorded tooltip intent
     -- (_ccTooltipMotion, written by the same style passes that run the
@@ -2923,6 +2930,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.parked = nil
     record.boundEntry = buttonData
     record.boundGroupScoped = groupScoped
+    record.boundSpellSet = {}
+    for spellID in pairs(spellSet) do record.boundSpellSet[spellID] = true end
     record.identityApplicable = CanApplySpellIdentityFilter(unit, groupScoped)
     SetIdentityVisibility(record, record.identityApplicable)
     -- Combat pool lock: while this button is pooled in combat it may only be
@@ -3433,10 +3442,11 @@ end
 
 -- Park then bind within the selected owners (nil means all owners). Both
 -- callers guard combat and aura secrecy before any chain geometry is changed.
-local function RebindCustomBarAuraBlocks(self, owners)
+local function RebindCustomBarAuraBlocks(self, owners, retireIds)
     for _, record in ipairs(blockRecords) do
         local owner = record.owner
-        if not owners or (owner and owners[owner.groupId] == owner.parent) then
+        if not owners or (owner and ((retireIds and retireIds[owner.groupId])
+            or owners[owner.groupId] == owner.parent)) then
             record.configured = nil
             blockChainBlocked = blockChainBlocked - (record.chainBlocked or 0)
             record.chainBlocked = nil
@@ -4460,21 +4470,23 @@ local function BindAuraSections(self, groupId, group, frame)
     end
 end
 
--- Park everything, then bind — the same discipline (and the same coalescing
--- argument) as the slot and block passes. OOC by RunAuraRebind's guarantee.
-local function RebindAuraPanels(self)
+-- Flow containers retain park-then-bind within the selected panel IDs.
+-- Unselected owners and their diagnostics stand. OOC by RunAuraRebind's guard.
+local panelDiagnostics = {}
+local function RebindAuraPanels(self, panelIds)
     for _, record in ipairs(panelRecords) do
-        for _, pgroup in ipairs(record.groupList) do
-            ParkPanelGroup(pgroup)
+        if not panelIds or panelIds[record.groupId] then
+            for _, pgroup in ipairs(record.groupList) do
+                ParkPanelGroup(pgroup)
+            end
+            record.container:Hide()
+            record.shown = false
+            SetPanelIdentityVisibility(record, false)
         end
-        record.container:Hide()
-        record.shown = false
-        SetPanelIdentityVisibility(record, false)
     end
-    panelSkippedNoKey = 0
-    panelUnitMismatches = 0
-    panelNoCandidates = 0
-    panelDuplicateKeys = 0
+    for groupId in pairs(panelDiagnostics) do
+        if not panelIds or panelIds[groupId] then panelDiagnostics[groupId] = nil end
+    end
 
     -- Walked from the LIVE FRAMES, like the slot pass above, not from stored
     -- config: the container mounts on the frame, so a panel without one has
@@ -4483,15 +4495,40 @@ local function RebindAuraPanels(self)
     -- parentage, a hidden container is inert, and it re-registers and refreshes
     -- itself on show.
     for groupId, frame in pairs(self.groupFrames) do
-        local group = self.db.profile.groups[groupId]
-        if frame and ST.IsAuraPanelGroup(group) then
-            BindAuraPanel(self, groupId, group, frame)
-        elseif frame and ST.PanelHasAuraSection(group) then
-            -- A MIXED panel: its base grid is live CC buttons the slot pass
-            -- above already handled, and only its aura sections come here.
-            BindAuraSections(self, groupId, group, frame)
+        if not panelIds or panelIds[groupId] then
+            panelSkippedNoKey, panelUnitMismatches, panelNoCandidates, panelDuplicateKeys = 0, 0, 0, 0
+            local group = self.db.profile.groups[groupId]
+            if frame and ST.IsAuraPanelGroup(group) then
+                BindAuraPanel(self, groupId, group, frame)
+            elseif frame and ST.PanelHasAuraSection(group) then
+                -- A MIXED panel: the slot pass handles its live CC buttons;
+                -- only its aura sections come here.
+                BindAuraSections(self, groupId, group, frame)
+            end
+            if panelSkippedNoKey + panelUnitMismatches + panelNoCandidates + panelDuplicateKeys > 0 then
+                panelDiagnostics[groupId] = { panelSkippedNoKey, panelUnitMismatches, panelNoCandidates, panelDuplicateKeys }
+            end
         end
     end
+    panelSkippedNoKey, panelUnitMismatches, panelNoCandidates, panelDuplicateKeys = 0, 0, 0, 0
+    for _, counts in pairs(panelDiagnostics) do
+        panelSkippedNoKey = panelSkippedNoKey + counts[1]
+        panelUnitMismatches = panelUnitMismatches + counts[2]
+        panelNoCandidates = panelNoCandidates + counts[3]
+        panelDuplicateKeys = panelDuplicateKeys + counts[4]
+    end
+end
+
+local function SlotBindingMatches(record, want)
+    if record.parked or not record.boundEntry or not record.boundSpellSet
+        or record.boundGroupScoped ~= want.groupScoped then return false end
+    for spellID in pairs(want.spellSet) do
+        if not record.boundSpellSet[spellID] then return false end
+    end
+    for spellID in pairs(record.boundSpellSet) do
+        if not want.spellSet[spellID] then return false end
+    end
+    return true
 end
 
 -- One combat-defer note per deferral window: config edits made in combat keep
@@ -4500,10 +4537,10 @@ end
 -- aura visuals lag. Cleared when a rebind actually runs.
 local deferNoteShown = false
 
--- A host is only slot-free once none of its records holds a binding. Several
--- records share one button, so this must be asked per host, not per record.
-local function HostHoldsBinding(byUnit)
-    for _, record in pairs(byUnit) do
+-- A host is only binding-free once none of its slot records or flow groups
+-- holds an entry. Several records share a host, so ask per host.
+local function HostHoldsBinding(bindings)
+    for _, record in pairs(bindings) do
         if record.boundEntry then
             return true
         end
@@ -4516,6 +4553,33 @@ local function HasBoundSlots(groupId)
         if record.boundEntry then
             if groupId == nil then return true end
             if record.button._groupId == groupId then return true end
+        end
+    end
+    return false
+end
+
+-- Populate/style requests can skip aura work only when the saved panel has no
+-- consumers AND none of its retained records needs retirement. Do not filter by
+-- visibility or eligibility: hidden entries still consume style at bind time.
+-- Read only CC-owned metadata, including records on pooled or replaced hosts.
+function CooldownCompanion:PanelNeedsAuraRebind(groupId, group)
+    if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
+        or group.displayMode == "textures" or group.displayMode == "trigger" then return true end
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.auraTracking or entry.addedAs == "aura" then return true end
+    end
+    if HasBoundSlots(groupId) then return true end
+    for _, record in ipairs(blockRecords) do
+        if record.owner and record.owner.groupId == groupId
+            and (record.configured or record.shown or HostHoldsBinding(record.groupList)) then
+            -- An incompatible unit bucket can be configured without binding an
+            -- entry. Retire that membership too, so it stops requesting work.
+            return true
+        end
+    end
+    for _, record in ipairs(panelRecords) do
+        if record.groupId == groupId and (record.shown or HostHoldsBinding(record.groupList)) then
+            return true
         end
     end
     return false
@@ -4545,7 +4609,7 @@ local function RefreshReboundBlockAttachments(self, owners)
     end
 end
 
-function RunAuraRebind(configEdit)
+function RunAuraRebind(configEdit, panelIds, resources)
     local self = CooldownCompanion
     if not (self.db and self.groupFrames) then return end
     -- Authoritative guard at the mutation boundary. Callers also check so they
@@ -4568,6 +4632,19 @@ function RunAuraRebind(configEdit)
     -- returns above resolve nothing, so they need no clear.
     ST.BeginAuraCandidatePass()
 
+    -- Scope is an explicit request, never a cached inference. Unknown/global
+    -- changes still take the full pass. Select retirement by ID so replaced
+    -- frame objects and pooled hosts are cleaned along with their live owner.
+    local owners
+    if panelIds then
+        owners = {}
+        for groupId in pairs(panelIds) do owners[groupId] = self.groupFrames[groupId] end
+    end
+    local function IncludesButton(button)
+        return not panelIds or (button._ccAuraHostKind == "resourceBar" and resources)
+            or panelIds[button._groupId]
+    end
+
     -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
     -- existing aura flags. Texture panels always bind primary Aura entries and
     -- require an explicit opt-in for ordinary spells, so retained pre-12.1
@@ -4577,7 +4654,7 @@ function RunAuraRebind(configEdit)
     -- aura's time, stacks or presence into those columns through the text
     -- host kit. Trigger panels remain excluded.
     local wanted = {}
-    for groupId, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(owners or self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
         if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures" or displayMode == "text")
@@ -4633,7 +4710,7 @@ function RunAuraRebind(configEdit)
     -- records in the same shape, hosted on stable holder frames. Looked up
     -- at run time (the module loads after this file).
     local collectCustomWants = ST._CollectResourceBarAuraWants
-    if collectCustomWants then
+    if collectCustomWants and (not panelIds or resources) then
         collectCustomWants(wanted)
     end
 
@@ -4658,15 +4735,24 @@ function RunAuraRebind(configEdit)
         end
     end
 
-    -- Park everything, then bind fresh — simple and idempotent; runs at
-    -- config-change frequency, never per tick. The mutation-boundary guard
-    -- above has established that combat lockdown and aura secrecy are both
-    -- clear before any binding is hidden or rewritten.
+    -- Keep unchanged native slot contracts mounted. Every selected want still
+    -- resolves candidates and restyles, including retries for data that was
+    -- unavailable last time. Removed/retargeted contracts retain full parking.
+    local retained = {}
+    for _, want in ipairs(wanted) do
+        want.records = {}
+        local byUnit = displays[want.button]
+        for _, unit in ipairs(want.units) do
+            local record = byUnit and byUnit[(want.hostKind or "button") .. "\031" .. unit]
+            want.records[unit] = record
+            if record and SlotBindingMatches(record, want) then retained[record] = true end
+        end
+    end
     for button in pairs(displays) do
-        BindMissingAuraReminder(button)
+        if IncludesButton(button) then BindMissingAuraReminder(button) end
     end
     for _, record in ipairs(records) do
-        ParkDisplay(record)
+        if IncludesButton(record.button) and not retained[record] then ParkDisplay(record) end
     end
     for _, want in ipairs(wanted) do
         -- Aura sounds are registered per unit token, so a multi-unit set would
@@ -4675,7 +4761,8 @@ function RunAuraRebind(configEdit)
         -- entries keep today's behavior exactly.
         local soundsAllowed = #want.units == 1
         for _, unit in ipairs(want.units) do
-            local record = EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
+            local record = want.records[unit]
+                or EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
             if record then
                 record.missingIndicator = want.missingIndicator
                 BindDisplay(record, want.buttonData, want.spellSet, unit,
@@ -4691,14 +4778,14 @@ function RunAuraRebind(configEdit)
     -- Aura blocks (custom-bar aura entries that hide when inactive): their own
     -- park-then-bind pass over the group containers. Disjoint from the slot
     -- records above — no host button, no pool lock — so ordering is free.
-    RebindCustomBarAuraBlocks(self)
-    RefreshReboundBlockAttachments(self)
+    RebindCustomBarAuraBlocks(self, owners, panelIds)
+    RefreshReboundBlockAttachments(self, owners)
 
     -- Aura Panels (whole panels drawn by their own aura container): likewise a
     -- self-contained park-then-bind pass. Disjoint from both passes above — an
     -- Aura Panel materializes no CC buttons, so the `wanted` walk never saw one
     -- and no record here shares a host with anything.
-    RebindAuraPanels(self)
+    RebindAuraPanels(self, panelIds)
 
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
@@ -4706,7 +4793,7 @@ function RunAuraRebind(configEdit)
     -- token while a sibling is still bound and visible would release the lock
     -- that stops the pool handing this host to a different entry.
     for button, byUnit in pairs(displays) do
-        if not HostHoldsBinding(byUnit) then
+        if IncludesButton(button) and not HostHoldsBinding(byUnit) then
             button._auraSlotHostToken = nil
         end
     end
@@ -4757,7 +4844,8 @@ local function RunBlockRebind(owners)
 end
 
 local function FlushAuraRebind()
-    if not fullRebindRequested and not next(blockRebindOwners) then return end
+    if not fullRebindRequested and not resourceRebindRequested
+        and not next(panelRebindIds) and not next(blockRebindOwners) then return end
     if not CanRunRebindNow() then
         if pendingConfigEdit then NoteDeferredConfigEdit("config") end
         ArmRebindRetry()
@@ -4768,13 +4856,20 @@ local function FlushAuraRebind()
     -- Consume only this batch. Requests made during a bind belong to the next
     -- batch and must survive both normal completion and restriction deferral.
     local full, owners, configEdit = fullRebindRequested, blockRebindOwners, pendingConfigEdit
+    local panelIds, resources = panelRebindIds, resourceRebindRequested
     fullRebindRequested, blockRebindOwners, pendingConfigEdit = false, {}, false
+    panelRebindIds, resourceRebindRequested = {}, false
     if full then
         RunAuraRebind(configEdit)
     else
+        if resources or next(panelIds) then
+            RunAuraRebind(configEdit, panelIds, resources)
+            for groupId in pairs(panelIds) do owners[groupId] = nil end
+        end
         RunBlockRebind(owners)
     end
-    if fullRebindRequested or next(blockRebindOwners) then ScheduleAuraRebind() end
+    if fullRebindRequested or resourceRebindRequested or next(panelRebindIds)
+        or next(blockRebindOwners) then ScheduleAuraRebind() end
 end
 
 function ScheduleAuraRebind()
@@ -4811,13 +4906,25 @@ function RequestBlockRebind(owner)
     ScheduleAuraRebind()
 end
 
--- Existing callers still request a full bind. Full work supersedes any pending
--- block scope, but never clears requests made after the running batch started.
-function CooldownCompanion:RequestAuraRebind(reason, groupId)
+-- Only callers with a known owner contract narrow the pass. Lifecycle, roster,
+-- candidate-map and unknown requests retain the full convergence fallback.
+function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     if not self.db then return end
     rebindRequestCount = rebindRequestCount + 1
-    fullRebindRequested = true
-    blockRebindOwners = {}
+    if groupId and (reason == "populate" or reason == "style"
+        or reason == "config" or reason == "aura-panel") then
+        if not fullRebindRequested then panelRebindIds[groupId] = true end
+    elseif reason == "resources" then
+        if not fullRebindRequested then
+            resourceRebindRequested = true
+            -- Resource geometry also owns the mounts of attached aura blocks.
+            if groupId then panelRebindIds[groupId] = true end
+            if previousGroupId then panelRebindIds[previousGroupId] = true end
+        end
+    else
+        fullRebindRequested = true
+        blockRebindOwners, panelRebindIds, resourceRebindRequested = {}, {}, false
+    end
     if reason == "config" or (reason == "style" and HasBoundSlots(groupId)) then
         pendingConfigEdit = true
     end

@@ -1678,6 +1678,31 @@ function CooldownCompanion:RepositionCastBar()
     elseif cast.state == "channel" then
         BuildChannelTickMarks()
     end
+    return true
+end
+
+-- Resource-only edits and native aura tails change attachment geometry, not
+-- cast styling. Retain full lifecycle convergence for suspended bars and
+-- independent movers, whose setup belongs to ApplyCastBarSettings.
+function CooldownCompanion:RefreshCastBarAttachment()
+    local settings = GetCastBarSettings()
+    local groupId = settings and GetEffectiveAnchorGroupId(settings)
+    local group = groupId and self.db.profile.groups[groupId]
+    local frame = groupId and self.groupFrames[groupId]
+    if isApplied and settings and settings.enabled
+        and not self:IsModuleAnchorIndependent("castbar")
+        and not (independentMoverFrame and independentMoverFrame:IsShown())
+        and group and self:IsIconLikeDisplayMode(group.displayMode)
+        and frame and frame:IsShown() and self:RepositionCastBar() then
+        if isUnlockAssistActive then
+            ApplyCastBarUnlockPreview()
+        elseif not cast.state and not cast.fadeMode then
+            HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
+        end
+        self:RefreshUnlockToolbar()
+        return
+    end
+    self:EvaluateCastBar({ skipRuntimeGate = true })
 end
 
 ------------------------------------------------------------------------

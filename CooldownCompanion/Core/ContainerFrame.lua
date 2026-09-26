@@ -1042,6 +1042,7 @@ end
 local EnsureContainerMoverChrome
 
 function CooldownCompanion:RefreshContainerWrapper(containerId)
+    if self:DeferPanelRefreshCompletion("wrappers", containerId) then return end
     local frame = self.containerFrames and self.containerFrames[containerId]
     local container = self.db and self.db.profile and self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
     if not (frame and container) or frame._isRefreshingContainerWrapper then return end
@@ -1228,6 +1229,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
 end
 
 function CooldownCompanion:RefreshAllContainerWrappers()
+    if self:DeferPanelRefreshCompletion("wrappers") then return end
     if not self.containerFrames then
         return
     end

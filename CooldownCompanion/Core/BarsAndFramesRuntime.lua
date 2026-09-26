@@ -128,6 +128,16 @@ end
 -- Native aura binding and its cast-only tail notification retain their own
 -- asynchronous lifecycle; neither can request Resources through this context.
 local attachmentRefresh
+local abandonedRefresh
+local completionGuard = CreateFrame("Frame")
+completionGuard:Hide()
+completionGuard:SetScript("OnUpdate", function(self)
+    -- A synchronous owner cannot legitimately span frames. An error before
+    -- End must not leave every later refresh nested forever. Keep its debt
+    -- for the next operation; do not retry a failing operation every frame.
+    self:Hide()
+    abandonedRefresh, attachmentRefresh = attachmentRefresh, nil
+end)
 local featureMethods = {
     resourceBars = { evaluate = "EvaluateResourceBars", apply = "ApplyResourceBars" },
     castBar = { evaluate = "EvaluateCastBar", apply = "ApplyCastBarSettings" },
@@ -136,8 +146,59 @@ local featureMethods = {
 
 function CooldownCompanion:BeginPanelAttachmentRefresh()
     if attachmentRefresh then return nil end
-    attachmentRefresh = { panels = {} }
+    attachmentRefresh = abandonedRefresh or { panels = {} }
+    if abandonedRefresh then
+        attachmentRefresh.full, attachmentRefresh.rangeChanged = true, true
+        attachmentRefresh.completing = nil
+        attachmentRefresh.completion = { wrappers = true, cursor = true, preview = true, alpha = true }
+        abandonedRefresh = nil
+    end
+    completionGuard:Show()
     return attachmentRefresh
+end
+
+-- Only completion work is batched. Geometry, button paints and anchors still
+-- run at their existing synchronous call sites; nothing waits for a timer.
+function CooldownCompanion:DeferPanelRefreshCompletion(kind, containerId)
+    local refresh = attachmentRefresh
+    if not refresh or (refresh.completing and refresh.completing[kind]) then return false end
+    local completion = refresh.completion or {}
+    refresh.completion = completion
+    if kind == "wrappers" and containerId and completion.wrappers ~= true then
+        completion.wrappers = completion.wrappers or {}
+        completion.wrappers[containerId] = true
+    else
+        completion[kind] = true
+    end
+    return true
+end
+
+local function FinishPanelRefreshCompletion(refresh, beforeModules)
+    local completion = refresh.completion or {}
+    refresh.completion = completion
+    refresh.completing = refresh.completing or {}
+    local kinds = beforeModules and { "preview", "wrappers" } or { "preview", "wrappers", "cursor", "alpha" }
+    for _, kind in ipairs(kinds) do
+        local requested = completion[kind]
+        completion[kind] = nil
+        refresh.completing[kind] = true
+        if requested then
+            if kind == "wrappers" then
+                if requested == true then
+                    CallIfAvailable("RefreshAllContainerWrappers")
+                else
+                    for id in pairs(requested) do CallIfAvailable("RefreshContainerWrapper", id) end
+                end
+            elseif kind == "preview" then
+                CallIfAvailable("RefreshCursorAnchorLayoutPreview")
+            elseif kind == "cursor" then
+                CallIfAvailable("RefreshCursorAnchorTicker")
+            else
+                CallIfAvailable("RefreshAlphaUpdateDriver")
+            end
+        end
+        refresh.completing[kind] = nil
+    end
 end
 
 local function IncludePanel(groupId, geometryKind, checkResources)
@@ -156,9 +217,14 @@ end
 
 function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     local refresh = attachmentRefresh
+    if not refresh then return end
     if changed then refresh.full, refresh.rangeChanged = true, true end
     if reason then refresh.reason = reason end
     if operation ~= refresh then return end
+
+    -- Preview membership may itself contribute panel work. Finish it before
+    -- deciding which modules the outer operation must converge.
+    FinishPanelRefreshCompletion(refresh, true)
 
     -- Panel construction alone must not start modules before initialization.
     -- Explicit module requests can start them; the shared login settle also
@@ -182,6 +248,8 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
             runtime.counters.skippedEvaluate = runtime.counters.skippedEvaluate + 1
         end
     end
+
+    FinishPanelRefreshCompletion(refresh, true)
 
     local opts = { skipRuntimeGate = true, skipCompactSuppression = true }
     local resourceMethod = evaluate and (refresh.full and "evaluate" or refresh.resourceBars)
@@ -210,9 +278,9 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     local castMethod = evaluate and (refresh.full and "evaluate" or refresh.castBar)
     if castMethod and flags.castBar then
         CallIfAvailable(featureMethods.castBar[castMethod], opts)
-    elseif flags.castBar and (refresh.resourceChanged
+    elseif flags.castBar and (refresh.castAttachment or refresh.resourceChanged
         or (next(refresh.panels) and refresh.panels[self:GetModuleAnchorPanelId("castbar")])) then
-        CallIfAvailable("RepositionCastBar")
+        CallIfAvailable("RefreshCastBarAttachment")
     end
     local frameMethod = evaluate and (refresh.full and "evaluate" or refresh.frameAnchoring)
     if frameMethod and flags.frameAnchoring then
@@ -225,7 +293,9 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     if evaluate and not flags.resourceBars and not flags.castBar then
         CallIfAvailable("RefreshUnlockToolbar")
     end
+    FinishPanelRefreshCompletion(refresh)
     attachmentRefresh = nil
+    completionGuard:Hide()
     if refresh.rangeChanged then self:UpdateRangeCheckRegistrations() end
     return evaluate == true and runtime.enabled == true
 end
@@ -253,7 +323,15 @@ function CooldownCompanion:RefreshBarsAndFramesRuntimeFeature(feature, reason, a
     if not applyOnly or not refresh[feature] then
         refresh[feature] = applyOnly and "apply" or "evaluate"
     end
-    if feature == "resourceBars" then refresh.castBar = "evaluate" end
+    if feature == "resourceBars" then
+        if applyOnly then
+            -- Even an empty/suspended resource apply must converge the cast
+            -- destination; it need not reach FinishResourceBarLayout.
+            refresh.castAttachment = true
+        else
+            refresh.castBar = "evaluate"
+        end
+    end
     return self:EndPanelAttachmentRefresh(operation, false, reason)
 end
 

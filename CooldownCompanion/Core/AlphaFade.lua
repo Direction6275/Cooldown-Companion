@@ -1258,6 +1258,7 @@ end
 -- external refresh always arms and lets the pass re-decide, which is also
 -- cheaper than the evaluation walk it used to run.
 function CooldownCompanion:RefreshAlphaUpdateDriver(fromAlphaPass)
+    if not fromAlphaPass and self:DeferPanelRefreshCompletion("alpha") then return false end
     if not self._alphaFrame then
         if self._initializingAlphaUpdateFrame then
             return false
