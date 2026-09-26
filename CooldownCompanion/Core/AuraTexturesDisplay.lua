@@ -450,6 +450,10 @@ local function GetTextureHostPositionContext(host)
 
     local owner = host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+    if ST.IsIndicatorGroup(group) then
+        -- Placement belongs to the Indicator even when it has no texture art.
+        return owner, group, ST.Indicator.Settings(group).signal
+    end
     local settings
     local requiresConfiguredTexture = false
     if group and CooldownCompanion:IsTriggerPanelGroup(group) then
@@ -1374,7 +1378,7 @@ function CooldownCompanion.ApplyTriggerTextVisual(host, settings)
     textFrame.text:SetJustifyV((lineCount or 1) > 1 and "TOP" or "MIDDLE")
     textFrame:Show()
 
-    return true
+    return true, frameWidth, frameHeight
 end
 
 function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
@@ -1623,13 +1627,16 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     end
 
     local savedSettings = isTriggerPanel and group and group.triggerSettings and group.triggerSettings.signal or group and group.textureSettings or nil
+    local indicatorSettings = ST.Indicator.Settings(group)
+    if indicatorSettings then savedSettings = indicatorSettings.signal end
     local hasSavedDisplay = false
     if displayType == "texture" then
         hasSavedDisplay = type(savedSettings) == "table" and savedSettings.sourceType ~= nil
     elseif displayType == "icon" then
         hasSavedDisplay = settings.manualIcon ~= nil
     elseif displayType == "text" then
-        hasSavedDisplay = CooldownCompanion.HasTriggerTextValue(settings)
+        -- Text Only has a saved display area; its readouts need no legacy value.
+        hasSavedDisplay = indicatorSettings ~= nil or CooldownCompanion.HasTriggerTextValue(settings)
     end
     local containerId = group and group.parentContainerId or nil
     local isGroupedPreviewSelected = visibilityState.isGroupedPreview

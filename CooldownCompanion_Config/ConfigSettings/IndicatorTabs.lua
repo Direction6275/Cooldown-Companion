@@ -140,9 +140,9 @@ local function BuildAppearance(container, group, changed)
         ST._BuildTexturePanelAppearanceTab(container,group)
     else
         Slider(container,{setting=appearance.width,min=20,max=600,step=1,value=settings.text.width or 180,
-            onRelease=function(value) settings.text.width=value; changed() end})
+            onRelease=function(value) settings.text.width=value; settings.legacyTextMetrics=nil; changed() end})
         Slider(container,{setting=appearance.height,min=10,max=300,step=1,value=settings.text.height or 48,
-            onRelease=function(value) settings.text.height=value; changed() end})
+            onRelease=function(value) settings.text.height=value; settings.legacyTextMetrics=nil; changed() end})
     end
     local r = settings.readouts
     Dropdown(container,{setting=appearance.label,list={none="None",name="Source Name",custom="Custom Text"},
@@ -168,25 +168,30 @@ local function BuildAppearance(container, group, changed)
         onChange=function(value) r.count=value; changed(true) end})
     Slider(container,{setting=appearance.fontSize,min=6,max=72,step=1,value=settings.text.textFontSize,
         onRelease=function(value) settings.text.textFontSize=value; changed() end})
-    local fonts={}
-    for name in pairs(LibStub("LibSharedMedia-3.0"):HashTable("font")) do fonts[name]=name end
-    Dropdown(container,{setting=appearance.font,list=fonts,value=settings.text.textFont,
-        onChange=function(value) settings.text.textFont=value; changed() end})
-    Dropdown(container,{setting=appearance.outline,list={[""]="None",OUTLINE="Outline",THICKOUTLINE="Thick Outline"},
-        order={"","OUTLINE","THICKOUTLINE"},value=settings.text.textFontOutline,
-        onChange=function(value) settings.text.textFontOutline=value; changed() end})
+    local font = Dropdown(container,{setting=appearance.font,pulloutWidth=300})
+    CS.SetupFontDropdown(font)
+    font:SetValue(settings.text.textFont or "Friz Quadrata TT")
+    CS.SetFontDropdownCallback(font,function(_,_,value) settings.text.textFont=value; changed() end)
+    local outline = Dropdown(container,{setting=appearance.outline})
+    CS.SetupFontOutlineDropdown(outline)
+    outline:SetValue(settings.text.textFontOutline or "OUTLINE")
+    CS.SetFontOutlineDropdownCallback(outline,function(_,_,value) settings.text.textFontOutline=value; changed() end)
     ST._AddColorRow(container,{setting=appearance.color,hasAlpha=true,tbl=settings.text,key="textFontColor",onConfirm=changed})
     ST._AddColorRow(container,{setting=appearance.background,hasAlpha=true,tbl=settings.text,key="textBgColor",onConfirm=changed})
     for _, key in ipairs({"label","timer","count"}) do
         local enabled=key == "label" and r.label ~= "none" or key == "timer" and r.timer or key == "count" and r.count ~= "none"
         if enabled then
             local name = key:sub(1,1):upper() .. key:sub(2)
+            local function positionChanged()
+                if key == "label" and settings.displayType == "text" then settings.legacyTextMetrics=nil end
+                changed()
+            end
             Dropdown(container,{setting=positions[key].anchor,list=anchors,order=anchorOrder,value=r[key.."Anchor"],
-                onChange=function(value) r[key.."Anchor"]=value; r[key.."X"],r[key.."Y"]=0,0; changed() end})
+                onChange=function(value) r[key.."Anchor"]=value; r[key.."X"],r[key.."Y"]=0,0; positionChanged() end})
             for _, axis in ipairs({"X","Y"}) do
                 local field=key..axis
                 Slider(container,{setting=positions[key][axis],min=-300,max=300,step=1,value=r[field] or 0,
-                    onRelease=function(value) r[field]=value; changed() end})
+                    onRelease=function(value) r[field]=value; positionChanged() end})
             end
         end
     end

@@ -54,11 +54,13 @@ local function StyleReadouts(host, group)
     local text, options = settings.text, settings.readouts
     local color = text.textFontColor or WHITE
     local font = Addon:FetchFont(text.textFont or "Friz Quadrata TT")
+    local outline = ST.GetEffectiveFontOutline(text.textFontOutline)
     local readouts = host.indicatorReadouts
     readouts.root:Show()
     for _, key in ipairs({"label", "timer", "count"}) do
         local fs = readouts[key]
-        fs:SetFont(font, text.textFontSize or 20, text.textFontOutline or "OUTLINE")
+        fs:SetFont(font, text.textFontSize or 20, outline)
+        ST.ApplyFontShadowForOutline(fs, outline)
         fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
         fs:ClearAllPoints()
         local anchor = options[key .. "Anchor"] or (key == "label" and "TOP" or key == "count" and "BOTTOM" or "CENTER")
@@ -110,14 +112,14 @@ function I.StyleVisual(host, group)
         host._activeTextureSettings, host._activeTextureGeometry = visual, geometry
     elseif settings.legacyTextMetrics then
         -- Migrated trigger messages keep their existing metrics/background.
-        Addon.ApplyTriggerTextVisual(host, settings.text)
-        geometry.boundsWidth, geometry.boundsHeight = Addon.GetTriggerTextDisplayMetrics(host.textFrame.text, settings.text)
+        -- Re-measuring after layout would clear the text's anchors.
+        shown, geometry.boundsWidth, geometry.boundsHeight = Addon.ApplyTriggerTextVisual(host, settings.text)
     else
         host._triggerTextBaseColor = CopyTable(settings.text.textFontColor or WHITE)
         host.textFrame.bg:SetColorTexture(unpack(settings.text.textBgColor or {0, 0, 0, 0}))
         host.textFrame:SetSize(geometry.boundsWidth, geometry.boundsHeight)
         host.textFrame.text:SetFont(Addon:FetchFont(settings.text.textFont or "Friz Quadrata TT"),
-            settings.text.textFontSize or 20, settings.text.textFontOutline or "OUTLINE")
+            settings.text.textFontSize or 20, ST.GetEffectiveFontOutline(settings.text.textFontOutline))
         host.textFrame.text:SetText("")
         host.textFrame:Show()
     end

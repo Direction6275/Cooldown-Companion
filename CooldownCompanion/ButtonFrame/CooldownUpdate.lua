@@ -805,7 +805,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         -- Both intentionally reuse the charge-text font/toggle without driving
         -- charge-specific cooldown logic.
         if buttonData.type == "spell"
-                and button.style and button.style.showChargeText then
+                and ST._ShouldShowChargeText(button) then
             local displayCountShown = false
             local hasCastCountText = HasCastCountText(buttonData)
             local conditionalCastCountSpellID
