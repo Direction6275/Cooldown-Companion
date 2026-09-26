@@ -146,6 +146,42 @@ local function FillHostFrame(host, frame)
     frame:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
 end
 
+-- Snapshot before releasing pooled widgets. Numeric offsets belong only to
+-- the same profile, owner, scope and tab; lens anchors resolve scope changes.
+local function SaveSettingsScroll()
+    local scroll = CS.col4Scroll
+    local status = scroll and (scroll.status or scroll.localstatus)
+    if not (status and scroll._cdcSettingsOwner and scroll._cdcSettingsScopeKey) then return end
+    return {
+        profile = scroll._cdcSettingsProfile, owner = scroll._cdcSettingsOwner,
+        scope = scroll._cdcSettingsScopeKey, entry = scroll._cdcSettingsEntry,
+        offset = status.offset, scrollvalue = status.scrollvalue,
+    }
+end
+
+local function RestoreSettingsScroll(saved, scroll)
+    if not (saved and scroll and saved.profile == scroll._cdcSettingsProfile
+        and saved.owner == scroll._cdcSettingsOwner and saved.scope == scroll._cdcSettingsScopeKey
+        and saved.entry == scroll._cdcSettingsEntry) then return end
+    local status = scroll.status or scroll.localstatus
+    status.offset, status.scrollvalue = saved.offset, saved.scrollvalue
+    CS.FixConfigScroll(scroll)
+end
+
+local function SetSettingsScrollOwner(scroll, owner, scope, entry)
+    CS.col4Scroll = scroll
+    scroll._cdcSettingsProfile = CooldownCompanion.db.profile
+    scroll._cdcSettingsOwner, scroll._cdcSettingsScopeKey, scroll._cdcSettingsEntry = owner, scope, entry
+    scroll._cdcStylePresentation, scroll._cdcSettingsViewKey = nil, nil
+    scroll:SetCallback("OnRelease", function(released)
+        local registry = CS.lensAnchorRegistry
+        if registry and registry.scroll == released then registry.released = true end
+        released._cdcSettingsProfile = nil
+        released._cdcStylePresentation, released._cdcSettingsScopeKey = nil, nil
+        released._cdcSettingsOwner, released._cdcSettingsViewKey, released._cdcSettingsEntry = nil, nil, nil
+    end)
+end
+
 -- stripOnly: the selected entry's Settings/Customizations tab owns the shared
 -- surface, so its style tabs are painted beside it without building content.
 -- Both strips still belong to the same selected entry.
@@ -202,6 +238,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             local tabGroup = AceGUI:Create("TabGroup")
             tabGroup:SetLayout("Fill")
             tabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
+                local savedScroll = SaveSettingsScroll()
                 CS.selectedContainerTab = tab
                 -- Clean up raw (?) info buttons BEFORE releasing children, so they
                 -- don't leak onto recycled AceGUI frames when switching tabs
@@ -216,7 +253,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 local scroll = AceGUI:Create("ScrollFrame")
                 scroll:SetLayout("List")
                 widget:AddChild(scroll)
-                CS.col4Scroll = scroll
+                SetSettingsScrollOwner(scroll,
+                    CooldownCompanion.db.profile.groupContainers[CS.selectedContainer], "group:" .. tab)
 
                 if tab == "general" then
                     ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
@@ -228,6 +266,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 -- themselves after their children land, and that height never
                 -- reaches the scroll frame until something relayouts it.
                 scroll:DoLayout()
+                RestoreSettingsScroll(savedScroll, scroll)
 
             end)
             tabGroup.frame:SetParent(container)
@@ -338,10 +377,10 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             local scroll = AceGUI:Create("ScrollFrame")
             scroll:SetLayout("List")
             scrollParent:AddChild(scroll)
-            CS.col4Scroll = scroll
-            scroll._cdcStylePresentation = nil
-            scroll._cdcSettingsScopeKey, scroll._cdcSettingsOwner = nil, nil
-            scroll._cdcSettingsViewKey, scroll._cdcSettingsEntry = nil, nil
+            local entry = styleGroup and styleGroup.buttons and styleGroup.buttons[CS.selectedButton]
+            local scope = CS.selectedRotationAssistantEntry and "rotation-entry" or (entry and "entry" or "panel")
+            SetSettingsScrollOwner(scroll, styleGroup,
+                scope .. ":" .. (styleGroup and styleGroup.displayMode or "icons") .. ":" .. tab, entry)
             if styleGroup then
                 scroll._cdcStylePresentation = styleGroup.displayMode or "icons"
                 if ST.PanelSupportsAttachedBars(styleGroup) then
@@ -366,12 +405,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                     end
                 end
             end
-            scroll:SetCallback("OnRelease", function(released)
-                local registry = CS.lensAnchorRegistry
-                if registry and registry.scroll == released then registry.released = true end
-                released._cdcStylePresentation, released._cdcSettingsScopeKey = nil, nil
-                released._cdcSettingsOwner, released._cdcSettingsViewKey, released._cdcSettingsEntry = nil, nil, nil
-            end)
             if ST._BeginLensAnchorBuild then
                 ST._BeginLensAnchorBuild(scroll)
             end
@@ -536,17 +569,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         return
     end
 
-    -- Save AceGUI scroll state before tab re-select (old col4Scroll will be released)
-    local savedOffset, savedScrollvalue, savedScope, savedOwner
-    if CS.col4Scroll then
-        local s = CS.col4Scroll.status or CS.col4Scroll.localstatus
-        if s and s.offset and s.offset > 0 then
-            savedOffset = s.offset
-            savedScrollvalue = s.scrollvalue
-            savedScope = CS.col4Scroll._cdcSettingsScopeKey
-            savedOwner = CS.col4Scroll._cdcSettingsOwner
-        end
-    end
+    local savedScroll = SaveSettingsScroll()
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)
@@ -554,15 +577,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 
     -- Restore the saved position; a full refresh applies it after the
     -- inline Advanced editor is reinserted, before returning to rendering.
-    if savedOffset and CS.col4Scroll and savedScope == CS.col4Scroll._cdcSettingsScopeKey
-        and savedOwner == CS.col4Scroll._cdcSettingsOwner then
-        local s = CS.col4Scroll.status or CS.col4Scroll.localstatus
-        if s then
-            s.offset = savedOffset
-            s.scrollvalue = savedScrollvalue
-            CS.FixConfigScroll(CS.col4Scroll)
-        end
-    end
+    RestoreSettingsScroll(savedScroll, CS.col4Scroll)
 end
 
 ST._RefreshGroupSettingsHost = RefreshGroupSettingsHost

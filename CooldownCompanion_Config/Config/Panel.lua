@@ -585,6 +585,9 @@ local function FixConfigScroll(widget)
         pendingScrollFixes[widget] = true
     else
         widget:FixScroll()
+        -- A fresh scroll frame already has no scrollbar. AceGUI leaves its
+        -- restored offset untouched when the completed page fits the viewport.
+        if not widget.scrollBarShown then widget:SetScroll(0) end
     end
 end
 CS.FixConfigScroll = FixConfigScroll
@@ -601,7 +604,7 @@ local function FinishConfigRefresh()
     end
     for widget in pairs(pendingScrollFixes) do
         pendingScrollFixes[widget] = nil
-        widget:FixScroll()
+        FixConfigScroll(widget)
     end
     if ST._RestoreLensAnchor then
         ST._RestoreLensAnchor()
