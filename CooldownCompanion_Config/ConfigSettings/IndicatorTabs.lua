@@ -233,7 +233,6 @@ local function BuildTracking(container, group, changed)
             onChange=function(value) settings.sourceVisibility=value; changed() end})
     end
     if I.IsAura(group) then
-        Hint(container,"While this aura is active")
         local left = ST._BeginRowGrid(container)
         local automaticSource = CopyTable(source)
         automaticSource.auraUnitOverride = nil
@@ -258,6 +257,9 @@ local function BuildTracking(container, group, changed)
         local list, order = {ready="Ready",cooldown="On Cooldown",always="Always"},{"ready","cooldown","always"}
         if mode == "custom" then list.custom="Custom Conditions"; order[#order+1]="custom" end
         Dropdown(left,{setting=tracking.conditions,list=list,order=order,value=mode,
+            tooltip={"When to Show",
+                {"Every enabled source and condition must match. Sources must be available to track. Visibility settings still apply.",1,1,1,true},
+                {"When Use Saved Source Visibility is enabled, those rules must also allow the Indicator to show.",1,1,1,true}},
             onChange=function(value)
                 if value == "custom" then return end
                 local clauses=source.triggerConditions or {}
@@ -266,9 +268,6 @@ local function BuildTracking(container, group, changed)
                 source.indicatorShowWhen = value == "always" and "always" or nil
                 source.triggerConditions=clauses; changed(true)
             end})
-        if #group.buttons > 1 or #(source.triggerConditions or {}) > ((mode == "ready" or mode == "cooldown") and 1 or 0) then
-            Hint(container,"All additional conditions must also match.")
-        end
         BuildConditions(container,source,(mode == "ready" or mode == "cooldown") and 2 or 1,changed)
         for index, entry in ipairs(group.buttons or {}) do
             if entry ~= source then
@@ -281,7 +280,7 @@ local function BuildTracking(container, group, changed)
                 BuildConditions(container,entry,1,changed)
             end
         end
-        Hint(container,"Add another spell or item below the preview for an additional source. Combat and specialization limits are in Visibility.")
+        Hint(container,"Add another spell or item below the preview for an additional source.")
     end
 end
 

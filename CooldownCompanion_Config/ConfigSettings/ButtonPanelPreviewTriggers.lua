@@ -23,7 +23,49 @@ local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllText
 local PP = ST._ButtonPanelPreview
 local AceGUI = LibStub("AceGUI-3.0")
 
+local conditionPhrases = {
+    cooldownActive = {[true]="on cooldown", [false]="off cooldown"},
+    procActive = {[true]="showing a proc", [false]="not showing a proc"},
+    rangeActive = {[true]="in range", [false]="out of range"},
+    usable = {[true]="usable", [false]="unusable"},
+    chargesRecharging = {[true]="recharging a charge", [false]="not recharging any charges"},
+    chargeState = {full="at full charges", missing="below full charges with at least one remaining", zero="out of charges"},
+    countTextActive = {[true]="showing count text", [false]="not showing count text"},
+    countState = {full="at its maximum display count", missing="below its maximum display count with a nonzero count",
+        zero="at zero display count"},
+}
+
+local function TrackingSummary(group)
+    local I = ST.Indicator
+    local source = I.Primary(group)
+    if source.enabled == false then return "Cannot show: the primary source is disabled." end
+    local prefix = group.enabled == false
+        and "This Indicator is disabled. When enabled, it shows when " or "Shows when "
+    if I.IsAura(group) then return prefix .. (source.name or tostring(source.id)) .. " is active." end
+    local sources = {}
+    -- Read the same saved clauses as I.Match: every enabled source and clause
+    -- must match, even when the primary selector says Always.
+    for _, entry in ipairs(group.buttons or {}) do
+        if entry.enabled ~= false then
+            local name, phrases = entry.name or tostring(entry.id), {}
+            for _, clause in ipairs(entry.triggerConditions or {}) do
+                local expected = clause.state
+                if expected == nil then expected = clause.expected ~= false end
+                local values = conditionPhrases[clause.key]
+                local phrase = values and values[expected]
+                if clause.unavailable or not I.ConditionKeys[clause.key] or not phrase then
+                    return "Cannot show: " .. name .. " has an unavailable condition. Replace or remove that condition."
+                end
+                phrases[#phrases + 1] = phrase
+            end
+            sources[#sources + 1] = name .. " is " .. (#phrases > 0 and table.concat(phrases, " and ") or "available to track")
+        end
+    end
+    return prefix .. table.concat(sources, ", and ") .. "."
+end
+
 function PP.ReleaseIndicatorPreviewControls(preview)
+    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
     if preview.indicatorDuration then
         AceGUI:Release(preview.indicatorDuration)
         preview.indicatorDuration = nil
@@ -32,6 +74,7 @@ end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
+    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
     local I = ST.Indicator
     if not I.Primary(group) then
         PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field below.", "Choose a source")
@@ -85,45 +128,54 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local settings = I.Settings(candidate)
     local showDuration = not readOnly and (settings.readouts.timer
         or settings.displayType == "texture" and settings.progress.enabled)
-    surface:SetScale(PP.GetHostFitScale(host,math_max(width,showDuration and 260 or 0),
-        height+(showDuration and 60 or 28),readOnly))
-    surface:ClearAllPoints()
-    surface:SetPoint("CENTER",preview.root,"CENTER",0,10)
-    surface:Show()
-    preview.barBaseRect = {x=0,y=0,width=width,height=height}
+    local footerHeight = 0
     if not readOnly then
         local caption=preview.indicatorCaption
         if not caption then
             caption=preview.root:CreateFontString(nil,"OVERLAY","GameFontDisableSmall")
+            ST._ConfigureWrappedHelperLabel(caption)
+            caption:SetJustifyH("CENTER")
+            caption:SetTextColor(0.75,0.75,0.75)
             preview.indicatorCaption=caption
         end
+        local captionWidth = PP.GetHostFitBox(host,false)
         caption:ClearAllPoints()
+        caption:SetWidth(captionWidth)
         caption:SetPoint("TOP",surface,"BOTTOM",0,-8)
-        caption:SetText("Sample display")
+        caption:SetText(TrackingSummary(group))
         caption:Show()
+        footerHeight = 8 + math_max(1,caption:GetStringHeight())
         if showDuration then
             local control = preview.indicatorDuration
             if not control then
                 -- Use the shared row's dropdown geometry and pool cleanup.
                 control = AceGUI:Create("CDC-DropdownRow")
-                control:SetLabel("Sample display")
-                control:SetWidth(260)
+                control:SetLabel("Duration")
                 control:SetList({full="Full",half="Half",empty="Empty",timeless="No Timer"},
                     {"full","half","empty","timeless"})
                 control.frame:SetParent(preview.root)
                 preview.indicatorDuration = control
             end
+            control:SetWidth(math_min(260,captionWidth))
             control.frame:ClearAllPoints()
-            control.frame:SetPoint("TOP",surface,"BOTTOM",0,-6)
+            control.frame:SetPoint("TOP",caption,"BOTTOM",0,-8)
             control:SetValue(state)
             control:SetCallback("OnValueChanged",function(_,_,value)
                 CS.indicatorPreviewState=value
                 ST._RefreshButtonsPreviewMirror(panelId)
             end)
             control.frame:Show()
-            caption:Hide()
+            footerHeight = footerHeight + 8 + control.frame:GetHeight()
         end
     end
+    -- Caption and controls stay readable at the host scale. Reserve their
+    -- measured height before fitting the artwork, then center the whole stack.
+    local scale = PP.GetHostFitScale(host,width,height+(readOnly and 28 or 0),readOnly,footerHeight)
+    surface:SetScale(scale)
+    surface:ClearAllPoints()
+    surface:SetPoint("CENTER",preview.root,"CENTER",0,readOnly and 10 or footerHeight / (2 * scale))
+    surface:Show()
+    preview.barBaseRect = {x=0,y=0,width=width,height=height}
     PP.FinalizePreviewState(preview)
 end
 local StylePreviewIcon = PP.StylePreviewIcon
