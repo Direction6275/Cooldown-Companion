@@ -10,6 +10,7 @@ function ST._ConvertUnifiedPanelImport(data)
     context.originPrefix = ("import:%d:%08x:"):format(#canonical, LibDeflate:Adler32(canonical))
     local converted, report = Migration.ConvertImport(data, context)
     if converted then converted = ST.IndicatorMigration.ConvertImport(converted) end
+    if converted then converted = ST.ConvertRotationAssistantImport(converted) end
     return converted, report
 end
 

@@ -96,26 +96,32 @@ local function GetButtonPoolKey(group, buttonData, style)
 end
 
 local function GetRuntimeGroupButtonList(self, frame, group)
-    if self:IsRotationAssistantGroup(group) then
-        local buttonData = self:GetRotationAssistantButtonData(frame)
-        local list = frame._rotationAssistantButtonList
-        if not list then
-            list = {}
-            frame._rotationAssistantButtonList = list
-        end
-        list[1] = buttonData
-        for index = 2, #list do
-            list[index] = nil
-        end
-        return list
+    local saved = group and group.buttons or {}
+    local hasAssistant = false
+    for _, entry in ipairs(saved) do
+        if entry.rotationAssistant then hasAssistant = true; break end
     end
-    return group and group.buttons or {}
+    if not hasAssistant then
+        frame._rotationAssistantEntries, frame._rotationAssistantButtonList = nil, nil
+        return saved
+    end
+    local list = frame._rotationAssistantButtonList or {}
+    frame._rotationAssistantButtonList = list
+    wipe(list)
+    local retained = {}
+    for index, entry in ipairs(saved) do
+        if entry.rotationAssistant then
+            retained[entry] = true
+            list[index] = self:GetRotationAssistantRuntimeData(frame, entry)
+        else list[index] = entry end
+    end
+    for entry in pairs(frame._rotationAssistantEntries) do
+        if not retained[entry] then frame._rotationAssistantEntries[entry] = nil end
+    end
+    return list
 end
 
 local function IsRuntimeButtonUsable(self, buttonData, group, opts)
-    if buttonData and buttonData._rotationAssistantVirtual == true then
-        return (opts and opts.checkLoadConditions == false) or self:IsButtonLoadConditionMet(buttonData, group)
-    end
     return self:IsButtonUsable(buttonData, group, opts)
 end
 

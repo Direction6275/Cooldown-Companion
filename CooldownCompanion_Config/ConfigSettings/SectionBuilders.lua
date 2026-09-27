@@ -22,7 +22,7 @@ local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 -- Builders that ignore it simply fill the left column, which is what the
 -- fill-LEFT-first rule asks for. The styling tabs pass it wherever a section
 -- opens its own two-column grid (Text mode's Font and Colors sections, the
--- rotation assistant's keybind block, the bar aura indicator's effects grid).
+-- bar aura indicator's effects grid).
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
@@ -1054,64 +1054,9 @@ end
 
 -- Row grammar only: LEFT column (the container the caller hands over) the
 -- toggle and the font trio, RIGHT column (opts.rightColumn) the color, anchor
--- and offsets. opts.label / opts.tooltip let the rotation assistant name this
+-- and offsets. opts.label / opts.tooltip let callers name this
 -- "Show Keybind Text" - it has no custom-text form.
-local function BuildKeybindTextControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local label = opts.label or KEYBIND_CUSTOM_LABEL
-    local tooltip = opts.tooltip or KEYBIND_CUSTOM_TOOLTIP
-    local function ApplyShowKeybindText(val)
-        styleTable.showKeybindText = val
-        if opts.completeEdit then
-            opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
-        else
-            RefreshStructuralControls(container, refreshCallback)
-        end
-    end
 
-    local kbRow = AddCheckboxRow(container, {
-        label = label,
-        setting = opts.setting,
-        value = styleTable.showKeybindText or false,
-        indent = opts.indent,
-        onChange = ApplyShowKeybindText,
-    })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-    -- onto the end of the row's label.
-    AnchorRowBadge(kbRow, CreateInfoButton(kbRow.frame, kbRow.frame, "LEFT", "LEFT", 0, 0,
-        tooltip, kbRow))
-
-    ST._AddAdvancedToggle(kbRow, "assistantKeybindText", {}, true, {
-        unlock = not styleTable.showKeybindText and { enable = {
-            label = "Enable Keybind Text", run = function() ApplyShowKeybindText(true) end,
-        } } or nil,
-        build = function(panel)
-            AddFontControls(panel, styleTable, "keybind", {size = 10, sizeMin = 6, sizeMax = 24},
-                refreshCallback, {
-                    row = true,
-                    indent = false,
-                    settings = opts.settings and {
-                        size = opts.settings.fontSize,
-                        font = opts.settings.font,
-                        outline = opts.settings.outline,
-                    },
-                })
-            AddColorRow(panel, {
-                label = "Font Color",
-                setting = opts.settings and opts.settings.color,
-                tbl = styleTable,
-                key = "keybindFontColor",
-                default = {1, 1, 1, 1},
-                hasAlpha = true,
-                onConfirm = refreshCallback,
-            })
-            AddTextPositionControls(panel, styleTable, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshCallback, {
-                defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
-                settings = opts.settings,
-            })
-        end,
-    })
-end
 
 -- Row grammar only: the render-mode dropdown reuses
 -- AddBorderRenderModeDropdown's own row mode, the conditional thickness slider
@@ -1515,120 +1460,7 @@ local BuildIconFillTimerAdvancedControls
 -- of the first one in override mode, siblings otherwise); the two conditional
 -- controls always indent under the toggle that reveals them. One parent chain,
 -- so it stays in a single column.
-local function BuildCooldownSwipeControls(container, styleTable, refreshCallback, opts)
-    opts = opts or {}
-    local disabledByIconFill = IsIconFillTimerEnabled(styleTable, opts)
-    local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
-    -- The writes both shapes perform, hoisted so neither can wire a different
-    -- store than the other. RefreshStructuralControls is on exactly the calls
-    -- that change which further controls exist.
-    local function ApplyShowSwipe(val)
-        if disabledByIconFill then return end
-        styleTable.showCooldownSwipe = val
-        refreshCallback()
-    end
-    local function ApplyReverse(val)
-        if disabledByIconFill then return end
-        styleTable.cooldownSwipeReverse = val
-        refreshCallback()
-    end
-    local function ApplyShowFill(val)
-        if disabledByIconFill then return end
-        styleTable.showCooldownSwipeFill = val
-        RefreshStructuralControls(container, refreshCallback)
-    end
-    local function ApplyFillAlpha(val)
-        if disabledByIconFill then return end
-        ST._PreviewScalarSetting(styleTable, "cooldownSwipeAlpha", val, previewRefresh)
-    end
-    local function ApplyShowEdge(val)
-        if disabledByIconFill then return end
-        styleTable.cooldownSwipeEdgeEnabled = val
-        RefreshStructuralControls(container, refreshCallback)
-    end
-
-    local childIndent = opts.indent
-
-    local swipeRow = AddCheckboxRow(container, {
-        label = "Show Cooldown Swipe",
-        setting = opts.settings and opts.settings.enabled,
-        value = styleTable.showCooldownSwipe ~= false,
-        indent = opts.indent,
-        disabled = disabledByIconFill,
-        onChange = ApplyShowSwipe,
-    })
-
-    ST._AddAdvancedToggle(swipeRow, "assistantCooldownSwipe", {}, not disabledByIconFill, {
-        unlock = styleTable.showCooldownSwipe == false and { enable = {
-            label = "Enable Cooldown Swipe", run = function() ApplyShowSwipe(true) end,
-        } } or nil,
-        build = function(panel)
-            AddCheckboxRow(panel, {
-                label = "Reverse Swipe",
-                setting = opts.settings and opts.settings.reverse,
-                value = styleTable.cooldownSwipeReverse or false,
-                indent = childIndent,
-                disabled = disabledByIconFill,
-                onChange = ApplyReverse,
-            })
-
-            AddCheckboxRow(panel, {
-                label = "Show Swipe Fill",
-                setting = opts.settings and opts.settings.fill,
-                value = styleTable.showCooldownSwipeFill ~= false,
-                indent = childIndent,
-                disabled = disabledByIconFill,
-                onChange = ApplyShowFill,
-            })
-
-            if styleTable.showCooldownSwipeFill ~= false then
-                -- Row grammar has no percent readout, so this reads 0 - 1 rather
-                -- than the pre-redesign slider's 0% - 100%; same store, same range.
-                -- The resource-bar opacity rows already read that way.
-                AddSliderRow(panel, {
-                    label = "Swipe Fill Opacity",
-                    setting = opts.settings and opts.settings.fillOpacity,
-                    indent = true,
-                    min = 0, max = 1, step = 0.05,
-                    value = styleTable.cooldownSwipeAlpha or 0.8,
-                    disabled = disabledByIconFill,
-                    onChange = ApplyFillAlpha,
-                    onRelease = function(val)
-                        if disabledByIconFill then return end
-                        styleTable.cooldownSwipeAlpha = val
-                        refreshCallback()
-                    end,
-                })
-            end
-
-            AddCheckboxRow(panel, {
-                label = "Show Swipe Edge",
-                setting = opts.settings and opts.settings.edge,
-                value = styleTable.cooldownSwipeEdgeEnabled == true,
-                indent = childIndent,
-                disabled = disabledByIconFill,
-                onChange = ApplyShowEdge,
-            })
-
-            if styleTable.cooldownSwipeEdgeEnabled == true then
-                AddColorRow(panel, {
-                    label = "Swipe Edge Color",
-                    setting = opts.settings and opts.settings.edgeColor,
-                    indent = true,
-                    tbl = styleTable,
-                    key = "cooldownSwipeEdgeColor",
-                    default = {1, 1, 1, 1},
-                    hasAlpha = true,
-                    disabled = disabledByIconFill,
-                    onConfirm = refreshCallback,
-                })
-            end
-
-        end,
-    })
-    return swipeRow
-end
 
 -- Aura duration swipe (12.1 compositing): the swipe is a slot-kit region that
 -- Blizzard drives directly; these keys are consumed at bind time by
@@ -2723,7 +2555,6 @@ ST._AddDurationLowTimeRows = AddDurationLowTimeRows
 ST._AddPandemicMarkerControls = AddPandemicMarkerControls
 ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
-ST._BuildKeybindTextControls = BuildKeybindTextControls
 ST._BuildBorderControls = BuildBorderControls
 ST._BuildIconTintControls = BuildIconTintControls
 ST._BuildDesaturationControls = BuildDesaturationControls
@@ -2732,7 +2563,6 @@ ST._BuildShowTooltipsControls = BuildShowTooltipsControls
 ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildAllowPingsControls = BuildAllowPingsControls
 ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
-ST._BuildCooldownSwipeControls = BuildCooldownSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls

@@ -1724,6 +1724,7 @@ local function FilterEquippable(bd)
     return bd.type == "item" and CooldownCompanion.IsItemEquippable(bd)
 end
 local function FilterChargeCapable(bd)
+    if bd.rotationAssistant then return true end
     if HasItemFallbacks(bd) then return false end
     if not UsesChargeBehavior(bd) then return false end
     if bd.type == "spell" then return true end
@@ -1731,6 +1732,7 @@ local function FilterChargeCapable(bd)
     return false
 end
 local function FilterChargeSpell(bd)
+    if bd.rotationAssistant then return true end
     if HasItemFallbacks(bd) then return false end
     return bd.type == "spell" and bd.hasCharges == true and UsesChargeBehavior(bd)
 end
@@ -1749,6 +1751,7 @@ end
 
 -- Returns true if a button has no real cooldown (GCD-only spell)
 local function IsNoCooldownSpell(bd)
+    if bd and bd.rotationAssistant then return false end
     if not bd or bd.type ~= "spell" or bd.isPassive or UsesChargeBehavior(bd) then return false end
     return IsNoCooldownSpellID(bd.id)
 end
@@ -1771,6 +1774,7 @@ local WHIRLING_DRAGON_PUNCH_SPELL_ID = 152175
 local HasCastCountText = CooldownCompanion.HasCastCountText
 
 local function IsNeverUnusableButton(bd)
+    if bd and bd.rotationAssistant then return false end
     if not bd or bd.type ~= "spell" then return false end
     if bd.id == WHIRLING_DRAGON_PUNCH_SPELL_ID then return false end
     if HasCastCountText(bd) then return false end
@@ -2722,9 +2726,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local showChargeSection
     if isBatch then showChargeSection = AnySelectedChargeCapable(group)
     else
-        showChargeSection = UsesChargeBehavior(buttonData)
-            and (buttonData.type == "spell" or (isItem and not CooldownCompanion.IsItemEquippable(buttonData)))
-            and not HasItemFallbacks(buttonData)
+        showChargeSection = FilterChargeCapable(buttonData)
     end
     if showChargeSection then
         -- Hiding or dimming at zero charges contradicts the Cooldown
@@ -3441,8 +3443,7 @@ local function BuildIndicatorSourceRestrictions(container, group)
 end
 
 -- There is one Visibility tab, and the selected object owns it: an entry edits
--- its rules, while a panel selection and multi-select edit the panel's. The
--- rotation assistant's virtual entry is served here too.
+-- its rules, while a panel selection and multi-select edit the panel's.
 --
 -- The info buttons go into CS.tabInfoButtons, not the entry-tab host's
 -- CS.buttonSettingsInfoButtons: this tab is built by the panel host, and
@@ -3455,24 +3456,7 @@ local function BuildVisibilityTab(container)
         for _ in pairs(CS.selectedButtons) do multiCount = multiCount + 1 end
 
         if multiCount < 2 then
-            if CS.selectedRotationAssistantEntry == true
-                and CooldownCompanion:IsRotationAssistantGroup(group) then
-                local buttonData = CooldownCompanion:GetRotationAssistantConfigButtonData(group)
-                if buttonData then
-                    ReleaseVisibilityTabScratch()
-                    -- The tab is a lens, so its entry scope names its subject
-                    -- the way the entry pane does. Emitted by the dispatcher,
-                    -- not the builder: the builder is the panel's own content
-                    -- in every other caller.
-                    ST._BuildEntryIdentityHeading(container, buttonData)
-                    -- The rotation assistant's virtual entry has neither a
-                    -- show/hide rule store nor talent conditions, so its lens
-                    -- is the load-condition half alone.
-                    AddFamilyHeading(container, "Load Conditions")
-                    BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
-                    return
-                end
-            elseif CS.selectedButton then
+            if CS.selectedButton then
                 local buttonData = group.buttons and group.buttons[CS.selectedButton]
                 if buttonData then
                     ReleaseVisibilityTabScratch()

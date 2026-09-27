@@ -2125,10 +2125,6 @@ local function CreateConfigPanel()
                 return
             end
 
-            -- The rotation assistant entry has no entry tabs at all: its one
-            -- surface is Visibility, which the panel-side tab now builds for
-            -- whichever entry is selected. Nothing to build here.
-
             local buttonData = CS.selectedButton and group.buttons[CS.selectedButton]
             if not buttonData then return end
 

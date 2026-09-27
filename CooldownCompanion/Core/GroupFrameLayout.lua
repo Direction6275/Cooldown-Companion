@@ -666,7 +666,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     -- are measured from one set of numbers and can never disagree.
     local sectionLayout = frame._sectionLayout
     local numButtons = frame.visibleButtonCount
-        or (self:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
@@ -936,7 +935,7 @@ end
 -- An edit scope names saved entry identity/presentation, never a cached style.
 local function IsStyleEditEntry(button, scope)
     if not scope then return true end
-    if scope.entry then return button.buttonData == scope.entry end
+    if scope.entry then return ST.GetConfiguredButtonData(button.buttonData) == scope.entry end
     if scope.presentation == "bars" then return button._isBar == true end
     if scope.presentation == "icons" then return not button._isBar end
     return true

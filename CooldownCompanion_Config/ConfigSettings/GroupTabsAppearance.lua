@@ -21,7 +21,6 @@ local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 local ChainHeadingBadges = ST._ChainHeadingBadges
 
 -- Imports from SectionBuilders.lua
-local BuildKeybindTextControls = ST._BuildKeybindTextControls
 local BuildBorderControls = ST._BuildBorderControls
 local BuildIconTintControls = ST._BuildIconTintControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
@@ -356,9 +355,7 @@ local function AppearanceFinderIcons(context)
     return mode == nil or mode == "icons"
 end
 
-local function AppearanceFinderAssistant(context)
-    return context and context.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-end
+
 
 local function AppearanceFinderTracksAura(context)
     local group = context and context.group
@@ -385,10 +382,6 @@ local function RefreshAppearanceFinderState(context)
     end
     local style = group.style or {}
     local state = {
-        assistantSquare = style.maintainAspectRatio ~= false,
-        assistantRectangular = style.maintainAspectRatio == false,
-        assistantCustomBorder = ST.GetBorderRenderMode(style)
-            ~= ST.BORDER_RENDER_MODE_CRISP,
     }
 
     if (group.displayMode or "icons") == "icons" then
@@ -483,36 +476,6 @@ end
 local ICON_APPEARANCE_SCOPE = { "panel", "entry" }
 
 if ST._DefineSettingRoute then
-    local assistant = ST._DefineSettingRoute({
-        idPrefix = "panel.appearance.assistant",
-        scope = "panel",
-        tab = "appearance",
-        tabLabel = "Appearance",
-        section = "assistant",
-        sectionLabel = "Assistant Panel",
-        collapseKeys = { "appearance_assistant" },
-        rowScope = "primary",
-        applies = AppearanceFinderAssistant,
-    })
-    APPEARANCE_FINDER.assistant = assistant:Settings({
-        square = { label = "Square Icons" },
-        size = { label = "Icon Size", aliases = { "Button Size" }, applies = AppearanceFinderStateFlag("assistantSquare") },
-        width = { label = "Icon Width", applies = AppearanceFinderStateFlag("assistantRectangular") },
-        height = { label = "Icon Height", applies = AppearanceFinderStateFlag("assistantRectangular") },
-        zoom = { label = "Icon Zoom" },
-        thickness = { advancedKey = "panelBorder", label = "Border Thickness" },
-        borderSize = { advancedKey = "panelBorder", label = "Border Size", applies = AppearanceFinderStateFlag("assistantCustomBorder") },
-        borderColor = { label = "Border Color" },
-        keybind = { label = "Show Keybind Text" },
-        keybindAnchor = { advancedKey = "assistantKeybindText", label = "Anchor" },
-        keybindXOffset = { advancedKey = "assistantKeybindText", label = "X Offset" },
-        keybindYOffset = { advancedKey = "assistantKeybindText", label = "Y Offset" },
-        keybindFontSize = { advancedKey = "assistantKeybindText", label = "Font Size" },
-        keybindFont = { advancedKey = "assistantKeybindText", label = "Font" },
-        keybindOutline = { advancedKey = "assistantKeybindText", label = "Font Outline" },
-        keybindColor = { advancedKey = "assistantKeybindText", label = "Font Color" },
-    })
-
     local icons = ST._DefineSettingRoute({
         idPrefix = "panel.appearance.icons",
         scope = ICON_APPEARANCE_SCOPE,
@@ -786,110 +749,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
 
 
-    if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        -- Row grammar. A rotation assistant panel shows one recommendation at
-        -- a time, so its whole Appearance tab is a single section.
-        local _, assistantCollapsed = BuildCollapsibleSection(container, "Assistant Panel",
-            "appearance_assistant", nil, nil, ROW_SECTION)
 
-        if not assistantCollapsed then
-        -- LEFT column: how the one icon is shaped and sized, then the keybind
-        -- text drawn on it and what that text is drawn WITH.
-        -- RIGHT column: the border around it, then where the keybind text
-        -- lands and what colour it takes.
-        local assistLeft, assistRight = BeginRowGrid(container)
-
-        AddCheckboxRow(assistLeft, {
-            label = "Square Icons",
-            setting = APPEARANCE_FINDER.assistant.square,
-            value = style.maintainAspectRatio ~= false,
-            onChange = function(value)
-                style.maintainAspectRatio = value ~= false
-                style.buttonsPerRow = 1
-                if not style.maintainAspectRatio then
-                    local size = style.buttonSize or ST.BUTTON_SIZE
-                    style.iconWidth = style.iconWidth or size
-                    style.iconHeight = style.iconHeight or size
-                end
-                refreshStyleSettings()
-            end,
-        })
-
-        if style.maintainAspectRatio ~= false then
-            local sizeRow = AddSliderRow(assistLeft, {
-                label = "Icon Size",
-                setting = APPEARANCE_FINDER.assistant.size,
-                min = 10, max = 150, step = 0.1,
-                value = style.buttonSize or ST.BUTTON_SIZE,
-            })
-            WireMirrorFirstSlider(sizeRow, function(value)
-                style.buttonSize = value
-                style.buttonsPerRow = 1
-            end, nil, nil, style, { "buttonSize", "buttonsPerRow" })
-        else
-            local widthRow = AddSliderRow(assistLeft, {
-                label = "Icon Width",
-                setting = APPEARANCE_FINDER.assistant.width,
-                min = 10, max = 150, step = 0.1,
-                value = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
-            })
-            WireMirrorFirstSlider(widthRow, function(value)
-                style.iconWidth = value
-                style.buttonsPerRow = 1
-            end, nil, nil, style, { "iconWidth", "buttonsPerRow" })
-
-            local heightRow = AddSliderRow(assistLeft, {
-                label = "Icon Height",
-                setting = APPEARANCE_FINDER.assistant.height,
-                min = 10, max = 150, step = 0.1,
-                value = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE,
-            })
-            WireMirrorFirstSlider(heightRow, function(value)
-                style.iconHeight = value
-                style.buttonsPerRow = 1
-            end, nil, nil, style, { "iconHeight", "buttonsPerRow" })
-        end
-
-        ST._BuildIconZoomControls(assistLeft, style, refreshStyle, {
-            setting = APPEARANCE_FINDER.assistant.zoom,
-            previewRefresh = ST._RefreshSelectedButtonsPreview,
-        })
-
-        -- The border builder has no second-column split of its own, so its
-        -- whole block heads the right column.
-        BuildBorderControls(assistRight, style, refreshStyle, {
-            completeEdit = function(operation) ST._CompleteConfigEdit(editTarget, operation) end,
-            row = true,
-            settings = {
-                thickness = APPEARANCE_FINDER.assistant.thickness,
-                size = APPEARANCE_FINDER.assistant.borderSize,
-                color = APPEARANCE_FINDER.assistant.borderColor,
-            },
-        })
-
-        BuildKeybindTextControls(assistLeft, style, refreshStyle, {
-            completeEdit = function(operation) ST._CompleteConfigEdit(editTarget, operation) end,
-            row = true,
-            rightColumn = assistRight,
-            label = "Show Keybind Text",
-            setting = APPEARANCE_FINDER.assistant.keybind,
-            settings = {
-                anchor = APPEARANCE_FINDER.assistant.keybindAnchor,
-                xOffset = APPEARANCE_FINDER.assistant.keybindXOffset,
-                yOffset = APPEARANCE_FINDER.assistant.keybindYOffset,
-                fontSize = APPEARANCE_FINDER.assistant.keybindFontSize,
-                font = APPEARANCE_FINDER.assistant.keybindFont,
-                outline = APPEARANCE_FINDER.assistant.keybindOutline,
-                color = APPEARANCE_FINDER.assistant.keybindColor,
-            },
-            tooltip = {
-                "Show Keybind Text",
-                {"Shows detected keybind text for the current recommendation.", 1, 1, 1, true},
-            },
-        })
-        end -- not assistantCollapsed
-        return
-    end
 
 
     -- Branch for text mode
@@ -963,7 +823,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     local lens = ST._ResolveStyleLens(group)
     -- Under a multi selection these tabs edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
-    -- No-op in every other lens mode. The trigger, texture, assistant and
+    -- No-op in every other lens mode. The trigger, texture and
     -- other-mode paths returned above, so only the standard icons path carries
     -- it; the modes with their own builders add their own.
     AddLensPanelScopeNote(container, lens)

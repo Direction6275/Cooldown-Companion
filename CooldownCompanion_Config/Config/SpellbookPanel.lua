@@ -170,6 +170,9 @@ local function CollectSections()
             local items = {}
             for slot = offset + 1, offset + (line.numSpellBookItems or 0) do
                 local info = C_SpellBook.GetSpellBookItemInfo(slot, PLAYER_BANK)
+                if info and CooldownCompanion:IsRotationAssistantActionSpell(info.spellID or info.actionID) then
+                    info = nil -- The fixed assistant control owns this identity.
+                end
                 if info and info.itemType == FLYOUT_ITEM_TYPE then
                     CollectFlyoutItems(items, unavailable, info, offSpecID, reason)
                 elseif info and (info.itemType == SPELL_ITEM_TYPE
@@ -645,12 +648,51 @@ local function EnsureChrome()
         end
     end)
 
+    -- The assistant is a fixed spellbook control, independent of list filters.
+    local assistant = CreateFrame("Button", nil, host)
+    assistant:SetHeight(28)
+    assistant:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
+    assistant:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
+    assistant:RegisterForDrag("LeftButton")
+    assistant:RegisterForClicks("LeftButtonUp")
+    local assistantIcon = assistant:CreateTexture(nil, "ARTWORK")
+    assistantIcon:SetSize(24, 24)
+    assistantIcon:SetPoint("LEFT", 2, 0)
+    assistantIcon:SetTexture(ST.ROTATION_ASSISTANT_FALLBACK_ICON)
+    local assistantLabel = assistant:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    assistantLabel:SetPoint("LEFT", assistantIcon, "RIGHT", 8, 0)
+    assistantLabel:SetText(ST.ROTATION_ASSISTANT_NAME)
+    local assistantHover = assistant:CreateTexture(nil, "HIGHLIGHT")
+    assistantHover:SetAllPoints()
+    assistantHover:SetColorTexture(1, 1, 1, 0.06)
+    assistant:SetScript("OnDragStart", function()
+        if InCombatLockdown() then return end
+        C_Spell.PickupSpell(CooldownCompanion:GetRotationAssistantActionSpellID())
+    end)
+    assistant:SetScript("OnDoubleClick", function()
+        if InCombatLockdown() then return end
+        if not CS.selectedGroup then
+            CooldownCompanion:Print("Select a normal Panel before adding Rotation Assistant.")
+            return
+        end
+        if ST._TryAddRotationAssistant({ groupId = CS.selectedGroup }) then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end)
+    assistant:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(ST.ROTATION_ASSISTANT_NAME)
+        GameTooltip:AddLine("Shows Blizzard's recommended next spell. Drag onto a panel or double-click to add.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    assistant:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     -- Centred over the whole window and one size up from the list's own small
     -- text: it captions the list rather than labelling the search box. Still
     -- muted grey -- it is an instruction, not a heading.
     local hint = host:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    hint:SetPoint("TOPLEFT", host, "TOPLEFT", CONTENT_INSET, -CONTENT_INSET)
-    hint:SetPoint("TOPRIGHT", host, "TOPRIGHT", -CONTENT_INSET, -CONTENT_INSET)
+    hint:SetPoint("TOPLEFT", assistant, "BOTTOMLEFT", 0, -HINT_GAP)
+    hint:SetPoint("TOPRIGHT", assistant, "BOTTOMRIGHT", 0, -HINT_GAP)
     hint:SetJustifyH("CENTER")
     hint:SetWordWrap(false)
     hint:SetText("Drag a spell onto a panel to add it.")

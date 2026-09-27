@@ -509,6 +509,7 @@ local function HidePreviewMessage(preview)
 end
 
 GetLayoutPreviewIcon = function(buttonData)
+    if buttonData and buttonData.rotationAssistant then return ST.ROTATION_ASSISTANT_FALLBACK_ICON end
     if not buttonData then
         return LAYOUT_PREVIEW_ICON_FALLBACK
     end
@@ -548,21 +549,7 @@ local function GetConfiguredPreviewIconSize(group)
 end
 
 local function GetSavedPreviewButtons(group)
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
-        return {
-            {
-                buttonData = {
-                    type = "spell",
-                    id = spellID,
-                    name = ST.ROTATION_ASSISTANT_NAME,
-                    manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID),
-                    _rotationAssistantVirtual = true,
-                    _rotationAssistantMissing = true,
-                },
-            },
-        }
-    end
+
 
     local buttons = {}
     local fallbackButtons = {}

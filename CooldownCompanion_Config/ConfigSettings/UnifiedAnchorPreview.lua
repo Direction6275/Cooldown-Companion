@@ -49,8 +49,7 @@ local function IsUnifiedAnchorPreviewEligible(groupId)
     if not group or ST.PanelSupportsAttachedBars(group) then
         return false
     end
-    if group.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT
-        and #(group.buttons or {}) == 0 then
+    if #(group.buttons or {}) == 0 then
         return false
     end
     return ST._HasAttachedBarLanesToRender

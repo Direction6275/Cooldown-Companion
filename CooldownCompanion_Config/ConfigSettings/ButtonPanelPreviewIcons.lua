@@ -379,8 +379,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         forceDesat = true
     end
 
-    -- The cooldown family: "cooldown" is the full state (text and rotation
-    -- assistant panels still fire it); "cooldown_swipe" is that state with
+    -- The cooldown family: "cooldown" is the full state; "cooldown_swipe" is that state with
     -- the countdown numbers withheld; "cooldown_text" is the countdown text
     -- alone on an otherwise resting slot (no fill, no desaturation, no tint).
     if (kind == "cooldown" or kind == "cooldown_swipe" or kind == "cooldown_text" or kind == "cooldown_active")

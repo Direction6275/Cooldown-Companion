@@ -342,7 +342,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             scroll:SetLayout("List")
             scrollParent:AddChild(scroll)
             local entry = styleGroup and styleGroup.buttons and styleGroup.buttons[CS.selectedButton]
-            local scope = CS.selectedRotationAssistantEntry and "rotation-entry" or (entry and "entry" or "panel")
+            local scope = entry and "entry" or "panel"
             SetSettingsScrollOwner(scroll, styleGroup,
                 scope .. ":" .. (styleGroup and styleGroup.displayMode or "icons") .. ":" .. tab, entry)
             if styleGroup then
@@ -436,9 +436,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 
     -- Rebuild tabs when the panel kind or selected settings scope changes.
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local isRotationEntry = group
-        and CS.selectedRotationAssistantEntry == true
-        and CooldownCompanion:IsRotationAssistantGroup(group)
     local isSingleEntry = group
         and CS.selectedButton ~= nil
         and group.buttons
@@ -449,8 +446,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     local availableTabs, presentations
     if ST._GetOrdinarySettingsTabs then availableTabs, presentations = ST._GetOrdinarySettingsTabs(group) end
     container._settingsPresentations = presentations
-    local selectionMode = isRotationEntry and "rotation-entry"
-        or (isSingleEntry and "entry" or "panel")
+    local selectionMode = isSingleEntry and "entry" or "panel"
     local tabsMode = (ST.IsIndicatorGroup(group) and "indicator" or "standard") .. ":" .. selectionMode
     if availableTabs then
         tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
@@ -473,10 +469,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         if ST.IsIndicatorGroup(group) then
             tabs = {{value="tracking",text="Tracking"},{value="appearance",text="Appearance"},
                 {value="effects",text="Effects"},{value="layout",text="Layout"},{value="loadconditions",text="Visibility"}}
-        elseif isRotationEntry then
-            -- The assistant's virtual entry owns Visibility alone. Its style
-            -- and layout belong to the panel reached through the breadcrumb.
-            tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
         else
             -- Entries expose Layout only when they own placement controls.
             if not isSingleEntry or (availableTabs and availableTabs.layout) then
@@ -501,9 +493,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if CS.selectedTab == "format" then
         CS.selectedTab = "appearance"
     end
-    if isRotationEntry then
-        CS.selectedTab = "loadconditions"
-    elseif isSingleEntry and CS.selectedTab == "layout" and not (availableTabs and availableTabs.layout) then
+    if isSingleEntry and CS.selectedTab == "layout" and not (availableTabs and availableTabs.layout) then
         CS.selectedTab = "appearance"
     end
     if availableTabs and not availableTabs[CS.selectedTab] then

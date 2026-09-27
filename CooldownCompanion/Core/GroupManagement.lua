@@ -1285,11 +1285,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     displayMode = displayMode or "icons"
     local isAuraPanel, isTotemPanel
     displayMode, isAuraPanel, isTotemPanel = ResolvePanelCreationMode(displayMode)
-    local isRotationAssistant = ST.IsRotationAssistantDisplayMode
-        and ST.IsRotationAssistantDisplayMode(displayMode)
 
     if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "indicator"
-        and not isRotationAssistant then return nil end
+        then return nil end
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
@@ -1298,7 +1296,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local containerFrameName = "CooldownCompanionContainer" .. containerId
 
     db.groups[groupId] = {
-        name = isRotationAssistant and ST.ROTATION_ASSISTANT_NAME or ("Panel " .. panelOrder),
+        name = "Panel " .. panelOrder,
         baseRowAnchorVersion = 1,
         parentContainerId = containerId,
         order = panelOrder,
@@ -1380,24 +1378,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.barAuraIndicatorEnabled == nil then
         style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
     end
-    if isRotationAssistant then
-        style.orientation = "horizontal"
-        style.growthOrigin = "TOPLEFT"
-        style.buttonsPerRow = 1
-        style.maintainAspectRatio = true
-        style.showCooldownText = false
-        style.showChargeText = false
-        style.showAuraText = false
-        style.showAuraStackText = false
-        style.showAssistedHighlight = false
-        style.showLossOfControl = false
-        style.showUnusable = false
-        style.procGlowStyle = "none"
-        style.pandemicGlowStyle = "none"
-        style.readyGlowStyle = "none"
-        style.keyPressHighlightStyle = "none"
-        style.iconFillEnabled = false
-    end
+
 
     ST.Indicator.Initialize(db.groups[groupId])
     self:CreateGroupFrame(groupId)
@@ -1538,9 +1519,9 @@ end
 
 local DISPLAY_MODE_CHANGE_REFUSALS = {
     indicator = "Create an Indicator to use the new display model. Existing panels retain their settings.",
+    ["assistant-entry"] = "Rotation Assistant entries need a normal Panel with icons.",
     ["totem-panel-modes"] = "Totem Panels can only switch between icons and bars.",
     ["totem-panel-create-only"] = "Create a new Totem Panel to display totem slots.",
-    assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
     unsupported = "This panel type is no longer supported. Create an Indicator instead.",
     ["aura-entries"] = "Aura entries require icon, bar, or Indicator panels.",
     ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
@@ -1572,15 +1553,17 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     end
 
     if newMode ~= "icons" and newMode ~= "bars" and newMode ~= "indicator"
-        and not ST.IsRotationAssistantDisplayMode(newMode) then return false, "unsupported" end
+        then return false, "unsupported" end
     local oldMode = group.displayMode
+    if newMode ~= "icons" then
+        for _, entry in ipairs(group.buttons or {}) do
+            if entry.rotationAssistant then return false, "assistant-entry" end
+        end
+    end
     if oldMode ~= newMode and (oldMode == "indicator" or newMode == "indicator") then
         return false, "indicator"
     end
-    if oldMode ~= newMode
-        and (ST.IsRotationAssistantDisplayMode(oldMode) or ST.IsRotationAssistantDisplayMode(newMode)) then
-        return false, "assistant"
-    end
+
 
 
 

@@ -2472,11 +2472,6 @@ local function UpdateEditingContext(col3)
             end
         elseif multiCount >= 2 then
             -- Entry multi-select surface lists its members itself.
-        elseif CS.selectedRotationAssistantEntry == true
-            and CooldownCompanion:IsRotationAssistantGroup(group) then
-            local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
-            icon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID)
-            name = ST.ROTATION_ASSISTANT_NAME
         elseif CS.selectedButton and group.buttons[CS.selectedButton] then
             local buttonData = group.buttons[CS.selectedButton]
             icon = ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)
@@ -2562,8 +2557,7 @@ local function GetValidatedUnifiedBarKind()
 end
 
 -- True when the column should show entry settings instead of the
--- group-side surfaces: a valid single entry (including the rotation
--- assistant's virtual entry) or an entry multi-select.
+-- group-side surfaces: a valid single entry or an entry multi-select.
 local function IsEntrySelectionActive()
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then
@@ -2574,10 +2568,7 @@ local function IsEntrySelectionActive()
     if multiCount >= 2 then
         return true
     end
-    if CS.selectedRotationAssistantEntry == true
-        and CooldownCompanion:IsRotationAssistantGroup(group) then
-        return true
-    end
+
     return CS.selectedButton ~= nil and group.buttons[CS.selectedButton] ~= nil
 end
 

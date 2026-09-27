@@ -104,11 +104,6 @@ local PANEL_TYPES = {
         label = "Indicator",
         description = "One spell, aura, or item shown as an icon, texture, or text, with optional conditions and readouts.",
     },
-    {
-        mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT,
-        label = ST.ROTATION_ASSISTANT_NAME or "Assistant Panel",
-        description = "Shows one locked recommendation icon from the in-game assistant.",
-    },
 }
 
 local PANEL_TYPE_BY_MODE = {}

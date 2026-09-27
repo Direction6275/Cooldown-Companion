@@ -23,7 +23,6 @@ local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
 local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildAllowPingsControls = ST._BuildAllowPingsControls
 local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
-local BuildCooldownSwipeControls = ST._BuildCooldownSwipeControls
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildAuraDurationSwipeAdvancedControls = ST._BuildAuraDurationSwipeAdvancedControls
 local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
@@ -121,7 +120,6 @@ local appearanceTabElements = CS.appearanceTabElements
 -- labels such as Glow Style, Border Size, and Show Only In Combat.
 local EFFECTS_FINDER = {
     icons = { spell = {}, aura = {}, interaction = {} },
-    assistant = { spell = {}, interaction = {} },
     advanced = {},
 }
 
@@ -776,7 +774,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
 
     -- Hover and click behavior sit in Interaction, at the foot of the tab -
     -- they are about the frame under the pointer rather than the spell's
-    -- state. Bars and the rotation assistant path draw the same section under
+    -- state. Bars draw the same section under
     -- the same key, so this one entry covers every mode that offers the gear.
     tooltipBehavior = EFFECTS_INTERACTION_SECTION,
 
@@ -843,77 +841,7 @@ local function BuildEffectsTab(container, settingsGroup)
     local displayMode = group.displayMode
 
 
-    if displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        -- Row grammar, reusing the icons tab's own spell-family and Interaction
-        -- collapse keys (the bar-mode precedent stated above the section map):
-        -- one entry per advanced key covers every mode that draws the section,
-        -- so the `unusableVisual` and `tooltipBehavior` gears in here are
-        -- queue-safe for free. A rotation assistant panel has no per-entry
-        -- style, so no section in here carries scope chrome.
-        --
-        -- Every row this path offers reads spell state, so they all live under
-        -- the one Cooldown / Spell Indicators section the icons tab draws, with
-        -- the same Timers / States subheadings inside it. A rotation assistant
-        -- has no aura rows at all, so it draws no Aura Indicators section.
-        local _, raSpellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Indicators", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
 
-        if not raSpellCollapsed then
-        AddSettingsSubheading(container, "Timers")
-        -- A single left rail: this path offers two of the icons Timers rows (the
-        -- cooldown swipe and the chain hanging off it - one parent chain, so it
-        -- never splits - then the GCD swipe) and no aura rows at all, so the
-        -- standing fill rule puts both on the left rather than splitting two
-        -- rows across two columns the way the icons tab's fuller set does.
-        local raTimerLeft = BeginRowGrid(container)
-
-        BuildCooldownSwipeControls(raTimerLeft, style, refreshStyle, { row = true, settings = EFFECTS_FINDER.assistant.cooldownSwipe })
-        BuildShowGCDSwipeControls(raTimerLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.gcd })
-
-        AddSettingsSubheading(container, "States")
-        -- A single left rail, for the same reason as Timers above: the four
-        -- looks a spell's state gives the icon (on cooldown, unusable, out of
-        -- range, locked out of control) all in source order, rather than the
-        -- two-column split the icons States subheading makes of the same set.
-        local raStateLeft = BeginRowGrid(container)
-
-        BuildDesaturationControls(raStateLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.desaturate })
-        BuildUnusableDimmingControls(raStateLeft, style, function(operation) return refreshStyle(operation or "style-settings") end, {
-            row = true,
-            advanced = true,
-            setting = EFFECTS_FINDER.assistant.spell.unusable,
-            settings = EFFECTS_FINDER.assistant.unusableAdvanced,
-            -- Non-lens lazy spec: the assistant path has no lens sections,
-            -- so the footer writes the panel style directly through the
-            -- shared groupStyle refresh sequence.
-            advancedUnlock = { target = style, refreshKind = "groupStyle",
-                enable = style.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
-        })
-        BuildShowOutOfRangeControls(raStateLeft, style, function(operation) return refreshStyle(operation or "style-settings") end, { row = true, setting = EFFECTS_FINDER.assistant.spell.outOfRange })
-        BuildLossOfControlControls(raStateLeft, style, refreshStyle, { row = true, setting = EFFECTS_FINDER.assistant.spell.lossOfControl })
-        end -- not raSpellCollapsed
-
-        -- Interaction: the same split-out the icons and bars tabs make, under
-        -- the same collapse key, at this path's own fidelity (a rotation
-        -- assistant panel has no per-entry style, so no section in here carries
-        -- scope chrome). LEFT the hover behavior, RIGHT the click behavior.
-        local _, raInteractionCollapsed = BuildCollapsibleSection(container, "Interaction", EFFECTS_INTERACTION_SECTION, nil, nil, ROW_SECTION)
-
-        if not raInteractionCollapsed then
-        local raInteractionLeft, raInteractionRight = BeginRowGrid(container)
-
-        BuildShowTooltipsControls(raInteractionLeft, style, function(operation) return refreshStyle(operation or "style-settings", "interaction") end, {
-            row = true,
-            advanced = true,
-            -- Non-lens lazy spec, same shape as Show Unusable above.
-            advancedUnlock = { target = style, refreshKind = "groupStyle",
-                enable = style.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
-            setting = EFFECTS_FINDER.assistant.interaction.tooltips,
-            settings = EFFECTS_FINDER.assistant.tooltipAdvanced,
-        })
-        BuildAllowPingsControls(raInteractionRight, style, function(operation) return refreshStyle(operation or "style", "interaction") end, { row = true, setting = EFFECTS_FINDER.assistant.interaction.pings })
-        end -- not raInteractionCollapsed
-        return
-    end
 
 
     if displayMode == "bars" then
@@ -955,7 +883,7 @@ local function BuildEffectsTab(container, settingsGroup)
 
     -- Under a multi selection these sections edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
-    -- No-op in every other lens mode. The trigger, texture, assistant and
+    -- No-op in every other lens mode. The trigger, texture and
     -- bar-mode paths returned above, so only the standard icons path carries
     -- it; the modes with their own builders add their own.
     AddLensPanelScopeNote(container, lens)
@@ -1541,10 +1469,7 @@ local function EffectsFinderIcons(context)
     return context and context.group and context.displayMode == "icons"
 end
 
-local function EffectsFinderAssistant(context)
-    return context and context.group
-        and context.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-end
+
 
 local function EffectsFinderTracksAura(context)
     return context and context.group and GroupHasAuraTrackingEntry(context.group)
@@ -1781,44 +1706,7 @@ if ST._DefineSettingRoute then
         },
     })
 
-    local assistantSpell = EffectsFinderRoute(
-        "panel.assistant.effects.spell", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", EffectsFinderAssistant)
-    EFFECTS_FINDER.assistant.spell = assistantSpell:Settings({
-        gcd = { label = "Show GCD Swipe" },
-        desaturate = { label = "Desaturate On Cooldown" },
-        unusable = { label = "Show Unusable Visual" },
-        outOfRange = { label = "Show Out of Range" },
-        lossOfControl = { label = "Show Loss of Control" },
-    })
-    EFFECTS_FINDER.assistant.cooldownSwipe = assistantSpell:Settings({
-        enabled = { label = "Show Cooldown Swipe" },
-        reverse = { advancedKey = "assistantCooldownSwipe", label = "Reverse Swipe" },
-        fill = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Fill" },
-        fillOpacity = { advancedKey = "assistantCooldownSwipe",
-            label = "Swipe Fill Opacity",
-            applies = function(context)
-                local style = context and context.group and context.group.style
-                return style and style.showCooldownSwipeFill ~= false
-            end,
-        },
-        edge = { advancedKey = "assistantCooldownSwipe", label = "Show Swipe Edge" },
-        edgeColor = { advancedKey = "assistantCooldownSwipe",
-            label = "Swipe Edge Color",
-            applies = function(context)
-                local style = context and context.group and context.group.style
-                return style and style.cooldownSwipeEdgeEnabled == true
-            end,
-        },
-    })
 
-    local assistantInteraction = EffectsFinderRoute(
-        "panel.assistant.effects.interaction", EFFECTS_INTERACTION_SECTION,
-        "Interaction", EffectsFinderAssistant)
-    EFFECTS_FINDER.assistant.interaction = assistantInteraction:Settings({
-        tooltips = { label = "Show Tooltips" },
-        pings = { label = "Allow Pings" },
-    })
 
     local function DefineGlowAdvanced(prefix, sectionId, advancedKey, needsAura, options)
         local route = EffectsFinderRoute(prefix, needsAura and EFFECTS_AURA_SECTION or EFFECTS_SPELL_SECTION,
@@ -2074,28 +1962,8 @@ if ST._DefineSettingRoute then
         hideInCombat = { label = "Hide Tooltips in Combat" },
     })
 
-    local assistantUnusable = EffectsFinderRoute(
-        "panel.assistant.effects.unusable", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", EffectsFinderAssistant, "unusableVisual")
-    EFFECTS_FINDER.assistant.unusableAdvanced = assistantUnusable:Settings({
-        dim = { label = "Dim Icon" },
-        dimColor = {
-            label = "Unusable Dim Color",
-            applies = function(context)
-                local style = context and context.group and context.group.style
-                return style and ST.UnusableVisualUsesDimTint(style)
-            end,
-        },
-        desaturate = { label = "Desaturate Icon" },
-    })
 
-    local assistantTooltip = EffectsFinderRoute(
-        "panel.assistant.effects.tooltip", EFFECTS_INTERACTION_SECTION,
-        "Interaction", EffectsFinderAssistant, "tooltipBehavior")
-    EFFECTS_FINDER.assistant.tooltipAdvanced = assistantTooltip:Settings({
-        position = { label = "Tooltip Position" },
-        hideInCombat = { label = "Hide Tooltips in Combat" },
-    })
+
 end
 
 ST._BuildEffectsTab = BuildEffectsTab

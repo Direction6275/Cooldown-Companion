@@ -389,7 +389,6 @@ local function StateRoute(advancedKey)
     return {
         icons = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         bars = { tab = "effects", key = advancedKey, uncollapse = statesSection },
-        rotationAssistant = { tab = "effects", key = advancedKey, uncollapse = statesSection },
     }
 end
 
@@ -567,22 +566,11 @@ local CONTROLS = {
     },
 
     {
-        id = "cooldown",
-        label = "Preview Cooldown State",
-        group = GROUP_COOLDOWNS_CHARGES,
-        menuOrder = 10,
-        modes = { rotationAssistant = true },
-        settings = {
-            rotationAssistant = { tab = "effects", uncollapse = "effects_spell" },
-            },
-        preview = ConditionalPreview("cooldown"),
-    },
-    {
         id = "unusable",
         label = "Preview Unusable State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 40,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         styleKey = "showUnusable",
         lensSection = "unusableDimming",
         settings = StateRoute("unusableVisual"),
@@ -593,7 +581,7 @@ local CONTROLS = {
         label = "Preview Out of Range State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 50,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
         requiresBarRangeIconConsumer = true,
@@ -605,7 +593,7 @@ local CONTROLS = {
         label = "Preview Loss of Control",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 60,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         section = "lossOfControl",
         styleKey = "showLossOfControl",
         settings = StateRoute(nil),
@@ -1142,10 +1130,6 @@ local function ResolvePreviewTargets(control, panelId, buttonIndex)
     if not owner then return {} end
     local presentation = control.presentation or owner.displayMode or "icons"
     local group = control.presentation and ST._CreatePanelSettingsContext(owner, presentation).group or owner
-    -- The rotation assistant's recommendation is one synthetic slot.
-    if CooldownCompanion.IsRotationAssistantGroup and CooldownCompanion:IsRotationAssistantGroup(owner) then
-        return nil
-    end
     local targets = {}
     -- Context construction inspects the whole panel. Share each presentation
     -- within this resolution only; later selections/edits need fresh contexts.
@@ -1857,9 +1841,7 @@ local function PanelAcceptsNewEntries(group)
     if not group then
         return false
     end
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return false
-    end
+
     return true
 end
 
