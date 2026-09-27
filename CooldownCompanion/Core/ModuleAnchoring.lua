@@ -153,6 +153,7 @@ function Addon:GetModuleAnchorStatusText(result, kind)
         if runtime.specId == self._currentSpecId and runtime[kind .. "PanelId"] == result.panelId then
             local failure = runtime[kind .. "Reason"]
             if failure == "provider-unavailable" then return "Unit frame is currently unavailable. Attachment resumes when it returns." end
+            if failure == "provider-incompatible" then return "This EllesmereUI frame cannot hand over positioning to Cooldown Companion. Anchoring is suspended." end
             if failure == "anchor-dependency" then return "This attachment has an unsupported anchor dependency. Choose another panel." end
         end
     end
