@@ -85,8 +85,7 @@ end
 -- the registry the tab builders state (ST._SECTION_HOME), because the answer is
 -- only needed to decide whether the row's name is a link at all; the navigation
 -- itself belongs to PreviewCommandCenter's route core and is never rebuilt here.
--- A mode with no home for the section (another mode's section, a trigger panel,
--- the rotation assistant) answers nil and the name stays plain text.
+-- A mode with no home for the section answers nil and the name stays plain text.
 --
 -- The WHOLE entry, not just its tab: the home also carries the optional
 -- availability predicates the two helpers below consult (contract stated at the

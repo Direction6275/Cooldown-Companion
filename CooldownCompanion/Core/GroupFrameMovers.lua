@@ -301,7 +301,6 @@ local function IsGroupPanelResizable(group)
     return displayMode == nil
         or displayMode == "icons"
         or displayMode == "bars"
-        or displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
 end
 
 local function CanUsePanelResizeInteractions(groupId, group)
@@ -363,7 +362,6 @@ local function GetPanelResizeBasis(frame, groupId, group, basis, start)
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
     local numButtons = frame.visibleButtonCount
-        or (CooldownCompanion:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
     if group.parentContainerId and not CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)

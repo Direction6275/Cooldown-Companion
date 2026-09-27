@@ -41,7 +41,7 @@ local function GetSelectedRuntimeButton(buttonData)
     end
 
     for _, button in ipairs(frame.buttons) do
-        if button and button.buttonData == buttonData then
+        if button and ST.GetConfiguredButtonData(button.buttonData) == buttonData then
             return button
         end
     end
@@ -129,6 +129,10 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
         and ST.IsAuraSectionEntry and ST.IsAuraSectionEntry(group, buttonData) then
         return false, "auraSection"
     end
+
+    -- The action spell is only an identity; its own cooldown says nothing
+    -- about the changing recommendation this entry will render.
+    if buttonData and buttonData.rotationAssistant then return true end
 
     if not (ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS
         and ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS[sectionId]

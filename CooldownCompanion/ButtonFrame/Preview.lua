@@ -128,7 +128,6 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     -- _text renders the countdown text alone on an otherwise resting button;
     -- _swipe renders everything else the state carries (swipe or icon fill,
     -- desaturation, cooldown tint) with the countdown numbers suppressed.
-    -- Text and rotation assistant panels still run the plain "cooldown" kind.
     cooldown_text = { kind = "cooldown_text", duration = 12, remaining = 8, loop = true },
     cooldown_swipe = { kind = "cooldown_swipe", duration = 12, remaining = 8, loop = true },
     charge_full = { kind = "charge_full" },

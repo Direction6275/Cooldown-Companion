@@ -58,6 +58,7 @@ local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 -- configure behavior that depends on the aura setup, so they belong on one
 -- pane). Panel.lua reads it through the export at the foot of this block.
 local function EntryOffersAuraTab(group, buttonData)
+    if buttonData and buttonData.rotationAssistant then return false end
     if not (buttonData and buttonData.type == "spell") then return false end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return false
@@ -70,15 +71,7 @@ end
 
 ST._EntryOffersAuraTab = EntryOffersAuraTab
 
--- nil means "this selection has no entry tabs at all". The rotation
--- assistant entry is the only one: everything it can be configured with is
--- visibility, and the panel-side Visibility tab is a lens onto the selected
--- entry, so there is nothing left for an entry cluster to carry.
 local function BuildButtonSettingsTabs(group, buttonData)
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return nil
-    end
-
     -- Sound Alerts, Item Fallbacks and Aura Tracking are not tabs: they live
     -- as sections of this entry's Settings ("Condition" on trigger panels)
     -- tab. Entry Visibility is not a tab either - the one Visibility tab on
@@ -101,8 +94,7 @@ local function EntryTabIconMarkup(icon)
     return string.format("|T%s:13:13:0:0|t ", tostring(icon))
 end
 
--- The entry's icon. The rotation assistant entry never gets here - it has no
--- entry tabs at all.
+-- The saved entry's icon, including the fixed Rotation Assistant symbol.
 local function GetSelectedEntryIcon(buttonData)
     if not buttonData then return nil end
     return ST._GetButtonIcon(buttonData)
@@ -218,6 +210,7 @@ end
 
 local function IsRegularSpellSoundContext(context)
     return context.group and context.buttonData
+        and not context.buttonData.rotationAssistant
         and context.buttonData.type == "spell"
         and not IsEquipmentSlotContext(context)
 end
@@ -327,7 +320,8 @@ local customKeybindSettings = ST._DefineSettingRoute({
     sectionLabel = "Custom Keybind Text",
     collapseKeys = EntrySettingsCollapseKey("customkeybind"),
     applies = function(context)
-        if not (context.group and context.buttonData and context.group.displayMode == "icons") then
+        if not (context.group and context.buttonData and context.group.displayMode == "icons")
+            or context.buttonData.rotationAssistant then
             return false
         end
         if not ST.CanGroupUseOverrideSection(context.group, "keybindText") then return false end
@@ -506,6 +500,7 @@ end
 -- (equipment slots, and anything that is not a spell outside trigger panels)
 -- add nothing rather than a section that only says "not available".
 local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+    if buttonData.rotationAssistant then return end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
@@ -1079,12 +1074,7 @@ local function RefreshButtonSettingsColumn()
 
     -- Check if a valid single button is selected
     local hasSelection = false
-    local rotationAssistantSelection = group
-        and CooldownCompanion:IsRotationAssistantGroup(group)
-        and CS.selectedRotationAssistantEntry == true
-    if rotationAssistantSelection then
-        hasSelection = true
-    elseif CS.selectedGroup and CS.selectedButton then
+    if CS.selectedGroup and CS.selectedButton then
         if group and group.buttons[CS.selectedButton] then
             hasSelection = true
         end
@@ -1120,19 +1110,6 @@ local function RefreshButtonSettingsColumn()
 
     if not entryTabs then
         bsCol.bsTabGroup.frame:Hide()
-
-        -- Third state: something IS selected, it just has no entry tabs (the
-        -- rotation assistant entry). No strip and no placeholder - the panel
-        -- tabs own the surface, and the Visibility tab among them is what
-        -- configures this entry. The scope is written directly rather than
-        -- through _UnifiedRowSetScope's reader twin: inside a refresh
-        -- transition _UnifiedRowPrimaryOwnsSurface is order-dependent.
-        if hasSelection then
-            if bsCol.bsPlaceholder then bsCol.bsPlaceholder:Hide() end
-            CS.unifiedRowScope = "primary"
-            ST._UnifiedRowApply()
-            return
-        end
 
         if bsCol.bsPlaceholder then
             local placeholderText
@@ -1250,6 +1227,7 @@ local function BuildCustomNameSection(scroll, buttonData)
 end
 
 local function BuildCustomKeybindSection(scroll, buttonData)
+    if buttonData.rotationAssistant then return end
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 

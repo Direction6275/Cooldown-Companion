@@ -102,13 +102,7 @@ end
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
 local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
-    if buttonData and buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
-        button._visibilityHidden = false
-        button._visibilityAlphaOverride = nil
-        button._visibilityReasonBits = 0
-        button._visibilityReasonMode = "visible"
-        return
-    end
+
 
     -- Fast path: no visibility toggles enabled
     if not buttonData.hideWhileOnCooldown

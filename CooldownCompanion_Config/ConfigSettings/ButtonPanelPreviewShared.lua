@@ -176,6 +176,7 @@ end
 
 local function IsBarPreviewNoCooldownSpell(buttonData)
     return buttonData.type == "spell"
+        and not buttonData.rotationAssistant
         and type(ST.IsNoCooldownSpell) == "function"
         and ST.IsNoCooldownSpell(buttonData.id) == true
 end
@@ -402,6 +403,7 @@ end
 -- slot. Manual icons and configured spell/item identities are stable inputs;
 -- equipment slots without a manual icon deliberately use a stable fallback.
 local function GetConfigOnlyBarPreviewIcon(buttonData)
+    if buttonData and buttonData.rotationAssistant then return ST.ROTATION_ASSISTANT_FALLBACK_ICON end
     if type(buttonData) ~= "table" then
         return BAR_PREVIEW_ICON_FALLBACK
     end
@@ -419,6 +421,7 @@ local function GetConfigOnlyBarPreviewIcon(buttonData)
 end
 
 local function GetConfigOnlyBarPreviewName(buttonData)
+    if buttonData and buttonData.rotationAssistant then return buttonData.customName or ST.ROTATION_ASSISTANT_NAME end
     if type(buttonData) ~= "table" then return "" end
     if buttonData.customName then return buttonData.customName end
     if CooldownCompanion.IsEquipmentSlotEntry
@@ -1478,8 +1481,8 @@ local function GetHostFitScale(host, contentWidth, contentHeight, readOnly, guid
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 end
 
--- Fallback for panels without a geometric mirror, such as the rotation
--- assistant: a flat strip with entry selection, badges and tooltips.
+-- Fallback for panels without a geometric mirror: a flat strip with entry
+-- selection, badges and tooltips.
 local STRIP_ICON_SIZE = 36
 local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
@@ -1563,8 +1566,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
         return width, height
     end
 
-    local count = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
-        and 1 or #(group.buttons or {})
+    local count = #(group.buttons or {})
     if count == 0 then
         return 220, 90
     end

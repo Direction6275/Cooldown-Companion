@@ -19,7 +19,8 @@ end
 local presentationSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.presentation", scope = "entry", rowScope = "detail",
     tab = "settings", section = "presentation", sectionLabel = "Display as",
-    applies = function(context) return OrdinaryOwner(context) ~= nil end,
+    applies = function(context) return OrdinaryOwner(context) ~= nil
+        and not (context.buttonData and context.buttonData.rotationAssistant) end,
 }):Settings({ display = { label = "Display as", aliases = { "icon", "bar", "presentation" } } })
 local chargeSetting = ST._DefineSettingRoute({
     idPrefix = "entry.settings.charges", scope = "entry", rowScope = "detail",
@@ -72,6 +73,7 @@ end
 ST._FlushPresentationEditors = FlushPresentationEditors
 
 function ST._BuildEntryPresentation(container, group, entry)
+    if entry.rotationAssistant then return end
     if not ST.PanelSupportsAttachedBars(group) then return end
     local groupId, index = CS.selectedGroup, CS.selectedButton
     ST._AddDropdownRow(container, {

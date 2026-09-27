@@ -301,7 +301,7 @@ end
 -- resolve class-scoped Resources settings).
 local CONTEXT_STATE_FIELDS = {
     "selectedContainer", "selectedGroup", "selectedButton",
-    "selectedRotationAssistantEntry", "selectedResourcePowerType",
+    "selectedResourcePowerType",
     "resourceSettingsSpecID", "castFramesSelectedItem",
     "barsEntrySelected", "barWorkspaceKind", "unifiedBarKind",
 }
@@ -327,7 +327,6 @@ local function BuildContextIdentity(context)
         tostring(context.displayMode or ""),
         tostring(context.buttonIndex or ""),
         tostring(context.buttonData or ""),
-        tostring(context.rotationAssistant == true),
         tostring(context.resourcePowerType or ""),
         tostring(context.resourceSpecID or ""),
         tostring(context.castFramesItem or ""),
@@ -398,9 +397,6 @@ local function GetSettingsFinderContext()
             -- style panel-owned, but their selected spell still renders
             -- entry-specific Settings and Visibility rows.
             context.scope = "entry"
-        elseif CS.selectedRotationAssistantEntry == true then
-            context.scope = "entry"
-            context.rotationAssistant = true
         else
             context.scope = "panel"
             context.rowScope = "primary"

@@ -526,6 +526,7 @@ for _, spellID in ipairs(NEVER_TRACKABLE_SPELL_IDS) do
 end
 
 local function IsNeverTrackableSpell(spellId)
+    if CooldownCompanion:IsRotationAssistantActionSpell(spellId) then return true end
     local id = tonumber(spellId)
     if not id or id <= 0 then return false end
     if NEVER_TRACKABLE_SPELL_SET[id] then return true end

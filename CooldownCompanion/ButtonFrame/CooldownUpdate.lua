@@ -195,6 +195,160 @@ local function ClearCooldownWidget(widget)
     end
 end
 
+-- Shared by a resolved spell and the assistant's empty recommendation state.
+local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, procOverlayActive)
+    -- Per-button visibility evaluation (after charge tracking)
+    button._procOverlayActive = procOverlayActive
+    EvaluateButtonVisibility(button, buttonData, procOverlayActive)
+    button._rawVisibilityHidden = button._visibilityHidden
+    button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
+    button._rawVisibilityReasonBits = button._visibilityReasonBits
+    button._rawVisibilityReasonMode = button._visibilityReasonMode
+
+    local group = buttonGroup
+    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
+    -- An unlocked panel shows every entry so there is something to grab and
+    -- arrange, whether the whole Group is unlocked or just this panel. Read
+    -- off the per-refresh cached frame flags (set in RefreshGroupFrame,
+    -- cleared by the combat forced lock): this runs at tick rate, so the
+    -- predicates themselves are never called from here.
+    local unlockFrame = not isTriggerPanel and button:GetParent() or nil
+    local forceVisibleByUnlockPreview = unlockFrame ~= nil
+        and (unlockFrame._containerUnlockPreviewActive == true
+            or unlockFrame._panelUnlockPreviewActive == true)
+    local visibilityOverrideSource
+    if isTriggerPanel then
+        button._visibilityHidden = true
+        button._visibilityAlphaOverride = 0
+        visibilityOverrideSource = "trigger"
+    end
+
+    -- Explicit positioning previews stay visible on the real display. Ordinary
+    -- config selection is rendered only by the pinned config mirror.
+    local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
+    local collapsingPlaceholder = (forceVisibleByUnlockPreview or forceVisibleByLayoutPreview)
+        and ST.IsCollapsingAttachedBar(group, buttonData, unlockFrame and unlockFrame._panelLayoutKind)
+    if forceVisibleByUnlockPreview then
+        button._visibilityHidden = false
+        -- An entry its own rules would hide right now comes back as a GHOST,
+        -- the way an Aura Panel's unlock placeholders and a hidden panel's
+        -- 40% ghost do, so the unlocked panel reads as "here is where this
+        -- entry sits" rather than as the entry being ready (owner ruling
+        -- 2026-09-03). Entries the rules leave visible keep their real alpha.
+        if button._rawVisibilityHidden == true or collapsingPlaceholder then
+            button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
+        else
+            button._visibilityAlphaOverride = 1
+        end
+        visibilityOverrideSource = "unlock-preview"
+    elseif forceVisibleByLayoutPreview and not isTriggerPanel then
+        button._visibilityHidden = false
+        button._visibilityAlphaOverride = collapsingPlaceholder and CooldownCompanion.DIM_FALLBACK_ALPHA or 1
+        visibilityOverrideSource = "layout-preview"
+    end
+    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
+    if button._visibilityHidden == true then
+        button._visibilityFinalMode = "hidden"
+    elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
+        button._visibilityFinalMode = "dimmed"
+    else
+        button._visibilityFinalMode = "visible"
+    end
+    button._visibilityOverrideSource = visibilityOverrideSource
+    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
+    local visualStateContext
+    local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
+    if shouldCaptureVisualState then
+        visualStateContext = button._visualStateContext
+        if type(visualStateContext) ~= "table" then
+            visualStateContext = {}
+            button._visualStateContext = visualStateContext
+        end
+        visualStateContext.displayMode = buttonDisplayMode
+        visualStateContext.preserveSecretTextRender = false
+    end
+    -- Track visibility/force-visible state changes for compact layout reflow.
+    local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
+    if visibilityChanged then
+        button._prevVisibilityHidden = button._visibilityHidden
+    end
+    local forceVisibleChanged = button._forceVisibleByConfig ~= button._prevForceVisibleByConfig
+    if forceVisibleChanged then
+        button._prevForceVisibleByConfig = button._forceVisibleByConfig
+    end
+    if visibilityChanged or forceVisibleChanged then
+        local groupFrame = button:GetParent()
+        if groupFrame then groupFrame._layoutDirty = true end
+    end
+
+    -- Apply visibility alpha or early-return for hidden buttons
+    if not group or not CooldownCompanion:IsGroupCompactLayoutActive(button._groupId, group) then
+        -- Non-compact mode: alpha=0 for hidden, restore for visible
+        if button._visibilityHidden then
+            button.cooldown:Hide()  -- prevent stale IsShown() across ticks
+            HideIconFillForHiddenButton(button)
+            if button._lastVisAlpha ~= 0 then
+                button:SetAlpha(0)
+                button._lastVisAlpha = 0
+                -- An alpha-0 frame still hit-tests; disarm the ping receiver
+                -- so pings pass through to the world instead of announcing an
+                -- invisible entry. Edge-guarded: runs only on the hide flip.
+                if button._ccPingSurface then
+                    SetEntryPingReceiver(button._ccPingSurface, false, button)
+                end
+            end
+            DispatchStandaloneTextureVisual(button, group)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
+            -- Combat ticker floor fail-open: hidden buttons skip NoteButtonTimeState, so
+            -- pin the ticker here for hideWhileUnusable (the walk is what re-shows the
+            -- button when usability flips).
+            if floorFailOpen then
+                CooldownCompanion:PinCooldownTicker(floorFailOpen)
+            end
+            return false
+        else
+            local targetAlpha = button._visibilityAlphaOverride or 1
+            if button._lastVisAlpha ~= targetAlpha then
+                -- Re-arm the ping receiver on the hidden-to-visible flip only
+                -- (not on ordinary alpha-override changes).
+                if button._lastVisAlpha == 0 and targetAlpha ~= 0 and button._ccPingSurface then
+                    SetEntryPingReceiver(button._ccPingSurface, true, button)
+                end
+                button:SetAlpha(targetAlpha)
+                button._lastVisAlpha = targetAlpha
+            end
+        end
+    else
+        -- Compact mode: Show/Hide handled by UpdateGroupLayout
+        if button._visibilityHidden then
+            -- Prevent stale IsShown() across ticks. SetCooldown(0,0) does not
+            -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
+            -- and icon mode force-show both read stale true on next tick.
+            button.cooldown:Hide()
+            HideIconFillForHiddenButton(button)
+            DispatchStandaloneTextureVisual(button, group)
+            if shouldCaptureVisualState then
+                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
+            end
+            -- Combat ticker floor fail-open: see the non-compact branch above.
+            if floorFailOpen then
+                CooldownCompanion:PinCooldownTicker(floorFailOpen)
+            end
+            return false
+        else
+            local targetAlpha = button._visibilityAlphaOverride or 1
+            if button._lastVisAlpha ~= targetAlpha then
+                button:SetAlpha(targetAlpha)
+                button._lastVisAlpha = targetAlpha
+            end
+        end
+    end
+
+    return true, group, shouldCaptureVisualState, visualStateContext
+end
+
 local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._durationObj = nil
     button._cooldownDeferred = nil
@@ -246,10 +400,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     end
     if button._cdTextRegion then
         button._cdTextRegion:SetTextColor(0, 0, 0, 0)
-    end
-    if button.SetAlpha and button._lastVisAlpha ~= 1 then
-        button:SetAlpha(1)
-        button._lastVisAlpha = 1
     end
 
     if UpdateIconModeGlows then
@@ -548,6 +698,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         or nil
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
+        ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, false)
         return
     end
 
@@ -1089,154 +1240,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Per-button visibility evaluation (after charge tracking)
-    button._procOverlayActive = procOverlayActive
-    EvaluateButtonVisibility(button, buttonData, procOverlayActive)
-    button._rawVisibilityHidden = button._visibilityHidden
-    button._rawVisibilityAlphaOverride = button._visibilityAlphaOverride
-    button._rawVisibilityReasonBits = button._visibilityReasonBits
-    button._rawVisibilityReasonMode = button._visibilityReasonMode
-
-    local group = buttonGroup
-    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
-    -- An unlocked panel shows every entry so there is something to grab and
-    -- arrange, whether the whole Group is unlocked or just this panel. Read
-    -- off the per-refresh cached frame flags (set in RefreshGroupFrame,
-    -- cleared by the combat forced lock): this runs at tick rate, so the
-    -- predicates themselves are never called from here.
-    local unlockFrame = not isTriggerPanel and button:GetParent() or nil
-    local forceVisibleByUnlockPreview = unlockFrame ~= nil
-        and (unlockFrame._containerUnlockPreviewActive == true
-            or unlockFrame._panelUnlockPreviewActive == true)
-    local visibilityOverrideSource
-    if isTriggerPanel then
-        button._visibilityHidden = true
-        button._visibilityAlphaOverride = 0
-        visibilityOverrideSource = "trigger"
-    end
-
-    -- Explicit positioning previews stay visible on the real display. Ordinary
-    -- config selection is rendered only by the pinned config mirror.
-    local forceVisibleByLayoutPreview = IsRuntimeLayoutPreviewButtonForceVisible(button)
-    local collapsingPlaceholder = (forceVisibleByUnlockPreview or forceVisibleByLayoutPreview)
-        and ST.IsCollapsingAttachedBar(group, buttonData, unlockFrame and unlockFrame._panelLayoutKind)
-    if forceVisibleByUnlockPreview then
-        button._visibilityHidden = false
-        -- An entry its own rules would hide right now comes back as a GHOST,
-        -- the way an Aura Panel's unlock placeholders and a hidden panel's
-        -- 40% ghost do, so the unlocked panel reads as "here is where this
-        -- entry sits" rather than as the entry being ready (owner ruling
-        -- 2026-09-03). Entries the rules leave visible keep their real alpha.
-        if button._rawVisibilityHidden == true or collapsingPlaceholder then
-            button._visibilityAlphaOverride = CooldownCompanion.DIM_FALLBACK_ALPHA
-        else
-            button._visibilityAlphaOverride = 1
-        end
-        visibilityOverrideSource = "unlock-preview"
-    elseif forceVisibleByLayoutPreview and not isTriggerPanel then
-        button._visibilityHidden = false
-        button._visibilityAlphaOverride = collapsingPlaceholder and CooldownCompanion.DIM_FALLBACK_ALPHA or 1
-        visibilityOverrideSource = "layout-preview"
-    end
-    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
-    if button._visibilityHidden == true then
-        button._visibilityFinalMode = "hidden"
-    elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
-        button._visibilityFinalMode = "dimmed"
-    else
-        button._visibilityFinalMode = "visible"
-    end
-    button._visibilityOverrideSource = visibilityOverrideSource
-    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
-    local visualStateContext
-    local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
-    if shouldCaptureVisualState then
-        visualStateContext = button._visualStateContext
-        if type(visualStateContext) ~= "table" then
-            visualStateContext = {}
-            button._visualStateContext = visualStateContext
-        end
-        visualStateContext.displayMode = buttonDisplayMode
-        visualStateContext.preserveSecretTextRender = false
-    end
-    -- Track visibility/force-visible state changes for compact layout reflow.
-    local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
-    if visibilityChanged then
-        button._prevVisibilityHidden = button._visibilityHidden
-    end
-    local forceVisibleChanged = button._forceVisibleByConfig ~= button._prevForceVisibleByConfig
-    if forceVisibleChanged then
-        button._prevForceVisibleByConfig = button._forceVisibleByConfig
-    end
-    if visibilityChanged or forceVisibleChanged then
-        local groupFrame = button:GetParent()
-        if groupFrame then groupFrame._layoutDirty = true end
-    end
-
-    -- Apply visibility alpha or early-return for hidden buttons
-    if not group or not CooldownCompanion:IsGroupCompactLayoutActive(button._groupId, group) then
-        -- Non-compact mode: alpha=0 for hidden, restore for visible
-        if button._visibilityHidden then
-            button.cooldown:Hide()  -- prevent stale IsShown() across ticks
-            HideIconFillForHiddenButton(button)
-            if button._lastVisAlpha ~= 0 then
-                button:SetAlpha(0)
-                button._lastVisAlpha = 0
-                -- An alpha-0 frame still hit-tests; disarm the ping receiver
-                -- so pings pass through to the world instead of announcing an
-                -- invisible entry. Edge-guarded: runs only on the hide flip.
-                if button._ccPingSurface then
-                    SetEntryPingReceiver(button._ccPingSurface, false, button)
-                end
-            end
-            DispatchStandaloneTextureVisual(button, group)
-            if shouldCaptureVisualState then
-                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
-            end
-            -- Combat ticker floor fail-open: hidden buttons skip NoteButtonTimeState, so
-            -- pin the ticker here for hideWhileUnusable (the walk is what re-shows the
-            -- button when usability flips).
-            if floorFailOpen then
-                CooldownCompanion:PinCooldownTicker(floorFailOpen)
-            end
-            return  -- Skip all visual updates
-        else
-            local targetAlpha = button._visibilityAlphaOverride or 1
-            if button._lastVisAlpha ~= targetAlpha then
-                -- Re-arm the ping receiver on the hidden-to-visible flip only
-                -- (not on ordinary alpha-override changes).
-                if button._lastVisAlpha == 0 and targetAlpha ~= 0 and button._ccPingSurface then
-                    SetEntryPingReceiver(button._ccPingSurface, true, button)
-                end
-                button:SetAlpha(targetAlpha)
-                button._lastVisAlpha = targetAlpha
-            end
-        end
-    else
-        -- Compact mode: Show/Hide handled by UpdateGroupLayout
-        if button._visibilityHidden then
-            -- Prevent stale IsShown() across ticks. SetCooldown(0,0) does not
-            -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
-            -- and icon mode force-show both read stale true on next tick.
-            button.cooldown:Hide()
-            HideIconFillForHiddenButton(button)
-            DispatchStandaloneTextureVisual(button, group)
-            if shouldCaptureVisualState then
-                CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
-            end
-            -- Combat ticker floor fail-open: see the non-compact branch above.
-            if floorFailOpen then
-                CooldownCompanion:PinCooldownTicker(floorFailOpen)
-            end
-            return  -- Skip visual updates for hidden buttons
-        else
-            local targetAlpha = button._visibilityAlphaOverride or 1
-            if button._lastVisAlpha ~= targetAlpha then
-                button:SetAlpha(targetAlpha)
-                button._lastVisAlpha = targetAlpha
-            end
-        end
-    end
+    local visible, group, shouldCaptureVisualState, visualStateContext = ApplyButtonVisibility(
+        button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, procOverlayActive)
+    if not visible then return end
 
     button._isUnusable, button._isOutOfRange = false, false
 

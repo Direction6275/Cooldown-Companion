@@ -923,27 +923,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     -- retain a released mirror while the unified host owns the visible slots.
     local reconcileVisuals = CS.panelPreviewVisualsNeedReconcile == true
 
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        local slot = slots[1]
-        if not slot then
-            return false
-        end
-        CS.panelPreviewVisualsNeedReconcile = nil
-        local buttonData = slot._cdcPreviewButtonData
-        if buttonData and reconcileVisuals then
-            local status = CollectEntryStatus(buttonData, group)
-            if slot.icon then
-                slot.icon:SetDesaturated(not status.usable)
-            end
-            ApplySlotEffectPreviews(slot, buttonData, group, panelId, 1, false)
-            ApplySlotConditionalPreview(slot, buttonData, group, panelId, 1)
-            if slot._cdcCondAnim then
-                EnsureConditionalTicker(preview)
-            end
-        end
-        ApplySelectionVisuals(slot, 1, CS.selectedRotationAssistantEntry == true)
-        return true
-    end
+
 
     local isGridPanel = IsIconModePanel(group)
     CS.panelPreviewVisualsNeedReconcile = nil

@@ -205,7 +205,6 @@ ST._configState = {
     selectedContainer = nil,     -- Group container selected in the Navigator
     selectedGroup = nil,         -- Panel selected in the Navigator
     selectedButton = nil,
-    selectedRotationAssistantEntry = nil,
     selectedButtons = {},
     selectedPanels = {},         -- multi-selected panel IDs (within a container)
     selectedGroups = {},         -- multi-selected container IDs
@@ -434,6 +433,7 @@ CS.ShowPopupAboveConfig = ShowPopupAboveConfig
 -- Helper: Get icon for a button data entry
 ------------------------------------------------------------------------
 local function GetButtonIcon(buttonData)
+    if buttonData.rotationAssistant then return ST.ROTATION_ASSISTANT_FALLBACK_ICON end
     local manualIcon = buttonData.manualIcon
     if type(manualIcon) == "number" or type(manualIcon) == "string" then
         return manualIcon
@@ -484,6 +484,7 @@ local function GetCooldownInfoDisplaySpellID(cooldownInfo)
 end
 
 local function GetConfigEntryDisplayName(buttonData, opts)
+    if buttonData and buttonData.rotationAssistant then return buttonData.customName or ST.ROTATION_ASSISTANT_NAME end
     if not buttonData then
         return nil
     end
@@ -616,7 +617,6 @@ local function SnapshotOtherClassLibraryState()
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
         selectedButton = CS.selectedButton,
-        selectedRotationAssistantEntry = CS.selectedRotationAssistantEntry,
         selectedGroups = CopyConfigStateMap(CS.selectedGroups),
         selectedPanels = CopyConfigStateMap(CS.selectedPanels),
         selectedButtons = CopyConfigStateMap(CS.selectedButtons),
@@ -647,7 +647,6 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.selectedContainer = snapshot.selectedContainer
     CS.selectedGroup = snapshot.selectedGroup
     CS.selectedButton = snapshot.selectedButton
-    CS.selectedRotationAssistantEntry = snapshot.selectedRotationAssistantEntry
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
     wipe(CS.selectedButtons)
@@ -1061,7 +1060,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.selectedContainer = containerId
     CS.selectedGroup = panelId
     CS.selectedButton = buttonIndex
-    CS.selectedRotationAssistantEntry = nil
     -- Finder results are explicit destinations, not ordinary focus changes.
     -- Never let an anchor captured by an earlier selection switch override
     -- the result the user chose.
@@ -1081,9 +1079,7 @@ end
 ------------------------------------------------------------------------
 local function GetGroupIcon(group)
     if ST.IsTotemPanelGroup(group) then return 136098 end
-    if group and group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        return CooldownCompanion:GetRotationAssistantFallbackIcon()
-    end
+
     if group.buttons and group.buttons[1] then
         return GetButtonIcon(group.buttons[1])
     end
@@ -1182,9 +1178,7 @@ end
 
 local function GetConfigPanelEntryCount(panel)
     if ST.IsTotemPanelGroup(panel) then return GetNumTotemSlots() end
-    if panel and panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        return 1
-    end
+
     return panel and panel.buttons and #panel.buttons or 0
 end
 
@@ -2409,7 +2403,6 @@ local function ClearSelectedButton(opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if ST._RememberPanelSettingsView then ST._RememberPanelSettingsView() end
     CS.selectedButton = nil
-    CS.selectedRotationAssistantEntry = nil
     wipe(CS.selectedButtons)
     if not (opts and opts.preserveLensAnchor) then
         CS.pendingLensAnchor = nil
@@ -2528,7 +2521,7 @@ local function SelectConfigPanel(panelId, opts)
     -- its own panel clears the entry highlight, but hands the semantic viewport
     -- anchor to the panel build so the user keeps their place.
     local samePanelEntry = CS.selectedGroup == panelId
-        and (CS.selectedButton ~= nil or CS.selectedRotationAssistantEntry == true)
+        and CS.selectedButton ~= nil
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local selectedPanel = profile and profile.groups and profile.groups[panelId]
     local supportsEntryLens = ST._GroupSupportsPerButtonOverrides
@@ -2540,8 +2533,7 @@ local function SelectConfigPanel(panelId, opts)
 
     if opts and opts.toggle
         and CS.selectedGroup == panelId
-        and not CS.selectedButton
-        and not CS.selectedRotationAssistantEntry then
+        and not CS.selectedButton then
         CS.selectedGroup = nil
     else
         CS.selectedGroup = panelId
@@ -2562,7 +2554,7 @@ local function NormalizeIndicatorConfigSelection()
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[CS.selectedGroup]
     if ST.IsIndicatorGroup(group) and (CS.selectedButton or next(CS.selectedButtons)
-        or CS.selectedRotationAssistantEntry or CS.unifiedRowScope == "detail") then
+        or CS.unifiedRowScope == "detail") then
         SelectConfigPanel(CS.selectedGroup)
     end
 end
@@ -2608,7 +2600,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local panelChanged = CS.selectedGroup ~= panelId
     local hadEntryFocus = not panelChanged
-        and (CS.selectedButton ~= nil or CS.selectedRotationAssistantEntry == true)
+        and CS.selectedButton ~= nil
     local explicitDestination = opts
         and (opts.scope == "detail" or opts.scope == "primary")
     local togglingOff = not panelChanged
@@ -2652,7 +2644,6 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
             CS.selectedButtons[CS.selectedButton] = true
         end
         CS.selectedButton = nil
-        CS.selectedRotationAssistantEntry = nil
         -- A multi-select of two or more only exists as the entry cluster's
         -- one appended tab, so the surface has to follow it there.
         local multiCount = 0
@@ -2662,7 +2653,6 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         end
     else
         wipe(CS.selectedButtons)
-        CS.selectedRotationAssistantEntry = nil
         if opts and opts.force then
             CS.selectedButton = buttonIndex
         elseif not panelChanged and CS.selectedButton == buttonIndex then
@@ -2684,32 +2674,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     FinishPreviewSelection()
 end
 
-local function SelectConfigRotationAssistantEntry(panelId, opts)
-    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    if opts and opts.containerId ~= nil then
-        CS.selectedContainer = opts.containerId
-    end
-    wipe(CS.selectedPanels)
-    wipe(CS.selectedGroups)
 
-    CS.selectedGroup = panelId
-    CS.selectedButton = nil
-    CS.selectedRotationAssistantEntry = true
-    CS.barsEntrySelected = false
-    CS.castFramesSelectedItem = nil
-    CS.unifiedBarKind = nil
-    wipe(CS.selectedButtons)
-    CS.pendingLensAnchor = nil
-    -- The rotation assistant entry has no entry tabs of its own. Everything
-    -- it offers is visibility, and the panel-side Visibility tab reads the
-    -- selected entry, so this selection lands on the panel tabs and names
-    -- Visibility as its destination. The explicit flag is what stops a
-    -- display mode's own default landing tab from overriding that.
-    CS.unifiedRowScope = "primary"
-    CS.selectedTab = "loadconditions"
-    CS.panelSettingsTab = "loadconditions"
-    FinishPreviewSelection()
-end
 
 local function SelectConfigButtonPanel(panelId, opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
@@ -2768,7 +2733,6 @@ local function SelectConfigResource(powerType, opts)
     -- entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
     if opts and opts.clearButtonMulti then
-        CS.selectedRotationAssistantEntry = nil
         wipe(CS.selectedButtons)
     end
 
@@ -2930,7 +2894,6 @@ local function ResetConfigSelection(full)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.selectedButton = nil
-    CS.selectedRotationAssistantEntry = nil
     CS.unifiedBarKind = nil
     ClearConfigResourceSelection()
     wipe(CS.selectedButtons)
@@ -3280,7 +3243,6 @@ ST._SelectConfigPanel = SelectConfigPanel
 ST._NormalizeIndicatorConfigSelection = NormalizeIndicatorConfigSelection
 ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
-ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry
 ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._ClearConfigBarsHomeSelection = ClearConfigBarsHomeSelection
 ST._SelectConfigResource = SelectConfigResource

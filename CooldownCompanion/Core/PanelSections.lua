@@ -12,8 +12,9 @@
     stays panel-wide, text included.
 
     Sections apply to plain icon panels only. An Aura Panel renders through
-    Blizzard's flow container, which assumes one cell size per line, and bar,
-    text, texture, trigger, and Rotation Assistant panels are outside the model.
+    Blizzard's flow container, which assumes one cell size per line. Bar Panels,
+    Totem Panels, and Indicators are outside the model. Assistant entries use
+    ordinary icon sections.
     Everywhere sections do not apply, GetSectionsForLayout returns nil and the
     panel lays out through the exact code it always did.
 

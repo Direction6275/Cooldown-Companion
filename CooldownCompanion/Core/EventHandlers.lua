@@ -501,7 +501,7 @@ function CooldownCompanion:RefreshChargeFlags(typeFilter, changedGroups)
     end
     for groupId, group in pairs(self.db.profile.groups) do
         for _, buttonData in ipairs(group.buttons) do
-            if buttonData.type == "spell" and typeFilter ~= "item" then
+            if buttonData.type == "spell" and not buttonData.rotationAssistant and typeFilter ~= "item" then
                 local previousCharges, previousMax, previousText, previousDisplayCount
                 if changedGroups then
                     previousCharges, previousMax = buttonData.hasCharges, buttonData.maxCharges

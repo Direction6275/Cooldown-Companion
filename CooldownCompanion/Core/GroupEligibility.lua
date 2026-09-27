@@ -277,11 +277,10 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         end
     end
 
-    -- An Aura Panel joins the Rotation Assistant in skipping the entry checks:
-    -- both are placed and sized before they have entries (the Aura Panel keeps a
+    -- Aura Panels are placed and sized before they have entries (each keeps a
     -- reserved one-cell footprint for exactly this), so "no saved entry" must
     -- not mean "not on screen to arrange".
-    local skipEntryChecks = self:IsRotationAssistantGroup(group) or ST.IsAuraPanelGroup(group)
+    local skipEntryChecks = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group) or HasAttachedModuleForUnlock(self, groupId, group)
     if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
         return false
@@ -628,13 +627,6 @@ end
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
     if ST.IsTotemPanelGroup(group) then return true end
     opts = opts or {}
-    if self:IsRotationAssistantGroup(group) then
-        if opts.checkLoadConditions == false then
-            return true
-        end
-        local entrySettings = self:GetRotationAssistantEntrySettings(group, false)
-        return self:IsButtonLoadConditionMet(entrySettings or {}, group)
-    end
     if not (group and group.buttons and #group.buttons > 0) then
         return false
     end
@@ -649,9 +641,6 @@ end
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
     if ST.IsTotemPanelGroup(group) then return GetNumTotemSlots() end
     opts = opts or {}
-    if self:IsRotationAssistantGroup(group) then
-        return 1
-    end
 
     if not (group and group.buttons and #group.buttons > 0) then
         return 0
@@ -1480,6 +1469,8 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
 
     -- Per-button talent condition: gate visibility on a specific talent node.
     if not opts.ignoreTalentConditions and not self:IsTalentConditionMet(buttonData) then return false end
+
+    if buttonData.rotationAssistant == true then return true end
 
     if opts.ignoreSpellAvailability and buttonData.type == "spell" then
         return true

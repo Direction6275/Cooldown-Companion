@@ -675,24 +675,22 @@ local function ShowPanelContextMenu(panelId, containerId)
                 UIDropDownMenu_AddButton(info, level)
             end
 
-            if panel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-                local hasSwitchModes = false
-                for _, modeInfo in ipairs(switchModes) do
-                    if panel.displayMode ~= modeInfo.mode
-                        and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
-                        hasSwitchModes = true
-                        break
-                    end
+            local hasSwitchModes = false
+            for _, modeInfo in ipairs(switchModes) do
+                if panel.displayMode ~= modeInfo.mode
+                    and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
+                    hasSwitchModes = true
+                    break
                 end
-                if hasSwitchModes then
-                    UIDropDownMenu_AddSeparator(level)
-                    info = UIDropDownMenu_CreateInfo()
-                    info.text = "Panel Type"
-                    info.notCheckable = true
-                    info.hasArrow = true
-                    info.menuList = "PANEL_TYPE"
-                    UIDropDownMenu_AddButton(info, level)
-                end
+            end
+            if hasSwitchModes then
+                UIDropDownMenu_AddSeparator(level)
+                info = UIDropDownMenu_CreateInfo()
+                info.text = "Panel Type"
+                info.notCheckable = true
+                info.hasArrow = true
+                info.menuList = "PANEL_TYPE"
+                UIDropDownMenu_AddButton(info, level)
             end
 
             UIDropDownMenu_AddSeparator(level)
@@ -774,32 +772,30 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "PANEL_TYPE" then
-            if panel.displayMode ~= ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-                for _, modeInfo in ipairs(switchModes) do
-                    if panel.displayMode ~= modeInfo.mode
-                        and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
-                        local info = UIDropDownMenu_CreateInfo()
-                        info.text = "Switch to " .. modeInfo.label
-                        info.notCheckable = true
-                        local targetMode = modeInfo.mode
-                        info.func = function()
-                            CloseDropDownMenus()
-                            -- Sections exist only in icon mode, and leaving it
-                            -- flattens them for good (placements are not
-                            -- remembered), so a panel that actually has some
-                            -- says so before the switch instead of after.
-                            if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
-                                ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
-                                    panelId = panelId,
-                                    containerId = containerId,
-                                    targetMode = targetMode,
-                                })
-                                return
-                            end
-                            ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
+            for _, modeInfo in ipairs(switchModes) do
+                if panel.displayMode ~= modeInfo.mode
+                    and CooldownCompanion:CanChangePanelDisplayMode(panelId, modeInfo.mode) then
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = "Switch to " .. modeInfo.label
+                    info.notCheckable = true
+                    local targetMode = modeInfo.mode
+                    info.func = function()
+                        CloseDropDownMenus()
+                        -- Sections exist only in icon mode, and leaving it
+                        -- flattens them for good (placements are not
+                        -- remembered), so a panel that actually has some
+                        -- says so before the switch instead of after.
+                        if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
+                            ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
+                                panelId = panelId,
+                                containerId = containerId,
+                                targetMode = targetMode,
+                            })
+                            return
                         end
-                        UIDropDownMenu_AddButton(info, level)
+                        ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
                     end
+                    UIDropDownMenu_AddButton(info, level)
                 end
             end
         elseif menuList == "COPY_PANEL_SETTINGS" then
@@ -1051,7 +1047,7 @@ local function MaybeSelectInitialConfigContainer()
     -- An explicit destination or workflow opened before the first refresh wins.
     if CooldownCompanion._unsupportedLegacyProfile
         or CS.selectedContainer or CS.selectedGroup or CS.selectedButton
-        or CS.selectedRotationAssistantEntry or CS.barsEntrySelected
+        or CS.barsEntrySelected
         or CS.selectedResourcePowerType
         or CS.castFramesSelectedItem or CS.unifiedBarKind
         or next(CS.selectedGroups) or next(CS.selectedPanels)
@@ -1798,9 +1794,6 @@ local function RenderExportModeGroups(db, selection, mode)
                     iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
                     iconVertexColor = ST.TOTEM_PANEL_BADGE_TINT
                     iconDesaturated = true
-                elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-                    iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
-                    iconTexCoord = { 0.08, 0.92, 0.08, 0.92 }
                 else
                     iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
                     local auraTint = GetConfigAuraPanelBadgeTint(panel)
@@ -2000,9 +1993,6 @@ local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
         iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
         vertexColor = ST.TOTEM_PANEL_BADGE_TINT
         desaturated = true
-    elseif panel.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
-        iconTexture = CooldownCompanion:GetRotationAssistantFallbackIcon()
-        texCoord = { 0.08, 0.92, 0.08, 0.92 }
     else
         iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
         local auraTint = GetConfigAuraPanelBadgeTint(panel)
@@ -2049,7 +2039,6 @@ local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
         panelEntry:SetColor(0.4, 0.7, 1.0)
     elseif CS.selectedGroup == panelId
         and CS.selectedButton == nil
-        and CS.selectedRotationAssistantEntry ~= true
         and not next(CS.selectedButtons) then
         panelEntry:SetColor(0, 1, 0)
     elseif panel.enabled == false or isInactive then

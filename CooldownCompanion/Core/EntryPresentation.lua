@@ -113,6 +113,7 @@ end
 
 function ST.GetEntryPresentation(group, entry)
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    if entry and entry.rotationAssistant then return "icons" end
     if ST.IsIndicatorGroup(group) then return "indicator" end
     if ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" then
         return "bars"
@@ -122,7 +123,8 @@ end
 
 function ST.IsPanelBarEntry(group, entry)
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    return ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" or false
+    return ST.PanelSupportsAttachedBars(group) and entry and not entry.rotationAssistant
+        and entry.displayAs == "bars" or false
 end
 
 function ST.CanSegmentEntryCharges(group, entry)
@@ -406,6 +408,7 @@ function Addon:SetEntryPresentation(groupId, index, presentation)
     local entry = group and group.buttons and group.buttons[index]
     if not ST.PanelSupportsAttachedBars(group) or not entry then return false end
     if presentation ~= "icons" and presentation ~= "bars" then return false end
+    if entry.rotationAssistant and presentation ~= "icons" then return false end
     if ST.GetEntryPresentation(group, entry) == presentation then return true end
     self:ClearAllConfigPreviews()
     entry.displayAs = presentation == "bars" and "bars" or nil

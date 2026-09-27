@@ -625,7 +625,7 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- the look on the Appearance tab.
     --
     -- Aura panels pack themselves (the Collapse Direction row above); only
-    -- icons, bars and text offer Compact Mode, never Rotation Assistant.
+    -- Ordinary panels offer Compact Mode.
     --
     -- Panel-only data with no override section, and the Layout tab is panel
     -- scope throughout (no entry lens ever reaches it), so the row needs no

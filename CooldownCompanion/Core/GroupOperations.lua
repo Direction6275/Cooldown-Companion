@@ -503,12 +503,6 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
             or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group)) then
         return true
     end
-    if self:IsRotationAssistantGroup(group) then
-        local buttonData = frame._rotationAssistantButtonData
-        return #frame.buttons ~= 1
-            or not frame.buttons[1]
-            or frame.buttons[1].buttonData ~= buttonData
-    end
     -- An Aura Panel's button list is empty by design, so the entry-count
     -- comparison below would report "needs rebuild" forever: one such panel
     -- would force a full refresh of EVERY group on every availability pass.
@@ -569,7 +563,7 @@ function CooldownCompanion:GroupButtonSetNeedsRebuild(groupId, group, opts)
 
     for i = 1, usableCount do
         local button = frame.buttons[i]
-        if not button or button.buttonData ~= usableButtons[i] then
+        if not button or ST.GetConfiguredButtonData(button.buttonData) ~= usableButtons[i] then
             return true
         end
     end

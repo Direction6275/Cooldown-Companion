@@ -50,21 +50,23 @@ local CREATE_ACCENT = {
 -- Single source of truth for the creatable panel types: menu order, menu
 -- label, tooltip copy, and the per-type defaults a create menu applies.
 -- The empty-Group picker may use an optional shorter `pickerLabel` or
--- `pickerDescription`; the full label and description remain the create menus'
--- richer explanation. Every create surface still reads this one descriptor.
+-- `pickerDescription`, plus a muted `pickerFormat` line; the full label and
+-- description remain the create menus' richer explanation. Every create
+-- surface still reads this one descriptor.
 -- Descriptor order is the menu order; `startsMenuSection` inserts a separator.
 -- A `parentMode` type is a SUBTYPE of the type it names.
 -- Its `mode` is a pseudo-mode CreatePanel resolves into a real displayMode plus
 -- the subtype flag, so it never reaches group.displayMode.
--- `primary` marks the everyday types. The empty-Group picker sizes its tiers by
--- this flag alone. Standard panels, Aura/Totem variants, and other specialist
--- types each occupy their own section in the create menus.
+-- `primary` marks the everyday types; `pickerFamily` groups the compact choices.
+-- Standard panels, Aura/Totem variants, and other specialist types each occupy
+-- their own section in the create menus.
 local PANEL_TYPES = {
     {
         mode = "icons",
         label = "Panel",
         description = "Shows spells, auras, and items as icons, bars, or both.",
-        pickerDescription = "Icons, bars, or both",
+        pickerDescription = "Track spells, auras, and items together.",
+        pickerFormat = "Icons, bars, or both",
         primary = true,
         -- The tutorial's create-panel step only advances on an Icon Panel.
         notifyTutorial = true,
@@ -74,28 +76,32 @@ local PANEL_TYPES = {
         startsMenuSection = true,
         parentMode = "icons",
         label = "Aura Icon Panel",
-        pickerLabel = "Aura Icons",
+        pickerLabel = "Icons",
+        pickerFamily = "aura",
         description = "Shows your tracked buffs or target debuffs as icons while active. Inactive auras collapse.",
     },
     {
         mode = "totemIcons",
         parentMode = "icons",
         label = "Totem Icon Panel",
-        pickerLabel = "Totem Icons",
+        pickerLabel = "Icons",
+        pickerFamily = "totem",
         description = "Automatically shows active totems and summons as icons, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
     },
     {
         mode = "auraBars",
         parentMode = "icons",
         label = "Aura Bar Panel",
-        pickerLabel = "Aura Bars",
+        pickerLabel = "Bars",
+        pickerFamily = "aura",
         description = "Shows your tracked buffs or target debuffs as bars while active. Inactive auras collapse.",
     },
     {
         mode = "totemBars",
         parentMode = "icons",
         label = "Totem Bar Panel",
-        pickerLabel = "Totem Bars",
+        pickerLabel = "Bars",
+        pickerFamily = "totem",
         description = "Automatically shows active totems and summons as timer bars, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
     },
     {
@@ -103,11 +109,9 @@ local PANEL_TYPES = {
         startsMenuSection = true,
         label = "Indicator",
         description = "One spell, aura, or item shown as an icon, texture, or text, with optional conditions and readouts.",
-    },
-    {
-        mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT,
-        label = ST.ROTATION_ASSISTANT_NAME or "Assistant Panel",
-        description = "Shows one locked recommendation icon from the in-game assistant.",
+        pickerDescription = "Highlight one spell, aura, or item.",
+        pickerFormat = "Icon, texture, or text",
+        primary = true,
     },
 }
 

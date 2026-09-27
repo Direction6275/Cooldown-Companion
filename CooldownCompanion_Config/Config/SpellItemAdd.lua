@@ -410,6 +410,13 @@ function CS.ResolveProspectiveAdd(stub, groupId)
     groupId = groupId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     if not group then return false end
+    if stub.type == "spell" and CooldownCompanion:IsRotationAssistantActionSpell(tonumber(stub.id)) then
+        local entry = CooldownCompanion:CreateRotationAssistantEntry()
+        if CooldownCompanion:GetPanelManualEntryRejectMessage(group, entry) then return false end
+        for key, value in pairs(entry) do stub[key] = value end
+        stub.displayAs = nil
+        return true
+    end
     stub.displayAs = ST.PanelSupportsAttachedBars(group) and CS.panelAddModePanelId == groupId
         and CS.panelAddPresentation == "bars" and "bars" or nil
     if stub.type == "item" then
@@ -477,6 +484,18 @@ local function CompleteAdd(request, buttonIndex)
     end
 end
 
+local function TryAddRotationAssistant(opts)
+    local request = CreateAddRequest(opts)
+    if not request or InCombatLockdown() then return false end
+    local index = CooldownCompanion:AddRotationAssistantEntry(request.groupId, { section = request.section })
+    if not index then return false end
+    request.autoSelect = true
+    CompleteAdd(request, index)
+    CooldownCompanion:Print("Added Rotation Assistant")
+    return true
+end
+ST._TryAddRotationAssistant = TryAddRotationAssistant
+
 local function TryAddSpell(input, isPetSpell, forceAura, opts)
     local request = CreateAddRequest(opts)
     if input == "" or not request then return false end
@@ -499,8 +518,8 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
     end
 
     if spellId and spellName then
-        if spellName == "Single-Button Assistant" then
-            CooldownCompanion:Print("Cannot track Single-Button Assistant")
+        if CooldownCompanion:IsRotationAssistantActionSpell(spellId) then
+            CooldownCompanion:Print("Add Rotation Assistant from the spellbook.")
             return false
         end
         local route, reason, detail = ResolveSpellAddRoute(spellId, spellName, forceAura,
@@ -802,7 +821,9 @@ local function TryReceiveCursorDrop(opts)
     end
 
     local added, status = false, nil
-    if cursorType == "spell" and cursorSpellID then
+    if cursorType == "spell" and CooldownCompanion:IsRotationAssistantActionSpell(cursorSpellID) then
+        added = TryAddRotationAssistant(opts)
+    elseif cursorType == "spell" and cursorSpellID then
         added, status = TryAddSpell(tostring(cursorSpellID), nil, nil, opts)
     elseif cursorType == "petaction" and cursorID then
         added, status = TryAddSpell(tostring(cursorID), true, nil, opts)

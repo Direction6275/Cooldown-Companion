@@ -3695,6 +3695,7 @@ function CooldownCompanion:RunAllMigrations()
     self:PrepareResourceBarSettings()
     if not unifiedOK then return false end
     self:RunIndicatorMigration()
+    self:MigrateRotationAssistantPanels(self.db.profile)
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

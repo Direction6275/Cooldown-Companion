@@ -362,11 +362,10 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     frame:RegisterForDrag("LeftButton")
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
-    -- An Aura Panel is exempt alongside the Rotation Assistant: it holds a
+    -- An Aura Panel is exempt: it holds a
     -- reserved one-cell footprint while empty precisely so it can be placed
     -- before its first aura is added.
-    local hasDragEntry = self:IsRotationAssistantGroup(group)
-        or ST.IsAuraPanelGroup(group)
+    local hasDragEntry = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
@@ -526,11 +525,9 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
         isLocked = true
     end
 
-    -- Update drag handle text and lock state. An empty Aura Panel is exempt for
-    -- the same reason the Rotation Assistant is: its one reserved cell is what
-    -- the owner arranges before adding auras.
-    local hasButtons = self:IsRotationAssistantGroup(group)
-        or ST.IsAuraPanelGroup(group)
+    -- Update drag handle text and lock state. An empty Aura Panel keeps a
+    -- reserved cell the owner can arrange before adding auras.
+    local hasButtons = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
@@ -669,10 +666,9 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         isLocked = true
     end
     local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    -- Exempt with the Rotation Assistant: an empty Aura Panel still lays out one
+    -- An empty Aura Panel still lays out one
     -- reserved cell, so the wheel has a real cell to scale.
-    local hasResizeEntry = self:IsRotationAssistantGroup(group)
-        or ST.IsAuraPanelGroup(group)
+    local hasResizeEntry = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
     local resizeWheelEnabled = hasResizeEntry

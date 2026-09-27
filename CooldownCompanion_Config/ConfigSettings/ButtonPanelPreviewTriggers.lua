@@ -209,23 +209,9 @@ local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 
 local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
     StopConditionalTicker(preview)
-    local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
     local entries = {}
-    if isRA then
-        local spellID = CooldownCompanion:GetRotationAssistantActionSpellID()
-        entries[1] = {
-            buttonData = {
-                type = "spell",
-                id = spellID,
-                name = ST.ROTATION_ASSISTANT_NAME,
-                manualIcon = CooldownCompanion:GetRotationAssistantFallbackIcon(spellID),
-            },
-            isRotationAssistant = true,
-        }
-    else
-        for index, buttonData in ipairs(group.buttons or {}) do
-            entries[#entries + 1] = { buttonData = buttonData, index = index }
-        end
+    for index, buttonData in ipairs(group.buttons or {}) do
+        entries[#entries + 1] = { buttonData = buttonData, index = index }
     end
 
     local count = #entries
@@ -263,7 +249,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
         return col * (w + STRIP_SPACING), -(row * (h + STRIP_SPACING))
     end
     preview.layoutDrag = layoutDrag
-    local dragModel = (not readOnly and not isRA and count >= 2) and layoutDrag or nil
+    local dragModel = (not readOnly and count >= 2) and layoutDrag or nil
 
     for i, entryInfo in ipairs(entries) do
         local slot = AcquireSlot(preview, content, "iconSlots")
@@ -283,51 +269,6 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
         if readOnly then
             slot.icon:SetDesaturated(false)
             DisableReadOnlySlotInteraction(slot)
-        elseif entryInfo.isRotationAssistant then
-            slot:EnableMouse(true)
-            slot.icon:SetDesaturated(false)
-            slot._cdcPreviewButtonData = buttonData
-            ApplySlotEffectPreviews(slot, buttonData, group, panelId, 1, false)
-            ApplySlotConditionalPreview(slot, buttonData, group, panelId, 1)
-            if slot.problemBadge then slot.problemBadge:Hide() end
-            if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
-            if slot.overrideBadge then slot.overrideBadge:Hide() end
-            if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
-            -- The assistant pseudo-entry is never a copy target, and the
-            -- recycled slot may carry a ring from a grid render.
-            if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
-            -- This pseudo-entry has its own click semantics. The next grid
-            -- binding must reinstall the shared handlers after this override.
-            slot._cdcEntryHandlersInstalled = nil
-            slot._cdcSpecialEntryHandlers = true
-            slot:SetScript("OnMouseDown", nil)
-            ApplySelectionVisuals(slot, 1, CS.selectedRotationAssistantEntry == true)
-            slot:SetScript("OnMouseUp", function(self, mouseButton)
-                if CS.dragState and CS.dragState.phase == "active" then return end
-                if GetCursorInfo() then return end
-                if mouseButton ~= "LeftButton" then return end
-                if CS.selectedRotationAssistantEntry == true then
-                    -- This click means "select the panel"; the shared selector
-                    -- clears the virtual entry and preserves the Visibility
-                    -- viewport while ownership changes.
-                    ST._SelectConfigButtonPanel(panelId, { clearPanelMulti = true })
-                else
-                    ST._SelectConfigRotationAssistantEntry(panelId, { containerId = CS.selectedContainer })
-                end
-                CooldownCompanion:RefreshConfigSelection()
-            end)
-            slot:SetScript("OnEnter", function(self)
-                self.hoverHighlight:SetFrameLevel(self:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
-                self.hoverHighlight:Show()
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetText(ST.ROTATION_ASSISTANT_NAME, 1, 1, 1)
-                GameTooltip:Show()
-            end)
-            slot:SetScript("OnLeave", function(self)
-                self.hoverHighlight:Hide()
-                GameTooltip:Hide()
-            end)
-            layoutDrag.slots[1] = slot
         else
             local status = CollectEntryStatus(buttonData, group)
             slot.icon:SetDesaturated(not status.usable)

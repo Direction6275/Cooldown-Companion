@@ -335,9 +335,7 @@ end
 -- on icons and bars the old single "Preview Cooldown State" is split into
 -- the Cooldown Text and Cooldown Swipe readouts, each rendering only what
 -- it names (the swipe entry keeps the rest of the state look - fill,
--- desaturation, tint - since those have no other preview). Text and
--- rotation assistant panels keep the single state entry: their cooldown
--- look is indivisible.
+-- desaturation, tint - since those have no other preview).
 ------------------------------------------------------------------------
 
 local GROUP_AURAS = "Auras"
@@ -383,13 +381,12 @@ local function StateRoute(advancedKey)
     -- with none there is nothing to resolve from, so name the section on the
     -- route or the gear lands on a collapsed header with nothing under it.
     -- The state looks are a subgroup of the Cooldown / Spell Indicators section
-    -- in every mode that draws them - icons, bars and the rotation assistant -
+    -- in both icon and bar presentation
     -- and the subheading over them owns no collapse state of its own.
     local statesSection = (advancedKey == nil) and "effects_spell" or nil
     return {
         icons = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         bars = { tab = "effects", key = advancedKey, uncollapse = statesSection },
-        rotationAssistant = { tab = "effects", key = advancedKey, uncollapse = statesSection },
     }
 end
 
@@ -567,22 +564,11 @@ local CONTROLS = {
     },
 
     {
-        id = "cooldown",
-        label = "Preview Cooldown State",
-        group = GROUP_COOLDOWNS_CHARGES,
-        menuOrder = 10,
-        modes = { rotationAssistant = true },
-        settings = {
-            rotationAssistant = { tab = "effects", uncollapse = "effects_spell" },
-            },
-        preview = ConditionalPreview("cooldown"),
-    },
-    {
         id = "unusable",
         label = "Preview Unusable State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 40,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         styleKey = "showUnusable",
         lensSection = "unusableDimming",
         settings = StateRoute("unusableVisual"),
@@ -593,7 +579,7 @@ local CONTROLS = {
         label = "Preview Out of Range State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 50,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
         requiresBarRangeIconConsumer = true,
@@ -605,7 +591,7 @@ local CONTROLS = {
         label = "Preview Loss of Control",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 60,
-        modes = { icons = true, bars = true, rotationAssistant = true },
+        modes = { icons = true, bars = true },
         section = "lossOfControl",
         styleKey = "showLossOfControl",
         settings = StateRoute(nil),
@@ -1142,10 +1128,6 @@ local function ResolvePreviewTargets(control, panelId, buttonIndex)
     if not owner then return {} end
     local presentation = control.presentation or owner.displayMode or "icons"
     local group = control.presentation and ST._CreatePanelSettingsContext(owner, presentation).group or owner
-    -- The rotation assistant's recommendation is one synthetic slot.
-    if CooldownCompanion.IsRotationAssistantGroup and CooldownCompanion:IsRotationAssistantGroup(owner) then
-        return nil
-    end
     local targets = {}
     -- Context construction inspects the whole panel. Share each presentation
     -- within this resolution only; later selections/edits need fresh contexts.
@@ -1857,9 +1839,7 @@ local function PanelAcceptsNewEntries(group)
     if not group then
         return false
     end
-    if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return false
-    end
+
     return true
 end
 

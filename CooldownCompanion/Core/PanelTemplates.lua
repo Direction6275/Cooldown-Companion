@@ -402,8 +402,8 @@ end
 -- Save / update / rename / delete
 ------------------------------------------------------------------------
 
--- Same eligibility as Copy Panel Settings' source side: the specialist
--- modes (textures, trigger, rotation assistant) have no template.
+-- Same eligibility as Copy Panel Settings' source side. Templates capture
+-- panel settings, including panels containing assistant entries, not entries.
 function CooldownCompanion:CanSavePanelTemplate(groupId)
     return self:GetPanelCopyMode(GetProfileGroup(self, groupId)) ~= nil
 end

@@ -41,6 +41,7 @@ Core\ConfigLoader.lua
 Core\AnchorPolicy.lua
 Core\EntryRuntime.lua
 Core\Defaults.lua
+Core\RotationAssistant.lua
 Core\IndicatorPanels.lua
 Core\EntryPresentation.lua
 Core\PanelSections.lua

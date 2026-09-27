@@ -33,7 +33,6 @@ local UpdateCoordLabel = GF.UpdateCoordLabel
 local GetCompactSlotForIndex = GF.GetCompactSlotForIndex
 
 -- GroupFrameButtonPool.lua
-local IsRuntimeButtonUsable = GF.IsRuntimeButtonUsable
 local ClearButtonCompactSlotCache = GF.ClearButtonCompactSlotCache
 local GetRuntimeGroupButtonList = GF.GetRuntimeGroupButtonList
 local GetButtonPoolKey = GF.GetButtonPoolKey
@@ -182,7 +181,7 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
 
     local slotIndex = 0
     for _, buttonData in ipairs(group.buttons or {}) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions) then
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             slotIndex = slotIndex + 1
             local tile = tiles[slotIndex]
             if not tile then
@@ -471,7 +470,7 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
     -- update and drop the fast path forever.
     local auraSectionPanel = ST.PanelHasAuraSection(group)
     for sourceIndex, buttonData in ipairs(sourceButtons) do
-        if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions)
+        if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions)
             and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
             visibleIndex = visibleIndex + 1
             local button = frame.buttons and frame.buttons[visibleIndex]
@@ -576,7 +575,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         local auraSectionPanel = ST.PanelHasAuraSection(group)
         -- Create new buttons (skip untalented spells)
         for i, buttonData in ipairs(sourceButtons) do
-            if IsRuntimeButtonUsable(self, buttonData, group, buttonUsabilityOptions)
+            if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions)
                 and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
                 local effectiveStyle = self:GetEntryEffectiveStyle(group, buttonData)
                 local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
@@ -666,7 +665,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     -- are measured from one set of numbers and can never disagree.
     local sectionLayout = frame._sectionLayout
     local numButtons = frame.visibleButtonCount
-        or (self:IsRotationAssistantGroup(group) and 1)
         or #group.buttons
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
@@ -936,7 +934,7 @@ end
 -- An edit scope names saved entry identity/presentation, never a cached style.
 local function IsStyleEditEntry(button, scope)
     if not scope then return true end
-    if scope.entry then return button.buttonData == scope.entry end
+    if scope.entry then return ST.GetConfiguredButtonData(button.buttonData) == scope.entry end
     if scope.presentation == "bars" then return button._isBar == true end
     if scope.presentation == "icons" then return not button._isBar end
     return true
