@@ -45,7 +45,7 @@ local function BuildContext(extra)
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
         selectedGroupDisplayMode = group and (group.displayMode or "icons") or "",
-        selectedGroupTriggerDisplayType = group and group.displayMode == "trigger" and CooldownCompanion.GetTriggerPanelDisplayType and CooldownCompanion:GetTriggerPanelDisplayType(group, false) or "",
+        selectedGroupTriggerDisplayType = group and ST.IsIndicatorGroup(group) and CooldownCompanion.GetTriggerPanelDisplayType and CooldownCompanion:GetTriggerPanelDisplayType(group, false) or "",
         selectedButton = CS.selectedButton,
         selectedButtons = SortedKeyString(CS.selectedButtons),
         -- Which strip owns the settings surface (UnifiedTabRow.lua). Pinned

@@ -187,17 +187,6 @@ local function GetActiveEditingAddBox(col3)
     return nil
 end
 
--- The texture panel's single tracked entry shows as a compact "quiet row" in
--- the editing surface (it replaces the entry-icon strip, which texture panels
--- no longer render). It occupies the same chrome slot as the add box and is
--- mutually exclusive with it (add box: no entry; row: one entry).
-local function GetActiveEditingRow(col3)
-    local row = col3.buttonsQuietRow
-    if row and row:IsShown() then
-        return row
-    end
-    return nil
-end
 
 local function SetWideEditingAddBox(col3, widget)
     local previous = col3._cdcAlternateEditingAddBox
@@ -1436,9 +1425,6 @@ local function GetEditingOverhead(col3)
         overhead = overhead + EDIT_HEADER_GAP
             + (actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
-    if GetActiveEditingRow(col3) then
-        overhead = overhead + EDIT_HEADER_GAP + ADD_BOX_HEIGHT
-    end
     local chips = col3._cdcEditingChips
     if chips and chips:IsShown() then
         overhead = overhead + EDIT_CHIPS_GAP + EDIT_CHIPS_HEIGHT
@@ -1814,15 +1800,7 @@ local function AnchorButtonsContentFrame(col3, frame)
             LayoutEditingActionRow(col3)
             topAnchor = actionRow
         end
-        local quietRow = GetActiveEditingRow(col3)
-        if quietRow then
-            quietRow:SetParent(surface)
-            quietRow:ClearAllPoints()
-            quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-            quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
-            quietRow:SetHeight(ADD_BOX_HEIGHT)
-            topAnchor = quietRow
-        end
+
         local chips = col3._cdcEditingChips
         if chips and chips:IsShown() then
             chips:SetParent(surface)
@@ -1836,10 +1814,10 @@ local function AnchorButtonsContentFrame(col3, frame)
         frame:SetPoint("BOTTOMRIGHT", surface, "BOTTOMRIGHT", -EDIT_INSET, EDIT_BOTTOM_INSET)
     else
         frame:SetParent(col3.content)
-        local quietRow = GetActiveEditingRow(col3)
+
         local chips = col3._cdcEditingChips
         local hasChips = chips and chips:IsShown()
-        if actionRow or hasChips or quietRow then
+        if actionRow or hasChips then
             if col3.buttonsSplitDivider then
                 col3.buttonsSplitDivider:CancelDrag()
                 col3.buttonsSplitDivider:Hide()
@@ -1859,13 +1837,6 @@ local function AnchorButtonsContentFrame(col3, frame)
                 actionRow:SetHeight(actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
                 LayoutEditingActionRow(col3)
                 topAnchor = actionRow
-            end
-            if quietRow then
-                quietRow:ClearAllPoints()
-                quietRow:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-                quietRow:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
-                quietRow:SetHeight(ADD_BOX_HEIGHT)
-                topAnchor = quietRow
             end
             if hasChips then
                 chips:SetParent(surface)
@@ -2169,16 +2140,6 @@ local function HidePanelPreview(col3)
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
     end
-    -- The quiet row is a col3.content sibling of the editing surface (like the
-    -- add box), so HideEditingChrome does not reach it; hide it here too or it
-    -- lingers, still clickable, over browse / multi-select / Resources / Cast.
-    if col3.buttonsQuietRow then
-        col3.buttonsQuietRow:Hide()
-    end
-    -- The inline texture browser is another col3.content sibling with the same
-    -- hazard. Leaving the buttons preview (Resources/Cast/talent/config close,
-    -- all routed through here) hides its grid, drops the flag, and clears any
-    -- staged preview so the browser cannot reappear or strand a texture.
     CloseInlineTextureBrowser(col3)
     col3._cdcEditingContext = nil
     col3._cdcEmptyGroupPreviewTakeover = nil
@@ -2351,10 +2312,7 @@ local function EnsureAddBox(col3)
         local targetGroupId = CS.selectedGroup
         if not ST._TryAdd(text, { groupId = targetGroupId, tutorialInput = text, clearInput = text }) then return end
         widget:SetText("")
-        local targetGroup = CooldownCompanion.db.profile.groups[targetGroupId]
-        if not (targetGroup and targetGroup.displayMode == "textures") then
-            CS.pendingWideAddFocus = true
-        end
+        CS.pendingWideAddFocus = true
         CooldownCompanion:RefreshConfigPanel()
     end)
     addBox:SetCallback("OnTextChanged", function(widget, event, text)
@@ -2449,115 +2407,8 @@ end
 
 -- A full-width layout host contains only a compact interactive entry chip.
 -- The unused space remains inert; all actions use the shared entry menu.
-local function LayoutQuietRow(row)
-    local tracksWidth = row.tracksLabel:GetUnboundedStringWidth()
-    row.tracksLabel:SetWidth(tracksWidth)
-    -- Icon/padding + name + 8px gap + 12px chevron + end padding.
-    local fixedWidth = 6 + 18 + 6 + 8 + 12 + 6
-    local available = math.max(fixedWidth + 1, row:GetWidth() - EDIT_INSET * 2 - tracksWidth - 8)
-    row.entry:SetWidth(math.min(fixedWidth + row.nameText:GetUnboundedStringWidth(), available))
-end
 
-local function EnsureQuietRow(col3)
-    local row = col3.buttonsQuietRow
-    if row then return row end
 
-    row = CreateFrame("Frame", nil, col3.content)
-    row:SetHeight(ADD_BOX_HEIGHT)
-
-    local tracks = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    tracks:SetPoint("LEFT", row, "LEFT", EDIT_INSET, 0)
-    tracks:SetText("Tracks:")
-    row.tracksLabel = tracks
-
-    local entry = CreateFrame("Button", nil, row)
-    entry:SetPoint("LEFT", tracks, "RIGHT", 8, 0)
-    entry:SetHeight(ADD_BOX_HEIGHT)
-    entry:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
-    row.entry = entry
-
-    local hover = entry:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetAllPoints()
-    hover:SetColorTexture(1, 1, 1, 0.06)
-
-    local icon = entry:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(18, 18)
-    icon:SetPoint("LEFT", entry, "LEFT", 6, 0)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    row.icon = icon
-
-    -- The chevron is artwork on the entry's single menu target.
-    local chevron = entry:CreateTexture(nil, "ARTWORK")
-    chevron:SetSize(12, 12)
-    chevron:SetPoint("RIGHT", entry, "RIGHT", -6, 0)
-    chevron:SetAtlas("uitools-icon-chevron-down", false)
-    chevron:SetAlpha(0.65)
-    row.chevron = chevron
-
-    local name = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    name:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-    name:SetPoint("RIGHT", chevron, "LEFT", -8, 0)
-    name:SetJustifyH("LEFT")
-    name:SetWordWrap(false)
-    row.nameText = name
-
-    local function OpenEntryActions()
-        local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        local buttonData = group and group.buttons and group.buttons[1]
-        if buttonData and ST._ShowEntryContextMenu then
-            GameTooltip:Hide()
-            ST._ShowEntryContextMenu(CS.selectedGroup, 1, buttonData)
-        end
-    end
-    entry:SetScript("OnClick", OpenEntryActions)
-    entry:SetScript("OnEnter", function(self)
-        chevron:SetAlpha(1)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine(name:GetText())
-        GameTooltip:AddLine("Click for entry actions.", 0.7, 0.7, 0.7)
-        GameTooltip:Show()
-    end)
-    entry:SetScript("OnLeave", function()
-        chevron:SetAlpha(0.65)
-        GameTooltip:Hide()
-    end)
-    row:SetScript("OnSizeChanged", LayoutQuietRow)
-    row:SetScript("OnHide", function()
-        chevron:SetAlpha(0.65)
-        if GameTooltip:IsOwned(entry) then GameTooltip:Hide() end
-    end)
-
-    col3.buttonsQuietRow = row
-    return row
-end
-
-local function UpdateQuietRow(col3)
-    local host = col3.buttonsPreviewHost
-    local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local buttonData = group and group.buttons and group.buttons[1]
-    local show = host and host:IsShown()
-        and group and group.displayMode == "textures"
-        and buttonData ~= nil
-    if not show then
-        if col3.buttonsQuietRow then
-            col3.buttonsQuietRow:Hide()
-        end
-        return
-    end
-
-    local row = EnsureQuietRow(col3)
-    row.icon:SetTexture((ST._GetLayoutPreviewIcon and ST._GetLayoutPreviewIcon(buttonData)) or 134400)
-    row.nameText:SetText((ST._GetConfigEntryDisplayName and ST._GetConfigEntryDisplayName(buttonData))
-        or buttonData.name or "")
-
-    local header = EnsureEditingSurface(col3)._cdcHeader
-    row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -EDIT_HEADER_GAP)
-    row:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -EDIT_HEADER_GAP)
-    row:SetHeight(ADD_BOX_HEIGHT)
-    LayoutQuietRow(row)
-    row:Show()
-end
 
 -- Async adds (uncached item IDs) complete after the add box's Enter
 -- handler already returned false; the loader calls this on success so the
@@ -2742,11 +2593,6 @@ local function EnsureGroupSettingsHost(col3)
     return host
 end
 
--- Persistent raw host for the inline texture browser, parked on col3.content
--- (same discipline as the quiet row). ButtonsWideColumn owns its lifecycle;
--- AuraTexturePicker renders its grid + chrome into it via
--- ST._RenderInlineTextureBrowser. Never an AceGUI-recycled frame, so nothing
--- bleeds onto sibling surfaces.
 local function EnsureInlineTextureBrowserHost(col3)
     local host = col3._inlineTextureBrowserHost
     if host then return host end
@@ -2762,7 +2608,6 @@ local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
     -- The panel Format tab's editor is hidden away with its host here without
     -- the host's own tab seams running, so settle any pending write first.
     -- Release is idempotent.
-    if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
     HideEntrySurfaces(col3)
     HidePanelPreview(col3)
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
@@ -2832,23 +2677,17 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
         CloseInlineTextureBrowser(col3)
     end
 
-    -- Inline texture browser takeover: while open for the selected standalone
-    -- texture or trigger panel, the browse grid owns the settings area. The
-    -- pinned preview, editing header, and quiet row stay above it so hovering a
-    -- thumbnail live-updates the pinned preview. The flag is set/cleared by
-    -- AuraTexturePicker.
     if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
         local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
         if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
             -- Same as the multi-select takeover above: the settings host goes
             -- away without its own tab seams running, so settle the format
             -- editor first. Release is idempotent.
-            if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
             HideEntrySurfaces(col3)
             if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
             UpdatePanelPreview(col3, selectionOnly, edit)
             UpdateAddBox(col3)
-            UpdateQuietRow(col3)
+
             UpdateEditingContext(col3)
             ReapplyPanelPreviewSplit()
             local host = EnsureInlineTextureBrowserHost(col3)
@@ -2869,7 +2708,7 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
         HideEntrySurfaces(col3)
         UpdatePanelPreview(col3, selectionOnly, edit)
         UpdateAddBox(col3)
-        UpdateQuietRow(col3)
+
         UpdateEditingContext(col3)
         ReapplyPanelPreviewSplit()
 
@@ -2897,7 +2736,7 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
     if IsEntrySelectionActive() then
         UpdatePanelPreview(col3, selectionOnly, edit)
         UpdateAddBox(col3)
-        UpdateQuietRow(col3)
+
         UpdateEditingContext(col3)
         -- Final height pass: the add box just settled its visibility,
         -- which feeds the settings-minimum clamp.
@@ -2922,7 +2761,7 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
     HideEntrySurfaces(col3)
     UpdatePanelPreview(col3, selectionOnly, edit)
     UpdateAddBox(col3)
-    UpdateQuietRow(col3)
+
     UpdateEditingContext(col3)
     -- Final height pass (see the entry branch above).
     ReapplyPanelPreviewSplit()
@@ -2972,7 +2811,7 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
             -- controls pass visualOnly because repainting this metadata on
             -- every drag tick is unrelated to the visual candidate.
             UpdateEditingContext(col3)
-            UpdateQuietRow(col3)
+
         end
         return true
     end

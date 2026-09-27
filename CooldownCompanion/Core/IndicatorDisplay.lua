@@ -110,10 +110,6 @@ function I.StyleVisual(host, group)
             progress.clip:SetAlpha(1)
         end
         host._activeTextureSettings, host._activeTextureGeometry = visual, geometry
-    elseif settings.legacyTextMetrics then
-        -- Migrated trigger messages keep their existing metrics/background.
-        -- Re-measuring after layout would clear the text's anchors.
-        shown, geometry.boundsWidth, geometry.boundsHeight = Addon.ApplyTriggerTextVisual(host, settings.text)
     else
         host._triggerTextBaseColor = CopyTable(settings.text.textFontColor or WHITE)
         host.textFrame.bg:SetColorTexture(unpack(settings.text.textBgColor or {0, 0, 0, 0}))
@@ -124,7 +120,6 @@ function I.StyleVisual(host, group)
         host.textFrame:Show()
     end
     StyleReadouts(host, group)
-    if settings.legacyTextMetrics then host.indicatorReadouts.frames.label:SetAlpha(0) end
     return shown, geometry.boundsWidth, geometry.boundsHeight
 end
 

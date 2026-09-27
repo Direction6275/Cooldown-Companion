@@ -3592,6 +3592,7 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     MigrateLcgGlowStyles(quiet, store)
     MigrateBarAuraEffectStyles(quiet, store)
     MigratePandemicSwitchOwnership(quiet, store)
+    ST.IndicatorMigration.ApplyTemplates(originalStore)
 end
 
 function CooldownCompanion:RunAllMigrations()
@@ -3652,9 +3653,7 @@ function CooldownCompanion:RunAllMigrations()
     StripRetiredIconFillAuraColor(self.db and self.db.profile)
     StripRetiredCastBarStylingKey(self.db and self.db.profile)
     StripRetiredTotemEntryFlag(self.db and self.db.profile)
-    if StripRetiredTextSizeKeys(self.db and self.db.profile) then
-        self:Print("Updated for 12.1: text panels now size themselves from their format and font. Use Padding for breathing room.")
-    end
+    StripRetiredTextSizeKeys(self.db and self.db.profile)
     MigratePerModeOrientation(self, self.db and self.db.profile)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     -- After the aura vocabulary rebuild so the repair walks entries whose

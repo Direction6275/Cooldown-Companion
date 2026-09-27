@@ -52,6 +52,7 @@ local appearance = Route("appearance", "display"):Settings({
     timerFormat={label="Timer Format",advancedKey="indicatorText",applies=Applies(function(_,s) return s.readouts.timer == true end)},
 })
 local tracking = Route("tracking", "source"):Settings({source={label="Source"},
+    sourceVisibility={label="Use Saved Source Visibility",applies=Applies(function(g,s) return s.sourceVisibility ~= nil and not I.IsAura(g) end)},
     conditions={label="Show When",aliases={"conditions","ready","on cooldown","always"},applies=Applies(function(g) return not I.IsAura(g) end)},
     unit={label="Aura Unit",applies=Applies(function(g) return I.IsAura(g) end)}})
 
@@ -61,16 +62,18 @@ local soundRoute = ST._DefineSettingRoute({
     collapseKeys=function(context) return {tostring(context.groupId).."_nil_soundalerts"} end,
     applies=Applies(function(g) return not Addon.IsEquipmentSlotEntry(I.Primary(g)) end),
 })
-local soundDefinitions = {triggered={label="Triggered",aliases={"on show","sound"},
-    applies=Applies(function(g) return not I.IsAura(g) end)}}
+local soundDefinitions = {
+    sourceSounds={label="Sound Events",applies=Applies(function(g) return not I.IsAura(g) and I.Primary(g).type == "spell" end)},
+    triggered={label="Triggered",aliases={"on show","sound"},
+    applies=Applies(function(g) return not I.UsesSourceSounds(g) end)}}
 for key, label in pairs({available="Available",availableWithCharges="Available / Charge Gained",
     onCooldown="On Cooldown",chargeGained="Charge Gained",onAuraApplied="Aura Applied",
     onAuraStackGained="Aura Stack Gained",onAuraRemoved="Aura Removed"}) do
     local eventKey, charged = key == "availableWithCharges" and "available" or key, key == "availableWithCharges"
     soundDefinitions[key]={label=label,applies=Applies(function(g)
-        if not I.IsAura(g) then return false end
+        if not I.UsesSourceSounds(g) then return false end
         local source=I.Primary(g)
-        local events=Addon:GetScopedValidSoundAlertEventsForButton(source)
+        local events=Addon:GetScopedValidSoundAlertEventsForButton(source,nil,nil,g)
         return events and events[eventKey] == true
             and (eventKey ~= "available" or (Addon.UsesChargeBehavior(source) == true) == charged)
     end)}
@@ -138,6 +141,7 @@ local function ShowWhen(entry)
     -- so adding one does not silently turn the selector into Custom.
     if entry.indicatorShowWhen == "always" then return "always" end
     if #clauses == 0 then return "always" end
+    if clauses[1].unavailable then return "custom" end
     if clauses[1].key == "cooldownActive" and clauses[1].state == nil then
         return clauses[1].expected == false and "ready" or "cooldown"
     end
@@ -151,7 +155,13 @@ local function BuildConditions(container, entry, first, changed)
         local choices, order = Addon:GetTriggerConditionTypeOptions(entry)
         local filtered = {}
         for _, key in ipairs(order) do if I.ConditionKeys[key] then filtered[#filtered+1]=key end end
-        choices.auraActive = nil
+        if clause.unavailable or not I.ConditionKeys[clause.key] then
+            local offered = false
+            for _, key in ipairs(filtered) do if key == clause.key then offered = true end end
+            choices[clause.key] = "Unavailable: " .. tostring(clause.key)
+            if not offered then filtered[#filtered+1] = clause.key end
+            Hint(container,"This saved condition cannot match. Replace or remove it to enable this display.")
+        end
         local left, right = ST._BeginRowGrid(container)
         Dropdown(left,{label="Check",list=choices,order=filtered,value=clause.key,
             onChange=function(value)
@@ -215,17 +225,30 @@ local function BuildTracking(container, group, changed)
         Hint(container,"Choose a replacement below the preview. Replacing the source resets its conditions; appearance is kept.")
     end
     Heading(container,"When to Show")
+    local settings = I.Settings(group)
+    if settings.sourceVisibility ~= nil and not I.IsAura(group) then
+        local rules = ST._BeginRowGrid(container)
+        Check(rules,{label="Use Saved Source Visibility",setting=tracking.sourceVisibility,value=settings.sourceVisibility,
+            tooltip={"Source Visibility",{"Preserves the source's saved cooldown, charge, item, and usability visibility rules.",1,1,1,true}},
+            onChange=function(value) settings.sourceVisibility=value; changed() end})
+    end
     if I.IsAura(group) then
         Hint(container,"While this aura is active")
         local left = ST._BeginRowGrid(container)
         local automaticSource = CopyTable(source)
         automaticSource.auraUnitOverride = nil
         local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
-        Dropdown(left,{setting=tracking.unit,list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",player="Player",target="Target"},
-            order={"automatic","player","target"},value=source.auraUnitOverride or "automatic",
+        local units = {automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
+            player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"}
+        local scope = source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
+            or source.auraUnitOverride or "automatic"
+        Dropdown(left,{setting=tracking.unit,list=units,
+            order={"automatic","player","target","group","pet"},value=scope,
             onChange=function(value)
                 source.auraUnitOverride=(value == "player" or value == "target") and value or nil
-                source.auraTrackGroup,source.auraTrackPet=nil,nil
+                source.auraTrackGroup = value == "group" or nil
+                source.auraTrackPet = value == "pet" or nil
+                if source.auraTrackGroup or source.auraTrackPet then source.auraUnitOverride = "player" end
                 source.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(source)
                 changed()
             end})
@@ -268,7 +291,7 @@ local function BuildTextFormatting(container, group, changed)
     if r.label ~= "none" then
         Dropdown(container,{setting=appearance.labelType,list={name="Source Name",custom="Custom Text"},
             order={"name","custom"},value=r.label,onChange=function(value)
-                r.label=value; settings.legacyTextMetrics=nil; changed(true)
+                r.label=value; changed(true)
             end})
         if r.label == "custom" then
             Edit(container,{setting=appearance.customText,value=r.customText or "",onEnterPressed=function(value)
@@ -302,7 +325,6 @@ local function BuildTextFormatting(container, group, changed)
         local enabled=key == "label" and r.label ~= "none" or key == "timer" and r.timer or key == "count" and r.count ~= "none"
         if enabled then
             local function positionChanged()
-                if key == "label" and settings.displayType == "text" then settings.legacyTextMetrics=nil end
                 changed()
             end
             Dropdown(container,{setting=positions[key].anchor,list=anchors,order=anchorOrder,value=r[key.."Anchor"],
@@ -333,9 +355,9 @@ local function BuildAppearance(container, group, changed)
     else
         local left, right = ST._BeginRowGrid(container)
         Slider(left,{setting=appearance.width,min=20,max=600,step=1,value=settings.text.width or 180,
-            onRelease=function(value) settings.text.width=value; settings.legacyTextMetrics=nil; changed() end})
+            onRelease=function(value) settings.text.width=value; changed() end})
         Slider(right,{setting=appearance.height,min=10,max=300,step=1,value=settings.text.height or 48,
-            onRelease=function(value) settings.text.height=value; settings.legacyTextMetrics=nil; changed() end})
+            onRelease=function(value) settings.text.height=value; changed() end})
     end
     Heading(container,"Text")
     local r = settings.readouts
@@ -343,7 +365,7 @@ local function BuildAppearance(container, group, changed)
     Check(left,{setting=appearance.label,value=r.label ~= "none",onChange=function(value)
         if value then r.label=r.lastLabel or "name"
         else r.lastLabel=r.label; r.label="none" end
-        settings.legacyTextMetrics=nil; changed(true)
+        changed(true)
     end})
     Check(left,{setting=appearance.timer,value=r.timer,onChange=function(value) r.timer=value; changed(true) end})
     local countKey = CountReadoutKey(group)
@@ -388,6 +410,12 @@ function ST._BuildIndicatorTab(container, group, tab)
     elseif tab == "effects" then
         if I.IsAura(group) then ST._BuildTextureEffectsTab(container,group)
         else ST._BuildTriggerEffectsTab(container,group) end
+        if not I.IsAura(group) and I.Primary(group).type == "spell" then
+            Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
+                list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},
+                value=I.UsesSourceSounds(group) and "source" or "indicator",
+                onChange=function(value) I.Settings(group).sourceSounds=value == "source"; changed(true) end})
+        end
         ST._BuildEntrySoundAlertsSection(container,group,I.Primary(group),CS.tabInfoButtons,ST._IndicatorSoundSettings)
     end
 end

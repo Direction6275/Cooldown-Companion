@@ -263,10 +263,16 @@ end
 -- scratch (optional): { scoped = {}, valid = {} }, both emptied here. Only for
 -- callers that read the result inside their own call and keep nothing; the config
 -- surface both holds and mutates the returned set, so it keeps fresh tables.
-function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride, scratch)
+function CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, spellIDOverride, scratch, group)
     local allowSpellEvents, allowAuraEvents = GetSoundAlertEntryScope(buttonData)
     if allowSpellEvents == nil then
         return nil
+    end
+
+    -- Indicator aura binding belongs to the panel's tracking mode, including
+    -- migrated sources whose old entry-level aura flags are absent or stale.
+    if ST.IsIndicatorGroup(group) then
+        allowAuraEvents = ST.Indicator.IsAura(group)
     end
 
     local scopedEvents = scratch and scratch.scoped or {}
@@ -336,29 +342,10 @@ end
 
 function CooldownCompanion:GetTriggerPanelSoundAlertConfig(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
-    if not self:IsTriggerPanelGroup(group) then
-        return nil
-    end
-
-    if ST.IsIndicatorGroup(group) then
-        local settings = ST.Indicator.Initialize(group)
-        if not settings.soundAlerts and createIfMissing then settings.soundAlerts = {} end
-        return settings.soundAlerts
-    end
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings = {}
-    end
-
-    local cfg = group.triggerSettings.soundAlerts
-    if not cfg and createIfMissing then
-        cfg = {}
-        group.triggerSettings.soundAlerts = cfg
-    end
-
-    return cfg
+    if not self:IsTriggerPanelGroup(group) then return end
+    local settings = ST.Indicator.Initialize(group)
+    if not settings.soundAlerts and createIfMissing then settings.soundAlerts = {} end
+    return settings.soundAlerts
 end
 
 function CooldownCompanion:GetTriggerPanelSoundAlertSelection(groupOrId, eventKey)
@@ -393,7 +380,7 @@ function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, s
     end
 
     if not next(cfg) then
-        local settings = ST.IsIndicatorGroup(group) and group.indicatorSettings or group.triggerSettings
+        local settings = group.indicatorSettings
         settings.soundAlerts = nil
     end
 end
@@ -839,7 +826,8 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, cool
     if not buttonData or buttonData.type ~= "spell" then return end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if self:IsTriggerPanelGroup(group) then
+    if ST.IsIndicatorGroup(group) and (not ST.Indicator.UsesSourceSounds(group)
+        or ST.Indicator.Primary(group) ~= buttonData) then
         button._sndInitialized = nil
         return
     end
@@ -891,6 +879,10 @@ end
 
 function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
     if not frame or not self:IsTriggerPanelGroup(group) then
+        return
+    end
+    if ST.Indicator.UsesSourceSounds(group) then
+        frame._triggerSoundInitialized = nil
         return
     end
 

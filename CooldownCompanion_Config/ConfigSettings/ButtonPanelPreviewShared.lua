@@ -15,7 +15,6 @@ local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
 local GetLayoutPreviewIcon = ST._GetLayoutPreviewIcon
-local GetTextEntryMetrics = ST._GetTextEntryMetrics
 local GetStoredConditionalPreviewState = ST._GetStoredConditionalPreviewState
 local IsStoredPreviewFlagActive = ST._IsStoredPreviewFlagActive
 
@@ -471,8 +470,8 @@ local function EnsurePreviewState(host)
 
     preview = {
         buildId = 1,
-        pools = { iconSlots = {}, barSlots = {}, textSlots = {} },
-        used = { iconSlots = 0, barSlots = 0, textSlots = 0 },
+        pools = { iconSlots = {}, barSlots = {} },
+        used = { iconSlots = 0, barSlots = 0 },
     }
     host._cdcPanelPreview = preview
 
@@ -822,28 +821,10 @@ ResetBarSlotWorkspaceState = function(frame)
     frame._cdcVisibilityBadgeShown = nil
 end
 
--- Text-mode slot: static twin of TextMode.lua CreateTextFrame (bg,
--- borders, single FontString; no cooldown/count runtime pieces).
-local function CreateTextSlot(parent)
-    local frame = CreateFrame("Button", nil, parent)
-    frame:SetClipsChildren(false)
-
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.textString = frame:CreateFontString(nil, "OVERLAY")
-    frame.borderTextures = {}
-    for i = 1, 4 do
-        frame.borderTextures[i] = frame:CreateTexture(nil, "OVERLAY")
-    end
-
-    AttachSlotHighlights(frame)
-    return frame
-end
 
 local SLOT_FACTORIES = {
     iconSlots = CreateIconSlot,
     barSlots = CreateBarSlot,
-    textSlots = CreateTextSlot,
 }
 
 local function AcquireSlot(preview, parent, poolName)
@@ -978,15 +959,7 @@ local function ApplySelectionVisuals(slot, index, isSelected)
 end
 
 local function CollectEntryMetadata(buttonData, group)
-    -- The per-entry text format is the flat buttonData.textFormat field (never
-    -- part of the styleOverrides sections), so it needs its own check to count
-    -- as a customization. Counted in EVERY display mode: a format stranded on
-    -- a panel that left text mode is still saved, and the Customizations list
-    -- and this badge must agree about whether the entry customizes anything.
     local hasOverrides = CooldownCompanion:HasStyleOverrides(buttonData) and true or false
-    if not hasOverrides and buttonData.textFormat ~= nil then
-        hasOverrides = true
-    end
     local status = {
         override = hasOverrides,
         fallback = CooldownCompanion.HasItemFallbacks(buttonData) and true or false,
@@ -1432,39 +1405,10 @@ end
 
 -- Entry footprint and grid settings mirrored from GroupFrameLayout.lua
 -- (GetButtonDimensions + ApplyActiveButtonLayout).
-local function GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
+local function GetPanelGeometry(group, isBarMode, visibleIndices)
     local style = group.style or {}
     local w, h
-    if isTextMode then
-        -- Mirror of GroupFrame's text-mode sizing (GetButtonDimensions): a
-        -- text entry measures itself from its own format and font, and the
-        -- grid pitch is the widest/tallest of them. The panel's own format
-        -- seeds a floor so an entry-less panel still has a size.
-        --
-        -- DIVERGENCE (pre-existing, deliberate): the live panel maxes over
-        -- currently USABLE entries only, while the mirror measures every saved
-        -- entry, so the mirror shows the pitch the panel takes with everything
-        -- showing rather than the pitch of this character's current subset.
-        -- The session filter narrows the scan to the entries it kept
-        -- (visibleIndices), so a hidden wide entry stops setting pitch.
-        if GetTextEntryMetrics then
-            w, h = GetTextEntryMetrics(style, nil, style.textFormat)
-            local buttons = group.buttons or {}
-            for ordinal = 1, (visibleIndices and #visibleIndices or #buttons) do
-                local buttonData = buttons[visibleIndices and visibleIndices[ordinal] or ordinal]
-                local effectiveStyle = CooldownCompanion.GetEffectiveStyle
-                    and CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
-                local fmt = buttonData.textFormat or effectiveStyle.textFormat
-                local entryWidth, entryHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
-                w = math_max(w, entryWidth)
-                h = math_max(h, entryHeight)
-            end
-        else
-            -- Same floor GroupFrame falls back to when the renderer's export
-            -- is missing.
-            w, h = 200, 20
-        end
-    elseif isBarMode then
+    if isBarMode then
         w, h = ST.GetBarGridCellDimensions(group)
     elseif style.maintainAspectRatio then
         local size = style.buttonSize or ST.BUTTON_SIZE
@@ -1498,28 +1442,6 @@ local function GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
     }
 end
 
--- Per-entry text footprint, mirroring TextMode.lua ApplyTextLayout: in the
--- world each text button measures itself and calls button:SetSize with its
--- OWN width/height, while GroupFrame's ApplyActiveButtonLayout only POSITIONS
--- text buttons on the uniform pitch. So the mirror places slots on the pitch
--- grid (GetPanelGeometry above) but sizes each one from its own metrics --
--- otherwise a short entry beside a long one renders full-pitch wide here and
--- narrow in the world. Same call shape as the pitch pass, so the entry's
--- metrics cache slot is shared rather than churned.
---
--- Without the renderer's export the pitch is the only number available, which
--- is exactly the uniform-slot behavior this mirror had before.
-local function GetTextSlotSize(group, buttonData, pitchWidth, pitchHeight)
-    if not GetTextEntryMetrics then
-        return pitchWidth, pitchHeight
-    end
-    local style = group.style or {}
-    local effectiveStyle = CooldownCompanion.GetEffectiveStyle
-        and CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
-    local fmt = buttonData.textFormat or effectiveStyle.textFormat
-    local entryWidth, entryHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
-    return entryWidth or pitchWidth, entryHeight or pitchHeight
-end
 
 local function IsIconModePanel(group)
     if group.displayMode ~= nil and group.displayMode ~= "icons" then
@@ -1581,54 +1503,6 @@ local function GetStripNaturalSize(count)
         (rows - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE
 end
 
--- Hidden scratch FontString for measuring trigger text natural size; the
--- metrics helper sets its own font, so no template styling matters here.
-local triggerTextMeasure
-local function GetTriggerTextMeasureFontString()
-    if not triggerTextMeasure then
-        local holder = CreateFrame("Frame", nil, UIParent)
-        holder:Hide()
-        triggerTextMeasure = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    end
-    return triggerTextMeasure
-end
-
--- Natural (unscaled) size of a trigger panel's display visual, or 0,0 when
--- that visual is empty. Mirrors the runtime RenderStandaloneDisplay dispatch.
-local function GetTriggerDisplayNaturalSize(group)
-    local displayType = CooldownCompanion.GetStandaloneDisplayType(group)
-    if displayType == "icon" then
-        local settings = CooldownCompanion:GetTriggerPanelIconSettings(group)
-        if settings and ST._IsValidIconTexture and ST._IsValidIconTexture(settings.manualIcon) then
-            return CooldownCompanion.GetTriggerIconDimensions(settings)
-        end
-        return 0, 0
-    end
-    if displayType == "text" then
-        local settings = CooldownCompanion:GetTriggerPanelTextSettings(group)
-        if settings and CooldownCompanion.HasTriggerTextValue(settings) then
-            local width, height = CooldownCompanion.GetTriggerTextDisplayMetrics(
-                GetTriggerTextMeasureFontString(), settings)
-            return width, height
-        end
-        return 0, 0
-    end
-    local settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
-    if type(settings) == "table" and settings.sourceType ~= nil and settings.sourceValue ~= nil then
-        local scale = tonumber(settings.scale) or 1
-        local sourceWidth = (tonumber(settings.width) or 128) * scale
-        local sourceHeight = (tonumber(settings.height) or 128) * scale
-        local geometry = CooldownCompanion.BuildTexturePanelGeometry
-            and CooldownCompanion:BuildTexturePanelGeometry(settings, sourceWidth, sourceHeight)
-        if geometry then
-            return math_max(1, geometry.boundsWidth or sourceWidth),
-                math_max(1, geometry.boundsHeight or sourceHeight)
-        end
-        return sourceWidth, sourceHeight
-    end
-    return 0, 0
-end
-
 local function GetPanelPreviewNaturalSize(group, includeSections, modules)
     modules = modules or {}
     group = ST.GetPanelLayoutGroup(group)
@@ -1640,43 +1514,15 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
         return 220, 90
     end
 
-    if CooldownCompanion:IsTexturePanelGroup(group) then
-        local settings = CooldownCompanion:GetTexturePanelSettings(group)
-        if type(settings) == "table" and CooldownCompanion.BuildTexturePanelGeometry then
-            local scale = tonumber(settings.scale) or 1
-            local sourceWidth = (tonumber(settings.width) or 128) * scale
-            local sourceHeight = (tonumber(settings.height) or 128) * scale
-            local geometry = CooldownCompanion:BuildTexturePanelGeometry(
-                settings,
-                sourceWidth,
-                sourceHeight
-            )
-            if geometry then
-                return math_max(1, geometry.boundsWidth or sourceWidth),
-                    math_max(1, geometry.boundsHeight or sourceHeight)
-            end
-        end
-        return 128, 128
-    end
-
-    -- Natural size feeds Group Overview tiles only, and a trigger tile renders
-    -- the display alone with the entry strip standing in when no display is
-    -- configured (see BuildTriggerPanelPreview) - so measure exactly that.
-    if CooldownCompanion:IsTriggerPanelGroup(group) then
-        local dispW, dispH = GetTriggerDisplayNaturalSize(group)
-        if dispW > 0 then
-            return dispW, dispH
-        end
-        local stripW, stripH = GetStripNaturalSize(#(group.buttons or {}))
-        if stripW <= 0 then
-            return 220, 90
-        end
-        return stripW, stripH
+    if ST.IsIndicatorGroup(group) then
+        local settings = ST.Indicator.NativeSettings(group)
+        local geometry = settings and CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+        if geometry then return geometry.boundsWidth, geometry.boundsHeight end
+        return 220, 90
     end
 
     local isBarMode = group.displayMode == "bars"
-    local isTextMode = group.displayMode == "text"
-    if isBarMode or isTextMode or IsIconModePanel(group) then
+    if isBarMode or IsIconModePanel(group) then
         local count = #(group.buttons or {})
         if count == 0 and #modules == 0 then
             return 220, 90
@@ -1688,7 +1534,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
                 if not ST.IsAttachedBarEntry(group, entry) then count = count + 1 end
             end
         end
-        local geo = GetPanelGeometry(group, isBarMode, isTextMode)
+        local geo = GetPanelGeometry(group, isBarMode)
         local perRow = math_max(1, geo.buttonsPerRow)
         local cols, rows
         if geo.orientation == "horizontal" then
@@ -1698,11 +1544,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
             rows = math_min(count, perRow)
             cols = math_ceil(count / perRow)
         end
-        local headerHeight = isTextMode
-            and (group.style or {}).showTextGroupHeader == true
-            and (((group.style or {}).textHeaderFontSize
-                or (group.style or {}).textFontSize or 12) + 4)
-            or 0
+        local headerHeight = 0
         -- Content-sized overview cards need the complete footprint, matching
         -- the read-only renderer's section layout rather than the base grid.
         local sections = includeSections and ST.GetSectionsForLayout(group)
@@ -1777,7 +1619,6 @@ PP.RefreshBarSlotWorkspacePresentation = RefreshBarSlotWorkspacePresentation
 PP.SLOT_FACTORIES = SLOT_FACTORIES
 PP.DisableReadOnlySlotInteraction = DisableReadOnlySlotInteraction
 PP.ApplyBarSlotVisualAlpha = ApplyBarSlotVisualAlpha
-PP.GetTextSlotSize = GetTextSlotSize
 PP.GetPanelGeometry = GetPanelGeometry
 PP.GetGrowthMultipliers = GetGrowthMultipliers
 PP.GetHostFitScale = GetHostFitScale
@@ -1795,7 +1636,6 @@ PP.ApplySelectionVisuals = ApplySelectionVisuals
 PP.PANEL_PREVIEW_PADDING = PANEL_PREVIEW_PADDING
 PP.EMPTY_ENTRY_GUIDANCE_BAND = EMPTY_ENTRY_GUIDANCE_BAND
 PP.GetHostFitBox = GetHostFitBox
-PP.GetTriggerDisplayNaturalSize = GetTriggerDisplayNaturalSize
 PP.GetStripNaturalSize = GetStripNaturalSize
 PP.TRIGGER_PREVIEW_STRIP_MAX_SHARE = TRIGGER_PREVIEW_STRIP_MAX_SHARE
 PP.EnsurePreviewState = EnsurePreviewState

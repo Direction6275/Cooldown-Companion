@@ -116,11 +116,6 @@ for _, panelType in ipairs(PANEL_TYPES) do
     PANEL_TYPE_BY_MODE[panelType.mode] = panelType
 end
 
-for _, mode in ipairs({"text", "textures", "trigger"}) do
-    PANEL_TYPE_BY_MODE[mode] = {mode=mode,label=({text="Legacy Text Panel",textures="Legacy Texture Panel",trigger="Legacy Trigger Panel"})[mode],
-        description="Existing display preserved for compatibility. Remains fully editable."}
-end
-
 local function GetPanelTypeInfo(displayMode)
     return PANEL_TYPE_BY_MODE[displayMode] or PANEL_TYPE_BY_MODE.icons
 end
@@ -608,7 +603,7 @@ end
 local function DuplicateEntrySelection(snapshot)
     if not ValidateEntryActionSelection(snapshot) then return end
     local group = snapshot.group
-    if group.displayMode == "textures" then return end
+    if ST.IsIndicatorGroup(group) then return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
     local previousCount = #group.buttons
@@ -628,6 +623,8 @@ end
 
 local function DeleteEntrySelection(snapshot)
     if not ValidateEntryActionSelection(snapshot) then return end
+    local rejectMessage = ST.Indicator.GetRemovalError(snapshot.group, snapshot.entries)
+    if rejectMessage then CooldownCompanion:Print(rejectMessage); return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
     for i = #snapshot.indices, 1, -1 do
@@ -650,13 +647,12 @@ end
 local function GetManualMoveRejectMessage(group, entries)
     local message = CooldownCompanion:GetPanelManualEntryRejectMessage(group, entries)
     if message then return message end
-    if group and group.displayMode == "textures" and #entries > 1 then
-        return "Texture Panels can only hold one entry. Move one entry at a time."
-    end
 end
 
 local function MoveEntrySelection(snapshot, targetGroupId)
     if not ValidateEntryActionSelection(snapshot) then return false end
+    local sourceRejectMessage = ST.Indicator.GetRemovalError(snapshot.group, snapshot.entries)
+    if sourceRejectMessage then CooldownCompanion:Print(sourceRejectMessage); return false end
     local targetGroup = snapshot.db.groups[targetGroupId]
     if not targetGroup or not CanMoveEntryToGroup(snapshot.groupId, targetGroupId) then
         CloseDropDownMenus()
@@ -900,9 +896,7 @@ local function AddEntrySelectionMenuButtons(level, snapshot)
     if anyEnabled then
         AddAction("Disable Selected", function() SetEntrySelectionEnabled(snapshot, false) end)
     end
-    if snapshot.group.displayMode ~= "textures" then
-        AddAction("Duplicate Selected", function() DuplicateEntrySelection(snapshot) end)
-    end
+    AddAction("Duplicate Selected", function() DuplicateEntrySelection(snapshot) end)
     AddEntrySelectionMoveMenuItem(level, snapshot, "Move Selected to...")
     AddAction("|cffff4444Delete Selected|r", function() ConfirmDeleteEntrySelection(snapshot) end)
 end
@@ -917,9 +911,6 @@ end
 -- section id the registry no longer knows is skipped in both places).
 local function CollectCopyCustomizationItems(entryData)
     local items = {}
-    if entryData.textFormat ~= nil then
-        items[#items + 1] = { scope = "format", label = "Text Format" }
-    end
     local sections = entryData.overrideSections or {}
     for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
         if sections[sectionId] then
@@ -994,42 +985,11 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             -- popout, and the panel's Format tab is a LENS onto the selected
             -- entry, so there is one destination for every entry: select it,
             -- keep the surface on the panel tabs, and open Format.
-            if sourceGroup and sourceGroup.displayMode == "text" then
-                local formatInfo = UIDropDownMenu_CreateInfo()
-                formatInfo.text = "Edit Format..."
-                formatInfo.notCheckable = true
-                formatInfo.func = function()
-                    if not ValidateEntryActionSelection(snapshot) then return end
-                    CloseDropDownMenus()
-                    -- The menu can be opened on a panel that is not the
-                    -- selected one; move the selection there first so the
-                    -- container crumb follows too.
-                    if CS.selectedGroup ~= sourceGroupId then
-                        SelectConfigPanel(sourceGroupId, {
-                            containerId = sourceGroup.parentContainerId,
-                        })
-                    end
-                    -- force: this names an entry, so it must end selected even
-                    -- if clicking it would normally toggle the selection off.
-                    -- scope "primary": the panel tabs keep the surface, which
-                    -- is where the format editor now lives.
-                    if SelectConfigButton then
-                        SelectConfigButton(sourceGroupId, sourceIndex, { force = true, scope = "primary" })
-                    end
-                    CS.selectedTab = "format"
-                    CS.panelSettingsTab = "format"
-                    -- A deliberate destination, so it outranks a display
-                    -- mode's own default landing tab.
-                    CS.panelSettingsTabExplicit = true
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(formatInfo, level)
-            end
 
-            local isTexturePanel = sourceGroup and sourceGroup.displayMode == "textures"
+            local isIndicator = ST.IsIndicatorGroup(sourceGroup)
             -- The texture is the display; its lone driver has no separate icon
             -- or independent enabled state to configure in this menu.
-            if not isTexturePanel then
+            if not isIndicator then
                 -- Disable / Enable button
                 local toggleInfo = UIDropDownMenu_CreateInfo()
                 toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
@@ -1069,9 +1029,9 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 end
             end
 
-            local canDuplicate = not isTexturePanel
+            local canDuplicate = not isIndicator
             local hasCustomizations = #CollectCopyCustomizationItems(entryData) > 0
-            if not isTexturePanel and (canDuplicate or hasCustomizations) then
+            if not isIndicator and (canDuplicate or hasCustomizations) then
                 UIDropDownMenu_AddSeparator(level)
             end
 

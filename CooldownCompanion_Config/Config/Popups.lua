@@ -1178,6 +1178,11 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
 
     local panel = srcPanel and CopyTable(srcPanel) or BuildDefaultImportedPanel(containerId)
     panel._originalGroupId = nil
+    if panel._indicatorMigrationOriginal then
+        db._indicatorMigrationBackup = db._indicatorMigrationBackup or {}
+        db._indicatorMigrationBackup[groupId] = panel._indicatorMigrationOriginal
+        panel._indicatorMigrationOriginal = nil
+    end
     panel.cdmPanelSource = nil
     panel.parentContainerId = containerId
     panel.order = panelIndex

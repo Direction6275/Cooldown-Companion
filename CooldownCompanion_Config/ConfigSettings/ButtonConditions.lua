@@ -1840,16 +1840,13 @@ local function GetEntryVisibilityFinderState(context)
         return context._ccEntryVisibilityFinderState
     end
     local group, buttonData = context.group, context.buttonData
-    if not (group and buttonData) or group.displayMode == "trigger" then return nil end
+    if not (group and buttonData) then return nil end
 
-    local isTexturePanel = group.displayMode == "textures"
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
     local hideShowConditions = isAuraPanel
-        or (isTexturePanel and buttonData.type == "spell" and buttonData.addedAs == "aura")
     local state = {
         group = group,
         buttonData = buttonData,
-        isTexturePanel = isTexturePanel,
         isAuraPanel = isAuraPanel,
         visible = not hideShowConditions,
     }
@@ -1868,8 +1865,6 @@ local function GetEntryVisibilityFinderState(context)
     local chargeCapable = FilterChargeCapable(buttonData)
     local nonEquippableItem = isItem and not CooldownCompanion.IsItemEquippable(buttonData)
 
-    state.textureAuraToggle = isTexturePanel and buttonData.type == "spell"
-        and buttonData.addedAs ~= "aura"
     state.auraPair = auraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel
     state.cooldownFamily = not passive and not noCooldown and not isAuraPanel
@@ -1902,11 +1897,6 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         return tostring(context.groupId) .. "_" .. tostring(context.buttonIndex) .. "_visibility"
     end,
 }):Settings({
-    textureAura = {
-        label = "Show Texture While Aura Active",
-        aliases = { "texture aura", "aura presence" },
-        applies = EntryVisibilityApplies(function(state) return state.textureAuraToggle end),
-    },
     -- One descriptor per state dropdown. The aliases carry the retired
     -- checkbox labels so a search typed from memory of the old rows still
     -- lands on the row that replaced them.
@@ -2177,7 +2167,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local BeginRowGrid = ST._BeginRowGrid
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-    local isTexturePanel = group.displayMode == "textures"
 
     local isBatch = batchContext ~= nil
     local isItem
@@ -2338,10 +2327,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- stacks or equipped state that a pure aura entry never has. The section
     -- would build its header and then pour no rows, so it does not build at all.
     local hideShowConditions = isAuraPanel
-        or (not isBatch
-            and isTexturePanel
-            and buttonData.type == "spell"
-            and buttonData.addedAs == "aura")
 
     if not hideShowConditions then
     -- The families are collected BEFORE the heading is drawn. Which of them
@@ -2453,14 +2438,12 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- escape above. opts.desaturateKey is nil for the families without one.
     local function BuildStateList(withDesaturate)
         local list, order = { show = "Show" }, { "show" }
-        if withDesaturate and not isTexturePanel then
+        if withDesaturate then
             list.desaturate = "Desaturate"
             order[#order + 1] = "desaturate"
         end
-        if not isTexturePanel then
-            list.dim = "Dim"
-            order[#order + 1] = "dim"
-        end
+        list.dim = "Dim"
+        order[#order + 1] = "dim"
         list.hide = "Hide"
         order[#order + 1] = "hide"
         return list, order
@@ -2515,30 +2498,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 write = function(value)
                     WriteHideDimState(spec.apply, value, spec.hideKey, spec.dimKey, spec.desaturateKey)
                     if spec.afterWrite then spec.afterWrite(value) end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end)
-    end
-
-    -- Ordinary Texture spell entries may layer presence-only Aura display onto
-    -- their spell behavior. Primary Aura entries are always Aura-controlled,
-    -- so only spell entries receive this opt-in.
-    if not isBatch and isTexturePanel and buttonData.type == "spell"
-        and buttonData.addedAs ~= "aura" then
-        AddFamily(1, function(column)
-            AddVisibilityRow(column, "Show Texture While Aura Active", "textureAuraDisplayEnabled", {
-                setting = entryVisibilitySettings.textureAura,
-                tooltip = {
-                    "Show Texture While Aura Active",
-                    {"Blizzard tracks the aura and directly controls whether the configured texture is shown. The addon never reads aura state in combat.", 1, 1, 1, true},
-                    {" ", 1, 1, 1, true},
-                    {"This is presence-only: duration, stacks, and group-member tracking are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
-                },
-                onChanged = function(widget, event, val)
-                    ST._SetTexturePanelAuraDisplayEnabled(group, buttonData, val, CS.selectedGroup)
-                    CooldownCompanion:RefreshAllGroups()
-                    CooldownCompanion:RequestAuraRebind("config")
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -2657,15 +2616,11 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         hide_ready = cooldownLabels.hide_ready,
     }
     local cooldownOrder = { "show" }
-    if not isTexturePanel then
-        cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
-        cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
-    end
+    cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
+    cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
     cooldownOrder[#cooldownOrder + 1] = "hide_cooldown"
-    if not isTexturePanel then
-        cooldownList.dim_ready = cooldownLabels.dim_ready
-        cooldownOrder[#cooldownOrder + 1] = "dim_ready"
-    end
+    cooldownList.dim_ready = cooldownLabels.dim_ready
+    cooldownOrder[#cooldownOrder + 1] = "dim_ready"
     cooldownOrder[#cooldownOrder + 1] = "hide_ready"
     if offerZeroOnly then
         cooldownList.zero_only = cooldownLabels.zero_only
@@ -2690,7 +2645,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 return "show"
             end,
             tooltip = BuildVisibilityModeTooltip("Cooldown Visibility",
-                COOLDOWN_VISIBILITY.tooltipLines, not isTexturePanel),
+                COOLDOWN_VISIBILITY.tooltipLines, true),
             write = function(value)
                 local hideOn = value == "hide_cooldown" or value == "dim_cooldown"
                 local hideReady = value == "hide_ready" or value == "dim_ready" or value == "zero_only"
@@ -2757,10 +2712,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local DESATURATE_TOOLTIP_LINE = {"Desaturate grays the icon in place.", 1, 1, 1, true}
     local function ZeroStateTooltipLines(firstLine)
         local lines = { {firstLine, 1, 1, 1, true} }
-        if not isTexturePanel then
-            lines[#lines + 1] = VISIBILITY_TOOLTIP_SPACER
-            lines[#lines + 1] = DESATURATE_TOOLTIP_LINE
-        end
+        lines[#lines + 1] = VISIBILITY_TOOLTIP_SPACER
+        lines[#lines + 1] = DESATURATE_TOOLTIP_LINE
         return lines
     end
 
@@ -3314,7 +3267,6 @@ local function BuildLoadConditionsTab(container)
     -- Alpha (moved here from the Layout tab: transparency behavior
     -- reads as visibility, not layout)
     -- ============================================================
-    local isTexturePanel = group.displayMode == "textures" or group.displayMode == "trigger"
 
     -- Where this panel's alpha comes from, when it hangs off something that
     -- has one to give: another panel, or a resolved external frame. Derived
@@ -3366,7 +3318,7 @@ local function BuildLoadConditionsTab(container)
                 value = group.inheritPanelAlpha == false and "custom" or "inherit",
                 onChange = function(val)
                     group.inheritPanelAlpha = val ~= "custom"
-                    if isTexturePanel then
+                    if ST.IsIndicatorGroup(group) then
                         -- A texture panel's alpha rides its texture visuals,
                         -- not a group frame shell.
                         CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -3383,7 +3335,7 @@ local function BuildLoadConditionsTab(container)
         end
     end
 
-    if isTexturePanel then
+    if ST.IsIndicatorGroup(group) then
         BuildPanelAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
             CooldownCompanion:RefreshConfigPanel()
@@ -3528,15 +3480,10 @@ local function BuildVisibilityTab(container)
                     -- Live rules first, then the static ones that decide
                     -- whether the entry loads at all. Trigger entries have
                     -- neither store, exactly as before.
-                    local isTriggerPanel = group.displayMode == "trigger"
-                    if not isTriggerPanel then
-                        BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
-                    end
+                    BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
                     AddFamilyHeading(container, "Load Conditions")
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
-                    if not isTriggerPanel then
-                        BuildEntryTalentConditionsSection(container, buttonData, tabInfoButtons)
-                    end
+                    BuildEntryTalentConditionsSection(container, buttonData, tabInfoButtons)
                     return
                 end
             end

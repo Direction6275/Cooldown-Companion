@@ -72,9 +72,6 @@ end
 -- format's aura tokens are the only readout. So the section keeps its left
 -- column there and builds none of the right-column visual rows, and the
 -- finder must not advertise a row the pane never draws.
-local function IsTextPanel(group)
-    return group ~= nil and group.displayMode == "text"
-end
 
 local function ResolveConfiguredAuraSpellID(buttonData)
     return CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -232,37 +229,6 @@ local STANDARD_TEXTURE_INDICATOR_ADVANCED_KEYS = {
     "textureIndicator_unusable",
 }
 
-local function SetTexturePanelAuraDisplayEnabled(group, buttonData, value, groupId)
-    local enabled = buttonData.addedAs == "aura" or value == true
-    buttonData.textureAuraDisplayEnabled = enabled
-    if groupId then
-        -- The applicable preview family changes with this toggle. Clear every
-        -- Texture preview flag now so a hidden command-center control cannot
-        -- leave the config-mirror animation armed or resume it later.
-        for _, indicatorKey in ipairs(TEXTURE_INDICATOR_PREVIEW_KEYS) do
-            ST._ConfigPreview.StopCommand("texture" .. indicatorKey:gsub("^%l", string.upper), groupId)
-        end
-    end
-    if enabled then
-        -- Aura control replaces the standard Texture indicator rows with one
-        -- inline Aura section. Retire any standard advanced popout that was
-        -- left open across the entry/panel scope switch so it cannot keep
-        -- editing settings that are now dormant.
-        if CS.CloseAdvancedSettingsPanel then
-            for _, settingKey in ipairs(STANDARD_TEXTURE_INDICATOR_ADVANCED_KEYS) do
-                CS.CloseAdvancedSettingsPanel({ settingKey = settingKey })
-            end
-        end
-        CooldownCompanion:NormalizeTexturePanelAuraIndicatorSettings(group, true)
-        if not buttonData.auraSpellID then
-            local inferred = CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
-            if inferred then
-                buttonData.auraSpellID = inferred
-            end
-        end
-        SyncDerivedAuraUnit(buttonData)
-    end
-end
 
 -- Post-change hook for the shared list writers: keep the stored (derived)
 -- unit in sync with the list's polarity, then re-normalize standalone
@@ -289,28 +255,6 @@ local AURA_TRACKING_TOOLTIP = {
     {"Buffs are tracked on you. Group tracking follows only buffs applied by you across you and your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically. If the game's data gets one wrong, set Tracked on yourself.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
-}
-
-local TEXTURE_AURA_TRACKING_TOOLTIP = {
-    "Aura-controlled Texture",
-    {"Blizzard tracks the aura and directly controls whether the configured texture is shown. The addon never reads aura state in combat.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. Your own debuffs are tracked on your target. Group-member tracking is not available for Texture panels.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"This is presence-only: duration and stacks are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
-}
-
-local TEXT_AURA_TRACKING_TOOLTIP = {
-    "Aura Tracking",
-    {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"Buffs are tracked on you. Group tracking follows only buffs applied by you across you and your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. Your own debuffs are tracked on your target.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
-    {"The format decides what shows: {aura} for remaining time, {aurastacks} for the count, and text inside {?aura}...{/aura} while the aura is active. See the Format tab.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"With no auras listed, the entry tracks its own aura. Added aura IDs take priority; its own aura remains a fallback only when both are buffs or both are debuffs.", 1, 1, 1, true},
 }
@@ -361,11 +305,7 @@ local function GetAuraTrackingCatalogState(context)
     if not (group and buttonData) then return nil end
 
     local isStandalone = buttonData.addedAs == "aura"
-    local isTexturePanel = group.displayMode == "textures"
-    local isTextPanel = IsTextPanel(group)
-    local active = (isTexturePanel
-            and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
-        or (not isTexturePanel and (isStandalone or buttonData.auraTracking == true))
+    local active = isStandalone or buttonData.auraTracking == true
     local isAuraPanel = ST.IsAuraPanelGroup(group)
         or ST.IsAuraSectionEntry(group, buttonData)
 
@@ -373,8 +313,6 @@ local function GetAuraTrackingCatalogState(context)
         group = group,
         buttonData = buttonData,
         isStandalone = isStandalone,
-        isTexturePanel = isTexturePanel,
-        isTextPanel = isTextPanel,
         isAuraPanel = isAuraPanel,
         active = active,
     }
@@ -384,10 +322,8 @@ local function GetAuraTrackingCatalogState(context)
     -- The group and pet scopes are choices inside the Tracked on row now, so
     -- the finder has no per-scope descriptor left to gate; their eligibility
     -- is resolved by the visible pane alone.
-    if not isTexturePanel then
-        state.maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
-    end
-    if not isTexturePanel and ST.GetEntryPresentation(group, buttonData) == "bars" then
+    state.maxStacks = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+    if ST.GetEntryPresentation(group, buttonData) == "bars" then
         state.barShowsStacks = CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
         if state.barShowsStacks then
             state.stackStyle = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData)
@@ -408,8 +344,7 @@ local function GetAuraTrackingCatalogState(context)
     end
     -- Text panels have no stack text of their own (the format's tokens are
     -- the readout), so every stack-text row stays off the finder there.
-    state.stackTextVisible = not isTexturePanel and not isTextPanel
-        and showAuraStackText ~= false
+    state.stackTextVisible = showAuraStackText ~= false
     state.showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     state.threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     state.maxColor = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData)
@@ -437,7 +372,7 @@ local auraSettings = ST._DefineSettingRoute({
         label = "Track an Aura",
         aliases = { "enable aura tracking", "track aura" },
         applies = AuraStateApplies(function(state)
-            return not state.isTexturePanel and not state.isStandalone
+            return not state.isStandalone
         end),
     },
     unit = {
@@ -454,7 +389,7 @@ local auraSettings = ST._DefineSettingRoute({
         label = "Bar Shows Stacks",
         aliases = { "stack fill", "fill by stacks" },
         applies = AuraStateApplies(function(state)
-            return state.active and not state.isTexturePanel
+            return state.active
                 and ST.GetEntryPresentation(state.group, state.buttonData) == "bars"
         end),
     },
@@ -533,7 +468,7 @@ local auraSettings = ST._DefineSettingRoute({
         label = "Never Desaturate",
         aliases = { "keep color", "passive aura" },
         applies = AuraStateApplies(function(state)
-            return state.active and not state.isTexturePanel and not state.isTextPanel
+            return state.active
                 and state.buttonData.isPassive == true
         end),
     },
@@ -543,8 +478,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local BeginRowGrid = ST._BeginRowGrid
 
     local isStandalone = buttonData.addedAs == "aura"
-    local isTexturePanel = group and group.displayMode == "textures"
-    local isTextPanel = IsTextPanel(group)
     -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
     -- passes groupScoped, so the group-scope rows below have nothing to act on
     -- there (owner ruling 2026-08-15).
@@ -570,9 +503,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- The heading's "?" chains off the end of its label; the fading rule
     -- restarts after that badge.
     local auraInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0,
-        (isTexturePanel and TEXTURE_AURA_TRACKING_TOOLTIP)
-            or (isTextPanel and TEXT_AURA_TRACKING_TOOLTIP)
-            or AURA_TRACKING_TOOLTIP, infoButtons)
+        AURA_TRACKING_TOOLTIP, infoButtons)
     AnchorLeftAlignedHeadingRule(heading, auraInfoBtn)
 
     if collapsed then return end
@@ -583,7 +514,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- panels it stays empty for good: the format's tokens are the drawing.
     local auraLeft, auraRight = BeginRowGrid(scroll)
 
-    if not isTexturePanel and not isStandalone then
+    if not isStandalone then
         AddCheckboxRow(auraLeft, {
             setting = auraSettings.enabled,
             value = buttonData.auraTracking == true,
@@ -603,11 +534,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         })
     end
 
-    if (isTexturePanel
-            and not CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
-        or (not isTexturePanel and not (isStandalone or buttonData.auraTracking)) then
-        return
-    end
+    if not (isStandalone or buttonData.auraTracking) then return end
 
     -- Tracked unit: automatic polarity with a user override. Detection is
     -- derived from spell data, which can be wrong (a self-buff whose record
@@ -628,7 +555,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
     -- Any confirmed helpful aura may use group scope. The runtime matches
     -- only auras applied by the player, including on the player themselves.
-    local canTrackGroup = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+    local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
     -- A stored flag offers the choice regardless of the gate (same escape the
     -- pet side and the custom bar twin have): the runtime binds group tokens
     -- off the flag alone, so the row has to state it and give it a way out.
@@ -643,7 +570,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- character level is the finest honest cut. A stored flag offers the
     -- choice regardless of every gate, so retained or imported pet state
     -- always has a clearing path.
-    local canTrackPet = not isTexturePanel and not isAuraPanel and isBuff and polarityKnown
+    local canTrackPet = not isAuraPanel and isBuff and polarityKnown
         and CharacterCanCommandPets()
         and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
     local offerPet = canTrackPet or buttonData.auraTrackPet == true
@@ -837,9 +764,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
             trackedAuraIDs[#trackedAuraIDs + 1] = id
         end
     end
-    if isTexturePanel then
-        AppendTrackedAuraID(primaryAuraSpellID)
-    elseif isStandalone then
+    if isStandalone then
         -- The resolver's head is the entry's applied-aura identity (the ID
         -- override when set); the candidate list holds the user's added
         -- fallbacks, which track beside the head either way.
@@ -888,27 +813,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- Text panels stop here. Every row below configures a shell, bar fill,
     -- stack text or icon the entry does not have; what the aura shows is
     -- decided by the format's tokens (the heading's "?" points there).
-    if isTextPanel then return end
 
-    if isTexturePanel then
-        -- Texture Aura display intentionally exposes presence only. The
-        -- selected artwork and its optional native animation are children of
-        -- Blizzard's AuraButton; no duration, stacks, or readable aura state
-        -- crosses back out of that forbidden subtree.
-        AddLabelRow(auraRight, {
-            label = "Display",
-            controlText = "Texture while active",
-        })
-        AddLabelRow(auraRight, {
-            label = "Duration / Stacks",
-            controlText = "Not shown",
-        })
-        AddLabelRow(auraRight, {
-            label = "Texture Indicators",
-            controlText = "Indicators tab",
-        })
-        return
-    end
 
     -- Bar fill mode (tracker C2): bar hosts can fill the aura bar by stack
     -- count instead of draining with time. Max stacks is automatic (game
@@ -1105,4 +1010,3 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 end
 
 ST._BuildAuraTrackingSection = BuildAuraTrackingSection
-ST._SetTexturePanelAuraDisplayEnabled = SetTexturePanelAuraDisplayEnabled

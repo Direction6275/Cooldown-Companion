@@ -111,11 +111,6 @@ local function ReadSafeAlphaValue(value)
     return value
 end
 
-local function GetGroupAnchorRelativeTo(group)
-    local anchor = group and group.anchor
-    return type(anchor) == "table" and anchor.relativeTo or anchor
-end
-
 local function SetExternalAnchorAlphaSyncActive(frame, active)
     if not frame then return end
     if active then
@@ -130,7 +125,7 @@ local function IsExternalFrameAnchorTarget(self, group, parentFrame)
         return false
     end
 
-    local relativeTo = GetGroupAnchorRelativeTo(group)
+    local relativeTo = CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
     if type(relativeTo) ~= "string" or relativeTo == "" or relativeTo == "UIParent" then
         return false
     end
@@ -143,6 +138,7 @@ local function IsExternalFrameAnchorTarget(self, group, parentFrame)
 end
 
 local function ShouldSyncAnchorAlpha(self, groupId, parentFrame)
+    if not parentFrame then return false, false, false end
     local profile = self.db and self.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
 

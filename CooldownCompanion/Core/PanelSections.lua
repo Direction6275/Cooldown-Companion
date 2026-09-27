@@ -906,8 +906,8 @@ end
 --- section, so a unit frame or another panel anchored to the frame would be
 --- shoved around every time a section appeared on one side. The BASE ROW is
 --- the anchoring body; an owner who wants a different spot uses the anchoring
---- module's own offsets. Unsectioned panels -- and every non-panel frame this
---- is handed -- come straight back out, so nothing else changes shape.
+--- module's own offsets. Indicators expose their stable saved display bounds;
+--- other unsectioned panels and non-panel frames come straight back out.
 ---
 --- Attached bars choose per destination: Main Icons uses this body; Entire
 --- Panel uses the frame's union. When a side has no configured section, its
@@ -918,6 +918,7 @@ end
 --- sectioned-state flip rather than trust a stored target.
 function ST.GetPanelAnchorBodyFrame(frame)
     if type(frame) ~= "table" then return frame end
+    if frame._indicatorAnchorBodyActive then return frame._indicatorAnchorBody end
     if frame._sectionLayout and frame._sectionBaseAnchor then
         return frame._sectionBaseAnchor
     end

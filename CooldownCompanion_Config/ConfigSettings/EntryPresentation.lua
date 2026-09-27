@@ -67,7 +67,6 @@ end
 
 local function FlushPresentationEditors()
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    if ST._ReleaseTextFormatTabEditor then ST._ReleaseTextFormatTabEditor() end
     Addon:ClearAllConfigPreviews()
 end
 ST._FlushPresentationEditors = FlushPresentationEditors

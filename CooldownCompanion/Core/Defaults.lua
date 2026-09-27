@@ -489,32 +489,7 @@ local defaults = {
             barReadyFont = "Friz Quadrata TT",
             barReadyFontOutline = "OUTLINE",
             barTexture = "Solid",
-            -- Text display mode defaults
-            -- Text entries auto-size from a measured worst-case render of
-            -- their format, so textPadding is the only manual size knob. The
-            -- retired textWidth/textHeight pair is stripped from saved data
-            -- by StripRetiredTextSizeKeys in Core/Migrations.lua.
-            textPadding = 4,
-            textFormat = "{name}  {status}",
-            textFont = "Friz Quadrata TT",
-            textFontSize = 12,
-            textFontOutline = "OUTLINE",
-            textFontColor = {1, 1, 1, 1},
-            textAlignment = "LEFT",
-            textCooldownColor = {1, 0.3, 0.3, 1},
-            textReadyColor = {0.2, 1.0, 0.2, 1},
-            textReadyText = "Ready",
-            textAuraColor = {0, 0.925, 1, 1},
-            textCustomColor = {1, 0.82, 0, 1},
-            textBgColor = {0, 0, 0, 0},
-            textBorderSize = 0,
-            textBorderRenderMode = "custom",
-            textBorderColor = {0, 0, 0, 1},
-            textShadow = false,
             durationFormat = "clock",
-            showTextGroupHeader = false,
-            textHeaderFontSize = 12,
-            textHeaderFontColor = {1, 1, 1, 1},
         },
         locked = false,
         resourceBarsByClass = {},
@@ -965,9 +940,6 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
     if self:IsRotationAssistantGroup(group) then
         return "Assistant Panels are populated automatically."
     end
-    if group and group.displayMode == "textures" and group.buttons and #group.buttons >= 1 then
-        return "Texture Panels can only hold one entry. Remove the current entry first if you want to replace it."
-    end
     -- Aura Panels hold ONLY aura entries, and only for a single unit: the
     -- panel's unit is derived from its first aura entry, so an entry of the
     -- other polarity has nowhere to render. With no entryData (the add box
@@ -998,12 +970,11 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
     -- gate aura adds before reaching here).
     if entryData and group then
         local displayMode = group.displayMode or "icons"
-        if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "textures"
-            and displayMode ~= "text" and displayMode ~= "indicator" then
+        if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "indicator" then
             local entries = entryData[1] and entryData or { entryData }
             for _, bd in ipairs(entries) do
                 if bd and bd.addedAs == "aura" then
-                    return "Use an icon, bar or text panel for Aura tracking."
+                    return "Use an icon, bar or Indicator panel for Aura tracking."
                 end
             end
         end
@@ -1483,26 +1454,6 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"showBarReadyText", "barReadyText", "barReadyTextColor", "barReadyFontSize", "barReadyFont", "barReadyFontOutline"},
         modes = {bars = true},
     },
-    -- Text Mode
-    -- (No textFormat section: the per-entry format override is the flat
-    -- buttonData.textFormat field, edited on the panel's Format tab as a lens
-    -- onto the selected entry, and never went through the styleOverrides
-    -- section machinery.)
-    textFont = {
-        label = "Text Font",
-        keys = {"textFont", "textFontSize", "textFontOutline", "textAlignment", "textShadow"},
-        modes = {text = true},
-    },
-    textColors = {
-        label = "Text Colors",
-        keys = {"textFontColor", "textCooldownColor", "textReadyColor", "textAuraColor", "textCustomColor", "textReadyText"},
-        modes = {text = true},
-    },
-    textBackground = {
-        label = "Text Background",
-        keys = {"textBgColor", "textBorderSize", "textBorderRenderMode", "textBorderColor"},
-        modes = {text = true},
-    },
 }
 
 -- Display order for the registry above, wherever an entry's overrides are
@@ -1515,7 +1466,6 @@ ST.OVERRIDE_SECTION_ORDER = {
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
     "barThickness", "barShape", "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
-    "textFont", "textColors", "textBackground",
 }
 
 -- Completeness backstop: a section added to ST.OVERRIDE_SECTIONS but
@@ -1776,20 +1726,6 @@ ST.PANEL_COPY_SCOPES = {
             },
         },
     },
-    -- Text panels have no Indicators tab; the Format tab is content, not
-    -- look, so it stays out of scope.
-    text = {
-        arrangement = { orientationKey = "textOrientation" },
-        position = {},
-        visibility = PANEL_VISIBILITY_COPY_SCOPE,
-        appearance = {
-            sections = { "textFont", "textColors", "textBackground" },
-            styleKeys = {
-                "textPadding", "buttonSpacing", "showTextGroupHeader",
-                "textHeaderFontSize", "textHeaderFontColor",
-            },
-        },
-    },
 }
 
 ------------------------------------------------------------------------
@@ -1802,7 +1738,6 @@ ST.PANEL_COPY_SCOPES = {
 ST.PANEL_TEMPLATE_SHAPE_KEYS = {
     icons = { "orientation", "growthOrigin", "buttonsPerRow" },
     bars = { "barOrientation", "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill" },
-    text = { "textOrientation", "growthOrigin", "buttonsPerRow" },
 }
 
 -- The per-anchor section settings a Panel Template carries (icon panels
@@ -1834,11 +1769,6 @@ ST.PANEL_TEMPLATE_STYLE_KEYS = {
         "barLength", "barHeight", "buttonSpacing", "barTexture", "durationFormat",
         "allowPings", "tooltipAnchor", "tooltipHideInCombat", "barOrientation",
         "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill", "strataOrder",
-    },
-    text = {
-        "textPadding", "buttonSpacing", "showTextGroupHeader", "textHeaderFontSize",
-        "textHeaderFontColor", "textFormat", "durationFormat", "textOrientation", "growthOrigin",
-        "buttonsPerRow", "strataOrder",
     },
 }
 

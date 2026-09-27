@@ -796,80 +796,8 @@ local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
 end
 
 local function DoesTriggerPanelMatch(frame)
-    if not frame then
-        return false
-    end
-
-    local group = frame.groupId and ResolveGroup(frame.groupId) or nil
-    if ST.IsIndicatorGroup(group) then return ST.Indicator.Match(frame, group) end
-    local configuredRows = group and group.buttons
-    if type(configuredRows) ~= "table" or #configuredRows == 0 then
-        return false
-    end
-
-    local runtimeButtonsByIndex = frame._triggerRuntimeButtonsByIndex
-    if runtimeButtonsByIndex then
-        wipe(runtimeButtonsByIndex)
-    else
-        runtimeButtonsByIndex = {}
-        frame._triggerRuntimeButtonsByIndex = runtimeButtonsByIndex
-    end
-    for _, button in ipairs(frame.buttons or {}) do
-        if button and button.index then
-            runtimeButtonsByIndex[button.index] = button
-        end
-    end
-
-    local activeRowCount = 0
-    for rowIndex, buttonData in ipairs(configuredRows) do
-        if type(buttonData) ~= "table" then
-            return false
-        end
-
-        if buttonData.enabled ~= false then
-            local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
-            activeRowCount = activeRowCount + 1
-            if #clauses == 0 then
-                return false
-            end
-
-            local runtimeButton = runtimeButtonsByIndex[rowIndex]
-            if not runtimeButton then
-                return false
-            end
-
-            for _, clause in ipairs(clauses) do
-                local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
-                if not conditionKey then
-                    return false
-                end
-
-                -- Trigger panels do not support Aura conditions on 12.1.
-                -- Preserve old saved clauses, but fail them closed instead of
-                -- consulting addon-side Aura state or guessing at absence.
-                if conditionKey == "auraActive" then
-                    return false
-                end
-
-                local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
-                local expectedState
-                local conditionMatched
-                if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-                    expectedState = clause.expected ~= false
-                    conditionMatched = actualState == expectedState
-                else
-                    expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
-                    conditionMatched = actualState == expectedState
-                end
-
-                if not conditionMatched then
-                    return false
-                end
-            end
-        end
-    end
-
-    return activeRowCount > 0
+    local group = frame and frame.groupId and ResolveGroup(frame.groupId)
+    return ST.Indicator.Match(frame, group)
 end
 
 local function CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
@@ -948,7 +876,7 @@ local function ApplyTextureIndicatorEffects(host, button, group, onlySectionKey)
 
 end
 
-function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive)
+function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive, previewEffects)
     if not host or not button or type(group) ~= "table" then
         return
     end
@@ -959,6 +887,22 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
         return
     end
 
+    local activeEffects = {}
+    for key, config in pairs(effects) do
+        if config.enabled then
+            -- Detached config samples demonstrate enabled effects without live state.
+            local active = previewEffects == true
+            if not active then
+                local activation = config.activation or "always"
+                active = activation == "always" and (not config.combatOnly or InCombatLockdown())
+                if activation ~= "always" then
+                    active = ResolveTextureIndicatorSectionState(button, activation, config)
+                end
+            end
+            if active then activeEffects[key] = config end
+        end
+    end
+    effects = activeEffects
     SetTextureIndicatorBaseVisuals(host)
 
     local freezeGeometryWhileUnlocked = group.locked == false

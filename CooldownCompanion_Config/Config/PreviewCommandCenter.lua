@@ -219,44 +219,6 @@ local function AuraSwipeEntryApplies(group, buttonIndex)
     return false
 end
 
--- Text panels have no aura text sections: an aura's time and stacks show
--- only where the entry's format puts an aura column (ButtonFrame/TextMode
--- TEXT RENDER PLAN), and only on an entry the runtime gives an aura button
--- (a spell tracking an aura - the rebind pass's own gate). Same scoping
--- rule as ChargeEntryApplies: a selected entry must itself qualify, at
--- panel scope one qualifying entry is enough. `wantKinds` is the control's
--- own set of piece kinds (duration / stacks / presence): a duration preview
--- is only offered where a duration column exists, and so on.
-local function TextAuraPiecesApply(group, buttonIndex, wantKinds)
-    local pieceKinds = ST._TextEntryAuraPieceKinds
-    if not pieceKinds then
-        return false
-    end
-    local buttons = group.buttons or {}
-    local function EntryApplies(index, buttonData)
-        if not (buttonData ~= nil
-            and buttonData.type == "spell"
-            and (buttonData.auraTracking or buttonData.addedAs == "aura")) then
-            return false
-        end
-        local kinds = pieceKinds(buttonData, ResolveTargetStyle(group, index))
-        for kind in pairs(wantKinds) do
-            if kinds[kind] then
-                return true
-            end
-        end
-        return false
-    end
-    if buttonIndex then
-        return EntryApplies(buttonIndex, buttons[buttonIndex])
-    end
-    for index, buttonData in ipairs(buttons) do
-        if EntryApplies(index, buttonData) then
-            return true
-        end
-    end
-    return false
-end
 
 -- Conditional state previews render nothing while the visual they stand
 -- in for is switched off, so the toggle hides with it - matching how the
@@ -348,6 +310,7 @@ local function TextureAuraDisplayEnabled(group)
 end
 
 local function AnyTriggerEffectEnabled(group)
+    if not ST.IsIndicatorGroup(group) or ST.Indicator.IsAura(group) then return false end
     local effects = CooldownCompanion.GetTriggerPanelEffectSettings
         and CooldownCompanion:GetTriggerPanelEffectSettings(group)
     if type(effects) ~= "table" then
@@ -414,10 +377,6 @@ local MENU_ROW_TEXT_INSET = "  "
 -- the section's home tab and open the collapsible it is drawn in.
 ------------------------------------------------------------------------
 
--- The conditional states share a shape: their visuals live on the Indicators
--- tab wherever there is one. Text panels have none (GroupSettingsHost builds
--- the tab list without it), so they land on Appearance - which is where a
--- text panel's state styling lives anyway.
 local function StateRoute(advancedKey)
     -- With an advanced key the queue resolves the section for us
     -- (ST._INDICATORS_SECTION_BY_ADVANCED_KEY maps it to "effects_spell");
@@ -431,7 +390,6 @@ local function StateRoute(advancedKey)
         icons = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         bars = { tab = "effects", key = advancedKey, uncollapse = statesSection },
         rotationAssistant = { tab = "effects", key = advancedKey, uncollapse = statesSection },
-        text = { tab = "appearance" },
     }
 end
 
@@ -442,14 +400,10 @@ end
 local ICON_TEXT_SECTION = "appearance_text"
 local BAR_TEXT_SECTION = "barappearance_textIcon"
 
--- `textTab` adds a text-panel destination: a tab-only route, since text
--- panels have no advanced panel for these readouts (the aura readouts are
--- the entry's format, so their route lands on the Format tab).
-local function TextRoute(iconKey, barKey, textTab)
+local function TextRoute(iconKey, barKey)
     return {
         icons = { tab = "appearance", key = iconKey, uncollapse = ICON_TEXT_SECTION },
         bars = { tab = "appearance", key = barKey, uncollapse = BAR_TEXT_SECTION },
-        text = textTab and { tab = textTab } or nil,
     }
 end
 
@@ -586,22 +540,11 @@ local CONTROLS = {
         preview = FlagPreview("_pandemicPreview", "aura_duration_bar"),
     },
     {
-        id = "textureProc",
-        label = "Preview Proc Effect",
-        group = GROUP_FEEDBACK_STATES,
-        menuOrder = 10,
-        modes = { textures = true },
-        indicatorKey = "proc",
-        excludesTextureAuraDisplay = true,
-        settings = { tab = "effects", key = "textureIndicator_proc" },
-        preview = TextureIndicatorPreview("proc"),
-    },
-    {
         id = "textureAura",
         label = "Preview Aura Effect",
         group = GROUP_AURAS,
         menuOrder = 10,
-        modes = { textures = true },
+        modes = { indicator = true },
         indicatorKey = "aura",
         requiresTextureAuraDisplay = true,
         -- Aura-controlled Texture options live directly in the Indicators
@@ -610,33 +553,11 @@ local CONTROLS = {
         preview = TextureIndicatorPreview("aura"),
     },
     {
-        id = "textureReady",
-        label = "Preview Ready Effect",
-        group = GROUP_FEEDBACK_STATES,
-        menuOrder = 20,
-        modes = { textures = true },
-        indicatorKey = "ready",
-        excludesTextureAuraDisplay = true,
-        settings = { tab = "effects", key = "textureIndicator_ready" },
-        preview = TextureIndicatorPreview("ready"),
-    },
-    {
-        id = "textureUnusable",
-        label = "Preview Unusable Effect",
-        group = GROUP_FEEDBACK_STATES,
-        menuOrder = 40,
-        modes = { textures = true },
-        indicatorKey = "unusable",
-        excludesTextureAuraDisplay = true,
-        settings = { tab = "effects", key = "textureIndicator_unusable" },
-        preview = TextureIndicatorPreview("unusable"),
-    },
-    {
         id = "triggerEffects",
         label = "Preview Effects",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 30,
-        modes = { trigger = true },
+        modes = { indicator = true },
         requiresTriggerEffect = true,
         -- No key: the preview plays every enabled trigger effect at once, and
         -- each has its own advanced panel. The tab draws them inside one
@@ -650,17 +571,10 @@ local CONTROLS = {
         label = "Preview Cooldown State",
         group = GROUP_COOLDOWNS_CHARGES,
         menuOrder = 10,
-        -- Icons and bars split this into the Cooldown Text / Cooldown Swipe
-        -- readouts below (owner ruling 2026-08-08); the modes whose cooldown
-        -- look is indivisible keep the state entry. The rotation assistant's
-        -- cooldown settings sit under the Timers subheading of its collapsible
-        -- "Cooldown / Spell Indicators" section; text panels have no advanced
-        -- panel for cooldown visuals at all, so both routes are tab-only.
-        modes = { text = true, rotationAssistant = true },
+        modes = { rotationAssistant = true },
         settings = {
             rotationAssistant = { tab = "effects", uncollapse = "effects_spell" },
-            text = { tab = "appearance" },
-        },
+            },
         preview = ConditionalPreview("cooldown"),
     },
     {
@@ -668,7 +582,7 @@ local CONTROLS = {
         label = "Preview Unusable State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 40,
-        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
+        modes = { icons = true, bars = true, rotationAssistant = true },
         styleKey = "showUnusable",
         lensSection = "unusableDimming",
         settings = StateRoute("unusableVisual"),
@@ -679,7 +593,7 @@ local CONTROLS = {
         label = "Preview Out of Range State",
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 50,
-        modes = { icons = true, bars = true, text = true, rotationAssistant = true },
+        modes = { icons = true, bars = true, rotationAssistant = true },
         styleKey = "showOutOfRange",
         lensSection = "showOutOfRange",
         requiresBarRangeIconConsumer = true,
@@ -739,13 +653,10 @@ local CONTROLS = {
         label = "Preview Aura Duration Text",
         group = GROUP_AURAS,
         menuOrder = 30,
-        -- Text panels: the format decides (textAuraPieces below), and the
-        -- gear lands on the Format tab, where that decision is made.
-        modes = { icons = true, bars = true, text = true },
+        modes = { icons = true, bars = true },
         section = "auraText",
         styleKeyDefaultOn = "showAuraText",
-        textAuraPieces = { duration = true, presence = true },
-        settings = TextRoute("auraText", "barAuraText", "format"),
+        settings = TextRoute("auraText", "barAuraText"),
         preview = ConditionalPreview("aura_duration_text"),
     },
     {
@@ -773,12 +684,10 @@ local CONTROLS = {
         label = "Preview Aura Stack Text",
         group = GROUP_AURAS,
         menuOrder = 40,
-        -- Text panels: same rule as Aura Duration Text above.
-        modes = { icons = true, bars = true, text = true },
+        modes = { icons = true, bars = true },
         section = "auraStackText",
         styleKeyDefaultOn = "showAuraStackText",
-        textAuraPieces = { stacks = true, presence = true },
-        settings = TextRoute("auraStackText", "barAuraStackText", "format"),
+        settings = TextRoute("auraStackText", "barAuraStackText"),
         preview = ConditionalPreview("aura_stack_text"),
     },
     {
@@ -851,12 +760,6 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if control.requiresMissingIndicator and not MissingAuraPreviewEnabled(group, buttonIndex) then
         return false
     end
-    if displayMode == "text" and control.textAuraPieces then
-        -- On a text panel the control's section and style gates describe
-        -- readouts the panel does not have; the entry's format is the whole
-        -- answer (see TextAuraPiecesApply).
-        return TextAuraPiecesApply(group, buttonIndex, control.textAuraPieces)
-    end
     if control.section and not SectionApplies(group, control.section, buttonIndex) then
         return false
     end
@@ -888,9 +791,6 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
         return false
     end
     if control.requiresTextureAuraDisplay and not TextureAuraDisplayEnabled(group) then
-        return false
-    end
-    if control.excludesTextureAuraDisplay and TextureAuraDisplayEnabled(group) then
         return false
     end
     if control.requiresTriggerEffect and not AnyTriggerEffectEnabled(group) then
@@ -1187,15 +1087,6 @@ local function ControlSectionId(control)
         local sectionId = control.resolveSection(group, buttonIndex)
         return sectionId
     end
-    if control.textAuraPieces then
-        -- No section on a text panel (see ControlApplies): the gear is a
-        -- plain tab route, with no lens scope or Customize shortcut to
-        -- describe.
-        local _, group = ResolveContext(control.presentation)
-        if group and group.displayMode == "text" then
-            return nil
-        end
-    end
     return control.lensSection or control.section
 end
 
@@ -1427,38 +1318,6 @@ local function ForceSectionOpen(collapseKey, lens, group)
     end
 end
 
--- The navigate-to-a-section core of ApplyGearRoute below, without the gear:
--- no advanced-panel queue, no route object, no preview to carry across. The
--- entry Settings pane's Customizations list clicks a section NAME and wants
--- exactly this - land on the tab that edits it, with the section unfolded.
---
--- ORDERING, same as the gear's: every navigation write lands BEFORE the
--- refresh. The rebuild reads CS.selectedTab / CS.panelSettingsTab and the
--- collapse table, so a refresh made first would build the surface the click
--- was leaving and then be told where to go.
---
--- Context comes from ResolveContext, not from the caller: the destination has
--- to be the panel the config is actually showing, and taking a group would let
--- a stale row navigate against one it is not on.
---
--- `opts.tab` is for a destination that is not an override section at all - the
--- text panel's Format tab, where the flat per-entry textFormat is edited.
---
--- Deliberately does NOT consult the home's `available` / `gearEnabled`
--- predicates. Every other route into here starts at a control that is on screen
--- (a preview gear must be visible to be clicked), so its section is drawn by
--- definition; the one caller that can name a section it cannot see - the
--- Customizations list - pre-gates on those predicates and never calls with an
--- unavailable destination.
---
--- `opts.advancedKey` additionally opens that section's advanced-settings panel
--- once the destination rebuilds, which is what the Customizations list's gear
--- adds over its name link. Queued in exactly the place the gear route queues it
--- (NavigateToPreviewSettings below): after every navigation write, before the
--- refresh. QueueAdvancedSettingsPanelOpen SNAPSHOTS the config context, and
--- that context reads CS.selectedTab / CS.panelSettingsTab, so a queue made any
--- earlier is stamped with the surface the click was leaving and expires against
--- a gear that never sees it.
 local function NavigateToSectionHome(sectionId, opts)
     local _, group = ResolveContext()
     if not group then
@@ -1547,8 +1406,6 @@ local function ApplyGearRoute(route, queueKey, sectionId, running)
     local tab = (home and home.tab) or route.tab
     CS.selectedTab = tab
     CS.panelSettingsTab = tab
-    -- A deliberate destination, so it outranks a display mode's own default
-    -- landing tab (text panels otherwise land on Format).
     CS.panelSettingsTabExplicit = true
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
@@ -1737,10 +1594,6 @@ local function ResolvePreviewCustomizeSection(bar)
         return nil
     end
 
-    -- Preview availability and override availability are separate contracts:
-    -- text panels can preview Unusable and Out of Range, but those sections
-    -- cannot be customized in text mode. Fail closed against the authoritative
-    -- override registry before either showing or executing this shortcut.
     local sectionDef = ST.OVERRIDE_SECTIONS and ST.OVERRIDE_SECTIONS[sectionId]
     local displayMode = group.displayMode or "icons"
     if not (sectionDef and sectionDef.modes and sectionDef.modes[displayMode] == true) then
@@ -2002,18 +1855,11 @@ local function ApplySpellbookTint(bar)
     end
 end
 
--- Opening the spellbook requires somewhere a drop could land.
--- Same rule as the workspace add box (ButtonsWideColumn's
--- UpdateAddBox): assistant panels never take user entries, and a
--- texture panel holds exactly one, so once set there is nothing to add.
 local function PanelAcceptsNewEntries(group)
     if not group then
         return false
     end
     if CooldownCompanion:IsRotationAssistantGroup(group) then
-        return false
-    end
-    if group.displayMode == "textures" and #(group.buttons or {}) >= 1 then
         return false
     end
     return true

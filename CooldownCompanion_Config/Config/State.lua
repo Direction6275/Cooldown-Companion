@@ -1161,9 +1161,7 @@ ST.TOTEM_PANEL_BADGE_TINT = { 0.3, 0.8, 1, 1 }
 local function GetConfigPanelTypeBadgeAtlas(displayMode)
     if displayMode == "bars" then
         return "CreditsScreen-Assets-Buttons-Pause"
-    elseif displayMode == "text" then
-        return "poi-workorders"
-    elseif displayMode == "textures" or displayMode == "trigger" or displayMode == "indicator" then
+    elseif displayMode == "indicator" then
         return "UI-HUD-MicroMenu-Communities-Icon-Notification"
     end
 
@@ -1594,7 +1592,7 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
     validateContext = function(context, db)
         local groupId = context and context.groupId
         local group = db and db.groups and db.groups[groupId]
-        return group and (group.displayMode == "trigger" or ST.IsIndicatorGroup(group)) and group or nil
+        return group and ST.IsIndicatorGroup(group) and group or nil
     end,
     getCurrentIcon = function(group)
         local settings = CooldownCompanion.GetTriggerPanelIconSettings

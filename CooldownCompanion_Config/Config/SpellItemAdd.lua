@@ -25,12 +25,6 @@ local function SelectNewButton(panelId, buttonIndex)
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
         and CooldownCompanion.db.profile.groups[panelId]
-    if group and group.displayMode == "textures" then
-        SelectConfigPanel(panelId, { containerId = group.parentContainerId })
-        CS.addingToPanelId = nil
-        CS.pendingTexturePickerOpen = panelId
-        return
-    end
     if ST.IsIndicatorGroup(group) then
         SelectConfigPanel(panelId, { containerId = group.parentContainerId })
         CS.addingToPanelId = nil
@@ -68,17 +62,12 @@ function CS.GetIndicatorSourceReplacement(groupId)
     if groupId == pending.groupId then return pending end
 end
 
-local function IsTriggerPanelTarget(groupId)
-    local group = GetTargetGroup(groupId)
-    return CooldownCompanion:IsTriggerPanelGroup(group) and not ST.IsIndicatorGroup(group)
-end
 
 local function TargetPanelAcceptsAuraEntries(groupId)
     groupId = groupId or CS.addingToPanelId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
-    return displayMode == "icons" or displayMode == "bars" or displayMode == "textures"
-        or displayMode == "text" or (displayMode == "indicator"
+    return displayMode == "icons" or displayMode == "bars" or (displayMode == "indicator"
             and (not ST.Indicator.Primary(group) or CS.GetIndicatorSourceReplacement(groupId) ~= nil))
 end
 
@@ -654,7 +643,6 @@ end
 local function TryAddEquipmentSlot(itemSlot, opts)
     local request = CreateAddRequest(opts)
     if not request then return false end
-    if IsTriggerPanelTarget(request.groupId) then return false end
 
     local slotData = {
         type = CooldownCompanion.EQUIPMENT_SLOT_TYPE or "equipmentSlot",
@@ -1242,12 +1230,11 @@ end
 local function SearchAutocomplete(query, allowTalentSearch)
     local cache = CS.autocompleteCache or BuildAutocompleteCache()
     local groupId = CS.addingToPanelId or CS.selectedGroup
-    local isTriggerTarget = IsTriggerPanelTarget(groupId)
     local targetAcceptsAuraEntries = TargetPanelAcceptsAuraEntries(groupId)
     local isAuraOnlyTarget = TargetPanelIsAuraOnly(groupId)
     -- nil while the panel is empty, which is when it accepts either polarity.
     local auraPanelUnit = isAuraOnlyTarget and GetTargetAuraPanelUnit(groupId) or nil
-    if isTriggerTarget or not targetAcceptsAuraEntries or isAuraOnlyTarget then
+    if not targetAcceptsAuraEntries or isAuraOnlyTarget then
         local filtered = {}
         for _, entry in ipairs(cache) do
             local keep
@@ -1260,8 +1247,7 @@ local function SearchAutocomplete(query, allowTalentSearch)
                 keep = entry.autocompleteKind == "aura"
                     and AutocompleteRowFitsAuraPanel(entry, auraPanelUnit)
             else
-                keep = (not isTriggerTarget or not entry.isEquipmentSlot)
-                    and (targetAcceptsAuraEntries or entry.autocompleteKind ~= "aura")
+                keep = targetAcceptsAuraEntries or entry.autocompleteKind ~= "aura"
             end
             if keep then
                 filtered[#filtered + 1] = entry

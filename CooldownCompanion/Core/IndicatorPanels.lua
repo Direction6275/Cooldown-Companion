@@ -17,15 +17,47 @@ function I.IsAura(group)
     return settings and settings.tracking == "aura" or false
 end
 
-function I.Primary(group)
+function I.UsesSourceSounds(group)
     local settings = I.Settings(group)
-    return settings and group.buttons and group.buttons[settings.primaryEntry or 1]
+    if not settings then return false end
+    local source = I.Primary(group)
+    return settings.tracking == "aura" or (settings.sourceSounds == true and source and source.type == "spell") or false
+end
+
+function I.Primary(group)
+    return I.Settings(group) and group.buttons and group.buttons[1]
+end
+
+-- Saved slot one owns the display; runtime lists omit unavailable entries.
+-- Never substitute the first surviving condition for a missing source.
+function I.RuntimeSource(frame, group)
+    local source = I.Primary(group)
+    if not source then return end
+    for _, button in ipairs(frame and frame.buttons or {}) do
+        if button.buttonData == source then return button end
+    end
+end
+
+-- Generic entry actions may remove conditions or the complete source set.
+-- A partial removal of the primary would silently promote another condition.
+function I.GetRemovalError(group, entries)
+    local source = I.Primary(group)
+    if not source then return end
+    local removing = {}
+    for _, entry in ipairs(entries) do removing[entry] = true end
+    if not removing[source] then return end
+    for _, entry in ipairs(group.buttons) do
+        if not removing[entry] then
+            return "Change or clear this Indicator's source in Tracking before removing it."
+        end
+    end
 end
 
 I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
 I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
     indicator_effects_multiple = "Aura Indicators support one visual effect. Turn off extra effects before choosing an aura source or copying these settings.",
+    indicator_effects_conditions = "Conditional visual effects require a spell or item source. Choose Always and turn off Only In Combat for each effect before choosing an aura source.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
 }
 
@@ -58,6 +90,7 @@ local function StoreEffects(group, effects, selection)
     if group.style then group.style.textureIndicators = nil end
     return settings.effects
 end
+I.SetEffects = StoreEffects
 
 function I.Effects(group)
     local settings = I.Settings(group)
@@ -74,7 +107,12 @@ function I.CheckEffects(effects, tracking, displayType)
     if not tracking then return true end
     local count = 0
     for _, key in ipairs(I.EffectOrder) do
-        if effects[key] and effects[key].enabled == true then count = count + 1 end
+        if effects[key] and effects[key].enabled == true then
+            count = count + 1
+            if tracking == "aura" and ((effects[key].activation or "always") ~= "always" or effects[key].combatOnly) then
+                return false, "indicator_effects_conditions"
+            end
+        end
     end
     if tracking == "aura" and count > 1 then return false, "indicator_effects_multiple" end
     local unavailable = tracking == "aura" and "colorShift" or "shrinkExpand"
@@ -137,7 +175,6 @@ function I.Initialize(group)
     local settings = group.indicatorSettings
     if type(settings) ~= "table" then settings = {}; group.indicatorSettings = settings end
     settings.version = settings.version or 1
-    settings.primaryEntry = settings.primaryEntry or 1
     settings.tracking = settings.tracking or "conditions"
     settings.displayType = settings.displayType or "icon"
     settings.signal = settings.signal or {
@@ -277,9 +314,6 @@ function I.AddRestriction(group, entry)
     if I.Primary(group) and I.IsAura(group) then return "This Indicator already tracks an aura. Replace its source in Tracking." end
     local entries = entry and (entry[1] and entry or {entry}) or {}
     for _, source in ipairs(entries) do
-        if source.addedAs == "aura" and (source.auraTrackGroup or source.auraTrackPet) then
-            return "Indicators support Player or Target aura sources. Change this aura's scope before moving it."
-        end
         if source.addedAs == "aura" and (I.Primary(group) or #entries > 1) then
             return "Aura displays cannot be combined with conditions. Create an aura Indicator instead."
         end
@@ -299,14 +333,15 @@ function I.Match(frame, group)
     local primary = I.Primary(group)
     if not primary then return false end
     local runtime = {}
-    for _, button in ipairs(frame.buttons or {}) do runtime[button.index] = button end
-    if not runtime[settings.primaryEntry or 1] then return false end
-    for index, entry in ipairs(group.buttons or {}) do
+    for _, button in ipairs(frame.buttons or {}) do runtime[button.buttonData] = button end
+    if not runtime[primary] then return false end
+    if settings.sourceVisibility and runtime[primary]._rawVisibilityHidden then return false end
+    for _, entry in ipairs(group.buttons or {}) do
         if entry.enabled ~= false then
-            if not runtime[index] then return false end
+            if not runtime[entry] then return false end
             for _, clause in ipairs(entry.triggerConditions or {}) do
-                if not I.ConditionKeys[clause.key] then return false end
-                local actual = ST._AT.EvaluateTriggerRowCondition(runtime[index], clause.key, true)
+                if clause.unavailable or not I.ConditionKeys[clause.key] then return false end
+                local actual = ST._AT.EvaluateTriggerRowCondition(runtime[entry], clause.key, true)
                 if issecretvalue(actual) or actual == nil then return false end
                 local expected = clause.state
                 if expected == nil then expected = clause.expected ~= false end
@@ -322,7 +357,7 @@ function I.ClearSource(group)
     local settings = I.Initialize(group)
     I.Effects(group)
     group.buttons = {}
-    settings.primaryEntry, settings.tracking = 1, "conditions"
+    settings.tracking = "conditions"
 end
 
 -- Build a replacement off to the side. Failed validation must leave the
@@ -336,7 +371,6 @@ function I.StageSourceReplacement(group, expectedSource)
     candidate.style = group.style and CopyTable(group.style)
     local effects, selection = I.ReadEffects(group)
     StoreEffects(candidate, effects, selection)
-    candidate.indicatorSettings.primaryEntry = 1
     candidate.indicatorSettings.tracking = "conditions"
     return candidate
 end
@@ -346,7 +380,6 @@ function I.CommitSourceReplacement(group, candidate)
     if not allowed then return false, reason end
     group.buttons = candidate.buttons
     local settings = I.Settings(group)
-    settings.primaryEntry = 1
     settings.tracking = I.Settings(candidate).tracking
     StoreEffects(group, I.Effects(candidate), I.Settings(candidate).effectSelection)
     NormalizeCountReadouts(group)
@@ -355,7 +388,7 @@ end
 
 local SIGNAL_APPEARANCE = {"sourceType","sourceValue","mediaType","label","scale","alpha","blendMode",
     "rotation","stretchX","stretchY","color","locationType","pairSpacing","width","height"}
-local PRESENTATION_FIELDS = {"displayType","icon","text","readouts","readoutsByDisplay","progress","legacyTextMetrics"}
+local PRESENTATION_FIELDS = {"displayType","icon","text","readouts","readoutsByDisplay","progress"}
 
 function I.CapturePresentation(group)
     local settings = I.Settings(group)

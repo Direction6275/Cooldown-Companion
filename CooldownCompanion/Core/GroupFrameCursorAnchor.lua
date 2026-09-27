@@ -118,8 +118,7 @@ local function GetCursorAnchoredStandaloneHost(frame, group)
         return nil
     end
 
-    local button = frame.buttons and frame.buttons[1] or nil
-    return button and button.auraTextureHost or nil
+    return CooldownCompanion:GetAuraTextureHostForGroupFrame(frame)
 end
 
 local function GetCursorAnchorLayoutPreviewPosition(self, groupId)
@@ -551,8 +550,7 @@ function CooldownCompanion:CancelCursorAnchorLayoutPreviewDrag()
     if groupId == nil then return end
     local frame = self.groupFrames and self.groupFrames[groupId]
         or self._dormantFrames and self._dormantFrames[groupId]
-    local button = frame and frame.buttons and frame.buttons[1]
-    local host = button and button.auraTextureHost
+    local host = self:GetAuraTextureHostForGroupFrame(frame)
     if host and host._cursorAnchorDrag then
         host._cursorAnchorDrag = nil
         host._isDragging = nil

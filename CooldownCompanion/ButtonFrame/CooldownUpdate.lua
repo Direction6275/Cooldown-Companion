@@ -66,8 +66,6 @@ local ApplyBarCountTextStyle = ST._ApplyBarCountTextStyle
 local UpdateBarDisplay = ST._UpdateBarDisplay
 local IsRuntimeLayoutPreviewButtonForceVisible = ST.IsRuntimeLayoutPreviewButtonForceVisible
 
--- Imports from TextMode
-local UpdateTextDisplay = ST._UpdateTextDisplay
 
 -- IsItemEquippable from Helpers (exported on CooldownCompanion)
 local IsItemEquippable = CooldownCompanion.IsItemEquippable
@@ -495,17 +493,6 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
     end
 
     local text = false
-    if not forced then
-        local timeActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN -- spell/item/deferred cooldown
-            or (isGCDOnly and button.style and button.style.showGCDSwipe == true) -- GCD swipe presentation
-        if timeActive and button._isText then
-            text = true                                      -- text mode is walk-driven (FormatTime + SetText)
-            forced = true
-        end
-        -- else: icon/bar self-animating cooldown/GCD -- skippable; discrete
-        -- edges stay event-covered.
-    end
-
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
     -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
     -- marks demoted), so it must force regardless of timeActive.
@@ -573,10 +560,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if button.count and button._countTextLaneStyled ~= useChargeTextLane then
         if button._isBar then
             ApplyBarCountTextStyle(button, style)
-        elseif not button._isText then
-            ApplyIconCountTextStyle(button, style)
         else
-            button._countTextLaneStyled = useChargeTextLane
+            ApplyIconCountTextStyle(button, style)
         end
     end
 
@@ -979,17 +964,17 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     if usesChargeBehavior then
       if buttonData.type == "spell" and buttonData.hasCharges then
-        -- Bar/text mode: charge bars are driven by the recharge DurationObject, not
+        -- Bar mode: charge bars are driven by the recharge DurationObject, not
         -- the main spell CD or GCD. Save and clear the main CD so recharge
         -- timing fully controls bar fill for charge spells.
-        if (button._isBar or button._isText) and button._chargeDurationObj then
+        if button._isBar and button._chargeDurationObj then
             button._durationObj = nil
         end
 
         local normalCooldownDisplayActive = button._cooldownState == COOLDOWN_STATE_COOLDOWN
             or (isGCDOnly and style.showGCDSwipe == true)
         if button._chargeDurationObj then
-            if not button._isBar and not button._isText then
+            if not button._isBar then
                 if button._chargeCooldownVisualActive then
                     -- Icon mode: active recharge owns the shared cooldown frame.
                     button._durationObj = button._chargeDurationObj
@@ -998,10 +983,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                     button.cooldown:SetCooldown(0, 0)
                 end
             elseif button._chargeRecharging then
-                -- Bar/text mode: only set _durationObj if actually recharging
+                -- Bar mode: only set _durationObj if actually recharging
                 button._durationObj = button._chargeDurationObj
             end
-        elseif not button._isBar and not button._isText then
+        elseif not button._isBar then
             -- Icon mode fallback: no chargeDurationObj, try fetching one.
             -- Only an active charge DurationObject may replace an existing GCD display.
             local chargeSpellID = cooldownSpellId or buttonData.id
@@ -1253,52 +1238,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         end
     end
 
-    -- Unusable/out-of-range state for text mode {unusable}/{oor} conditionals
-    if button._isText then
-        if buttonData.isPassive or buttonData.isPassiveCooldown then
-            button._isUnusable = false
-        elseif buttonData.type == "spell" then
-            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
-                button._isUnusable = false
-            else
-                local spellID = button._displaySpellId or buttonData.id
-                button._isUnusable = not C_Spell_IsSpellUsable(spellID)
-            end
-        elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
-            local itemID = button._resolvedItemId or buttonData.id
-            local usable = itemID and IsUsableItem(itemID)
-            button._isUnusable = not usable
-        else
-            button._isUnusable = false
-        end
-
-        if buttonData.type == "spell" and not buttonData.isPassiveCooldown then
-            if EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
-                button._isOutOfRange = false
-            else
-                button._isOutOfRange = button._spellOutOfRange or false
-            end
-        elseif IsEntryItemLike(buttonData) or buttonData.type == "equipitem" then
-            -- C_Item.IsItemInRange is protected in combat for non-enemy targets (10.2.0)
-            local itemID = button._resolvedItemId or buttonData.id
-            if not InCombatLockdown() or UnitCanAttack("player", "target") then
-                local inRange = itemID and IsItemInRange(itemID, "target") or nil
-                button._isOutOfRange = (inRange == false)
-            else
-                button._isOutOfRange = false
-            end
-        else
-            button._isOutOfRange = false
-        end
-    else
-        button._isUnusable = false
-        button._isOutOfRange = false
-    end
+    button._isUnusable, button._isOutOfRange = false, false
 
     -- Mode-specific visual dispatch
-    if button._isText then
-        UpdateTextDisplay(button)
-    elseif button._isBar then
+    if button._isBar then
         UpdateBarDisplay(button)
         DispatchStandaloneTextureVisual(button, group)
     else

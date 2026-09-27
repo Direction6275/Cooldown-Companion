@@ -162,23 +162,19 @@ local function GetStandaloneTextureAnchorSettings(group)
     if ST.IsIndicatorGroup(group) then
         return group.indicatorSettings and group.indicatorSettings.signal
     end
-    if group.displayMode == "trigger" then
-        return type(group.triggerSettings) == "table" and group.triggerSettings.signal or nil
-    end
-    if group.displayMode == "textures" then
-        return group.textureSettings
-    end
     return nil
 end
 
 local function GetActivePanelAnchorRelativeTo(group)
+    local anchor = group and group.anchor
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
+    if relativeTo == CURSOR_ANCHOR_TARGET then return relativeTo end
     local standalone = GetStandaloneTextureAnchorSettings(group)
     if type(standalone) == "table" and type(standalone.relativeTo) == "string" then
         return standalone.relativeTo
     end
 
-    local anchor = group and group.anchor
-    return type(anchor) == "table" and anchor.relativeTo or anchor
+    return relativeTo
 end
 
 local function GetPanelShellAnchorRelativeTo(group)
@@ -673,9 +669,6 @@ function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGrou
     if AnchorTargetsCursorRoot(profile, "CooldownCompanionGroup" .. tostring(targetGroupId)) then
         return false, "cursor-root-target"
     end
-    if self:IsStandaloneTexturePanelGroup(group) then
-        return false, "unsupported-display-mode"
-    end
     if IsAuraPanelAnchorTarget(group) then
         return false, "aura-panel-target"
     end
@@ -722,10 +715,6 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
             local name = group.name or ("Panel " .. tostring(id))
             if ST.IsIndicatorGroup(group) then
                 AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Indicator")
-            elseif group.displayMode == "trigger" then
-                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Trigger Display")
-            elseif group.displayMode == "textures" then
-                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Texture Display")
             end
         end
     end

@@ -15,7 +15,7 @@
     every login and on profile change; nothing here normalizes a template.
 
     Version 3 snapshots carry every supported panel setting, including Alpha
-    inheritance, strata and panel Text Format. capturedFields records presence
+    inheritance and strata. capturedFields records presence
     even for nil-valued settings: absent values inside that coverage RESET a
     target, while fields outside it were never saved. No profile baseline is
     substituted. Entries, eligibility, identity and anchor connections stay local.
@@ -121,11 +121,6 @@ local function GetPanelTemplateFields(group, mode)
 end
 ST._GetPanelTemplateFields = GetPanelTemplateFields
 
-local function FlushTemplateEditor()
-    -- The config module publishes its existing commit owner only when loaded.
-    -- Flush without releasing the editor: a rejected apply keeps it usable.
-    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
-end
 
 -- Legacy snapshots cannot apply settings they never captured.
 local function GetPanelTemplateScopeList(self, mode, template)
@@ -378,7 +373,7 @@ end
 
 -- Sorted array of { id = , template = }: by name (case-insensitive), then
 -- id. `mode` nil lists every template, else only that base copy mode
--- ("icons" / "bars" / "text", the answer GetPanelCopyMode gives).
+-- ("icons" / "bars" / "indicator", the answer GetPanelCopyMode gives).
 function CooldownCompanion:GetPanelTemplates(mode)
     local list = {}
     local store = self:GetPanelTemplateStore()
@@ -415,7 +410,6 @@ end
 
 -- Returns the new template id, or nil when the panel cannot be a template.
 function CooldownCompanion:SavePanelTemplate(groupId, name)
-    FlushTemplateEditor()
     local group = GetProfileGroup(self, groupId)
     local mode = self:GetPanelCopyMode(group)
     local store = mode and self:GetPanelTemplateStore()
@@ -454,7 +448,6 @@ end
 function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
     local canUpdate, reason = self:CanUpdatePanelTemplate(templateId, groupId)
     if not canUpdate then return false, reason end
-    FlushTemplateEditor()
     templateId = tonumber(templateId)
     local existing = self:GetPanelTemplate(templateId)
     local group = GetProfileGroup(self, groupId)
@@ -568,7 +561,6 @@ end
 -- Current snapshots preserve the target; old snapshots retain Group placement.
 function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     groupId = tonumber(groupId)
-    FlushTemplateEditor()
     local canApply, reason, details = self:CanApplyPanelTemplate(templateId, groupId)
     if not canApply then
         return false, reason, details

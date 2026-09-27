@@ -19,7 +19,6 @@ local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
 local select = select
 local wipe = wipe
-local GetTextEntryMetrics = ST._GetTextEntryMetrics
 
 local GF = ST._GroupFrame
 
@@ -52,30 +51,10 @@ local UpdateResizedPanelContainerWrapper = GF.UpdateResizedPanelContainerWrapper
 local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
-    local isTextMode = group.displayMode == "text"
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     local w, h
     if isTextureMode then
         w, h = 1, 1
-    elseif isTextMode then
-        if GetTextEntryMetrics then
-            -- The grid pitch is the widest/tallest usable entry. Each entry
-            -- frame keeps its own measured size (UpdateStyle -> ApplyTextLayout),
-            -- so short entries stay short inside a wider pitch. The group-level
-            -- format seeds a floor so an entry-less panel still has a size.
-            w, h = GetTextEntryMetrics(style, nil, style.textFormat or "{name}  {status}")
-            for _, buttonData in ipairs(group.buttons or {}) do
-                if CooldownCompanion:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
-                    local effectiveStyle = CooldownCompanion:GetEffectiveStyle(style, buttonData, group)
-                    local fmt = buttonData.textFormat or effectiveStyle.textFormat or "{name}  {status}"
-                    local buttonWidth, buttonHeight = GetTextEntryMetrics(effectiveStyle, buttonData, fmt)
-                    w = math_max(w, buttonWidth)
-                    h = math_max(h, buttonHeight)
-                end
-            end
-        else
-            w, h = 200, 20
-        end
     elseif isBarMode then
         w, h = ST.GetBarGridCellDimensions(group)
     elseif style.maintainAspectRatio then
@@ -339,49 +318,6 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
     end
 end
 
-local function ApplyTextGroupHeader(self, frame, group, style, isTextMode)
-    local showHeader = isTextMode and style.showTextGroupHeader == true
-    local headerHeight = 0
-
-    if showHeader then
-        if not frame.textHeader then
-            frame.textHeader = frame:CreateFontString(nil, "OVERLAY")
-            frame.textHeader:SetJustifyV("TOP")
-        end
-        local font = self:FetchFont(style.textFont or "Friz Quadrata TT")
-        local fontSize = style.textHeaderFontSize or style.textFontSize or 12
-        local fontOutline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
-        frame.textHeader:SetFont(font, fontSize, fontOutline)
-        local hdrColor = style.textHeaderFontColor or {1, 1, 1, 1}
-        frame.textHeader:SetTextColor(hdrColor[1], hdrColor[2], hdrColor[3], hdrColor[4] or 1)
-        ST.ApplyFontShadowForOutline(frame.textHeader, fontOutline, style.textShadow == true)
-        local align = style.textAlignment or "LEFT"
-        frame.textHeader:SetJustifyH(align)
-        frame.textHeader:SetText(group.name or "")
-        frame.textHeader:ClearAllPoints()
-        local growthOrigin = style.growthOrigin or "TOPLEFT"
-        -- Raw "BOTTOM" counts only while it is the ACTIVE centered edge; an
-        -- axis-mismatched value folds to TOPLEFT in layout, and the header
-        -- must land on the same edge the entries grow from.
-        local vEdge = (growthOrigin == "BOTTOMLEFT" or growthOrigin == "BOTTOMRIGHT"
-            or ST.GetCenteredGrowthEdge(growthOrigin, ST.GetPanelLayoutOrientation(group.displayMode, style)) == "BOTTOM")
-            and "BOTTOM" or "TOP"
-        local anchor = align == "RIGHT" and (vEdge .. "RIGHT") or align == "CENTER" and vEdge or (vEdge .. "LEFT")
-        local parentAnchor = anchor
-        local xOff = (align == "CENTER") and 0 or (align == "RIGHT") and -2 or 2
-        local yOff = vEdge == "BOTTOM" and 1 or -1
-        frame.textHeader:SetPoint(anchor, frame, parentAnchor, xOff, yOff)
-        frame.textHeader:SetWidth(frame:GetWidth() - 4)
-        frame.textHeader:Show()
-        headerHeight = fontSize + 4
-    elseif frame.textHeader then
-        frame.textHeader:Hide()
-    end
-
-    frame._textHeaderHeight = headerHeight
-    frame._textHeaderShown = showHeader
-    return headerHeight
-end
 
 local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
@@ -516,11 +452,6 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
     end
 
     local style = group.style or {}
-    local isTextMode = group.displayMode == "text"
-    local headerShown = isTextMode and style.showTextGroupHeader == true
-    if (frame._textHeaderShown == true) ~= headerShown then
-        return nil
-    end
 
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
@@ -608,9 +539,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
     wipe(frame.buttons)
 
-    -- Text mode group header
-    local isTextMode = group.displayMode == "text"
-    local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
+    local headerHeight = 0
 
     if ST.IsTotemPanelGroup(group) then
         self:ReleaseGroupButtonPools(frame)
@@ -654,9 +583,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 local button = AcquireButtonFromPool(frame, poolKey, buttonData)
                 local reusedButton = button ~= nil
                 if not button then
-                    if group.displayMode == "text" then
-                        button = self:CreateTextFrame(frame, i, buttonData, effectiveStyle)
-                    elseif poolKey == "bars" or poolKey == "attachedBars" then
+                    if poolKey == "bars" or poolKey == "attachedBars" then
                         button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle,
                             ST.IsAttachedBarEntry(group, buttonData))
                     else
@@ -1011,7 +938,7 @@ local function IsStyleEditEntry(button, scope)
     if not scope then return true end
     if scope.entry then return button.buttonData == scope.entry end
     if scope.presentation == "bars" then return button._isBar == true end
-    if scope.presentation == "icons" then return not button._isBar and not button._isText end
+    if scope.presentation == "icons" then return not button._isBar end
     return true
 end
 
@@ -1033,13 +960,11 @@ end
 -- Narrow outcomes are opt-in at audited writes. Binding/mode/Masque checks run
 -- first; unsupported surfaces keep the existing full style completion.
 local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, buttonUsabilityOptions, effect, scope)
-    if ST.IsAuraPanelGroup(group) or group.displayMode == "textures"
-        or group.displayMode == "trigger" or ST.IsIndicatorGroup(group) then return false end
+    if ST.IsAuraPanelGroup(group) or ST.IsIndicatorGroup(group) then return false end
     if effect == "appearance" or effect == "interaction" then
         for index = 1, entries.count do
             local button = frame.buttons[index]
-            if IsStyleEditEntry(button, scope) and (button._isText
-                or (effect == "appearance" and button._isBar)) then return false end
+            if IsStyleEditEntry(button, scope) and (effect == "appearance" and button._isBar) then return false end
         end
         for index = 1, entries.count do
             local button = frame.buttons[index]
@@ -1052,7 +977,7 @@ local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, button
         end
     elseif effect == "layout" then
         local style = group.style or {}
-        local headerHeight = ApplyTextGroupHeader(self, frame, group, style, group.displayMode == "text")
+        local headerHeight = 0
         local sizing = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
         ApplyActiveButtonLayout(self, groupId, frame, group, sizing, headerHeight)
         local compact = self:IsGroupCompactLayoutActive(groupId, group)
@@ -1127,8 +1052,7 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     end
 
     local style = group.style or {}
-    local isTextMode = group.displayMode == "text"
-    local headerHeight = ApplyTextGroupHeader(self, frame, group, style, isTextMode)
+    local headerHeight = 0
 
     for visibleIndex = 1, entries.count do
         local entry = entries[visibleIndex]

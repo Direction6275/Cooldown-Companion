@@ -34,7 +34,6 @@ local GetGrowthMultipliers = PP.GetGrowthMultipliers
 local GetHostFitScale = PP.GetHostFitScale
 local GetConfigOnlyBarPreviewIcon = PP.GetConfigOnlyBarPreviewIcon
 local AcquireSlot = PP.AcquireSlot
-local GetTextSlotSize = PP.GetTextSlotSize
 local ApplyPreviewSlotGeometry = PP.ApplyPreviewSlotGeometry
 local GetStoredBarPreviewState = PP.GetStoredBarPreviewState
 local CollectBarEntryStatus = PP.CollectBarEntryStatus
@@ -54,9 +53,6 @@ local ResetBarSlotWorkspaceState = PP.ResetBarSlotWorkspaceState
 local SectionDrag = PP.SectionDrag
 
 -- ButtonPanelPreviewTriggers.lua
-local StopTextureMirrorEffects = PP.StopTextureMirrorEffects
-local BuildTextureMirror = PP.BuildTextureMirror
-local BuildTriggerPanelPreview = PP.BuildTriggerPanelPreview
 local BuildSelectionStrip = PP.BuildSelectionStrip
 
 -- ButtonPanelPreviewInteraction.lua
@@ -71,9 +67,6 @@ local ClearSlotEffectPreviews = PP.ClearSlotEffectPreviews
 local EnsureConditionalTicker = PP.EnsureConditionalTicker
 
 -- ButtonPanelPreviewText.lua
-local UpdateTextGroupHeader = PP.UpdateTextGroupHeader
-local StyleTextEntry = PP.StyleTextEntry
-local ApplyTextSlotConditionalPreview = PP.ApplyTextSlotConditionalPreview
 
 -- ButtonPanelPreviewBars.lua
 local StyleBarEntry = PP.StyleBarEntry
@@ -89,11 +82,11 @@ local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 -- acquisition, membership, placement and interaction models.
 local function RenderPreviewEntry(preview, group, binding, context)
     local slot, buttonData, index = binding.slot, binding.buttonData, binding.index
-    local panelId, readOnly, isTextMode = preview.panelId, preview.readOnly, context.isTextMode
+    local panelId, readOnly = preview.panelId, preview.readOnly
     local scale, dropGhostIndex, placement = context.scale, context.dropGhostIndex, binding.placement
     local poolName = binding.poolName
     local isBarMode = poolName == "barSlots"
-    local styleFn = isBarMode and StyleBarEntry or (isTextMode and StyleTextEntry or StyleIconEntry)
+    local styleFn = isBarMode and StyleBarEntry or StyleIconEntry
     PP.RestoreMissingReminderPreview(slot)
     slot:SetAlpha(1)
     local effectiveStyle
@@ -113,10 +106,10 @@ local function RenderPreviewEntry(preview, group, binding, context)
         ResetBarSlotConditionalVisuals(slot)
     end
     styleFn(slot, buttonData, group, effectiveStyle)
-    if not readOnly and not isTextMode then
+    if not readOnly then
         ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
             effectiveStyle, barPreviewState)
-    elseif not isTextMode then
+    else
         ClearSlotEffectPreviews(slot)
     end
     local status = not readOnly and (isBarMode and CollectBarEntryStatus(buttonData, group)
@@ -142,16 +135,11 @@ local function RenderPreviewEntry(preview, group, binding, context)
             baseTint and baseTint[3] or 1,
             baseTint and baseTint[4] or 1)
     end
-    if readOnly and isTextMode then
-        ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index, true)
-        slot._cdcCondAnim = nil
-    elseif readOnly then
+    if readOnly then
         ResetSlotConditionalVisuals(slot)
     elseif isBarMode then
         ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, index,
             effectiveStyle, barPreviewState)
-    elseif isTextMode then
-        ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
     else
         ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
     end
@@ -226,7 +214,6 @@ local function ResetPreviewLayout(preview)
     preview.cursorPadModel = nil
     preview.cursorPadInputs = nil
     SectionDrag.EndGesture(preview)
-    StopTextureMirrorEffects(preview.textureMirror)
     -- Fresh static layout: discard any tweens or ghost the canceled drag
     -- queued so they can't fight the rebuilt slot positions
     preview.tweens = preview.tweens or {}
@@ -257,7 +244,7 @@ end
 local function LayoutPreviewEntries(preview, host, panelId, group, options, reuseSlots, updateModules)
     local readOnly = preview.readOnly
     local dropGhostIndex = options and options.dropGhostIndex
-    local isBarMode, isTextMode = group.displayMode == "bars", group.displayMode == "text"
+    local isBarMode = group.displayMode == "bars"
     local buttons = group.buttons or {}
     local count = #buttons
     local modules = updateModules or (options and options.previewModules) or (not readOnly and ST._GetPanelAttachmentPreviewModules
@@ -281,7 +268,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         -- and the ghost hides the message rather than sharing that box.
         if not readOnly then
             preview.dropGhostMode = isBarMode and "barSlots"
-                or (isTextMode and "textSlots" or "iconSlots")
+                or "iconSlots"
         end
         FinalizePreviewState(preview)
         return
@@ -322,7 +309,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     end
     local guidanceReserve = count == 0 and not readOnly and PP.EMPTY_ENTRY_GUIDANCE_BAND or 0
 
-    local geo = GetPanelGeometry(group, isBarMode, isTextMode, visibleIndices)
+    local geo = GetPanelGeometry(group, isBarMode, visibleIndices)
     local w, h = geo.entryWidth, geo.entryHeight
     local spacing = geo.spacing
     local perRow = math_max(1, geo.buttonsPerRow)
@@ -339,9 +326,6 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     -- Text-mode group header claims a row of space above (or below, for
     -- bottom growth) the entries, exactly like the live layout.
     local headerHeight = 0
-    if isTextMode and style.showTextGroupHeader == true then
-        headerHeight = (style.textHeaderFontSize or style.textFontSize or 12) + 4
-    end
 
     -- Panel Sections. Every number a section contributes below -- footprint,
     -- position, icon size -- is read straight off the engine's own layout
@@ -518,9 +502,8 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         height = sectionLayout and sectionLayout.baseHeight or iconHeight,
     }
     content:Show()
-    UpdateTextGroupHeader(preview, group, style, headerHeight)
 
-    local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
+    local poolName = isBarMode and "barSlots" or "iconSlots"
     -- The drop ghost (DropGhost) draws on this build's grid; read-only
     -- mirrors take no drop. The unified composition is in: the ghost claims
     -- no strip the bar lanes sit on, only the base row's next cell.
@@ -624,7 +607,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         end
     end
     local context = {
-        isTextMode = isTextMode, scale = scale, dropGhostIndex = dropGhostIndex,
+        scale = scale, dropGhostIndex = dropGhostIndex,
         dragModel = dragModel, layoutDrag = layoutDrag, sections = sections,
         visibleIndices = visibleIndices, attachmentDrag = attachmentDrag,
         headerHeight = headerHeight, options = options, modules = modules,
@@ -645,7 +628,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         local index = visibleIndices and visibleIndices[ordinal] or ordinal
         local buttonData = buttons[index]
         local isBarMode = ST.GetEntryPresentation(group, buttonData) == "bars"
-        local poolName = isBarMode and "barSlots" or (isTextMode and "textSlots" or "iconSlots")
+        local poolName = isBarMode and "barSlots" or "iconSlots"
         -- A section member's own icon size, and its position, come from the
         -- engine's layout table; nil means the entry is a base-grid cell.
         local placement = (attachedPositions and attachedPositions[index])
@@ -654,11 +637,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         local slot = reuseSlots and binding.slot or AcquireSlot(preview, content, poolName)
         binding.slot, binding.poolName, binding.placement = slot, poolName, placement
         binding.attached = ST.IsAttachedBarEntry(group, buttonData)
-        if isTextMode then
-            -- Cell placement stays on the uniform pitch below; only the slot's
-            -- own footprint is per-entry, like the live text button.
-            slot:SetSize(GetTextSlotSize(group, buttonData, w, h))
-        elseif placement then
+        if placement then
             -- Sized before styleFn: the mirrored icon crops its texture from
             -- the slot's current size (ST._ApplyIconTexCoord).
             slot:SetSize(placement.width, placement.height)
@@ -811,17 +790,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     if ST.IsIndicatorGroup(group) then
         return ST._ButtonPanelPreview.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     end
-    local isTextMode = group.displayMode == "text"
-    if not isBarMode and not isTextMode and not IsIconModePanel(group) then
-        -- Texture panels render their real texture; trigger panels stack
-        -- their display visual above the strip; rotation-assistant panels
-        -- keep the entry-icon selection strip alone.
-        if CooldownCompanion:IsTexturePanelGroup(group) then
-            return BuildTextureMirror(preview, host, panelId, group, readOnly)
-        end
-        if CooldownCompanion:IsTriggerPanelGroup(group) then
-            return BuildTriggerPanelPreview(preview, host, panelId, group, readOnly)
-        end
+    if not isBarMode and not IsIconModePanel(group) then
         return BuildSelectionStrip(preview, host, panelId, group, readOnly)
     end
 
@@ -894,7 +863,6 @@ function ST._UpdateButtonPanelPreview(host, panelId, outcome)
         LayoutPreviewEntries(preview, host, panelId, group, preview.renderContext.options, true, modules)
     else
         local context = preview.renderContext
-        UpdateTextGroupHeader(preview, group, group.style or {}, context.headerHeight)
         for _, binding in ipairs(preview.entryBindings) do
             if binding.slot then
                 -- An unrelated paint must not unhide the lifted entry or undo
@@ -977,8 +945,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
         return true
     end
 
-    local isTextMode = group.displayMode == "text"
-    local isGridPanel = isTextMode or IsIconModePanel(group)
+    local isGridPanel = IsIconModePanel(group)
     CS.panelPreviewVisualsNeedReconcile = nil
     if reconcileVisuals then
         StopConditionalTicker(preview)
@@ -991,12 +958,8 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
             if slot.icon then
                 slot.icon:SetDesaturated(not status.usable)
             end
-            if isTextMode then
-                ApplyTextSlotConditionalPreview(slot, buttonData, group, panelId, index)
-            else
-                ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
-                ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
-            end
+            ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
+            ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
         end
         anyAnimated = anyAnimated or slot._cdcCondAnim ~= nil
         if slot._cdcBarPreviewVisibility then
@@ -1050,7 +1013,6 @@ function ST._ReleaseReadOnlyPanelPreview(host)
     preview.updateReady, preview.entryBindings, preview.renderContext = nil, nil, nil
     preview.ownerProfile, preview.ownerGroup, preview.sectionOwners = nil, nil, nil
     StopConditionalTicker(preview)
-    StopTextureMirrorEffects(preview.textureMirror)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
     for poolName, pool in pairs(preview.pools) do
         local used = preview.used[poolName] or 0
@@ -1092,7 +1054,7 @@ ST._HidePreviewDropGhost = DropGhost.Hide
 function ST._PanelPreviewUnavailableEntryState(group)
     if not group then return nil end
     if ST.IsTotemPanelGroup(group) then return nil end
-    if group.displayMode ~= "text" and not IsIconModePanel(group) then
+    if not IsIconModePanel(group) then
         return nil
     end
     for _, buttonData in ipairs(group.buttons or {}) do
@@ -1114,7 +1076,6 @@ function ST._ReleaseButtonPanelPreview(host)
         end
         StopConditionalTicker(preview)
         if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
-        StopTextureMirrorEffects(preview.textureMirror)
         DropGhost.Reset(preview)
         local barPool = preview.pools.barSlots or {}
         for index = 1, (preview.used.barSlots or 0) do

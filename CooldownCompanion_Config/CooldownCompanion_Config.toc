@@ -72,7 +72,6 @@ ConfigSettings\ButtonPanelPreviewShared.lua
 ConfigSettings\ButtonPanelPreviewSections.lua
 ConfigSettings\ButtonPanelPreviewIcons.lua
 ConfigSettings\ButtonPanelPreviewBars.lua
-ConfigSettings\ButtonPanelPreviewText.lua
 ConfigSettings\ButtonPanelPreviewEffects.lua
 ConfigSettings\ButtonPanelPreviewInteraction.lua
 ConfigSettings\ButtonPanelPreviewTriggers.lua
@@ -91,8 +90,6 @@ ConfigSettings\ButtonSettings.lua
 ConfigSettings\ButtonSettingsAura.lua
 ConfigSettings\ButtonConditions.lua
 ConfigSettings\BarModeTabs.lua
-ConfigSettings\FormatEditor.lua
-ConfigSettings\TextModeTabs.lua
 ConfigSettings\GroupTabsShared.lua
 ConfigSettings\TotemPanelTabs.lua
 ConfigSettings\GroupTabsSpecial.lua

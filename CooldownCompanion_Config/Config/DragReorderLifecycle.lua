@@ -324,6 +324,7 @@ local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
     if sourceIndex == dropIndex then return end
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
+    if ST.IsIndicatorGroup(group) and (sourceIndex == 1 or dropIndex == 1) then return end
     local entry = table.remove(group.buttons, sourceIndex)
     table.insert(group.buttons, dropIndex, entry)
     -- Track selectedButton
@@ -355,6 +356,11 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     if not sourceGroup or not targetGroup then return nil end
     local buttonData = sourceGroup.buttons[sourceIndex]
     if not buttonData then return nil end
+    local sourceRejectMessage = ST.Indicator.GetRemovalError(sourceGroup, {buttonData})
+    if sourceRejectMessage then
+        CooldownCompanion:Print(sourceRejectMessage)
+        return nil
+    end
     local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
         and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, buttonData)
     if rejectMessage then
@@ -393,7 +399,6 @@ end
 local function StripButtonOverrides(buttonData)
     buttonData.styleOverrides = nil
     buttonData.overrideSections = nil
-    buttonData.textFormat = nil
 end
 
 ------------------------------------------------------------------------

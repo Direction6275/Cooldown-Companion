@@ -206,155 +206,7 @@ function CooldownCompanion:FinalizeContainerAnchorsToScreenOffsets()
     end
 end
 
-local function SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
-    if not (self and groupId and type(group) == "table") then
-        return
-    end
 
-    local settings
-    if group.displayMode == "trigger" then
-        settings = self:GetTriggerPanelSignalSettings(group, true)
-    else
-        settings = self:GetTexturePanelSettings(group, true)
-    end
-    local frame = self.groupFrames and self.groupFrames[groupId]
-    local anchor = type(group.anchor) == "table" and group.anchor or nil
-    local point = (anchor and anchor.point) or "CENTER"
-    local relativePoint = (anchor and anchor.relativePoint) or "CENTER"
-    local relativeTo = anchor and anchor.relativeTo or nil
-    local ownContainerFrame = group.parentContainerId and ("CooldownCompanionContainer" .. tostring(group.parentContainerId)) or nil
-    if type(relativeTo) == "string"
-        and relativeTo ~= "UIParent"
-        and relativeTo ~= ownContainerFrame
-        and not self:IsCursorAnchor(relativeTo) then
-        local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
-        local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(relativeTo, options)
-        if ok then
-            settings.point = point
-            settings.relativePoint = relativePoint
-            settings.relativeTo = relativeTo
-            settings.x = RoundAnchorOffset(tonumber(anchor and anchor.x) or 0)
-            settings.y = RoundAnchorOffset(tonumber(anchor and anchor.y) or 0)
-            return
-        end
-    end
-
-    if frame and frame.GetCenter then
-        local body = ST.GetPanelAnchorBodyFrame(frame)
-        local cx, cy = body:GetCenter()
-        local fw, fh = body:GetSize()
-        local rcx, rcy = UIParent:GetCenter()
-        local rw, rh = UIParent:GetSize()
-
-        if cx and cy and fw and fh and rcx and rcy and rw and rh then
-            local fax, fay = GetAnchorOffset(point, fw, fh)
-            local framePtX = cx + fax
-            local framePtY = cy + fay
-            local rax, ray = GetAnchorOffset(relativePoint, rw, rh)
-            local refPtX = rcx + rax
-            local refPtY = rcy + ray
-
-            settings.point = point
-            settings.relativePoint = relativePoint
-            settings.relativeTo = "UIParent"
-            settings.x = RoundAnchorOffset(framePtX - refPtX)
-            settings.y = RoundAnchorOffset(framePtY - refPtY)
-            return
-        end
-    end
-
-    settings.point = point
-    settings.relativePoint = relativePoint
-    settings.relativeTo = "UIParent"
-    settings.x = tonumber(anchor and anchor.x) or 0
-    settings.y = tonumber(anchor and anchor.y) or 0
-end
-
-local function SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
-    if not (self and groupId and type(group) == "table") then
-        return
-    end
-
-    local settings
-    if group.displayMode == "trigger" then
-        settings = self:GetTriggerPanelSignalSettings(group)
-    else
-        settings = self:GetTexturePanelSettings(group)
-    end
-    if not settings then
-        return
-    end
-
-    if self:IsCursorAnchor(group.anchor) then
-        return
-    end
-
-    group.anchor = group.anchor or {}
-
-    local point = settings.point or group.anchor.point or "CENTER"
-    local relativePoint = settings.relativePoint or group.anchor.relativePoint or "CENTER"
-    local settingsRelativeTo = type(settings.relativeTo) == "string" and settings.relativeTo or nil
-    if settingsRelativeTo and settingsRelativeTo ~= "UIParent" then
-        local targetFrame = _G[settingsRelativeTo]
-        local options = self.GetGroupAnchorValidationOptions and self:GetGroupAnchorValidationOptions(groupId) or nil
-        local ok = not self.ValidateAddonFrameAnchorTarget or self:ValidateAddonFrameAnchorTarget(settingsRelativeTo, options)
-        if ok and (targetFrame == nil or IsFrameLikeAnchorTarget(targetFrame)) then
-            group.anchor.point = point
-            group.anchor.relativeTo = settingsRelativeTo
-            group.anchor.relativePoint = relativePoint
-            group.anchor.x = RoundAnchorOffset(tonumber(settings.x) or 0)
-            group.anchor.y = RoundAnchorOffset(tonumber(settings.y) or 0)
-            return
-        end
-    end
-
-    local relativeTo = group.anchor.relativeTo or "UIParent"
-    local relFrame = nil
-
-    if relativeTo ~= "UIParent" then
-        relFrame = _G[relativeTo]
-        if not (relFrame and relFrame.GetCenter and relFrame.GetSize) then
-            relativeTo = "UIParent"
-            relFrame = nil
-        end
-    end
-
-    if not relFrame then
-        relFrame = UIParent
-    end
-
-    -- Same rule as everywhere else a panel is measured for a dependent: the
-    -- anchoring body, because that is what AnchorGroupFrame will SetPoint the
-    -- panel against once these offsets are saved.
-    relFrame = ST.GetPanelAnchorBodyFrame(relFrame)
-
-    local rw, rh = relFrame:GetSize()
-    local rcx, rcy = relFrame:GetCenter()
-    local uw, uh = UIParent:GetSize()
-    local ucx, ucy = UIParent:GetCenter()
-
-    if rw and rh and rcx and rcy and uw and uh and ucx and ucy then
-        local uiAnchorX, uiAnchorY = GetAnchorOffset(relativePoint, uw, uh)
-        local screenPtX = ucx + uiAnchorX + (tonumber(settings.x) or 0)
-        local screenPtY = ucy + uiAnchorY + (tonumber(settings.y) or 0)
-        local relAnchorX, relAnchorY = GetAnchorOffset(relativePoint, rw, rh)
-        local refPtX = rcx + relAnchorX
-        local refPtY = rcy + relAnchorY
-
-        group.anchor.point = point
-        group.anchor.relativeTo = relativeTo
-        group.anchor.relativePoint = relativePoint
-        group.anchor.x = RoundAnchorOffset(screenPtX - refPtX)
-        group.anchor.y = RoundAnchorOffset(screenPtY - refPtY)
-        return
-    end
-
-    group.anchor.point = point
-    group.anchor.relativeTo = relativeTo
-    group.anchor.relativePoint = relativePoint
-    group.anchor.x = tonumber(settings.x) or 0
-    group.anchor.y = tonumber(settings.y) or 0
-end
 
 local function CopyPresetValue(v)
     if type(v) == "table" then
@@ -373,9 +225,6 @@ ST._CopyPresetValue = CopyPresetValue
 function ST.GetPanelLayoutOrientation(displayMode, style)
     if displayMode == "bars" then
         return style.barOrientation or "vertical"
-    end
-    if displayMode == "text" then
-        return style.textOrientation or "vertical"
     end
     return style.orientation or "horizontal"
 end
@@ -413,7 +262,7 @@ end
 ------------------------------------------------------------------------
 
 -- Which copy family a panel belongs to. nil for the specialist modes
--- (textures, trigger, rotation assistant), which the feature does not serve.
+-- such as rotation assistant, which the feature does not serve.
 -- Aura Panels ride their base display mode, exactly as the retired preset
 -- paths judged them; the subtype's invariants are re-established after apply.
 function CooldownCompanion:GetPanelCopyMode(group)
@@ -422,7 +271,7 @@ function CooldownCompanion:GetPanelCopyMode(group)
     if displayMode == nil or displayMode == "icons" then
         return "icons"
     end
-    if displayMode == "bars" or displayMode == "text" or displayMode == "indicator" then
+    if displayMode == "bars" or displayMode == "indicator" then
         return displayMode
     end
     return nil
@@ -1439,6 +1288,8 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local isRotationAssistant = ST.IsRotationAssistantDisplayMode
         and ST.IsRotationAssistantDisplayMode(displayMode)
 
+    if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "indicator"
+        and not isRotationAssistant then return nil end
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
@@ -1497,8 +1348,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     -- pre-split panels and copy the icons key over their layout.
     if displayMode == "bars" then
         style.barOrientation = "vertical"
-    elseif displayMode == "text" then
-        style.textOrientation = "vertical"
     end
     style.growthOrigin = "TOPLEFT"
     style.buttonsPerRow = 12
@@ -1548,30 +1397,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style.readyGlowStyle = "none"
         style.keyPressHighlightStyle = "none"
         style.iconFillEnabled = false
-    end
-
-    if displayMode == "textures" then
-        db.groups[groupId].textureSettings = {
-            blendMode = "BLEND",
-            point = "CENTER",
-            relativePoint = "CENTER",
-            relativeTo = "UIParent",
-            x = 0,
-            y = 0,
-        }
-    elseif displayMode == "trigger" then
-        db.groups[groupId].triggerSettings = {
-            displayType = "texture",
-            signal = {
-                blendMode = "BLEND",
-                point = "CENTER",
-                relativePoint = "CENTER",
-                relativeTo = "UIParent",
-                x = 0,
-                y = 0,
-            },
-            effects = {},
-        }
     end
 
     ST.Indicator.Initialize(db.groups[groupId])
@@ -1716,9 +1541,8 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     ["totem-panel-modes"] = "Totem Panels can only switch between icons and bars.",
     ["totem-panel-create-only"] = "Create a new Totem Panel to display totem slots.",
     assistant = "Assistant Panels cannot be converted. Create a new Assistant Panel instead.",
-    trigger = "Trigger Panels cannot be converted. Create a new Trigger Panel instead.",
-    ["texture-entry-limit"] = "Texture Panels can only hold one entry. Remove extra entries first, or create a new Texture Panel.",
-    ["aura-entries"] = "This panel contains aura entries, which can only be tracked in icon, bar, text, or Texture panels. Remove them first, or convert to one of those modes.",
+    unsupported = "This panel type is no longer supported. Create an Indicator instead.",
+    ["aura-entries"] = "Aura entries require icon, bar, or Indicator panels.",
     ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
     ["aura-panel-create-only"] = "Aura Panels cannot be converted from an existing panel. Create a new Aura Panel instead.",
 }
@@ -1747,6 +1571,8 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
         return false, "aura-panel-create-only"
     end
 
+    if newMode ~= "icons" and newMode ~= "bars" and newMode ~= "indicator"
+        and not ST.IsRotationAssistantDisplayMode(newMode) then return false, "unsupported" end
     local oldMode = group.displayMode
     if oldMode ~= newMode and (oldMode == "indicator" or newMode == "indicator") then
         return false, "indicator"
@@ -1756,13 +1582,7 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
         return false, "assistant"
     end
 
-    if oldMode ~= newMode and (oldMode == "trigger" or newMode == "trigger") then
-        return false, "trigger"
-    end
 
-    if newMode == "textures" and #(group.buttons or {}) > 1 then
-        return false, "texture-entry-limit"
-    end
 
     -- Primary aura entries only display through the aura system, which binds
     -- to icon, bar, text and Texture panels; refuse conversions that would
@@ -1770,8 +1590,6 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     if oldMode ~= newMode
         and newMode ~= "icons"
         and newMode ~= "bars"
-        and newMode ~= "textures"
-        and newMode ~= "text"
         and newMode ~= nil then
         for _, bd in ipairs(group.buttons or {}) do
             if bd.addedAs == "aura" then
@@ -1801,18 +1619,8 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     newMode = ResolvePanelCreationMode(newMode)
 
     local oldMode = group.displayMode
-    if (oldMode == "textures" or oldMode == "trigger") and newMode ~= oldMode then
-        -- Leaving texture mode should carry the standalone texture position
-        -- back into the normal panel anchor so the panel does not jump back.
-        SyncGroupAnchorFromTexturePanelSettings(self, groupId, group)
-    end
 
     group.displayMode = newMode
-    if oldMode ~= newMode and newMode == "textures" and self.EnableTexturePanelAuraDisplayForEntry then
-        for _, buttonData in ipairs(group.buttons or {}) do
-            self:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
-        end
-    end
     if oldMode ~= newMode and ShouldClearCDMPanelSourceForDisplayMode(group, newMode) then
         group.cdmPanelSource = nil
     end
@@ -1828,41 +1636,9 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     -- mode's own key on first entry so new-format panels always carry it.
     if newMode == "bars" and group.style.barOrientation == nil then
         group.style.barOrientation = "vertical"
-    elseif newMode == "text" and group.style.textOrientation == nil then
-        group.style.textOrientation = "vertical"
     end
     if newMode ~= "icons" and group.masqueEnabled and self.ToggleGroupMasque then
         self:ToggleGroupMasque(groupId, false)
-    end
-    if newMode == "textures" or newMode == "trigger" then
-        -- Entering texture mode switches from group.anchor to textureSettings,
-        -- so convert the panel's current on-screen position once here.
-        SyncTexturePanelPositionFromGroupFrame(self, groupId, group)
-    end
-    if newMode == "trigger" then
-        group.triggerSettings = group.triggerSettings or {
-            displayType = "texture",
-            signal = {
-                blendMode = "BLEND",
-                point = "CENTER",
-                relativePoint = "CENTER",
-                relativeTo = "UIParent",
-                x = 0,
-                y = 0,
-            },
-            effects = {},
-        }
-        if group.triggerSettings.displayType == nil then
-            group.triggerSettings.displayType = "texture"
-        end
-        if type(group.triggerSettings.effects) ~= "table" then
-            group.triggerSettings.effects = {}
-        end
-        if self.NormalizeTriggerConditionRowData then
-            for _, buttonData in ipairs(group.buttons or {}) do
-                self:NormalizeTriggerConditionRowData(buttonData)
-            end
-        end
     end
     RefreshPanelAlphaDependencyTargets(self)
     self:RefreshGroupFrame(groupId)
@@ -1981,7 +1757,7 @@ end
 function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     if not group then return end
     local displayMode = group.displayMode or "icons"
-    if displayMode ~= "icons" and displayMode ~= "bars" and displayMode ~= "text" then
+    if displayMode ~= "icons" and displayMode ~= "bars" then
         return
     end
     local style = group.style
@@ -2337,6 +2113,8 @@ end
 function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     local group = self.db.profile.groups[groupId]
     if not group then return end
+    local rejectMessage = ST.Indicator.GetRemovalError(group, {group.buttons[buttonIndex]})
+    if rejectMessage then self:Print(rejectMessage); return end
 
     -- A section IS its members: take the leaving entry out of its cluster before
     -- it goes, so the last one out dissolves it. An orphaned section table would

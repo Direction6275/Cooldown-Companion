@@ -33,7 +33,6 @@ local RefreshBarSlotWorkspacePresentation = PP.RefreshBarSlotWorkspacePresentati
 local SLOT_FACTORIES = PP.SLOT_FACTORIES
 local DisableReadOnlySlotInteraction = PP.DisableReadOnlySlotInteraction
 local ApplyBarSlotVisualAlpha = PP.ApplyBarSlotVisualAlpha
-local GetTextSlotSize = PP.GetTextSlotSize
 local GetPanelGeometry = PP.GetPanelGeometry
 local GetGrowthMultipliers = PP.GetGrowthMultipliers
 local GetHostFitScale = PP.GetHostFitScale
@@ -52,9 +51,6 @@ local ApplyBarSlotConditionalPreview = PP.ApplyBarSlotConditionalPreview
 local ClearSlotEffectPreviews = PP.ClearSlotEffectPreviews
 
 -- ButtonPanelPreviewText.lua
-local StyleTextEntry = PP.StyleTextEntry
-local ApplyTextSlotConditionalPreview = PP.ApplyTextSlotConditionalPreview
-local UpdateTextGroupHeader = PP.UpdateTextGroupHeader
 
 -- ButtonPanelPreviewIcons.lua
 local StyleIconEntry = PP.StyleIconEntry
@@ -147,7 +143,6 @@ ST._ArmCopyCustomization = ArmCopyCustomization
 ST._CancelCopyCustomization = CancelCopyCustomization
 
 local function GetCopyCustomizationLabel(state)
-    if state.scope == "format" then return "Text Format" end
     if state.scope == "all" then return "All Customizations" end
     local sectionDef = ST.OVERRIDE_SECTIONS[state.sectionId]
     return sectionDef and sectionDef.label or tostring(state.sectionId)
@@ -172,10 +167,6 @@ local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
     -- reverted on the source while the rings are up. A vanished payload
     -- must fail here: a nil format would WIPE the target's saved format,
     -- and a cleared section would no-op while reporting success.
-    if state.scope == "format" then
-        return sourceData.textFormat ~= nil
-            and (targetGroup.displayMode or "icons") == "text"
-    end
     if state.scope == "section" then
         if not (sourceData.overrideSections
             and sourceData.overrideSections[state.sectionId]) then
@@ -184,9 +175,6 @@ local function IsEligibleCopyTarget(state, targetGroup, targetButtonData)
         return CanCopySectionToEntry(targetGroup, targetButtonData, state.sectionId)
     end
     -- "all": eligible when at least one of the source's customizations lands.
-    if sourceData.textFormat ~= nil and (targetGroup.displayMode or "icons") == "text" then
-        return true
-    end
     for sectionId in pairs(sourceData.overrideSections or {}) do
         if CanCopySectionToEntry(targetGroup, targetButtonData, sectionId) then
             return true
@@ -219,16 +207,11 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
     end
 
     local sourceStyle = ST.GetEntryBaseStyle(sourceGroup, sourceData)
-    local applied, skipped, formatCopied = 0, 0, false
+    local applied, skipped = 0, 0
     if state.scope == "section" then
         if CooldownCompanion:CopySectionOverride(sourceData, sourceStyle, buttonData, state.sectionId) then
             applied = 1
         end
-    elseif state.scope == "format" then
-        -- Eligibility guaranteed a non-nil source format at this click.
-        buttonData.textFormat = sourceData.textFormat
-        formatCopied = true
-        applied = 1
     else
         local sections = sourceData.overrideSections or {}
         for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
@@ -239,15 +222,6 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
                 else
                     skipped = skipped + 1
                 end
-            end
-        end
-        if sourceData.textFormat ~= nil then
-            if (targetGroup.displayMode or "icons") == "text" then
-                buttonData.textFormat = sourceData.textFormat
-                formatCopied = true
-                applied = applied + 1
-            else
-                skipped = skipped + 1
             end
         end
     end
@@ -262,9 +236,6 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
     else CooldownCompanion:UpdateGroupStyle(panelId) end
     -- The format is re-parsed on the way through PopulateGroupButtons, which
     -- only the frame refresh reaches. Paid only when a format actually copied.
-    if formatCopied then
-        CooldownCompanion:RefreshGroupFrame(panelId)
-    end
     local name = GetConfigEntryDisplayName(buttonData) or buttonData.name or "entry"
     if skipped > 0 then
         state.lastAppliedText = ("Applied to %s (%d of %d)"):format(name, applied, applied + skipped)
@@ -981,9 +952,6 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         local canUse = ST._CanButtonUseConfigOverrideSection
         local sections = buttonData.overrideSections or {}
         local lines = {}
-        if buttonData.textFormat ~= nil then
-            lines[#lines + 1] = { label = "Text Format", active = displayMode == "text" }
-        end
         for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
             if sections[sectionId] then
                 local sectionDef = ST.OVERRIDE_SECTIONS[sectionId]
@@ -1384,27 +1352,19 @@ function DropGhost.StyleCell(cell, stub, group, mode, panelId)
         ApplyBarSlotVisualAlpha(cell, GHOST_ALPHA)
         return
     end
-    if mode == "textSlots" then
-        StyleTextEntry(cell, stub, group)
-        -- forceBase: the panel's own format at rest, which is what the entry
-        -- shows the moment it exists.
-        ApplyTextSlotConditionalPreview(cell, stub, group, panelId, nil, true)
-        cell._cdcCondAnim = nil
-    else
-        StyleIconEntry(cell, stub, group)
-        ClearSlotEffectPreviews(cell)
-        ResetSlotConditionalVisuals(cell)
-        cell.icon:SetDesaturated(false)
-        -- Base tint only, as the read-only mirror writes it: no conditional
-        -- pass runs on a ghost.
-        local style = group.style or {}
-        if CooldownCompanion.GetEffectiveStyle then
-            style = CooldownCompanion:GetEffectiveStyle(style, stub) or style
-        end
-        local tint = style.iconTintColor
-        cell.icon:SetVertexColor(tint and tint[1] or 1, tint and tint[2] or 1,
-            tint and tint[3] or 1, tint and tint[4] or 1)
+    StyleIconEntry(cell, stub, group)
+    ClearSlotEffectPreviews(cell)
+    ResetSlotConditionalVisuals(cell)
+    cell.icon:SetDesaturated(false)
+    -- Base tint only, as the read-only mirror writes it: no conditional
+    -- pass runs on a ghost.
+    local style = group.style or {}
+    if CooldownCompanion.GetEffectiveStyle then
+        style = CooldownCompanion:GetEffectiveStyle(style, stub) or style
     end
+    local tint = style.iconTintColor
+    cell.icon:SetVertexColor(tint and tint[1] or 1, tint and tint[2] or 1,
+        tint and tint[3] or 1, tint and tint[4] or 1)
     DisableReadOnlySlotInteraction(cell)
     cell:SetAlpha(GHOST_ALPHA)
 end
@@ -1448,9 +1408,6 @@ function DropGhost.ResolveRect(preview, group, mode, stub, target)
         end
     end
     local w, h = layoutDrag.slotW, layoutDrag.slotH
-    if mode == "textSlots" then
-        w, h = GetTextSlotSize(group, stub, w, h)
-    end
     local count = layoutDrag.count or 0
     local perRow = layoutDrag.perRow or 1
     local x, y
@@ -1480,17 +1437,11 @@ end
 --- cell, fit-scaled, centered on the root), and the message steps aside
 --- until the ghost goes, so the box has one subject at a time.
 function DropGhost.PlaceEmpty(preview, host, group, mode, cell, stub)
-    local isBarMode, isTextMode = mode == "barSlots", mode == "textSlots"
+    local isBarMode = mode == "barSlots"
     local style = group.style or {}
-    local geo = GetPanelGeometry(group, isBarMode, isTextMode, nil)
+    local geo = GetPanelGeometry(group, isBarMode)
     local w, h = geo.entryWidth, geo.entryHeight
-    if isTextMode then
-        w, h = GetTextSlotSize(group, stub, w, h)
-    end
     local headerHeight = 0
-    if isTextMode and style.showTextGroupHeader == true then
-        headerHeight = (style.textHeaderFontSize or style.textFontSize or 12) + 4
-    end
     local contentWidth, contentHeight = w, h + headerHeight
     -- Cell 1 of the populated path's grid, for the one line it needs.
     local _, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
@@ -1512,7 +1463,6 @@ function DropGhost.PlaceEmpty(preview, host, group, mode, cell, stub)
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
     content:Show()
-    UpdateTextGroupHeader(preview, group, style, headerHeight)
     if not preview.dropGhostHidMessage then
         local title, label, note = preview.messageTitle, preview.messageLabel, preview.messageNote
         preview.dropGhostHidMessage = {

@@ -31,9 +31,6 @@ local function CanAllPanelsMoveToContainer(panelIds, containerId)
     return true
 end
 
-local function GroupUsesTriggerPanelEntries(group)
-    return group and group.displayMode == "trigger"
-end
 
 -- Row-grammar action strips: compact buttons on grammar-height lines (the
 -- preset-trio shape in Helpers.lua). Flow insets its single row by 3px top
@@ -120,9 +117,8 @@ function ST._RefreshButtonSettingsMultiSelect(scroll, multiCount, multiIndices, 
     ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local isTriggerPanel = GroupUsesTriggerPanelEntries(group)
 
-    if uniformType and group and not isTriggerPanel then
+    if uniformType and group then
         local repData = group.buttons[multiIndices[1]]
         if repData then
             -- The same row-grammar Show & Hide Rules / Talent Conditions

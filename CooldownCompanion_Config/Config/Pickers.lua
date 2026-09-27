@@ -185,8 +185,7 @@ local function FindStandaloneAddonPanelAtPoint(x, y)
     end
     local bestFrame, bestName, bestArea
     for groupId, groupFrame in pairs(CooldownCompanion.groupFrames or {}) do
-        local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
-        local host = button and button.auraTextureHost or nil
+        local host = CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
         if host and IsVisibleSafe(host) then
             local left, bottom, width, height = GetAccessibleRect(host)
             if left and width and width > 0 and height > 0

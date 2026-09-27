@@ -609,8 +609,6 @@ local function ShowPanelContextMenu(panelId, containerId)
     local switchModes = {
         { mode = "icons", label = "Icons" },
         { mode = "bars", label = "Bars" },
-        { mode = "text", label = "Text" },
-        { mode = "textures", label = "Textures" },
     }
     UIDropDownMenu_Initialize(CS.panelContextMenu, function(_, level, menuList)
         level = level or 1
@@ -1806,10 +1804,7 @@ local function RenderExportModeGroups(db, selection, mode)
                 else
                     iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
                     local auraTint = GetConfigAuraPanelBadgeTint(panel)
-                    if panel.displayMode == "trigger" then
-                        iconVertexColor = { 1.0, 0.18, 0.78, 1 }
-                        iconDesaturated = true
-                    elseif auraTint then
+                    if auraTint then
                         iconVertexColor = auraTint
                         iconDesaturated = true
                     end
@@ -2011,10 +2006,7 @@ local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
     else
         iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
         local auraTint = GetConfigAuraPanelBadgeTint(panel)
-        if panel.displayMode == "trigger" then
-            vertexColor = { 1.0, 0.18, 0.78, 1 }
-            desaturated = true
-        elseif auraTint then
+        if auraTint then
             -- Aura Panel polarity: green tracks the player's buffs,
             -- red tracks target debuffs. Desaturated so the tint is
             -- the badge's whole color, not a wash over its gold.

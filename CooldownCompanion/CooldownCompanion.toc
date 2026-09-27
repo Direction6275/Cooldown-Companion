@@ -95,8 +95,6 @@ ButtonFrame\IconVisuals.lua
 ButtonFrame\IconMode.lua
 ButtonFrame\BarVisuals.lua
 ButtonFrame\BarMode.lua
-ButtonFrame\TextFormat.lua
-ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 # Panel frames: shared helpers and providers before lifecycle consumers

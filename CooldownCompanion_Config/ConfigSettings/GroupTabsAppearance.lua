@@ -43,10 +43,6 @@ local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPane
 local MakeCooldownTextAdvancedDescriptor = ST._MakeCooldownTextAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
-local AddTriggerDisplayTypeDropdown = ST._AddTriggerDisplayTypeDropdown
-local BuildTriggerIconAppearanceTab = ST._BuildTriggerIconAppearanceTab
-local BuildTriggerTextAppearanceTab = ST._BuildTriggerTextAppearanceTab
-local BuildTexturePanelAppearanceTab = ST._BuildTexturePanelAppearanceTab
 
 -- Imports from GroupTabsEffects.lua
 local EFFECTS_SPELL_SECTION = ST._EFFECTS_SPELL_SECTION
@@ -56,8 +52,6 @@ local EFFECTS_INTERACTION_SECTION = ST._EFFECTS_INTERACTION_SECTION
 -- Imports from BarModeTabs.lua
 local BuildBarAppearanceTab = ST._BuildBarAppearanceTab
 
--- Imports from TextModeTabs.lua
-local BuildTextAppearanceTab = ST._BuildTextAppearanceTab
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
@@ -791,20 +785,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     end
 
 
-    if group.displayMode == "trigger" then
-        local displayAction = AddTriggerDisplayTypeDropdown(container, group)
-        local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
-        if displayType == "icon" then
-            BuildTriggerIconAppearanceTab(container, group)
-            return
-        elseif displayType == "text" then
-            local textEditor = BuildTriggerTextAppearanceTab(container, group)
-            if displayAction then
-                displayAction:SetCallback("OnClick", function() textEditor:SetFocus() end)
-            end
-            return
-        end
-    end
 
     if group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         -- Row grammar. A rotation assistant panel shows one recommendation at
@@ -911,16 +891,8 @@ local function BuildAppearanceTab(container, settingsGroup)
         return
     end
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
-        BuildTexturePanelAppearanceTab(container, group)
-        return
-    end
 
     -- Branch for text mode
-    if group.displayMode == "text" then
-        BuildTextAppearanceTab(container, group, style)
-        return
-    end
 
     -- Branch for bar mode
     if group.displayMode == "bars" then
