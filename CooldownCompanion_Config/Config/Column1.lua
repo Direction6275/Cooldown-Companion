@@ -1117,12 +1117,48 @@ end
 -- path as the Group context menu.
 ST._CreatePanelInContainer = CreatePanelInContainer
 
--- Every create menu offers the account's templates after the specialists,
--- and offers nothing, not even the separator, while there are none. The
--- create path itself lives in PanelShared, which loads after this file.
+-- Both create menus use the same choices and actions; only the label prefix
+-- differs. Recheck the target on click because the menu can outlive its Group.
+local function AddPanelTypeCreateItems(level, containerId, labelPrefix)
+    for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
+        if panelType.startsMenuSection then
+            UIDropDownMenu_AddSeparator(level)
+        end
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = (labelPrefix or "") .. panelType.label
+        info.notCheckable = true
+        local displayMode = panelType.mode
+        if ST._AddPanelTypeMenuTooltip then
+            ST._AddPanelTypeMenuTooltip(info, displayMode)
+        end
+        info.func = function()
+            CloseDropDownMenus()
+            if not IsCreateTargetContainer(containerId) then return end
+            CreatePanelInContainer(containerId, displayMode)
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end
+end
+
+local function AddCDMStarterCreateItem(level, containerId)
+    local info = UIDropDownMenu_CreateInfo()
+    ST._AddCDMStarterMenuTooltip(info)
+    info.text = "From Template: " .. info.tooltipTitle
+    info.notCheckable = true
+    info.func = function()
+        CloseDropDownMenus()
+        if not IsCreateTargetContainer(containerId) then return end
+        if ST._CreateMissingCDMPanelsInSelectedContainer then
+            ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
+        end
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
+
+-- Every create menu groups the built-in Cooldown Manager setup with saved
+-- templates after the specialists. PanelShared owns their creation paths.
 local function AddPanelTemplateCreateItems(level, containerId)
     local templates = GetPanelTemplateList(nil)
-    if #templates == 0 then return end
     UIDropDownMenu_AddSeparator(level)
     for _, entry in ipairs(templates) do
         local info = UIDropDownMenu_CreateInfo()
@@ -1141,6 +1177,7 @@ local function AddPanelTemplateCreateItems(level, containerId)
         end
         UIDropDownMenu_AddButton(info, level)
     end
+    AddCDMStarterCreateItem(level, containerId)
 end
 
 local function ShowContainerContextMenu(db, containerId, container)
@@ -1256,23 +1293,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then
-            for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
-                if panelType.startsMenuSection then
-                    UIDropDownMenu_AddSeparator(level)
-                end
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = panelType.label
-                info.notCheckable = true
-                if ST._AddPanelTypeMenuTooltip then
-                    ST._AddPanelTypeMenuTooltip(info, panelType.mode)
-                end
-                local targetMode = panelType.mode
-                info.func = function()
-                    CloseDropDownMenus()
-                    CreatePanelInContainer(containerId, targetMode)
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
+            AddPanelTypeCreateItems(level, containerId)
             AddPanelTemplateCreateItems(level, containerId)
         end
     end, "MENU")
@@ -1313,49 +1334,8 @@ local function EnsurePanelTypeMenu()
     return CS.panelTypeMenu
 end
 
--- The menu can outlive the Group that opened it, so every item re-answers the
--- create gate before acting. PanelShared owns both the order and section breaks.
-local function AddPanelTypeCreateItems(level, containerId)
-    for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
-        if panelType.startsMenuSection then
-            UIDropDownMenu_AddSeparator(level)
-        end
-        local info = UIDropDownMenu_CreateInfo()
-        info.text = "New " .. panelType.label
-        info.notCheckable = true
-        local displayMode = panelType.mode
-        if ST._AddPanelTypeMenuTooltip then
-            ST._AddPanelTypeMenuTooltip(info, displayMode)
-        end
-        info.func = function()
-            CloseDropDownMenus()
-            if not IsCreateTargetContainer(containerId) then return end
-            CreatePanelInContainer(containerId, displayMode)
-        end
-        UIDropDownMenu_AddButton(info, level)
-    end
-end
-
-local function AddCDMStarterCreateItem(level, containerId)
-    local info = UIDropDownMenu_CreateInfo()
-    info.text = "Add Missing CDM Panels"
-    info.notCheckable = true
-    if ST._AddCDMStarterMenuTooltip then
-        ST._AddCDMStarterMenuTooltip(info)
-    end
-    info.func = function()
-        CloseDropDownMenus()
-        if not IsCreateTargetContainer(containerId) then return end
-        if ST._CreateMissingCDMPanelsInSelectedContainer then
-            ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
-        end
-    end
-    UIDropDownMenu_AddButton(info, level)
-end
-
 -- Opened by the Group overview's add tile. The everyday types, specialists,
--- saved templates and Cooldown Manager starter share one list, separated into
--- visual groups.
+-- and templates share one list, separated into visual groups.
 -- It uses the create surfaces' own dropdown frame rather than the Group context
 -- menu's, so opening it never toggles or re-initializes that one, and it opens
 -- at the cursor because the tile it belongs to moves with the grid.
@@ -1367,10 +1347,8 @@ local function ShowPanelTypeMenuForContainer(containerId)
     UIDropDownMenu_Initialize(menu, function(_, level)
         level = level or 1
         if level == 1 then
-            AddPanelTypeCreateItems(level, containerId)
+            AddPanelTypeCreateItems(level, containerId, "New ")
             AddPanelTemplateCreateItems(level, containerId)
-            UIDropDownMenu_AddSeparator(level)
-            AddCDMStarterCreateItem(level, containerId)
         end
     end, "MENU")
     menu:SetFrameStrata("FULLSCREEN_DIALOG")

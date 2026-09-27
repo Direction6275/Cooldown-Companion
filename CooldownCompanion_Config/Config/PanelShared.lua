@@ -143,8 +143,13 @@ local function BuildPanelCreateOptions(displayMode)
     }
 end
 local function AddCDMStarterMenuTooltip(info)
-    info.tooltipTitle = "Add Missing CDM Panels"
-    info.tooltipText = "Creates any missing Cooldown Manager starter panels without duplicating existing CDM panels."
+    info.tooltipTitle = "Cooldown Manager Panels"
+    info.tooltipText = "Creates up to four editable panels from the entries currently displayed in Blizzard's Cooldown Manager:"
+        .. "\n\nEssential Cooldowns: spell icons"
+        .. "\nUtility Cooldowns: spell icons"
+        .. "\nTracked Buffs: aura icons"
+        .. "\nTracked Bars: aura bars"
+        .. "\n\nEmpty categories and Cooldown Manager panels already in this group are skipped."
     info.tooltipOnButton = true
 end
 
