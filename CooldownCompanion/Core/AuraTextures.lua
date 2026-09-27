@@ -10,16 +10,7 @@ local LSM = LibStub("LibSharedMedia-3.0")
 local AT = ST._AT or {}
 ST._AT = AT
 
-CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH = 120
-CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LINES = 4
-CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_X = 4
-CooldownCompanion.TRIGGER_PANEL_TEXT_INSET_Y = 2
-CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_X = 6
-CooldownCompanion.TRIGGER_PANEL_TEXT_OVERFLOW_Y = 4
-
-local GetTime = GetTime
 local ipairs = ipairs
-local issecretvalue = issecretvalue
 local math_cos = math.cos
 local math_max = math.max
 local math_sin = math.sin
@@ -29,7 +20,6 @@ local function IsRuntimeItemLike(buttonData)
     return buttonData
         and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
 end
-local string_gsub = string.gsub
 local string_upper = string.upper
 local tonumber = tonumber
 local type = type
@@ -335,23 +325,6 @@ local function NormalizeTextureIndicatorSection(sectionKey, sectionData)
     end
 
     return sectionData
-end
-
-local function NormalizeTextureIndicatorStore(styleTable)
-    if type(styleTable) ~= "table" then
-        return nil
-    end
-
-    if type(styleTable.textureIndicators) ~= "table" then
-        styleTable.textureIndicators = {}
-    end
-
-    local store = styleTable.textureIndicators
-    for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
-        store[sectionKey] = NormalizeTextureIndicatorSection(sectionKey, store[sectionKey])
-    end
-
-    return store
 end
 
 CooldownCompanion.NormalizeTextureIndicatorSection = NormalizeTextureIndicatorSection
@@ -693,7 +666,7 @@ function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
     return self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"
         and buttonData.type == "spell"
-        and (not ST.IsIndicatorGroup(group) or buttonData.enabled ~= false)
+        and buttonData.enabled ~= false
         and (buttonData.addedAs == "aura"
             or buttonData.textureAuraDisplayEnabled == true)
 end
@@ -788,10 +761,6 @@ function CooldownCompanion:GetTexturePanelSettings(groupOrId)
     if ST.IsIndicatorGroup(group) then return NormalizeAuraTextureSettings(ST.Indicator.Initialize(group).signal) end
 end
 
-function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId)
-    return self:GetTexturePanelSettings(groupOrId)
-end
-
 function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
     if not ST.IsIndicatorGroup(group) then return end
@@ -824,13 +793,6 @@ function CooldownCompanion:ResetTextureIndicatorRootState(host)
     host.visualRoot:SetScale(1)
     host.visualRoot:ClearAllPoints()
     host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
-end
-
-function CooldownCompanion.NormalizeTriggerDisplayType(displayType)
-    if displayType == "icon" or displayType == "text" then
-        return displayType
-    end
-    return "texture"
 end
 
 function CooldownCompanion.IsValidTriggerPanelIconTexture(iconTexture)
@@ -878,42 +840,6 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
     return settings
 end
 
-
-function CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
-    if type(value) ~= "string" then
-        return ""
-    end
-
-    return string_gsub(string_gsub(value, "\r\n", "\n"), "\r", "\n")
-end
-
-function CooldownCompanion.SanitizeTriggerPanelTextValue(value)
-    value = CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
-
-    local maxLength = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LENGTH or 120
-    if #value > maxLength then
-        value = value:sub(1, maxLength)
-    end
-
-    local maxLines = CooldownCompanion.TRIGGER_PANEL_TEXT_MAX_LINES or 4
-    local lineCount = 1
-    local cutIndex = nil
-    for index = 1, #value do
-        if value:sub(index, index) == "\n" then
-            lineCount = lineCount + 1
-            if lineCount > maxLines then
-                cutIndex = index - 1
-                break
-            end
-        end
-    end
-
-    if cutIndex then
-        value = value:sub(1, cutIndex)
-    end
-
-    return value
-end
 
 function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId)
     local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
@@ -1129,110 +1055,6 @@ function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
 
     local options = TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive
     return options, { "true", "false" }
-end
-
-function CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex)
-    if type(buttonData) ~= "table" then
-        return nil
-    end
-
-    local clause = self:GetTriggerConditionClauses(buttonData)[clauseIndex or 1]
-    if not clause then
-        return nil
-    end
-
-    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-        return clause.expected == false and "false" or "true"
-    end
-
-    return NormalizeTriggerStateKey(conditionKey, clause.state)
-end
-
-function CooldownCompanion:SetTriggerConditionClauses(buttonData, clauses)
-    if type(buttonData) ~= "table" then
-        return
-    end
-
-    buttonData.triggerConditions = clauses
-    self:NormalizeTriggerConditionRowData(buttonData)
-end
-
-function CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, conditionKey)
-    if type(buttonData) ~= "table" then
-        return
-    end
-
-    local clauses = self:GetTriggerConditionClauses(buttonData)
-    local clause = clauses[clauseIndex]
-    if not clause then
-        return
-    end
-
-    clause.key = conditionKey
-    clause.expected = nil
-    clause.state = nil
-    self:SetTriggerConditionClauses(buttonData, clauses)
-end
-
-function CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
-    if type(buttonData) ~= "table" then
-        return
-    end
-
-    local clauses = self:GetTriggerConditionClauses(buttonData)
-    local clause = clauses[clauseIndex or 1]
-    if not clause then
-        return
-    end
-
-    local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-        clause.expected = (value ~= "false")
-        clause.state = nil
-        self:SetTriggerConditionClauses(buttonData, clauses)
-        return
-    end
-
-    clause.state = NormalizeTriggerStateKey(conditionKey, value)
-    clause.expected = nil
-    self:SetTriggerConditionClauses(buttonData, clauses)
-end
-
-function CooldownCompanion:AddTriggerConditionClause(buttonData, conditionKey)
-    if type(buttonData) ~= "table" then
-        return false
-    end
-
-    local clauses = self:GetTriggerConditionClauses(buttonData)
-    local excludedKeys = {}
-    for _, clause in ipairs(clauses) do
-        excludedKeys[#excludedKeys + 1] = clause.key
-    end
-
-    local _, order = self:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
-    if #order == 0 then
-        return false
-    end
-
-    clauses[#clauses + 1] = { key = conditionKey or order[1] }
-    self:SetTriggerConditionClauses(buttonData, clauses)
-    return true
-end
-
-function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
-    if type(buttonData) ~= "table" then
-        return false
-    end
-
-    local clauses = self:GetTriggerConditionClauses(buttonData)
-    if #clauses <= 1 or not clauses[clauseIndex] then
-        return false
-    end
-
-    table.remove(clauses, clauseIndex)
-    self:SetTriggerConditionClauses(buttonData, clauses)
-    return true
 end
 
 function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId)

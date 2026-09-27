@@ -980,15 +980,8 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
         elseif level == 1 then
             local sourceGroup = CooldownCompanion.db.profile.groups[sourceGroupId]
 
-            -- A text panel IS its format string, so the editor that owns it
-            -- leads the menu. The editor is config surface now rather than a
-            -- popout, and the panel's Format tab is a LENS onto the selected
-            -- entry, so there is one destination for every entry: select it,
-            -- keep the surface on the panel tabs, and open Format.
-
             local isIndicator = ST.IsIndicatorGroup(sourceGroup)
-            -- The texture is the display; its lone driver has no separate icon
-            -- or independent enabled state to configure in this menu.
+            -- Indicators own source and display settings at panel scope.
             if not isIndicator then
                 -- Disable / Enable button
                 local toggleInfo = UIDropDownMenu_CreateInfo()

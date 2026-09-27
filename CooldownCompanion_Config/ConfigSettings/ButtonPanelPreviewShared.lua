@@ -1478,30 +1478,14 @@ local function GetHostFitScale(host, contentWidth, contentHeight, readOnly, guid
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 end
 
--- Fallback for panel types with no meaningful geometric mirror (trigger,
--- texture, and rotation-assistant panels): a flat strip of
--- clickable entry icons with the same selection, badges, tooltips, and
--- context-menu behavior as the mirrored slots.
+-- Fallback for panels without a geometric mirror, such as the rotation
+-- assistant: a flat strip with entry selection, badges and tooltips.
 local STRIP_ICON_SIZE = 36
 local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
--- Trigger panels stack their display visual above the selection strip inside
--- one preview: the strip may claim at most this share of the fit height, and
--- the band between the two reuses the preview's own padding rhythm.
-local TRIGGER_PREVIEW_STRIP_MAX_SHARE = 0.35
 -- Bottom band reserved for compact entry guidance beneath a specialized mirror.
 local EMPTY_ENTRY_GUIDANCE_BAND = 44
-
-local function GetStripNaturalSize(count)
-    if count <= 0 then
-        return 0, 0
-    end
-    local cols = math_min(count, STRIP_PER_ROW)
-    local rows = math_ceil(count / STRIP_PER_ROW)
-    return (cols - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE,
-        (rows - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE
-end
 
 local function GetPanelPreviewNaturalSize(group, includeSections, modules)
     modules = modules or {}
@@ -1636,8 +1620,6 @@ PP.ApplySelectionVisuals = ApplySelectionVisuals
 PP.PANEL_PREVIEW_PADDING = PANEL_PREVIEW_PADDING
 PP.EMPTY_ENTRY_GUIDANCE_BAND = EMPTY_ENTRY_GUIDANCE_BAND
 PP.GetHostFitBox = GetHostFitBox
-PP.GetStripNaturalSize = GetStripNaturalSize
-PP.TRIGGER_PREVIEW_STRIP_MAX_SHARE = TRIGGER_PREVIEW_STRIP_MAX_SHARE
 PP.EnsurePreviewState = EnsurePreviewState
 PP.ResetPreviewState = ResetPreviewState
 PP.IsIconModePanel = IsIconModePanel

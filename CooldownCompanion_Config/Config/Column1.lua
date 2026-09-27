@@ -2622,7 +2622,6 @@ local function RefreshColumn1(preserveDrag)
                             CS.panelSettingsTab = "loadconditions"
                             -- A deliberate destination, so it outranks a
                             -- display mode's own default landing tab.
-                            CS.panelSettingsTabExplicit = true
                             CooldownCompanion:RefreshConfigPanel()
                         else
                             SelectConfigPanel(panelId, {
