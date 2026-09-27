@@ -107,16 +107,6 @@ local PRIMARY_CARD_STYLE = {
     minWidth = 220,
     columnChoices = { 2, 1 },
 }
-local SECONDARY_CARD_STYLE = {
-    titleFont = "GameFontNormal",
-    bodyFont = CARD_BODY_FONT,
-    titleHeight = 18,
-    padding = 8,
-    minHeight = 48,
-    minWidth = 168,
-    columnChoices = { 4, 2, 1 },
-    titleOnly = true,
-}
 local FAMILY_CARD_STYLE = {
     titleFont = "GameFontNormal",
     bodyFont = CARD_BODY_FONT,
@@ -880,8 +870,7 @@ end
 -- are the measurement position; placement centers the measured block later.
 local function ApplyPickerCardStyle(card, style, textWidth)
     card.title:SetFontObject(_G[style.titleFont])
-    local titleColor = style.titleColor or CARD_TITLE_COLOR
-    card.title:SetTextColor(titleColor[1], titleColor[2], titleColor[3])
+    card.title:SetTextColor(CARD_TITLE_COLOR[1], CARD_TITLE_COLOR[2], CARD_TITLE_COLOR[3])
     card.title:SetWidth(textWidth)
     card.title:SetHeight(style.wrapTitle and 0 or style.titleHeight)
     card.title:SetJustifyH("CENTER")
@@ -1120,7 +1109,7 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
     for _, family in ipairs(PICKER_FAMILIES) do
         familyByKey[family.key] = { key = family.key, entries = {} }
     end
-    local primaryEntries, secondaryEntries = {}, {}
+    local primaryEntries = {}
     for _, panelType in ipairs(ST._PANEL_TYPES or {}) do
         local entry = {
             title = panelType.pickerLabel or panelType.label,
@@ -1135,33 +1124,29 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
             primaryEntries[#primaryEntries + 1] = entry
         elseif family then
             family.entries[#family.entries + 1] = entry
-        else
-            secondaryEntries[#secondaryEntries + 1] = entry
         end
     end
     local cardBandWidth = math_max(1,
         math_min(visibleWidth, EMPTY_STATE_MAX_CARD_WIDTH))
     local primaryFirst = 1
     local families = {}
-    local secondaryFirst = primaryFirst + #primaryEntries
+    local nextCardIndex = primaryFirst + #primaryEntries
     for _, definition in ipairs(PICKER_FAMILIES) do
         local family = familyByKey[definition.key]
         local hasEntries = #family.entries > 0
         block.families[family.key].label:SetShown(hasEntries)
         block.families[family.key].description:SetShown(hasEntries)
         if hasEntries then
-            family.firstIndex = secondaryFirst
-            secondaryFirst = secondaryFirst + #family.entries
+            family.firstIndex = nextCardIndex
+            nextCardIndex = nextCardIndex + #family.entries
             families[#families + 1] = family
         end
     end
     local primaryMetrics = MeasurePickerTier(overview, block, primaryFirst,
         primaryEntries, PRIMARY_CARD_STYLE, cardBandWidth)
-    local secondaryMetrics = MeasurePickerTier(overview, block, secondaryFirst,
-        secondaryEntries, SECONDARY_CARD_STYLE, cardBandWidth)
     y = y + PlacePickerTier(overview, block, primaryFirst, primaryEntries,
         primaryMetrics, PRIMARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
-    if #primaryEntries > 0 and (#families > 0 or #secondaryEntries > 0) then
+    if #primaryEntries > 0 and #families > 0 then
         y = y + EMPTY_STATE_SECTION_GAP
         block.typeDivider:ClearAllPoints()
         block.typeDivider:SetPoint("TOP", block, "TOP", 0, -y)
@@ -1179,16 +1164,10 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
     else
         block.familyNote:Hide()
     end
-    if #secondaryEntries > 0 then
-        y = y + CARD_TIER_GAP
-    end
-    y = y + PlacePickerTier(overview, block, secondaryFirst, secondaryEntries,
-        secondaryMetrics, SECONDARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
-
     -- The reflow path re-runs this pass without a reset, so a card the last
     -- layout used and this one does not must
     -- not linger on screen holding a stale create action.
-    local usedCards = secondaryFirst + #secondaryEntries - 1
+    local usedCards = nextCardIndex - 1
     for index = usedCards + 1, overview.usedCards or 0 do
         local card = overview.cards[index]
         if card then
