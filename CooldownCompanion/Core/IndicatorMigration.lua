@@ -70,6 +70,7 @@ local function Convert(group)
         end
     end
     group.textureSettings, group.triggerSettings = nil, nil
+    I.Effects(group)
     return nil, legacy
 end
 
@@ -79,7 +80,12 @@ function M.Apply(profile)
     for id, group in pairs(profile.groups or {}) do
         local mode = group.displayMode
         if mode == "indicator" then
+            if not group.indicatorSettings or group.indicatorSettings.effectVersion ~= 1 then
+                profile._indicatorEffectMigrationBackup = profile._indicatorEffectMigrationBackup or {}
+                profile._indicatorEffectMigrationBackup[id] = profile._indicatorEffectMigrationBackup[id] or CopyTable(group)
+            end
             I.Initialize(group)
+            I.Effects(group)
             I.NormalizeSourceEnablement(group)
         elseif mode == "text" or mode == "textures" or mode == "trigger" then
             local reason, legacy = Convert(group)
@@ -106,7 +112,11 @@ function M.ConvertImport(data)
         if type(value) ~= "table" then return end
         if type(value.buttons) == "table" and type(value.displayMode) == "string" then
             if value.displayMode == "indicator" then
+                -- Old templates omitted source family. Do not invent one and
+                -- silently select the wrong legacy store; apply reports it.
+                if value.templateVersion then return end
                 I.Initialize(value)
+                I.Effects(value)
                 I.NormalizeSourceEnablement(value)
                 return
             end
@@ -115,7 +125,8 @@ function M.ConvertImport(data)
             return
         end
         for key, child in pairs(value) do
-            if key ~= "_indicatorMigrationBackup" and key ~= "_unifiedPanelBackup" then Visit(child) end
+            if key ~= "_indicatorMigrationBackup" and key ~= "_indicatorEffectMigrationBackup"
+                and key ~= "_unifiedPanelBackup" then Visit(child) end
         end
     end
     Visit(candidate)

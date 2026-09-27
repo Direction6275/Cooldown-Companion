@@ -371,6 +371,7 @@ local RETIRED_PROFILE_KEYS = {
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
     _indicatorMigrationBackup = true,
+    _indicatorEffectMigrationBackup = true,
     _indicatorMigrationVersion = true,
     _unifiedPanelBackup = true,
     _barGeometryBackup = true,

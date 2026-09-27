@@ -354,6 +354,8 @@ local function NormalizeTextureIndicatorStore(styleTable)
     return store
 end
 
+CooldownCompanion.NormalizeTextureIndicatorSection = NormalizeTextureIndicatorSection
+
 function CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, effectData)
     local defaults = CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS[effectKey]
     if not defaults then
@@ -849,7 +851,10 @@ end
 
 function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeTriggerPanelEffectStore(ST.Indicator.Settings(group)) end
+    if ST.IsIndicatorGroup(group) then
+        ST.Indicator.Effects(group)
+        return CooldownCompanion.NormalizeTriggerPanelEffectStore(ST.Indicator.Settings(group))
+    end
     if type(group) ~= "table" then
         return nil
     end
@@ -1395,6 +1400,7 @@ end
 
 function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
+    if ST.IsIndicatorGroup(group) then return {aura = ST.Indicator.NativeEffect(group)} end
     if type(group) ~= "table" then
         return nil
     end

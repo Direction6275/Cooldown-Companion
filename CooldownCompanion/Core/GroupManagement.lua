@@ -518,6 +518,10 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
         and self:IsCursorAnchor(sourceGroup.anchor) ~= self:IsCursorAnchor(targetGroup.anchor) then
         return false, "anchor_mode_mismatch"
     end
+    if mode == "indicator" and (scope == "indicators" or scope == "all") then
+        local allowed, reason = ST.Indicator.CanApplyEffects(sourceGroup, targetGroup, scope == "all")
+        if not allowed then return false, reason end
+    end
 
     -- Any panel in the profile is a legal source or target as long as both
     -- resolve to a valid class scope. This is a deliberate widening from the
@@ -688,7 +692,10 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
                 if scope == "indicators" then effects = true end
             end
         end
-        ST.Indicator.ApplyPresentation(source, targetGroup, appearance, effects)
+        if appearance or effects then
+            local applied, reason = ST.Indicator.ApplyPresentation(source, targetGroup, appearance, effects)
+            if not applied then return false, reason end
+        end
     end
     if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
@@ -2007,7 +2014,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     local group = self.db.profile.groups[groupId]
     if not group then return end
     local replacementTarget
-    if replaceIndicatorSource then
+    if replaceIndicatorSource or (ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group)) then
         replacementTarget = group
         group = ST.Indicator.StageSourceReplacement(group, replaceIndicatorSource)
         if not group then return end
@@ -2237,7 +2244,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         self:Print("Aura displays cannot be combined with conditions. Create an aura Indicator instead.")
         return nil
     end
-    ST.Indicator.OnSourceAdded(group, newButton)
+    local added, reason = ST.Indicator.OnSourceAdded(group, newButton)
+    if not added then
+        table.remove(group.buttons, buttonIndex)
+        self:Print(ST.Indicator.EffectFailureText[reason])
+        return nil
+    end
     if self.EnableTexturePanelAuraDisplayForEntry then
         self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
     end
@@ -2252,7 +2264,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         ST.SetPanelSectionForEntry(group, newButton, section)
     end
 
-    if replacementTarget then ST.Indicator.CommitSourceReplacement(replacementTarget, group) end
+    if replacementTarget then
+        local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
+        if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+    end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex, transformNotified
@@ -2262,7 +2277,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local group = self.db.profile.groups[groupId]
     if not group then return end
     local replacementTarget
-    if replaceIndicatorSource then
+    if replaceIndicatorSource or (ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group)) then
         replacementTarget = group
         group = ST.Indicator.StageSourceReplacement(group, replaceIndicatorSource)
         if not group then return end
@@ -2300,12 +2315,20 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = newButton
 
-    ST.Indicator.OnSourceAdded(group, newButton)
+    local added, reason = ST.Indicator.OnSourceAdded(group, newButton)
+    if not added then
+        table.remove(group.buttons, buttonIndex)
+        self:Print(ST.Indicator.EffectFailureText[reason])
+        return nil
+    end
     if self:IsTriggerPanelGroup(group) and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
-    if replacementTarget then ST.Indicator.CommitSourceReplacement(replacementTarget, group) end
+    if replacementTarget then
+        local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
+        if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+    end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex

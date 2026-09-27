@@ -1702,7 +1702,7 @@ local PANEL_VISIBILITY_COPY_SCOPE = {
 ST.PANEL_COPY_SCOPES = {
     indicator = {
         appearance = {},
-        indicators = {styleKeys = {"textureIndicators"}},
+        indicators = {},
         visibility = PANEL_VISIBILITY_COPY_SCOPE,
     },
     icons = {
@@ -1824,7 +1824,7 @@ ST.PANEL_TEMPLATE_SECTION_KEYS = {
 -- section participates; these are the additional PANEL-owned style fields.
 -- Selective quick-copy scopes above intentionally remain narrower.
 ST.PANEL_TEMPLATE_STYLE_KEYS = {
-    indicator = {"strataOrder", "textureIndicators"},
+    indicator = {"strataOrder"},
     icons = {
         "maintainAspectRatio", "buttonSize", "iconWidth", "iconHeight", "buttonSpacing",
         "durationFormat", "allowPings", "tooltipAnchor", "tooltipHideInCombat",

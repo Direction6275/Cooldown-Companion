@@ -1003,8 +1003,17 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
     end
     local auraControlled = opts and opts.auraControlled == true
     local finder = SPECIAL_FINDER.textureEffects[sectionKey]
+    local function SaveEffect()
+        if ST.IsIndicatorGroup(group) then
+            ST.Indicator.SelectNativeEffect(group, config.effectType, config.enabled)
+        end
+    end
     local function RefreshRuntime()
         RefreshTextureIndicatorRuntime(group, auraControlled)
+    end
+    local function RefreshConfig()
+        SaveEffect()
+        RefreshTextureIndicatorConfig(group, auraControlled)
     end
 
     if container then
@@ -1021,12 +1030,12 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             else
                 config.enabled = false
                 CooldownCompanion:Print("All texture indicator effects are already in use by other sections.")
-                RefreshTextureIndicatorConfig(group, auraControlled)
+                RefreshConfig()
                 return
             end
         end
         config.enabled = true
-        RefreshTextureIndicatorConfig(group, auraControlled)
+        RefreshConfig()
     end
 
     local enableCb = AddCheckboxRow(container, {
@@ -1039,12 +1048,15 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                 return
             end
             config.enabled = false
-            RefreshTextureIndicatorConfig(group, auraControlled)
+            RefreshConfig()
         end,
     })
 
     local function BuildTextureIndicatorOptions(primary, details, inline)
         details = details or primary
+        -- Timings/colors bind the saved owner directly so the shared temporary
+        -- preview/restore transaction sees the same data as both renderers.
+        local effectConfig = ST.IsIndicatorGroup(group) and ST.Indicator.Effects(group)[config.effectType] or config
         -- Aura-controlled Texture effects inherit Blizzard's aura visibility.
         -- A combat-only transition would require touching the forbidden child
         -- when combat changes, so that live-only refinement is intentionally
@@ -1078,7 +1090,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
             value = dormant and "none" or config.effectType,
             onChange = function(value)
                 config.effectType = value or "none"
-                RefreshTextureIndicatorConfig(group, auraControlled)
+                RefreshConfig()
             end,
         })
 
@@ -1087,22 +1099,22 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
                 label = "Shift Color",
                 setting = finder and finder.shiftColor,
                 indent = inline == true,
-                tbl = config,
+                tbl = effectConfig,
                 key = "color",
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
                 onConfirm = RefreshRuntime,
             })
-            BuildTextureIndicatorSpeedSlider(details, config, "Shift Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Shift Duration", RefreshRuntime, inline,
                 finder and finder.shiftDuration)
         elseif config.effectType == "pulse" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Pulse Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Pulse Duration", RefreshRuntime, inline,
                 finder and finder.pulseDuration)
         elseif config.effectType == "shrinkExpand" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Cycle Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Cycle Duration", RefreshRuntime, inline,
                 finder and finder.cycleDuration)
         elseif config.effectType == "bounce" then
-            BuildTextureIndicatorSpeedSlider(details, config, "Bounce Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Bounce Duration", RefreshRuntime, inline,
                 finder and finder.bounceDuration)
         end
     end
@@ -1681,6 +1693,9 @@ local function SpecialFinderTriggerTextSettings(context)
 end
 
 local function SpecialFinderTextureIndicators(context)
+    if context and ST.IsIndicatorGroup(context.group) then
+        return CooldownCompanion:GetTexturePanelIndicatorSettings(context.group)
+    end
     local style = context and context.group and context.group.style
     return style and style.textureIndicators or nil
 end

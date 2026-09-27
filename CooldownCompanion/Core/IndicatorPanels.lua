@@ -22,6 +22,105 @@ function I.Primary(group)
     return settings and group.buttons and group.buttons[settings.primaryEntry or 1]
 end
 
+I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
+I.EffectFailureText = {
+    indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
+    indicator_effects_multiple = "Aura Indicators support one visual effect. Turn off extra effects before choosing an aura source or copying these settings.",
+    indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
+}
+
+-- Pure reader for validation and snapshots. Before the unified store existed,
+-- only the active source family owned effects; the other store was dormant.
+function I.ReadEffects(group)
+    local settings = I.Settings(group) or {}
+    if settings.effectVersion == 1 then return settings.effects or {}, settings.effectSelection end
+    if group.templateVersion and settings.tracking == nil then
+        return nil, nil, "indicator_effects_legacy"
+    end
+    if settings.tracking ~= "aura" then return settings.effects or {} end
+    local legacy = group.style and group.style.textureIndicators and group.style.textureIndicators.aura or {}
+    local aura = Addon.NormalizeTextureIndicatorSection("aura", CopyTable(legacy))
+    local key = aura.effectType
+    local effects = {}
+    for _, effectKey in ipairs(I.EffectOrder) do
+        -- The old single selector shared duration/color between choices.
+        effects[effectKey] = {enabled = effectKey == key and aura.enabled == true, speed = aura.speed}
+        if effectKey == "colorShift" then effects[effectKey].color = CopyTable(aura.color) end
+    end
+    return effects, key
+end
+
+local function StoreEffects(group, effects, selection)
+    local settings = I.Settings(group)
+    settings.effects = CopyTable(effects)
+    settings.effectSelection = selection
+    settings.effectVersion = 1
+    if group.style then group.style.textureIndicators = nil end
+    return settings.effects
+end
+
+function I.Effects(group)
+    local settings = I.Settings(group)
+    if not settings then return end
+    if settings.effectVersion == 1 then return settings.effects end
+    local effects, selection = I.ReadEffects(group)
+    if effects then return StoreEffects(group, effects, selection) end
+end
+
+-- Empty panels defer capability checks until their first source is known.
+-- Display switching still retains dormant effects, as the editor advertises;
+-- transfers must not introduce an effect that the destination cannot render.
+function I.CheckEffects(effects, tracking, displayType)
+    if not tracking then return true end
+    local count = 0
+    for _, key in ipairs(I.EffectOrder) do
+        if effects[key] and effects[key].enabled == true then count = count + 1 end
+    end
+    if tracking == "aura" and count > 1 then return false, "indicator_effects_multiple" end
+    local unavailable = tracking == "aura" and "colorShift" or "shrinkExpand"
+    if displayType == "text" and effects[unavailable] and effects[unavailable].enabled == true then
+        return false, "indicator_effects_text"
+    end
+    return true
+end
+
+function I.CanApplyEffects(source, destination, appearance)
+    local effects, _, reason = I.ReadEffects(source)
+    if not effects then return false, reason end
+    local saved, target = I.Settings(source) or {}, I.Settings(destination) or {}
+    return I.CheckEffects(effects, I.Primary(destination) and target.tracking,
+        appearance and saved.displayType or target.displayType)
+end
+
+function I.CheckSourceEffects(group, source)
+    local effects, _, reason = I.ReadEffects(group)
+    if not effects then return false, reason end
+    return I.CheckEffects(effects, source.addedAs == "aura" and "aura" or "conditions",
+        (I.Settings(group) or {}).displayType)
+end
+
+-- The native aura renderer consumes one selected effect. This is a derived
+-- description, never a second saved store. Config commits edits explicitly.
+function I.NativeEffect(group)
+    I.Effects(group)
+    local settings = I.Settings(group)
+    local effects = Addon.NormalizeTriggerPanelEffectStore(settings)
+    local selected = settings.effectSelection or "pulse"
+    for _, key in ipairs(I.EffectOrder) do
+        if effects[key].enabled then selected = key; break end
+    end
+    local effect = effects[selected] or {}
+    return {effectType = selected, enabled = effect.enabled == true,
+        speed = effect.speed, color = effect.color and CopyTable(effect.color), combatOnly = false}
+end
+
+function I.SelectNativeEffect(group, key, enabled)
+    local effects = I.Effects(group)
+    for _, effect in pairs(effects) do effect.enabled = false end
+    if effects[key] then effects[key].enabled = enabled == true end
+    I.Settings(group).effectSelection = key
+end
+
 local function NewReadouts(displayType)
     return {
         label = displayType == "text" and "name" or "none", timer = displayType == "text",
@@ -83,8 +182,13 @@ local function NormalizeCountReadouts(group)
 end
 
 function I.OnSourceAdded(group, entry)
+    if ST.IsIndicatorGroup(group) and (not I.Primary(group) or I.Primary(group) == entry) then
+        local allowed, reason = I.CheckSourceEffects(group, entry)
+        if not allowed then return false, reason end
+    end
     local settings = I.Initialize(group)
-    if not settings then return end
+    if not settings then return true end
+    I.Effects(group) -- Capture the previous family before tracking changes.
     if entry.enabled == nil then entry.enabled = true end
     if I.Primary(group) == entry then
         I.NormalizeSourceEnablement(group)
@@ -105,6 +209,7 @@ function I.OnSourceAdded(group, entry)
             entry.triggerCondition, entry.triggerExpected = "cooldownActive", false
         end
     end
+    return true
 end
 
 function I.IconSettings(group)
@@ -178,6 +283,10 @@ function I.AddRestriction(group, entry)
         if source.addedAs == "aura" and (I.Primary(group) or #entries > 1) then
             return "Aura displays cannot be combined with conditions. Create an aura Indicator instead."
         end
+        if not I.Primary(group) then
+            local allowed, reason = I.CheckSourceEffects(group, source)
+            if not allowed then return I.EffectFailureText[reason] end
+        end
     end
 end
 
@@ -210,8 +319,9 @@ function I.Match(frame, group)
 end
 
 function I.ClearSource(group)
-    group.buttons = {}
     local settings = I.Initialize(group)
+    I.Effects(group)
+    group.buttons = {}
     settings.primaryEntry, settings.tracking = 1, "conditions"
 end
 
@@ -223,17 +333,24 @@ function I.StageSourceReplacement(group, expectedSource)
     for key, value in pairs(group) do candidate[key] = value end
     candidate.buttons = {}
     candidate.indicatorSettings = CopyTable(I.Settings(group))
+    candidate.style = group.style and CopyTable(group.style)
+    local effects, selection = I.ReadEffects(group)
+    StoreEffects(candidate, effects, selection)
     candidate.indicatorSettings.primaryEntry = 1
     candidate.indicatorSettings.tracking = "conditions"
     return candidate
 end
 
 function I.CommitSourceReplacement(group, candidate)
+    local allowed, reason = I.CheckSourceEffects(candidate, I.Primary(candidate))
+    if not allowed then return false, reason end
     group.buttons = candidate.buttons
     local settings = I.Settings(group)
     settings.primaryEntry = 1
     settings.tracking = I.Settings(candidate).tracking
+    StoreEffects(group, I.Effects(candidate), I.Settings(candidate).effectSelection)
     NormalizeCountReadouts(group)
+    return true
 end
 
 local SIGNAL_APPEARANCE = {"sourceType","sourceValue","mediaType","label","scale","alpha","blendMode",
@@ -249,13 +366,19 @@ function I.CapturePresentation(group)
         local value = settings.signal[key]
         copy.signal[key] = type(value) == "table" and CopyTable(value) or value
     end
-    copy.effects = CopyTable(settings.effects or {})
+    local effects, selection = I.ReadEffects(group)
+    copy.effects = CopyTable(effects)
+    copy.effectSelection, copy.effectVersion = selection, 1
     return copy
 end
 
 function I.ApplyPresentation(source, destination, appearance, effects)
+    if effects then
+        local allowed, reason = I.CanApplyEffects(source, destination, appearance)
+        if not allowed then return false, reason end
+    end
     local saved, target = I.Settings(source), I.Initialize(destination)
-    if not saved or not target then return end
+    if not saved or not target then return false end
     if appearance then
         for _, key in ipairs(PRESENTATION_FIELDS) do
             target[key] = type(saved[key]) == "table" and CopyTable(saved[key]) or saved[key]
@@ -265,7 +388,11 @@ function I.ApplyPresentation(source, destination, appearance, effects)
             target.signal[key] = type(value) == "table" and CopyTable(value) or value
         end
     end
-    if effects then target.effects = CopyTable(saved.effects or {}) end
+    if effects then
+        local store, selection = I.ReadEffects(source)
+        StoreEffects(destination, store, selection)
+    end
     I.Initialize(destination)
     if appearance then NormalizeCountReadouts(destination) end
+    return true
 end

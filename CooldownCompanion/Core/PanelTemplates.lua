@@ -47,6 +47,12 @@ local tostring = tostring
 local table_sort = table.sort
 local string_lower = string.lower
 
+local function IndicatorFieldCaptured(template, key)
+    if template.templateVersion ~= 3 and template.templateVersion ~= 4 then return true end
+    local fields = template.capturedFields and template.capturedFields.indicator
+    return fields and fields[key] == true or false
+end
+
 -- Also used by the create menus. Unknown versions must never fall through to
 -- the old-template path, which would apply a different scope silently.
 function CooldownCompanion:CanUsePanelTemplate(template)
@@ -522,6 +528,11 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
     if not mode or mode ~= templateMode or not TemplateSubtypeMatches(template, group) then
         return false, "mode_mismatch"
     end
+    if mode == "indicator" and IndicatorFieldCaptured(template, "effects") then
+        local allowed, reason = ST.Indicator.CanApplyEffects(template, group,
+            IndicatorFieldCaptured(template, "appearance"))
+        if not allowed then return false, reason end
+    end
     if self.ResolveContainerClassScope then
         local scope = group.parentContainerId
             and self:ResolveContainerClassScope(group.parentContainerId)
@@ -612,6 +623,10 @@ function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
     local template = self:GetPanelTemplate(templateId)
     local usable, reason = self:CanUsePanelTemplate(template)
     if not usable then return nil, reason end
+    if ST.IsIndicatorGroup(template) and IndicatorFieldCaptured(template, "effects") then
+        local effects, _, effectReason = ST.Indicator.ReadEffects(template)
+        if not effects then return nil, effectReason end
+    end
     local newGroupId = self:CreatePanel(containerId, self:GetPanelTemplateCreationMode(template))
     if not newGroupId then return nil end
 

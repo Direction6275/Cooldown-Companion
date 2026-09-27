@@ -71,10 +71,11 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         candidate.locked = true
         local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
         if I.IsAura(candidate) then
-            local indicators=CooldownCompanion:GetTexturePanelIndicatorSettings(candidate)
             -- Native text has no registered vertex-color artwork animation.
-            if candidate.indicatorSettings.displayType == "text" and indicators and indicators.aura
-                and indicators.aura.effectType == "colorShift" then indicators.aura.enabled=false end
+            if candidate.indicatorSettings.displayType == "text" then
+                local effects=I.Effects(candidate)
+                if effects.colorShift then effects.colorShift.enabled=false end
+            end
             ApplyTextureIndicatorEffects(surface,sample,candidate,"aura")
         else
             CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true)

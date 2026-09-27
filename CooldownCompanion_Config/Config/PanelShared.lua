@@ -170,6 +170,7 @@ local PANEL_TEMPLATE_FAILURE_TEXT = {
     invalid_template = "This template is incomplete. Update it from a panel or save a new template.",
 }
 local function GetPanelTemplateFailureText(reason, details)
+    if ST.Indicator.EffectFailureText[reason] then return ST.Indicator.EffectFailureText[reason] end
     if reason == "section_conflict" and details then
         local label = ST.PANEL_SECTION_ANCHOR_LABELS[details.section] or details.section
         return "Cannot apply template: " .. label .. " section. " .. details.reason
