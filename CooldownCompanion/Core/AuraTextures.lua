@@ -354,6 +354,8 @@ local function NormalizeTextureIndicatorStore(styleTable)
     return store
 end
 
+CooldownCompanion.NormalizeTextureIndicatorSection = NormalizeTextureIndicatorSection
+
 function CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, effectData)
     local defaults = CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS[effectKey]
     if not defaults then
@@ -681,7 +683,7 @@ local function NormalizeAuraTextureSettings(settings)
 end
 
 function CooldownCompanion:IsTexturePanelGroup(group)
-    return type(group) == "table" and group.displayMode == "textures"
+    return ST.Indicator.IsAura(group)
 end
 
 -- Primary Aura entries in Texture panels are intrinsically aura-controlled.
@@ -691,6 +693,7 @@ function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
     return self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"
         and buttonData.type == "spell"
+        and (not ST.IsIndicatorGroup(group) or buttonData.enabled ~= false)
         and (buttonData.addedAs == "aura"
             or buttonData.textureAuraDisplayEnabled == true)
 end
@@ -746,11 +749,11 @@ function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonDa
 end
 
 function CooldownCompanion:IsTriggerPanelGroup(group)
-    return type(group) == "table" and group.displayMode == "trigger"
+    return ST.IsIndicatorGroup(group) and not ST.Indicator.IsAura(group)
 end
 
 function CooldownCompanion:IsStandaloneTexturePanelGroup(group)
-    return self:IsTexturePanelGroup(group) or self:IsTriggerPanelGroup(group)
+    return ST.IsIndicatorGroup(group)
 end
 
 function CooldownCompanion:GetTexturePanelLocationOptions()
@@ -780,93 +783,27 @@ end
 AT.NormalizeAuraTextureSettings = NormalizeAuraTextureSettings
 AT.ResolveGroup = ResolveGroup
 
-function CooldownCompanion:GetTexturePanelSettings(groupOrId, createIfMissing)
+function CooldownCompanion:GetTexturePanelSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.textureSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.textureSettings = {
-            blendMode = "BLEND",
-            locationType = LOCATION_CENTER,
-            pairSpacing = DEFAULT_TEXTURE_PAIR_SPACING,
-            rotation = 0,
-            stretchX = 0,
-            stretchY = 0,
-            point = "CENTER",
-            relativePoint = "CENTER",
-            relativeTo = UI_PARENT_NAME,
-            x = 0,
-            y = 0,
-        }
-    end
-
-    return NormalizeAuraTextureSettings(group.textureSettings)
+    if ST.IsIndicatorGroup(group) then return NormalizeAuraTextureSettings(ST.Indicator.Initialize(group).signal) end
 end
 
-function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId, createIfMissing)
-    local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings = {}
-    end
-
-    if type(group.triggerSettings.signal) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings.signal = {
-            blendMode = "BLEND",
-            locationType = LOCATION_CENTER,
-            pairSpacing = DEFAULT_TEXTURE_PAIR_SPACING,
-            rotation = 0,
-            stretchX = 0,
-            stretchY = 0,
-            point = "CENTER",
-            relativePoint = "CENTER",
-            relativeTo = UI_PARENT_NAME,
-            x = 0,
-            y = 0,
-        }
-    end
-
-    return NormalizeAuraTextureSettings(group.triggerSettings.signal)
+function CooldownCompanion:GetTriggerPanelSignalSettings(groupOrId)
+    return self:GetTexturePanelSettings(groupOrId)
 end
 
-function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId, createIfMissing)
+function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings = {}
-    end
-
-    if type(group.triggerSettings.effects) ~= "table" and not createIfMissing then
-        return nil
-    end
-
-    return CooldownCompanion.NormalizeTriggerPanelEffectStore(group.triggerSettings)
+    if not ST.IsIndicatorGroup(group) then return end
+    ST.Indicator.Effects(group)
+    return CooldownCompanion.NormalizeTriggerPanelEffectStore(ST.Indicator.Settings(group))
 end
 
 function CooldownCompanion:GetTextureIndicatorTransformTarget(host)
     if not host then
         return nil
     end
+    if host.indicatorReadouts then return host.visualRoot end
 
     if host._activeDisplayType == "icon" and host.iconFrame then
         return host.iconFrame
@@ -941,21 +878,6 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
     return settings
 end
 
-function CooldownCompanion.NormalizeTriggerTextSettings(settings)
-    if type(settings) ~= "table" then
-        return nil
-    end
-
-    settings.value = type(settings.value) == "string" and settings.value or ""
-    settings.textFont = type(settings.textFont) == "string" and settings.textFont or "Friz Quadrata TT"
-    settings.textFontSize = Clamp(tonumber(settings.textFontSize) or 12, 6, 72)
-    settings.textFontOutline = type(settings.textFontOutline) == "string" and settings.textFontOutline or "OUTLINE"
-    settings.textFontColor = CopyColor(settings.textFontColor) or { 1, 1, 1, 1 }
-    settings.textBgColor = CopyColor(settings.textBgColor) or { 0, 0, 0, 0 }
-    settings.textAlignment = (settings.textAlignment == "LEFT" or settings.textAlignment == "RIGHT") and settings.textAlignment or "CENTER"
-
-    return settings
-end
 
 function CooldownCompanion.NormalizeTriggerPanelTextLineEndings(value)
     if type(value) ~= "string" then
@@ -993,87 +915,16 @@ function CooldownCompanion.SanitizeTriggerPanelTextValue(value)
     return value
 end
 
-function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId, createIfMissing)
-    local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return "texture"
-    end
-
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return "texture"
-        end
-        group.triggerSettings = {}
-    end
-
-    group.triggerSettings.displayType = CooldownCompanion.NormalizeTriggerDisplayType(group.triggerSettings.displayType)
-    return group.triggerSettings.displayType
+function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId)
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.displayType or "icon"
 end
 
-function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId, createIfMissing)
+function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings = {}
-    end
-
-    if type(group.triggerSettings.icon) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings.icon = {
-            manualIcon = nil,
-            maintainAspectRatio = true,
-            iconZoom = 0,
-            buttonSize = 36,
-            iconWidth = 36,
-            iconHeight = 36,
-            borderSize = 1,
-            borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM,
-            borderColor = { 0, 0, 0, 1 },
-            backgroundColor = { 0, 0, 0, 0.5 },
-            iconTintColor = { 1, 1, 1, 1 },
-        }
-    end
-
-    return CooldownCompanion.NormalizeTriggerIconSettings(group.triggerSettings.icon)
+    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeTriggerIconSettings(ST.Indicator.Initialize(group).icon) end
 end
 
-function CooldownCompanion:GetTriggerPanelTextSettings(groupOrId, createIfMissing)
-    local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.triggerSettings) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings = {}
-    end
-
-    if type(group.triggerSettings.text) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.triggerSettings.text = {
-            value = "",
-            textFont = "Friz Quadrata TT",
-            textFontSize = 12,
-            textFontOutline = "OUTLINE",
-            textFontColor = { 1, 1, 1, 1 },
-            textBgColor = { 0, 0, 0, 0 },
-        }
-    end
-
-    return CooldownCompanion.NormalizeTriggerTextSettings(group.triggerSettings.text)
-end
 
 function CooldownCompanion:BuildLegacyTriggerConditionClause(buttonData)
     if type(buttonData) ~= "table" then
@@ -1384,23 +1235,7 @@ function CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex)
     return true
 end
 
-function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId, createIfMissing)
+function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
-    if type(group) ~= "table" then
-        return nil
-    end
-
-    if type(group.style) ~= "table" then
-        if not createIfMissing then
-            return nil
-        end
-        group.style = {}
-    end
-
-    if type(group.style.textureIndicators) ~= "table" and not createIfMissing then
-        return nil
-    end
-
-    return NormalizeTextureIndicatorStore(group.style)
+    if ST.IsIndicatorGroup(group) then return {aura = ST.Indicator.NativeEffect(group)} end
 end
-

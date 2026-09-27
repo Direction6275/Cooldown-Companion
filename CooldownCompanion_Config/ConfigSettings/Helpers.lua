@@ -1329,7 +1329,6 @@ local function ArmColorCommitOnClose(onConfirmedFn)
 end
 
 function ST._FlushSettingsEdits()
-    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
     if pendingColorCommit then
         local commit = pendingColorCommit
         pendingColorCommit = nil

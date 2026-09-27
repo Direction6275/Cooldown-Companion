@@ -50,8 +50,6 @@ local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPane
 local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
-local BuildTriggerEffectsTab = ST._BuildTriggerEffectsTab
-local BuildTextureEffectsTab = ST._BuildTextureEffectsTab
 local EFFECTS_TEXTURE_INDICATORS_SECTION = ST._EFFECTS_TEXTURE_INDICATORS_SECTION
 
 -- Imports from BarModeTabs.lua
@@ -844,10 +842,6 @@ local function BuildEffectsTab(container, settingsGroup)
 
     local displayMode = group.displayMode
 
-    if displayMode == "trigger" then
-        BuildTriggerEffectsTab(container, group)
-        return
-    end
 
     if displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT then
         -- Row grammar, reusing the icons tab's own spell-family and Interaction
@@ -921,10 +915,6 @@ local function BuildEffectsTab(container, settingsGroup)
         return
     end
 
-    if displayMode == "textures" then
-        BuildTextureEffectsTab(container, group)
-        return
-    end
 
     if displayMode == "bars" then
         BuildBarEffectsTab(container, group, style)

@@ -19,7 +19,7 @@ local SH = ST._SettingsHelpers
 local ChainHeadingBadges = ST._ChainHeadingBadges
 
 local function GroupSupportsPerButtonOverrides(group)
-    return group and (group.displayMode or "icons") ~= "textures"
+    return group and not ST.IsIndicatorGroup(group)
 end
 
 local function GetSelectedRuntimeButton(buttonData)
@@ -402,13 +402,6 @@ local function GetOverrideSectionLabel(sectionId)
     return sectionDef and sectionDef.label or sectionId
 end
 
--- The revert's WORDING and its CLICK, split out from the glyph so the heading
--- chrome's text affordance is the same action in a different shape. Any change
--- to what reverting says or does lands here for both.
---
--- The label form exists because ONE revert in the config is not a style section:
--- the per-entry text format is a flat field (buttonData.textFormat) outside the
--- section machinery, and it must still read as the same action.
 local function GetRevertTooltipTextForLabel(label)
     return "Revert " .. label .. " to panel settings"
 end

@@ -77,12 +77,7 @@ end
 local function BuildPreviewSelection(groupId, buttonIndex, entry)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
-    local baseSettings
-    if group and group.displayMode == "trigger" then
-        baseSettings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
-    else
-        baseSettings = group and CooldownCompanion:GetTexturePanelSettings(group)
-    end
+    local baseSettings = group and CooldownCompanion:GetTexturePanelSettings(group)
     return CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
 end
 

@@ -198,9 +198,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- placeholder branches and the tabs-only pass all take the tab content
     -- away without re-selecting a tab, and the branch that does re-select one
     -- releases again from the callback (Release is idempotent).
-    if ST._ReleaseTextFormatTabEditor then
-        ST._ReleaseTextFormatTabEditor()
-    end
 
     -- No panel to show tabs for: the placeholder branches below own the
     -- host, whatever the caller asked for.
@@ -335,9 +332,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- AceGUI's pool. There is exactly ONE format editor in the config
             -- (the Format tab's, panel or entry lens alike), so this single
             -- release is the whole contract.
-            if ST._ReleaseTextFormatTabEditor then
-                ST._ReleaseTextFormatTabEditor()
-            end
             local previousTab = container._activePanelSettingsTab
             local tabChanged = previousTab ~= nil and previousTab ~= tab
             -- Selecting a style tab hands that strip the settings surface.
@@ -415,8 +409,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- not rebuild - collapsed sections, early-returned builders and
             -- gearless tabs alike.
             CS.RunAdvancedGearBuildPass(function()
-                if tab == "format" then
-                    ST._BuildTextFormatTab(scroll)
+                local selectedGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+                if ST.IsIndicatorGroup(selectedGroup) and (tab == "tracking" or tab == "appearance" or tab == "effects") then
+                    ST._BuildIndicatorTab(scroll, selectedGroup, tab)
                 elseif tab == "appearance" then
                     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
                     if ST.IsTotemPanelGroup(group) then ST._BuildTotemAppearanceTab(scroll, group)
@@ -473,7 +468,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- what a text panel IS) and has no Indicators tab (info lives in the
     -- format editor).
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    local isTextMode = group and group.displayMode == "text"
     local isRotationEntry = group
         and CS.selectedRotationAssistantEntry == true
         and CooldownCompanion:IsRotationAssistantGroup(group)
@@ -489,7 +483,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     container._settingsPresentations = presentations
     local selectionMode = isRotationEntry and "rotation-entry"
         or (isSingleEntry and "entry" or "panel")
-    local tabsMode = (isTextMode and "text" or "standard") .. ":" .. selectionMode
+    local tabsMode = (ST.IsIndicatorGroup(group) and "indicator" or "standard") .. ":" .. selectionMode
     if availableTabs then
         tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
     end
@@ -508,20 +502,20 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
-        if isRotationEntry then
+        if ST.IsIndicatorGroup(group) then
+            tabs = {{value="tracking",text="Tracking"},{value="appearance",text="Appearance"},
+                {value="effects",text="Effects"},{value="layout",text="Layout"},{value="loadconditions",text="Visibility"}}
+        elseif isRotationEntry then
             -- The assistant's virtual entry owns Visibility alone. Its style
             -- and layout belong to the panel reached through the breadcrumb.
             tabs[#tabs + 1] = { value = "loadconditions", text = "Visibility" }
         else
-            if isTextMode then
-                tabs[#tabs + 1] = { value = "format", text = "Format" }
-            end
             -- Entries expose Layout only when they own placement controls.
             if not isSingleEntry or (availableTabs and availableTabs.layout) then
                 tabs[#tabs + 1] = { value = "layout", text = "Layout" }
             end
             if not availableTabs or availableTabs.appearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
-            if not isTextMode and (not availableTabs or availableTabs.effects) then
+            if not availableTabs or availableTabs.effects then
                 tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
             end
             tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
@@ -531,21 +525,20 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
 
     -- Migrate stale tab keys from previous layout
+    if not ST.IsIndicatorGroup(group) and CS.selectedTab == "tracking" then CS.selectedTab = "appearance" end
+    if ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group) then CS.selectedTab = "tracking" end
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
     -- Text mode has no Indicators tab — redirect to Appearance
-    if isTextMode and CS.selectedTab == "effects" then
-        CS.selectedTab = "appearance"
-    end
     -- Only text mode has a Format tab — redirect to Appearance, the same way
     -- Indicators redirects the other direction.
-    if not isTextMode and CS.selectedTab == "format" then
+    if CS.selectedTab == "format" then
         CS.selectedTab = "appearance"
     end
     if isRotationEntry then
         CS.selectedTab = "loadconditions"
     elseif isSingleEntry and CS.selectedTab == "layout" and not (availableTabs and availableTabs.layout) then
-        CS.selectedTab = isTextMode and "format" or "appearance"
+        CS.selectedTab = "appearance"
     end
     if availableTabs and not availableTabs[CS.selectedTab] then
         for _, candidate in ipairs({ "layout", "appearance", "effects", "loadconditions" }) do
@@ -557,9 +550,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- so "is this a choice?" is tracked separately: a tab click, or a route
     -- that deliberately names a destination, sets the flag, and from then on
     -- the remembered tab wins here too.
-    if isTextMode and not CS.panelSettingsTabExplicit then
-        CS.selectedTab = "format"
-    end
     CS.panelSettingsTab = CS.selectedTab
 
     -- Tabs-only pass: an entry owns the surface, so the remembered panel

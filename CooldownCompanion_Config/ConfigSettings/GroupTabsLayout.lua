@@ -72,7 +72,7 @@ local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, set
     local anchor = group.anchor or {}
     local panelContainerFrame, currentAnchor, currentAnchorGroupId, isCursorAnchor, canUseCursorAnchor, targetMode
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         settings = settings or {}
         currentAnchor = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
             and settings.relativeTo or "UIParent"
@@ -145,18 +145,16 @@ end
 
 local function ResolveLayoutArrangementState(group, layoutCount)
     local displayMode = group.displayMode or "icons"
-    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local standalone = displayMode == "indicator"
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
     local isTotemPanel = ST.IsTotemPanelGroup(group)
     local showAll = group._settingsContext and group._settingsContext.mode ~= "entry"
     local isIconsMode = displayMode == "icons"
     local isBarMode = displayMode == "bars"
-    local isTextMode = displayMode == "text"
     local auraBarPanel = isBarMode and isAuraPanel
 
     return {
         showAll = showAll,
-        isTextMode = isTextMode,
         isTotemPanel = isTotemPanel,
         auraBarPanel = auraBarPanel,
         allowCentered = not isAuraPanel and not isTotemPanel,
@@ -164,10 +162,9 @@ local function ResolveLayoutArrangementState(group, layoutCount)
         orientation = not standalone and not isBarMode,
         growth = not standalone and (showAll or layoutCount > 1),
         collapse = not standalone and (isAuraPanel or isTotemPanel),
-        buttonsPerLine = not standalone and not auraBarPanel and not isTextMode,
-        entriesPerLine = not standalone and isTextMode and layoutCount > 1,
+        buttonsPerLine = not standalone and not auraBarPanel,
         compact = not standalone and not isAuraPanel and not isTotemPanel
-            and (isIconsMode or isBarMode or isTextMode),
+            and (isIconsMode or isBarMode),
     }
 end
 
@@ -210,7 +207,7 @@ local function GetLayoutFinderState(context)
     local groupId = context.groupId
     local owner = group._attachedBarOwner or group
     local displayMode = group.displayMode or "icons"
-    local standalone = displayMode == "textures" or displayMode == "trigger"
+    local standalone = displayMode == "indicator"
     local anchorState = ResolveLayoutAnchorState(group, groupId,
         CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId],
         standalone and GetStandaloneTextureSettings(group, false) or nil)
@@ -229,8 +226,7 @@ local function GetLayoutFinderState(context)
 
     state.panelPoint = targetMode == "cursor"
     state.anchorPoint = not standalone and targetMode ~= "cursor"
-    state.displayPoint = standalone and displayMode == "trigger" and targetMode ~= "cursor"
-    state.texturePoint = standalone and displayMode == "textures" and targetMode ~= "cursor"
+    state.displayPoint = standalone and targetMode ~= "cursor"
     state.targetPoint = standalone and targetMode ~= "cursor"
         and (targetMode == "panel" or targetMode == "frame")
     state.screenPoint = standalone and targetMode ~= "cursor" and targetMode == "group"
@@ -514,11 +510,7 @@ local function BuildGridArrangement(container, group, layoutCount)
             list = { horizontal = "Horizontal", vertical = "Vertical" },
             value = orientation,
             onChange = function(val)
-                if state.isTextMode then
-                    style.textOrientation = val
-                else
-                    style.orientation = val
-                end
+                style.orientation = val
                 SwapCenteredGrowthAxis()
                 refreshStyle("style-settings", "layout")
             end,
@@ -612,13 +604,11 @@ local function BuildGridArrangement(container, group, layoutCount)
 
     -- Text mode calls its entries entries, and offers the wrap count only
     -- once there is something to wrap.
-    if state.buttonsPerLine or state.entriesPerLine then
+    if state.buttonsPerLine then
         local numButtons = math.max(state.showAll and 100 or 1, layoutCount)
         local wrapRow = AddSliderRow(arrangeRight, {
-            label = state.isTextMode and "Entries per Row/Column" or "Buttons Per Row/Column",
-            setting = LAYOUT_FINDER.arrangement and (
-                state.isTextMode and LAYOUT_FINDER.arrangement.entriesPerLine
-                or LAYOUT_FINDER.arrangement.buttonsPerLine),
+            label = "Buttons Per Row/Column",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.buttonsPerLine,
             min = 1, max = numButtons, step = 1,
             value = math.min(style.buttonsPerRow or 12, numButtons),
         })
@@ -677,15 +667,14 @@ local function BuildLayoutTab(container)
     local style = group.style
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
 
-    if group.displayMode == "textures" or group.displayMode == "trigger" then
+    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         local settings = GetStandaloneTextureSettings(group, true)
         if not settings then
             return
         end
         local textureGroupId = CS.selectedGroup
-        local isTriggerPanel = group.displayMode == "trigger"
-        local positionHeadingText = isTriggerPanel and "Trigger Display Position" or "Texture Position"
-        local anchorLabel = isTriggerPanel and "Display Point" or "Texture Point"
+        local positionHeadingText = "Indicator Position"
+        local anchorLabel = "Display Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
         local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
             and CooldownCompanion:GetCursorAnchorTargetName()
@@ -1001,9 +990,7 @@ local function BuildLayoutTab(container)
             AddAnchorDropdown(positionLeft, settings, "point", "CENTER",
                 RefreshTextureVisual, anchorLabel, {
                     row = true,
-                    setting = LAYOUT_FINDER.position and (
-                        isTriggerPanel and LAYOUT_FINDER.position.displayPoint
-                        or LAYOUT_FINDER.position.texturePoint),
+                    setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.displayPoint,
                 })
             AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
                 RefreshTextureVisual,

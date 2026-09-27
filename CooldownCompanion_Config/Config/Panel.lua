@@ -1165,9 +1165,6 @@ local function CreateConfigPanel()
         -- has a write still pending. Flush before the collapse guard: collapsing
         -- keeps the tab built, so its editor must stay alive, but the pending
         -- write is settled either way.
-        if ST._FlushTextFormatTabCommit then
-            ST._FlushTextFormatTabCommit()
-        end
         -- The minimized config deliberately preserves the editing widgets,
         -- but Finder query/results are visibility-scoped and must not return
         -- when the workspace expands again.
@@ -1180,9 +1177,6 @@ local function CreateConfigPanel()
         -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
         -- the tab and its editor, so drop this one's animation driver and any
         -- confirmation it left standing.
-        if ST._ReleaseTextFormatTabEditor then
-            ST._ReleaseTextFormatTabEditor()
-        end
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
         end
@@ -2095,9 +2089,6 @@ local function CreateConfigPanel()
         -- else: it lives on the panel Format tab, and selecting an entry tab
         -- hands the settings surface away from it. Release is idempotent, so
         -- the panel-side seams releasing again costs nothing.
-        if ST._ReleaseTextFormatTabEditor then
-            ST._ReleaseTextFormatTabEditor()
-        end
         local previousTab = col3._activeButtonSettingsTab
         local tabChanged = previousTab ~= nil and previousTab ~= tab
         -- Both tab clusters belong to the selected entry. This only chooses
@@ -2164,29 +2155,24 @@ local function CreateConfigPanel()
                 -- why the entry was selected.
                 ST._BuildCustomizationsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
 
-                if group.displayMode == "trigger" then
-                    ST._BuildTriggerConditionSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                else
-                    if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
-                        ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    end
-                    -- Show & Hide Rules and Talent Conditions both live on the
-                    -- Visibility tab now (owner ruling): everything deciding
-                    -- WHEN an entry shows is edited there. What stays here is
-                    -- what the entry IS - its aura setup, its names and keys,
-                    -- and the alerts it plays.
-                    --
-                    -- Aura Tracking is gated exactly as the retired Aura tab
-                    -- was, so entries that never offered it still get nothing.
-                    if ST._EntryOffersAuraTab(group, buttonData) then
-                        ST._BuildAuraTrackingSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
-                    end
-                    ST._BuildCustomKeybindSection(scroll, buttonData)
-                    ST._BuildCustomNameSection(scroll, buttonData)
-                    ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
-                    ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                if buttonData.type == "item" and not CooldownCompanion.IsItemEquippable(buttonData) then
+                    ST._BuildItemSettings(scroll, buttonData, CS.buttonSettingsInfoButtons)
                 end
+                -- Show & Hide Rules and Talent Conditions both live on the
+                -- Visibility tab now (owner ruling): everything deciding
+                -- WHEN an entry shows is edited there. What stays here is
+                -- what the entry IS - its aura setup, its names and keys,
+                -- and the alerts it plays.
+                --
+                -- Aura Tracking is gated exactly as the retired Aura tab
+                -- was, so entries that never offered it still get nothing.
+                if ST._EntryOffersAuraTab(group, buttonData) then
+                    ST._BuildAuraTrackingSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
+                end
+                ST._BuildCustomKeybindSection(scroll, buttonData)
+                ST._BuildCustomNameSection(scroll, buttonData)
+                ST._BuildItemFallbacksSection(scroll, buttonData, CS.buttonSettingsInfoButtons)
+                ST._BuildEntrySoundAlertsSection(scroll, group, buttonData, CS.buttonSettingsInfoButtons)
             end
         end
 
@@ -2524,6 +2510,7 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     end
     CS.configRefreshInProgress = true
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
+    ST._NormalizeIndicatorConfigSelection()
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2576,19 +2563,9 @@ function CooldownCompanion:_configRefreshPanelImpl(edit)
         ST._ShowResourceBarConflictChooser()
     end
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
+    ST._NormalizeIndicatorConfigSelection()
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
-    end
-
-    -- Texture panels only ever hold one entry, so the config never asks the
-    -- user to select it: as long as the entry exists it stays selected, and
-    -- every selection path that could drop it self-heals here on refresh.
-    local healGroup = CS.selectedGroup and self.db.profile.groups[CS.selectedGroup]
-    if healGroup and not CS.selectedButton
-        and self.IsTexturePanelGroup and self:IsTexturePanelGroup(healGroup)
-        and healGroup.buttons and healGroup.buttons[1] then
-        wipe(CS.selectedButtons)
-        CS.selectedButton = 1
     end
 
     if IsConfigFinderAvailable and not IsConfigFinderAvailable() and ClearConfigFinderText then

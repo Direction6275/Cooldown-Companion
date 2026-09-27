@@ -821,15 +821,15 @@ local function BuildTexturePanelSlotKit(slotButton)
     slotButton:SetMouseClickEnabled(false)
     slotButton:SetMouseMotionEnabled(false)
 
-    local visualRoot = CreateFrame("Frame", nil, slotButton)
+    local host = CreateFrame("Frame", nil, slotButton)
+    host:SetAllPoints(slotButton)
+    local visualRoot = CreateFrame("Frame", nil, host)
     visualRoot:SetAllPoints(slotButton)
     visualRoot:SetAlpha(0)
 
-    local host = {
-        visualRoot = visualRoot,
-        primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
-        secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
+    host.visualRoot = visualRoot
+    host.primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
+    host.secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
 
     host.pulseAG = visualRoot:CreateAnimationGroup()
     host.pulseAG:SetLooping("BOUNCE")
@@ -850,13 +850,23 @@ local function BuildTexturePanelSlotKit(slotButton)
     host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
     host.bounceAnim:SetSmoothing("OUT")
 
+    ST.Indicator.CreateVisual(host, slotButton)
     host.colorShift = {}
-    for index, texture in ipairs({ host.primaryTexture, host.secondaryTexture }) do
+    local colorRegions = {
+        {host.primaryTexture, "texture", true}, {host.secondaryTexture, "texture", true},
+        {host.indicatorProgress.foreground.primaryTexture, "texture"},
+        {host.indicatorProgress.foreground.secondaryTexture, "texture"},
+        {host.iconFrame.icon, "icon"},
+    }
+    for index, entry in ipairs(colorRegions) do
+        local texture = entry[1]
         local group = texture:CreateAnimationGroup()
         group:SetLooping("BOUNCE")
         host.colorShift[index] = {
             group = group,
             animation = group:CreateAnimation("VertexColor"),
+            displayType = entry[2],
+            dim = entry[3],
         }
         host.colorShift[index].animation:SetSmoothing("IN_OUT")
     end
@@ -864,43 +874,6 @@ local function BuildTexturePanelSlotKit(slotButton)
     host.primaryTexture:Hide()
     host.secondaryTexture:Hide()
     return { texturePanelHost = host }
-end
-
--- Text panels: the entry's format is cut into columns (ButtonFrame/TextMode
--- .lua, TEXT RENDER PLAN) and the aura columns are the client's to render.
--- The kit is two registered FontStrings and nothing else — no icon, swipe,
--- bars, glows or pandemic regions — so the slot draws only the text the entry
--- reserved room for, and Blizzard hiding the whole button while no aura
--- matches IS the entry's "only while active" behavior. Geometry is anchored
--- to the host button at bind time (StyleTextSlotKit); both regions start
--- centered on the slot at alpha 0 because an unanchored FontString is a
--- layout error even when invisible.
-local function BuildTextSlotKit(slotButton)
-    -- Click-through for life: a text entry has no tooltip or cancel-aura
-    -- surface, and the slot covers the whole entry box.
-    slotButton:SetMouseClickEnabled(false)
-    slotButton:SetMouseMotionEnabled(false)
-
-    local kit = { isText = true }
-    kit.textOverlay = CreateFrame("Frame", nil, slotButton)
-    kit.textOverlay:SetAllPoints(slotButton)
-
-    -- Plain registrations here; every bind re-calls both setters with the
-    -- entry's piece formatters (or plain again, to converge a pooled slot).
-    kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
-    kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-    kit.durationText:SetAlpha(0)
-    slotButton:SetDurationText(kit.durationText)
-
-    -- One count region serves both a {aurastacks} piece and a presence
-    -- piece: the planner emits at most one of the two per entry.
-    kit.countText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
-    kit.countText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-    kit.countText:SetAlpha(0)
-    slotButton:SetApplicationCount(kit.countText)
-
-    kit.countFormatter = C_StringUtil.CreateNumericRuleFormatter()
-    return kit
 end
 
 -- Position contract for the aura duration text: it shares the Cooldown Text
@@ -1543,7 +1516,7 @@ local function StopTexturePanelSlotIndicator(host)
     end
 end
 
-local function StyleTexturePanelSlotKit(slot, settings, indicator)
+local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
     local host = slot.kit and slot.kit.texturePanelHost
     if not host then return end
 
@@ -1552,6 +1525,7 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
     StopTexturePanelSlotIndicator(host)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
+    host._indicatorDimAlpha = nil
 
     local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
     if not geometry then
@@ -1560,7 +1534,16 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
         return
     end
 
-    local shown = LayoutTexturePieces(host, settings, geometry, alpha)
+    local shown
+    if ST.IsIndicatorGroup(group) then
+        shown = ST.Indicator.StyleAura(slot, group)
+    else
+        CooldownCompanion.HideStandaloneDisplayVisuals(host)
+        slot.slotButton:ClearIcon()
+        host.indicatorReadouts.root:Hide()
+        host.indicatorProgress.clip:SetAlpha(0)
+        shown = LayoutTexturePieces(host, settings, geometry, alpha)
+    end
     host.visualRoot:SetAlpha(shown and 1 or 0)
     if not shown or type(indicator) ~= "table" or indicator.enabled ~= true then
         return
@@ -1582,15 +1565,19 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator)
         host.bounceAnim:SetDuration(speed / 2)
         host.bounceAG:Play()
     elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
+        local displayType = ST.IsIndicatorGroup(group) and group.indicatorSettings.displayType or "texture"
         local base = settings.color or { 1, 1, 1, 1 }
+        if displayType == "icon" then base = group.indicatorSettings.icon.iconTintColor or base end
         local shift = indicator.color or { 1, 1, 1, 1 }
-        local startColor = CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, alpha or 1)
-        local endColor = CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, shift[4] or 1)
         for _, colorShift in ipairs(host.colorShift) do
-            colorShift.animation:SetStartColor(startColor)
-            colorShift.animation:SetEndColor(endColor)
-            colorShift.animation:SetDuration(speed / 2)
-            colorShift.group:Play()
+            if colorShift.displayType == displayType then
+                local dim = colorShift.dim and host._indicatorDimAlpha or 1
+                local startAlpha = displayType == "icon" and (base[4] or 1) or (alpha or 1)
+                colorShift.animation:SetStartColor(CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, startAlpha * dim))
+                colorShift.animation:SetEndColor(CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, (shift[4] or 1) * dim))
+                colorShift.animation:SetDuration(speed / 2)
+                colorShift.group:Play()
+            end
         end
     end
 end
@@ -2377,13 +2364,8 @@ local function EnsureAuraLayer(button)
         layer._ccNoTouch = true
         button.auraLayer = layer
     end
-    -- Re-anchored every call: idempotent, and frame-relative anchoring tracks
-    -- geometry restyles for free. Bar hosts mount the slot on the bar rect
-    -- (statusBar is already inset by the border layout, so the CC border ring
-    -- stays visible around the aura display). Text hosts mount on the whole
-    -- entry box: their `icon` is a hidden 1x1 stub, never an anchor.
     local anchorTo = (button._isBar and button.statusBar)
-        or (not button._isText and button.icon)
+        or button.icon
         or button
     layer:ClearAllPoints()
     layer:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", 0, 0)
@@ -2393,11 +2375,6 @@ local function EnsureAuraLayer(button)
     -- time re-levels reach the slot without ever touching it.
     if button._isBar and button.barTextFrame then
         ST.BarLayers.Apply(button)
-    elseif button._isText then
-        -- Text hosts have no strata order: the entry is one flat frame
-        -- (background, border and run strings all on it), so one level above
-        -- it puts the client's text over everything the entry draws.
-        layer:SetFrameLevel(button:GetFrameLevel() + 1)
     else
         -- Icon hosts: the aura display is a CONFIGURABLE layer, so its level
         -- comes from the panel's strata order. ApplyStrataOrder
@@ -2545,8 +2522,6 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
             if hostKind == "button" then frame:SetFrameLevel(layer:GetFrameLevel() + 1) end
             if hostKind == "texturePanel" then
                 record.kit = BuildTexturePanelSlotKit(frame)
-            elseif hostKind == "text" then
-                record.kit = BuildTextSlotKit(frame)
             else
                 record.kit = BuildSlotKit(frame)
             end
@@ -2740,108 +2715,6 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
     kit.stackCountFormatterKey = wantKey
 end
 
--- Text host styling (ButtonFrame/TextMode.lua, TEXT RENDER PLAN): anchor the
--- kit's two client-driven FontStrings onto the entry's laid-out aura pieces
--- (x/y from the host button's TOPLEFT, the column's reserved width, the
--- line height, the line's alignment) and install formatters carrying each
--- piece's baked prefix/suffix, so the client renders the whole column.
--- Both regions are reset first so a pooled slot rebound to an entry whose
--- pieces changed or vanished converges to inert; a region no piece claims
--- is re-registered plain. The piece tables belong to the plan: read only.
---
--- Duration pieces reuse the shared Duration Format brackets (with the aura
--- low-time opt-in) and bake the prefix/suffix onto every bracket EXCEPT the
--- visibility tail: its empty format is what hides the countdown above the
--- threshold, and the column's static text must go with it. No Pandemic
--- composition on text hosts (owner ruling). Stack pieces go through the same
--- breakpoint builder as icon/bar stack text; presence pieces install one
--- constant format at threshold 0, so the region reads the piece's text for
--- any count while the aura is up (ApplyApplicationCount always formats
--- through the formatter when one is registered; no aura means "").
-local function StyleTextSlotKit(slot, button, buttonData, style)
-    local kit = slot.kit
-    if not (kit and kit.isText) then return end
-    style = style or {}
-    local slotButton = slot.slotButton
-
-    kit.durationText:ClearAllPoints()
-    kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-    kit.durationText:SetAlpha(0)
-    kit.countText:ClearAllPoints()
-    kit.countText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-    kit.countText:SetAlpha(0)
-
-    local pieces = ST._GetTextAuraPieces and ST._GetTextAuraPieces(button)
-    local durationBound, countBound = false, false
-    if pieces then
-        local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
-        local outline = ST.GetEffectiveFontOutline(style.textFontOutline or "OUTLINE")
-        for _, piece in ipairs(pieces) do
-            local fs = piece.kind == "duration" and kit.durationText or kit.countText
-            -- Same recipe as the addon-rendered runs (TextMode's
-            -- StyleTextRunString): font, size, outline and base color from
-            -- the text keys, then the shadow rule. The prefix/suffix carry
-            -- their own color escapes.
-            ApplyFontStyle(fs, style, "text")
-            ST.ApplyFontShadowForOutline(fs, outline, style.textShadow == true)
-            fs:ClearAllPoints()
-            fs:SetPoint("TOPLEFT", button, "TOPLEFT", piece.x, piece.y)
-            fs:SetSize(piece.width, piece.height)
-            fs:SetJustifyH(piece.justifyH)
-            fs:SetJustifyV("MIDDLE")
-            fs:SetWordWrap(false)
-            fs:SetAlpha(1)
-
-            if piece.kind == "duration" then
-                -- Bounded text contract (owner ruling 2026-09-03): Low Time
-                -- is explicitly OFF on text hosts, so no retained key can
-                -- colour a column the text config never exposes. The
-                -- prefix/suffix can carry an open colour escape across the
-                -- value; that only stays correct while no bracket format in
-                -- between emits `|r` -- the plain Duration Format brackets
-                -- and the "" visibility tail never do. Re-enabling Low Time,
-                -- Pandemic or stack colours here would need the enclosing
-                -- colour reopened after the value.
-                local brackets = CooldownCompanion.GetDurationTextBrackets(style, false, "aura")
-                local list = {}
-                for i, bracket in ipairs(brackets) do
-                    local clone = CloneBracket(bracket)
-                    if clone.format ~= "" then
-                        clone.format = piece.prefix .. clone.format .. piece.suffix
-                    end
-                    list[i] = clone
-                end
-                local formatter = C_StringUtil.CreateNumericRuleFormatter()
-                formatter:SetBreakpoints(list)
-                slotButton:SetDurationText(kit.durationText, { textFormatter = formatter })
-                durationBound = true
-            else
-                local breakpoints
-                if piece.kind == "stacks" then
-                    -- Stock breakpoints only (owner ruling 2026-09-03):
-                    -- hidden below 2, plain colour. The per-entry one-stack
-                    -- and threshold/max-colour policies are icon/bar stack
-                    -- text options the text config does not expose, so a
-                    -- retained or imported one must not shape a column.
-                    breakpoints = BuildStackCountBreakpoints(false, nil, piece.prefix, piece.suffix)
-                else
-                    breakpoints = { { threshold = 0, format = piece.text } }
-                end
-                kit.countFormatter:ClearBreakpoints()
-                kit.countFormatter:SetBreakpoints(breakpoints)
-                slotButton:SetApplicationCount(kit.countText, { formatter = kit.countFormatter })
-                countBound = true
-            end
-        end
-    end
-    if not durationBound then
-        slotButton:SetDurationText(kit.durationText)
-    end
-    if not countBound then
-        slotButton:SetApplicationCount(kit.countText)
-    end
-end
-
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
     local button = record.button
     local wasParked = record.parked
@@ -2875,19 +2748,15 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.container:SetAuraSlotFilterString(record.key, SlotContract(unit, groupScoped).filter)
     record.container:SetAuraSlotCandidateFilters(record.key,
         BuildCandidateFilters(unit, spellSet, groupScoped))
-    -- Text hosts converge their own count registration per piece inside
-    -- StyleTextSlotKit (no stack bar exists on the kit).
-    local isTextHost = record.hostKind == "text"
-    if record.hostKind ~= "texturePanel" and not isTextHost then
+    if record.hostKind ~= "texturePanel" then
         ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax)
         ConvergeApplicationCount(record.slotButton, record.kit, buttonData)
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
     if record.hostKind == "texturePanel" then
-        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator)
-    elseif isTextHost then
-        StyleTextSlotKit(record, button, buttonData, style)
+        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator,
+            CooldownCompanion.db.profile.groups[button._groupId])
     else
         StyleSlotKit(record, button, buttonData, style)
     end
@@ -2906,27 +2775,20 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     else
         ReleaseSlotAuraSounds(record)
     end
-    -- Tooltip suppression follows the button's recorded tooltip intent
-    -- (_ccTooltipMotion, written by the same style passes that run the
-    -- click-through sweep; the sweep itself never reaches the slot subtree).
-    -- Not the sweep's motion state: entry pings widen motion without wanting
-    -- tooltips. P7-validated shape. Text hosts stay click-through for life
-    -- (BuildTextSlotKit); forcing motion off here keeps that true on every
-    -- bind.
     record.slotButton:SetMouseMotionEnabled(
-        record.hostKind ~= "texturePanel" and not isTextHost and button._ccTooltipMotion == true)
+        record.hostKind ~= "texturePanel" and button._ccTooltipMotion == true)
     -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
     -- state on the slot button, same OOC re-call pattern as the motion line
     -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets
     -- is what an untouched button resolves to, so re-calling it converges
     -- pooled buttons when the setting goes back to Default.
     record.slotButton:SetTooltipAnchorPoint(
-        record.hostKind ~= "texturePanel" and not isTextHost
+        record.hostKind ~= "texturePanel"
             and (AURA_TOOLTIP_ANCHORS[style.tooltipAnchor] or "ANCHOR_NONE")
             or "ANCHOR_NONE",
         0, 0)
     record.slotButton:SetHideTooltipInCombat(
-        record.hostKind == "texturePanel" or isTextHost or style.tooltipHideInCombat == true)
+        record.hostKind == "texturePanel" or style.tooltipHideInCombat == true)
     record.parked = nil
     record.boundEntry = buttonData
     record.boundGroupScoped = groupScoped
@@ -4564,7 +4426,7 @@ end
 -- Read only CC-owned metadata, including records on pooled or replaced hosts.
 function CooldownCompanion:PanelNeedsAuraRebind(groupId, group)
     if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
-        or group.displayMode == "textures" or group.displayMode == "trigger" then return true end
+        or self:IsStandaloneTexturePanelGroup(group) then return true end
     for _, entry in ipairs(group.buttons or {}) do
         if entry.auraTracking or entry.addedAs == "aura" then return true end
     end
@@ -4645,39 +4507,28 @@ function RunAuraRebind(configEdit, panelIds, resources)
             or panelIds[button._groupId]
     end
 
-    -- Collect wanted bindings from live buttons. Icon/bar behavior keeps its
-    -- existing aura flags. Texture panels always bind primary Aura entries and
-    -- require an explicit opt-in for ordinary spells, so retained pre-12.1
-    -- auraTracking residue stays dormant. Text panels bind an aura-tracking
-    -- entry only when its format reserves at least one aura column
-    -- (ButtonFrame/TextMode.lua, TEXT RENDER PLAN): the client renders the
-    -- aura's time, stacks or presence into those columns through the text
-    -- host kit. Trigger panels remain excluded.
+    -- Icon/bar entries use their existing aura flags. Aura Indicators use
+    -- the native host kit and the selected player, target, group, or pet scope.
     local wanted = {}
     for groupId, frame in pairs(owners or self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
-        if (displayMode == "icons" or displayMode == "bars" or displayMode == "textures" or displayMode == "text")
+        if (displayMode == "icons" or displayMode == "bars"
+            or ST.Indicator.IsAura(group))
             and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
-                local textureAura = displayMode == "textures"
+                local textureAura = ST.Indicator.IsAura(group)
                     and self:IsTexturePanelAuraDisplayEnabled(group, buttonData)
-                local standardAura = displayMode ~= "textures"
+                local standardAura = displayMode ~= "indicator"
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
                 if buttonData and buttonData.type == "spell" and (textureAura or standardAura)
                     and not ST.IsCollapsingAttachedBar(group, buttonData) then
-                    local textAura = displayMode == "text"
                     local style = self:GetEntryEffectiveStyle(group, buttonData)
-                    -- Text entries: the plan decides. No aura column, no
-                    -- want (a format with only cc content stays exactly as
-                    -- before), so candidate resolution is skipped too.
-                    local spellSet
-                    if not textAura or ST._TextEntryHasAuraPieces(buttonData, style) then
-                        spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
-                    end
+                    local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
                     local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
+                    if ST.Indicator.IsAura(group) then textureSettings = ST.Indicator.NativeSettings(group) end
                     local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
                     if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
                         -- Stack fill (tracker C2): bar hosts only; the max is
@@ -4695,7 +4546,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             spellSet = spellSet,
                             style = style,
                             stackBarMax = stackBarMax,
-                            hostKind = textureAura and "texturePanel" or textAura and "text" or "button",
+                            hostKind = textureAura and "texturePanel" or "button",
                             missingIndicator = self:IsMissingAuraIndicatorEntry(buttonData, group, style),
                             textureSettings = textureSettings,
                             textureIndicator = textureIndicators and textureIndicators.aura or nil,
@@ -4719,17 +4570,15 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- record per token.
     for _, want in ipairs(wanted) do
         want.units = want.unit and { want.unit }
-            or ResolveEntryAuraUnits(self, want.buttonData, want.hostKind ~= "texturePanel")
-        want.groupScoped = want.hostKind ~= "texturePanel"
-            and want.buttonData.auraTrackGroup == true
+            or ResolveEntryAuraUnits(self, want.buttonData, true)
+        want.groupScoped = want.buttonData.auraTrackGroup == true
             and want.units[1] ~= "target"
         -- Armed from the opt-in, not from a resolved ally token: solo the set is
         -- { "player" } and there would be no ally record to trigger it.
         if want.groupScoped then
             EnsureGroupWatcher()
         end
-        if want.hostKind ~= "texturePanel"
-            and want.buttonData.auraTrackPet == true
+        if want.buttonData.auraTrackPet == true
             and want.units[1] ~= "target" then
             EnsurePetWatcher()
         end

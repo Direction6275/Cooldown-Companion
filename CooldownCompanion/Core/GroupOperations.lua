@@ -92,8 +92,7 @@ local function GetPanelAnchorDepth(groups, groupId, visiting)
     visiting[groupId] = true
 
     local group = groups and groups[groupId]
-    local anchor = group and group.anchor
-    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    local relativeTo = CooldownCompanion:GetActivePanelAnchorRelativeTo(group)
     local kind, targetGroupId = CooldownCompanion:ParseAddonAnchorFrameName(relativeTo)
     if kind ~= "group" then
         visiting[groupId] = nil
@@ -226,7 +225,6 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     else
         if not group.parentContainerId then return false end
         if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
-        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then return false end
     end
 
     local container = self:GetParentContainer(group)
@@ -673,7 +671,6 @@ function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
 
     ST.TagRefreshPass("availability-rebuild")
     self:UpdateAllCooldowns()
-    self:RefreshTextEntryLayouts()
 
     -- D3: spec/talent/spell-availability churn can change override identity
     -- without repopulating buttons — refresh the identity index (coalesced).
@@ -1135,10 +1132,13 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         self:DeleteMasqueGroup(groupId)
     end
 
-    -- Restore alpha sync if this frame inherits alpha from a parent frame.
-    -- Skip if anchor is pending re-evaluation — anchoredToParent may be stale
-    -- and will be corrected when AnchorGroupFrame runs from the layout ticker.
-    if frame.anchoredToParent and not frame._anchorDirty then
+    -- Restore alpha ownership from the current connection.
+    if ST.IsIndicatorGroup(group) then
+        -- A dormant Indicator can be retargeted without rebuilding its source.
+        -- Resolve its current display connection before restoring alpha sync.
+        self:AnchorGroupFrame(frame, group.anchor)
+    elseif frame.anchoredToParent and not frame._anchorDirty then
+        -- Pending anchors are corrected by the layout ticker before syncing.
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
 
@@ -1220,7 +1220,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     self:SnapshotCooldownPassContext()
     self._cooldownUpdatePassActive = true
     -- F2 idle skip: reset the per-pass time-animation flag. Any button that renders
-    -- time-driven state this walk sets it true (NoteButtonTimeState); a walk that
+    -- time-driven state this walk sets it true (PinCooldownTicker); a walk that
     -- ends with it still false latches idle-eligible below. Fail open.
     self._passTimeStateSeen = false
 
@@ -1237,7 +1237,7 @@ function CooldownCompanion:UpdateAllCooldowns()
     self._cooldownUpdatePassActive = nil
     -- F2 idle-skip eligibility: a completed full walk that saw no time-animated
     -- button latches idle-eligible. Only this line may latch it true; every
-    -- other writer (NoteButtonTimeState) may only clear it to false. It is thus
+    -- other writer (PinCooldownTicker) may only clear it to false. It is thus
     -- never older than the last completed walk. Maintained unconditionally (not
     -- gated on telemetry) so the live-skip predicate (CanSkipIdleTickerRefresh)
     -- can read it. Fail open.

@@ -241,9 +241,8 @@ function CooldownCompanion:CaptureArrangePanelRecord(groupId)
         barSize = ST.PanelSupportsAttachedBars(group)
             and CaptureArrangeFields(group.attachedBarStyle or {}, ARRANGE_ATTACHED_BAR_SIZE_KEYS) or nil,
         sections = sections,
-        texture = CaptureArrangeFields(group.textureSettings, ARRANGE_TEXTURE_POSITION_KEYS),
         signal = CaptureArrangeFields(
-            group.triggerSettings and group.triggerSettings.signal,
+            group.indicatorSettings and group.indicatorSettings.signal,
             ARRANGE_TEXTURE_POSITION_KEYS
         ),
         locked = group.locked,
@@ -369,16 +368,12 @@ local function RestoreArrangeSnapshot(addon, snapshot)
                     end
                 end
             end
-            if record.texture then
-                group.textureSettings = type(group.textureSettings) == "table" and group.textureSettings or {}
-                RestoreArrangeFields(group.textureSettings, record.texture, ARRANGE_TEXTURE_POSITION_KEYS)
-            end
             if record.signal then
-                group.triggerSettings = type(group.triggerSettings) == "table" and group.triggerSettings or {}
-                group.triggerSettings.signal = type(group.triggerSettings.signal) == "table"
-                    and group.triggerSettings.signal
+                group.indicatorSettings = type(group.indicatorSettings) == "table" and group.indicatorSettings or {}
+                group.indicatorSettings.signal = type(group.indicatorSettings.signal) == "table"
+                    and group.indicatorSettings.signal
                     or {}
-                RestoreArrangeFields(group.triggerSettings.signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
+                RestoreArrangeFields(group.indicatorSettings.signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
             end
             group.locked = record.locked
         end

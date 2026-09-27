@@ -65,16 +65,6 @@ local CUSTOMIZATIONS_CHROME_FIELDS = {
     "_cdcCustomizationsName",
 }
 
--- The per-entry text format is a FLAT field (buttonData.textFormat) outside the
--- styleOverrides section machinery, so it has no section id, no label of its
--- own, and no home in ST._SECTION_HOME. It is still a customization, and the
--- one index of them cannot be the surface that forgets it.
---
--- Named for the THING, not its state: inside a section titled Customizations
--- every row is already custom. Word-for-word what the entry-slot hover tooltip
--- (ButtonPanelPreview) calls the same field, because Defaults.lua contracts
--- these two surfaces to never list a customization differently.
-local FORMAT_ROW_LABEL = "Text Format"
 
 local CUSTOMIZATIONS_TOOLTIP = {
     "Customizations",
@@ -160,7 +150,6 @@ end
 local CUSTOMIZATIONS_GEAR_MAPS_BY_MODE = {
     icons = { "_APPEARANCE_SECTION_BY_ADVANCED_KEY", "_INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY" },
     bars = { "_BARMODE_SECTION_BY_ADVANCED_KEY" },
-    text = { "_TEXTMODE_SECTION_BY_ADVANCED_KEY" },
 }
 
 -- A section with TWO OR MORE gears in one mode gets NO gear on its row. Pandemic
@@ -256,11 +245,6 @@ end
 -- calls ST._ReleaseTextFormatTabEditor before it builds anything, which flushes
 -- the pending write and drops the timer. No guard, because there is nothing
 -- reachable to guard against.
-local function PerformFormatRevert(buttonData, target)
-    if not ST._IsConfigEditTargetCurrent(target) then return end
-    buttonData.textFormat = nil
-    ST._CompleteConfigEdit(target, "frame-settings")
-end
 
 -- Every customization on one entry, in one pass. Deliberately NOT a loop over
 -- PerformSectionRevert: that helper ends in UpdateGroupStyle plus a full config
@@ -290,19 +274,7 @@ local function RevertAllEntryCustomizations(groupId, buttonIndex, target, expect
         end
     end
 
-    -- Gated on being SET, which is the same gate the list draws the row on, so
-    -- Revert All clears exactly the rows it was shown beside - including a
-    -- format stranded on a panel that is no longer a text panel, which the list
-    -- shows as inactive rather than hiding.
-    local formatCleared = false
-    if buttonData.textFormat ~= nil then
-        buttonData.textFormat = nil
-        formatCleared = true
-    end
-
-    -- Frame population applies style and reparses format; do not style first
-    -- and then repeat it. Both operations deliver one final workspace mirror.
-    ST._CompleteConfigEdit(target, formatCleared and "frame-settings" or "style-settings")
+    ST._CompleteConfigEdit(target, "style-settings")
 end
 
 local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons)
@@ -327,25 +299,6 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     -- other lens that is what the builders' gates read.
     local lens = ResolveStyleLens(group)
     local predicateStyle = (lens and lens.mode == "entry" and lens.effective) or group.style or {}
-
-    -- Leads the list: the format is what a text entry IS, so its customization
-    -- reads first rather than under the style sections.
-    --
-    -- A saved format on a panel that is no longer a text panel is stranded, not
-    -- gone - the same "saved but unreachable" state the sections have - so it
-    -- takes the same inactive shape: the displayMode clause, its own revert, and
-    -- NO name link, because the Format tab it would open only exists in text
-    -- mode (tab = nil is what drives that, exactly as it does for a section
-    -- with no home in this mode).
-    if buttonData.textFormat ~= nil then
-        local textMode = displayMode == "text"
-        items[#items + 1] = {
-            format = true,
-            label = FORMAT_ROW_LABEL,
-            reason = (not textMode) and "displayMode" or nil,
-            tab = textMode and "format" or nil,
-        }
-    end
 
     if sections then
         for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
@@ -514,14 +467,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         end
 
         local revert = EnsureScopeGlyph(frame, "_cdcCustomizationsRevert")
-        if item.format then
-            ApplyRevertGlyphLook(revert.icon)
-            BindRevertGlyph(revert, GetRevertTooltipTextForLabel(label), function()
-                PerformFormatRevert(buttonData, editTarget)
-            end)
-        else
-            WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)
-        end
+        WireRevertGlyph(revert, revert.icon, buttonData, item.sectionId)
         AnchorRowBadge(row, revert)
 
         -- The name becomes a link only where there is somewhere to go. Gold
@@ -536,7 +482,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
             -- The route resolves the destination itself, from the same
             -- registry consulted above; the format row has no section and
             -- names its tab instead.
-            local sectionId, formatRow = item.sectionId, item.format
+            local sectionId = item.sectionId
             nav:SetScript("OnClick", function()
                 if moduleContext then
                     if not moduleContext:IsCurrent() then return end
@@ -554,7 +500,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
                 end
                 local navigate = ST._NavigateToSectionHome
                 if navigate then
-                    navigate(sectionId, formatRow and { tab = "format" } or nil)
+                    navigate(sectionId)
                 end
             end)
         end

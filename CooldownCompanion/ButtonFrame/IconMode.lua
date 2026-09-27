@@ -104,7 +104,7 @@ local function IsKeyPressHighlightGroupEligible(button)
         and CooldownCompanion.db.profile.groups
     local group = groupId and groups and groups[groupId]
     local presentation = group and ST.GetEntryPresentation(group, button.buttonData)
-    return group and presentation ~= "bars" and presentation ~= "text" or false
+    return group and presentation == "icons" or false
 end
 
 local function HasCachedBindingKeys(button)
@@ -923,9 +923,6 @@ function CooldownCompanion:UpdateButtonIcon(button, totemTexture)
     -- columns at measure time; this is the identity edge that re-measures
     -- them (no-op for every other button). After the texture write above so
     -- the probe sees the new icon.
-    if button._isText and ST._RequestTextIdentityRelayout then
-        ST._RequestTextIdentityRelayout(button)
-    end
 
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then

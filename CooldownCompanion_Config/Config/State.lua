@@ -1161,9 +1161,7 @@ ST.TOTEM_PANEL_BADGE_TINT = { 0.3, 0.8, 1, 1 }
 local function GetConfigPanelTypeBadgeAtlas(displayMode)
     if displayMode == "bars" then
         return "CreditsScreen-Assets-Buttons-Pause"
-    elseif displayMode == "text" then
-        return "poi-workorders"
-    elseif displayMode == "textures" or displayMode == "trigger" then
+    elseif displayMode == "indicator" then
         return "UI-HUD-MicroMenu-Communities-Icon-Notification"
     end
 
@@ -1594,7 +1592,7 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
     validateContext = function(context, db)
         local groupId = context and context.groupId
         local group = db and db.groups and db.groups[groupId]
-        return group and group.displayMode == "trigger" and group or nil
+        return group and ST.IsIndicatorGroup(group) and group or nil
     end,
     getCurrentIcon = function(group)
         local settings = CooldownCompanion.GetTriggerPanelIconSettings
@@ -1610,6 +1608,7 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
             return
         end
         settings.manualIcon = iconTexture
+        if ST.Indicator.IsAura(group) then CooldownCompanion:RequestAuraRebind("style") end
         CooldownCompanion:RefreshAllAuraTextureVisuals()
         CooldownCompanion:RefreshConfigPanel()
     end,
@@ -2564,6 +2563,18 @@ local function SelectConfigPanel(panelId, opts)
     FinishPreviewSelection(opts and opts.previewSession)
 end
 
+-- Indicator sources are edited inside the panel's Tracking tab. Old texture
+-- selection and retained entry routes must not turn them into an entry scope.
+local function NormalizeIndicatorConfigSelection()
+    if CS.GetIndicatorSourceReplacement then CS.GetIndicatorSourceReplacement(CS.selectedGroup) end
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
+    if ST.IsIndicatorGroup(group) and (CS.selectedButton or next(CS.selectedButtons)
+        or CS.selectedRotationAssistantEntry or CS.unifiedRowScope == "detail") then
+        SelectConfigPanel(CS.selectedGroup)
+    end
+end
+
 local function ToggleConfigPanelMultiSelect(panelId)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
@@ -2592,6 +2603,16 @@ end
 -- surface lives), and a caller that names a destination with opts.scope -
 -- adding a spell, whose new entry is the destination.
 local function SelectConfigButton(panelId, buttonIndex, opts)
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = profile and profile.groups and profile.groups[panelId]
+    if ST.IsIndicatorGroup(group) then
+        SelectConfigPanel(panelId, {containerId=opts and opts.containerId,
+            previewSession=opts and opts.previewSession})
+        if opts and opts.scope == "detail" then
+            CS.selectedTab, CS.panelSettingsTab, CS.panelSettingsTabExplicit = "tracking", "tracking", true
+        end
+        return
+    end
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local panelChanged = CS.selectedGroup ~= panelId
     local hadEntryFocus = not panelChanged
@@ -2604,8 +2625,6 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     local enteringFromPanel = not panelChanged
         and not hadEntryFocus
         and not (opts and opts.multi)
-    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = profile and profile.groups and profile.groups[panelId]
     local supportsEntryLens = ST._GroupSupportsPerButtonOverrides
         and ST._GroupSupportsPerButtonOverrides(group)
     local preservePlace = supportsEntryLens
@@ -3267,6 +3286,7 @@ ST._ClearConfigPrimarySelection = ClearConfigPrimarySelection
 ST._SelectConfigContainer = SelectConfigContainer
 ST._ToggleConfigContainerMultiSelect = ToggleConfigContainerMultiSelect
 ST._SelectConfigPanel = SelectConfigPanel
+ST._NormalizeIndicatorConfigSelection = NormalizeIndicatorConfigSelection
 ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
 ST._SelectConfigRotationAssistantEntry = SelectConfigRotationAssistantEntry

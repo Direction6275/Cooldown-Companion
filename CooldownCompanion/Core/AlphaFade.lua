@@ -248,10 +248,13 @@ local function GetGroupAlphaFrame(self, groupId)
         or (self._dormantFrames and self._dormantFrames[groupId])
 end
 
-local function GetStandaloneTextureHost(groupFrame)
-    return CooldownCompanion.GetAuraTextureHostForGroupFrame
-        and CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
-        or nil
+local function IsGroupAlphaMouseOver(frame, group)
+    if ST.IsIndicatorGroup(group) then
+        -- The panel's bookkeeping frame is 1x1. Preserve the standalone
+        -- display's hover footprint without giving that display alpha ownership.
+        frame = CooldownCompanion:GetAuraTextureHostForGroupFrame(frame)
+    end
+    return frame and frame:IsShown() and frame:IsMouseOver() or false
 end
 
 local function ClampAlpha(alpha)
@@ -424,11 +427,6 @@ local function BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTarget
             local frame = GetGroupAlphaFrame(self, groupId)
             if FrameIsAlphaWorkTarget(frame, panelAlphaAnchorTargets and panelAlphaAnchorTargets[groupId]) then
                 AddContainerAlphaEntry(scratch, entriesByContainer, controlledGroups, sourceContainerId, groupId, group, frame)
-            end
-
-            local host = GetStandaloneTextureHost(frame)
-            if host and host.IsShown and host:IsShown() then
-                AddContainerAlphaEntry(scratch, entriesByContainer, controlledGroups, sourceContainerId, groupId, group, host)
             end
         end
     end
@@ -823,7 +821,7 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, 
     -- Mouseover check (geometric, works even when click-through)
     local ignoreSelfMouseover = CooldownCompanion:IsGroupCursorAnchored(group)
     if not forceFull and group.forceAlphaMouseover and not ignoreSelfMouseover then
-        local isHovering = frame:IsMouseOver()
+        local isHovering = IsGroupAlphaMouseOver(frame, group)
         if isHovering then
             forceFull = true
             state.hoverExpire = now + (group.fadeDelay or 1)
@@ -879,8 +877,7 @@ function CooldownCompanion:UpdateContainerAlpha(containerId, container, entries,
         local isHovering = false
         for i = 1, #entries do
             local frame = entries[i].frame
-            if frame and frame.IsShown and frame:IsShown()
-                and frame.IsMouseOver and frame:IsMouseOver() then
+            if IsGroupAlphaMouseOver(frame, entries[i].group) then
                 isHovering = true
                 break
             end

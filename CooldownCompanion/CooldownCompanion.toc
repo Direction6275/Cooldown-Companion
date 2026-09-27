@@ -41,6 +41,7 @@ Core\ConfigLoader.lua
 Core\AnchorPolicy.lua
 Core\EntryRuntime.lua
 Core\Defaults.lua
+Core\IndicatorPanels.lua
 Core\EntryPresentation.lua
 Core\PanelSections.lua
 Core\SpellActivationOverlayData.lua
@@ -49,6 +50,7 @@ Core\AuraTexturesBuiltins.lua
 Core\AuraTexturesPicker.lua
 Core\AuraTexturesEffects.lua
 Core\AuraTexturesDisplay.lua
+Core\IndicatorDisplay.lua
 Core\ChangelogData.lua
 Core\Changelog.lua
 Core\ScopedSettings.lua
@@ -71,6 +73,7 @@ Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua
 Core\UnifiedPanelMigration.lua
+Core\IndicatorMigration.lua
 Core\Migrations.lua
 Core\AlphaFade.lua
 Core\Keybinds.lua
@@ -92,8 +95,6 @@ ButtonFrame\IconVisuals.lua
 ButtonFrame\IconMode.lua
 ButtonFrame\BarVisuals.lua
 ButtonFrame\BarMode.lua
-ButtonFrame\TextFormat.lua
-ButtonFrame\TextMode.lua
 ButtonFrame\Preview.lua
 ButtonFrame\CooldownUpdate.lua
 # Panel frames: shared helpers and providers before lifecycle consumers

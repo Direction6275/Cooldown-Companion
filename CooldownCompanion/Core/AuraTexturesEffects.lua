@@ -221,6 +221,7 @@ local function SetTextureIndicatorBaseVisuals(host)
 
         local color = settings.color or { 1, 1, 1, 1 }
         local baseAlpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
+        baseAlpha = baseAlpha * (host._indicatorDimAlpha or 1)
         local textures = {
             host.primaryTexture,
             host.secondaryTexture,
@@ -251,6 +252,9 @@ local function SetTextureIndicatorBaseVisuals(host)
     if displayType == "text" and host.textFrame and host.textFrame.text and host.textFrame.text:IsShown() then
         local color = CopyColor(host._triggerTextBaseColor) or { 1, 1, 1, 1 }
         host.textFrame.text:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        if host.indicatorReadouts then
+            for _, key in ipairs({"label", "timer", "count"}) do host.indicatorReadouts[key]:SetTextColor(unpack(color)) end
+        end
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
         host._indicatorBaseColor = color
         host._indicatorBaseVisualsReady = true
@@ -337,7 +341,7 @@ TextureIndicatorOnUpdate = function(self)
         local shift = self._textureColorShiftColor or { 1, 1, 1, 1 }
         local colorPhase = GetTextureIndicatorLoopPhase(now, self._textureColorShiftSpeed)
         local t = 0.5 - (0.5 * math_cos(colorPhase * 2 * math_pi))
-        local shiftAlpha = Clamp(shift[4] ~= nil and shift[4] or 1, 0, 1)
+        local shiftAlpha = Clamp(shift[4] ~= nil and shift[4] or 1, 0, 1) * (self._indicatorDimAlpha or 1)
         local alpha = baseAlpha + ((shiftAlpha - baseAlpha) * t)
 
         local shiftedR = (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t)
@@ -345,6 +349,13 @@ TextureIndicatorOnUpdate = function(self)
         local shiftedB = (baseColor[3] or 1) + (((shift[3] or 1) - (baseColor[3] or 1)) * t)
 
         if self._activeDisplayType == "texture" then
+            if self.indicatorProgress and self._indicatorDimAlpha then
+                local normalAlpha = Clamp(((self._activeTextureSettings.color or {})[4] or 1) * (self._activeTextureSettings.alpha or 1), 0.05, 1)
+                local foregroundAlpha = normalAlpha + (((shift[4] or 1) - normalAlpha) * t)
+                for _, texture in ipairs({self.indicatorProgress.foreground.primaryTexture, self.indicatorProgress.foreground.secondaryTexture}) do
+                    texture:SetVertexColor(shiftedR, shiftedG, shiftedB, foregroundAlpha)
+                end
+            end
             local primaryTexture = self.primaryTexture
             if primaryTexture and primaryTexture:IsShown() then
                 primaryTexture:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
@@ -357,6 +368,11 @@ TextureIndicatorOnUpdate = function(self)
         elseif self._activeDisplayType == "icon" and self.iconFrame and self.iconFrame.icon and self.iconFrame.icon:IsShown() then
             self.iconFrame.icon:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
         elseif self._activeDisplayType == "text" and self.textFrame and self.textFrame.text and self.textFrame.text:IsShown() then
+            if self.indicatorReadouts then
+                for _, key in ipairs({"label", "timer", "count"}) do
+                    self.indicatorReadouts[key]:SetTextColor(shiftedR, shiftedG, shiftedB, alpha)
+                end
+            end
             self.textFrame.text:SetTextColor(
                 (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
                 (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),
@@ -650,16 +666,18 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
     return FinishTextureIndicatorSectionState(target, false, "unknown-section", nil, effectType)
 end
 
-local function EvaluateTriggerRowCondition(button, conditionKey)
+local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
     if not button then
         return false
     end
 
     if conditionKey == "cooldownActive" then
+        if readableOnly and button._desatCooldownActive == nil then return nil end
         return button._desatCooldownActive == true
     end
 
     if conditionKey == "procActive" then
+        if readableOnly and button._procOverlayActive == nil then return nil end
         return button._procOverlayActive == true
     end
 
@@ -682,7 +700,8 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         if IsRuntimeItemLike(buttonData) then
             if not InCombatLockdown() or UnitCanAttack("player", "target") then
                 local itemID = button._resolvedItemId or buttonData.id
-                local inRange = itemID and C_Item_IsItemInRange(itemID, "target") or nil
+                local inRange
+                if itemID then inRange = C_Item_IsItemInRange(itemID, "target") end
                 if inRange == nil then
                     return nil
                 end
@@ -697,6 +716,7 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
     if conditionKey == "usable" then
         local buttonData = button.buttonData
         if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
+            if readableOnly then return nil end
             return false
         end
         if buttonData.type == "spell" then
@@ -708,12 +728,15 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
         end
         if IsRuntimeItemLike(buttonData) then
             local itemID = button._resolvedItemId or buttonData.id
+            if readableOnly and not itemID then return nil end
             return itemID and C_Item_IsUsableItem(itemID) or false
         end
+        if readableOnly then return nil end
         return false
     end
 
     if conditionKey == "chargesRecharging" then
+        if readableOnly and button._chargeRecharging == nil then return nil end
         return button._chargeRecharging == true
     end
 
@@ -734,8 +757,10 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
             return nil
         end
 
-        local countText = button.count and button.count:GetText() or nil
+        local countText
+        if button.count then countText = button.count:GetText() end
         if issecretvalue(countText) then
+            if readableOnly then return nil end
             return true
         end
         return countText ~= nil and countText ~= ""
@@ -771,79 +796,8 @@ local function EvaluateTriggerRowCondition(button, conditionKey)
 end
 
 local function DoesTriggerPanelMatch(frame)
-    if not frame then
-        return false
-    end
-
-    local group = frame.groupId and ResolveGroup(frame.groupId) or nil
-    local configuredRows = group and group.buttons
-    if type(configuredRows) ~= "table" or #configuredRows == 0 then
-        return false
-    end
-
-    local runtimeButtonsByIndex = frame._triggerRuntimeButtonsByIndex
-    if runtimeButtonsByIndex then
-        wipe(runtimeButtonsByIndex)
-    else
-        runtimeButtonsByIndex = {}
-        frame._triggerRuntimeButtonsByIndex = runtimeButtonsByIndex
-    end
-    for _, button in ipairs(frame.buttons or {}) do
-        if button and button.index then
-            runtimeButtonsByIndex[button.index] = button
-        end
-    end
-
-    local activeRowCount = 0
-    for rowIndex, buttonData in ipairs(configuredRows) do
-        if type(buttonData) ~= "table" then
-            return false
-        end
-
-        if buttonData.enabled ~= false then
-            local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
-            activeRowCount = activeRowCount + 1
-            if #clauses == 0 then
-                return false
-            end
-
-            local runtimeButton = runtimeButtonsByIndex[rowIndex]
-            if not runtimeButton then
-                return false
-            end
-
-            for _, clause in ipairs(clauses) do
-                local conditionKey = NormalizeTriggerConditionKey(buttonData, clause.key)
-                if not conditionKey then
-                    return false
-                end
-
-                -- Trigger panels do not support Aura conditions on 12.1.
-                -- Preserve old saved clauses, but fail them closed instead of
-                -- consulting addon-side Aura state or guessing at absence.
-                if conditionKey == "auraActive" then
-                    return false
-                end
-
-                local actualState = EvaluateTriggerRowCondition(runtimeButton, conditionKey)
-                local expectedState
-                local conditionMatched
-                if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
-                    expectedState = clause.expected ~= false
-                    conditionMatched = actualState == expectedState
-                else
-                    expectedState = NormalizeTriggerStateKey(conditionKey, clause.state)
-                    conditionMatched = actualState == expectedState
-                end
-
-                if not conditionMatched then
-                    return false
-                end
-            end
-        end
-    end
-
-    return activeRowCount > 0
+    local group = frame and frame.groupId and ResolveGroup(frame.groupId)
+    return ST.Indicator.Match(frame, group)
 end
 
 local function CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
@@ -922,7 +876,7 @@ local function ApplyTextureIndicatorEffects(host, button, group, onlySectionKey)
 
 end
 
-function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive)
+function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive, previewEffects)
     if not host or not button or type(group) ~= "table" then
         return
     end
@@ -933,6 +887,22 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
         return
     end
 
+    local activeEffects = {}
+    for key, config in pairs(effects) do
+        if config.enabled then
+            -- Detached config samples demonstrate enabled effects without live state.
+            local active = previewEffects == true
+            if not active then
+                local activation = config.activation or "always"
+                active = activation == "always" and (not config.combatOnly or InCombatLockdown())
+                if activation ~= "always" then
+                    active = ResolveTextureIndicatorSectionState(button, activation, config)
+                end
+            end
+            if active then activeEffects[key] = config end
+        end
+    end
+    effects = activeEffects
     SetTextureIndicatorBaseVisuals(host)
 
     local freezeGeometryWhileUnlocked = group.locked == false
@@ -977,3 +947,4 @@ AT.SetTextureIndicatorBaseVisuals = SetTextureIndicatorBaseVisuals
 AT.StopAllTextureIndicatorEffects = StopAllTextureIndicatorEffects
 AT.ApplyTextureIndicatorEffects = ApplyTextureIndicatorEffects
 AT.DoesTriggerPanelMatch = DoesTriggerPanelMatch
+AT.EvaluateTriggerRowCondition = EvaluateTriggerRowCondition

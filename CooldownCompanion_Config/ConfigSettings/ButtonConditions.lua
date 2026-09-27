@@ -93,6 +93,28 @@ local panelLoadConditionSettings = DefineLoadConditionFinderSettings(
     "panel.visibility.where", "panel", "primary", "loadconditions", "loadconditions_panel_local")
 local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
     "entry.visibility.where", "entry", "primary", "loadconditions", "loadconditions_entry_local")
+
+local function HasSavedSourceRestrictions(source)
+    return type(source.loadConditions) == "table" and next(source.loadConditions) ~= nil
+        or type(source.talentConditions) == "table" and #source.talentConditions > 0
+end
+
+local indicatorSourceRestrictions = ST._DefineSettingRoute({
+    idPrefix = "panel.indicator.visibility", scope = "panel", rowScope = "primary",
+    tab = "loadconditions", tabLabel = "Visibility",
+    section = "source_restrictions", sectionLabel = "Source Restrictions",
+    applies = function(context)
+        if not ST.IsIndicatorGroup(context.group) then return false end
+        for _, source in ipairs(context.group.buttons or {}) do
+            if HasSavedSourceRestrictions(source) then return true end
+        end
+        return false
+    end,
+}):Setting({key = "sources", label = "Source Restrictions",
+    aliases = {"source load conditions", "entry load conditions", "source visibility",
+        "source dungeon", "source raid", "source open world", "clear source restrictions",
+        "source talents", "talent conditions"}})
+
 local function PanelAlphaState(context)
     if context._ccPanelAlphaFinderState then
         return context._ccPanelAlphaFinderState
@@ -1818,16 +1840,13 @@ local function GetEntryVisibilityFinderState(context)
         return context._ccEntryVisibilityFinderState
     end
     local group, buttonData = context.group, context.buttonData
-    if not (group and buttonData) or group.displayMode == "trigger" then return nil end
+    if not (group and buttonData) then return nil end
 
-    local isTexturePanel = group.displayMode == "textures"
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
     local hideShowConditions = isAuraPanel
-        or (isTexturePanel and buttonData.type == "spell" and buttonData.addedAs == "aura")
     local state = {
         group = group,
         buttonData = buttonData,
-        isTexturePanel = isTexturePanel,
         isAuraPanel = isAuraPanel,
         visible = not hideShowConditions,
     }
@@ -1846,8 +1865,6 @@ local function GetEntryVisibilityFinderState(context)
     local chargeCapable = FilterChargeCapable(buttonData)
     local nonEquippableItem = isItem and not CooldownCompanion.IsItemEquippable(buttonData)
 
-    state.textureAuraToggle = isTexturePanel and buttonData.type == "spell"
-        and buttonData.addedAs ~= "aura"
     state.auraPair = auraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel
     state.cooldownFamily = not passive and not noCooldown and not isAuraPanel
@@ -1880,11 +1897,6 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         return tostring(context.groupId) .. "_" .. tostring(context.buttonIndex) .. "_visibility"
     end,
 }):Settings({
-    textureAura = {
-        label = "Show Texture While Aura Active",
-        aliases = { "texture aura", "aura presence" },
-        applies = EntryVisibilityApplies(function(state) return state.textureAuraToggle end),
-    },
     -- One descriptor per state dropdown. The aliases carry the retired
     -- checkbox labels so a search typed from memory of the old rows still
     -- lands on the row that replaced them.
@@ -2155,7 +2167,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local BeginRowGrid = ST._BeginRowGrid
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-    local isTexturePanel = group.displayMode == "textures"
 
     local isBatch = batchContext ~= nil
     local isItem
@@ -2316,10 +2327,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- stacks or equipped state that a pure aura entry never has. The section
     -- would build its header and then pour no rows, so it does not build at all.
     local hideShowConditions = isAuraPanel
-        or (not isBatch
-            and isTexturePanel
-            and buttonData.type == "spell"
-            and buttonData.addedAs == "aura")
 
     if not hideShowConditions then
     -- The families are collected BEFORE the heading is drawn. Which of them
@@ -2431,14 +2438,12 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- escape above. opts.desaturateKey is nil for the families without one.
     local function BuildStateList(withDesaturate)
         local list, order = { show = "Show" }, { "show" }
-        if withDesaturate and not isTexturePanel then
+        if withDesaturate then
             list.desaturate = "Desaturate"
             order[#order + 1] = "desaturate"
         end
-        if not isTexturePanel then
-            list.dim = "Dim"
-            order[#order + 1] = "dim"
-        end
+        list.dim = "Dim"
+        order[#order + 1] = "dim"
         list.hide = "Hide"
         order[#order + 1] = "hide"
         return list, order
@@ -2493,30 +2498,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 write = function(value)
                     WriteHideDimState(spec.apply, value, spec.hideKey, spec.dimKey, spec.desaturateKey)
                     if spec.afterWrite then spec.afterWrite(value) end
-                    CooldownCompanion:RefreshConfigPanel()
-                end,
-            })
-        end)
-    end
-
-    -- Ordinary Texture spell entries may layer presence-only Aura display onto
-    -- their spell behavior. Primary Aura entries are always Aura-controlled,
-    -- so only spell entries receive this opt-in.
-    if not isBatch and isTexturePanel and buttonData.type == "spell"
-        and buttonData.addedAs ~= "aura" then
-        AddFamily(1, function(column)
-            AddVisibilityRow(column, "Show Texture While Aura Active", "textureAuraDisplayEnabled", {
-                setting = entryVisibilitySettings.textureAura,
-                tooltip = {
-                    "Show Texture While Aura Active",
-                    {"Blizzard tracks the aura and directly controls whether the configured texture is shown. The addon never reads aura state in combat.", 1, 1, 1, true},
-                    {" ", 1, 1, 1, true},
-                    {"This is presence-only: duration, stacks, and group-member tracking are not displayed. An optional active-aura effect can be configured in the Indicators tab.", 1, 1, 1, true},
-                },
-                onChanged = function(widget, event, val)
-                    ST._SetTexturePanelAuraDisplayEnabled(group, buttonData, val, CS.selectedGroup)
-                    CooldownCompanion:RefreshAllGroups()
-                    CooldownCompanion:RequestAuraRebind("config")
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -2635,15 +2616,11 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         hide_ready = cooldownLabels.hide_ready,
     }
     local cooldownOrder = { "show" }
-    if not isTexturePanel then
-        cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
-        cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
-    end
+    cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
+    cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
     cooldownOrder[#cooldownOrder + 1] = "hide_cooldown"
-    if not isTexturePanel then
-        cooldownList.dim_ready = cooldownLabels.dim_ready
-        cooldownOrder[#cooldownOrder + 1] = "dim_ready"
-    end
+    cooldownList.dim_ready = cooldownLabels.dim_ready
+    cooldownOrder[#cooldownOrder + 1] = "dim_ready"
     cooldownOrder[#cooldownOrder + 1] = "hide_ready"
     if offerZeroOnly then
         cooldownList.zero_only = cooldownLabels.zero_only
@@ -2668,7 +2645,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 return "show"
             end,
             tooltip = BuildVisibilityModeTooltip("Cooldown Visibility",
-                COOLDOWN_VISIBILITY.tooltipLines, not isTexturePanel),
+                COOLDOWN_VISIBILITY.tooltipLines, true),
             write = function(value)
                 local hideOn = value == "hide_cooldown" or value == "dim_cooldown"
                 local hideReady = value == "hide_ready" or value == "dim_ready" or value == "zero_only"
@@ -2735,10 +2712,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local DESATURATE_TOOLTIP_LINE = {"Desaturate grays the icon in place.", 1, 1, 1, true}
     local function ZeroStateTooltipLines(firstLine)
         local lines = { {firstLine, 1, 1, 1, true} }
-        if not isTexturePanel then
-            lines[#lines + 1] = VISIBILITY_TOOLTIP_SPACER
-            lines[#lines + 1] = DESATURATE_TOOLTIP_LINE
-        end
+        lines[#lines + 1] = VISIBILITY_TOOLTIP_SPACER
+        lines[#lines + 1] = DESATURATE_TOOLTIP_LINE
         return lines
     end
 
@@ -2860,23 +2835,33 @@ end
 ------------------------------------------------------------------------
 -- TALENT CONDITIONS (its own section, independent of the show/hide rules)
 ------------------------------------------------------------------------
-local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext)
+local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext, sourceIndex)
     -- Function-local, not upvalues: see the note by the row-grammar imports.
     local AddLabelRow = ST._AddLabelRow
     local BeginRowGrid = ST._BeginRowGrid
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    local profile, groupId = CooldownCompanion.db.profile, CS.selectedGroup
+    local group = profile.groups[groupId]
     if not group then return end
 
     local isBatch = batchContext ~= nil
 
-    local function ApplyToSelected(field, value)
-        ApplyFieldToSelection(group, buttonData, field, value)
+    local function IsCurrentSource()
+        return not sourceIndex or (CooldownCompanion.db.profile == profile
+            and profile.groups[groupId] == group and group.buttons[sourceIndex] == buttonData)
     end
 
-    local talentKey = isBatch
+    local function ApplyToSelected(field, value)
+        if sourceIndex then buttonData[field] = value
+        else ApplyFieldToSelection(group, buttonData, field, value) end
+    end
+
+    local talentKey = sourceIndex and (groupId .. "_indicator_source_" .. sourceIndex .. "_talentcondition")
+        or isBatch
         and (CS.selectedGroup .. "_batch_talentcondition")
         or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
-    local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, "Talent Conditions", talentKey,
+    local headingText = sourceIndex and ("Talents: " .. (buttonData.name or tostring(buttonData.id or sourceIndex)))
+        or "Talent Conditions"
+    local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, headingText, talentKey,
         nil, nil, ROW_SECTION)
 
     -- The heading's "?" chains off the end of its label; the fading rule
@@ -2985,6 +2970,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
+            if not IsCurrentSource() then return end
             if results then
                 local normalized, changed = CooldownCompanion:NormalizeTalentConditions(results)
                 if changed then
@@ -2993,7 +2979,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
             end
             if results then
                 -- Deep-copy each condition for batch mode safety
-                if CS.selectedButtons then
+                if CS.selectedButtons and not sourceIndex then
                     local count = 0
                     for _ in pairs(CS.selectedButtons) do count = count + 1 end
                     if count >= 2 then
@@ -3050,7 +3036,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
                 ApplyToSelected("talentName", nil)
                 ApplyToSelected("talentShow", nil)
             end
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end, initialConditions, group)
     end)
@@ -3081,13 +3067,14 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         clearBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
         clearBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
         clearBtn:SetCallback("OnClick", function()
+            if not IsCurrentSource() then return end
             ApplyToSelected("talentConditions", nil)
             ApplyToSelected("talentNodeID", nil)
             ApplyToSelected("talentEntryID", nil)
             ApplyToSelected("talentSpellID", nil)
             ApplyToSelected("talentName", nil)
             ApplyToSelected("talentShow", nil)
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
         strip:AddChild(clearBtn)
@@ -3280,7 +3267,6 @@ local function BuildLoadConditionsTab(container)
     -- Alpha (moved here from the Layout tab: transparency behavior
     -- reads as visibility, not layout)
     -- ============================================================
-    local isTexturePanel = group.displayMode == "textures" or group.displayMode == "trigger"
 
     -- Where this panel's alpha comes from, when it hangs off something that
     -- has one to give: another panel, or a resolved external frame. Derived
@@ -3332,7 +3318,7 @@ local function BuildLoadConditionsTab(container)
                 value = group.inheritPanelAlpha == false and "custom" or "inherit",
                 onChange = function(val)
                     group.inheritPanelAlpha = val ~= "custom"
-                    if isTexturePanel then
+                    if ST.IsIndicatorGroup(group) then
                         -- A texture panel's alpha rides its texture visuals,
                         -- not a group frame shell.
                         CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -3349,7 +3335,7 @@ local function BuildLoadConditionsTab(container)
         end
     end
 
-    if isTexturePanel then
+    if ST.IsIndicatorGroup(group) then
         BuildPanelAlphaControls(container, group, function()
             CooldownCompanion:RefreshAllAuraTextureVisuals()
             CooldownCompanion:RefreshConfigPanel()
@@ -3376,21 +3362,22 @@ local function BuildLoadConditionsTab(container)
     end
 end
 
-local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
+local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, opts)
     if not (CS.selectedGroup and buttonData) then return end
     local groupId = CS.selectedGroup
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
+    opts = opts or {}
 
     -- Entry scope mirrors the panel tab, minus the eligibility half: an entry
     -- inherits who its panel is for and can only add places to hide.
     local _, togglesRight = AddScopedLoadConditionToggles(container, {
         target = buttonData,
-        settings = entryLoadConditionSettings,
+        settings = opts.settings or entryLoadConditionSettings,
         defaults = CooldownCompanion:GetLocalLoadConditionDefaults(),
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
-        headingText = "Where To Hide It",
-        localCollapsedKey = "loadconditions_entry_local",
+        headingText = opts.headingText or "Where To Hide It",
+        localCollapsedKey = opts.collapseKey or "loadconditions_entry_local",
         preserveMissing = true,
         row = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
@@ -3404,13 +3391,13 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
         end,
     })
 
-    if CooldownCompanion:HasLocalLoadConditions(buttonData) then
+    if opts.allowClear or CooldownCompanion:HasLocalLoadConditions(buttonData) then
         -- Compact and flush left, filling the shorter (4-row) right column's
         -- tail. With the section collapsed there is no grid to sit in, so it
         -- falls back to the tab surface - still reachable, still compact.
         local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")
-        clearBtn:SetText("Clear Added Places")
+        clearBtn:SetText(opts.clearLabel or "Clear Added Places")
         clearBtn:SetAutoWidth(true)
         clearBtn:SetCallback("OnClick", function()
             buttonData.loadConditions = nil
@@ -3418,6 +3405,38 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons)
             CooldownCompanion:RefreshConfigPanel()
         end)
         clearHost:AddChild(clearBtn)
+    end
+end
+
+local function BuildIndicatorSourceRestrictions(container, group)
+    if not ST.IsIndicatorGroup(group) then return end
+    local heading
+    for index, source in ipairs(group.buttons or {}) do
+        if HasSavedSourceRestrictions(source) then
+            if not heading then
+                heading = AddFamilyHeading(container, "Source Restrictions")
+                ST._BindSettingWidget(heading, indicatorSourceRestrictions, "Source Restrictions")
+                local onRelease = heading.events and heading.events.OnRelease
+                heading:SetCallback("OnRelease", function(widget, event, ...)
+                    widget._cdcSettingDescriptor = nil
+                    if onRelease then onRelease(widget, event, ...) end
+                end)
+            end
+            if type(source.loadConditions) == "table" and next(source.loadConditions) then
+                BuildEntryLoadConditionsTab(container, source, tabInfoButtons, {
+                    -- Repeated source rows belong to one searchable section, not
+                    -- the entry-scope descriptors used by ordinary panels.
+                    settings = {},
+                    headingText = "Source: " .. (source.name or tostring(source.id or index)),
+                    collapseKey = "loadconditions_indicator_source_" .. index,
+                    allowClear = true,
+                    clearLabel = "Clear Load Conditions",
+                })
+            end
+            if type(source.talentConditions) == "table" and #source.talentConditions > 0 then
+                BuildEntryTalentConditionsSection(container, source, tabInfoButtons, nil, index)
+            end
+        end
     end
 end
 
@@ -3461,15 +3480,10 @@ local function BuildVisibilityTab(container)
                     -- Live rules first, then the static ones that decide
                     -- whether the entry loads at all. Trigger entries have
                     -- neither store, exactly as before.
-                    local isTriggerPanel = group.displayMode == "trigger"
-                    if not isTriggerPanel then
-                        BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
-                    end
+                    BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
                     AddFamilyHeading(container, "Load Conditions")
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
-                    if not isTriggerPanel then
-                        BuildEntryTalentConditionsSection(container, buttonData, tabInfoButtons)
-                    end
+                    BuildEntryTalentConditionsSection(container, buttonData, tabInfoButtons)
                     return
                 end
             end
@@ -3477,6 +3491,7 @@ local function BuildVisibilityTab(container)
     end
 
     BuildLoadConditionsTab(container)
+    BuildIndicatorSourceRestrictions(container, group)
 end
 
 ------------------------------------------------------------------------

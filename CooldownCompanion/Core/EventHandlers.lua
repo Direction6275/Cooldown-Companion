@@ -347,7 +347,7 @@ function CooldownCompanion:OnReadyGlowUsabilityChanged()
                 local style, bd = button.style, button.buttonData
                 -- Include individually hidden entries so hide-while-unusable
                 -- can recover. Only an enabled icon Ready Glow needs this pass.
-                if button.readyGlow and not button._isBar and not button._isText
+                if button.readyGlow and not button._isBar
                         and style and style.readyGlowOnlyWhileUsable == true
                         and style.readyGlowStyle and style.readyGlowStyle ~= "none"
                         and bd and not bd.isPassive and not bd.isPassiveCooldown

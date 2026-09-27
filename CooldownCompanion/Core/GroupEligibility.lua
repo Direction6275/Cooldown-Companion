@@ -1469,7 +1469,7 @@ end
 -- Texture panels have one driver and use the panel's enabled state. Ignore
 -- legacy entry flags here, including entries imported or moved from other modes.
 function CooldownCompanion:IsButtonEnabled(buttonData, group)
-    return (group and group.displayMode == "textures") or buttonData.enabled ~= false
+    return buttonData.enabled ~= false
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData, group, opts)

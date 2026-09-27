@@ -19,6 +19,19 @@ local IsUsableItem = C_Item.IsUsableItem
 local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 
+local function ShouldShowChargeText(button)
+    if button.style and button.style.showChargeText then return true end
+    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
+    local group = button._groupId and profile and profile.groups and profile.groups[button._groupId]
+    if not group then return false end
+    local settings = ST.Indicator.Settings(group)
+    -- The Indicator owns its count readout. Keep using the shared count writer
+    -- without changing the source's saved style or reading native aura text.
+    return settings ~= nil and settings.tracking ~= "aura"
+        and settings.readouts.count == "charges"
+        and ST.Indicator.Primary(group) == button.buttonData
+end
+
 -- Update charge count state for a spell with hasCharges enabled.
 -- chargeSpellID should be the effective runtime spell ID (override-aware).
 -- Returns the raw charges API table (may be nil) for use by callers.
@@ -71,9 +84,10 @@ local function UpdateChargeTracking(button, buttonData, chargeSpellID)
     end
 
     -- Display charge text via secret-safe widget methods
-    local showChargeText = button.style and button.style.showChargeText
+    local showChargeText = ShouldShowChargeText(button)
     if not showChargeText then
         button.count:SetText("")
+        button._chargeText = nil
     else
         if cur then
             -- Plain number: use directly (can optimize with comparison)
@@ -127,7 +141,7 @@ local function UpdateDisplayCountTracking(button, buttonData, spellID)
     button._chargeDurationObj = nil
     button._chargesSpent = nil
 
-    local showChargeText = button.style and button.style.showChargeText
+    local showChargeText = ShouldShowChargeText(button)
     if not showChargeText then
         button.count:SetText("")
     else
@@ -157,9 +171,10 @@ local function UpdateItemChargeTracking(button, buttonData)
     button._chargeCountReadable = true
 
     -- Display charge text with change detection
-    local showChargeText = button.style and button.style.showChargeText
+    local showChargeText = ShouldShowChargeText(button)
     if not showChargeText then
         button.count:SetText("")
+        button._chargeText = nil
     elseif button._chargeText ~= chargeCount then
         button._chargeText = chargeCount
         button.count:SetText(chargeCount)
@@ -395,6 +410,7 @@ local function EvaluateDesaturation(button, buttonData, style)
 end
 
 -- Exports
+ST._ShouldShowChargeText = ShouldShowChargeText
 ST._UpdateChargeTracking = UpdateChargeTracking
 ST._UpdateDisplayCountTracking = UpdateDisplayCountTracking
 ST._UpdateItemChargeTracking = UpdateItemChargeTracking

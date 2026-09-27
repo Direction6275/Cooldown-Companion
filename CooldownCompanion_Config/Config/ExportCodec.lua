@@ -15,7 +15,8 @@ local STRIPPED_CHARACTER_ELIGIBILITY_KEY = "_cdcCharacterEligibilityStripped"
 local COMPACT3_FORMAT_VALUE = "compact3"
 local COMPACT4_FORMAT_VALUE = "compact4"
 local COMPACT5_FORMAT_VALUE = "compact5"
-local CURRENT_COMPACT_FORMAT_VALUE = "compact6"
+local COMPACT6_FORMAT_VALUE = "compact6"
+local CURRENT_COMPACT_FORMAT_VALUE = "compact7"
 local UNSUPPORTED_COMPACT_FORMATS = {
     compact1 = true,
     compact2 = true,
@@ -369,6 +370,9 @@ local RETIRED_PROFILE_KEYS = {
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
+    _indicatorMigrationBackup = true,
+    _indicatorEffectMigrationBackup = true,
+    _indicatorMigrationVersion = true,
     _unifiedPanelBackup = true,
     _barGeometryBackup = true,
     _castBarOffsetBackup = true,
@@ -381,7 +385,8 @@ local function IsRetiredProfileKey(key)
     return RETIRED_PROFILE_KEYS[key] == true or OUTBOUND_ONLY_RETIRED_PROFILE_KEYS[key] == true
 end
 
-local function BuildCurrentCompactProfileDefaults()
+-- Frozen compact6 profile defaults, derived only from the frozen compact5 snapshot.
+local function BuildCompact6ProfileDefaults()
     local defaults = CopyTable(ST.COMPACT5_PROFILE_DEFAULTS)
     local resources = defaults.resourceBars
     if resources then
@@ -503,13 +508,15 @@ local COMPACT_PROFILE_DEFAULTS = {
     [COMPACT3_FORMAT_VALUE] = StripAuraDurationSwipeDefaults(BuildCompact3ProfileDefaults()),
     [COMPACT4_FORMAT_VALUE] = BuildCompact4ProfileDefaults(),
     [COMPACT5_FORMAT_VALUE] = CopyTable(ST.COMPACT5_PROFILE_DEFAULTS),
-    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCurrentCompactProfileDefaults(),
+    [COMPACT6_FORMAT_VALUE] = BuildCompact6ProfileDefaults(),
+    [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompact6ProfileDefaults(),
 }
 
 local COMPACT_ENTITY_DEFAULTS = {
     [COMPACT3_FORMAT_VALUE] = BuildCompactEntityDefaults(false),
     [COMPACT4_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
     [COMPACT5_FORMAT_VALUE] = CopyTable(ST.COMPACT5_ENTITY_DEFAULTS),
+    [COMPACT6_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
     [CURRENT_COMPACT_FORMAT_VALUE] = BuildCompactEntityDefaults(true),
 }
 

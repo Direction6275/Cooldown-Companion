@@ -99,20 +99,10 @@ local PANEL_TYPES = {
         description = "Automatically shows active totems and summons as timer bars, including Tyrant, Dreadstalkers, and Chi-Ji. No entries need to be added.",
     },
     {
-        mode = "text",
+        mode = "indicator",
         startsMenuSection = true,
-        label = "Text Panel",
-        description = "Shows text-only entries for compact readouts and status lists.",
-    },
-    {
-        mode = "textures",
-        label = "Texture Panel",
-        description = "Shows one standalone texture for a single spell or item.",
-    },
-    {
-        mode = "trigger",
-        label = "Trigger Panel",
-        description = "Add spell or item entries, then set conditions on each one. The display appears only when every enabled entry meets its conditions.",
+        label = "Indicator",
+        description = "One spell, aura, or item shown as an icon, texture, or text, with optional conditions and readouts.",
     },
     {
         mode = ST.DISPLAY_MODE_ROTATION_ASSISTANT,
@@ -175,6 +165,7 @@ local PANEL_TEMPLATE_FAILURE_TEXT = {
     invalid_template = "This template is incomplete. Update it from a panel or save a new template.",
 }
 local function GetPanelTemplateFailureText(reason, details)
+    if ST.Indicator.EffectFailureText[reason] then return ST.Indicator.EffectFailureText[reason] end
     if reason == "section_conflict" and details then
         local label = ST.PANEL_SECTION_ANCHOR_LABELS[details.section] or details.section
         return "Cannot apply template: " .. label .. " section. " .. details.reason
@@ -612,7 +603,7 @@ end
 local function DuplicateEntrySelection(snapshot)
     if not ValidateEntryActionSelection(snapshot) then return end
     local group = snapshot.group
-    if group.displayMode == "textures" then return end
+    if ST.IsIndicatorGroup(group) then return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
     local previousCount = #group.buttons
@@ -632,6 +623,8 @@ end
 
 local function DeleteEntrySelection(snapshot)
     if not ValidateEntryActionSelection(snapshot) then return end
+    local rejectMessage = ST.Indicator.GetRemovalError(snapshot.group, snapshot.entries)
+    if rejectMessage then CooldownCompanion:Print(rejectMessage); return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
     for i = #snapshot.indices, 1, -1 do
@@ -654,13 +647,12 @@ end
 local function GetManualMoveRejectMessage(group, entries)
     local message = CooldownCompanion:GetPanelManualEntryRejectMessage(group, entries)
     if message then return message end
-    if group and group.displayMode == "textures" and #entries > 1 then
-        return "Texture Panels can only hold one entry. Move one entry at a time."
-    end
 end
 
 local function MoveEntrySelection(snapshot, targetGroupId)
     if not ValidateEntryActionSelection(snapshot) then return false end
+    local sourceRejectMessage = ST.Indicator.GetRemovalError(snapshot.group, snapshot.entries)
+    if sourceRejectMessage then CooldownCompanion:Print(sourceRejectMessage); return false end
     local targetGroup = snapshot.db.groups[targetGroupId]
     if not targetGroup or not CanMoveEntryToGroup(snapshot.groupId, targetGroupId) then
         CloseDropDownMenus()
@@ -686,6 +678,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
         ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
+        ST.Indicator.OnSourceAdded(targetGroup, entry)
         results[i] = previousCount + i
     end
     for i = #snapshot.indices, 1, -1 do
@@ -903,9 +896,7 @@ local function AddEntrySelectionMenuButtons(level, snapshot)
     if anyEnabled then
         AddAction("Disable Selected", function() SetEntrySelectionEnabled(snapshot, false) end)
     end
-    if snapshot.group.displayMode ~= "textures" then
-        AddAction("Duplicate Selected", function() DuplicateEntrySelection(snapshot) end)
-    end
+    AddAction("Duplicate Selected", function() DuplicateEntrySelection(snapshot) end)
     AddEntrySelectionMoveMenuItem(level, snapshot, "Move Selected to...")
     AddAction("|cffff4444Delete Selected|r", function() ConfirmDeleteEntrySelection(snapshot) end)
 end
@@ -920,9 +911,6 @@ end
 -- section id the registry no longer knows is skipped in both places).
 local function CollectCopyCustomizationItems(entryData)
     local items = {}
-    if entryData.textFormat ~= nil then
-        items[#items + 1] = { scope = "format", label = "Text Format" }
-    end
     local sections = entryData.overrideSections or {}
     for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER or {}) do
         if sections[sectionId] then
@@ -997,42 +985,11 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
             -- popout, and the panel's Format tab is a LENS onto the selected
             -- entry, so there is one destination for every entry: select it,
             -- keep the surface on the panel tabs, and open Format.
-            if sourceGroup and sourceGroup.displayMode == "text" then
-                local formatInfo = UIDropDownMenu_CreateInfo()
-                formatInfo.text = "Edit Format..."
-                formatInfo.notCheckable = true
-                formatInfo.func = function()
-                    if not ValidateEntryActionSelection(snapshot) then return end
-                    CloseDropDownMenus()
-                    -- The menu can be opened on a panel that is not the
-                    -- selected one; move the selection there first so the
-                    -- container crumb follows too.
-                    if CS.selectedGroup ~= sourceGroupId then
-                        SelectConfigPanel(sourceGroupId, {
-                            containerId = sourceGroup.parentContainerId,
-                        })
-                    end
-                    -- force: this names an entry, so it must end selected even
-                    -- if clicking it would normally toggle the selection off.
-                    -- scope "primary": the panel tabs keep the surface, which
-                    -- is where the format editor now lives.
-                    if SelectConfigButton then
-                        SelectConfigButton(sourceGroupId, sourceIndex, { force = true, scope = "primary" })
-                    end
-                    CS.selectedTab = "format"
-                    CS.panelSettingsTab = "format"
-                    -- A deliberate destination, so it outranks a display
-                    -- mode's own default landing tab.
-                    CS.panelSettingsTabExplicit = true
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-                UIDropDownMenu_AddButton(formatInfo, level)
-            end
 
-            local isTexturePanel = sourceGroup and sourceGroup.displayMode == "textures"
+            local isIndicator = ST.IsIndicatorGroup(sourceGroup)
             -- The texture is the display; its lone driver has no separate icon
             -- or independent enabled state to configure in this menu.
-            if not isTexturePanel then
+            if not isIndicator then
                 -- Disable / Enable button
                 local toggleInfo = UIDropDownMenu_CreateInfo()
                 toggleInfo.text = (entryData.enabled ~= false) and "Disable" or "Enable"
@@ -1072,9 +1029,9 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 end
             end
 
-            local canDuplicate = not isTexturePanel
+            local canDuplicate = not isIndicator
             local hasCustomizations = #CollectCopyCustomizationItems(entryData) > 0
-            if not isTexturePanel and (canDuplicate or hasCustomizations) then
+            if not isIndicator and (canDuplicate or hasCustomizations) then
                 UIDropDownMenu_AddSeparator(level)
             end
 

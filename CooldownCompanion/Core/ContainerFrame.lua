@@ -926,8 +926,7 @@ local function GetContainerMemberDisplayFrame(self, groupId, group)
     local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
 
     if isStandaloneDisplay then
-        local driverButton = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
-        local host = driverButton and driverButton.auraTextureHost or nil
+        local host = self:GetAuraTextureHostForGroupFrame(groupFrame)
         if host and host:IsShown() then
             return host
         end

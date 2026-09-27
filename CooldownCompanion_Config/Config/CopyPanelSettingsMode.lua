@@ -113,7 +113,10 @@ local function HandleCopyPanelSettingsClick(panelId)
     if panelId == state.sourceGroupId then
         return false
     end
-    if not IsEligibleCopyPanelTarget(panelId) then
+    local eligible, reason = CooldownCompanion:CanCopyPanelSettings(state.sourceGroupId, panelId, state.scope)
+    if not eligible then
+        local message = ST.Indicator.EffectFailureText[reason]
+        if message then CooldownCompanion:Print(message) end
         -- Ineligible panel: stay armed and consume the click, so a stray
         -- click on a wrong-mode panel never navigates away mid-gesture.
         return true

@@ -28,7 +28,6 @@ local FormatAuraDurationPreviewText = PP.FormatAuraDurationPreviewText
 local StyleSlotCooldownText = PP.StyleSlotCooldownText
 
 -- ButtonPanelPreviewText.lua
-local RenderTextSlot = PP.RenderTextSlot
 
 ------------------------------------------------------------------------
 -- Effect previews on the mirror: while a preview toggle is active for an
@@ -254,16 +253,6 @@ local function EnsureConditionalTicker(preview)
                         slot.locCooldown:SetCooldown(startTime, duration)
                     end
                 end
-            end
-        end
-        -- Text slots: re-render the format so the countdown ticks
-        local textPool = preview.pools.textSlots
-        local usedText = preview.used.textSlots or 0
-        for i = 1, usedText do
-            local slot = textPool[i]
-            local state = slot and slot:IsShown() and slot._cdcCondAnim or nil
-            if state and RenderTextSlot then
-                RenderTextSlot(slot, slot.buttonData, slot.style or {}, state, now)
             end
         end
     end)

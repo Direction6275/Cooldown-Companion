@@ -137,7 +137,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     local iconFill = state.iconFill or {}
     local glows = state.glows or {}
     local bar = state.bar or {}
-    local text = state.text or {}
     local tintActive
     if tint.intentAvailable == true then
         tintActive = IsTrue(tint.intentActive)
@@ -199,18 +198,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         stackMode = bar.stackMode,
         gcdSuppressed = bar.gcdSuppressed,
     }
-    row.text = {
-        preservedSecretTextRender = text.preservedSecretTextRender,
-        intentAvailable = text.intentAvailable,
-        domain = text.domain,
-        stackSource = text.stackSource,
-        secretDuration = text.secretDuration,
-        secretDurationToken = text.secretDurationToken,
-        secretStack = text.secretStack,
-        secretName = text.secretName,
-        pulseActive = text.pulseActive,
-        appliedWritePath = text.appliedWritePath,
-    }
     CompareValue(row, "cooldown.state", cooldown.state, button._cooldownState)
     CompareValue(row, "cooldown.active", cooldown.active, button._cooldownState == STATE_COOLDOWN)
     CompareValue(row, "cooldown.visualActive", state.cooldownVisualActive, IsTrue(button._desatCooldownActive))
@@ -252,9 +239,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         end
         CompareValue(row, "glows.ready.intent", glows.readyIntentActive, glows.readyActive)
     end
-    local compareVisibleTextIntent = row.displayMode == "text"
-        and row.phase == "post-dispatch"
-        and visibility.hidden ~= true
     local compareVisibleBarIntent = row.displayMode == "bars"
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true
@@ -269,25 +253,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
             CompareValue(row, "bar.pulseActive", bar.appliedPulseActive, bar.pulseActive)
             CompareValue(row, "bar.colorShiftActive", bar.appliedColorShiftActive, bar.colorShiftActive)
             CompareValue(row, "bar.gcdSuppressed", bar.appliedGcdSuppressed, bar.gcdSuppressed)
-        end
-    end
-    local preservedSecretTextWithoutFreshSidecars = text.preservedSecretTextRender == true
-        and (text.intentAvailable ~= true or text.appliedAvailable ~= true)
-    if compareVisibleTextIntent and not preservedSecretTextWithoutFreshSidecars then
-        if text.intentAvailable ~= true then
-            AddMismatch(row, "text.intent.missing")
-        elseif text.appliedAvailable ~= true then
-            AddMismatch(row, "text.applied.missing")
-        else
-            local expectedWritePath = (text.secretDuration == true or text.secretStack == true or text.secretName == true)
-                and "formatted"
-                or "text"
-            CompareValue(row, "text.writePath", text.appliedWritePath, expectedWritePath)
-            CompareValue(row, "text.hasText", text.appliedHasText, text.hasText)
-            CompareValue(row, "text.secretDuration", text.appliedSecretDuration, text.secretDuration)
-            CompareValue(row, "text.secretStack", text.appliedSecretStack, text.secretStack)
-            CompareValue(row, "text.secretName", text.appliedSecretName, text.secretName)
-            CompareValue(row, "text.pulseActive", text.appliedPulseActive, text.pulseActive)
         end
     end
     return row

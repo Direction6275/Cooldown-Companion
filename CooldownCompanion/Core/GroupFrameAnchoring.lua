@@ -31,6 +31,22 @@ local BuildDefaultCursorAnchor = GF.BuildDefaultCursorAnchor
 local ParseAddonAnchorFrameName = GF.ParseAddonAnchorFrameName
 local WouldFrameDependencyCreateCircularAnchor = GF.WouldFrameDependencyCreateCircularAnchor
 
+-- Indicator geometry and alpha have the same active connection. The panel
+-- frame owns natural alpha even when no source/display host exists.
+function CooldownCompanion:RefreshIndicatorAnchorAlpha(frame, group, force)
+    local relativeTo = self:GetActivePanelAnchorRelativeTo(group)
+    local kind = self:ParseAddonAnchorFrameName(relativeTo)
+    local target
+    if group.inheritPanelAlpha ~= false and relativeTo and relativeTo ~= "UIParent"
+        and not IsCursorAnchor(relativeTo) and (kind == "group" or kind == nil) then
+        target = self:ResolveAddonFrameAnchorTarget(frame.groupId, "group", relativeTo)
+    end
+    if not force and frame._indicatorAlphaOwned and frame.anchoredToParent == target then return end
+    frame._indicatorAlphaOwned = true
+    frame.anchoredToParent = target
+    self:SetupAlphaSync(frame, target)
+end
+
 -- GroupFrameCursorAnchor.lua
 local GetCursorAnchorLayoutPreviewPosition = GF.GetCursorAnchorLayoutPreviewPosition
 local ApplyCursorAnchorPosition = GF.ApplyCursorAnchorPosition
@@ -40,6 +56,23 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     if InCombatLockdown() and frame:IsProtected() then
         frame._anchorDirty = true
         return
+    end
+
+    local group = self.db.profile.groups[frame.groupId]
+    if ST.IsIndicatorGroup(group) then
+        local body, deferred = self:UpdateIndicatorAnchorBody(frame, group)
+        if deferred then return end
+        frame._anchorDirty = nil
+        frame:ClearAllPoints()
+        ST.SetPanelBasePoint(frame, "CENTER", body, "CENTER", 0, 0)
+        self:RefreshIndicatorAnchorAlpha(frame, group, true)
+        if IsCursorAnchor(anchor) then
+            self:RefreshCursorAnchorTicker()
+        end
+        return
+    else
+        frame._indicatorAnchorBodyActive = nil
+        frame._indicatorAlphaOwned = nil
     end
 
     if IsCursorAnchor(anchor) then
@@ -272,9 +305,7 @@ function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetK
         local relTo
         if currentKind == "group" then
             local g = groups[currentId]
-            if g and g.anchor and g.anchor.relativeTo then
-                relTo = g.anchor.relativeTo
-            end
+            relTo = self:GetActivePanelAnchorRelativeTo(g)
         else
             local c = containers[currentId]
             if c and c.anchor and c.anchor.relativeTo then

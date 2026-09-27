@@ -19,6 +19,7 @@ local contextPreparers = {}
 local presentationDescriptors = {}
 
 local TAB_LABELS = {
+    tracking = "Tracking",
     general = "General",
     settings = "Settings",
     format = "Format",

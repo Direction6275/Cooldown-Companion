@@ -43,13 +43,7 @@ local CONDITION_PULLOUT_WIDTH = 300
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 
-local function GroupUsesTexturePanelEntries(group)
-    return group and (group.displayMode or "icons") == "textures"
-end
 
-local function GroupUsesTriggerPanelEntries(group)
-    return group and group.displayMode == "trigger"
-end
 
 -- 12.1 aura tracking is offered on spell entries in icon, bar and text
 -- groups, and as a Texture-only active/inactive display. Icons and bars
@@ -71,9 +65,7 @@ local function EntryOffersAuraTab(group, buttonData)
     local displayMode = group and group.displayMode or "icons"
     return displayMode == "icons"
         or displayMode == "bars"
-        or displayMode == "text"
-        or (displayMode == "textures"
-            and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData))
+
 end
 
 ST._EntryOffersAuraTab = EntryOffersAuraTab
@@ -92,11 +84,6 @@ local function BuildButtonSettingsTabs(group, buttonData)
     -- tab. Entry Visibility is not a tab either - the one Visibility tab on
     -- the left reads whichever entry is selected. So the entry cluster is
     -- exactly one tab, whatever the entry and panel type.
-    if GroupUsesTriggerPanelEntries(group) then
-        return {
-            { value = "settings", text = "Condition" },
-        }
-    end
 
     return {
         { value = "settings", text = "Settings" },
@@ -228,13 +215,9 @@ local function IsEquipmentSlotContext(context)
         and CooldownCompanion.IsEquipmentSlotEntry(context.buttonData)
 end
 
-local function IsTriggerEntryContext(context)
-    return context.group and context.buttonData and context.group.displayMode == "trigger"
-end
 
 local function IsRegularSpellSoundContext(context)
     return context.group and context.buttonData
-        and context.group.displayMode ~= "trigger"
         and context.buttonData.type == "spell"
         and not IsEquipmentSlotContext(context)
 end
@@ -244,13 +227,8 @@ local function SoundEventApplies(context, eventKey)
 
     local validEvents = context._ccSoundAlertValidEvents
     if validEvents == nil then
-        validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(context.buttonData) or false
+        validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(context.buttonData, nil, nil, context.group) or false
         context._ccSoundAlertValidEvents = validEvents
-    end
-    if context.group.displayMode == "textures"
-        and CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-    then
-        return CooldownCompanion:IsTexturePanelAuraDisplayEnabled(context.group, context.buttonData)
     end
     return validEvents and validEvents[eventKey] == true or false
 end
@@ -298,62 +276,9 @@ for key, spec in pairs(SOUND_EVENT_SPECS) do
     })
 end
 
-local triggerSoundSettings = ST._DefineSettingRoute({
-    idPrefix = "entry.condition.sound_alerts",
-    scope = "entry",
-    rowScope = "detail",
-    tab = "settings",
-    tabLabel = "Condition",
-    section = "sound_alerts",
-    sectionLabel = "Sound Alerts",
-    collapseKeys = EntrySettingsCollapseKey("soundalerts"),
-    applies = function(context)
-        return IsTriggerEntryContext(context) and not IsEquipmentSlotContext(context)
-    end,
-}):Settings({
-    triggered = { label = "Triggered", aliases = { "on show", "sound alert" } },
-})
-
-local function GetFinderTriggerConditionClauses(context)
-    if context._ccTriggerConditionClauses ~= nil then
-        return context._ccTriggerConditionClauses or nil
-    end
-    local clauses = IsTriggerEntryContext(context)
-        and CooldownCompanion:GetTriggerConditionClauses(context.buttonData) or nil
-    context._ccTriggerConditionClauses = type(clauses) == "table" and clauses or false
-    return type(clauses) == "table" and clauses or nil
-end
-
--- Clauses are ordered, persistent items. Give every possible row position its
--- own static descriptor so repeated Check/State labels still navigate to one
--- exact widget. Nine is the complete condition-key vocabulary; uniqueness
--- prevents a trigger entry from ever carrying more clauses than that.
-local triggerConditionSettings = {}
-for clauseIndex = 1, 9 do
-    local routeIndex = clauseIndex
-    triggerConditionSettings[routeIndex] = ST._DefineSettingRoute({
-        idPrefix = "entry.condition.conditions.clause." .. routeIndex,
-        scope = "entry",
-        rowScope = "detail",
-        tab = "settings",
-        tabLabel = "Condition",
-        section = "condition_" .. routeIndex,
-        sectionLabel = "Condition " .. routeIndex,
-        collapseKeys = EntrySettingsCollapseKey("triggerconditions"),
-        applies = function(context)
-            local clauses = GetFinderTriggerConditionClauses(context)
-            return clauses and clauses[routeIndex] ~= nil or false
-        end,
-    }):Settings({
-        check = { label = "Check", aliases = { "condition type" } },
-        state = { label = "State", aliases = { "expected state", "condition value" } },
-    })
-end
-
 local function ItemSettingsApply(context)
     return context.group and context.buttonData
         and context.buttonData.type == "item"
-        and context.group.displayMode ~= "text"
         and not UsesChargeBehavior(context.buttonData)
 end
 
@@ -424,7 +349,7 @@ local customKeybindSettings = ST._DefineSettingRoute({
 
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
-local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
@@ -443,23 +368,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
 
     if soundCollapsed then return end
 
-    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData)
-    if group and group.displayMode == "textures" then
-        -- Texture-only aura tracking deliberately does not set the general
-        -- auraTracking flag. Make this group's sound surface follow Texture
-        -- Aura display ownership instead, including the spell-entry opt-in.
-        local textureAuraEnabled = CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
-        if textureAuraEnabled then
-            validEvents = validEvents or {}
-        end
-        for eventKey in pairs(CooldownCompanion:GetNativeAuraSoundEventKeys()) do
-            if textureAuraEnabled then
-                validEvents[eventKey] = true
-            elseif validEvents then
-                validEvents[eventKey] = nil
-            end
-        end
-    end
+    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, nil, nil, group)
     if not validEvents or not next(validEvents) then
         -- A transient state of the entry's tracking, not a setting, so it stays
         -- a full-width wrapped label under the heading rather than a row.
@@ -502,9 +411,9 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
-        local setting = soundSettings[eventKey]
+        local setting = (finderSettings or soundSettings)[eventKey]
         if eventKey == "available" and UsesChargeBehavior(buttonData) then
-            setting = soundSettings.availableWithCharges
+            setting = (finderSettings or soundSettings).availableWithCharges
         end
         AddSoundPreviewDropdownRow(column, {
             setting = setting,
@@ -549,11 +458,11 @@ end
 -- Row grammar (RowWidgets.lua): the same shape as the spell section above,
 -- with a single panel-level event instead of a filtered set. One row, so it
 -- takes the left column and the right one stays empty.
-local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
-    if not (group and group.displayMode == "trigger") then
+    if not CooldownCompanion:IsTriggerPanelGroup(group) then
         return
     end
 
@@ -564,7 +473,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Plays when the trigger display appears. This is a panel alert, not an alert for any one condition.", 1, 1, 1, true},
+        {"Plays when the panel display appears after all its conditions match.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
     }, infoButtons)
@@ -578,7 +487,7 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     local soundLeft = BeginRowGrid(scroll)
 
     AddSoundPreviewDropdownRow(soundLeft, {
-        setting = triggerSoundSettings.triggered,
+        setting = (finderSettings or ST._IndicatorSoundSettings).triggered,
         pulloutWidth = SOUND_PULLOUT_WIDTH,
         list = soundOptions,
         order = soundOptionOrder,
@@ -596,13 +505,13 @@ end
 -- trigger panels) on every panel type. Entries that never had a sound surface
 -- (equipment slots, and anything that is not a spell outside trigger panels)
 -- add nothing rather than a section that only says "not available".
-local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons)
+local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
 
-    if group and group.displayMode == "trigger" then
-        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons)
+    if CooldownCompanion:IsTriggerPanelGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
+        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
         return
     end
 
@@ -610,145 +519,11 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
 
     -- Row grammar: the event rows sit in a BeginRowGrid the section opens on
     -- the scroll itself, so no Flow host is interposed any more.
-    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons)
+    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
 end
 
 -- Conditions stay in one vertical sequence. Each clause uses the shared
 -- half-width grid for Check / State, with a readable summary above it.
-local function BuildTriggerConditionSettings(scroll, buttonData, infoButtons)
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
-    local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group then
-        return
-    end
-
-    CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
-    local clauses = CooldownCompanion:GetTriggerConditionClauses(buttonData)
-
-    local conditionsKey = CS.selectedGroup .. "_" .. CS.selectedButton .. "_triggerconditions"
-    local heading, conditionsCollapsed =
-        BuildCollapsibleSection(scroll, "Conditions", conditionsKey, nil, nil, ROW_SECTION)
-    local help = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
-        "Trigger Conditions",
-        { "All conditions on all enabled entries must match for this display to appear.", 1, 1, 1, true },
-        { "Check chooses what to test; State chooses the result required. Add another condition to narrow when the display appears.", 1, 1, 1, true },
-    }, heading)
-    AnchorLeftAlignedHeadingRule(heading, help)
-    if conditionsCollapsed then return end
-
-    local conditionNames = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
-    for clauseIndex, clause in ipairs(clauses) do
-        local expectedOptions, expectedOrder = CooldownCompanion:GetTriggerConditionExpectedOptions(clause.key)
-        local state = CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex)
-        local conditionName = conditionNames[clause.key]
-            or (clause.key == "auraActive" and "Aura (unavailable)") or "Condition"
-        local clauseRow = AddLabelRow(scroll, {
-            label = clauseIndex .. ". " .. conditionName .. ": " .. (expectedOptions[state] or "Not configured"),
-        })
-        local conditionLeft, conditionRight = BeginRowGrid(scroll)
-
-        -- Removing the only clause would leave the entry with no condition at
-        -- all, so the link is drawn on every clause once there are two or more,
-        -- and on none while there is a single one - the same gate the
-        -- pre-redesign Remove button had.
-        if #clauses > 1 then
-            local removeLabel = AceGUI:Create("InteractiveLabel")
-            -- Clean-on-acquire: the shared pool also serves the Navigator,
-            -- whose plain-child frame badges survive release (badge-leak
-            -- class).
-            CleanRecycledEntry(removeLabel)
-            removeLabel:SetText("|cffff5555Remove|r")
-            removeLabel:SetWidth(60)
-            removeLabel:SetJustifyH("RIGHT")
-            removeLabel:SetCallback("OnClick", function()
-                if CooldownCompanion:RemoveTriggerConditionClause(buttonData, clauseIndex) then
-                    CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end)
-            clauseRow:SetControlWidget(removeLabel)
-        end
-
-        local excludedKeys = {}
-        for otherIndex, otherClause in ipairs(clauses) do
-            if otherIndex ~= clauseIndex then
-                excludedKeys[#excludedKeys + 1] = otherClause.key
-            end
-        end
-
-        local checkOptions, checkOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
-        AddDropdownRow(conditionLeft, {
-            setting = triggerConditionSettings[clauseIndex]
-                and triggerConditionSettings[clauseIndex].check,
-            indent = true,
-            pulloutWidth = CONDITION_PULLOUT_WIDTH,
-            list = checkOptions,
-            order = checkOrder,
-            value = clause.key,
-            onChange = function(value)
-                CooldownCompanion:SetTriggerConditionKey(buttonData, clauseIndex, value)
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        AddDropdownRow(conditionRight, {
-            setting = triggerConditionSettings[clauseIndex]
-                and triggerConditionSettings[clauseIndex].state,
-            indent = true,
-            pulloutWidth = CONDITION_PULLOUT_WIDTH,
-            list = expectedOptions,
-            order = expectedOrder,
-            value = CooldownCompanion:GetTriggerConditionStateValue(buttonData, clauseIndex),
-            onChange = function(value)
-                -- Note the argument order: the state setter takes the value
-                -- before the clause index, the key setter after it.
-                CooldownCompanion:SetTriggerConditionStateValue(buttonData, value, clauseIndex)
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-    end
-
-    local usedKeys = {}
-    for _, clause in ipairs(clauses) do
-        usedKeys[#usedKeys + 1] = clause.key
-    end
-    local addOptions, addOrder = CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, usedKeys)
-    if #addOrder > 0 then
-        local addColumn, actionColumn = BeginRowGrid(scroll)
-        local addRow = AddDropdownRow(addColumn, {
-            label = "New Condition",
-            pulloutWidth = CONDITION_PULLOUT_WIDTH,
-            list = addOptions,
-            order = addOrder,
-            value = addOrder[1],
-        })
-
-        local addStrip = AceGUI:Create("SimpleGroup")
-        addStrip:SetFullWidth(true)
-        addStrip:SetLayout("Flow")
-        addStrip:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-        addStrip.noAutoHeight = true
-
-        local addBtn = AceGUI:Create("Button")
-        addBtn:SetText("Add Condition")
-        addBtn:SetAutoWidth(true)
-        addBtn:SetCallback("OnClick", function()
-            if CooldownCompanion:AddTriggerConditionClause(buttonData, addRow:GetValue()) then
-                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end)
-        addStrip:AddChild(addBtn)
-
-        -- Added last so the List-layout column measures a populated row.
-        actionColumn:AddChild(addStrip)
-    end
-
-end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
@@ -761,7 +536,6 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- using the panel's text font and color. The per-entry itemCount* keys
     -- below style only the separate count overlay owned by Icon/Bar mode, so
     -- this otherwise-empty section has nothing relevant to edit in Text mode.
-    if group.displayMode == "text" then return end
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
     if UsesChargeBehavior(buttonData) then return end
@@ -1330,9 +1104,6 @@ local function RefreshButtonSettingsColumn()
         -- ("settings" today - retired tab names have no writer left and CS
         -- state is session-only). This normalizes a remembered tab a trigger
         -- panel does not offer, which matters again if the cluster regrows.
-        if GroupUsesTriggerPanelEntries(group) and CS.buttonSettingsTab ~= "settings" then
-            CS.buttonSettingsTab = "settings"
-        end
 
         local tabs = BuildButtonSettingsTabs(group, buttonData)
         if tabs then
@@ -1365,15 +1136,7 @@ local function RefreshButtonSettingsColumn()
 
         if bsCol.bsPlaceholder then
             local placeholderText
-            if GroupUsesTriggerPanelEntries(group) then
-                placeholderText = "Select an entry to configure"
-            elseif GroupUsesTexturePanelEntries(group) then
-                -- Reachable only while the panel is empty: a texture panel's
-                -- lone entry is auto-selected whenever it exists.
-                placeholderText = "Add a texture to configure"
-            else
-                placeholderText = "Select a spell or item to configure"
-            end
+            placeholderText = "Select a spell or item to configure"
             bsCol.bsPlaceholder:SetText(placeholderText)
             bsCol.bsPlaceholder:Show()
         end
@@ -1536,4 +1299,3 @@ ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildEntrySoundAlertsSection = BuildEntrySoundAlertsSection
-ST._BuildTriggerConditionSettings = BuildTriggerConditionSettings

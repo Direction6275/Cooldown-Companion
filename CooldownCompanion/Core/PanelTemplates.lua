@@ -15,7 +15,7 @@
     every login and on profile change; nothing here normalizes a template.
 
     Version 3 snapshots carry every supported panel setting, including Alpha
-    inheritance, strata and panel Text Format. capturedFields records presence
+    inheritance and strata. capturedFields records presence
     even for nil-valued settings: absent values inside that coverage RESET a
     target, while fields outside it were never saved. No profile baseline is
     substituted. Entries, eligibility, identity and anchor connections stay local.
@@ -46,6 +46,12 @@ local tonumber = tonumber
 local tostring = tostring
 local table_sort = table.sort
 local string_lower = string.lower
+
+local function IndicatorFieldCaptured(template, key)
+    if template.templateVersion ~= 3 and template.templateVersion ~= 4 then return true end
+    local fields = template.capturedFields and template.capturedFields.indicator
+    return fields and fields[key] == true or false
+end
 
 -- Also used by the create menus. Unknown versions must never fall through to
 -- the old-template path, which would apply a different scope silently.
@@ -81,6 +87,7 @@ end
 -- for controls added after this particular snapshot was made.
 local function GetPanelTemplateFields(group, mode)
     local fields = { style = {}, group = {}, loadConditions = {}, section = {} }
+    if mode == "indicator" then fields.indicator = {appearance=true,effects=true} end
     for sectionId, section in pairs(ST.OVERRIDE_SECTIONS) do
         if section.modes and (section.modes[mode]
             or (mode == "bars" and ST.IsTotemPanelGroup(group) and sectionId == "auraIndicator")) then
@@ -114,11 +121,6 @@ local function GetPanelTemplateFields(group, mode)
 end
 ST._GetPanelTemplateFields = GetPanelTemplateFields
 
-local function FlushTemplateEditor()
-    -- The config module publishes its existing commit owner only when loaded.
-    -- Flush without releasing the editor: a rejected apply keeps it usable.
-    if ST._FlushTextFormatTabCommit then ST._FlushTextFormatTabCommit() end
-end
 
 -- Legacy snapshots cannot apply settings they never captured.
 local function GetPanelTemplateScopeList(self, mode, template)
@@ -270,6 +272,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
     }
 
     for key in pairs(fields.style) do style[key] = ST._CopyPresetValue(sourceStyle[key]) end
+    if mode == "indicator" then template.indicatorSettings = ST.Indicator.CapturePresentation(group) end
     if fields.attachedBarStyle then
         template.attachedBarStyle, template.attachedBarLayout = {}, {}
         local attachedStyle = ST.GetAttachedBarStyle(group)
@@ -370,7 +373,7 @@ end
 
 -- Sorted array of { id = , template = }: by name (case-insensitive), then
 -- id. `mode` nil lists every template, else only that base copy mode
--- ("icons" / "bars" / "text", the answer GetPanelCopyMode gives).
+-- ("icons" / "bars" / "indicator", the answer GetPanelCopyMode gives).
 function CooldownCompanion:GetPanelTemplates(mode)
     local list = {}
     local store = self:GetPanelTemplateStore()
@@ -407,7 +410,6 @@ end
 
 -- Returns the new template id, or nil when the panel cannot be a template.
 function CooldownCompanion:SavePanelTemplate(groupId, name)
-    FlushTemplateEditor()
     local group = GetProfileGroup(self, groupId)
     local mode = self:GetPanelCopyMode(group)
     local store = mode and self:GetPanelTemplateStore()
@@ -446,7 +448,6 @@ end
 function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
     local canUpdate, reason = self:CanUpdatePanelTemplate(templateId, groupId)
     if not canUpdate then return false, reason end
-    FlushTemplateEditor()
     templateId = tonumber(templateId)
     local existing = self:GetPanelTemplate(templateId)
     local group = GetProfileGroup(self, groupId)
@@ -520,6 +521,11 @@ function CooldownCompanion:CanApplyPanelTemplate(templateId, groupId)
     if not mode or mode ~= templateMode or not TemplateSubtypeMatches(template, group) then
         return false, "mode_mismatch"
     end
+    if mode == "indicator" and IndicatorFieldCaptured(template, "effects") then
+        local allowed, reason = ST.Indicator.CanApplyEffects(template, group,
+            IndicatorFieldCaptured(template, "appearance"))
+        if not allowed then return false, reason end
+    end
     if self.ResolveContainerClassScope then
         local scope = group.parentContainerId
             and self:ResolveContainerClassScope(group.parentContainerId)
@@ -555,7 +561,6 @@ end
 -- Current snapshots preserve the target; old snapshots retain Group placement.
 function CooldownCompanion:ApplyPanelTemplate(templateId, groupId, opts)
     groupId = tonumber(groupId)
-    FlushTemplateEditor()
     local canApply, reason, details = self:CanApplyPanelTemplate(templateId, groupId)
     if not canApply then
         return false, reason, details
@@ -610,6 +615,10 @@ function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
     local template = self:GetPanelTemplate(templateId)
     local usable, reason = self:CanUsePanelTemplate(template)
     if not usable then return nil, reason end
+    if ST.IsIndicatorGroup(template) and IndicatorFieldCaptured(template, "effects") then
+        local effects, _, effectReason = ST.Indicator.ReadEffects(template)
+        if not effects then return nil, effectReason end
+    end
     local newGroupId = self:CreatePanel(containerId, self:GetPanelTemplateCreationMode(template))
     if not newGroupId then return nil end
 

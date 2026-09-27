@@ -87,14 +87,10 @@ end
 local function GetButtonPoolKey(group, buttonData, style)
     if ST.IsAttachedBarEntry(group, buttonData) then return "attachedBars" end
     local displayMode = ST.GetEntryPresentation(group, buttonData)
-    if displayMode == "text" then
-        return "text"
-    elseif displayMode == "bars" then
+    if displayMode == "bars" then
         return "bars"
-    elseif displayMode == "textures" then
-        return "textures"
-    elseif displayMode == "trigger" then
-        return "trigger"
+    elseif displayMode == "indicator" then
+        return "indicator"
     end
     return "icons"
 end
@@ -126,9 +122,6 @@ end
 local function GetExistingButtonPoolKey(button)
     if button and button._buttonPoolKey then
         return button._buttonPoolKey
-    end
-    if button and button._isText then
-        return "text"
     end
     if button and button._isBar then
         return "bars"
@@ -224,7 +217,6 @@ local function ClearReusableButtonRuntime(button)
     button._auraActive = false
     button._auraTrackingReady = nil
     button._auraHasTimer = nil
-    button._textSecretNameActive = nil
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false
@@ -270,23 +262,10 @@ local function ClearReusableButtonRuntime(button)
     button._barFillSuppressed = nil
     button._barTextColorDirty = true
     button._lastBarTimeText = nil
-    button._textVisualIntent = nil
-    button._textVisualApplied = nil
-    button._textModeSecretArgs = nil
-    button._textModeSecretParts = nil
     button._savedOnUpdate = nil
     ClearButtonPreviewState(button)
     ClearButtonVisualState(button)
     if button.count then button.count:SetText("") end
-    if button.textString then
-        button.textString:SetText("")
-        button.textString:SetAlpha(1)
-    end
-    -- Composite text entries render through pooled run strings beside
-    -- textString; put them away with it so the next entry starts blank.
-    if button._isText and ST._ResetTextRunStrings then
-        ST._ResetTextRunStrings(button)
-    end
     if button.nameText then button.nameText:SetText("") end
     if button.timeText then
         UnbindDurationText(button.timeText)
@@ -512,14 +491,6 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     end
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
-    end
-    -- A text entry is auto-sized from a worst-case render of its format, and
-    -- {name} resolves through the display identity UpdateButtonIcon just
-    -- assigned (ClearReusableButtonRuntime wiped it on release). UpdateStyle
-    -- above therefore measured against the SAVED id, so re-measure here; the
-    -- ApplyActiveButtonLayout call that follows this loop re-pitches the grid.
-    if button._isText and ST._ApplyTextEntryLayout then
-        ST._ApplyTextEntryLayout(button)
     end
     if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
         button:SetAlpha(0)

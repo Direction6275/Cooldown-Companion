@@ -48,26 +48,6 @@ local function CopyFieldMap(target, source, fieldMap)
     end
 end
 
-local TEXT_INTENT_FIELDS = {
-    "domain",
-    "stackSource",
-    "secretDuration",
-    "secretDurationToken",
-    "secretStack",
-    "secretName",
-    "hasText",
-    "pulseActive",
-}
-
-local TEXT_APPLIED_FIELDS = {
-    appliedWritePath = "writePath",
-    appliedHasText = "hasText",
-    appliedSecretDuration = "secretDuration",
-    appliedSecretStack = "secretStack",
-    appliedSecretName = "secretName",
-    appliedPulseActive = "pulseActive",
-}
-
 local BAR_INTENT_FIELDS = {
     "domain",
     "colorReason",
@@ -409,24 +389,6 @@ local function ResolveIconFillIntent(button, buttonData, style, target)
     return SetIconFillIntent(target, true, false, "inactive")
 end
 
-local function CopyTextVisualState(button, text, context)
-    local preservedSecretTextRender = IsTrue(context and context.preserveSecretTextRender)
-    local isTextSnapshot = (context and context.displayMode == "text") or button._isText == true
-    local textSidecarsAreFresh = isTextSnapshot
-        and context
-        and context.phase == "post-dispatch"
-        and not preservedSecretTextRender
-    local intent = textSidecarsAreFresh and button._textVisualIntent or nil
-    local hasIntent = type(intent) == "table"
-    text.preservedSecretTextRender = preservedSecretTextRender
-    text.intentAvailable = hasIntent
-    CopyFieldList(text, hasIntent and intent or nil, TEXT_INTENT_FIELDS)
-
-    local applied = textSidecarsAreFresh and button._textVisualApplied or nil
-    local hasApplied = type(applied) == "table"
-    text.appliedAvailable = hasApplied
-    CopyFieldMap(text, hasApplied and applied or nil, TEXT_APPLIED_FIELDS)
-end
 
 local function CopyBarVisualState(button, bar, context)
     local isBarSnapshot = (context and context.displayMode == "bars") or button._isBar == true
@@ -454,8 +416,6 @@ local function ClearButtonVisualState(button)
     if button then
         button._visualState = nil
         button._visualStateContext = nil
-        button._textVisualIntent = nil
-        button._textVisualApplied = nil
         button._iconGlowIntent = nil
         button._barVisualIntent = nil
         button._barVisualApplied = nil
@@ -599,8 +559,6 @@ local function RefreshButtonVisualState(button, context)
     local bar = EnsureSection(state, "bar")
     CopyBarVisualState(button, bar, context)
 
-    local text = EnsureSection(state, "text")
-    CopyTextVisualState(button, text, context)
 
     return state
 end
