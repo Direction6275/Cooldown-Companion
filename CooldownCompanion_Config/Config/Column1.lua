@@ -1117,12 +1117,25 @@ end
 -- path as the Group context menu.
 ST._CreatePanelInContainer = CreatePanelInContainer
 
--- Every create menu offers the account's templates after the specialists,
--- and offers nothing, not even the separator, while there are none. The
--- create path itself lives in PanelShared, which loads after this file.
+local function AddCDMStarterCreateItem(level, containerId)
+    local info = UIDropDownMenu_CreateInfo()
+    ST._AddCDMStarterMenuTooltip(info)
+    info.text = "From Template: " .. info.tooltipTitle
+    info.notCheckable = true
+    info.func = function()
+        CloseDropDownMenus()
+        if not IsCreateTargetContainer(containerId) then return end
+        if ST._CreateMissingCDMPanelsInSelectedContainer then
+            ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
+        end
+    end
+    UIDropDownMenu_AddButton(info, level)
+end
+
+-- Every create menu groups the built-in Cooldown Manager setup with saved
+-- templates after the specialists. PanelShared owns their creation paths.
 local function AddPanelTemplateCreateItems(level, containerId)
     local templates = GetPanelTemplateList(nil)
-    if #templates == 0 then return end
     UIDropDownMenu_AddSeparator(level)
     for _, entry in ipairs(templates) do
         local info = UIDropDownMenu_CreateInfo()
@@ -1141,6 +1154,7 @@ local function AddPanelTemplateCreateItems(level, containerId)
         end
         UIDropDownMenu_AddButton(info, level)
     end
+    AddCDMStarterCreateItem(level, containerId)
 end
 
 local function ShowContainerContextMenu(db, containerId, container)
@@ -1336,26 +1350,8 @@ local function AddPanelTypeCreateItems(level, containerId)
     end
 end
 
-local function AddCDMStarterCreateItem(level, containerId)
-    local info = UIDropDownMenu_CreateInfo()
-    info.text = "Add Missing CDM Panels"
-    info.notCheckable = true
-    if ST._AddCDMStarterMenuTooltip then
-        ST._AddCDMStarterMenuTooltip(info)
-    end
-    info.func = function()
-        CloseDropDownMenus()
-        if not IsCreateTargetContainer(containerId) then return end
-        if ST._CreateMissingCDMPanelsInSelectedContainer then
-            ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
-        end
-    end
-    UIDropDownMenu_AddButton(info, level)
-end
-
 -- Opened by the Group overview's add tile. The everyday types, specialists,
--- saved templates and Cooldown Manager starter share one list, separated into
--- visual groups.
+-- and templates share one list, separated into visual groups.
 -- It uses the create surfaces' own dropdown frame rather than the Group context
 -- menu's, so opening it never toggles or re-initializes that one, and it opens
 -- at the cursor because the tile it belongs to moves with the grid.
@@ -1369,8 +1365,6 @@ local function ShowPanelTypeMenuForContainer(containerId)
         if level == 1 then
             AddPanelTypeCreateItems(level, containerId)
             AddPanelTemplateCreateItems(level, containerId)
-            UIDropDownMenu_AddSeparator(level)
-            AddCDMStarterCreateItem(level, containerId)
         end
     end, "MENU")
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
