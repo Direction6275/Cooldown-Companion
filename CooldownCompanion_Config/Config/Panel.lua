@@ -1161,10 +1161,6 @@ local function CreateConfigPanel()
         if CancelFirstIconPanelTutorial then
             CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
         end
-        -- The text Format tab commits typing on a debounce, so a close mid-word
-        -- has a write still pending. Flush before the collapse guard: collapsing
-        -- keeps the tab built, so its editor must stay alive, but the pending
-        -- write is settled either way.
         -- The minimized config deliberately preserves the editing widgets,
         -- but Finder query/results are visibility-scoped and must not return
         -- when the workspace expands again.
@@ -2085,10 +2081,6 @@ local function CreateConfigPanel()
     bsTabGroup:SetLayout("Fill")
 
     bsTabGroup:SetCallback("OnGroupSelected", function(widget, event, tab)
-        -- The config's one text-format editor is settled here, before anything
-        -- else: it lives on the panel Format tab, and selecting an entry tab
-        -- hands the settings surface away from it. Release is idempotent, so
-        -- the panel-side seams releasing again costs nothing.
         local previousTab = col3._activeButtonSettingsTab
         local tabChanged = previousTab ~= nil and previousTab ~= tab
         -- Both tab clusters belong to the selected entry. This only chooses

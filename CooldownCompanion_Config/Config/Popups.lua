@@ -525,7 +525,7 @@ StaticPopupDialogs["CDC_SAVE_PANEL_TEMPLATE"] = {
         if not (data and data.panelId and CooldownCompanion.SavePanelTemplate) then return end
         local templateId = CooldownCompanion:SavePanelTemplate(data.panelId, self.EditBox:GetText())
         if not templateId then
-            CooldownCompanion:Print("Could not save the template: the panel is gone or is not an icon, bar, or text panel.")
+            CooldownCompanion:Print("Could not save the template: the panel is gone or does not support templates.")
             return
         end
         local template = CooldownCompanion:GetPanelTemplate(templateId)

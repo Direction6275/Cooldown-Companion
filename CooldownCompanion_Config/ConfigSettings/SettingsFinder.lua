@@ -795,14 +795,12 @@ local function ApplyDefaultTabRoute(descriptor, context)
     elseif context.scope == "panel" then
         CS.selectedTab = tab
         CS.panelSettingsTab = tab
-        CS.panelSettingsTabExplicit = true
     elseif context.scope == "entry" then
         if descriptor.rowScope == "detail" then
             CS.buttonSettingsTab = tab
         else
             CS.selectedTab = tab
             CS.panelSettingsTab = tab
-            CS.panelSettingsTabExplicit = true
         end
     elseif context.scope == "resources" then
         CS.resourcesSettingsTab = tab

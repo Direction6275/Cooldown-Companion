@@ -1361,7 +1361,6 @@ local function NavigateToSectionHome(sectionId, opts)
     CS.panelSettingsTab = tab
     -- A deliberate destination, so it outranks a display mode's own default
     -- landing tab.
-    CS.panelSettingsTabExplicit = true
     if type(CS.collapsedSections) == "table" then
         local resolveLens = ST._ResolveStyleLens
         local lens = resolveLens and resolveLens(group) or nil
@@ -1406,7 +1405,6 @@ local function ApplyGearRoute(route, queueKey, sectionId, running)
     local tab = (home and home.tab) or route.tab
     CS.selectedTab = tab
     CS.panelSettingsTab = tab
-    CS.panelSettingsTabExplicit = true
     -- A collapsed section never builds its checkbox, and a queued key with
     -- no gear to consume it expires silently.
     if type(CS.collapsedSections) == "table" then

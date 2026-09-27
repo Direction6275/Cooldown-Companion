@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ButtonPanelPreviewTriggers
-    Selection strips and texture/icon/text trigger-display mirrors.
+    Indicator previews and fallback entry selection strips.
 
     Part of the ButtonPanelPreview family; see its ordered block in the addon TOC.
     Private helpers are shared through ST._ButtonPanelPreview.
@@ -13,12 +13,8 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
-local ApplyBorderEdgePositions = ST._ApplyBorderEdgePositions
-local IsStoredPreviewFlagActive = ST._IsStoredPreviewFlagActive
 local AuraTextures = ST._AT
 local ApplyTextureIndicatorEffects = AuraTextures and AuraTextures.ApplyTextureIndicatorEffects
-local SetTextureIndicatorBaseVisuals = AuraTextures and AuraTextures.SetTextureIndicatorBaseVisuals
-local StopAllTextureIndicatorEffects = AuraTextures and AuraTextures.StopAllTextureIndicatorEffects
 
 local PP = ST._ButtonPanelPreview
 local AceGUI = LibStub("AceGUI-3.0")
@@ -188,7 +184,6 @@ local EnsureConditionalTicker = PP.EnsureConditionalTicker
 
 -- ButtonPanelPreviewShared.lua
 local SetPreviewMessage = PP.SetPreviewMessage
-local HidePreviewMessage = PP.HidePreviewMessage
 local FinalizePreviewState = PP.FinalizePreviewState
 local STRIP_ICON_SIZE = PP.STRIP_ICON_SIZE
 local STRIP_PER_ROW = PP.STRIP_PER_ROW
@@ -203,11 +198,6 @@ local PANEL_PREVIEW_DISABLED_ALPHA = PP.PANEL_PREVIEW_DISABLED_ALPHA
 local ApplySlotBadges = PP.ApplySlotBadges
 local ApplySelectionVisuals = PP.ApplySelectionVisuals
 local CopyMode = PP.CopyMode
-local PANEL_PREVIEW_PADDING = PP.PANEL_PREVIEW_PADDING
-local EMPTY_ENTRY_GUIDANCE_BAND = PP.EMPTY_ENTRY_GUIDANCE_BAND
-local GetHostFitBox = PP.GetHostFitBox
-local GetStripNaturalSize = PP.GetStripNaturalSize
-local TRIGGER_PREVIEW_STRIP_MAX_SHARE = PP.TRIGGER_PREVIEW_STRIP_MAX_SHARE
 
 -- ButtonPanelPreviewInteraction.lua
 local CreatePreviewLayoutDrag = PP.CreatePreviewLayoutDrag
@@ -217,10 +207,7 @@ local WireEntryInteraction = PP.WireEntryInteraction
 local ResetSlotConditionalVisuals = PP.ResetSlotConditionalVisuals
 local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 
--- layout (optional) is the trigger preview's band placement: scaleOverride
--- replaces the fit-to-host scale (the display visual above owns most of the
--- height) and anchorPoint = "BOTTOM" parks the strip along the bottom edge.
-local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layout)
+local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
     StopConditionalTicker(preview)
     local isRA = group.displayMode == ST.DISPLAY_MODE_ROTATION_ASSISTANT
     local entries = {}
@@ -259,8 +246,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
     local rows = math_ceil(count / STRIP_PER_ROW)
     local contentWidth = (cols - 1) * (w + STRIP_SPACING) + w
     local contentHeight = (rows - 1) * (h + STRIP_SPACING) + h
-    local scale = layout and layout.scaleOverride
-        or GetHostFitScale(host, contentWidth, contentHeight, readOnly)
+    local scale = GetHostFitScale(host, contentWidth, contentHeight, readOnly)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
@@ -370,14 +356,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly, layo
 
     content:SetScale(scale)
     content:ClearAllPoints()
-    if layout and layout.anchorPoint == "BOTTOM" then
-        -- Offset in content-local units so the strip clears the fit-box
-        -- padding by exactly PANEL_PREVIEW_PADDING on screen at any scale.
-        content:SetPoint("BOTTOM", preview.root, "BOTTOM", 0,
-            PANEL_PREVIEW_PADDING / math_max(scale, 0.01))
-    else
-        content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
-    end
+    content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
     FinalizePreviewState(preview)
 end

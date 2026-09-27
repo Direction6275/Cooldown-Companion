@@ -1547,9 +1547,7 @@ local function BuildLayoutTab(container)
             end
             local host = CS.groupSettingsActiveHost
             if host and host.tabGroup then
-                -- Rebuild in place, not a tab choice: the helper keeps the
-                -- remembered-tab bookkeeping from reading it as one.
-                ST._SelectPanelSettingsTabProgrammatic(host.tabGroup, CS.selectedTab)
+                host.tabGroup:SelectTab(CS.selectedTab)
             end
         end,
     })

@@ -674,12 +674,7 @@ local function EnsureAuraTextureNudger(host)
         local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        local settings
-        if group and CooldownCompanion:IsTriggerPanelGroup(group) then
-            settings = CooldownCompanion:GetTriggerPanelSignalSettings(group)
-        else
-            settings = group and CooldownCompanion:GetTexturePanelSettings(group)
-        end
+        local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
         local displayX, displayY
         if settings and group and group.parentContainerId
             and not HasStandaloneAnchorTarget(settings)
@@ -726,7 +721,7 @@ local function LockAuraTexturePanelFromMover(host)
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end
-    CooldownCompanion:Print((group.name or "Texture Panel") .. " locked.")
+    CooldownCompanion:Print((group.name or "Indicator") .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
@@ -782,7 +777,7 @@ local function EnsureAuraTextureDragHandle(host)
     )
     EnsureAuraTextureNudger(host)
     local _, group, settings = GetTextureHostPositionContext(host)
-    dragHandle.text:SetText(group and group.name or "Texture Panel")
+    dragHandle.text:SetText(group and group.name or "Indicator")
     local anchor = group and CooldownCompanion:IsGroupCursorAnchored(group) and group.anchor or settings
     UpdateTextureHostCoordLabel(host, anchor and anchor.x, anchor and anchor.y)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(host.dragHandle, host.coordLabel, host.nudger)
@@ -1083,11 +1078,6 @@ end
 local function GetStandaloneTextureSettings(group)
     local settings = ST.Indicator.Settings(group)
     return settings and settings.signal
-end
-
-function CooldownCompanion.GetStandaloneDisplayType(group)
-    local settings = ST.Indicator.Settings(group)
-    return settings and settings.displayType
 end
 
 function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
@@ -1405,7 +1395,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     local showHeader = host._dragEnabled == true and (not visibilityState.isGroupedPreview or isGroupedPreviewSelected)
     if showHeader then EnsureAuraTextureDragHandle(host) end
     if host.dragHandle and host.coordLabel then
-        host.dragHandle.text:SetText(group and group.name or "Texture Panel")
+        host.dragHandle.text:SetText(group and group.name or "Indicator")
         if isCursorPreviewSelected then
             -- The label shows the saved cursor offset, matching what a drag
             -- or nudge writes back to the anchor.
@@ -1605,12 +1595,7 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
             local groupFrame = self.groupFrames and self.groupFrames[panelInfo.groupId] or nil
             local driverButton = ST.Indicator.RuntimeSource(groupFrame, group)
             local host = driverButton and driverButton.auraTextureHost or nil
-            local settings = nil
-            if self:IsTriggerPanelGroup(group) then
-                settings = self:GetTriggerPanelSignalSettings(group)
-            else
-                settings = self:GetTexturePanelSettings(group)
-            end
+            local settings = self:GetTexturePanelSettings(group)
 
             local didSync = false
             local hasStandaloneAnchorTarget = HasStandaloneAnchorTarget(settings)
@@ -1677,23 +1662,16 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local host = self:EnsureAuraTextureHost(driverButton)
-    local auraControlled = (displayType == "texture" or ST.IsIndicatorGroup(group))
-        and not isTriggerPanel
+    local auraControlled = not isTriggerPanel
         and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
-    -- The production artwork lives inside the slot kit, so the managed path
-    -- draws NOTHING until the access-gated rebind has bound a slot for this
-    -- entry. That is invisible when the queued pass lands next frame, but a pass
-    -- blocked while auras are secret (reload mid-fight, or Aura control enabled
-    -- in combat) would leave the panel dark for the whole fight - so keep the
-    -- ordinary render until the slot exists. A pooled host can also carry the
-    -- previous entry's still-bound slot; the ordinary branch suppresses that
-    -- root too, and
-    -- BindDisplay re-runs this once it installs the matching pool token.
+    -- Aura Indicators render production artwork only inside their native slot.
+    -- Reveal it once the access-gated rebind has installed this source's token;
+    -- a pooled host may still carry the previous source's slot. Layout/unlock
+    -- previews use the ordinary saved-design render instead.
     local slotToken = driverButton._auraSlotHostToken
     local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
     local useManagedRuntime = auraControlled
         and not visibilityState.bypassModuleAlpha
-        and (ST.IsIndicatorGroup(group) or hasBoundSlot or self:CanRunAuraRebindNow())
     local shown
     if useManagedRuntime then
         shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, hasBoundSlot)

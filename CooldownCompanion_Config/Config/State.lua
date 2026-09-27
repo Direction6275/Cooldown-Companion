@@ -215,12 +215,6 @@ ST._configState = {
     selectedContainerTab = "general",
     buttonSettingsTab = "settings",
     panelSettingsTab = "appearance",
-    -- Whether `selectedTab` above is an explicit choice — a tab the user
-    -- clicked, or one a route deliberately sent them to — rather than the
-    -- shipped default. Until it is, a text panel lands on its Format tab
-    -- instead of honoring it. Set beside every deliberate assignment of
-    -- selectedTab; the panel tab callback sets it for clicks.
-    panelSettingsTabExplicit = false,
     -- Which half of the unified tab row owns the settings surface while a
     -- detail cluster (entry, entry multi-select, attached bar, resource) is
     -- in it: "detail" (the default - selecting one zooms into it) or
@@ -638,7 +632,6 @@ local function SnapshotOtherClassLibraryState()
         peekedContainers = CopyConfigStateMap(CS.peekedContainers),
         selectedTab = CS.selectedTab,
         panelSettingsTab = CS.panelSettingsTab,
-        panelSettingsTabExplicit = CS.panelSettingsTabExplicit,
         selectedContainerTab = CS.selectedContainerTab,
         buttonSettingsTab = CS.buttonSettingsTab,
         unifiedRowScope = CS.unifiedRowScope,
@@ -674,7 +667,6 @@ local function RestoreOtherClassLibrarySnapshot()
     for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
     CS.selectedTab = snapshot.selectedTab
     CS.panelSettingsTab = snapshot.panelSettingsTab
-    CS.panelSettingsTabExplicit = snapshot.panelSettingsTabExplicit
     CS.selectedContainerTab = snapshot.selectedContainerTab
     CS.buttonSettingsTab = snapshot.buttonSettingsTab
     CS.unifiedRowScope = snapshot.unifiedRowScope
@@ -2609,7 +2601,7 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
         SelectConfigPanel(panelId, {containerId=opts and opts.containerId,
             previewSession=opts and opts.previewSession})
         if opts and opts.scope == "detail" then
-            CS.selectedTab, CS.panelSettingsTab, CS.panelSettingsTabExplicit = "tracking", "tracking", true
+            CS.selectedTab, CS.panelSettingsTab = "tracking", "tracking"
         end
         return
     end
@@ -2716,7 +2708,6 @@ local function SelectConfigRotationAssistantEntry(panelId, opts)
     CS.unifiedRowScope = "primary"
     CS.selectedTab = "loadconditions"
     CS.panelSettingsTab = "loadconditions"
-    CS.panelSettingsTabExplicit = true
     FinishPreviewSelection()
 end
 
@@ -3315,7 +3306,6 @@ ST._ApplyConfigRoute = function(route)
         SelectConfigPanel(route.id, { containerId = route.containerId })
         CS.selectedTab = "layout"
         CS.panelSettingsTab = "layout"
-        CS.panelSettingsTabExplicit = true
         CS.collapsedSections.layout_anchor = false
     elseif route.kind == "container" and route.id then
         SelectConfigContainer(route.id)

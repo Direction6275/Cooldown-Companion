@@ -444,7 +444,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
     local groupId = CS.selectedGroup
 
-    local _, iconCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Icon" or "Trigger Icon",
+    local _, iconCollapsed = BuildCollapsibleSection(container, "Icon",
         "appearance_triggerIcon", nil, nil, ROW_SECTION)
 
     -- The icon renders in the Live Preview, which is also the picker: clicking
@@ -879,7 +879,7 @@ local function BuildTriggerEffectsTab(container, group)
     -- keys but always force this section open first (collapseKeys names
     -- "effects_triggerEffects"), so the gear builds and consumes the queue.
     -- Any future entrance that queues one of these keys must do the same.
-    local _, effectsCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Visual Effects" or "Trigger Panel Effects",
+    local _, effectsCollapsed = BuildCollapsibleSection(container, "Visual Effects",
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
     if not effectsCollapsed then
@@ -914,7 +914,7 @@ local function BuildTextureEffectsTab(container, group)
         for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
             ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
         end
-        local _, indicatorsCollapsed = BuildCollapsibleSection(container, ST.IsIndicatorGroup(group) and "Visual Effects" or "Texture Indicators",
+        local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Visual Effects",
             EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
         local indicatorLeft, indicatorRight
         if not indicatorsCollapsed then
@@ -1377,7 +1377,7 @@ if ST._DefineSettingRoute then
         tab = "appearance",
         tabLabel = "Appearance",
         section = "triggerIcon",
-        sectionLabel = "Trigger Icon",
+        sectionLabel = "Icon",
         collapseKeys = { "appearance_triggerIcon" },
         rowScope = "primary",
         applies = SpecialFinderTriggerType("icon"),
@@ -1401,9 +1401,9 @@ if ST._DefineSettingRoute then
             idPrefix = "panel.trigger.effects." .. key,
             scope = SPECIAL_FINDER_SCOPE,
             tab = "effects",
-            tabLabel = "Indicators",
+            tabLabel = "Effects",
             section = "triggerEffects",
-            sectionLabel = "Trigger Panel Effects",
+            sectionLabel = "Visual Effects",
             collapseKeys = { "effects_triggerEffects" },
             rowScope = "primary",
             applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
@@ -1415,7 +1415,7 @@ if ST._DefineSettingRoute then
             idPrefix = "panel.trigger.effects." .. key .. ".advanced",
             scope = SPECIAL_FINDER_SCOPE,
             tab = "effects",
-            tabLabel = "Indicators",
+            tabLabel = "Effects",
             section = "triggerEffects",
             sectionLabel = def.label .. " Effect",
             collapseKeys = { "effects_triggerEffects" },
@@ -1441,9 +1441,9 @@ if ST._DefineSettingRoute then
             idPrefix = "panel.texture.effects." .. key,
             scope = SPECIAL_FINDER_SCOPE,
             tab = "effects",
-            tabLabel = "Indicators",
+            tabLabel = "Effects",
             section = "textureIndicators",
-            sectionLabel = "Texture Indicators",
+            sectionLabel = "Visual Effects",
             collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
             rowScope = "primary",
             applies = function(context) return SpecialFinderTextureEffectShown(context, key) end,
@@ -1455,7 +1455,7 @@ if ST._DefineSettingRoute then
             idPrefix = "panel.texture.effects." .. key .. ".options",
             scope = SPECIAL_FINDER_SCOPE,
             tab = "effects",
-            tabLabel = "Indicators",
+            tabLabel = "Effects",
             section = "textureIndicators",
             sectionLabel = sectionDef.label:gsub("^Show ", ""),
             collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },

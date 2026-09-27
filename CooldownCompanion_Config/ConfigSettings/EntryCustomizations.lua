@@ -237,15 +237,6 @@ local function EnsureRowNameButton(row, field)
     return btn
 end
 
--- Clearing the entry's text format. Same two refreshes the Format tab's own
--- "Revert to Panel Format" makes, minus its CancelTextFormatTabCommit: a
--- debounced format write cannot be pending while this list is on screen. The
--- format editor is torn down at every seam that takes its container away, and
--- selecting the entry Settings tab is one of them - Panel.lua's entry TabGroup
--- calls ST._ReleaseTextFormatTabEditor before it builds anything, which flushes
--- the pending write and drops the timer. No guard, because there is nothing
--- reachable to guard against.
-
 -- Every customization on one entry, in one pass. Deliberately NOT a loop over
 -- PerformSectionRevert: that helper ends in UpdateGroupStyle plus a full config
 -- rebuild, and paying for both once per section would rebuild the pane N times

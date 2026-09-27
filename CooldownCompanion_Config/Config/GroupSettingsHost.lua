@@ -128,18 +128,6 @@ local function CreatePresentationPage(widget, group, tab, presentation, availabl
     return page
 end
 
--- Set only while this file drives SelectTab itself. A user clicking a tab
--- fires the same callback with the flag clear, which is the only way to tell
--- "the user picked this tab" from "we re-selected the remembered one" — and
--- that distinction is what decides whether a text panel lands on Format.
-local programmaticTabSelect = false
-
-local function SelectPanelSettingsTabProgrammatic(tabGroup, tab)
-    programmaticTabSelect = true
-    tabGroup:SelectTab(tab)
-    programmaticTabSelect = false
-end
-
 local function FillHostFrame(host, frame)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
@@ -191,13 +179,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- Callers that re-select the panel tab (e.g. the custom strata toggle)
     -- need the host that most recently built these surfaces.
     CS.groupSettingsActiveHost = container
-
-    -- The text Format tab hosts a live editor with a pending debounced write
-    -- and an animation driver on the container frame. Settle both here, at
-    -- the top, before any branch below decides what owns the surface: the
-    -- placeholder branches and the tabs-only pass all take the tab content
-    -- away without re-selecting a tab, and the branch that does re-select one
-    -- releases again from the callback (Release is idempotent).
 
     -- No panel to show tabs for: the placeholder branches below own the
     -- host, whatever the caller asked for.
@@ -321,17 +302,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             local oldOwner = oldScroll and oldScroll._cdcSettingsOwner
             local oldView = oldScroll and oldScroll._cdcSettingsViewKey
             local oldEntry = oldScroll and oldScroll._cdcSettingsEntry
-            -- A click on the tab itself is the user choosing a tab; our own
-            -- re-selects are not. Once there is a choice to honor, it is
-            -- honored for every panel, text or not.
-            if not programmaticTabSelect then
-                CS.panelSettingsTabExplicit = true
-            end
-            -- Flush the Format tab's pending write and release its controller
-            -- BEFORE ReleaseChildren hands the container frame back to
-            -- AceGUI's pool. There is exactly ONE format editor in the config
-            -- (the Format tab's, panel or entry lens alike), so this single
-            -- release is the whole contract.
             local previousTab = container._activePanelSettingsTab
             local tabChanged = previousTab ~= nil and previousTab ~= tab
             -- Selecting a style tab hands that strip the settings surface.
@@ -464,9 +434,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     -- find where its own cluster starts.
     container.tabGroup.frame:Show()
 
-    -- Update tabs every refresh — text mode leads with Format (the format is
-    -- what a text panel IS) and has no Indicators tab (info lives in the
-    -- format editor).
+    -- Rebuild tabs when the panel kind or selected settings scope changes.
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local isRotationEntry = group
         and CS.selectedRotationAssistantEntry == true
@@ -529,9 +497,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group) then CS.selectedTab = "tracking" end
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
-    -- Text mode has no Indicators tab — redirect to Appearance
-    -- Only text mode has a Format tab — redirect to Appearance, the same way
-    -- Indicators redirects the other direction.
+    -- Retired Format destinations now land on Appearance.
     if CS.selectedTab == "format" then
         CS.selectedTab = "appearance"
     end
@@ -545,11 +511,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             if availableTabs[candidate] then CS.selectedTab = candidate; break end
         end
     end
-    -- A text panel with no tab choice to honor lands on Format. The remembered
-    -- tab is one shared value with no "unset" state (it ships as "appearance"),
-    -- so "is this a choice?" is tracked separately: a tab click, or a route
-    -- that deliberately names a destination, sets the flag, and from then on
-    -- the remembered tab wins here too.
     CS.panelSettingsTab = CS.selectedTab
 
     -- Tabs-only pass: an entry owns the surface, so the remembered panel
@@ -563,7 +524,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 
     -- Show and refresh the tab content (SelectTab fires callback synchronously,
     -- which releases old col4Scroll and creates a new one)
-    SelectPanelSettingsTabProgrammatic(container.tabGroup, CS.selectedTab)
+    container.tabGroup:SelectTab(CS.selectedTab)
 
     -- Restore the saved position; a full refresh applies it after the
     -- inline Advanced editor is reinserted, before returning to rendering.
@@ -571,7 +532,3 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
 end
 
 ST._RefreshGroupSettingsHost = RefreshGroupSettingsHost
--- For the few outside callers that rebuild the current panel tab in place.
--- Going through this instead of SelectTab keeps a rebuild from being mistaken
--- for the user choosing a tab.
-ST._SelectPanelSettingsTabProgrammatic = SelectPanelSettingsTabProgrammatic

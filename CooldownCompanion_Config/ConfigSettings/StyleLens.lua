@@ -1527,10 +1527,6 @@ ST._MakeAdvancedPanelReadOnly = MakeAdvancedPanelReadOnly
 ST._BeginLensSection = BeginLensSection
 ST._ResolveLensCollapseKey = ResolveLensCollapseKey
 ST._AddLensPanelScopeNote = AddLensPanelScopeNote
--- The text Format tab writes its own scope note (its field lives outside the
--- section machinery), so it borrows the NAME the chrome would have shown
--- rather than re-deriving one and truncating it differently.
-ST._GetLensEntryName = GetLensEntryName
 ST._GroupHasAuraTrackingEntry = GroupHasAuraTrackingEntry
 
 -- Private helpers consumed by later Helpers files.

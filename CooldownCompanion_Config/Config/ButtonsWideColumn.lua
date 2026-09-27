@@ -2605,9 +2605,6 @@ local function ShowMultiSelectActions(col3, refreshFn, multiCount, selectedIds)
     -- Batch actions replace the edited object rather than refreshing it.
     -- Do not carry a Finder query or captured identity into this takeover.
     ClearSettingsFinderActionRowState(col3)
-    -- The panel Format tab's editor is hidden away with its host here without
-    -- the host's own tab seams running, so settle any pending write first.
-    -- Release is idempotent.
     HideEntrySurfaces(col3)
     HidePanelPreview(col3)
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
