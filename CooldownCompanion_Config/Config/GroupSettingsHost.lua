@@ -395,9 +395,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 elseif tab == "loadconditions" then
                     -- One Visibility tab for both scopes: the dispatcher
                     -- edits the selected entry's rules when there is one
-                    -- (including the rotation assistant's virtual entry,
-                    -- which has no entry tabs of its own) and the panel's
-                    -- otherwise.
+                    -- and the panel's otherwise.
                     ST._BuildVisibilityTab(scroll)
                 end
             end)

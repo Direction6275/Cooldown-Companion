@@ -113,21 +113,14 @@ end
 function CooldownCompanion:GetRotationAssistantRecommendationSpellID()
     local assistedCombat = C_AssistedCombat
     if not (assistedCombat and assistedCombat.GetNextCastSpell) then
-        self._rotationAssistantAvailable = false
-        self._rotationAssistantUnavailableReason = "apiUnavailable"
         return nil
     end
 
     if assistedCombat.IsAvailable then
-        local available, reason = assistedCombat.IsAvailable()
-        self._rotationAssistantAvailable = available == true
-        self._rotationAssistantUnavailableReason = reason
+        local available = assistedCombat.IsAvailable()
         if available ~= true then
             return nil
         end
-    else
-        self._rotationAssistantAvailable = true
-        self._rotationAssistantUnavailableReason = nil
     end
 
     local spellID = assistedCombat.GetNextCastSpell(false)
@@ -196,8 +189,6 @@ function CooldownCompanion:RefreshRotationAssistantButton(button)
             clearInactiveMaxCharges = true,
         })
     end
-    button._rotationAssistantSpellID = recommendedSpellID
-
     if changed then
         self:ClearRotationAssistantButtonRuntime(button)
         if self.UpdateButtonIcon then

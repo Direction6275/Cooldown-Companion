@@ -335,9 +335,7 @@ end
 -- on icons and bars the old single "Preview Cooldown State" is split into
 -- the Cooldown Text and Cooldown Swipe readouts, each rendering only what
 -- it names (the swipe entry keeps the rest of the state look - fill,
--- desaturation, tint - since those have no other preview). Text and
--- rotation assistant panels keep the single state entry: their cooldown
--- look is indivisible.
+-- desaturation, tint - since those have no other preview).
 ------------------------------------------------------------------------
 
 local GROUP_AURAS = "Auras"
@@ -383,7 +381,7 @@ local function StateRoute(advancedKey)
     -- with none there is nothing to resolve from, so name the section on the
     -- route or the gear lands on a collapsed header with nothing under it.
     -- The state looks are a subgroup of the Cooldown / Spell Indicators section
-    -- in every mode that draws them - icons, bars and the rotation assistant -
+    -- in both icon and bar presentation
     -- and the subheading over them owns no collapse state of its own.
     local statesSection = (advancedKey == nil) and "effects_spell" or nil
     return {

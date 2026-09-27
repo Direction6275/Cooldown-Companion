@@ -261,8 +261,7 @@ end
 -- never move. The combined copy excludes Position.
 ------------------------------------------------------------------------
 
--- Which copy family a panel belongs to. nil for the specialist modes
--- such as rotation assistant, which the feature does not serve.
+-- Which copy family a panel belongs to. nil for unsupported legacy modes.
 -- Aura Panels ride their base display mode, exactly as the retired preset
 -- paths judged them; the subtype's invariants are re-established after apply.
 function CooldownCompanion:GetPanelCopyMode(group)

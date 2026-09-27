@@ -121,10 +121,6 @@ local function GetRuntimeGroupButtonList(self, frame, group)
     return list
 end
 
-local function IsRuntimeButtonUsable(self, buttonData, group, opts)
-    return self:IsButtonUsable(buttonData, group, opts)
-end
-
 local function GetExistingButtonPoolKey(button)
     if button and button._buttonPoolKey then
         return button._buttonPoolKey
@@ -538,7 +534,6 @@ function CooldownCompanion:ReleaseGroupButtonPools(frame)
 end
 
 -- Private helpers consumed by later GroupFrame files.
-GF.IsRuntimeButtonUsable = IsRuntimeButtonUsable
 GF.ClearButtonCompactSlotCache = ClearButtonCompactSlotCache
 GF.GetRuntimeGroupButtonList = GetRuntimeGroupButtonList
 GF.GetButtonPoolKey = GetButtonPoolKey
