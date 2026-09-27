@@ -979,6 +979,7 @@ function CooldownCompanion.HideStandaloneDisplayVisuals(host)
     if not host then
         return
     end
+    host._indicatorStyle = nil
 
     if host.primaryTexture then
         host.primaryTexture:Hide()
@@ -1199,7 +1200,8 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
     host._standaloneTeardownFor = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
-    return ST.Indicator.Render(host, driverButton, group, false, nil, effectsActive)
+    return ST.Indicator.Render(host, driverButton, group, false, nil, effectsActive,
+        displayType == "icon" and settings or nil)
 end
 
 -- Locked Aura-controlled Texture panels keep the ordinary host for anchoring,
