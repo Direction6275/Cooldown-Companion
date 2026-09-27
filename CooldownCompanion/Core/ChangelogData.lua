@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.8",
         "2.7.2",
         "2.7.1",
         "2.7",
@@ -45,6 +46,36 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.8"] = {
+            markdown = [[
+## New Features
+
+- **Unified Indicators:** Texture, Text, and Trigger panels are now one Indicator panel type, with Icon, Texture, or Text displays. This brings their overlapping features into a much simpler system focused on what you want to track and how you want to see it, while preserving nearly all existing functionality. Configure labels, timers, charges, aura stacks, and item counts through familiar settings tabs.
+
+  - **Updating:** Existing panels, older imports, and saved templates convert automatically. Multi-entry Text panels split into separate Indicators; check their placement.
+  - **Text changes:** Custom wording and formatting may be lost, and specialized charge readouts are simplified. Combined cooldown/aura displays keep aura readouts; add a separate cooldown Indicator to show both.
+  - **Migration caveats:** Unsupported Trigger conditions can leave Indicators hidden until edited. Original settings are backed up locally but excluded from exports.
+
+- **Rotation Assistant in panels:** Add Rotation Assistant from CDC's spellbook, or drag it from Blizzard's spellbook, into a normal panel or icon section. Existing Assistant Panels automatically become normal panels with one assistant icon, preserving placement, appearance, enabled state, and saved conditions.
+
+## Polish | QoL
+
+- **Simpler panel creation:** Panel and Indicator are the main choices, with Aura and Totem options beneath them. Saved templates have a separate card browser, and Cooldown Manager Panels is now under Templates > Prefilled Templates, even if you have no saved templates.
+- **Stable settings scrolling:** Editing Group settings keeps your place. Switching settings views or collapsing and reopening sections no longer brings back unrelated or stale scroll positions.
+
+## Bug Fixes
+
+- **Copied layouts:** Duplicating groups preserves panel anchors, offsets, cursor anchoring, and links between copied panels, including when copying several groups together.
+- **Adding entries:** Name, ID, autocomplete, and spellbook additions consistently honor Icon or Bar presentation. Navigator drops preserve your editing selection, and items still loading keep their intended destination.
+- **Arrange Mode:** Cancel correctly restores cast-bar height when thickness is customized.
+- **Charge text:** Text keeps the correct size when talent changes alter charge capacity.
+- **Ellesmere unit frames:** Fixed repeated position corrections when attaching player or target frames to CDC panels, addressing a reported CPU spike while preserving Ellesmere's saved layouts and size controls.
+
+## Performance
+
+- **Fewer repeated updates:** Reduced repeated panel and aura work during loading, talent/spec changes, and settings updates. Spell and item Indicators reuse unchanged appearance settings while keeping timers, counts, and effects on their existing update cadence.
+]],
+        },
         ["2.7.2"] = {
             markdown = [[
 ## New Features
