@@ -267,7 +267,7 @@ function I.IconSettings(group)
 end
 
 -- A render description only. Saved placement always belongs to signal.
-function I.NativeSettings(group)
+function I.NativeSettings(group, resolvedIcon)
     local settings = I.Settings(group)
     if not settings then return end
     if settings.displayType == "texture" then
@@ -276,7 +276,7 @@ function I.NativeSettings(group)
     local visual = { enabled = true, sourceType = "file", sourceValue = "Interface\\Buttons\\WHITE8x8",
         blendMode = "BLEND", locationType = "CENTER", color = {1, 1, 1, 1} }
     if settings.displayType == "icon" then
-        local icon = I.IconSettings(group)
+        local icon = resolvedIcon or I.IconSettings(group)
         visual.sourceValue = icon.manualIcon
         visual.width, visual.height = Addon.GetTriggerIconDimensions(icon)
         visual.enabled = icon.manualIcon ~= nil

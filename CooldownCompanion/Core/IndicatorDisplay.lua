@@ -3,6 +3,8 @@
 local _, ST = ...
 local Addon, I = ST.Addon, ST.Indicator
 local WHITE = {1, 1, 1, 1}
+local READOUT_KEYS = {"label", "timer", "count"}
+local STYLE_SECTIONS = {"signal", "text", "readouts", "progress"}
 
 function I.CreateVisual(host, nativeSlot)
     if host.indicatorReadouts then return end
@@ -12,7 +14,7 @@ function I.CreateVisual(host, nativeSlot)
     root:SetAllPoints(host.visualRoot)
     root:EnableMouse(false)
     local readouts = {root = root, frames = {}}
-    for _, key in ipairs({"label", "timer", "count"}) do
+    for _, key in ipairs(READOUT_KEYS) do
         local wrapper = CreateFrame("Frame", nil, root)
         wrapper:SetAllPoints(root)
         wrapper:SetAlpha(0)
@@ -49,15 +51,13 @@ function I.CreateVisual(host, nativeSlot)
     end
 end
 
-local function StyleReadouts(host, group)
+local function StyleReadouts(host, group, font, outline)
     local settings = I.Settings(group)
     local text, options = settings.text, settings.readouts
     local color = text.textFontColor or WHITE
-    local font = Addon:FetchFont(text.textFont or "Friz Quadrata TT")
-    local outline = ST.GetEffectiveFontOutline(text.textFontOutline)
     local readouts = host.indicatorReadouts
     readouts.root:Show()
-    for _, key in ipairs({"label", "timer", "count"}) do
+    for _, key in ipairs(READOUT_KEYS) do
         local fs = readouts[key]
         fs:SetFont(font, text.textFontSize or 20, outline)
         ST.ApplyFontShadowForOutline(fs, outline)
@@ -78,10 +78,11 @@ local function StyleReadouts(host, group)
     readouts.label:SetText(I.Label(group))
 end
 
-function I.StyleVisual(host, group)
+function I.StyleVisual(host, group, icon, font, outline)
     local settings = I.Settings(group)
     if not settings then return false end
-    local visual = I.NativeSettings(group)
+    if settings.displayType == "icon" then icon = icon or I.IconSettings(group) end
+    local visual = I.NativeSettings(group, icon)
     if not visual or visual.enabled == false then return false end
     local geometry, alpha = Addon:GetTexturePanelRenderGeometry(visual)
     if not geometry then return false end
@@ -91,9 +92,10 @@ function I.StyleVisual(host, group)
     host.indicatorProgress.clip:SetAlpha(0)
     host._indicatorDimAlpha = nil
     host._activeDisplayType = settings.displayType
+    font = font or Addon:FetchFont(settings.text.textFont or "Friz Quadrata TT")
+    outline = outline or ST.GetEffectiveFontOutline(settings.text.textFontOutline)
     local shown = true
     if settings.displayType == "icon" then
-        local icon = I.IconSettings(group)
         if not icon.manualIcon then return false end
         Addon.ApplyTriggerIconVisual(host, icon)
     elseif settings.displayType == "texture" then
@@ -110,17 +112,80 @@ function I.StyleVisual(host, group)
             progress.clip:SetAlpha(1)
         end
         host._activeTextureSettings, host._activeTextureGeometry = visual, geometry
+        host._indicatorTextureAlpha = alpha
     else
         host._triggerTextBaseColor = CopyTable(settings.text.textFontColor or WHITE)
         host.textFrame.bg:SetColorTexture(unpack(settings.text.textBgColor or {0, 0, 0, 0}))
         host.textFrame:SetSize(geometry.boundsWidth, geometry.boundsHeight)
-        host.textFrame.text:SetFont(Addon:FetchFont(settings.text.textFont or "Friz Quadrata TT"),
-            settings.text.textFontSize or 20, ST.GetEffectiveFontOutline(settings.text.textFontOutline))
+        host.textFrame.text:SetFont(font, settings.text.textFontSize or 20, outline)
         host.textFrame.text:SetText("")
         host.textFrame:Show()
     end
-    StyleReadouts(host, group)
+    StyleReadouts(host, group, font, outline)
     return shown, geometry.boundsWidth, geometry.boundsHeight
+end
+
+-- Compare saved values, not table identity: sliders/colors, imports and preview
+-- rollback can edit a table in place. No timer/count/aura observations enter this
+-- snapshot. Native aura kits still use the unconditional, access-gated styler.
+local function SameStyleValues(current, previous)
+    if type(current) ~= "table" then return current == previous end
+    if type(previous) ~= "table" then return false end
+    for key, value in pairs(current) do
+        if not SameStyleValues(value, previous[key]) then return false end
+    end
+    for key in pairs(previous) do
+        if current[key] == nil then return false end
+    end
+    return true
+end
+
+local function RefreshRuntimeStyle(host, group, icon)
+    local settings = I.Settings(group)
+    local font = Addon:FetchFont(settings.text.textFont or "Friz Quadrata TT")
+    local outline = ST.GetEffectiveFontOutline(settings.text.textFontOutline)
+    local label = I.Label(group)
+    local borderMode, borderInset, assetType, assetValue
+    if icon then
+        borderMode = ST.GetEffectiveBorderRenderMode(icon, nil, icon.borderSize)
+        -- StyleVisual resets visualRoot's animated scale before laying out the
+        -- icon. The outer host matches that scale without sampling Shrink/Expand.
+        borderInset = ST.GetEffectiveBorderLayoutSize(host, icon.borderSize, borderMode)
+    elseif settings.displayType == "texture" then
+        local signal = settings.signal
+        assetType, assetValue = Addon:ResolveAuraTextureAsset(signal.sourceType, signal.sourceValue, signal.mediaType)
+    end
+    local previous = host._indicatorStyle
+    local same = previous and previous.source == I.Primary(group)
+        and previous.displayType == settings.displayType and previous.tracking == settings.tracking
+        and previous.font == font and previous.outline == outline and previous.label == label
+        and previous.borderMode == borderMode and previous.borderInset == borderInset
+        and previous.assetType == assetType and previous.assetValue == assetValue
+        and SameStyleValues(icon, previous.icon)
+    if same then
+        for _, key in ipairs(STYLE_SECTIONS) do
+            if not SameStyleValues(settings[key], previous[key]) then same = false; break end
+        end
+    end
+    if same then return true end
+
+    local shown, width, height = I.StyleVisual(host, group, icon, font, outline)
+    if not shown then host._indicatorStyle = nil; return false end
+    host:SetSize(width, height)
+    local snapshot = {source=I.Primary(group), displayType=settings.displayType, tracking=settings.tracking,
+        font=font, outline=outline, label=label, borderMode=borderMode, borderInset=borderInset,
+        assetType=assetType, assetValue=assetValue, icon=icon}
+    for _, key in ipairs(STYLE_SECTIONS) do snapshot[key] = CopyTable(settings[key]) end
+    host._indicatorStyle = snapshot
+    return true
+end
+
+local function SetProgressDim(host, dim)
+    if host._indicatorDimAlpha == dim then return end
+    host._indicatorDimAlpha = dim
+    host._indicatorBaseVisualsReady = nil
+    ST._AT.LayoutTexturePieces(host, host._activeTextureSettings, host._activeTextureGeometry,
+        host._indicatorTextureAlpha * (dim or 1))
 end
 
 function I.UpdateReadouts(host, driver, group, previewFraction)
@@ -159,6 +224,17 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
             else readouts.count:SetText("") end
         else readouts.count:SetText("") end
         if settings.progress.enabled and settings.displayType == "texture" then
+            -- Style no longer runs on every tick. Restore the drain when a new
+            -- cooldown starts, and restore its unshifted foreground before the
+            -- live effects writer applies this tick's activation state.
+            if duration or itemDuration > 0 then
+                SetProgressDim(host, settings.progress.dimAlpha or 0.35)
+                host.indicatorProgress.clip:SetAlpha(1)
+            end
+            local color = host._activeTextureSettings.color or WHITE
+            local foreground = host.indicatorProgress.foreground
+            foreground.primaryTexture:SetVertexColor(color[1], color[2], color[3], host._indicatorTextureAlpha)
+            foreground.secondaryTexture:SetVertexColor(color[1], color[2], color[3], host._indicatorTextureAlpha)
             if duration then
                 host.indicatorProgress.bar:SetTimerDuration(duration, ST.STATUS_BAR_INTERPOLATION_SMOOTH,
                     ST.STATUS_BAR_TIMER_DIRECTION_REMAINING)
@@ -167,10 +243,7 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
                 host.indicatorProgress.bar:SetValue(itemRemaining)
             else
                 host.indicatorProgress.clip:SetAlpha(0)
-                host._indicatorDimAlpha = nil
-                local visual = I.NativeSettings(group)
-                local geometry, alpha = Addon:GetTexturePanelRenderGeometry(visual)
-                ST._AT.LayoutTexturePieces(host, visual, geometry, alpha)
+                SetProgressDim(host, nil)
             end
         end
     end
@@ -180,11 +253,18 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
     end
 end
 
-function I.Render(host, driver, group, preview, fraction, effectsActive)
+function I.Render(host, driver, group, preview, fraction, effectsActive, resolvedIcon)
     I.CreateVisual(host)
-    local shown, width, height = I.StyleVisual(host, group)
-    if not shown then return false end
-    host:SetSize(width, height)
+    local settings = I.Settings(group)
+    if not settings then return false end
+    local icon = settings.displayType == "icon" and (resolvedIcon or I.IconSettings(group)) or nil
+    if not preview and not I.IsAura(group) then
+        if not RefreshRuntimeStyle(host, group, icon) then return false end
+    else
+        local shown, width, height = I.StyleVisual(host, group, icon)
+        if not shown then return false end
+        host:SetSize(width, height)
+    end
     I.UpdateReadouts(host, driver, group, (preview or I.IsAura(group)) and (fraction or 0.5) or nil)
     if not I.IsAura(group) and not preview then
         Addon:ApplyTriggerPanelEffects(host, driver, group, effectsActive == true)
@@ -211,6 +291,7 @@ end
 
 function I.ReleaseVisual(host)
     if not host or not host.indicatorReadouts then return end
+    host._indicatorStyle = nil
     ST._AT.StopAllTextureIndicatorEffects(host)
     Addon.UnbindDurationText(host.indicatorReadouts.timer, true)
     host.indicatorReadouts.root:Hide()
