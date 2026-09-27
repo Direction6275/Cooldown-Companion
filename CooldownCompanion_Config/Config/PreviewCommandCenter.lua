@@ -2246,7 +2246,8 @@ local function UpdatePreviewCommandCenter(host)
 
     local panelId, group, buttonIndex = ResolveContext()
     ReconcileRunningPreview(panelId, group, buttonIndex)
-    if not panelId then
+    -- Indicators continuously preview their single display without commands.
+    if not panelId or ST.IsIndicatorGroup(group) then
         HideBar(host)
         return
     end
