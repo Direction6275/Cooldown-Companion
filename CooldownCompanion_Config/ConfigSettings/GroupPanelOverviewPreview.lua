@@ -9,8 +9,8 @@
     tiles' own border so it reads as part of the surface. An empty Group
     instead gets the create surface itself: a
     centered picker of clickable panel-type cards -- Panel and Indicator equally
-    prominent, Aura and Totem families beneath them, then the account's saved
-    templates and a Cooldown Manager starter. A Group that
+    prominent, Aura and Totem families beneath them, with a header library for
+    templates and a Cooldown Manager starter below. A Group that
     cannot take a new Panel (Browse Other Classes, invalid class scope) keeps
     the plain label and nothing clickable.
 ]]
@@ -91,10 +91,9 @@ local PICKER_FAMILIES = {
 }
 local FAMILY_COLLAPSE_NOTE = "Inactive auras and empty totem slots collapse."
 
--- Saved Panel Templates sit between the families and the starter as
--- title-only cards under one muted label. Templates are account-wide, so the
--- tier appears on every empty Group once one exists.
-local TEMPLATE_TIER_LABEL = "Your templates"
+local LIBRARY_BUTTON_HEIGHT = 26
+local LIBRARY_ICON_ATLAS = "campaign-questlog-lorebook"
+local LIBRARY_MODES = { "icons", "indicator", "auraIcons", "auraBars", "totemIcons", "totemBars" }
 
 -- All picker buttons share the same face and centering. Their styles change
 -- only hierarchy, density, and whether the body copy is shown. Compact tiers
@@ -117,23 +116,6 @@ local SECONDARY_CARD_STYLE = {
     minWidth = 168,
     columnChoices = { 4, 2, 1 },
     titleOnly = true,
-}
-local TEMPLATE_CARD_STYLE = {
-    titleFont = "GameFontNormal",
-    titleColor = EMPTY_STATE_SUBLINE_COLOR,
-    bodyFont = CARD_BODY_FONT,
-    titleHeight = 18,
-    padding = 6,
-    minHeight = 34,
-    minWidth = 168,
-    columnChoices = { 4, 2, 1 },
-    titleOnly = true,
-}
-local TEMPLATE_CARD_ACCENT = {
-    idleBorder = TILE_BORDER_COLOR,
-    hoverBorder = CREATE_ACCENT.hoverBorder,
-    idleFill = { 0.10, 0.14, 0.19, 0.35 },
-    hoverFill = CREATE_ACCENT.hoverFill,
 }
 local FAMILY_CARD_STYLE = {
     titleFont = "GameFontNormal",
@@ -161,6 +143,17 @@ local STARTER_CARD_STYLE = {
     minWidth = 168,
     columnChoices = { 1 },
     titleOnly = true,
+}
+local TEMPLATE_CARD_STYLE = {
+    titleFont = "GameFontNormalLarge",
+    bodyFont = CARD_BODY_FONT,
+    titleHeight = 22,
+    padding = 12,
+    minHeight = 72,
+    minWidth = 220,
+    columnChoices = { 2, 1 },
+    titleOnly = true,
+    wrapTitle = true,
 }
 
 -- The starter stays available as a quiet footer action.
@@ -631,13 +624,6 @@ local function EnsureEmptyStateBlock(overview)
 
     block.divider = block:CreateTexture(nil, "ARTWORK")
 
-    block.templateLabel = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE,
-        EMPTY_STATE_SUBLINE_COLOR)
-    block.templateLabel:SetText(TEMPLATE_TIER_LABEL)
-    block.templateLabel:Hide()
-    block.templateDivider = block:CreateTexture(nil, "ARTWORK")
-    block.templateDivider:SetColorTexture(unpack(TILE_BORDER_COLOR))
-
     block.families = {}
     for _, family in ipairs(PICKER_FAMILIES) do
         local label = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE)
@@ -665,6 +651,125 @@ local function ApplyCardFill(card, color)
     card:SetBackdropColor(color[1], color[2], color[3], color[4] or 1)
 end
 
+-- Navigation belongs to the header, outside the create cards. The library's
+-- header lives above the scroll viewport so Back stays reachable in long grids.
+local function CreateLibraryNavigation(overview, parent, opensLibrary)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    button:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
+    button.borderTextures = ST.CreateBorderTextureSet(button, "OVERLAY", 7)
+    button:RegisterForClicks("LeftButtonUp")
+    button.label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    button.label:SetPoint("CENTER", button, "CENTER", opensLibrary and 10 or 0, 0)
+    if opensLibrary then
+        button.icon = button:CreateTexture(nil, "ARTWORK")
+        button.icon:SetAtlas(LIBRARY_ICON_ATLAS)
+        button.icon:SetSize(18, 18)
+        button.icon:SetPoint("LEFT", button, "LEFT", 6, 0)
+    else
+        button.label:SetText("Back")
+    end
+    local function Restore(self)
+        ApplyTileBorder(self, CREATE_ACCENT.idleBorder)
+        ApplyCardFill(self, CREATE_ACCENT.idleFill)
+        if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+    end
+    button:SetScript("OnEnter", function(self)
+        ApplyTileBorder(self, CREATE_ACCENT.hoverBorder)
+        ApplyCardFill(self, CREATE_ACCENT.hoverFill)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(opensLibrary and "Templates" or "Choose a panel type", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", Restore)
+    button:SetScript("OnHide", Restore)
+    button:SetScript("OnClick", function(self)
+        if not self:IsVisible() or not (overview.containerId
+            and ST._IsCreateTargetContainer(overview.containerId)) then return end
+        if opensLibrary then
+            overview.pickerScrollOffset = overview.scrollOffset
+            overview.scrollOffset = 0
+        else
+            overview.scrollOffset = overview.pickerScrollOffset or 0
+            overview.pickerScrollOffset = nil
+        end
+        overview.showTemplates = opensLibrary
+        Restore(self)
+        ST._ReflowGroupPanelOverview(overview.host)
+        -- Reflow can reuse the highlighted Panel frame for a template card.
+        -- Resolve tutorial targets again before positioning its guide/glow.
+        if CS.tutorialRuntime and CS.tutorialRuntime.active then
+            if ST._RebuildTutorialAnchors then ST._RebuildTutorialAnchors() end
+            if ST._RefreshTutorialPlacement then ST._RefreshTutorialPlacement() end
+        end
+    end)
+    Restore(button)
+    return button
+end
+
+local function EnsureLibraryHeader(overview)
+    if overview.libraryHeader then return overview.libraryHeader end
+    local header = CreateFrame("Frame", nil, overview.root)
+    header:EnableMouse(false)
+    header:SetPoint("TOPLEFT", overview.root, "TOPLEFT", OUTER_PADDING, -OUTER_PADDING)
+    header.heading = NewEmptyStateLine(header, EMPTY_STATE_HEADING_SIZE)
+    header.heading:SetText("Templates")
+    header.subline = NewEmptyStateLine(header, EMPTY_STATE_BODY_SIZE, EMPTY_STATE_SUBLINE_COLOR)
+    header.subline:SetText("Choose a template.")
+    header.divider = header:CreateTexture(nil, "ARTWORK")
+    header.back = CreateLibraryNavigation(overview, header, false)
+    overview.libraryHeader = header
+    return header
+end
+
+local function SetOverviewHeaderHeight(overview, height)
+    overview.scroll:SetPoint("TOPLEFT", overview.root, "TOPLEFT",
+        OUTER_PADDING, -(OUTER_PADDING + height))
+    overview.scrollTrack:SetPoint("TOPRIGHT", overview.root, "TOPRIGHT",
+        -2, -(OUTER_PADDING + height))
+end
+
+-- Reserve equal space on both sides of centered copy. At very narrow widths
+-- navigation gets its own row instead of colliding with the heading.
+local function LayoutPickerHeader(header, width, button, isBack)
+    local bandWidth = math_min(width, EMPTY_STATE_MAX_CARD_WIDTH)
+    local textWidth = math_min(width, EMPTY_STATE_MAX_TEXT_WIDTH)
+    local y = EMPTY_STATE_TOP_PADDING
+    if button and button:IsShown() then
+        local buttonWidth = button.label:GetStringWidth() + (isBack and 20 or 38)
+        button:SetSize(buttonWidth, LIBRARY_BUTTON_HEIGHT)
+        button:ClearAllPoints()
+        button:SetPoint(isBack and "TOPLEFT" or "TOPRIGHT", header, "TOP",
+            (isBack and -1 or 1) * bandWidth / 2, -y)
+        local available = bandWidth - 2 * (buttonWidth + CARD_GAP)
+        if available < 140 then
+            y = y + LIBRARY_BUTTON_HEIGHT + CARD_GAP
+        else
+            textWidth = math_min(textWidth, available)
+        end
+    end
+    local copyTop = y
+    for index, line in ipairs({ header.heading, header.subline }) do
+        if index == 2 then y = y + EMPTY_STATE_SUBLINE_GAP end
+        line:SetWidth(math_max(1, textWidth))
+        line:SetWordWrap(true)
+        line:ClearAllPoints()
+        line:SetPoint("TOP", header, "TOP", 0, -y)
+        line:Show()
+        y = y + math_max(1, line:GetStringHeight() or 0)
+    end
+    y = math_max(y, copyTop + LIBRARY_BUTTON_HEIGHT) + EMPTY_STATE_DIVIDER_GAP
+    -- GetClassColor may return nothing; keep the established blue fallback.
+    local color = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    header.divider:ClearAllPoints()
+    header.divider:SetPoint("TOP", header, "TOP", 0, -y)
+    header.divider:SetSize(math_min(width, EMPTY_STATE_MAX_TEXT_WIDTH), EMPTY_STATE_DIVIDER_HEIGHT)
+    header.divider:SetColorTexture(color and color.r or TILE_BORDER_COLOR[1],
+        color and color.g or TILE_BORDER_COLOR[2], color and color.b or TILE_BORDER_COLOR[3],
+        EMPTY_STATE_DIVIDER_ALPHA)
+    header.divider:Show()
+    return y + EMPTY_STATE_DIVIDER_HEIGHT + EMPTY_STATE_DIVIDER_GAP
+end
+
 -- One pooled card family serves both tiers and the starter, so every card must
 -- be told its whole appearance on every configure. Idle and hover live on the
 -- card itself because the scripts are installed once and the look changes per
@@ -673,14 +778,27 @@ end
 -- While the first-run tutorial waits for the player to create an Icon Panel,
 -- every other create card stands down so the guided path cannot dead-end.
 -- Checked live in the handlers (the tutorial can end without a rebuild); the
--- build pass reads it once for the dimmed look. A template card stands down
--- by its template's type, so an Icon Panel template stays live: it advances
--- the tutorial exactly as the Icon Panel card does.
+-- build pass reads it once for the dimmed look. Templates use their exact
+-- creation mode, including ordinary legacy Bar templates under Panel.
 local function IsCardTutorialLocked(create)
-    if not create or (create.mode or create.templateMode) == "icons" then
+    if not create or create.mode == "icons" then
         return false
     end
     return (ST._IsTutorialAwaitingIconPanel and ST._IsTutorialAwaitingIconPanel()) == true
+end
+
+local function GetPickerTemplatesByMode()
+    local byMode, count = {}, 0
+    for _, mode in ipairs(LIBRARY_MODES) do byMode[mode] = {} end
+    for _, entry in ipairs(CooldownCompanion:GetPanelTemplates(nil)) do
+        local mode = CooldownCompanion:GetPanelTemplateCreationMode(entry.template)
+        if byMode[mode] then
+            local entries = byMode[mode]
+            entries[#entries + 1] = entry
+            count = count + 1
+        end
+    end
+    return byMode, count
 end
 
 local function EnsurePickerCard(overview, block, index)
@@ -703,7 +821,7 @@ local function EnsurePickerCard(overview, block, index)
 
     card:SetScript("OnClick", function(self)
         local create = self._cdcOverviewCreate
-        if not create or IsCardTutorialLocked(create) then return end
+        if not create or create.disabled or not self:IsVisible() or IsCardTutorialLocked(create) then return end
         local containerId = create.containerId
         -- The click lands after the build pass, so the Group may already be
         -- gone or out of scope. Re-answer the create gate before acting.
@@ -712,9 +830,9 @@ local function EnsurePickerCard(overview, block, index)
             return
         end
         if create.templateId then
-            if ST._CreatePanelFromTemplateInContainer then
-                ST._CreatePanelFromTemplateInContainer(containerId, create.templateId)
-            end
+            local template = CooldownCompanion:GetPanelTemplate(create.templateId)
+            if not template or CooldownCompanion:GetPanelTemplateCreationMode(template) ~= create.mode then return end
+            ST._CreatePanelFromTemplateInContainer(containerId, create.templateId)
         elseif create.cdmStarter then
             if ST._CreateMissingCDMPanelsInSelectedContainer then
                 ST._CreateMissingCDMPanelsInSelectedContainer(containerId)
@@ -726,8 +844,10 @@ local function EnsurePickerCard(overview, block, index)
     card:SetScript("OnEnter", function(self)
         local create = self._cdcOverviewCreate
         if not create or IsCardTutorialLocked(create) then return end
-        ApplyTileBorder(self, self._cdcHoverBorder or self._cdcIdleBorder)
-        ApplyCardFill(self, self._cdcHoverFill or self._cdcIdleFill)
+        if not create.disabled then
+            ApplyTileBorder(self, self._cdcHoverBorder or self._cdcIdleBorder)
+            ApplyCardFill(self, self._cdcHoverFill or self._cdcIdleFill)
+        end
         if create.tooltipText then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(create.tooltipTitle or "Panel", 1, 1, 1)
@@ -747,6 +867,9 @@ local function EnsurePickerCard(overview, block, index)
     card:SetScript("OnMouseWheel", function(_, delta)
         SetScrollOffset(overview, (overview.scrollOffset or 0) - (delta * SCROLL_STEP))
     end)
+    card:SetScript("OnHide", function(self)
+        if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+    end)
 
     overview.cards[index] = card
     return card
@@ -764,20 +887,18 @@ local function AnchorPickerCardText(card, style, topOffset)
             + (card.body:GetStringHeight() or 0) + CARD_TITLE_BODY_GAP))
 end
 
--- Re-asserted on every configure, because a card reused from the other tier
--- still carries that tier's font, insets, and anchors. Title and description
--- are both centered on the card's own text column: the face says what it makes,
--- so nothing has to be hovered to be read. The padding anchors are also the
--- neutral measurement position; placement centers the measured block later.
+-- Re-asserted on every configure, because pooled cards can move between the
+-- create choices and wrapped template names. The padding anchors
+-- are the measurement position; placement centers the measured block later.
 local function ApplyPickerCardStyle(card, style, textWidth)
     card.title:SetFontObject(_G[style.titleFont])
     local titleColor = style.titleColor or CARD_TITLE_COLOR
     card.title:SetTextColor(titleColor[1], titleColor[2], titleColor[3])
     card.title:SetWidth(textWidth)
-    card.title:SetHeight(style.titleHeight)
+    card.title:SetHeight(style.wrapTitle and 0 or style.titleHeight)
     card.title:SetJustifyH("CENTER")
     card.title:SetJustifyV("MIDDLE")
-    card.title:SetWordWrap(false)
+    card.title:SetWordWrap(style.wrapTitle == true)
 
     card.body:SetFontObject(_G[style.bodyFont])
     card.body:SetWidth(textWidth)
@@ -821,11 +942,11 @@ local function PlacePickerCard(block, card, entry, style, containerId, accent,
         mode = entry.mode,
         cdmStarter = entry.cdmStarter,
         templateId = entry.templateId,
-        templateMode = entry.templateMode,
+        disabled = entry.disabled,
         tooltipTitle = entry.tooltipTitle,
         tooltipText = entry.tooltipText,
     }
-    card:SetAlpha(IsCardTutorialLocked(card._cdcOverviewCreate) and 0.35 or 1)
+    card:SetAlpha((entry.disabled or IsCardTutorialLocked(card._cdcOverviewCreate)) and 0.35 or 1)
     ApplyPickerCardAccent(card, accent)
     card:ClearAllPoints()
     card:SetPoint("TOPLEFT", block, "TOP", x, -y)
@@ -833,7 +954,8 @@ local function PlacePickerCard(block, card, entry, style, containerId, accent,
     local bodyHeight = style.titleOnly and 0
         or (card.body:GetStringHeight() or 0)
     local formatHeight = entry.format and (card.format:GetStringHeight() or 0) or 0
-    local contentHeight = style.titleHeight
+    local titleHeight = style.wrapTitle and card.title:GetStringHeight() or style.titleHeight
+    local contentHeight = titleHeight
         + (bodyHeight > 0 and (CARD_TITLE_BODY_GAP + bodyHeight) or 0)
         + (formatHeight > 0 and (CARD_TITLE_BODY_GAP + formatHeight) or 0)
     AnchorPickerCardText(card, style,
@@ -863,6 +985,7 @@ local function MeasurePickerTier(overview, block, firstIndex, entries, style,
     local cardWidth = (bandWidth - ((columns - 1) * CARD_GAP)) / columns
     local textWidth = math_max(1, cardWidth - (style.padding * 2))
     local bodyHeight = 0
+    local titleHeight = style.titleHeight
 
     for offset, entry in ipairs(entries) do
         local card = EnsurePickerCard(overview, block, firstIndex + offset - 1)
@@ -875,6 +998,9 @@ local function MeasurePickerTier(overview, block, firstIndex, entries, style,
         -- block is: the measurement should come from a live region. Placement
         -- follows in this same pass, so nothing is left floating.
         card:Show()
+        if style.wrapTitle then
+            titleHeight = math_max(titleHeight, card.title:GetStringHeight() or 0)
+        end
         if not style.titleOnly then
             bodyHeight = math_max(bodyHeight,
                 (card.body:GetStringHeight() or 0)
@@ -884,9 +1010,9 @@ local function MeasurePickerTier(overview, block, firstIndex, entries, style,
     end
 
     -- One height for the whole tier, taken from its tallest wrapped
-    -- description, so the row reads as a row instead of a ragged edge.
+    -- title or description, so the cards stay aligned.
     local height = math_max(style.minHeight or 0,
-        (style.padding * 2) + style.titleHeight
+        (style.padding * 2) + titleHeight
             + (bodyHeight > 0 and (CARD_TITLE_BODY_GAP + bodyHeight) or 0))
 
     return {
@@ -984,7 +1110,7 @@ end
 
 -- Lays the whole block out top-down in block coordinates and returns its
 -- height, which is what tells the caller whether the surface needs to scroll.
-local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
+local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templateCount)
     local block = EnsureEmptyStateBlock(overview)
     block:SetWidth(visibleWidth)
     -- Shown before measuring: the caller only positions it afterwards, and the
@@ -993,7 +1119,13 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
 
     local textWidth = math_max(1,
         math_min(visibleWidth, EMPTY_STATE_MAX_TEXT_WIDTH))
-    local y = EMPTY_STATE_TOP_PADDING
+    for _, label in pairs(block.libraryLabels or {}) do label:Hide() end
+    if not block.libraryButton then
+        block.libraryButton = CreateLibraryNavigation(overview, block, true)
+    end
+    block.libraryButton.label:SetText(tostring(templateCount))
+    block.libraryButton:SetShown(templateCount > 0)
+    local y = LayoutPickerHeader(block, visibleWidth, block.libraryButton)
 
     local function PlaceLine(line, gapBefore)
         y = y + (gapBefore or 0)
@@ -1003,24 +1135,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
         line:Show()
         y = y + math_max(1, line:GetStringHeight() or 0)
     end
-
-    PlaceLine(block.heading)
-    PlaceLine(block.subline, EMPTY_STATE_SUBLINE_GAP)
-
-    -- GetClassColor is documented MayReturnNothing, so the divider falls back
-    -- to the tile border's own blue rather than vanishing.
-    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
-    local dividerR = classColor and classColor.r or TILE_BORDER_COLOR[1]
-    local dividerG = classColor and classColor.g or TILE_BORDER_COLOR[2]
-    local dividerB = classColor and classColor.b or TILE_BORDER_COLOR[3]
-    y = y + EMPTY_STATE_DIVIDER_GAP
-    block.divider:ClearAllPoints()
-    block.divider:SetPoint("TOP", block, "TOP", 0, -y)
-    block.divider:SetSize(textWidth, EMPTY_STATE_DIVIDER_HEIGHT)
-    block.divider:SetColorTexture(dividerR, dividerG, dividerB,
-        EMPTY_STATE_DIVIDER_ALPHA)
-    block.divider:Show()
-    y = y + EMPTY_STATE_DIVIDER_HEIGHT + EMPTY_STATE_DIVIDER_GAP
 
     -- Menu order stays independent of the picker's visual families.
     local familyByKey = {}
@@ -1044,22 +1158,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
             family.entries[#family.entries + 1] = entry
         else
             secondaryEntries[#secondaryEntries + 1] = entry
-        end
-    end
-    -- Saved templates are title-only cards like the specialists, each making
-    -- its template's type. Read through the Core API, never the store.
-    local templateEntries = {}
-    if CooldownCompanion.GetPanelTemplates then
-        for _, entry in ipairs(CooldownCompanion:GetPanelTemplates(nil)) do
-            local template = entry.template
-            local templateEntry = {
-                title = template.name,
-                templateId = entry.id,
-                templateMode = template.displayMode,
-            }
-            -- The same title and sentence the create menus show for it.
-            ST._AddPanelTemplateMenuTooltip(templateEntry, template)
-            templateEntries[#templateEntries + 1] = templateEntry
         end
     end
     local starterEntries = {
@@ -1087,15 +1185,12 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
             families[#families + 1] = family
         end
     end
-    local templateFirst = secondaryFirst + #secondaryEntries
-    local starterFirst = templateFirst + #templateEntries
+    local starterFirst = secondaryFirst + #secondaryEntries
 
     local primaryMetrics = MeasurePickerTier(overview, block, primaryFirst,
         primaryEntries, PRIMARY_CARD_STYLE, cardBandWidth)
     local secondaryMetrics = MeasurePickerTier(overview, block, secondaryFirst,
         secondaryEntries, SECONDARY_CARD_STYLE, cardBandWidth)
-    local templateMetrics = MeasurePickerTier(overview, block, templateFirst,
-        templateEntries, TEMPLATE_CARD_STYLE, cardBandWidth)
     -- The starter is one full-width offer, so it never shares a row.
     local starterMetrics = MeasurePickerTier(overview, block, starterFirst,
         starterEntries, STARTER_CARD_STYLE, cardBandWidth, 1)
@@ -1115,29 +1210,13 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     end
     y = y + PlacePickerTier(overview, block, secondaryFirst, secondaryEntries,
         secondaryMetrics, SECONDARY_CARD_STYLE, containerId, CREATE_ACCENT, y)
-    if #templateEntries > 0 then
-        y = y + EMPTY_STATE_SECTION_GAP
-        block.templateDivider:ClearAllPoints()
-        block.templateDivider:SetPoint("TOP", block, "TOP", 0, -y)
-        block.templateDivider:SetSize(cardBandWidth, 1)
-        block.templateDivider:Show()
-        y = y + 1
-        PlaceLine(block.templateLabel, EMPTY_STATE_SECTION_GAP)
-        y = y + CARD_GAP
-        y = y + PlacePickerTier(overview, block, templateFirst,
-            templateEntries, templateMetrics, TEMPLATE_CARD_STYLE,
-            containerId, TEMPLATE_CARD_ACCENT, y)
-    else
-        block.templateLabel:Hide()
-        block.templateDivider:Hide()
-    end
     y = y + EMPTY_STATE_SECTION_GAP
     y = y + PlacePickerTier(overview, block, starterFirst, starterEntries,
         starterMetrics, STARTER_CARD_STYLE, containerId,
         CARD_STARTER_ACCENT, y)
 
     -- The reflow path re-runs this pass without a reset, so a card the last
-    -- layout used and this one does not (a template gone in between) must
+    -- layout used and this one does not must
     -- not linger on screen holding a stale create action.
     local usedCards = starterFirst + #starterEntries - 1
     for index = usedCards + 1, overview.usedCards or 0 do
@@ -1151,13 +1230,82 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth)
     return y + EMPTY_STATE_BOTTOM_PADDING
 end
 
+local function LayoutTemplateLibrary(overview, containerId, width, templatesByMode)
+    local block = EnsureEmptyStateBlock(overview)
+    block:SetWidth(width)
+    block:Show()
+    block.heading:Hide()
+    block.subline:Hide()
+    block.divider:Hide()
+    block.familyNote:Hide()
+    if block.libraryButton then block.libraryButton:Hide() end
+    for _, family in pairs(block.families) do
+        family.label:Hide()
+        family.description:Hide()
+    end
+    block.libraryLabels = block.libraryLabels or {}
+    for _, label in pairs(block.libraryLabels) do label:Hide() end
+    local bandWidth = math_min(width, EMPTY_STATE_MAX_CARD_WIDTH)
+    local y, usedCards = 0, 0
+    for _, mode in ipairs(LIBRARY_MODES) do
+        local entries = templatesByMode[mode]
+        if #entries > 0 then
+            if usedCards > 0 then y = y + EMPTY_STATE_SECTION_GAP end
+            local label = block.libraryLabels[mode]
+            if not label then
+                label = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE)
+                block.libraryLabels[mode] = label
+            end
+            label:SetText(ST._GetPanelModeLabel(mode) .. " (" .. #entries .. ")")
+            label:SetWidth(bandWidth)
+            label:ClearAllPoints()
+            label:SetPoint("TOP", block, "TOP", 0, -y)
+            label:Show()
+            y = y + label:GetStringHeight() + CARD_GAP
+            local templateEntries = {}
+            for _, saved in ipairs(entries) do
+                local entry = { title = saved.template.name, mode = mode, templateId = saved.id }
+                ST._AddPanelTemplateMenuTooltip(entry, saved.template)
+                templateEntries[#templateEntries + 1] = entry
+            end
+            local firstIndex = usedCards + 1
+            local metrics = MeasurePickerTier(overview, block, firstIndex,
+                templateEntries, TEMPLATE_CARD_STYLE, bandWidth)
+            y = y + PlacePickerTier(overview, block, firstIndex, templateEntries,
+                metrics, TEMPLATE_CARD_STYLE, containerId, CREATE_ACCENT, y)
+            usedCards = usedCards + #templateEntries
+        end
+    end
+    for index = usedCards + 1, overview.usedCards or 0 do
+        ReleasePickerCard(overview.cards[index])
+    end
+    overview.usedCards = usedCards
+    return y + EMPTY_STATE_BOTTOM_PADDING
+end
+
+local function HideEmptyPicker(overview)
+    for index = 1, overview.usedCards do ReleasePickerCard(overview.cards[index]) end
+    overview.usedCards = 0
+    if overview.emptyBlock then overview.emptyBlock:Hide() end
+    if overview.libraryHeader then overview.libraryHeader:Hide() end
+    SetOverviewHeaderHeight(overview, 0)
+end
+
 -- An editable Group with no Panels gets the create surface itself instead of a
 -- bare label and glyph. The block rides in the scroll child, so a short host
 -- scrolls it rather than clipping the lowest cards out of reach; when it fits,
 -- it centers on the full empty workspace.
 local function BuildEmptyGroupState(overview, host, containerId, sameContainer)
+    if not sameContainer then
+        overview.showTemplates = nil
+        overview.pickerScrollOffset = nil
+        overview.scrollOffset = 0
+    end
     if not (ST._IsCreateTargetContainer
         and ST._IsCreateTargetContainer(containerId)) then
+        HideEmptyPicker(overview)
+        overview.showTemplates = nil
+        overview.pickerScrollOffset = nil
         ShowPlainEmptyLabel(overview)
         return
     end
@@ -1171,21 +1319,68 @@ local function BuildEmptyGroupState(overview, host, containerId, sameContainer)
 
     -- The heading speaks for the surface here, so the plain label stays down.
     overview.empty:Hide()
+    overview.scroll:Show()
+    local templatesByMode, templateCount = GetPickerTemplatesByMode()
+    if overview.showTemplates and templateCount == 0 then
+        overview.showTemplates = nil
+        overview.scrollOffset = overview.pickerScrollOffset or 0
+        overview.pickerScrollOffset = nil
+    end
+    if overview.showTemplates then
+        local header = EnsureLibraryHeader(overview)
+        header:SetWidth(visibleWidth)
+        header:Show()
+        local headerHeight = LayoutPickerHeader(header, visibleWidth, header.back, true)
+        -- A short preview still needs a usable grid viewport. Collapse the
+        -- explanatory copy to one navigation row instead of inverting anchors.
+        if headerHeight + TEMPLATE_CARD_STYLE.minHeight > visibleHeight then
+            header.back:ClearAllPoints()
+            header.back:SetPoint("TOPLEFT", header, "TOPLEFT", 0, -4)
+            header.heading:ClearAllPoints()
+            header.heading:SetPoint("LEFT", header.back, "RIGHT", CARD_GAP, 0)
+            header.heading:SetWidth(math_max(1, visibleWidth - header.back:GetWidth() - CARD_GAP))
+            header.heading:SetWordWrap(false)
+            header.subline:Hide()
+            header.divider:Hide()
+            headerHeight = LIBRARY_BUTTON_HEIGHT + 8
+        end
+        header:SetHeight(headerHeight)
+        SetOverviewHeaderHeight(overview, headerHeight)
+        visibleHeight = math_max(1, visibleHeight - headerHeight)
+    else
+        if overview.libraryHeader then overview.libraryHeader:Hide() end
+        SetOverviewHeaderHeight(overview, 0)
+    end
 
     -- Laid out at the full band first. If that overflows, the scroll track is
     -- about to appear, so one re-measure at the narrower band lets the cards
     -- keep clear of it. Exactly one retry: the second pass is never wider than
     -- the first, so it cannot re-open the question it just answered.
     local layoutWidth = visibleWidth
-    local blockHeight = LayoutEmptyStateBlock(overview, containerId,
-        layoutWidth)
+    local function LayoutBlock(width)
+        if overview.showTemplates then
+            return LayoutTemplateLibrary(overview, containerId, width, templatesByMode)
+        end
+        return LayoutEmptyStateBlock(overview, containerId, width, templateCount)
+    end
+    local blockHeight = LayoutBlock(layoutWidth)
     if blockHeight > visibleHeight and visibleWidth > SCROLL_RESERVE then
         layoutWidth = math_max(1, visibleWidth - SCROLL_RESERVE)
-        blockHeight = LayoutEmptyStateBlock(overview, containerId, layoutWidth)
+        blockHeight = LayoutBlock(layoutWidth)
     end
     local block = overview.emptyBlock
     local blockTop = blockHeight < visibleHeight
         and ((visibleHeight - blockHeight) / 2) or 0
+    if overview.showTemplates then
+        -- Center the header and grid as one surface, just like the new-group
+        -- picker. On overflow they start at the top and only the cards scroll.
+        local header = overview.libraryHeader
+        header:SetPoint("TOPLEFT", overview.root, "TOPLEFT", OUTER_PADDING,
+            -(OUTER_PADDING + blockTop))
+        SetOverviewHeaderHeight(overview, header:GetHeight() + blockTop)
+        visibleHeight = visibleHeight - blockTop
+        blockTop = 0
+    end
     block:SetHeight(math_max(1, blockHeight))
     block:ClearAllPoints()
     block:SetPoint("TOPLEFT", overview.content, "TOPLEFT", 0, -blockTop)
@@ -1195,9 +1390,6 @@ local function BuildEmptyGroupState(overview, host, containerId, sameContainer)
     overview.visibleHeight = visibleHeight
     overview.contentHeight = contentHeight
     overview.maxScroll = math_max(0, contentHeight - visibleHeight)
-    if not sameContainer then
-        overview.scrollOffset = 0
-    end
     overview.content:SetSize(visibleWidth, contentHeight)
     overview.scrollTrack:SetShown(overview.maxScroll > 0)
     SetScrollOffset(overview, overview.scrollOffset or 0)
@@ -1289,13 +1481,7 @@ local function ResetOverview(overview)
     -- The picker cards go down first, and their create actions go with them, so
     -- a click that lands mid-refresh finds nothing to act on rather than acting
     -- on the Group that just left the screen.
-    for index = 1, overview.usedCards do
-        ReleasePickerCard(overview.cards[index])
-    end
-    overview.usedCards = 0
-    if overview.emptyBlock then
-        overview.emptyBlock:Hide()
-    end
+    HideEmptyPicker(overview)
     if GameTooltip:GetOwner() then
         if GameTooltip:GetOwner() == overview.addTile then
             GameTooltip:Hide()
@@ -1480,6 +1666,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
         BuildEmptyGroupState(overview, host, containerId, sameContainer)
         return
     end
+    overview.showTemplates = nil
+    overview.pickerScrollOffset = nil
 
     local records = {}
     local includeSections = true
@@ -1573,13 +1761,22 @@ function ST._ReleaseGroupPanelOverview(host)
     overview.containerId = nil
     overview.maxScroll = 0
     overview.scrollOffset = 0
+    overview.showTemplates = nil
+    overview.pickerScrollOffset = nil
     overview.root:Hide()
 end
 
+-- Surface visibility is separate from tutorial anchor availability: both the
+-- create choices and the template library can contain tutorial-dimmed cards.
+function ST._IsEmptyGroupPickerVisible()
+    local overview = activeOverview
+    return (overview and overview.root:IsVisible()
+        and overview.emptyBlock and overview.emptyBlock:IsShown()) or false
+end
+
 -- Read-only lookup of one panel-type card in the empty state's picker, used to
--- point at it without owning it. Only the type cards carry a display mode: the
--- add tile and the Cooldown Manager starter have none, so a lookup by mode can
--- never land on them. Returns nil whenever the picker is not the surface on
+-- point at it without owning it. Templates are not tutorial create targets.
+-- Returns nil whenever the picker is not the surface on
 -- screen, so callers must tolerate a missing frame.
 function ST._GetEmptyPickerCardFrame(mode)
     local overview = activeOverview
@@ -1587,7 +1784,7 @@ function ST._GetEmptyPickerCardFrame(mode)
     for index = 1, overview.usedCards or 0 do
         local card = overview.cards[index]
         local create = card and card._cdcOverviewCreate
-        if create and create.mode == mode and card:IsShown() then
+        if create and not create.templateId and create.mode == mode and card:IsShown() then
             return card
         end
     end

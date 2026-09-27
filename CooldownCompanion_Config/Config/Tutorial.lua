@@ -657,9 +657,9 @@ local function CancelFirstIconPanelTutorial(reason)
     end
     HideHighlight()
 
-    -- The empty picker locks its non-icon cards while the tutorial waits for
-    -- an Icon Panel; if it is the surface on screen, a rebuild hands them back.
-    if ST._GetEmptyPickerCardFrame and ST._GetEmptyPickerCardFrame("icons") then
+    -- Both empty-picker views dim non-icon choices during the tutorial.
+    -- Templates have no tutorial anchor, but still need their appearance reset.
+    if ST._IsEmptyGroupPickerVisible and ST._IsEmptyGroupPickerVisible() then
         CooldownCompanion:RefreshConfigPanel()
     end
 end
