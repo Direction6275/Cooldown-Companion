@@ -36,6 +36,7 @@ local lastEvaluationSpecId
 local lastPlayerFrameName = nil
 local lastTargetFrameName = nil
 local InstallHooks
+local addonDisabled = false
 
 -- Combat deferral: any positioning attempt during combat is coalesced into a
 -- single full re-evaluation once PLAYER_REGEN_ENABLED fires.
@@ -91,6 +92,179 @@ local function GetFrameAnchoringSettings()
     return CooldownCompanion:GetFrameAnchoringSettings()
 end
 
+------------------------------------------------------------------------
+-- Ellesmere position ownership (EllesmereUI 9.3 unlock-element contract)
+------------------------------------------------------------------------
+
+-- Ellesmere requeues its own anchor until GetPoint matches its placement.
+-- Claim its existing element-level ownership contract before writing CC's
+-- points. Saved layout records and the provider's frame methods stay intact.
+local ellesmereHooks = {}
+local ellesmereRefreshQueued = false
+local ELLESMERE_POSITION_CALLBACKS = { "applyPosition", "savePosition", "clearPosition" }
+
+local function ResolveEllesmereElement(frame)
+    if not frame then return end
+    local key
+    for _, family in ipairs(UNIT_FRAME_PROVIDERS.ellesmere.families) do
+        if frame == _G[family.player] then key = "player"; break end
+        if frame == _G[family.target] then key = "target"; break end
+    end
+    if not key then return end
+
+    local provider = _G.EllesmereUI
+    if type(provider) ~= "table" or type(provider._unlockRegisteredElements) ~= "table"
+        or type(provider.RegisterUnlockElements) ~= "function"
+        or type(provider.IsUnlockAnchored) ~= "function"
+        or type(provider.ReapplyOwnAnchor) ~= "function" then
+        return nil, "provider-incompatible"
+    end
+    local element = provider._unlockRegisteredElements[key]
+    if type(element) ~= "table" or element.key ~= key
+        or type(element.getFrame) ~= "function" or element.getFrame(key) ~= frame
+        or type(element.loadPosition) ~= "function"
+        or (element.isAnchored ~= nil and type(element.isAnchored) ~= "function")
+        or (element.noInitHook ~= nil and type(element.noInitHook) ~= "boolean")
+        or (element.keepMoverWhenAnchored ~= nil and type(element.keepMoverWhenAnchored) ~= "boolean") then
+        return nil, "provider-incompatible"
+    end
+    for _, field in ipairs(ELLESMERE_POSITION_CALLBACKS) do
+        if type(element[field]) ~= "function" then return nil, "provider-incompatible" end
+    end
+    return element, nil, provider, key
+end
+
+local function ReleaseEllesmereOwnership(ownership)
+    if not ownership then return end
+    ownership.active = false
+    for field, installed in pairs(ownership.installed) do
+        if ownership.element[field] == installed then
+            ownership.element[field] = ownership.original[field]
+        end
+    end
+end
+
+local function AcquireEllesmereOwnership(state, frame, element, provider, key)
+    local previous = state.ellesmereOwnership
+    if previous and previous.element == element and previous.frame == frame then
+        local intact = true
+        for field, installed in pairs(previous.installed) do
+            if element[field] ~= installed then intact = false; break end
+        end
+        if intact then return end
+    end
+    ReleaseEllesmereOwnership(previous)
+    state.ellesmereOwnership = nil
+    if not element then return end
+
+    local ownership = { element = element, provider = provider, key = key, frame = frame,
+        active = true, original = {}, installed = {} }
+    local function Install(field, value)
+        ownership.original[field] = element[field]
+        ownership.installed[field] = value
+        element[field] = value
+    end
+    local originalIsAnchored = element.isAnchored
+    Install("isAnchored", function(...)
+        if ownership.active then return true end
+        if originalIsAnchored then return originalIsAnchored(...) end
+        return false
+    end)
+    for _, field in ipairs(ELLESMERE_POSITION_CALLBACKS) do
+        local original = element[field]
+        Install(field, function(...)
+            -- EUI's layout flush uses savePosition to restore stored spec or
+            -- fallback coordinates. Let those update its saved layout; our
+            -- existing write hooks reclaim any accompanying frame placement.
+            -- Ordinary saves of CC's live placement must still be suppressed.
+            if not ownership.active
+                or (field == "savePosition" and provider._unlockLayerApplying == true) then
+                return original(...)
+            end
+        end)
+    end
+    Install("noInitHook", true)
+    Install("keepMoverWhenAnchored", true)
+    state.ellesmereOwnership = ownership
+end
+
+local function ReapplyReleasedEllesmereFrames(released)
+    for _, ownership in ipairs(released) do
+        local provider, element, key = ownership.provider, ownership.element, ownership.key
+        -- Both CC destinations must have settled before the provider follows
+        -- either one. A provider swap can reuse the released frame in CC.
+        if ownership.frame ~= frames.player.frame and ownership.frame ~= frames.target.frame
+            and provider == _G.EllesmereUI
+            and type(provider._unlockRegisteredElements) == "table"
+            and provider._unlockRegisteredElements[key] == element
+            and type(element.getFrame) == "function" and element.getFrame(key) == ownership.frame then
+            if type(provider.IsUnlockAnchored) == "function" and provider.IsUnlockAnchored(key)
+                and type(provider.ReapplyOwnAnchor) == "function" then
+                provider.ReapplyOwnAnchor(key)
+            elseif type(element.applyPosition) == "function" then
+                element.applyPosition(key)
+            end
+        end
+    end
+end
+
+local function OnEllesmereRegistrationChanged()
+    -- A re-registration can replace a descriptor while its protected frame is
+    -- still owned by CC in combat. Transfer only the callback lease here;
+    -- all frame positioning continues through the existing combat gate.
+    for _, state in pairs(frames) do
+        if state.frame then
+            local element, _, provider, key = ResolveEllesmereElement(state.frame)
+            if element then AcquireEllesmereOwnership(state, state.frame, element, provider, key) end
+        end
+    end
+    if addonDisabled or ellesmereRefreshQueued or not CooldownCompanion.db then return end
+    local settings = GetFrameAnchoringSettings()
+    if not (settings and settings.enabled) then return end
+    local selected = settings.unitFrameAddon
+    if selected and selected ~= "" and selected ~= "ellesmere" and selected ~= "custom" then return end
+    ellesmereRefreshQueued = true
+    C_Timer.After(0, function()
+        ellesmereRefreshQueued = false
+        if addonDisabled then return end
+        local latest = GetFrameAnchoringSettings()
+        if latest and latest.enabled then
+            CooldownCompanion:EvaluateFrameAnchoring({ reason = "ellesmere-registration" })
+        end
+    end)
+end
+
+local function InstallEllesmereRegistrationHooks()
+    local provider = _G.EllesmereUI
+    if type(provider) ~= "table" then return end
+    for _, method in ipairs({ "RegisterUnlockElements", "UnregisterUnlockElement" }) do
+        local fn = provider[method]
+        if type(fn) == "function" and ellesmereHooks[method] ~= fn then
+            hooksecurefunc(provider, method, function(_, elements)
+                if provider ~= _G.EllesmereUI then return end
+                if type(elements) == "string" then
+                    if elements == "player" or elements == "target" then OnEllesmereRegistrationChanged() end
+                elseif type(elements) == "table" then
+                    for _, element in ipairs(elements) do
+                        if element.key == "player" or element.key == "target" then
+                            OnEllesmereRegistrationChanged()
+                            break
+                        end
+                    end
+                end
+            end)
+            ellesmereHooks[method] = provider[method]
+        end
+    end
+end
+
+-- CC can load before Ellesmere. Registration itself is the retry signal;
+-- neither discovery nor ownership maintenance needs an OnUpdate poll.
+local ellesmereLoadFrame = CreateFrame("Frame")
+ellesmereLoadFrame:RegisterEvent("ADDON_LOADED")
+ellesmereLoadFrame:SetScript("OnEvent", InstallEllesmereRegistrationHooks)
+InstallEllesmereRegistrationHooks()
+
 local function GetInheritedUnitFrameAlpha(groupFrame)
     if not groupFrame or not groupFrame:IsShown() then return nil end
 
@@ -115,6 +289,7 @@ local function SetUnitFrameAlphaGuarded(frame, alpha)
 end
 
 local function ResyncInheritedUnitFrameAlpha(force, latest)
+    if addonDisabled then return end
     latest = latest or GetFrameAnchoringSettings()
     if not (isApplied and latest and latest.enabled and latest.inheritAlpha) then return end
     for _, state in pairs(frames) do
@@ -346,7 +521,7 @@ local function GetFrameDebugName(frame, fallback)
 end
 
 local function QueueExternalAnchorRepair(frame)
-    if anchorWriteGuards[frame] then return end
+    if addonDisabled or anchorWriteGuards[frame] then return end
     if not isApplied or (frame ~= frames.player.frame and frame ~= frames.target.frame) then return end
     if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
 
@@ -451,16 +626,20 @@ local function WouldFrameDependOn(sourceFrame, dependencyFrame, visited, depth, 
     return false
 end
 
-local function RestoreManagedFrame(state)
-    if state.frame then
-        if state.savedAlpha ~= nil then SetUnitFrameAlphaGuarded(state.frame, state.savedAlpha) end
-        RestoreFrameAnchors(state.frame, state.savedAnchors)
-    end
+local function RestoreManagedFrame(state, released)
+    local frame, alpha, anchors, ownership = state.frame, state.savedAlpha, state.savedAnchors, state.ellesmereOwnership
+    -- Remove membership first, so provider callbacks cannot reclaim a frame
+    -- that CC is in the middle of returning.
     for key in pairs(state) do state[key] = nil end
+    if frame then
+        if alpha ~= nil then SetUnitFrameAlphaGuarded(frame, alpha) end
+        RestoreFrameAnchors(frame, anchors)
+    end
+    ReleaseEllesmereOwnership(ownership)
+    if ownership then released[#released + 1] = ownership end
 end
 
 local function ConfigureManagedFrame(state, frame, target, position, mirror, inheritAlpha)
-    if state.frame and (state.frame ~= frame or not target.available) then RestoreManagedFrame(state) end
     state.reason = target.reason
     if not frame or not target.available then
         if not frame then state.reason = "provider-unavailable" end
@@ -470,6 +649,7 @@ local function ConfigureManagedFrame(state, frame, target, position, mirror, inh
         state.savedAnchors = SaveFrameAnchors(frame)
         state.frame = frame
     end
+    AcquireEllesmereOwnership(state, frame, target.ellesmereElement, target.ellesmereProvider, target.ellesmereKey)
     state.panel = target.frame
     state.panelId = target.panelId
     local point, relativePoint = position.anchorPoint, position.relativePoint
@@ -514,6 +694,7 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:ApplyFrameAnchoring(opts)
+    if addonDisabled then self:RevertFrameAnchoring(); return end
     opts = opts or {}
     if not opts.skipRuntimeGate then
         return self:RefreshBarsAndFramesRuntimeFeature("frameAnchoring", "frame-anchoring-apply", true)
@@ -536,6 +717,14 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
 
     local playerFrame, targetFrame, provider = GetUnitFrames(settings)
     local playerTarget, targetTarget = self:ResolveModulePanel("player"), self:ResolveModulePanel("target")
+    for _, candidate in ipairs({ { playerFrame, playerTarget }, { targetFrame, targetTarget } }) do
+        local frame, target = candidate[1], candidate[2]
+        if frame and target.available then
+            local element, reason, owner, key = ResolveEllesmereElement(frame)
+            if reason then target.available, target.reason = false, reason end
+            target.ellesmereElement, target.ellesmereProvider, target.ellesmereKey = element, owner, key
+        end
+    end
     for _ = 1, 2 do
         local proposed = ProposedFrameDependencies(playerFrame, playerTarget, targetFrame, targetTarget)
         local playerCycle = playerFrame and playerTarget.available
@@ -550,7 +739,15 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
 
     -- Clear old managed edges before restoring either provider or installing
     -- new edges. A provider change may even exchange the player/target frames.
-    local cleared = {}
+    if frames.player.frame == playerFrame and playerTarget.available then
+        AcquireEllesmereOwnership(frames.player, playerFrame, playerTarget.ellesmereElement,
+            playerTarget.ellesmereProvider, playerTarget.ellesmereKey)
+    end
+    if frames.target.frame == targetFrame and targetTarget.available then
+        AcquireEllesmereOwnership(frames.target, targetFrame, targetTarget.ellesmereElement,
+            targetTarget.ellesmereProvider, targetTarget.ellesmereKey)
+    end
+    local cleared, released = {}, {}
     for _, state in pairs(frames) do
         if state.frame then
             anchorWriteGuards[state.frame] = true
@@ -561,12 +758,12 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     end
     if frames.player.frame and (frames.player.frame ~= playerFrame or not playerTarget.available) then
         local restored = frames.player.frame
-        RestoreManagedFrame(frames.player)
+        RestoreManagedFrame(frames.player, released)
         cleared[restored] = nil
     end
     if frames.target.frame and (frames.target.frame ~= targetFrame or not targetTarget.available) then
         local restored = frames.target.frame
-        RestoreManagedFrame(frames.target)
+        RestoreManagedFrame(frames.target, released)
         cleared[restored] = nil
     end
 
@@ -612,6 +809,7 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
         alphaSyncFrame:SetScript("OnUpdate", nil)
         rapidAlphaSyncUntil = 0
     end
+    ReapplyReleasedEllesmereFrames(released)
 end
 
 ------------------------------------------------------------------------
@@ -636,8 +834,10 @@ function CooldownCompanion:RevertFrameAnchoring()
             anchorWriteGuards[state.frame] = nil
         end
     end
-    RestoreManagedFrame(frames.player)
-    RestoreManagedFrame(frames.target)
+    local released = {}
+    RestoreManagedFrame(frames.player, released)
+    RestoreManagedFrame(frames.target, released)
+    ReapplyReleasedEllesmereFrames(released)
 end
 
 ------------------------------------------------------------------------
@@ -645,6 +845,7 @@ end
 ------------------------------------------------------------------------
 
 function CooldownCompanion:EvaluateFrameAnchoring(opts)
+    if addonDisabled then self:RevertFrameAnchoring(); return end
     opts = opts or {}
     if not opts.skipRuntimeGate then
         return self:RefreshBarsAndFramesRuntimeFeature("frameAnchoring", opts.reason or "frame-anchoring-evaluate")
@@ -689,6 +890,8 @@ function CooldownCompanion:GetFrameAnchoringRuntimeDebugInfo()
         targetReason = frames.target.reason,
         playerApplied = frames.player.anchor ~= nil,
         targetApplied = frames.target.anchor ~= nil,
+        playerEllesmereOwned = frames.player.ellesmereOwnership ~= nil,
+        targetEllesmereOwned = frames.target.ellesmereOwnership ~= nil,
         playerFrameName = lastPlayerFrameName,
         targetFrameName = lastTargetFrameName,
     }
@@ -699,8 +902,18 @@ end
 ------------------------------------------------------------------------
 
 InstallHooks = function()
+    InstallEllesmereRegistrationHooks()
     if hooksInstalled then return end
     hooksInstalled = true
+
+    hooksecurefunc(CooldownCompanion, "OnDisable", function()
+        addonDisabled = true
+        CooldownCompanion:RevertFrameAnchoring()
+    end)
+    hooksecurefunc(CooldownCompanion, "OnEnable", function()
+        addonDisabled = false
+        CooldownCompanion:EvaluateFrameAnchoring({ reason = "unit-frame-addon-enabled" })
+    end)
 
     hooksecurefunc(CooldownCompanion, "OnTargetChanged", function()
         if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("frameAnchoring") then return end
