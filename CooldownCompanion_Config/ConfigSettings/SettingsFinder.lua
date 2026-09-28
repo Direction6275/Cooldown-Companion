@@ -492,8 +492,9 @@ local function IsDescriptorApplicable(descriptor, context)
     local editing = context.group and context.group._settingsContext
     if editing and editing.contents and (descriptor.tab == "appearance" or descriptor.tab == "effects")
         and not editing.contents[editing.presentation] then
+        local section = descriptor.sectionId or descriptor.section
         if not (editing.presentation == "bars" and editing.contents.modules and descriptor.tab == "appearance"
-            and (descriptor.sectionId or descriptor.section) == "barThickness") then return false end
+            and (section == "barThickness" or section == "barCharges")) then return false end
     end
     if context.scope == "entry" and context.group and context.group._settingsContext then
         local sectionId = descriptor.sectionId or descriptor.section

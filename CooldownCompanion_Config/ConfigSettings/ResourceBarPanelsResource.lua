@@ -1284,50 +1284,50 @@ local function BuildResourceBarPositioningPanel(container)
     -- ============================================================
     -- Bar Size (how thick each bar is, and how they sit apart)
     -- ============================================================
-    local _, sizeCollapsed = BuildCollapsibleSection(container, "Bar Size", "rb_bar_size", resourceBarCollapsedSections, nil, ROW_SECTION)
+    if not ST.GetModuleGeometryPanel("resources") then
+        local _, sizeCollapsed = BuildCollapsibleSection(container, "Bar Size", "rb_bar_size", resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    if not sizeCollapsed then
-        -- LEFT column: the thickness of a bar, shared or per-resource - the
-        -- override toggle disables the shared slider above it, so the two stay
-        -- adjacent. RIGHT column: the gaps between the things being sized.
-        local sizeLeft, sizeRight = BeginRowGrid(container)
+        if not sizeCollapsed then
+            -- LEFT column: the thickness of a bar, shared or per-resource - the
+            -- override toggle disables the shared slider above it, so the two stay
+            -- adjacent. RIGHT column: the gaps between the things being sized.
+            local sizeLeft, sizeRight = BeginRowGrid(container)
 
-        -- Bar Height + Custom Heights
-        if not ST.UsesSharedModuleGeometry("resources") then ST._BuildBarHeightControls(sizeLeft, settings, layout) end
+            -- Bar Height + Custom Heights
+            if not ST.UsesSharedModuleGeometry("resources") then ST._BuildBarHeightControls(sizeLeft, settings, layout) end
 
-        -- Bar Spacing. The canvas takes its lane gap straight from this value,
-        -- so the whole stack re-spaces under the drag and the live bars
-        -- reposition once, on release.
-        if not ST.GetModuleGeometryPanel("resources") then
-        AddMirrorFirstSliderRow(sizeRight, {
-            label = "Bar Spacing",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.spacing,
-            min = 0, max = 20, step = 0.1,
-            value = layout.barSpacing or settings.barSpacing or 3.6,
-            set = function(val) layout.barSpacing = val end,
-            apply = function()
-                applyBars()
-            end,
-            stateOwner = layout,
-            stateKeys = "barSpacing",
-        })
+            -- Bar Spacing. The canvas takes its lane gap straight from this value,
+            -- so the whole stack re-spaces under the drag and the live bars
+            -- reposition once, on release.
+            AddMirrorFirstSliderRow(sizeRight, {
+                label = "Bar Spacing",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                    and RESOURCE_FINDER.primary.size.spacing,
+                min = 0, max = 20, step = 0.1,
+                value = layout.barSpacing or settings.barSpacing or 3.6,
+                set = function(val) layout.barSpacing = val end,
+                apply = function()
+                    applyBars()
+                end,
+                stateOwner = layout,
+                stateKeys = "barSpacing",
+            })
 
+            -- Segment Gap
+            AddMirrorFirstSliderRow(sizeRight, {
+                label = "Segment Gap",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                    and RESOURCE_FINDER.primary.size.segmentGap,
+                min = 0, max = 20, step = 0.1,
+                value = layout.segmentGap or settings.segmentGap or 4,
+                set = function(val) layout.segmentGap = val end,
+                apply = function()
+                    applyBars()
+                end,
+                stateOwner = layout,
+                stateKeys = "segmentGap",
+            })
         end
-        -- Segment Gap
-        AddMirrorFirstSliderRow(sizeRight, {
-            label = "Segment Gap",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.segmentGap,
-            min = 0, max = 20, step = 0.1,
-            value = layout.segmentGap or settings.segmentGap or 4,
-            set = function(val) layout.segmentGap = val end,
-            apply = function()
-                applyBars()
-            end,
-            stateOwner = layout,
-            stateKeys = "segmentGap",
-        })
     end
 
     -- ============ Anchor Settings (independent mode only) ============
@@ -3317,15 +3317,21 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
-    if ST.UsesSharedModuleGeometry("resources", numericSpecID) then
+    local sharedGeometry = ST.UsesSharedModuleGeometry("resources", numericSpecID)
+    local segmented = ST._RB.SupportsResourceAuraStackMode(numericPowerType)
+        and not ST._RB.IsContinuousResourceShape(CooldownCompanion:GetResourceBarSettings(), numericPowerType, numericSpecID)
+    if sharedGeometry or segmented then
         ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
         local key = "rb_resource_appearance_" .. numericPowerType .. "_" .. numericSpecID
         local _, collapsed = BuildCollapsibleSection(container, "Appearance", key,
             resourceBarCollapsedSections, nil, ROW_SECTION)
         if not collapsed then
             local column = BeginRowGrid(container)
-            ST._BuildModuleBarThickness(column, "resources", numericPowerType, numericSpecID,
-                ST._ResourceThicknessSetting)
+            if sharedGeometry then
+                ST._BuildModuleBarThickness(column, "resources", numericPowerType, numericSpecID,
+                    ST._ResourceThicknessSetting)
+            end
+            ST._BuildResourceSegmentGap(column, numericPowerType, numericSpecID, ST._ResourceSegmentGapSetting)
         end
     end
     BuildResourceBarStylingPanel(container, "resource_settings", {
@@ -3728,7 +3734,8 @@ if ST._DefineSettingRoute then
                 end,
             },
             spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
-            segmentGap = { label = "Segment Gap", aliases = { "segment spacing" } },
+            segmentGap = { label = "Segment Gap", aliases = { "segment spacing" },
+                applies = function() return not ST.GetModuleGeometryPanel("resources") end },
         })
         RESOURCE_FINDER.primary.customHeight = {}
         RESOURCE_FINDER.primary.customWidth = {}
@@ -4663,4 +4670,17 @@ ST._ResourceThicknessSetting = ST._DefineSettingRoute({
     end,
     applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
 }):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
+ST._ResourceSegmentGapSetting = ST._DefineSettingRoute({
+    idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
+    tab = "settings", tabLabel = "Settings", section = "barCharges", sectionLabel = "Appearance",
+    collapseStore = "resource", collapseKeys = function(context)
+        return { "rb_resource_appearance_" .. tostring(context.resourcePowerType) .. "_" .. tostring(context.resourceSpecID) }
+    end,
+    applies = function(context)
+        local settings = RESOURCE_FINDER.Settings(context)
+        local powerType = context.resourcePowerType
+        return ST._RB.SupportsResourceAuraStackMode(powerType)
+            and not ST._RB.IsContinuousResourceShape(settings, powerType, context.resourceSpecID)
+    end,
+}):Setting({ key = "segmentGap", label = "Segment Gap", aliases = { "segment spacing", "stack spacing" } })
 end

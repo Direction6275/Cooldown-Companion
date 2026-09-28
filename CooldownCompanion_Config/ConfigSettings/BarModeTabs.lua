@@ -14,7 +14,8 @@ local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.
 local function ShowChargeGap(group)
     local entry = ST._GetPanelSettingsSelection(group)
     return CanGroupUseOverrideSection(group, "barCharges")
-        and (not entry or (ST.CanSegmentEntryCharges(group, entry) and entry.barSegmentCharges == true))
+        and (not entry or ST.CanUseBarSegmentGap(group, entry))
+        and (not group._moduleGeometryOnly or ST._PanelHasConfiguredModuleBars(CS.selectedGroup, "resources"))
 end
 
 -- Imports from Helpers.lua
@@ -519,6 +520,29 @@ local function BuildBarAppearanceTab(container, group, style)
         sec:Chrome(row)
         sec:Finish()
     end
+    if ShowChargeGap(group) then
+        local chargesLeft = BeginRowGrid(container)
+        local sec = BeginLensSection(lens, group, "barCharges", { column = chargesLeft })
+        local row = AddSliderRow(chargesLeft, {
+            label = "Segment Gap",
+            setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.gap,
+            min = 0, max = 20, step = 0.1,
+            value = sec.read.barChargeSegmentGap or 4,
+            disabled = sec.disabled,
+            onChange = function(value)
+                if not sec.write then return end
+                ST._PreviewScalarSetting(sec.write, "barChargeSegmentGap", value, ST._RefreshSelectedButtonsPreview)
+            end,
+            onRelease = function(value)
+                if not sec.write then return end
+                sec.write.barChargeSegmentGap = value
+                refreshStyle()
+            end,
+        })
+        sec:Chrome(row)
+        sec:Finish()
+    end
+
     if group._moduleGeometryOnly then return end
 
     -- ================================================================
@@ -663,28 +687,6 @@ local function BuildBarAppearanceTab(container, group, style)
     barSettingsSec:FinishBracket(barRightBracket)
     end -- not barSettingsCollapsed
 
-    if ShowChargeGap(group) then
-        local chargesLeft = BeginRowGrid(container)
-        local sec = BeginLensSection(lens, group, "barCharges", { column = chargesLeft })
-        local row = AddSliderRow(chargesLeft, {
-            label = "Segment Gap",
-            setting = BAR_FINDER.appearance.chargeSegments and BAR_FINDER.appearance.chargeSegments.gap,
-            min = 0, max = 20, step = 0.1,
-            value = sec.read.barChargeSegmentGap or 4,
-            disabled = sec.disabled,
-            onChange = function(value)
-                if not sec.write then return end
-                ST._PreviewScalarSetting(sec.write, "barChargeSegmentGap", value, ST._RefreshSelectedButtonsPreview)
-            end,
-            onRelease = function(value)
-                if not sec.write then return end
-                sec.write.barChargeSegmentGap = value
-                refreshStyle()
-            end,
-        })
-        sec:Chrome(row)
-        sec:Finish()
-    end
 
     -- Bar colors have no heading and no collapse state, so they stay on screen
     -- while Bar Settings is folded away. They get a grid of their own, which is
@@ -2373,7 +2375,7 @@ if ST._DefineSettingRoute then
         "panel.bars.appearance.chargeSegments", "appearance", "barCharges",
         "Segment Gap", nil, nil, nil, "barCharges"):Settings({
         gap = {
-            label = "Segment Gap", aliases = {"charge spacing"},
+            label = "Segment Gap", aliases = {"charge spacing", "stack gap", "divider gap", "block gap", "resource spacing"},
             applies = function(context)
                 return context and context.group and ShowChargeGap(context.group)
             end,

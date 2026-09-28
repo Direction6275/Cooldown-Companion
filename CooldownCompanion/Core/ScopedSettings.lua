@@ -130,6 +130,7 @@ local function CreateResourceBarSettings()
     local settings = CopySubsystemDefaults("resourceBars")
     settings.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
     settings._barGeometryVersion = 1
+    settings._barSegmentGapVersion = 1
     return settings
 end
 
@@ -1090,6 +1091,8 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
     if DeepEqual(comparable, defaults) then return true end
     defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
     defaults._barGeometryVersion = 1
+    if DeepEqual(comparable, defaults) then return true end
+    defaults._barSegmentGapVersion = 1
     return DeepEqual(comparable, defaults)
 end
 

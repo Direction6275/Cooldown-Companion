@@ -1191,7 +1191,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
     local barInfo = frame.previewBarInfo
     local rbSettings = preview.rbSettings
     local layout = preview.layout
-    local segmentGap = (layout and layout.segmentGap) or rbSettings.segmentGap or 4
+    local segmentGap = ST.ResolveResourceSegmentGap(rbSettings, layout, slot.powerType, slot.anchorGroup)
 
     if slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
@@ -3358,12 +3358,13 @@ ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
 
 -- Ordinary panels render modules inside the same attachment composition as
 -- their entries. Reuse this file's resource/cast painters and preview state.
-function ST._PanelHasConfiguredModuleBars(panelId)
+function ST._PanelHasConfiguredModuleBars(panelId, kind)
     local group = CooldownCompanion.db.profile.groups[panelId]
     if not ST.PanelSupportsAttachedBars(group) then return false end
     local cast = ST.GetConfiguredModuleBarSettings("castbar")
-    if cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
+    if kind ~= "resources" and cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
         and ModuleBelongsToPreview("castbar", panelId, true, cast) then return true end
+    if kind == "castbar" then return false end
     local saved = ST.GetConfiguredModuleBarSettings("resources")
     if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
     local settings = CopyTable(saved)

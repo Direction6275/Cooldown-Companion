@@ -408,15 +408,6 @@ local auraSettings = ST._DefineSettingRoute({
                 and state.stackStyle == "segmented"
         end),
     },
-    segmentGap = { advancedKey = "entryAuraStackDisplay",
-        label = "Segment Gap",
-        aliases = { "stack gap", "divider gap", "block gap" },
-        applies = AuraStateApplies(function(state)
-            return state.active and state.barShowsStacks and state.maxStacks ~= nil
-                and state.stackStyle == "segmented"
-                and (not state.isStandalone or state.maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX)
-        end),
-    },
     showCountAtOne = {
         label = "Show Count at 1 Stack",
         aliases = { "show one stack", "stack count one" },
@@ -883,55 +874,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                         AnchorRowBadge(smoothRow, CreateInfoButton(smoothRow.frame, smoothRow.frame, "LEFT", "LEFT", 0, 0,
                             SEGMENTED_SMOOTHING_TOOLTIP, CS.advancedSettingsInfoButtons))
                     end
-                end
-
-                -- Widget-mode blocks (standalone aura entries): the gap lives
-                -- in the bundled fill atlas, so the control is a preset
-                -- dropdown picking an atlas set, capped at the block-atlas
-                -- max (a larger bound runs painted dividers instead).
-                if isStandalone and maxStacks and stackStyle == "segmented"
-                    and maxStacks <= ST.STACK_SEGMENT_ATLAS_MAX then
-                    ST._AddStackBlockGapRow(panel, buttonData, {
-                        setting = auraSettings.segmentGap,
-                        maxStacks = maxStacks,
-                        commit = function()
-                            ST._RefreshSelectedButtonsPreview()
-                            CooldownCompanion:RequestAuraRebind("config")
-                            CooldownCompanion:RefreshAllGroups()
-                        end,
-                    })
-                end
-
-                -- Painted-divider mode only: spell entries keep the free pixel
-                -- slider (their stripes are CC-painted, not atlas artwork).
-                -- Hidden too when the aura doesn't stack (duration fallback —
-                -- there are no segments for a gap to sit between) and for the
-                -- continuous style (no segments at all).
-                if not isStandalone and maxStacks and stackStyle == "segmented" then
-                    AddSliderRow(panel, {
-                        setting = auraSettings.segmentGap,
-                        indent = false,
-                        min = 0, max = 20, step = 1,
-                        value = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData),
-                        onChange = function(value)
-                            local previousAuraBar = buttonData.auraBar
-                            local hadAuraBar = type(previousAuraBar) == "table"
-                            local previous = hadAuraBar and previousAuraBar.segmentGap or nil
-                            CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-                            ST._RefreshSelectedButtonsPreview()
-                            if hadAuraBar then
-                                buttonData.auraBar.segmentGap = previous
-                            else
-                                buttonData.auraBar = previousAuraBar
-                            end
-                        end,
-                        onRelease = function(value)
-                            CooldownCompanion:SetBarPanelAuraSegmentGap(buttonData, value)
-                            -- Rebind only: the gap is pure slot-kit styling, so no
-                            -- group refresh or panel rebuild is needed.
-                            CooldownCompanion:RequestAuraRebind("config")
-                        end,
-                    })
                 end
 
                 AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })

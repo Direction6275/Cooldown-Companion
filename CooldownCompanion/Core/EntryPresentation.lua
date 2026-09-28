@@ -81,6 +81,22 @@ function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
         vertical = vertical, spacing = layout.barSpacing or settings.barSpacing or 3.6 })
 end
 
+-- Segment spacing follows the same panel -> individual resource ownership as
+-- thickness. Independent/specialized hosts retain their resource default.
+function ST.ResolveResourceSegmentGap(settings, layout, powerType, group)
+    settings, layout = settings or {}, layout or {}
+    local canonical = ST._RB and ST._RB.GetCanonicalPowerType and ST._RB.GetCanonicalPowerType(powerType) or powerType
+    local slot = layout.resources and layout.resources[canonical]
+    if slot and slot.overrideSections and slot.overrideSections.barCharges and slot.styleOverrides then
+        local value = rawget(slot.styleOverrides, "barChargeSegmentGap")
+        if value ~= nil then return value end
+    end
+    if ST.PanelSupportsAttachedBars(group) then
+        return ST.GetAttachedBarStyle(group).barChargeSegmentGap or 4
+    end
+    return layout.segmentGap or settings.segmentGap or 4
+end
+
 function ST.ResolveCastBarGeometry(settings, group)
     settings = settings or {}
     return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and settings or nil, baseline = settings.height or 15 })
@@ -132,6 +148,16 @@ function ST.CanSegmentEntryCharges(group, entry)
     return entry ~= nil and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
         and ST.GetEntryPresentation(group, entry) == "bars"
         and entry.type == "spell" and entry.addedAs ~= "aura" and entry.hasCharges == true
+end
+
+function ST.CanUseBarSegmentGap(group, entry)
+    if not entry or ST.GetEntryPresentation(group, entry) ~= "bars" then return false end
+    if ST.CanSegmentEntryCharges(group, entry) and entry.barSegmentCharges == true then return true end
+    if entry.type ~= "spell" or not (entry.addedAs == "aura" or entry.auraTracking == true)
+        or not Addon:IsBarPanelAuraStackDisplay(entry)
+        or Addon:GetBarPanelAuraStackDisplayMode(entry) ~= "segmented" then return false end
+    local maximum = Addon:GetAuraStackBarMax(entry, true)
+    return maximum ~= nil and maximum > 1 and maximum <= ST.STACK_SEGMENT_MAX
 end
 
 -- Read the old ownership before override cleanup. Icon entries can carry a

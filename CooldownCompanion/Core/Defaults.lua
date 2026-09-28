@@ -1380,7 +1380,6 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
 -- whole population can share, and a section only some of its entries can use
 -- is not a panel-wide default worth offering.
 ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
-    barCharges = true,
     cooldownSwipe = true,
     showGCDSwipe = true,
     desaturation = true,
@@ -1436,7 +1435,6 @@ ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
     barColor = true,
     barCooldownColor = true,
     barChargeColor = true,
-    barCharges = true,
     -- "Ready" is the off-cooldown state a bar falls back to. Without a cooldown
     -- there is no such state to word.
     barReadyText = true,
@@ -1636,7 +1634,10 @@ function ST.CanButtonUseOverrideSection(buttonData, sectionId)
         and ST.ASSISTANT_ENTRY_DENIED_OVERRIDE_SECTIONS[sectionId] then
         return false, "entryType"
     end
-    if buttonData and buttonData._barGeometryKind then return sectionId == "barThickness", "entryType" end
+    if buttonData and buttonData._barGeometryKind then
+        return sectionId == "barThickness"
+            or (sectionId == "barCharges" and buttonData._barGeometryKind == "resources"), "entryType"
+    end
     if buttonData and buttonData.type == "equipmentSlot" then
         if ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS[sectionId] then
             return false, "entryType"

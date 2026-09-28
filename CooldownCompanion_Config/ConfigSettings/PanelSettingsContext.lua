@@ -369,7 +369,8 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
             local geometry = ST.ResolveResourceBarGeometry(settings, layout, nil, panel)
             baseline = geometry.thickness
         else baseline = ST.ResolveBarGeometry(panel, { baseline = settings.height or 15 }).thickness end
-        return { barHeight = baseline }
+        return { barHeight = baseline, barChargeSegmentGap = kind == "resources"
+            and ST.ResolveResourceSegmentGap(settings, self:GetLayout(false), nil, panel) or nil }
     end
     function context:Refresh(operation, effect)
         return ST._CompleteConfigEdit(ST._CaptureConfigEditTarget(self.panelId, self), operation or "style", effect)
@@ -427,8 +428,31 @@ end
 
 function ST._BuildModuleGeometrySummary(container, kind, powerType, spec)
     local context = ST._CreateModuleSettingsContext(kind, powerType, spec)
-    if context and context.entry.overrideSections and context.entry.overrideSections.barThickness then
+    if context and context.entry.overrideSections
+        and (context.entry.overrideSections.barThickness or context.entry.overrideSections.barCharges) then
         local host = ST._NewPanelSettingsSectionHost(container, context)
         ST._BuildCustomizationsSection(host, context.group, context.entry, CS.tabInfoButtons)
     end
+end
+
+function ST._BuildResourceSegmentGap(container, powerType, spec, setting)
+    local context = ST._CreateModuleSettingsContext("resources", powerType, spec)
+    if not context or not ST._CanButtonUseConfigOverrideSection(context.entry, "barCharges", context.group) then return end
+    local host = ST._NewPanelSettingsSectionHost(container, context)
+    local lens = ST._ResolveStyleLens(context.group)
+    local sec = ST._BeginLensSection(lens, context.group, "barCharges", { column = host })
+    local row = ST._AddSliderRow(host, { label = "Segment Gap", setting = setting,
+        min = 0, max = 20, step = 0.1, value = sec.tbl.barChargeSegmentGap or 4, disabled = sec.disabled,
+        onChange = function(value)
+            ST._PreviewScalarSetting(sec.tbl, "barChargeSegmentGap", value, ST._RefreshResourcesCanvasForDrag)
+        end,
+        onRelease = function(value)
+            if not context:IsCurrent() then return end
+            sec.tbl.barChargeSegmentGap = value
+            context:Refresh()
+        end,
+    })
+    sec:Chrome(row)
+    sec:Finish()
+    return context
 end

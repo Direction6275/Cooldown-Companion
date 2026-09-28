@@ -109,8 +109,13 @@ local function IsPandemicPreviewEnabled(style, buttonData)
     return style and style.pandemicEffectEnabled == true
 end
 
-local function StopBarSlotFillEffects(slot)
+local function StopBarSlotFillPulse(slot)
     if slot._cdcFillPulseAG then slot._cdcFillPulseAG:Stop() end
+    if slot._cdcFillPulseTarget then slot._cdcFillPulseTarget:SetAlpha(1) end
+end
+
+local function StopBarSlotFillEffects(slot)
+    StopBarSlotFillPulse(slot)
     if slot._cdcFillShiftAG then slot._cdcFillShiftAG:Stop() end
     local fillTex = slot.statusBar and slot.statusBar:GetStatusBarTexture()
     if fillTex then
@@ -132,19 +137,28 @@ local function ApplyBarSlotFillEffects(slot, style, auraColor, suppressShift)
     local fillTex = slot.statusBar:GetStatusBarTexture()
     if not fillTex then return false end
     if style.barAuraPulseEnabled == true then
-        if not slot._cdcFillPulseAG then
-            local ag = fillTex:CreateAnimationGroup()
+        local pulseTarget = slot._cdcAuraStackWidget and slot._cdcAuraStackFill.fillHost or fillTex
+        if slot._cdcFillPulseTarget ~= pulseTarget then StopBarSlotFillPulse(slot) end
+        -- A pooled slot can switch renderers. Keep each animation with the
+        -- artwork it owns; the slot references only the active pulse.
+        if not pulseTarget._cdcFillPulseAG then
+            local ag = pulseTarget:CreateAnimationGroup()
             ag:SetLooping("BOUNCE")
             local anim = ag:CreateAnimation("Alpha")
             anim:SetFromAlpha(1.0)
             anim:SetToAlpha(0.3)
-            slot._cdcFillPulseAG = ag
-            slot._cdcFillPulseAnim = anim
+            pulseTarget._cdcFillPulseAG = ag
+            pulseTarget._cdcFillPulseAnim = anim
         end
+        slot._cdcFillPulseTarget = pulseTarget
+        slot._cdcFillPulseAG = pulseTarget._cdcFillPulseAG
+        slot._cdcFillPulseAnim = pulseTarget._cdcFillPulseAnim
         slot._cdcFillPulseAnim:SetDuration(style.barAuraPulseSpeed or 0.5)
         slot._cdcFillPulseAG:Play()
     end
     if not suppressShift and style.barAuraColorShiftEnabled == true then
+        -- Segmented artwork has its own per-block color-shift animations.
+        if slot._cdcAuraStackWidget then return true end
         if not slot._cdcFillShiftAG then
             local ag = fillTex:CreateAnimationGroup()
             ag:SetLooping("BOUNCE")
@@ -170,9 +184,11 @@ local function ResetBarAuraStackPreview(slot)
     ST.HideStackBlocks(slot._cdcAuraStackBlocks)
     ST.HideStackBlocks(slot._cdcAuraStackSegments)
     ST.HideStackBlockBorders(slot._cdcAuraStackBorders)
+    ST.StyleStackBlockFill(slot._cdcAuraStackFill)
     if slot._cdcAuraStackWidget then
         slot._cdcAuraStackWidget = nil
         slot.statusBar:SetRotatesTexture(false)
+        slot.statusBar:GetStatusBarTexture():SetAlpha(1)
         local style = slot.style or {}
         slot.statusBar:SetStatusBarTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
         slot.bg:SetShown(slot._cdcAuraStackBgShown)
@@ -196,28 +212,38 @@ local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum, ba
     slot.statusBar:SetScript("OnUpdate", nil)
     slot.statusBar:SetValue(count / maximum)
     if CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) ~= "segmented"
-        or maximum > ST.STACK_SEGMENT_ATLAS_MAX then return end
+        or maximum > ST.STACK_SEGMENT_MAX then return end
 
     local vertical = style.barFillVertical == true
     local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
     if buttonData.addedAs == "aura" then
-        -- The same atlas and measured block edges as the live aura kit:
+        -- The same block geometry and fill containment as the live aura kit:
         -- true empty gaps and a separate border around every capacity block.
         local blocks = slot._cdcAuraStackBlocks or {}
         local borders = slot._cdcAuraStackBorders or {}
         slot._cdcAuraStackBlocks, slot._cdcAuraStackBorders = blocks, borders
-        for i = #blocks + 1, maximum do
+        if not slot._cdcAuraStackBorderHost then
+            slot._cdcAuraStackBorderHost = CreateFrame("Frame", nil, slot.statusBar)
+            slot._cdcAuraStackBorderHost:SetFrameLevel(slot.statusBar:GetFrameLevel() + 3)
+            slot._cdcAuraStackBorderHost:EnableMouse(false)
+        end
+        for i = #blocks + 1, ST.STACK_SEGMENT_MAX do
             blocks[i] = slot.statusBar:CreateTexture(nil, "BACKGROUND")
             borders[i] = {}
             for edge = 1, 4 do
-                borders[i][edge] = slot.statusBar:CreateTexture(nil, "OVERLAY", nil, 3)
+                borders[i][edge] = slot._cdcAuraStackBorderHost:CreateTexture(nil, "OVERLAY", nil, 3)
             end
         end
-        local gap = CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, maximum)
-        ST.LayoutStackBlocks(blocks, slot.statusBar, maximum, vertical, bg, backgroundAlpha, nil, gap / 512)
-        ST.LayoutStackBlockBorders(borders, blocks, maximum, style)
-        slot.statusBar:SetStatusBarTexture(ST.GetStackSegmentsTexture(maximum, gap))
-        slot.statusBar:SetRotatesTexture(vertical)
+        local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style)
+        local blockLength = ST.LayoutStackBlocks(blocks, slot.statusBar, maximum, vertical, bg, backgroundAlpha, nil, gap)
+        slot.statusBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        local nativeFill = slot.statusBar:GetStatusBarTexture()
+        if not slot._cdcAuraStackFill then
+            slot._cdcAuraStackFill = ST.CreateStackBlockFill(slot.statusBar, nativeFill, blocks)
+        end
+        ST.LayoutStackBlockBorders(borders, blocks, maximum, style, slot._cdcAuraStackFill,
+            blockLength, vertical and slot.statusBar:GetWidth() or slot.statusBar:GetHeight())
+        nativeFill:SetAlpha(0)
         slot._cdcAuraStackWidget = true
         slot._cdcAuraStackBgShown = slot.bg:IsShown()
         slot.bg:Hide()
@@ -228,8 +254,9 @@ local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum, ba
     else
         -- Spell entries keep their continuous background and whole-bar ring;
         -- opaque dividers reproduce AuraDisplay's StyleStackSegments recipe.
-        local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+        local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style)
         local length = vertical and slot.statusBar:GetHeight() or slot.statusBar:GetWidth()
+        if maximum > 1 then gap = math.min(gap, math.max(0, (length - maximum) / (maximum - 1))) end
         if gap <= 0 or length <= 0 then return end
         local segments = slot._cdcAuraStackSegments or {}
         slot._cdcAuraStackSegments = segments
@@ -340,6 +367,18 @@ local function ApplyBarAuraFillPreview(slot, style, buttonData, isAuraPanel, pan
         slot.statusBar:SetStatusBarColor(1, 1, 1, auraColor[4] or 1)
     else
         slot.statusBar:SetStatusBarColor(auraColor[1], auraColor[2], auraColor[3], auraColor[4] or 1)
+    end
+    if slot._cdcAuraStackWidget then
+        local color = auraColor
+        if pandemicActive then
+            local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+            color = { pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1 }
+        end
+        ST.StyleStackBlockFill(slot._cdcAuraStackFill,
+            CooldownCompanion:GetAuraStackBarMax(buttonData, true), color,
+            shifted and (style.barAuraColorShiftColor or { 1, 1, 1, 1 }), style.barAuraColorShiftSpeed)
+        -- Native color/reset writes above must not reveal the clip driver.
+        slot.statusBar:GetStatusBarTexture():SetAlpha(0)
     end
 end
 

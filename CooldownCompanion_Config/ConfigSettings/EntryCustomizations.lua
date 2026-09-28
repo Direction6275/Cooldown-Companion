@@ -479,7 +479,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
                     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
                     if not moduleContext:IsCurrent() then return end
                     if moduleContext.kind == "resources" then
-                        ST._NavigateToFinderSetting(ST._ResourceThicknessSetting)
+                        ST._NavigateToFinderSetting(sectionId == "barCharges"
+                            and ST._ResourceSegmentGapSetting or ST._ResourceThicknessSetting)
                         return
                     else
                         CS.castBarHomeTab = "appearance"

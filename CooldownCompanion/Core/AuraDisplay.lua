@@ -658,28 +658,11 @@ local function BuildSlotKit(slotButton)
             kit.pandemicStackFillClone:SetAllPoints(stackFillTex)
             kit.pandemicStackFillClone:SetTexture("Interface\\Buttons\\WHITE8x8")
             kit.pandemicStackFillClone:SetAlpha(0)
-            -- The clone's rect follows Blizzard's secret application fill.
-            -- A full-bar mask supplies fixed atlas alpha for widget stacks,
-            -- so partial counts reveal only whole blocks without trying to
-            -- read or copy the StatusBar's secret texcoord crop.
-            kit.pandemicStackFillMaskH = kit.stackFill:CreateMaskTexture(nil, "ARTWORK", nil, 2)
-            kit.pandemicStackFillMaskH:SetAllPoints(kit.stackFill)
-            kit.pandemicStackFillMaskH:SetTexture("Interface\\Buttons\\WHITE8x8")
-            kit.pandemicStackFillClone:AddMaskTexture(kit.pandemicStackFillMaskH)
-
-            -- Mask texcoords cannot change after attachment. Pre-create the
-            -- vertical variant with atlas x=0 at the destination bottom, then
-            -- switch which mask carries the atlas by changing only its file.
-            kit.pandemicStackFillMaskV = kit.stackFill:CreateMaskTexture(nil, "ARTWORK", nil, 2)
-            kit.pandemicStackFillMaskV:SetAllPoints(kit.stackFill)
-            kit.pandemicStackFillMaskV:SetTexture("Interface\\Buttons\\WHITE8x8")
-            kit.pandemicStackFillMaskV:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
-            kit.pandemicStackFillClone:AddMaskTexture(kit.pandemicStackFillMaskV)
             slotButton:AddPandemicRegion(kit.pandemicStackFillClone)
         end
 
         kit.stackSegments = {}
-        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX - 1 do
+        for i = 1, ST.STACK_SEGMENT_MAX - 1 do
             local tex = kit.stackFill:CreateTexture(nil, "OVERLAY")
             tex:SetAlpha(0)
             kit.stackSegments[i] = tex
@@ -687,18 +670,22 @@ local function BuildSlotKit(slotButton)
         -- Same background layer + sublayer as the barBackdrop slab these
         -- replace in widget mode.
         kit.stackBgBlocks = {}
-        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX do
+        for i = 1, ST.STACK_SEGMENT_MAX do
             local tex = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
             tex:SetAlpha(0)
             kit.stackBgBlocks[i] = tex
         end
+        kit.stackBlockFill = ST.CreateStackBlockFill(kit.stackFill, stackFillTex, kit.stackBgBlocks, slotButton)
+        kit.stackBlockBorderHost = CreateFrame("Frame", nil, kit.stackFill)
+        kit.stackBlockBorderHost:SetFrameLevel(kit.stackBlockFill:GetFrameLevel() + 1)
+        kit.stackBlockBorderHost:EnableMouse(false)
         -- Per-block border rings (each stack is its own widget — owner
         -- ruling): above the fill and the separator stripes.
         kit.stackBlockBorders = {}
-        for i = 1, ST.STACK_SEGMENT_ATLAS_MAX do
+        for i = 1, ST.STACK_SEGMENT_MAX do
             local set = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
             for edge = 1, 4 do
-                local tex = kit.stackFill:CreateTexture(nil, "OVERLAY", nil, 2)
+                local tex = kit.stackBlockBorderHost:CreateTexture(nil, "OVERLAY", nil, 2)
                 tex:SetAlpha(0)
                 set[edge] = tex
             end
@@ -958,29 +945,14 @@ local function ShouldShowAuraIcon(buttonData, style)
 end
 
 ------------------------------------------------------------------------
--- True-widget stack rendering (tracker C2, owner ruling): standalone aura
--- entries in stack mode render per-stack blocks with genuinely empty gaps.
--- The fill uses a bundled block atlas — StatusBars CROP their texture as
--- they fill (they don't stretch it), so Blizzard's secret-driven fill
--- reveals whole blocks one stack at a time. Capacity blocks are plain
--- CC-drawn textures laid out with the SAME proportions as the atlas so the
--- two always align; BarMode draws an identical set under the kit for the
--- aura-down state.
+-- Standalone aura stacks retain separate capacity blocks and empty gaps.
+-- Fixed fill blocks are clipped by Blizzard's native application-fill rect;
+-- BarMode draws matching backgrounds while the aura is inactive.
 ------------------------------------------------------------------------
 
-ST.STACK_SEGMENT_GAP_RATIO = 10 / 512 -- the default artwork's baked gap
-ST.STACK_SEGMENT_ATLAS_MAX = 30
+ST.STACK_SEGMENT_MAX = 30
 
--- Gap presets ship as separate atlas sets (stack-segments-g<gap>-<max>);
--- the original gap-10 files keep their unsuffixed names.
-function ST.GetStackSegmentsTexture(max, gapTexels)
-    if gapTexels and gapTexels ~= ST.STACK_BLOCK_GAP_DEFAULT then
-        return "Interface\\AddOns\\CooldownCompanion\\Media\\stack-segments-g" .. gapTexels .. "-" .. max .. ".tga"
-    end
-    return "Interface\\AddOns\\CooldownCompanion\\Media\\stack-segments-" .. max .. ".tga"
-end
-
--- Lay out `max` capacity blocks over `host` with the atlas proportions.
+-- Lay out capacity blocks using the same pixel-gap clamp as charge bars.
 -- Opaque by default like the bar backdrop: a translucent block would let
 -- the layer underneath bleed through while the aura display is occluding
 -- it. Base backgrounds and aura-only hosts pass `alpha` so their blocks
@@ -991,35 +963,19 @@ end
 -- `length` overrides the measured host extent, for callers that know the
 -- size but whose host has not been through a layout pass yet (the config
 -- canvas builds its bars and lays out its lanes in the same frame).
-function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length, gapRatio)
+function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length, gap)
     length = length or (vertical and host:GetHeight() or host:GetWidth())
     if length <= 0 then
         ST.HideStackBlocks(blocks)
         return
     end
-    -- Block rects come from the MEASURED atlas edges when the shipped file
-    -- has them (ST.STACK_SEGMENT_BOUNDARIES): the atlases bake blocks at
-    -- uneven integer texel widths, so uniform division lands the border
-    -- rings up to ~1 texel off the painted fill edges and the fill shows
-    -- outside the border. Uniform math remains for gap-0 (contiguous fill,
-    -- nothing to misalign against) and any max past the atlas cap.
-    local gapTexels = math.floor((gapRatio or ST.STACK_SEGMENT_GAP_RATIO) * 512 + 0.5)
-    local gapFamily = ST.STACK_SEGMENT_BOUNDARIES and ST.STACK_SEGMENT_BOUNDARIES[gapTexels]
-    local edges = gapFamily and gapFamily[max] or nil
-    local gap = length * (gapRatio or ST.STACK_SEGMENT_GAP_RATIO)
+    gap = gap or 4
+    gap = max > 1 and math.min(math.max(0, gap), math.max(0, (length - max) / (max - 1))) or 0
     local blockLen = (length - (max - 1) * gap) / max
     for i, tex in ipairs(blocks) do
         if i <= max then
-            local start, thisLen
-            if edges then
-                -- Vertical bars map atlas texel 0 to the bottom
-                -- (SetRotatesTexture), the same end these offsets grow from.
-                start = edges[2 * i - 1] * length / 512
-                thisLen = (edges[2 * i] - edges[2 * i - 1]) * length / 512
-            else
-                start = (i - 1) * (blockLen + gap)
-                thisLen = blockLen
-            end
+            local start = (i - 1) * (blockLen + gap)
+            local thisLen = blockLen
             tex:SetColorTexture(color[1] or 0.1, color[2] or 0.1, color[3] or 0.1, alpha or 1)
             tex:ClearAllPoints()
             if vertical then
@@ -1037,6 +993,77 @@ function ST.LayoutStackBlocks(blocks, host, max, vertical, color, alpha, length,
             tex:SetAlpha(0)
         end
     end
+    return blockLen
+end
+
+-- Like charge-bar recharge windows, this frame consumes the native fill
+-- rectangle through anchors. No stack count or dependent geometry is read.
+-- Fixed block textures leave actual transparent gaps at any configured size.
+function ST.CreateStackBlockFill(parent, nativeFill, blocks, auraButton)
+    local clip = CreateFrame("Frame", nil, parent)
+    clip._ccPreserveHitRectInsets = true
+    clip:EnableMouse(false)
+    -- Preserve the kit's existing fill < border/glow < text ordering.
+    clip:SetFrameLevel(parent:GetFrameLevel())
+    clip:SetAllPoints(nativeFill)
+    clip:SetClipsChildren(true)
+    clip:SetAlpha(0)
+    -- Clip child-frame artwork, as for resourceFillTint. Keep its drawing
+    -- host fixed to the full bar while only the parent clipping rect moves.
+    clip.fillHost = CreateFrame("Frame", nil, clip)
+    clip.fillHost:EnableMouse(false)
+    clip.fillHost:SetFrameLevel(clip:GetFrameLevel())
+    clip.fillHost:SetAllPoints(parent)
+    clip.fills = {}
+    if auraButton and auraButton.AddPandemicRegion then
+        clip.pandemic = CreateFrame("Frame", nil, clip)
+        clip.pandemic:EnableMouse(false)
+        clip.pandemic:SetAllPoints(parent)
+        clip.pandemic:SetAlpha(0)
+        auraButton:AddPandemicRegion(clip.pandemic)
+    end
+    for i, block in ipairs(blocks) do
+        local tex = clip.fillHost:CreateTexture(nil, "ARTWORK")
+        tex:SetAllPoints(block)
+        tex:SetTexture("Interface\\Buttons\\WHITE8x8")
+        tex.shift = tex:CreateAnimationGroup()
+        tex.shift:SetLooping("BOUNCE")
+        tex.shiftAnim = tex.shift:CreateAnimation("VertexColor")
+        if clip.pandemic then
+            tex.pandemic = clip.pandemic:CreateTexture(nil, "ARTWORK")
+            tex.pandemic:SetAllPoints(block)
+            tex.pandemic:SetTexture("Interface\\Buttons\\WHITE8x8")
+        end
+        clip.fills[i] = tex
+    end
+    return clip
+end
+
+function ST.StyleStackBlockFill(clip, maximum, color, shift, speed, pandemicColor)
+    if not clip then return end
+    clip:SetAlpha(maximum and 1 or 0)
+    if clip.pandemic then clip.pandemic:SetAlpha(maximum and pandemicColor and 1 or 0) end
+    for i, tex in ipairs(clip.fills) do
+        tex.shift:Stop()
+        local active = maximum and i <= maximum and tex._ccHasInterior ~= false
+        tex:SetAlpha(active and 1 or 0)
+        if active then
+            tex:SetVertexColor(color[1], color[2], color[3], color[4] or 1)
+            if shift then
+                tex:SetVertexColor(1, 1, 1, color[4] or 1)
+                tex.shiftAnim:SetStartColor(CreateColor(color[1], color[2], color[3], color[4] or 1))
+                tex.shiftAnim:SetEndColor(CreateColor(shift[1], shift[2], shift[3], shift[4] or 1))
+                tex.shiftAnim:SetDuration(speed or 0.5)
+                tex.shift:Play()
+            end
+        end
+        if tex.pandemic then
+            tex.pandemic:SetAlpha(active and 1 or 0)
+            if pandemicColor then
+                tex.pandemic:SetVertexColor(pandemicColor[1], pandemicColor[2], pandemicColor[3], 1)
+            end
+        end
+    end
 end
 
 function ST.HideStackBlocks(blocks)
@@ -1051,12 +1078,22 @@ end
 -- widgets — the whole-bar border ring is suppressed for these entries
 -- (one ring around all stacks was the look the ruling rejected). Rings are
 -- drawn INSIDE each block's rect (ST.EDGE_ANCHOR_SPEC geometry, same as
--- every CC border), overlapping the fill edge from an overlay layer, so the
--- block/atlas proportions are untouched and the gaps stay genuinely empty.
+-- every CC border). Fill artwork anchors to their inner edges: full-block
+-- fills can peek outside pixel-snapped borders during native clipping.
 -- borderSets[i] = 4 edge textures for block i; pools follow their block
 -- pools. Alpha-driven (kit convention), styled from the same border keys as
 -- the ring they replace.
-function ST.LayoutStackBlockBorders(borderSets, blocks, max, style)
+local function AnchorStackBlockFill(tex, block, borders)
+    tex:ClearAllPoints()
+    if borders then
+        tex:SetPoint("TOPLEFT", borders[3], "TOPRIGHT", 0, 0)
+        tex:SetPoint("BOTTOMRIGHT", borders[4], "BOTTOMLEFT", 0, 0)
+    else
+        tex:SetAllPoints(block)
+    end
+end
+
+function ST.LayoutStackBlockBorders(borderSets, blocks, max, style, fill, blockLength, thickness)
     if not borderSets then return end
     local size = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local mode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, size)
@@ -1073,6 +1110,17 @@ function ST.LayoutStackBlockBorders(borderSets, blocks, max, style)
             for _, tex in ipairs(set) do
                 tex:SetAlpha(0)
             end
+        end
+        local tex = fill and fill.fills[i]
+        if tex and blocks[i] then
+            -- Live kits supply UIParent as the safe scale source; previews
+            -- can use their ordinary block. Never measure a native fill.
+            local inset = shown and ST.GetBorderLayoutSize(set._cdcBorderScaleSource or blocks[i], size, mode) or 0
+            tex._ccHasInterior = i <= max and blockLength ~= nil
+                and blockLength > 2 * inset and thickness > 2 * inset
+            local borders = shown and tex._ccHasInterior and set or nil
+            AnchorStackBlockFill(tex, blocks[i], borders)
+            if tex.pandemic then AnchorStackBlockFill(tex.pandemic, blocks[i], borders) end
         end
     end
 end
@@ -1093,7 +1141,7 @@ end
 -- time is banned). While color-shifting, the base color stays white so the
 -- VertexColor animation owns the full color range (same trick as the kit
 -- border colorShift). fillTexture/rotates override the user bar texture
--- for the widget-stack atlas (rotated so vertical bars keep the blocks).
+-- for widget stacks, whose visible blocks are clipped separately.
 local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAnim,
         button, buttonData, style, fillTexture, rotates)
     local auraColor = ST.ResolveBarAuraFillColor(
@@ -1102,6 +1150,7 @@ local function StyleActiveBarFill(fill, fillTex, pulseAG, pulseAnim, csAG, csAni
     fill:SetReverseFill(style.barReverseFill or false)
     fill:SetRotatesTexture(rotates == true)
     fill:SetStatusBarTexture(fillTexture or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+    fillTex:SetAlpha(1)
     fill:SetAlpha(1)
 
     pulseAG:Stop()
@@ -1146,16 +1195,6 @@ local function StylePandemicBarFillClone(clone, fillTexture, color)
     clone:SetVertexColor(color[1] or 1, color[2] or 0.5, color[3] or 0, 1)
 end
 
--- Blizzard EncounterTimeline documents that attached-mask texcoords cannot
--- change. The two masks above therefore keep fixed horizontal/vertical UVs;
--- exactly one receives the atlas while the other remains fully opaque.
-local function StylePandemicStackFillMasks(horizontalMask, verticalMask, atlas, rotates)
-    if not (horizontalMask and verticalMask) then return end
-    local white = "Interface\\Buttons\\WHITE8x8"
-    horizontalMask:SetTexture(atlas and not rotates and atlas or white)
-    verticalMask:SetTexture(atlas and rotates and atlas or white)
-end
-
 -- The host rect, in numbers CC owns. Aura-host descriptors stamp
 -- _ccKitRectW/H because measuring them is either stale (a freshly anchored
 -- holder reports last frame's rect — the lane lesson) or forbidden (a block
@@ -1183,7 +1222,8 @@ local function StyleStackSegments(kit, button, buttonData, style, boundMax, show
     local vertical = button._isVertical
     local rectW, rectH = HostRectSize(button)
     local length = vertical and rectH or rectW
-    local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData)
+    local gap = CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style)
+    if boundMax and boundMax > 1 then gap = math.min(gap, math.max(0, (length - boundMax) / (boundMax - 1))) end
     if not shown or length <= 0 or gap <= 0
         or not boundMax or boundMax - 1 > #segments then
         for _, tex in ipairs(segments) do
@@ -1238,14 +1278,14 @@ local function AnchorResourceStackLane(fill, slotButton, host, vertical)
 end
 
 -- Widget-stack eligibility for the CURRENT bind: a SEGMENTED stack-mode
--- bind on a standalone aura entry whose max fits the block atlas.
+-- bind on a standalone aura entry whose max fits the prebuilt block pool.
 -- Continuous-style binds and spell-entry stack binds use the plain-bar /
 -- painted-divider rendering.
 local function IsWidgetStackBind(slot, buttonData)
     local kit = slot.kit
     return kit ~= nil and kit.stackFill ~= nil and kit.stackBgBlocks ~= nil
         and slot.boundStackMax ~= nil
-        and slot.boundStackMax <= ST.STACK_SEGMENT_ATLAS_MAX
+        and slot.boundStackMax <= ST.STACK_SEGMENT_MAX
         and buttonData.addedAs == "aura"
         and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
 end
@@ -1586,6 +1626,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local kit = slot.kit
     if not kit then return end
     style = style or {}
+    ST.StyleStackBlockFill(kit.stackBlockFill)
 
     local slotButton = slot.slotButton
     local isBar = button._isBar == true
@@ -1967,8 +2008,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- bar before styling); every other bind runs the duration fill.
         -- Exactly one fill is visible per bind. Stack style (live parity):
         -- SEGMENTED standalone aura entries render stacks as true widgets
-        -- (owner ruling): capacity blocks with empty gaps + the block-atlas
-        -- fill; segmented spell entries keep the painted-divider look (the
+        -- (owner ruling): capacity blocks with empty gaps and clipped fills;
+        -- segmented spell entries keep the painted-divider look (the
         -- CC bar underneath needs the slab); CONTINUOUS renders the plain
         -- bar with no per-stack decoration at all.
         local useStackFill = kit.stackFill ~= nil and slot.boundStackMax ~= nil
@@ -1998,10 +2039,10 @@ local function StyleSlotKit(slot, button, buttonData, style)
             -- Share the slab's composition rule, including the contribution
             -- from dimmed capacity blocks beneath the active aura.
             local rectW, rectH = HostRectSize(button)
-            ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
+            local blockLength = ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
                 slot.boundStackMax, button._isVertical, blockBg, barBackgroundAlpha,
                 button._isVertical and rectH or rectW,
-                CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax) / 512)
+                CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style))
             -- The per-block rings always come from the KIT, even when its
             -- blocks are invisible (they are laid out purely to anchor
             -- these). The kit's rings live inside the fill frame and draw
@@ -2010,7 +2051,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
             -- a segmented bar read as one continuous fill for exactly as
             -- long as the aura was up.
             ST.LayoutStackBlockBorders(kit.stackBlockBorders, kit.stackBgBlocks,
-                slot.boundStackMax, style)
+                slot.boundStackMax, style, kit.stackBlockFill, blockLength,
+                button._isVertical and rectW or rectH)
         else
             ST.HideStackBlocks(kit.stackBgBlocks)
             ST.HideStackBlockBorders(kit.stackBlockBorders)
@@ -2025,19 +2067,14 @@ local function StyleSlotKit(slot, button, buttonData, style)
             end
         end
         local stackFillTexture
-        local stackFillRotates = false
         if useStackFill then
-            stackFillTexture = widgetStack and ST.GetStackSegmentsTexture(slot.boundStackMax,
-                CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax))
+            stackFillTexture = widgetStack and "Interface\\Buttons\\WHITE8x8"
                 or CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid")
-            stackFillRotates = widgetStack and button._isVertical == true
         end
 
-        -- Pandemic fill recolor: exactly one clone is armed for every bar
-        -- bind. Duration/continuous fills wear their active texture; a widget
-        -- stack uses a solid clone clipped by a full-bar atlas mask. The clone
-        -- rect still follows Blizzard's secret application fill, while the
-        -- fixed mask preserves the complete stack geometry at partial counts.
+        -- Duration/continuous fills use one native-rect recolor clone. Widget
+        -- stacks use the registered Pandemic frame inside the same clipping
+        -- window as their fixed blocks; neither path reads the stack count.
         -- Disabled legs write only alpha 0, so slot reuse cannot strand the
         -- previous bind's region. Duration/continuous custom textures retain
         -- the accepted cosmetic limit that horizontal variation stretches
@@ -2056,24 +2093,27 @@ local function StyleSlotKit(slot, button, buttonData, style)
                 StyleActiveBarFill(kit.stackFill, kit.stackFillTexture,
                     kit.stackFillPulseAG, kit.stackFillPulseAnim,
                     kit.stackFillCsAG, kit.stackFillCsAnim, button, buttonData, style,
-                    stackFillTexture, stackFillRotates)
+                    stackFillTexture)
             else
                 RestBarFill(kit.stackFill, kit.stackFillTexture, kit.stackFillPulseAG, kit.stackFillCsAG)
             end
         end
         if kit.pandemicStackFillClone then
-            if pandemicOn and useStackFill then
+            if pandemicOn and useStackFill and not widgetStack then
                 local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
-                local pandemicFillTexture = widgetStack
-                    and "Interface\\Buttons\\WHITE8x8" or stackFillTexture
-                StylePandemicBarFillClone(kit.pandemicStackFillClone,
-                    pandemicFillTexture, pc)
-                StylePandemicStackFillMasks(
-                    kit.pandemicStackFillMaskH, kit.pandemicStackFillMaskV,
-                    widgetStack and stackFillTexture or nil, stackFillRotates)
+                StylePandemicBarFillClone(kit.pandemicStackFillClone, stackFillTexture, pc)
             else
                 kit.pandemicStackFillClone:SetAlpha(0)
             end
+        end
+        if widgetStack then
+            kit.stackFillTexture:SetAlpha(0)
+            kit.stackFillCsAG:Stop()
+            local color = ST.ResolveBarAuraFillColor(style, buttonData, button._ccWholeAuraPanel == true)
+            local shift = ST.IsBarAuraIndicatorEnabled(style) and style.barAuraColorShiftEnabled
+                and (style.barAuraColorShiftColor or { 1, 1, 1, 1 }) or nil
+            ST.StyleStackBlockFill(kit.stackBlockFill, slot.boundStackMax, color, shift,
+                style.barAuraColorShiftSpeed, pandemicOn and (style.barPandemicColor or { 1, 0.5, 0, 1 }))
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
             segmentedStyle and not widgetStack)
