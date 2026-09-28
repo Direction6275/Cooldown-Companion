@@ -983,8 +983,8 @@ end
 -- Lay out `max` capacity blocks over `host` with the atlas proportions.
 -- Opaque by default like the bar backdrop: a translucent block would let
 -- the layer underneath bleed through while the aura display is occluding
--- it. Custom-bar hosts pass `alpha` so their blocks follow the configured
--- background instead — nothing renders beneath them that needs hiding.
+-- it. Base backgrounds and aura-only hosts pass `alpha` so their blocks
+-- follow the configured background instead.
 -- `alpha = 0` lays the blocks out without drawing them at all, which is how
 -- occlusion-free hosts get anchor rects for their per-block border rings
 -- while the CC layer underneath supplies the visible background.
@@ -1614,6 +1614,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- visual either way (the dim key stands alone on 12.1).
     local shellEntry = isAuraPanelHost or CooldownCompanion:IsAuraShellEntry(buttonData)
     local occlusionFree = ST.BarLayers.IsUncoveredAura(button, buttonData)
+    local barBackgroundAlpha
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local showAuraIcon = ShouldShowAuraIcon(buttonData, style)
     -- Keep-swipe entries (icon hosts only) skip the icon takeover: the CC
@@ -1974,41 +1975,31 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local widgetStack = IsWidgetStackBind(slot, buttonData)
         local segmentedStyle = useStackFill
             and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented"
+        local _, overlayAlpha = ST.BarLayers.GetAuraBackgroundAlpha(
+            buttonData, style, button._ccAuraHostKind)
+        barBackgroundAlpha = overlayAlpha
         -- Pure Aura entries have no cooldown fill beneath the kit. Their CC
         -- bar already draws the configured background, including its alpha;
         -- an opaque cover here would turn a transparent background solid
         -- while the aura is active. Spell entries still need that cover.
-        if shellEntry or widgetStack or occlusionFree then
+        if shellEntry or widgetStack or barBackgroundAlpha == 0 then
             kit.barBackdrop:SetAlpha(0)
         else
             local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
             -- Backdrop alpha forced opaque: a translucent backdrop would let
             -- the CC fill bleed through as the aura bar drains.
-            kit.barBackdrop:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, 1)
+            kit.barBackdrop:SetColorTexture(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, barBackgroundAlpha)
             kit.barBackdrop:SetAlpha(1)
         end
         if widgetStack then
             -- Block geometry reads the CC statusBar (sanctioned anchor
             -- target + CC-owned width), matching BarMode's block set exactly.
             local blockBg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
-            -- Alpha: forced opaque is an OCCLUSION rule, so it applies only
-            -- where something renders beneath.
-            --   * occlusion-free: the CC-side blocks under the holder ARE
-            --     the background, so the kit's stay invisible.
-            --   * custom-bar shell: the CC frame is at whole-frame alpha 0,
-            --     so these blocks are the whole background and follow the
-            --     configured alpha (otherwise the shell toggle would change
-            --     a bar's opacity).
-            --   * panels: opaque, occluding whatever runs beneath.
-            local blockAlpha
-            if occlusionFree then
-                blockAlpha = 0
-            elseif isCustomBarHost then
-                blockAlpha = blockBg[4] or 1
-            end
+            -- Share the slab's composition rule, including the contribution
+            -- from dimmed capacity blocks beneath the active aura.
             local rectW, rectH = HostRectSize(button)
             ST.LayoutStackBlocks(kit.stackBgBlocks, button.statusBar or slotButton,
-                slot.boundStackMax, button._isVertical, blockBg, blockAlpha,
+                slot.boundStackMax, button._isVertical, blockBg, barBackgroundAlpha,
                 button._isVertical and rectH or rectW,
                 CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, slot.boundStackMax) / 512)
             -- The per-block rings always come from the KIT, even when its
@@ -2181,7 +2172,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             kit.bg:ClearAllPoints()
             kit.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
             kit.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
-            kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+            kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, barBackgroundAlpha)
             kit.bg:SetAlpha(1)
         end
         local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE

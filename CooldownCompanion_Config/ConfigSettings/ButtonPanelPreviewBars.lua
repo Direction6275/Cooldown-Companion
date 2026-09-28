@@ -184,7 +184,7 @@ local function ResetBarAuraStackPreview(slot)
     end
 end
 
-local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum)
+local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum, backgroundAlpha)
     -- Text-only threshold/max styling may select an interesting sample only
     -- while its readout is visible. The fill and displayed count then agree.
     local text = state.stackText
@@ -214,7 +214,7 @@ local function ApplyBarAuraStackFill(slot, buttonData, style, state, maximum)
             end
         end
         local gap = CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, maximum)
-        ST.LayoutStackBlocks(blocks, slot.statusBar, maximum, vertical, bg, bg[4] or 1, nil, gap / 512)
+        ST.LayoutStackBlocks(blocks, slot.statusBar, maximum, vertical, bg, backgroundAlpha, nil, gap / 512)
         ST.LayoutStackBlockBorders(borders, blocks, maximum, style)
         slot.statusBar:SetStatusBarTexture(ST.GetStackSegmentsTexture(maximum, gap))
         slot.statusBar:SetRotatesTexture(vertical)
@@ -388,6 +388,15 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     local auraPresentationActive = IsBarPreviewAuraActive(state, effectFlags)
     local isAuraEntry = buttonData.type == "spell"
         and (buttonData.auraTracking == true or buttonData.addedAs == "aura")
+    local bg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+    local backgroundAlpha = bg[4] or 1
+    if isAuraEntry and auraPresentationActive then
+        -- The preview has one background, so use the composed result rather
+        -- than the live aura layer's partial contribution over a dimmed base.
+        backgroundAlpha = ST.BarLayers.GetAuraBackgroundAlpha(
+            buttonData, style, isAuraPanel and "auraPanel" or nil)
+    end
+    slot.bg:SetColorTexture(bg[1], bg[2], bg[3], backgroundAlpha)
     if isAuraEntry then
         if auraPresentationActive then
             -- Live needs the bar icon square: the aura layer's cover is
@@ -459,7 +468,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 and CooldownCompanion:GetAuraStackBarMax(buttonData, true)
             slot._cdcCondAnim = state
             if stackMax then
-                ApplyBarAuraStackFill(slot, buttonData, style, state, stackMax)
+                ApplyBarAuraStackFill(slot, buttonData, style, state, stackMax, backgroundAlpha)
             else
                 -- Unknown/non-stacking capacities follow the live duration fallback.
                 slot.statusBar._cdcOwner = slot

@@ -15,6 +15,30 @@ function Layers.IsUncoveredAura(button, entry)
         and Layers.HasPersistentAuraName(entry, button._ccAuraHostKind == "customBar")
 end
 
+-- Final background opacity and the aura layer's contribution. The base and
+-- aura backgrounds have the same RGB. Account for the dimmed base using
+-- source-over alpha: combined = overlay + base * (1 - overlay).
+-- Only a visible spell fill requires an opaque cover. Use saved resting
+-- opacity: Arrange Mode can end in combat, when the bound aura layer cannot
+-- be restyled. Temporary preview exposure must not change its contribution.
+function Layers.GetAuraBackgroundAlpha(entry, style, hostKind)
+    local bg = style.barBgColor
+    local configuredAlpha = bg and (bg[4] or 1) or 0.8
+    local native = hostKind == "auraPanel"
+    local auraOnly = native or (entry and entry.addedAs == "aura"
+        and (hostKind == "customBar" or entry.isPassive == true))
+    local baseVisualAlpha = native and 0 or (Addon:IsAuraShellEntry(entry)
+        and Addon:GetAuraShellRestingAlpha(entry) or 1)
+    if not auraOnly and baseVisualAlpha > 0 then
+        return 1, 1
+    end
+    local baseAlpha = configuredAlpha * baseVisualAlpha
+    if baseAlpha >= configuredAlpha then
+        return configuredAlpha, 0
+    end
+    return configuredAlpha, (configuredAlpha - baseAlpha) / (1 - baseAlpha)
+end
+
 -- Sole owner of ordinary bars' text and aura-mount levels. The stable CC
 -- statusBar is the base; deriving the mount from a raised name would make
 -- every restyle/rebind lift the whole stack again. No aura-child reads.
