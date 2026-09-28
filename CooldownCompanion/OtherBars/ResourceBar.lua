@@ -2355,7 +2355,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
     lastAppliedLayout = layout
     lastAppliedIndependentStack = isIndependentStack
-    local segmentGap = layout.segmentGap or settings.segmentGap or 4
     local totalPrimaryLength
     if isIndependentStack then
         EnsureIndependentStackConfig(settings, layout)
@@ -2422,6 +2421,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             or GetResourcePrimaryLength(groupFrame, settings, region == "main" and "main" or "outer")
         local effectiveThickness = ST.ResolveResourceBarGeometry(settings, layout,
             RB.GetCanonicalPowerType(powerType), geometryHost).thickness
+        local segmentGap = ST.ResolveResourceSegmentGap(settings, layout, powerType, geometryHost)
         local width = isVerticalLayout and effectiveThickness or primaryLength
         local height = isVerticalLayout and primaryLength or effectiveThickness
 

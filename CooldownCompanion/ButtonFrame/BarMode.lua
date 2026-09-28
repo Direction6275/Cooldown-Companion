@@ -486,7 +486,7 @@ local function UpdateBarStackBlocks(button, style)
         and CooldownCompanion:IsBarPanelAuraStackDisplay(buttonData)
         and CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "segmented" then
         max = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
-        if max and max > ST.STACK_SEGMENT_ATLAS_MAX then max = nil end
+        if max and max > ST.STACK_SEGMENT_MAX then max = nil end
     end
     if max then
         local blocks = button._stackBgBlocks
@@ -518,7 +518,7 @@ local function UpdateBarStackBlocks(button, style)
         local blockBg = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
         ST.LayoutStackBlocks(blocks, button.statusBar or button, max,
             button._isVertical, blockBg, blockBg[4] or 1, nil,
-            CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, max) / 512)
+            CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style))
         ST.LayoutStackBlockBorders(borders, blocks, max, style)
         -- Both layout helpers stamp alpha on every piece (1 shown, 0 hidden
         -- — the border helper hides all of them when the style has no

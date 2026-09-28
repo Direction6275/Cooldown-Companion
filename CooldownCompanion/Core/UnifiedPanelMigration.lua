@@ -941,6 +941,36 @@ local function RepairCastOffsets(profile, context, report)
     profile._unifiedPanelMigration = stamp
 end
 
+local function InheritancePanel(profile, context, report, class, spec, settings, layout, owner)
+    local lookup = Copy(context)
+    lookup.geometryOnly = true
+    if not class or not spec then return nil end
+    lookup.geometryOwner = owner
+    local id = Destination(profile, class, spec, settings, layout, lookup, report, {})
+    local group = id and profile.groups[id]
+    if not group then return nil end
+    -- Destination chooses saved placement, not a guaranteed runtime host.
+    -- A conditional candidate may yield to a different panel's defaults.
+    -- Keep the old thickness explicit; do not skip it and infer inheritance
+    -- from the next candidate. This decision serves Resources and Cast Bar.
+    for _, entity in ipairs({ group, profile.groupContainers[group.parentContainerId] }) do
+        if entity.heroTalents and next(entity.heroTalents) then return nil end
+        local conditions = entity.loadConditions
+        if conditions then
+            -- Class-shared Resources have no single character identity.
+            if not owner and conditions.characterAllowlist ~= nil then return nil end
+            -- Legacy panel/container load-condition tables default these
+            -- two gates on, including when their fields are unset.
+            if conditions.petBattle ~= false or conditions.vehicleUI ~= false then return nil end
+            for key, value in pairs(conditions) do
+                if key ~= "classAllowlist" and key ~= "specAllowlist" and key ~= "characterAllowlist"
+                    and value then return nil end
+            end
+        end
+    end
+    return group
+end
+
 -- Geometry conversion is separate from legacy bar identity conversion. Its
 -- per-owner stamp survives exports, so importing an already-upgraded object
 -- cannot restore a customization the user subsequently reverted.
@@ -977,35 +1007,6 @@ local function NormalizeGeometry(profile, context, report)
             if ordinary or convertedEntry then group._barGeometryVersion, changed = 1, true end
         end
     end
-    local lookup = Copy(context)
-    lookup.geometryOnly = true
-    local function InheritancePanel(class, spec, settings, layout, owner)
-        if not class or not spec then return nil end
-        lookup.geometryOwner = owner
-        local id = Destination(profile, class, spec, settings, layout, lookup, report, {})
-        local group = id and profile.groups[id]
-        if not group then return nil end
-        -- Destination chooses saved placement, not a guaranteed runtime host.
-        -- A conditional candidate may yield to a different panel's defaults.
-        -- Keep the old thickness explicit; do not skip it and infer inheritance
-        -- from the next candidate. This decision serves Resources and Cast Bar.
-        for _, entity in ipairs({ group, profile.groupContainers[group.parentContainerId] }) do
-            if entity.heroTalents and next(entity.heroTalents) then return nil end
-            local conditions = entity.loadConditions
-            if conditions then
-                -- Class-shared Resources have no single character identity.
-                if not owner and conditions.characterAllowlist ~= nil then return nil end
-                -- Legacy panel/container load-condition tables default these
-                -- two gates on, including when their fields are unset.
-                if conditions.petBattle ~= false or conditions.vehicleUI ~= false then return nil end
-                for key, value in pairs(conditions) do
-                    if key ~= "classAllowlist" and key ~= "specAllowlist" and key ~= "characterAllowlist"
-                        and value then return nil end
-                end
-            end
-        end
-        return group
-    end
     local visited = {}
     local function Resources(settings, class, owner)
         if type(settings) ~= "table" or settings._barGeometryVersion == 1 or visited[settings] then return true end
@@ -1028,7 +1029,7 @@ local function NormalizeGeometry(profile, context, report)
             for _, key in ipairs(catalog) do keys[key] = true end
             for key in pairs(settings.resources or {}) do keys[tonumber(key) or key] = true end
             for key in pairs(layout.resources) do keys[tonumber(key) or key] = true end
-            local panel = InheritancePanel(class, spec, settings, layout, owner)
+            local panel = InheritancePanel(profile, context, report, class, spec, settings, layout, owner)
             local vertical = Value(layout, settings, "orientation", "horizontal") == "vertical"
             local baseline = vertical and Value(layout, settings, "barWidth", Value(layout, settings, "barHeight", 12))
                 or Value(layout, settings, "barHeight", Value(layout, settings, "barWidth", 12))
@@ -1077,7 +1078,7 @@ local function NormalizeGeometry(profile, context, report)
         for spec in pairs(classSpecs or {}) do specs[tonumber(spec) or spec] = true end
         for spec in pairs(settings.attachmentBySpec or {}) do specs[tonumber(spec) or spec] = true end
         for spec in pairs(specs) do
-            local panel = InheritancePanel(class, spec, settings, { attachment = SpecTable(settings.attachmentBySpec, spec),
+            local panel = InheritancePanel(profile, context, report, class, spec, settings, { attachment = SpecTable(settings.attachmentBySpec, spec),
                 independentAnchorEnabled = settings.independentAnchorEnabled }, owner)
             found = true
             if not panel or (settings.height or 15) ~= Value(panel.attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS, "barHeight", 12) then inherits = false end
@@ -1107,6 +1108,86 @@ local function NormalizeGeometry(profile, context, report)
     return true
 end
 Migration.NormalizeGeometry = NormalizeGeometry
+
+-- Persist the new ownership on each exported resource setup. Matching gaps
+-- inherit; differing/ambiguous hosts preserve the old gap as a customization.
+local function NormalizeSegmentGaps(profile, context, report)
+    for _, group in pairs(profile.groups or {}) do
+        for _, entry in ipairs(group.buttons or {}) do
+            local aura = entry.auraBar
+            if type(aura) == "table" then
+                local oldGap = tonumber(aura.segmentGap)
+                if oldGap and entry.addedAs ~= "aura" and entry.barSegmentCharges ~= true
+                    and not (entry.overrideSections and entry.overrideSections.barCharges) then
+                    local base = ST.GetEntryBaseStyle(group, entry)
+                    if oldGap ~= (base.barChargeSegmentGap or 4) then
+                        entry.overrideSections = entry.overrideSections or {}
+                        entry.styleOverrides = entry.styleOverrides or {}
+                        entry.overrideSections.barCharges = true
+                        entry.styleOverrides.barChargeSegmentGap = math.max(0, math.min(20, math.floor(oldGap + 0.5)))
+                    end
+                end
+                -- Artwork-relative presets have no fixed pixel equivalent.
+                -- All stack styles now use the panel/entry's pixel setting.
+                aura.segmentGap, aura.blockGap = nil, nil
+            end
+        end
+    end
+    local visited = {}
+    local function Resources(settings, class, owner)
+        if type(settings) ~= "table" or settings._barSegmentGapVersion == 1 or visited[settings] then return end
+        visited[settings] = true
+        local specs = {}
+        local classSpecs = context.classSpecs and context.classSpecs[class]
+            or (class and ST._GetResourceBarClassSpecInfo and ST._GetResourceBarClassSpecInfo(class))
+        for spec in pairs(classSpecs or {}) do specs[tonumber(spec) or spec] = true end
+        for spec in pairs(settings.layoutOrder or {}) do specs[tonumber(spec) or spec] = true end
+        if not next(specs) then return end
+        settings.layoutOrder = settings.layoutOrder or {}
+        local classID = ST._GetClassIDFromResourceBarClassKey and ST._GetClassIDFromResourceBarClassKey(class)
+        for spec in pairs(specs) do
+            local layout = SpecTable(settings.layoutOrder, spec) or {}
+            settings.layoutOrder[spec] = layout
+            local panel = InheritancePanel(profile, context, report, class, spec, settings, layout, owner)
+            local gap = Value(layout, settings, "segmentGap", 4)
+            -- Independent resources still inherit this same local default.
+            -- A missing/conditional attached host instead needs preservation.
+            if not Addon:IsModuleAnchorIndependent("resources", spec, settings)
+                and (not panel or gap ~= Value(panel.attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS, "barChargeSegmentGap", 4)) then
+                local keys = {}
+                local catalog = ST._RB and ((ST._RB.SPEC_RESOURCES_CONFIG or {})[spec]
+                    or (ST._RB.CLASS_RESOURCES_CONFIG or {})[classID]) or {}
+                for _, key in ipairs(catalog) do keys[key] = true end
+                for key in pairs(settings.resources or {}) do keys[tonumber(key) or key] = true end
+                for key in pairs(layout.resources or {}) do keys[tonumber(key) or key] = true end
+                layout.resources = layout.resources or {}
+                for key in pairs(keys) do
+                    if not (ST._RB and ST._RB.SupportsResourceAuraStackMode)
+                        or ST._RB.SupportsResourceAuraStackMode(key) then
+                        local slot = SpecTable(layout.resources, key) or {}
+                        if not (slot.overrideSections and slot.overrideSections.barCharges) then
+                            slot.overrideSections = slot.overrideSections or {}
+                            slot.styleOverrides = slot.styleOverrides or {}
+                            slot.overrideSections.barCharges = true
+                            slot.styleOverrides.barChargeSegmentGap = gap
+                            layout.resources[key] = slot
+                            if tostring(key) ~= key then layout.resources[tostring(key)] = nil end
+                        end
+                    end
+                end
+            end
+        end
+        settings._barSegmentGapVersion = 1
+    end
+    for class, settings in pairs(profile.resourceBarsByClass or {}) do Resources(settings, class) end
+    for owner, settings in pairs(profile.resourceBarsByChar or {}) do
+        if not IsParkedResourceOwner(context, owner) then
+            Resources(settings, (context.ownerClasses or {})[owner], owner)
+        end
+    end
+    -- Unscoped seeds normalize when adopted by a class, as for thickness.
+end
+Migration.NormalizeSegmentGaps = NormalizeSegmentGaps
 
 local function BuildConversion(source, context)
     local valid, errorText = Validate(source)
@@ -1287,6 +1368,7 @@ local function BuildConversion(source, context)
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
     for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+    NormalizeSegmentGaps(profile, context, report)
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
     profile._unifiedPanelMigration.completed = completed
@@ -1340,6 +1422,7 @@ function Migration.Build(source, context)
     if not source._unifiedPanelMigration then ReportParkedResources(source, context, report) end
     RepairCastOffsets(candidate, context, report)
     for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+    NormalizeSegmentGaps(candidate, context, report)
     valid, errorText = Validate(candidate)
     if not valid then return nil, errorText end
     return candidate, report
@@ -1368,6 +1451,7 @@ function Migration.Apply(profile, context)
             profile._unifiedPanelMigration = candidate._unifiedPanelMigration
         end
         for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+        NormalizeSegmentGaps(profile, context, report)
         return true, report
     end
     local candidate, report = Migration.Build(profile, context)

@@ -206,38 +206,6 @@ end
 -- the panel entry section and the custom-bar Aura section; the store is
 -- whatever the Core/Aura.lua accessors read (entry buttonData or
 -- cabConfig).
-local STACK_BLOCK_GAP_LABELS = {
-    [0] = "None", [5] = "Thin", [10] = "Default", [15] = "Wide", [20] = "Widest",
-}
-local STACK_BLOCK_GAP_ORDER = { 0, 5, 10, 15, 20 }
-
-local function AddStackBlockGapRow(container, buttonData, opts)
-    -- Wide presets stop existing at high block counts (the artwork rule
-    -- lives in IsStackBlockGapPresetAvailable), so the list only offers
-    -- what this bar's max can render and the shown value is the same
-    -- stepped-down one the bind uses.
-    local list, order = {}, {}
-    for _, preset in ipairs(STACK_BLOCK_GAP_ORDER) do
-        if CooldownCompanion:IsStackBlockGapPresetAvailable(preset, opts.maxStacks) then
-            local key = tostring(preset)
-            list[key] = STACK_BLOCK_GAP_LABELS[preset]
-            order[#order + 1] = key
-        end
-    end
-    return AddDropdownRow(container, {
-        label = "Segment Gap",
-        setting = opts.setting,
-        indent = true,
-        list = list,
-        order = order,
-        value = tostring(CooldownCompanion:GetAuraStackBlockGapTexels(buttonData, opts.maxStacks)),
-        onChange = function(value)
-            CooldownCompanion:SetAuraStackBlockGapTexels(buttonData, tonumber(value))
-            opts.commit()
-        end,
-    })
-end
-
 local STACK_THRESHOLD_TOOLTIP = {
     "Stack Text Threshold Color",
     {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
@@ -2590,7 +2558,6 @@ ST._TryAddAuraCandidate = TryAddAuraCandidate
 ST._RemoveAuraCandidate = RemoveAuraCandidate
 ST._AddAuraCandidateRow = AddAuraCandidateRow
 ST._AddAuraStackMaxStatusLabel = AddAuraStackMaxStatusLabel
-ST._AddStackBlockGapRow = AddStackBlockGapRow
 ST._BuildStackThresholdColorRows = BuildStackThresholdColorRows
 
 -- Shared icon/bar control: placement, inheritance, and preview use the same

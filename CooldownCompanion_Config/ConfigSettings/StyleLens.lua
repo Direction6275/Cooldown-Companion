@@ -98,8 +98,15 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.
 local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
-    if buttonData and buttonData._barGeometryKind then return sectionId == "barThickness", "entryType" end
-    if sectionId == "barCharges" and group and not ST.CanSegmentEntryCharges(group, buttonData) then
+    if buttonData and buttonData._barGeometryKind then
+        if sectionId == "barCharges" and buttonData._barGeometryKind == "resources" then
+            local context = buttonData._geometryContext
+            return ST._RB.SupportsResourceAuraStackMode(context.powerType)
+                and not ST._RB.IsContinuousResourceShape(context.settings, context.powerType, context.spec), "entryType"
+        end
+        return sectionId == "barThickness", "entryType"
+    end
+    if sectionId == "barCharges" and group and not ST.CanUseBarSegmentGap(group, buttonData) then
         return false, "entryType"
     end
     if group and group._settingsContext and buttonData and buttonData.addedAs == "aura"
@@ -1125,7 +1132,7 @@ local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
         local context = lens.buttonData and lens.buttonData._geometryContext
         SetRowScopeTooltip(rowWidget, context and not context.owner and {
             context.kind == "resources" and "Resources default" or "Cast Bar default",
-            { "Customize to give this bar its own thickness.", 1, 1, 1, true },
+            { "Customize to give this bar its own " .. GetOverrideSectionLabel(sectionId):lower() .. ".", 1, 1, 1, true },
         } or ROW_SCOPE_INHERITED_TOOLTIP)
         attached = true
 
