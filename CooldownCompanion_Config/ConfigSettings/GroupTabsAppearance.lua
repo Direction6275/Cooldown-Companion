@@ -21,7 +21,6 @@ local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 local ChainHeadingBadges = ST._ChainHeadingBadges
 
 -- Imports from SectionBuilders.lua
-local BuildBorderControls = ST._BuildBorderControls
 local BuildIconTintControls = ST._BuildIconTintControls
 local AddDurationFormatDropdown = ST._AddDurationFormatDropdown
 local AddDurationTextVisibilityRows = ST._AddDurationTextVisibilityRows
@@ -143,7 +142,6 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- data with no override section - see the note at its call site, which is on
 -- the Layout tab (GroupTabsLayout.lua's Arrangement section) for every mode.
 ST._APPEARANCE_SECTION_BY_ADVANCED_KEY = {
-    iconBorder = "borderSettings",
     durationLowTime = "durationLowTime",
     iconCooldownTintEnabled = "iconTint",
     iconAuraTintEnabled = "iconTint",
@@ -1821,7 +1819,6 @@ local function BuildAppearanceTab(container, settingsGroup)
         refreshStyleSettings()
     end, group.masqueEnabled or borderSec.disabled, {
         row = true,
-        label = "Border Thickness Mode", customLabel = "Custom",
         setting = APPEARANCE_FINDER.border.thickness,
     })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()

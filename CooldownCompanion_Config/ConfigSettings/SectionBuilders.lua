@@ -1033,64 +1033,47 @@ end
 -- "Show Keybind Text" - it has no custom-text form.
 
 
--- Row grammar only: the render-mode dropdown reuses
--- AddBorderRenderModeDropdown's own row mode, the conditional thickness slider
--- is its child row, and the color is a color row. Three rows in one column -
--- splitting a parent from its children would orphan the indent.
+-- Row grammar only: Border Color, Border Thickness Mode and (unless
+-- one-pixel) Border Thickness, inline in one column like the icon and bar
+-- tabs' border rows. The Totem Panel is the caller.
 local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
+    local settings = opts.settings or {}
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
-
-    local function ApplyRenderModeChanged()
-        if opts.completeEdit then
-            opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
-        else
-            RefreshStructuralControls(container, refreshCallback)
-        end
-    end
     local colorRow = AddColorRow(container, {
         label = "Border Color",
-        setting = opts.settings and opts.settings.color,
-        indent = opts.indent,
+        setting = settings.color,
         tbl = styleTable,
         key = "borderColor",
         default = {0, 0, 0, 1},
         hasAlpha = true,
         onConfirm = function() return refreshCallback(nil, "appearance") end,
     })
-    ST._AddAdvancedToggle(colorRow, "panelBorder", {}, not opts.sec or opts.sec.scope ~= "denied", {
-        unlock = opts.sec and { sec = opts.sec } or nil,
-        build = function(panel)
-            local renderMode = AddBorderRenderModeDropdown(panel, styleTable, "borderRenderMode",
-                ApplyRenderModeChanged, nil, {
-                    row = true,
-                    indent = opts.indent,
-                    setting = opts.settings and opts.settings.thickness,
-                })
-            local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                AddSliderRow(panel, {
-                    label = "Border Size",
-                    setting = opts.settings and opts.settings.size,
-                    indent = false,
-                    min = 0, max = 5, step = 0.1,
-                    value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
-                    disabled = borderThicknessLocked,
-                    onChange = function(val)
-                        if borderThicknessLocked then return end
-                        ST._PreviewScalarSetting(styleTable, "borderSize", val, previewRefresh)
-                    end,
-                    onRelease = function(val)
-                        if borderThicknessLocked then return end
-                        styleTable.borderSize = val
-                        refreshCallback()
-                    end,
-                })
-            end
-
-        end,
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
+        RefreshStructuralControls(container, refreshCallback)
+    end, nil, {
+        row = true,
+        setting = settings.thickness,
     })
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderThicknessLocked = ST.IsBorderThicknessLocked()
+        AddSliderRow(container, {
+            label = "Border Thickness",
+            setting = settings.size,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
+                if borderThicknessLocked then return end
+                ST._PreviewScalarSetting(styleTable, "borderSize", val, previewRefresh)
+            end,
+            onRelease = function(val)
+                if borderThicknessLocked then return end
+                styleTable.borderSize = val
+                refreshCallback()
+            end,
+        })
+    end
     return colorRow
 end
 

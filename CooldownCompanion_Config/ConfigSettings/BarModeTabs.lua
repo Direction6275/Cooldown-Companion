@@ -151,7 +151,6 @@ local EFFECTS_INTERACTION_SECTION = "effects_interaction"
 --
 -- A gear added to any converted section belongs here the same day.
 ST._BARMODE_SECTION_BY_ADVANCED_KEY = {
-    panelBorder = "borderSettings",
     durationLowTime = "durationLowTime",
     iconCooldownTintEnabled = "iconTint",
     iconAuraTintEnabled = "iconTint",

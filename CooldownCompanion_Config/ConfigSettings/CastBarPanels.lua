@@ -215,11 +215,11 @@ if ST._DefineSettingRoute then
         xOffset = { label = "Icon X Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         yOffset = { label = "Icon Y Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         borderThickness = {
-            label = "Border Thickness",
-            aliases = { "icon border thickness" },
+            label = "Border Thickness Mode",
+            aliases = { "icon border mode" },
             applies = CastBarFinderCacheFlag("iconOffsetEnabled"),
         },
-        borderSize = { label = "Icon Border Size", applies = CastBarFinderCacheFlag("customIconBorderSize") },
+        borderSize = { label = "Icon Border Thickness", aliases = { "icon border size" }, applies = CastBarFinderCacheFlag("customIconBorderSize") },
     })
 
     local ticks = ST._DefineSettingRoute({
@@ -785,7 +785,7 @@ local function BuildCastBarStylingPanel(container)
 
         if iconRenderMode ~= ST.BORDER_RENDER_MODE_CRISP then
             AddMirrorFirstSliderRow(panel, {
-                label = "Icon Border Size",
+                label = "Icon Border Thickness",
                 setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderSize,
                 indent = true,
                 min = 0, max = 4, step = 0.1,

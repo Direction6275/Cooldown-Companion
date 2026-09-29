@@ -1609,8 +1609,8 @@ end
 
 local BORDER_THICKNESS_MODE_TOOLTIPS = {
     [ST.BORDER_RENDER_MODE_CUSTOM] = {
-        "Custom Thickness",
-        "Uses the Border Size slider, including fractional values.",
+        "Custom",
+        "Uses the Border Thickness slider, including fractional values.",
     },
     [ST.BORDER_RENDER_MODE_CRISP] = {
         "One-pixel",
@@ -1646,7 +1646,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     key = key or "borderRenderMode"
     local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
     local modeList = {
-        [ST.BORDER_RENDER_MODE_CUSTOM] = opts and opts.customLabel or "Custom Thickness",
+        [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom",
         [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
     }
     local modeOrder = { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP }
@@ -1660,7 +1660,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     end
 
     local modeRow = ST._AddDropdownRow(container, {
-        label = opts and opts.label or "Border Thickness",
+        label = opts and opts.label or "Border Thickness Mode",
         setting = opts and opts.setting,
         indent = opts and opts.indent,
         list = modeList,

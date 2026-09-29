@@ -67,8 +67,11 @@ local fields = {
     background = Setting(shape, "background", "Background Color", IsIcons),
     border = {
         color = Setting(shape, "borderColor", "Border Color"),
-        thickness = shape:Setting({key = "borderMode", label = "Border Thickness", advancedKey = "panelBorder"}),
-        size = shape:Setting({key = "borderSize", label = "Border Size", advancedKey = "panelBorder"}),
+        thickness = shape:Setting({key = "borderMode", label = "Border Thickness Mode"}),
+        size = shape:Setting({key = "borderSize", label = "Border Thickness", aliases = {"border size"},
+            applies = function(context)
+                return ST.GetBorderRenderMode(SelectedGroup(context).style) ~= ST.BORDER_RENDER_MODE_CRISP
+            end}),
     },
     length = Setting(bars, "length", "Bar Length"),
     barHeight = Setting(bars, "height", "Bar Height"),

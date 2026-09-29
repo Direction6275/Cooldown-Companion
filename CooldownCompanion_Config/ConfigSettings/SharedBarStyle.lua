@@ -173,7 +173,7 @@ local function BuildRows(column, group, id)
                 onRelease=function(value) set(key,value) end })
         elseif widget == "border" then
             local _, modeRow = ST._AddBorderRenderModeDropdown(column,sec.tbl,key,refresh,sec.disabled,
-                {row=true,setting=setting,label=label,customLabel="Custom"})
+                {row=true,setting=setting,label=label})
             row = modeRow
         elseif widget == "zoom" then
             row = ST._BuildIconZoomControls(column,sec.tbl,refresh,{setting=setting,
