@@ -1124,7 +1124,8 @@ local function StripRetiredTotemEntryFlag(profile)
     end
 end
 
-local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden" }
+-- configPreviewSplit was the stacked config layout's preview/settings split.
+local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden", "configPreviewSplit" }
 
 local function ClearRetiredProfileFlags(profile)
     if type(profile) ~= "table" then
@@ -1138,6 +1139,30 @@ local function ClearRetiredProfileFlags(profile)
         profile[key] = nil
     end
     return cdmHiddenWasEnabled
+end
+
+-- The stacked config layout (Live Preview above Settings) retired: Settings
+-- always has its own fixed-width column now, so a window saved at the old
+-- 1180 default would squeeze the Live Preview. Raise a saved width to the
+-- new default once; never shrink one. The width is frozen at the default
+-- this shipped with, and the window still clamps it to the screen on open.
+local CONFIG_WINDOW_WIDEN_SENTINEL = "_cdcConfigWindowWidened"
+local CONFIG_WINDOW_WIDENED_WIDTH = 1500
+
+local function RetireStackedConfigLayout(global)
+    if type(global) ~= "table" then
+        return
+    end
+    global.configLayout = nil
+    if global[CONFIG_WINDOW_WIDEN_SENTINEL] then
+        return
+    end
+    global[CONFIG_WINDOW_WIDEN_SENTINEL] = true
+    local geo = global.configWindow
+    if type(geo) == "table" and type(geo.width) == "number"
+        and geo.width < CONFIG_WINDOW_WIDENED_WIDTH then
+        geo.width = CONFIG_WINDOW_WIDENED_WIDTH
+    end
 end
 
 local function HasSupportedCheckpoint(payload)
@@ -3670,6 +3695,7 @@ function CooldownCompanion:RunAllMigrations()
     if self.db and self.db.global then
         self.db.global.totemSpellLinks = nil
     end
+    RetireStackedConfigLayout(self.db and self.db.global)
 
     local checkpointState = self._savedProfileCheckpointState
     local allowMissingCheckpoint = self._allowMissingMigrationCheckpointOnce

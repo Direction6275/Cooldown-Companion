@@ -130,7 +130,6 @@ local function ComputeConfigSidePlacement(sideFrame, windowWidth)
     end
     return "left", -SIDE_WINDOW_GAP
 end
-ST._ComputeConfigSidePlacement = ComputeConfigSidePlacement
 
 local function CleanupProfileWideSideWindow(widget, stateKey)
     if CS.UnregisterConfigDragAlphaFrame then
@@ -531,9 +530,9 @@ end
 
 local function ShouldShowSettingsColumn(col3)
     local host = col3._cdcActiveWideHost
-    return ST._IsThreeColumnConfigLayout() and not CS.talentPickerMode
+    return not CS.talentPickerMode
         and not CS.exportMode and not CS.importMode
-        and (CS.spellbookPanelDocked or (col3._cdcEmptyGroupPreviewTakeover ~= true
+        and (CS.spellbookPanelWindow ~= nil or (col3._cdcEmptyGroupPreviewTakeover ~= true
             and host ~= nil and host:IsShown()))
 end
 
@@ -542,7 +541,7 @@ local function ApplyConfigColumnTitles(frame)
     -- window layout pass. Only relayout when the separate column changes.
     if frame.settingsColumn
         and frame.settingsColumn.frame:IsShown()
-            ~= (ShouldShowSettingsColumn(frame.col3) and not CS.spellbookPanelDocked)
+            ~= (ShouldShowSettingsColumn(frame.col3) and not CS.spellbookPanelWindow)
     then
         frame.LayoutColumns()
         -- Tabs rebuilt under a hidden Settings column have independent anchors.
@@ -564,9 +563,9 @@ local function ApplyConfigColumnTitles(frame)
 
     local selection = GetConfigSelectionSummary()
     -- Two labeled workspace areas: while a pinned preview is showing, the
-    -- column title names the preview region and the editing surface below
-    -- the divider carries its own "Editing:" header; without a preview the
-    -- title keeps naming the settings content.
+    -- column title names the preview region and the editing surface in the
+    -- Settings column carries its own "Editing:" header; without a preview
+    -- the title keeps naming the settings content.
     local activeHost = frame.col3._cdcActiveWideHost
     if activeHost and activeHost:IsShown() then
         frame.col3:SetTitle("Live Preview")
@@ -888,11 +887,46 @@ local buttonSettingsScroll
 ------------------------------------------------------------------------
 -- Config window geometry (size and position persist account-wide)
 ------------------------------------------------------------------------
-local CONFIG_WINDOW_DEFAULT_WIDTH = 1180
+-- Settings has a fixed-width column, so extra width goes to the Live Preview.
+local CONFIG_WINDOW_DEFAULT_WIDTH = 1500
 local CONFIG_WINDOW_DEFAULT_HEIGHT = 780
--- Must match the SetResizeBounds call in CreateConfigPanel.
-local CONFIG_WINDOW_MIN_WIDTH = 993
+-- Keeps the Live Preview at least ~429 wide beside the fixed Navigator and
+-- Settings columns, and still fits a 16:10 screen at UI scale 1.0.
+local CONFIG_WINDOW_MIN_WIDTH = 1200
 local CONFIG_WINDOW_MIN_HEIGHT = 400
+
+-- A screen narrower than the minimum (a 4:3 monitor or a high UI scale)
+-- would push the window's right edge, Close button and resize grip
+-- off-screen, so the minimum never exceeds the screen width.
+local function GetConfigWindowMinWidth()
+    return math.min(CONFIG_WINDOW_MIN_WIDTH, UIParent:GetWidth())
+end
+
+-- The one rule for every path that sizes the window itself (opening, the
+-- grip's reset, a screen that no longer fits it): at most 95% of the screen
+-- width and 90% of its height, never below the minimum. A player's own
+-- grip resize is not held to it.
+local function ClampConfigWindowSize(width, height)
+    width = math.max(GetConfigWindowMinWidth(),
+        math.min(width, UIParent:GetWidth() * 0.95))
+    height = math.max(CONFIG_WINDOW_MIN_HEIGHT,
+        math.min(height, UIParent:GetHeight() * 0.9))
+    return width, height
+end
+
+-- AceGUI's only drag handle is the title strip centered on the window's top
+-- edge. Keeping its center and the window's top at least this far inside
+-- the screen keeps it within reach.
+local CONFIG_WINDOW_TITLE_MARGIN = 40
+-- Size and position differences smaller than this are rounding, not change.
+local CONFIG_WINDOW_FIT_TOLERANCE = 0.5
+
+-- Slides a window of the given size fully onto the screen.
+local function ClampConfigWindowPosition(left, top, width, height)
+    left = math.max(0, math.min(left, UIParent:GetWidth() - width))
+    top = math.max(height, math.min(top, UIParent:GetHeight()))
+    return left, top
+end
 
 -- Every side window follows the config's settled geometry; run from
 -- SaveConfigWindowGeometry so any move, resize, or reset re-picks their side.
@@ -932,21 +966,15 @@ end
 -- same way; with none saved the frame keeps AceGUI's centered default.
 local function ApplyConfigWindowGeometry(frame)
     local content = frame.frame
-    local screenWidth = UIParent:GetWidth()
-    local screenHeight = UIParent:GetHeight()
     local db = CooldownCompanion.db
     local geo = db and db.global and db.global.configWindow
-    local width = (geo and geo.width) or CONFIG_WINDOW_DEFAULT_WIDTH
-    local height = (geo and geo.height) or CONFIG_WINDOW_DEFAULT_HEIGHT
-    width = math.max(CONFIG_WINDOW_MIN_WIDTH,
-        math.min(width, screenWidth * 0.95))
-    height = math.max(CONFIG_WINDOW_MIN_HEIGHT,
-        math.min(height, screenHeight * 0.9))
+    local width, height = ClampConfigWindowSize(
+        (geo and geo.width) or CONFIG_WINDOW_DEFAULT_WIDTH,
+        (geo and geo.height) or CONFIG_WINDOW_DEFAULT_HEIGHT)
     frame:SetWidth(width)
     frame:SetHeight(height)
     if geo and geo.left and geo.top then
-        local left = math.max(0, math.min(geo.left, screenWidth - width))
-        local top = math.max(height, math.min(geo.top, screenHeight))
+        local left, top = ClampConfigWindowPosition(geo.left, geo.top, width, height)
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
     end
@@ -1089,9 +1117,9 @@ local function CreateConfigPanel()
     local fullHeight = content:GetHeight()
     local fullWidth = content:GetWidth()
 
-    -- Custom resize grip — expand freely, shrink horizontally up to 30% (min 993px)
+    -- Custom resize grip — expand freely, shrink down to the minimum size
+    -- (FitConfigWindowToScreen owns the resize bounds).
     content:SetResizable(true)
-    content:SetResizeBounds(993, 400)
 
     local resizeGrip = CreateFrame("Button", nil, content)
     resizeGrip:SetSize(16, 16)
@@ -1116,18 +1144,13 @@ local function CreateConfigPanel()
     -- resizes from the bottom-right.
     resizeGrip:SetScript("OnDoubleClick", function()
         content:StopMovingOrSizing()
-        local screenWidth = UIParent:GetWidth()
-        local screenHeight = UIParent:GetHeight()
-        local width = math.max(CONFIG_WINDOW_MIN_WIDTH,
-            math.min(CONFIG_WINDOW_DEFAULT_WIDTH, screenWidth * 0.95))
-        local height = math.max(CONFIG_WINDOW_MIN_HEIGHT,
-            math.min(CONFIG_WINDOW_DEFAULT_HEIGHT, screenHeight * 0.9))
+        local width, height = ClampConfigWindowSize(
+            CONFIG_WINDOW_DEFAULT_WIDTH, CONFIG_WINDOW_DEFAULT_HEIGHT)
         local left, top = content:GetLeft(), content:GetTop()
         if left and top then
             -- Reclamp the kept corner against the restored size, so a config
             -- parked near the right or bottom edge cannot grow off-screen.
-            left = math.max(0, math.min(left, screenWidth - width))
-            top = math.min(screenHeight, math.max(top, height))
+            left, top = ClampConfigWindowPosition(left, top, width, height)
             content:ClearAllPoints()
             content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
         end
@@ -1440,21 +1463,6 @@ local function CreateConfigPanel()
                 CooldownCompanion.db.profile.escClosesConfig = not CooldownCompanion.db.profile.escClosesConfig
             end
             UIDropDownMenu_AddButton(info2, level)
-
-            local layoutInfo = UIDropDownMenu_CreateInfo()
-            layoutInfo.text = "  Three-column Layout"
-            layoutInfo.checked = function() return ST._IsThreeColumnConfigLayout() end
-            layoutInfo.isNotRadio = true
-            layoutInfo.func = function()
-                if CS.CloseSpellbookPanel then CS.CloseSpellbookPanel() end
-                local divider = frame.col3 and frame.col3.buttonsSplitDivider
-                if divider then divider:CancelDrag() end
-                CooldownCompanion.db.global.configLayout =
-                    ST._IsThreeColumnConfigLayout() and "stacked" or "threeColumn"
-                CloseDropDownMenus()
-                CooldownCompanion:RefreshConfigPanel()
-            end
-            UIDropDownMenu_AddButton(layoutInfo, level)
 
             UIDropDownMenu_AddSeparator(level)
 
@@ -1780,6 +1788,58 @@ local function CreateConfigPanel()
     frame.CollapseConfigWindow = CollapseConfigWindow
     frame.ExpandConfigWindow = ExpandConfigWindow
 
+    -- UI scale and resolution can change while this frame lives on, so the
+    -- minimum follows the current screen, the way the world map refits
+    -- itself on the same events. The window moves only as far as it has to
+    -- stay usable: a window too big for the screen takes the shared size
+    -- rule and comes fully on-screen; otherwise its width is raised to the
+    -- minimum if needed and it moves only enough to keep the title strip
+    -- within reach, so a window parked partly off an edge stays put. A
+    -- closed or minimized window refits when it next shows.
+    local function FitConfigWindowToScreen()
+        local minWidth = GetConfigWindowMinWidth()
+        content:SetResizeBounds(minWidth, CONFIG_WINDOW_MIN_HEIGHT)
+        if isMinimized or not content:IsShown() then return end
+        local left, top = content:GetLeft(), content:GetTop()
+        if not (left and top) then return end
+        local screenWidth = UIParent:GetWidth()
+        local screenHeight = UIParent:GetHeight()
+        local tolerance = CONFIG_WINDOW_FIT_TOLERANCE
+        local oldWidth, oldHeight = content:GetWidth(), content:GetHeight()
+        local width, height, newLeft, newTop
+        if oldWidth > screenWidth + tolerance or oldHeight > screenHeight + tolerance then
+            width, height = ClampConfigWindowSize(oldWidth, oldHeight)
+            newLeft, newTop = ClampConfigWindowPosition(left, top, width, height)
+        else
+            width, height = oldWidth, oldHeight
+            if width < minWidth - tolerance then
+                width = minWidth
+            end
+            local margin = CONFIG_WINDOW_TITLE_MARGIN
+            local center = math.max(margin,
+                math.min(left + width / 2, screenWidth - margin))
+            newLeft = center - width / 2
+            newTop = math.max(margin, math.min(top, screenHeight))
+        end
+        if math.abs(width - oldWidth) < tolerance
+            and math.abs(height - oldHeight) < tolerance
+            and math.abs(newLeft - left) < tolerance
+            and math.abs(newTop - top) < tolerance then
+            return
+        end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", newLeft, newTop)
+        frame:SetWidth(width)
+        frame:SetHeight(height)
+        fullWidth, fullHeight = width, height
+    end
+    FitConfigWindowToScreen()
+    content:HookScript("OnShow", FitConfigWindowToScreen)
+    local screenWatch = CreateFrame("Frame")
+    screenWatch:RegisterEvent("UI_SCALE_CHANGED")
+    screenWatch:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    screenWatch:SetScript("OnEvent", FitConfigWindowToScreen)
+
     collapseBtn:RegisterForClicks("LeftButtonUp")
 
     -- Collapse button callback
@@ -1945,8 +2005,8 @@ local function CreateConfigPanel()
     col3.frame:SetParent(colParent)
     col3.frame:Show()
 
-    -- Separate settings shell for the optional three-column workspace.
-    -- Its width stays fixed; the existing workspace becomes the center preview.
+    -- Separate settings shell to the right of the Live Preview.
+    -- Its width stays fixed; the workspace column becomes the center preview.
     local settingsColumn = AceGUI:Create("InlineGroup")
     settingsColumn:SetTitle("Settings")
     settingsColumn:SetAutoAdjustHeight(false)
@@ -2020,12 +2080,6 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("The Customizations section in the Settings tab lists everything that button customizes, each with its own Revert.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("The Visibility tab shows the selected button's conditions. Deselect to see the panel's own.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                if ST._IsThreeColumnConfigLayout() then
-                    GameTooltip:AddLine("Settings have their own full-height column. Turn off Three-column Layout in the window's gear menu to place the preview above settings.", 1, 1, 1, true)
-                else
-                    GameTooltip:AddLine("Drag the line under the preview to resize it. Double-click to reset. Choose Three-column Layout in the window's gear menu to give settings their own full-height column.", 1, 1, 1, true)
-                end
             end
         end
         GameTooltip:Show()
@@ -2304,8 +2358,8 @@ local function CreateConfigPanel()
     -- Layout columns on size change
     local function LayoutColumns()
         local function ShowSettingsColumn(shown)
-            settingsColumn.frame:SetShown(shown and not CS.spellbookPanelDocked)
-            if CS.spellbookPanelDocked and CS.spellbookPanelWindow then
+            settingsColumn.frame:SetShown(shown and not CS.spellbookPanelWindow)
+            if CS.spellbookPanelWindow then
                 CS.spellbookPanelWindow.frame:SetShown(shown)
             end
         end
@@ -2418,10 +2472,10 @@ local function CreateConfigPanel()
         UpdateCompactConfigRows()
         PositionPrimaryAxisUI()
 
-        -- Window resizes change the column height the persisted preview
-        -- split is applied against; recompute and re-clamp the preview.
-        if ST._ReapplyPanelPreviewSplit then
-            ST._ReapplyPanelPreviewSplit()
+        -- Window resizes change the preview column's size; refit the host
+        -- and rebuild the preview against it.
+        if ST._RefitWidePreviewHost then
+            ST._RefitWidePreviewHost()
         end
     end
 

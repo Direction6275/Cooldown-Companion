@@ -231,7 +231,7 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
         return
     end
 
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     local group = CooldownCompanion.db.profile.groups[newPanelId]
     SelectConfigPanel(newPanelId, {
         containerId = opts and opts.containerId or nil,
@@ -447,7 +447,7 @@ local function CreateMissingCDMPanelsInSelectedContainer(containerId)
     end
 
     local selectPanelId = createdBySource.essential or createdPanelIds[1]
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     SelectConfigPanel(selectPanelId, { containerId = containerId })
     CS.addingToPanelId = nil
     CS.pendingEditBoxFocus = false

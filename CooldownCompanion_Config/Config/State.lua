@@ -1044,7 +1044,7 @@ end
 
 local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     CooldownCompanion:ClearAllConfigPreviews()
     local selectedScope = ResolveConfigContainerClassScope(containerId)
     if selectedScope and selectedScope.isOtherClass then
@@ -2756,7 +2756,7 @@ local function PruneConfigResourceSelection(resourceExists)
 end
 
 -- Unified anchor preview (buttons view): clicking an attached bar in the
--- pinned preview selects it for editing below the divider. Toggle
+-- pinned preview selects it for editing in the Settings column. Toggle
 -- semantics by default; `opts.toggle = false` selects without the
 -- toggle-off (the right-click menu must keep an already-selected bar
 -- selected under its menu). A bar selection replaces any entry
@@ -3290,7 +3290,7 @@ ST._ApplyConfigRoute = function(route)
     else
         return
     end
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     CooldownCompanion:RefreshConfigPanel()
 end
 

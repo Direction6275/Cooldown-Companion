@@ -371,7 +371,7 @@ end
 -- stack as part of the composition, and the module-enable pills pinned to
 -- the pane's bottom-right corner. Everything else this workspace can
 -- configure but is not drawing right now goes to the quiet text-chip strip
--- below the editing divider, not here.
+-- in the editing surface, not here.
 --
 -- The badges are deliberately not facsimile unit frames. The frame
 -- anchoring module re-anchors the player's real unit frames and draws
@@ -1816,7 +1816,7 @@ local function SelectPreviewSlot(slot, modifierMulti)
         return false
     end
     if ST._HandleModuleThicknessCopy and ST._HandleModuleThicknessCopy(slot) then return true end
-    local allowToggle = not CS.spellbookPanelDocked
+    local allowToggle = not CS.spellbookPanelWindow
 
     -- Unified anchor preview (buttons view): route to the unified bar
     -- selection, which owns the entry-vs-bar exclusivity and cast support.
@@ -1993,7 +1993,7 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
 
             if SelectPreviewSlot(slotModel, IsControlKeyDown and IsControlKeyDown()) then
-                if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+                if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
                 CooldownCompanion:RefreshConfigPanel()
             end
         end)
