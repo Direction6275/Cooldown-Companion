@@ -19,7 +19,9 @@ end
 -- sections (and PreviewCommandCenter, which loads first) still spell the text
 -- keys out; shared_bar_settings_grouping reopens both kinds to pin them together.
 local SECTION_KEYS = {
-    panel = { appearance = "shared_bar_appearance", segments = "shared_bar_segments", text = "barappearance_textIcon" },
+    -- A bar panel's Background Color sits with its fill colors (BarModeTabs).
+    panel = { appearance = "shared_bar_appearance", segments = "shared_bar_segments", text = "barappearance_textIcon",
+        colors = "barappearance_colors" },
     castbar = { appearance = "castbar_appearance", text = "castbar_contents" },
     resource = { appearance = "rb_resource_appearance", segments = "shared_bar_segments", text = "rb_text", textStore = "resource" },
     health = { appearance = "rb_health_appearance", text = "rb_health_text", textStore = "resource" },
@@ -28,6 +30,7 @@ local SECTION_KEYS = {
 local function CollapseKey(id, scope)
     local keys = SECTION_KEYS[scope] or SECTION_KEYS.panel
     if id == "barSmoothing" then return keys.segments or "shared_bar_segments" end
+    if id == "barBgColor" and keys.colors then return keys.colors end
     return IsTextSection(id) and keys.text or keys.appearance
 end
 -- The Finder's store name ("resource") for a section, or nil for the default.
@@ -89,7 +92,7 @@ local fields = {
     barTexture = { { "barTexture", "Bar Texture", "texture" }, {"barClassTextureBrightness", "Class Texture Brightness", "size", 0.5, 2} },
     barBgColor = { { "barBgColor", "Background Color", "color" } },
     borderSettings = { { "barBorderStyle", "Border Style", "borderStyle" }, { "borderColor", "Border Color", "color" },
-        { "borderRenderMode", "Thickness Mode", "border" }, { "borderSize", "Thickness", "size", 0, 5 } },
+        { "borderRenderMode", "Border Thickness Mode", "border" }, { "borderSize", "Border Thickness", "size", 0, 5 } },
     barDirection = { { "barReverseFill", "Reverse Fill Direction", "check" } },
     barSmoothing = { { "barSegmentedSmoothing", "Segmented Smoothing", "smoothing" } },
     barIconAppearance = { { "barIconReverse", "Icon on Right Side", "check" },
@@ -220,7 +223,8 @@ end
 -- Visible groups follow the thing being edited, independently of override owners.
 -- Callers with local text/icon behavior place these same rows beside that behavior.
 -- opts.leadingRows / opts.trailingRows(left, right) place a surface's own
--- bar rows (thickness, fill color) inside Bar Appearance.
+-- bar rows (thickness, fill color) inside Bar Appearance; opts.skip names
+-- sections a surface builds elsewhere with _BuildSharedBarStyleRows.
 local function Build(container, group, part, opts)
     local scope = ScopeOf(group)
     local function Section(title, key, ids, leading, trailing)
@@ -234,7 +238,14 @@ local function Build(container, group, part, opts)
         end
     end
     if not part or part == "appearance" then
-        Section("Bar Appearance", CollapseKey("barTexture", scope), appearanceSections,
+        local ids = appearanceSections
+        if opts and opts.skip then
+            ids = {}
+            for _, id in ipairs(appearanceSections) do
+                if not opts.skip[id] then ids[#ids + 1] = id end
+            end
+        end
+        Section("Bar Appearance", CollapseKey("barTexture", scope), ids,
             opts and opts.leadingRows, opts and opts.trailingRows)
     end
     if not part or part == "segments" then
@@ -311,8 +322,7 @@ function ST._BuildModuleBarStyleRows(column, kind, powerType, spec, id, opts)
 end
 
 local aliases = { barTexture = {"statusbar texture"}, barBgColor = {"empty color"},
-    barSegmentedSmoothing = {"smooth animation"}, borderRenderMode = {"border thickness"},
-    borderSize = {"border size","border thickness"} }
+    barSegmentedSmoothing = {"smooth animation"}, borderSize = {"border size"} }
 
 -- Both the settings finder and Customizations links land on these exact rows.
 -- resourceWide is the independent Resources tab: the defaults every resource starts from.
@@ -333,8 +343,14 @@ if ST._DefineSettingRoute then
                     rowScope=primary and "primary" or scope ~= "panel" and "detail" or nil,
                     -- Breadcrumbs name the heading the row sits under.
                     section=id,sectionId=id,sectionLabel=IsTextSection(id) and ST.OVERRIDE_SECTIONS[id].label
-                        or id == "barSmoothing" and "Segments" or "Bar Appearance",
-                    collapseKeys={CollapseKey(id,scope)},
+                        or id == "barSmoothing" and "Segments"
+                        or id == "barBgColor" and scope == "panel" and "Colors" or "Bar Appearance",
+                    -- A panel of only attached modules has no Colors section:
+                    -- its Background Color stays in Bar Appearance.
+                    collapseKeys=id == "barBgColor" and scope == "panel" and function(context)
+                        return { context.group and context.group._moduleGeometryOnly
+                            and CollapseKey("barTexture", scope) or CollapseKey(id, scope) }
+                    end or {CollapseKey(id,scope)},
                     collapseStore=CollapseStore(id,scope),
                     applies=function(context)
                         if scope == "panel" then return context.group and context.group.displayMode == "bars" and Allowed(context.group,id) end

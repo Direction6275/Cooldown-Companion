@@ -290,10 +290,15 @@ end
 ST._SECTION_HOME = ST._SECTION_HOME or {}
 ST._SECTION_HOME.bars = {
     barThickness = { tab = "appearance", collapseKey = ST._SharedBarStyleCollapseKey("barTexture", "panel") },
-    barShape = { tab = "appearance", collapseKey = "barappearance_settings" },
-    barColor = { tab = "appearance" },
-    barCooldownColor = { tab = "appearance" },
-    barChargeColor = { tab = "appearance" },
+    -- Fitted attached bars draw no Bar Settings rows; their one barShape row,
+    -- Duration Format, sits in Text & Icon.
+    barShape = { tab = "appearance", collapseKey = function(group)
+        return group and group._attachedBarOwner and group._fittedBarLayout
+            and ST._SharedBarStyleCollapseKey("barNameTypography") or "barappearance_settings"
+    end },
+    barColor = { tab = "appearance", collapseKey = ST._SharedBarStyleCollapseKey("barBgColor") },
+    barCooldownColor = { tab = "appearance", collapseKey = ST._SharedBarStyleCollapseKey("barBgColor") },
+    barChargeColor = { tab = "appearance", collapseKey = ST._SharedBarStyleCollapseKey("barBgColor") },
     barCharges = { tab = "appearance", collapseKey = ST._SharedBarStyleCollapseKey("barSmoothing", "panel") },
     -- Icon Tint is drawn only while the icon renders for the current selection
     -- (BuildBarAppearanceTab's `iconVisSec.read.showBarIcon ~= false`).
@@ -494,17 +499,22 @@ local function BuildBarAppearanceTab(container, group, style)
     AddLensPanelScopeNote(container, lens)
 
     -- Attached bars have one size control, the first row of Bar Appearance.
-    ST._BuildSharedBarStyle(container, group, "appearance", group._attachedBarOwner and { leadingRows = function(column)
-        local sec = BeginLensSection(lens, group, "barThickness", { column = column })
-        local row = AddSliderRow(column, {
-            label = "Bar Thickness", setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.thickness,
-            min = 4, max = 100, step = 0.1, value = sec.tbl.barHeight or 12, disabled = sec.disabled,
-            onChange = function(value) ST._PreviewScalarSetting(sec.tbl, "barHeight", value, ST._RefreshSelectedButtonsPreview) end,
-            onRelease = function(value) sec.tbl.barHeight = value; refreshStyle() end,
-        })
-        sec:Chrome(row)
-        sec:Finish()
-    end } or nil)
+    -- Background Color sits with the fill colors (Colors, below) wherever the
+    -- panel has bar entries; a panel of only attached modules keeps it here.
+    ST._BuildSharedBarStyle(container, group, "appearance", {
+        skip = not group._moduleGeometryOnly and { barBgColor = true } or nil,
+        leadingRows = group._attachedBarOwner and function(column)
+            local sec = BeginLensSection(lens, group, "barThickness", { column = column })
+            local row = AddSliderRow(column, {
+                label = "Bar Thickness", setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.thickness,
+                min = 4, max = 100, step = 0.1, value = sec.tbl.barHeight or 12, disabled = sec.disabled,
+                onChange = function(value) ST._PreviewScalarSetting(sec.tbl, "barHeight", value, ST._RefreshSelectedButtonsPreview) end,
+                onRelease = function(value) sec.tbl.barHeight = value; refreshStyle() end,
+            })
+            sec:Chrome(row)
+            sec:Finish()
+        end or nil,
+    })
     if ShowChargeGap(group) or ST._SharedBarStyleAllowed(group, "barSmoothing") then
         local _, collapsed = BuildCollapsibleSection(container, "Segments", ST._SharedBarStyleCollapseKey("barSmoothing", "panel"), nil, nil, ROW_SECTION)
         if not collapsed then
@@ -539,8 +549,12 @@ local function BuildBarAppearanceTab(container, group, style)
     end
 
     -- ================================================================
-    -- Bar Settings (length, height, fill direction, spacing, texture)
+    -- Bar Settings (length, height, vertical fill, spacing)
     -- ================================================================
+    -- Fitted attached bars draw none of these rows. Their one other barShape
+    -- key, Duration Format, lives with the duration text (Text & Icon).
+    local hasBarSettingsRows = not (group._attachedBarOwner and group._fittedBarLayout)
+    if hasBarSettingsRows then
     -- Panel-only under an entry lens, so the collapse key is lens-scoped and
     -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
     local barSettingsHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings",
@@ -633,32 +647,31 @@ local function BuildBarAppearanceTab(container, group, style)
         })
     end
 
-    if group._attachedBarOwner then
-        AddDurationFormatDropdown(barRight, shapeStyle, refreshStyle, {
-            row = true, infoButtons = tabInfoButtons,
-            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.durationFormat,
-        })
-    end
-
     barSettingsSec:Finish()
     barSettingsSec:FinishBracket(barRightBracket)
     end -- not barSettingsCollapsed
+    end -- hasBarSettingsRows
 
 
-    -- Bar colors have no heading and no collapse state, so they stay on screen
-    -- while Bar Settings is folded away. They get a grid of their own, which is
-    -- also what keeps them off the section's last line.
-    -- LEFT column: everything a SPELL paints - the bar at rest, the backdrop
-    -- behind it, and the two colors a spell timer draws over that.
+    -- ================================================================
+    -- Colors (the backdrop, then what spells and auras paint over it)
+    -- ================================================================
+    -- Background Color leads: it is the bar's own chrome, not a spell or aura
+    -- row, so it sits above the family grid.
+    -- LEFT column: everything a SPELL paints - the bar at rest and the two
+    -- colors a spell timer draws over that.
     -- RIGHT column: the aura timer color. It lives here rather than beside the
     -- aura TEXT toggles in Text & Icon, and it carries that section's
     -- aura-tracking gate with it.
+    local _, colorsCollapsed = BuildCollapsibleSection(container, "Colors", ST._SharedBarStyleCollapseKey("barBgColor"),
+        nil, nil, ROW_SECTION)
+    if not colorsCollapsed then
+    ST._BuildSharedBarStyleRows(BeginRowGrid(container), group, "barBgColor")
     local colorLeft, colorRight = BeginRowGrid(container)
 
     -- Captions only where both families really draw. The left predicate is the
-    -- OR of the two spell-side gates below (Bar Background Color is ungated,
-    -- but it is the bar's own chrome rather than a spell row, so it does not
-    -- speak for that family); the right one is the aura timer color's gate.
+    -- OR of the two spell-side gates below; the right one is the aura timer
+    -- color's gate.
     -- Both spell gates are false on an Aura Panel, which is what keeps a
     -- single-family grid uncaptioned there.
     if (CanGroupUseOverrideSection(group, "barColor")
@@ -695,17 +708,17 @@ local function BuildBarAppearanceTab(container, group, style)
     -- materializes no CC buttons, so barColor never paints anything - the only
     -- fill is the aura kit's, and that reads barAuraColor alone
     -- (StyleActiveBarFill, AuraDisplay.lua). The backdrop still shows, so
-    -- Bar Background Color stays.
+    -- Background Color stays.
     if CanGroupUseOverrideSection(group, "barColor") then
-        AddBarColorRow(colorLeft, "barColor", "Bar Color", "barColor", {0.2, 0.6, 1.0, 1.0},
+        AddBarColorRow(colorLeft, "barColor", "Ready Color", "barColor", {0.2, 0.6, 1.0, 1.0},
             BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.bar)
     end
     -- The two colors a spell TIMER paints - spell-side, so they close the left
     -- column. An Aura Panel bar has no cooldown and no recharge to paint.
     if CanGroupUseOverrideSection(group, "barCooldownColor") then
-        AddBarColorRow(colorLeft, "barCooldownColor", "Bar Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0},
+        AddBarColorRow(colorLeft, "barCooldownColor", "Cooldown Color", "barCooldownColor", {0.6, 0.6, 0.6, 1.0},
             BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.cooldown)
-        AddBarColorRow(colorLeft, "barChargeColor", "Bar Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0},
+        AddBarColorRow(colorLeft, "barChargeColor", "Recharging Color", "barChargeColor", {1.0, 0.82, 0.0, 1.0},
             BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.recharging)
     end
 
@@ -720,7 +733,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if GroupHasAuraTrackingEntry(group) then
         local auraColorSec = BeginLensSection(lens, group, "barActiveAura")
         AddColorRow(colorRight, {
-            label = "Bar Aura Timer Color",
+            label = "Aura Timer Color",
             setting = BAR_FINDER.appearance.colors and BAR_FINDER.appearance.colors.aura,
             tbl = auraColorSec.tbl, key = "barAuraColor",
             default = {0.2, 1.0, 0.2, 1.0}, hasAlpha = true,
@@ -728,6 +741,7 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
         })
     end
+    end -- not colorsCollapsed
 
     -- ================================================================
     -- Icon Tint (the bar's icon square)
@@ -842,6 +856,25 @@ local function BuildBarAppearanceTab(container, group, style)
     -- Dedicated override section (owner ruling 2026-08-25): one shared policy
     -- for cooldown and aura duration phases, customized as one entry-owned
     -- unit. The master row carries the section's scope affordance.
+    -- Duration Format sits with the duration text on every bar panel. A normal
+    -- panel owns it; attached bars keep it in their Bar Settings section
+    -- (barShape) so each bar can customize it. It follows that section's
+    -- scope, and wears the section's chrome itself when Bar Settings has no
+    -- rows on screen.
+    local function AddBarDurationFormat(column, textSec)
+        local formatOpts = { row = true, sharedHelp = true, infoButtons = tabInfoButtons,
+            setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat }
+        if not group._attachedBarOwner then
+            local row = AddDurationFormatDropdown(column, group.style, refreshStyle, formatOpts)
+            if row then textSec:PanelRowChrome(row) end
+            return
+        end
+        local shapeSec = BeginLensSection(lens, group, "barShape", { column = column })
+        local row = AddDurationFormatDropdown(column, shapeSec.tbl, refreshStyle, formatOpts)
+        if row and not hasBarSettingsRows then shapeSec:Chrome(row) end
+        shapeSec:Finish()
+    end
+
     local function AddDurationLowTimeSection()
         if not (ST._AddDurationLowTimeRows and lowTimeLeft and lowTimeRight) then return end
         local lowTimeSec = BeginLensSection(lens, group, "durationLowTime", { column = lowTimeLeft })
@@ -978,16 +1011,8 @@ local function BuildBarAppearanceTab(container, group, style)
     cdTextSec:Chrome(showTimeRow)
 
     cdTextSec:Finish()
-    if drawsCooldownFormat and not group._attachedBarOwner then
-        local durationFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
-            row = true,
-            sharedHelp = true,
-            infoButtons = tabInfoButtons,
-            setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat,
-        })
-        if durationFormatRow then
-            cdTextSec:PanelRowChrome(durationFormatRow)
-        end
+    if drawsCooldownFormat then
+        AddBarDurationFormat(durationLeft, cdTextSec)
     end
     if drawsCooldownLowTime then
         AddDurationLowTimeSection()
@@ -1225,16 +1250,8 @@ local function BuildBarAppearanceTab(container, group, style)
         auraTextSec:Chrome(auraTextRow)
 
         auraTextSec:Finish()
-        if drawsAuraFormat and not drawsCooldownFormat and not group._attachedBarOwner then
-            local auraFormatRow = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
-                row = true,
-                sharedHelp = true,
-                infoButtons = tabInfoButtons,
-                setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat,
-            })
-            if auraFormatRow then
-                auraTextSec:PanelRowChrome(auraFormatRow)
-            end
+        if drawsAuraFormat and not drawsCooldownFormat then
+            AddBarDurationFormat(durationLeft, auraTextSec)
         end
 
         if drawsAuraLowTime and not drawsCooldownLowTime then
@@ -2119,8 +2136,6 @@ if ST._DefineSettingRoute then
                     and ((buttons and #buttons > 1) or group._settingsContext ~= nil)
             end,
         },
-        durationFormat = { label = "Duration Format", aliases = { "timer format" },
-            applies = function(context) return context.group._attachedBarOwner ~= nil end },
     })
 
     BAR_FINDER.appearance.chargeSegments = BarFinderRoute(
@@ -2136,21 +2151,21 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.appearance.colors = BarFinderRoute(
         "panel.bars.appearance.colors", "appearance", "barColors",
-        "Bar Colors", nil):Settings({
+        "Colors", ST._SharedBarStyleCollapseKey("barBgColor")):Settings({
         bar = {
-            label = "Bar Color", sectionId = "barColor",
+            label = "Ready Color", aliases = { "bar color" }, sectionId = "barColor",
             applies = function(context) return BarFinderCanUse(context, "barColor") end,
         },
         cooldown = {
-            label = "Bar Cooldown Color", sectionId = "barCooldownColor",
+            label = "Cooldown Color", aliases = { "bar cooldown color" }, sectionId = "barCooldownColor",
             applies = function(context) return BarFinderCanUse(context, "barCooldownColor") end,
         },
         recharging = {
-            label = "Bar Recharging Color", aliases = { "charges" }, sectionId = "barChargeColor",
+            label = "Recharging Color", aliases = { "charges", "bar recharging color" }, sectionId = "barChargeColor",
             applies = function(context) return BarFinderCanUse(context, "barCooldownColor") end,
         },
         aura = {
-            label = "Bar Aura Timer Color", aliases = { "aura fill color" }, sectionId = "barActiveAura",
+            label = "Aura Timer Color", aliases = { "aura fill color", "bar aura timer color" }, sectionId = "barActiveAura",
             applies = BarFinderTracksAura,
         },
     })
@@ -2210,7 +2225,7 @@ if ST._DefineSettingRoute then
         },
         durationFormat = {
             label = "Duration Format", aliases = { "timer format" },
-            applies = function(context) return not context.group._attachedBarOwner and BarFinderDurationFormat(context) end,
+            applies = BarFinderDurationFormat,
         },
     })
 

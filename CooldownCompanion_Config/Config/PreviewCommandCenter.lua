@@ -1285,6 +1285,8 @@ end
 -- resolver seeds that straight back to collapsed on the rebuild this
 -- navigation is about to trigger.
 local function ForceSectionOpen(collapseKey, lens, group)
+    -- A home whose section depends on the panel shape names it per group.
+    if type(collapseKey) == "function" then collapseKey = collapseKey(group) end
     if not collapseKey then
         return
     end

@@ -1258,12 +1258,12 @@ ST.OVERRIDE_SECTIONS = {
         modes = { bars = true },
     },
     barColor = {
-        label = "Bar Color",
+        label = "Ready Color",
         keys = {"barColor"},
         modes = {bars = true},
     },
     barCooldownColor = {
-        label = "Bar Cooldown Color",
+        label = "Cooldown Color",
         keys = {"barCooldownColor"},
         modes = {bars = true},
     },
@@ -1274,7 +1274,7 @@ ST.OVERRIDE_SECTIONS = {
         modes = {bars = true},
     },
     barChargeColor = {
-        label = "Bar Recharging Color",
+        label = "Recharging Color",
         keys = {"barChargeColor"},
         modes = {bars = true},
     },
