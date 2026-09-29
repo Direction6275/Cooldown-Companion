@@ -825,17 +825,23 @@ local function BuildBarAppearanceTab(container, group, style)
     ST._BuildSharedBarStyleRows(nameRight, group, "barNameTypography")
 
     AddSettingsSubheading(container, "Duration Text")
+    -- Rows that serve both cooldown and aura text (Duration Format, the
+    -- near-expiry policy) lead, as on the Icons tab.
+    local sharedLeft, sharedRight
+    if drawsCooldownFormat or drawsAuraFormat or drawsCooldownLowTime or drawsAuraLowTime then
+        if isAuraPanel then
+            sharedLeft = BeginRowGrid(container)
+            sharedRight = sharedLeft
+        else
+            sharedLeft, sharedRight = BeginRowGrid(container)
+        end
+    end
     local durationLeft, durationStyleColumn = BeginRowGrid(container)
     local durationRight = durationLeft
     ST._BuildSharedBarStyleRows(durationStyleColumn, group, "barDurationTypography")
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
-        if isAuraPanel then
-            lowTimeLeft = BeginRowGrid(container)
-            lowTimeRight = lowTimeLeft
-        else
-            lowTimeLeft, lowTimeRight = BeginRowGrid(container)
-        end
+        lowTimeLeft, lowTimeRight = sharedLeft, sharedRight
     end
 
     AddSettingsSubheading(container, "Value Text (Charges / Stacks)")
@@ -1012,7 +1018,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     cdTextSec:Finish()
     if drawsCooldownFormat then
-        AddBarDurationFormat(durationLeft, cdTextSec)
+        AddBarDurationFormat(sharedLeft, cdTextSec)
     end
     if drawsCooldownLowTime then
         AddDurationLowTimeSection()
@@ -1026,7 +1032,7 @@ local function BuildBarAppearanceTab(container, group, style)
     local chargeSec = BeginLensSection(lens, group, "chargeText", { column = otherLeft })
 
     local chargeTextRow = AddCheckboxRow(otherLeft, {
-        label = "Show Count Text (Charges/Uses)",
+        label = "Show Count Text (Charges / Uses)",
         setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.count,
         value = chargeSec.read.showChargeText ~= false,
         disabled = chargeSec.disabled,
@@ -1251,7 +1257,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
         auraTextSec:Finish()
         if drawsAuraFormat and not drawsCooldownFormat then
-            AddBarDurationFormat(durationLeft, auraTextSec)
+            AddBarDurationFormat(sharedLeft, auraTextSec)
         end
 
         if drawsAuraLowTime and not drawsCooldownLowTime then
@@ -2207,7 +2213,7 @@ if ST._DefineSettingRoute then
             applies = BarFinderCooldownText,
         },
         count = {
-            label = "Show Count Text (Charges/Uses)", aliases = { "charges", "uses" },
+            label = "Show Count Text (Charges / Uses)", aliases = { "charges", "uses" },
             sectionId = "chargeText",
             applies = function(context) return BarFinderCanUse(context, "chargeText") end,
         },

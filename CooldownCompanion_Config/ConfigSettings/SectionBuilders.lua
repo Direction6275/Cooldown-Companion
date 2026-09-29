@@ -712,10 +712,6 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         disabled = disabled,
         onChange = SetEnabled,
     })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-    -- onto the end of the row's label.
-    AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
-        LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
     rows[#rows + 1] = toggleRow
 
     -- Keep the current behavior readable while the editor is collapsed.
@@ -896,6 +892,10 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 } or nil,
             },
         })
+    -- After the gear, so the row reads label, gear, (?) like every other row.
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button.
+    AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
+        LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
     return rows
 end
 

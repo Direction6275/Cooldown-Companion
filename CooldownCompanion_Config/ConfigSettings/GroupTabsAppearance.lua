@@ -517,7 +517,7 @@ if ST._DefineSettingRoute then
             size = { label = "Icon Size", applies = AppearanceFinderSectionSquare },
             width = { label = "Icon Width", applies = AppearanceFinderSectionRectangular },
             height = { label = "Icon Height", applies = AppearanceFinderSectionRectangular },
-            spacing = { label = "Spacing" },
+            spacing = { label = "Icon Spacing" },
         })
     end
 
@@ -544,7 +544,7 @@ if ST._DefineSettingRoute then
             aliases = { "cooldown text threshold" },
             applies = AppearanceFinderStateFlag("cooldownVisibility"),
         },
-        count = { label = "Show Count Text (Charges/Uses)", aliases = { "charges", "uses" }, applies = AppearanceFinderStateFlag("countAvailable") },
+        count = { label = "Show Count Text (Charges / Uses)", aliases = { "charges", "uses" }, applies = AppearanceFinderStateFlag("countAvailable") },
         auraDuration = { label = "Show Aura Duration Text", applies = AppearanceFinderStateFlag("auraTextAvailable") },
         auraVisible = { advancedKey = "auraText",
             label = "Visible", sectionLabel = "Aura Duration Text",
@@ -680,8 +680,8 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.border = border:Settings({
         color = { label = "Border Color" },
-        thickness = { advancedKey = "iconBorder", label = "Border Thickness" },
-        size = { advancedKey = "iconBorder", label = "Border Size", applies = AppearanceFinderStateFlag("customBorderSize") },
+        thickness = { label = "Border Thickness Mode" },
+        size = { label = "Border Thickness", aliases = { "border size" }, applies = AppearanceFinderStateFlag("customBorderSize") },
     })
 
     local tint = ST._DefineSettingRoute({
@@ -1055,7 +1055,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
                 local sectionRightBracket = sectionSec:Bracket(sectionRight)
                 local sectionSpacingRow = AddSliderRow(sectionRight, {
-                    label = "Spacing",
+                    label = "Icon Spacing",
                     setting = APPEARANCE_FINDER.sections[anchor].spacing,
                     min = 0, max = 30, step = 0.1,
                     value = sectionSpacing,
@@ -1091,6 +1091,19 @@ local function BuildAppearanceTab(container, settingsGroup)
     local drawsAuraFormat = IconsDrawAuraDurationLowTimeRows(group, group.style)
         or drawsAuraLowTime
     AddSettingsSubheading(container, "Duration Text")
+    -- Rows that serve both families (Duration Format, the near-expiry policy)
+    -- lead, above the captioned columns, so a single-column layout never
+    -- stacks them under the AURA caption. The near-expiry rows flow across
+    -- both columns of this grid.
+    local sharedLeft, sharedRight
+    if drawsCooldownFormat or drawsAuraFormat or drawsCooldownLowTime or drawsAuraLowTime then
+        if isAuraPanel then
+            sharedLeft = BeginRowGrid(container)
+            sharedRight = sharedLeft
+        else
+            sharedLeft, sharedRight = BeginRowGrid(container)
+        end
+    end
     local durationLeft, durationRight
     if isAuraPanel then
         durationLeft = BeginRowGrid(container)
@@ -1102,19 +1115,13 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- the Show Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT
     -- is the aura duration text block, gated on an aura-tracking entry. An Aura
     -- Panel uses the left half (durationLeft == durationRight), which the helper
-    -- also refuses on its own. The low-time grid below is NOT captioned: it is
-    -- one feature flowing across two columns, not a family split.
+    -- also refuses on its own.
     if not isAuraPanel and groupHasAuraEntry then
         AddFamilyColumnCaptions(durationLeft, durationRight)
     end
     local lowTimeLeft, lowTimeRight
     if drawsCooldownLowTime or drawsAuraLowTime then
-        if isAuraPanel then
-            lowTimeLeft = BeginRowGrid(container)
-            lowTimeRight = lowTimeLeft
-        else
-            lowTimeLeft, lowTimeRight = BeginRowGrid(container)
-        end
+        lowTimeLeft, lowTimeRight = sharedLeft, sharedRight
     end
 
     AddSettingsSubheading(container, "Other Text")
@@ -1141,8 +1148,8 @@ local function BuildAppearanceTab(container, settingsGroup)
 
     local durationFormatAdded = false
     local function AddDurationFormatRow()
-        if durationFormatAdded then return nil end
-        local row = AddDurationFormatDropdown(durationLeft, group.style, refreshStyle, {
+        if durationFormatAdded or not sharedLeft then return nil end
+        local row = AddDurationFormatDropdown(sharedLeft, group.style, refreshStyle, {
             setting = APPEARANCE_FINDER.text.durationFormat,
             sharedHelp = true,
             infoButtons = tabInfoButtons,
@@ -1272,7 +1279,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     local chargeSec = BeginLensSection(lens, group, "chargeText", { column = otherLeft })
 
     local chargeTextRow = AddCheckboxRow(otherLeft, {
-        label = "Show Count Text (Charges/Uses)",
+        label = "Show Count Text (Charges / Uses)",
         setting = APPEARANCE_FINDER.text.count,
         value = chargeSec.read.showChargeText ~= false,
         disabled = chargeSec.disabled,
@@ -1788,8 +1795,8 @@ local function BuildAppearanceTab(container, settingsGroup)
     borderSec:HeadingChrome(borderHeading)
 
     if not borderCollapsed then
-    -- Three related rows, so they stay in one column rather than splitting a
-    -- parent from its children. The right column is deliberately empty.
+    -- Three related rows in one column, drawn inline like the bar tab's
+    -- border rows. The right column is deliberately empty.
     local borderLeft = BeginRowGrid(container)
 
     -- The column only exists here, so the section's bracket is taken now
@@ -1798,8 +1805,6 @@ local function BuildAppearanceTab(container, settingsGroup)
 
     -- Masque gating stays on the GROUP flag, not the lens: skinning owns the
     -- border art for the whole panel, and no entry can override that.
-    --
-    -- Border Color owns the section; thickness and size are its children.
     local borderColorRow = AddColorRow(borderLeft, {
         label = "Border Color",
         setting = APPEARANCE_FINDER.border.color,
@@ -1812,44 +1817,37 @@ local function BuildAppearanceTab(container, settingsGroup)
     })
     borderSec:DirectColorControl(borderColorRow, "borderColor", group.masqueEnabled == true)
 
-    ST._AddAdvancedToggle(borderColorRow, "iconBorder", {}, borderSec.scope ~= "denied" and not group.masqueEnabled, {
-        unlock = { sec = borderSec },
-        build = function(panel)
-            local renderMode = AddBorderRenderModeDropdown(panel, borderSec.tbl, "borderRenderMode", function()
-                refreshStyleSettings()
-            end, group.masqueEnabled or borderSec.disabled, {
-                row = true,
-                indent = false,
-                setting = APPEARANCE_FINDER.border.thickness,
-            })
-            local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
-
-            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                local borderSizeRow = AddSliderRow(panel, {
-                    label = "Border Size",
-                    setting = APPEARANCE_FINDER.border.size,
-                    indent = false,
-                    min = 0, max = 5, step = 0.1,
-                    value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
-                    disabled = (borderSec.disabled or borderThicknessLocked) and true or false,
-                })
-                -- Not wired at all while the section is inert. The mirror-first path
-                -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
-                -- it to anything is wiring a write path; the read-only lens has no
-                -- table for one, so it gets no wiring instead of a harmless-looking one.
-                if borderSec.write then
-                    WireMirrorFirstSlider(borderSizeRow, function(val)
-                        if borderThicknessLocked then return end
-                        borderSec.write.borderSize = val
-                    end, function()
-                        if borderThicknessLocked then return end
-                        refreshStyle()
-                    end, nil, borderSec.write, "borderSize")
-                end
-            end
-
-        end,
+    local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
+        refreshStyleSettings()
+    end, group.masqueEnabled or borderSec.disabled, {
+        row = true,
+        label = "Border Thickness Mode", customLabel = "Custom",
+        setting = APPEARANCE_FINDER.border.thickness,
     })
+    local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
+
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderSizeRow = AddSliderRow(borderLeft, {
+            label = "Border Thickness",
+            setting = APPEARANCE_FINDER.border.size,
+            min = 0, max = 5, step = 0.1,
+            value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = (borderSec.disabled or borderThicknessLocked) and true or false,
+        })
+        -- Not wired at all while the section is inert. The mirror-first path
+        -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
+        -- it to anything is wiring a write path; the read-only lens has no
+        -- table for one, so it gets no wiring instead of a harmless-looking one.
+        if borderSec.write then
+            WireMirrorFirstSlider(borderSizeRow, function(val)
+                if borderThicknessLocked then return end
+                borderSec.write.borderSize = val
+            end, function()
+                if borderThicknessLocked then return end
+                refreshStyle()
+            end, nil, borderSec.write, "borderSize")
+        end
+    end
 
     borderSec:Finish()
     end -- not borderCollapsed
