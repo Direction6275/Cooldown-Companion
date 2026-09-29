@@ -50,23 +50,17 @@ local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "segmentedSmoothing",
 }
 
+-- Fonts are not listed: resource text styling lives in the resource
+-- slot's Value/Duration Text customization (BarStyle.lua).
 local RESOURCE_TEXT_DISPLAY_KEYS = {
     "showText",
     "textFormat",
-    "textFont",
-    "textFontSize",
-    "textFontOutline",
-    "textFontColor",
     "textAnchor",
     "textXOffset",
     "textYOffset",
     "hideTextAtZero",
     "showRechargeText",
     "rechargeTextMode",
-    "rechargeTextFont",
-    "rechargeTextFontSize",
-    "rechargeTextFontOutline",
-    "rechargeTextFontColor",
     "rechargeTextAnchor",
     "rechargeTextXOffset",
     "rechargeTextYOffset",
@@ -626,7 +620,7 @@ local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID
     if layout.barHeight == nil then layout.barHeight = settings.barHeight or 12 end
     if layout.barWidth == nil then layout.barWidth = settings.barWidth or layout.barHeight or 12 end
     if layout.customBarHeights == nil then layout.customBarHeights = settings.customBarHeights == true end
-    if layout.inheritAlpha == nil then layout.inheritAlpha = settings.inheritAlpha == true end
+    if layout.inheritAlpha == nil then layout.inheritAlpha = settings.inheritAlpha ~= false end
     if layout.yOffset == nil then layout.yOffset = settings.yOffset or 3 end
     if layout.verticalXOffset == nil then layout.verticalXOffset = settings.verticalXOffset or layout.yOffset or 3 end
     if layout.independentWidth == nil then layout.independentWidth = settings.independentWidth end
@@ -719,8 +713,15 @@ local function GetSpecResourceDisplayProfile(settings, specID)
     return SeedResourceDisplayProfileFromGlobal(settings.displayProfiles[specID], settings)
 end
 
-local function GetResourceDisplayValue(settings, key, fallback)
-    local profile = GetSpecResourceDisplayProfile(settings)
+local function GetResourceDisplayValue(settings, key, fallback, powerType, appearance)
+    if ST.ResolveModuleBarStyle then
+        local style = appearance and appearance.style
+            or ST.ResolveModuleBarStyle("resources", settings, powerType, GetCurrentSpecID())
+        local mapped = ST.MODULE_BAR_STYLE_MAPS.resources[key]
+        local value = key == "borderStyle" and style.borderStyle or mapped and style[mapped]
+        if value ~= nil then return value end
+    end
+    local profile = GetSpecResourceDisplayProfile(settings, appearance and appearance.spec)
     if profile and profile[key] ~= nil then
         return profile[key]
     end
@@ -730,7 +731,12 @@ local function GetResourceDisplayValue(settings, key, fallback)
     return fallback
 end
 
-local function GetResourceSegmentedSmoothing(settings, specID)
+local function GetResourceSegmentedSmoothing(settings, specID, powerType, appearance)
+    if ST.ResolveModuleBarStyle then
+        local style = appearance and appearance.style
+            or ST.ResolveModuleBarStyle("resources", settings, powerType, specID or GetCurrentSpecID())
+        return ST.NormalizeSegmentedSmoothing(style.barSegmentedSmoothing)
+    end
     local profile = GetSpecResourceDisplayProfile(settings, specID)
     return ST.NormalizeSegmentedSmoothing(profile and profile.segmentedSmoothing or nil)
 end
@@ -883,19 +889,23 @@ local function GetPlacementRenderPowerType(powerType)
     return powerType
 end
 
-local function GetResourceDisplayConfig(settings, powerType)
-    local resource = settings and settings.resources and settings.resources[powerType]
-    if type(resource) ~= "table" then return nil end
-    local specID = GetCurrentSpecID()
+local function GetResourceDisplayConfig(settings, powerType, appearance)
+    if type(settings) ~= "table" then return nil end
+    local resource = settings.resources and settings.resources[powerType]
+    if type(resource) ~= "table" then resource = nil end
+    local specID = appearance and appearance.spec or GetCurrentSpecID()
     if not specID then return resource end
-    local resolved = CopyTable(resource)
-    local specOverrides = resource.specOverrides
+    -- Resource buckets contain optional local settings. An untouched resource
+    -- still inherits appearance without materializing a saved bucket.
+    local resolved = resource and CopyTable(resource) or {}
+    local specOverrides = resource and resource.specOverrides
     local specData = type(specOverrides) == "table" and (specOverrides[specID] or specOverrides[tostring(specID)]) or nil
     if type(specData) == "table" then
         for key, value in pairs(specData) do
             resolved[key] = value
         end
     end
+    if ST.ApplyModuleBarStyle then ST.ApplyModuleBarStyle("resources", resolved, settings, powerType, specID, nil, appearance) end
     return resolved
 end
 

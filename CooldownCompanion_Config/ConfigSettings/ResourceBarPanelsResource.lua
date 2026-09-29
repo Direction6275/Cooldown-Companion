@@ -173,6 +173,12 @@ local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
 -- constructing any hidden settings page.
 local RESOURCE_FINDER = {}
 
+function RESOURCE_FINDER.FillDirectionSettingKey(settings, specID)
+    if not ST.GetModuleGeometryPanel("resources", specID) then return "verticalFill" end
+    local health = settings and settings.resources and settings.resources[RESOURCE_HEALTH]
+    if health and health.enabled == true then return "healthVerticalFill" end
+end
+
 local function EnsureResourceLayoutAnchor(settings, layout)
     if type(layout.independentAnchor) ~= "table" then
         layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor)
@@ -397,7 +403,7 @@ end
 local function BuildResourceTextControls(container, settings, powerType, displaySpecID, applyBars, collapsedKey)
     local rbTextAdvBtns = {}
 
-    local textKey = collapsedKey or "rb_text"
+    local textKey = collapsedKey or ST._SharedBarStyleCollapseKey("barValueTypography", "resource")
     local _, textCollapsed = BuildCollapsibleSection(container, "Text", textKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
     if textCollapsed then
@@ -434,6 +440,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
     -- readout, which only runes have - every other resource leaves it empty,
     -- and the grid top-aligns its columns, so a short side just ends early.
     local textLeft, textRight = BeginRowGrid(container)
+    ST._AddSettingsSubheading(textLeft, name .. " Value Text")
+    if capturedPt == 5 then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
 
     local cb = AddCheckboxRow(textLeft, {
         label = "Show " .. name .. " Text",
@@ -532,25 +540,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
             end,
         })
 
-        ST._AddFontControls(panel, resSettings, "text", {
-            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24,
-            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-        }, applyBars, {
-            settings = finderText and finderText.advanced,
-            previewRefresh = RefreshLayoutOrderPreviewForDrag,
-        })
-
-        AddColorRow(panel, {
-            label = "Text Color",
-            setting = finderText and finderText.advanced and finderText.advanced.color,
-            tbl = resSettings,
-            key = "textFontColor",
-            default = DEFAULT_RESOURCE_TEXT_COLOR,
-            hasAlpha = true,
-            onConfirm = applyBars,
-            onPreview = RefreshLayoutOrderPreviewForDrag,
-        })
-
         local textSettings = finderText and finderText.advanced
         ST._AddTextPositionControls(panel, resSettings, "textAnchor", "textXOffset", "textYOffset", applyBars, {
             anchorLabel = "Text Anchor", xLabel = "Text X Offset", yLabel = "Text Y Offset",
@@ -602,6 +591,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         } or nil,
     })
 
+    ST._BuildModuleBarStyleRows(textLeft, "resources", capturedPt, displaySpecID, "barValueTypography")
     if capturedPt ~= 5 then
         return
     end
@@ -616,6 +606,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
             applyBars("style-settings")
         end,
     })
+
+    ST._BuildModuleBarStyleRows(textRight, "resources", capturedPt, displaySpecID, "barDurationTypography")
 
     -- Single rail, same read/write contract as the value-text panel above.
     --
@@ -647,25 +639,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
                 resSettings.rechargeTextMode = (val == "all") and "all" or "recharging"
                 applyBars("style-advanced")
             end,
-        })
-
-        ST._AddFontControls(panel, resSettings, "rechargeText", {
-            size = DEFAULT_RESOURCE_TEXT_SIZE, sizeMin = 6, sizeMax = 24,
-            font = DEFAULT_RESOURCE_TEXT_FONT, outline = DEFAULT_RESOURCE_TEXT_OUTLINE,
-        }, applyBars, {
-            settings = finderText and finderText.rechargeAdvanced,
-            previewRefresh = RefreshLayoutOrderPreviewForDrag,
-        })
-
-        AddColorRow(panel, {
-            label = "Text Color",
-            setting = finderText and finderText.rechargeAdvanced
-                and finderText.rechargeAdvanced.color,
-            tbl = resSettings,
-            key = "rechargeTextFontColor",
-            default = DEFAULT_RESOURCE_TEXT_COLOR,
-            hasAlpha = true,
-            onConfirm = applyBars,
         })
 
         local rechargeSettings = finderText and finderText.rechargeAdvanced
@@ -715,6 +688,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         return
     end
     local health = HealthResource.EnsureDisplaySettings(settings, specID)
+    ST._BuildModuleBarStyle(container, "resources", HealthResource.ID, specID, "appearance")
     if specID then health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID) end
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
@@ -806,7 +780,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
                 and RESOURCE_FINDER.primary.healthMissing.opacity)
     end
 
-    BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars, "rb_health_text")
+    BuildResourceTextControls(container, settings, HealthResource.ID, specID, applyBars,
+        ST._SharedBarStyleCollapseKey("barValueTypography", "health"))
 
     local healthEffectsKey = "rb_health_effects"
     local _, healthEffectsCollapsed = BuildCollapsibleSection(container, "Health Effects", healthEffectsKey, resourceBarCollapsedSections, nil, ROW_SECTION)
@@ -1170,12 +1145,33 @@ local function BuildResourceBarAnchoringPanel(container)
 
     -- ============ Alpha Section ============
     local group = db.groups[CS.selectedGroup]
+    local inheritsPanelAlpha = not isIndependentStack and layout.inheritAlpha ~= false
     BuildAlphaControls(container, settings, function()
         applyBars("style-settings")
     end, "rb_alpha", {
         row = true,
         isGlobal = group and group.isGlobal,
-        disabled = not isIndependentStack and layout.inheritAlpha == true,
+        disabled = inheritsPanelAlpha,
+        -- Attached resources follow the panel's alpha until customized, so the
+        -- switch leads the rows it unlocks.
+        leadingRows = not isIndependentStack and function(left)
+            local row = AddCheckboxRow(left, {
+                label = "Customize Resource Opacity",
+                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.alpha
+                    and RESOURCE_FINDER.primary.alpha.inheritAlpha,
+                value = not inheritsPanelAlpha,
+                onChange = function(val)
+                    layout.inheritAlpha = val ~= true
+                    applyBars("style-settings")
+                end,
+            })
+            AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+                "Customize Resource Opacity",
+                {"When off, resources use the alpha settings of the panel they're attached to.", 1, 1, 1, true},
+                " ",
+                {"Turn on to use the settings below instead.", 1, 1, 1, true},
+            }, row))
+        end or nil,
         previewRefresh = RefreshLayoutOrderPreviewForDrag,
         settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.alpha,
     })
@@ -1249,36 +1245,25 @@ local function BuildResourceBarPositioningPanel(container)
             end,
         })
 
-        AddDropdownRow(placementLeft, {
-            label = "Vertical Fill Direction",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
-                and RESOURCE_FINDER.primary.placement.verticalFill,
-            indent = false,
-            list = {
-                bottom_to_top = "Bottom to Top",
-                top_to_bottom = "Top to Bottom",
-            },
-            order = { "bottom_to_top", "top_to_bottom" },
-            value = layout.verticalFillDirection or settings.verticalFillDirection or "bottom_to_top",
-            disabled = not isVerticalLayout,
-            onChange = function(val)
-                layout.verticalFillDirection = val
-                applyBars()
-            end,
-        })
-
-        if not CooldownCompanion:IsResourceBarAnchorIndependent() then
-            AddCheckboxRow(placementRight, {
-                label = "Inherit panel alpha",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement
-                    and RESOURCE_FINDER.primary.placement.inheritAlpha,
-                value = layout.inheritAlpha,
+        local fillDirectionKey = RESOURCE_FINDER.FillDirectionSettingKey(settings)
+        if fillDirectionKey then
+            AddDropdownRow(placementLeft, {
+                setting = placementFinder[fillDirectionKey],
+                indent = false,
+                list = {
+                    bottom_to_top = "Bottom to Top",
+                    top_to_bottom = "Top to Bottom",
+                },
+                order = { "bottom_to_top", "top_to_bottom" },
+                value = layout.verticalFillDirection or settings.verticalFillDirection or "bottom_to_top",
+                disabled = not isVerticalLayout,
                 onChange = function(val)
-                    layout.inheritAlpha = val == true
-                    applyBars("style-settings")
+                    layout.verticalFillDirection = val
+                    applyBars()
                 end,
             })
         end
+
     end
 
     -- ============================================================
@@ -1313,20 +1298,7 @@ local function BuildResourceBarPositioningPanel(container)
                 stateKeys = "barSpacing",
             })
 
-            -- Segment Gap
-            AddMirrorFirstSliderRow(sizeRight, {
-                label = "Segment Gap",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                    and RESOURCE_FINDER.primary.size.segmentGap,
-                min = 0, max = 20, step = 0.1,
-                value = layout.segmentGap or settings.segmentGap or 4,
-                set = function(val) layout.segmentGap = val end,
-                apply = function()
-                    applyBars()
-                end,
-                stateOwner = layout,
-                stateKeys = "segmentGap",
-            })
+
         end
     end
 
@@ -1479,15 +1451,6 @@ local function BuildResourceBarPositioningPanel(container)
 end
 
 ------------------------------------------------------------------------
-
-local function GetResourceBarTextureOptions()
-    local t = {}
-    for _, name in ipairs(LSM:List("statusbar")) do
-        t[name] = name
-    end
-    t["blizzard_class"] = "Blizzard (Class)"
-    return t
-end
 
 -- Extracted to its own function to keep upvalue counts manageable in the caller.
 local function BuildLegacyBarHeightControls(container, settings, layout)
@@ -2735,7 +2698,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         container:AddChild(label)
         return
     end
-    local localBarTextureName = displayProfile.barTexture or settings.barTexture or "Solid"
+    local localBarTextureName = showResourceSettings
+        and ST.ResolveModuleBarStyle("resources", settings, resourceSettingsPowerType, displaySpecID).barTexture
+        or displayProfile.barTexture or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
     local _colorSpecID = displaySpecID
 
@@ -2858,173 +2823,39 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showBarText then
-    if not showResourceSettings then
-    -- ============================================================
-    -- Bar (the fill itself and what shows behind it)
-    -- ============================================================
-    local _, barCollapsed = BuildCollapsibleSection(container, "Bar", "rb_appearance_bar", resourceBarCollapsedSections, nil, ROW_SECTION)
+    if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
+    -- The same Bar Appearance rows as every other bar surface. Here they edit
+    -- the defaults every resource starts from.
+    ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
+        leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+            and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
 
-    if not barCollapsed then
-    -- LEFT column: the texture and the one setting that only exists for one
-    -- texture, so it stays adjacent to it. RIGHT column: how the fill moves,
-    -- and what shows through where it is not.
-    local barLeft, barRight = BeginRowGrid(container)
-    if ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent() then
-        ST._BuildBarHeightControls(barLeft, settings, CooldownCompanion:GetSpecLayoutOrder())
+    local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
+        ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide"), resourceBarCollapsedSections, nil, ROW_SECTION)
+    if not segmentsCollapsed then
+        local gapColumn, smoothingColumn = BeginRowGrid(container)
+        local layout = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
+        -- Segment Gap
+        AddMirrorFirstSliderRow(gapColumn, {
+            label = "Segment Gap",
+            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                and RESOURCE_FINDER.primary.size.segmentGap,
+            min = 0, max = 20, step = 0.1,
+            value = layout.segmentGap or settings.segmentGap or 4,
+            set = function(val) layout.segmentGap = val end,
+            apply = function()
+                applyBars()
+            end,
+            stateOwner = layout,
+            stateKeys = "segmentGap",
+        })
+        ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
     end
-
-    -- Bar Texture. LibSharedMedia names run past the control column, so the
-    -- menu is widened - a 140px control would otherwise open a 140px menu.
-    local texRow = AddDropdownRow(barLeft, {
-        label = "Bar Texture",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
-            and RESOURCE_FINDER.primary.bar.texture,
-        pulloutWidth = MEDIA_PULLOUT_WIDTH,
-    })
-    CS.SetupBarTextureDropdown(texRow, { list = GetResourceBarTextureOptions() })
-    texRow:SetValue(localBarTextureName)
-    CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
-        displayProfile.barTexture = val
-        applyBars("style-settings-soon")
-    end)
-
-    -- Brightness slider (only for Blizzard Class texture)
-    ST._AddAdvancedToggle(texRow, "rbClassTexture", {}, effectiveBarTextureName == "blizzard_class", {
-        build = function(panel)
-            local brightnessLocked = ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked()
-            AddMirrorFirstSliderRow(panel, {
-                label = "Class Texture Brightness",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
-                    and RESOURCE_FINDER.primary.bar.brightness,
-                indent = false,
-                min = 0.5, max = 2.0, step = 0.1,
-                value = displayProfile.classBarBrightness or settings.classBarBrightness or 1.3,
-                disabled = brightnessLocked,
-                set = function(val)
-                    if ST.IsBarTexturePickerLocked and ST.IsBarTexturePickerLocked() then return end
-                    displayProfile.classBarBrightness = val
-                end,
-                apply = applyBars,
-                stateOwner = displayProfile,
-                stateKeys = "classBarBrightness",
-            })
-        end,
-    })
-
-    local smoothingRow = AddDropdownRow(barRight, {
-        label = "Segmented Smoothing",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
-            and RESOURCE_FINDER.primary.bar.smoothing,
-        list = {
-            [ST.SEGMENTED_SMOOTHING_ON] = "On",
-            [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
-        },
-        order = { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF },
-        value = ST.NormalizeSegmentedSmoothing(displayProfile.segmentedSmoothing),
-        onChange = function(val)
-            displayProfile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(val)
-            applyBars()
-        end,
-    })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
-    -- the end of the row's label.
-    AnchorRowBadge(smoothingRow, CreateInfoButton(smoothingRow.frame, smoothingRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Segmented Smoothing",
-        {"Controls whether segmented resource bars animate smoothly or snap between segment values.", 1, 1, 1, true},
-        " ",
-        {"Continuous resources are not affected.", 1, 1, 1, true},
-    }, smoothingRow))
-
-    -- Resource Background Color
-    AddColorRow(barRight, {
-        label = "Background Color",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar
-            and RESOURCE_FINDER.primary.bar.background,
-        tbl = displayProfile,
-        key = "backgroundColor",
-        default = { 0, 0, 0, 0.5 },
-        hasAlpha = true,
-        onConfirm = applyBars,
-        onPreview = previewOnly,
-    })
-    end -- not barCollapsed
-
-    -- ============================================================
-    -- Border
-    -- ============================================================
-    local _, borderCollapsed = BuildCollapsibleSection(container, "Border", "rb_appearance_border", resourceBarCollapsedSections, nil, ROW_SECTION)
-
-    if not borderCollapsed then
-    -- LEFT column: whether there is a border at all, and what colour it is.
-    -- RIGHT column: how thick it is drawn. Both sides are gated on the style
-    -- above, so both end early when the border is off.
-    local borderLeft, borderRight = BeginRowGrid(container)
-
-    local borderRow = AddDropdownRow(borderLeft, {
-        label = "Border Style",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-            and RESOURCE_FINDER.primary.border.style,
-        list = {
-            pixel = "Pixel",
-            none = "None",
-        },
-        order = { "pixel", "none" },
-        value = displayProfile.borderStyle or settings.borderStyle or "pixel",
-        onChange = function(val)
-            displayProfile.borderStyle = val
-            applyBars("style-settings")
-        end,
-    })
-
-    ST._AddAdvancedToggle(borderRow, "rbBorder", {}, (displayProfile.borderStyle or settings.borderStyle or "pixel") == "pixel", {
-        build = function(panel)
-            AddColorRow(panel, {
-                label = "Border Color",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                    and RESOURCE_FINDER.primary.border.color,
-                indent = false,
-                tbl = displayProfile,
-                key = "borderColor",
-                default = { 0, 0, 0, 1 },
-                hasAlpha = true,
-                onConfirm = applyBars,
-                onPreview = previewOnly,
-            })
-
-            local renderMode = ST._AddBorderRenderModeDropdown(panel, displayProfile, "borderRenderMode", function()
-                applyBars("style-settings")
-            end, nil, {
-                row = true,
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                    and RESOURCE_FINDER.primary.border.thickness,
-            })
-            local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                AddMirrorFirstSliderRow(panel, {
-                    label = "Border Size",
-                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.border
-                        and RESOURCE_FINDER.primary.border.size,
-                    indent = false,
-                    min = 0, max = 4, step = 0.1,
-                    value = displayProfile.borderSize or settings.borderSize or 1,
-                    disabled = borderThicknessLocked,
-                    set = function(val)
-                        if borderThicknessLocked then return end
-                        displayProfile.borderSize = val
-                    end,
-                    apply = applyBars,
-                    stateOwner = displayProfile,
-                    stateKeys = "borderSize",
-                })
-            end
-        end,
-    })
-    end -- not borderCollapsed
     end
 
     if showResourceText then
-        BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars, "rb_text")
+        BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars,
+            ST._SharedBarStyleCollapseKey("barValueTypography", "resource"))
     end
     end
 
@@ -3320,18 +3151,20 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
     local sharedGeometry = ST.UsesSharedModuleGeometry("resources", numericSpecID)
     local segmented = ST._RB.SupportsResourceAuraStackMode(numericPowerType)
         and not ST._RB.IsContinuousResourceShape(CooldownCompanion:GetResourceBarSettings(), numericPowerType, numericSpecID)
-    if sharedGeometry or segmented then
+    if sharedGeometry then
         ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
-        local key = "rb_resource_appearance_" .. numericPowerType .. "_" .. numericSpecID
-        local _, collapsed = BuildCollapsibleSection(container, "Appearance", key,
-            resourceBarCollapsedSections, nil, ROW_SECTION)
+    end
+    ST._BuildModuleBarStyle(container, "resources", numericPowerType, numericSpecID, "appearance",
+        sharedGeometry and { leadingRows = function(left)
+            ST._BuildModuleBarThickness(left, "resources", numericPowerType, numericSpecID,
+                ST._ResourceThicknessSetting)
+        end } or nil)
+    if segmented then
+        local _, collapsed = BuildCollapsibleSection(container, "Segments", ST._SharedBarStyleCollapseKey("barSmoothing", "resource"), nil, nil, ROW_SECTION)
         if not collapsed then
-            local column = BeginRowGrid(container)
-            if sharedGeometry then
-                ST._BuildModuleBarThickness(column, "resources", numericPowerType, numericSpecID,
-                    ST._ResourceThicknessSetting)
-            end
-            ST._BuildResourceSegmentGap(column, numericPowerType, numericSpecID, ST._ResourceSegmentGapSetting)
+            local gapColumn, smoothingColumn = BeginRowGrid(container)
+            ST._BuildResourceSegmentGap(gapColumn, numericPowerType, numericSpecID, ST._ResourceSegmentGapSetting)
+            ST._BuildModuleBarStyleRows(smoothingColumn, "resources", numericPowerType, numericSpecID, "barSmoothing")
         end
     end
     BuildResourceBarStylingPanel(container, "resource_settings", {
@@ -3363,6 +3196,10 @@ RESOURCE_FINDER.BarsEnabled = function(context)
     local settings = RESOURCE_FINDER.Settings(context)
     return settings and settings.enabled == true or false
 end
+
+-- The group's own appearance rows exist only while Resources are independent.
+-- One gate, shared with the appearance rows the shared bar style builder routes.
+RESOURCE_FINDER.LocalAppearance = ST._ResourceWideAppearanceApplies
 
 RESOURCE_FINDER.SelectedPowerIs = function(context, powerType)
     return tonumber(context and context.resourcePowerType) == tonumber(powerType)
@@ -3421,7 +3258,9 @@ end
 RESOURCE_FINDER.EffectiveTexture = function(context)
     local settings = RESOURCE_FINDER.Settings(context)
     local profile = RESOURCE_FINDER.DisplayProfile(context)
-    local texture = profile and profile.barTexture
+    local texture = context and context.resourcePowerType
+        and ST.ResolveModuleBarStyle("resources", settings, context.resourcePowerType, context.resourceSpecID).barTexture
+        or profile and profile.barTexture
         or settings and settings.barTexture or "Solid"
     return ST.GetEffectiveBarTextureName and ST.GetEffectiveBarTextureName(texture)
         or texture
@@ -3589,6 +3428,10 @@ if ST._DefineSettingRoute then
         collapseStore = "resource",
         applies = RESOURCE_FINDER.BarsEnabled,
     }):Settings({
+        inheritAlpha = {
+            label = "Customize Resource Opacity", aliases = { "panel opacity", "inherit panel alpha" },
+            applies = function() return not CooldownCompanion:IsResourceBarAnchorIndependent() end,
+        },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" } },
         combat = { label = "In Combat" },
         outOfCombat = { label = "Out of Combat" },
@@ -3663,16 +3506,18 @@ if ST._DefineSettingRoute then
             applies = function(context)
                 local layout = RESOURCE_FINDER.Layout(context)
                 local settings = RESOURCE_FINDER.Settings(context)
-                return (layout and layout.orientation or settings and settings.orientation)
-                    == "vertical"
+                return RESOURCE_FINDER.FillDirectionSettingKey(settings, context.resourceSpecID) == "verticalFill"
+                    and (layout and layout.orientation or settings and settings.orientation) == "vertical"
             end,
         },
-        inheritAlpha = {
-            label = "Inherit panel alpha",
-            aliases = { "panel opacity" },
+        healthVerticalFill = {
+            label = "Health Fill Direction",
+            aliases = { "vertical fill direction" },
             applies = function(context)
                 local layout = RESOURCE_FINDER.Layout(context)
-                return not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
+                local settings = RESOURCE_FINDER.Settings(context)
+                return RESOURCE_FINDER.FillDirectionSettingKey(settings, context.resourceSpecID) == "healthVerticalFill"
+                    and (layout and layout.orientation or settings and settings.orientation) == "vertical"
             end,
         },
     })
@@ -3735,6 +3580,8 @@ if ST._DefineSettingRoute then
             },
             spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
             segmentGap = { label = "Segment Gap", aliases = { "segment spacing" },
+                tab = "appearance", tabLabel = "Appearance", section = "segments", sectionLabel = "Segments",
+                collapseKeys = { ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide") },
                 applies = function() return not ST.GetModuleGeometryPanel("resources") end },
         })
         RESOURCE_FINDER.primary.customHeight = {}
@@ -3831,6 +3678,7 @@ if ST._DefineSettingRoute then
         },
     })
 
+    -- The shared bar style builder owns the other resource-wide appearance rows.
     RESOURCE_FINDER.primary.bar = ST._DefineSettingRoute({
         idPrefix = "resources.appearance.bar",
         scope = "resources",
@@ -3838,68 +3686,13 @@ if ST._DefineSettingRoute then
         tab = "appearance",
         tabLabel = "Appearance",
         section = "bar",
-        sectionLabel = "Bar",
-        collapseKeys = { "rb_appearance_bar" },
-        collapseStore = "resource",
-        applies = RESOURCE_FINDER.BarsEnabled,
+        sectionLabel = "Bar Appearance",
+        collapseKeys = { ST._SharedBarStyleCollapseKey("barTexture", "resourceWide") },
+        applies = RESOURCE_FINDER.LocalAppearance,
     }):Settings({
-        texture = { label = "Bar Texture", aliases = { "statusbar texture" } },
         thickness = { label = "Default Bar Thickness", aliases = { "bar thickness", "height", "width" }, applies = function()
             return ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
         end },
-        brightness = { advancedKey = "rbClassTexture",
-            label = "Class Texture Brightness",
-            applies = function(context)
-                return RESOURCE_FINDER.EffectiveTexture(context) == "blizzard_class"
-            end,
-        },
-        smoothing = { label = "Segmented Smoothing", aliases = { "smooth animation" } },
-        background = { label = "Background Color", aliases = { "empty color", "resource background" } },
-    })
-
-    RESOURCE_FINDER.primary.border = ST._DefineSettingRoute({
-        idPrefix = "resources.appearance.border",
-        scope = "resources",
-        rowScope = "primary",
-        tab = "appearance",
-        tabLabel = "Appearance",
-        section = "border",
-        sectionLabel = "Border",
-        collapseKeys = { "rb_appearance_border" },
-        collapseStore = "resource",
-        applies = RESOURCE_FINDER.BarsEnabled,
-    }):Settings({
-        style = { label = "Border Style" },
-        color = { advancedKey = "rbBorder",
-            label = "Border Color",
-            applies = function(context)
-                local settings = RESOURCE_FINDER.Settings(context)
-                local profile = RESOURCE_FINDER.DisplayProfile(context)
-                return (profile and profile.borderStyle
-                    or settings and settings.borderStyle or "pixel") == "pixel"
-            end,
-        },
-        thickness = { advancedKey = "rbBorder",
-            label = "Border Thickness",
-            applies = function(context)
-                local settings = RESOURCE_FINDER.Settings(context)
-                local profile = RESOURCE_FINDER.DisplayProfile(context)
-                return (profile and profile.borderStyle
-                    or settings and settings.borderStyle or "pixel") == "pixel"
-            end,
-        },
-        size = { advancedKey = "rbBorder",
-            label = "Border Size",
-            applies = function(context)
-                local settings = RESOURCE_FINDER.Settings(context)
-                local profile = RESOURCE_FINDER.DisplayProfile(context)
-                local style = profile and profile.borderStyle
-                    or settings and settings.borderStyle or "pixel"
-                return style == "pixel"
-                    and ST.GetBorderRenderMode(profile or settings, "borderRenderMode")
-                        ~= ST.BORDER_RENDER_MODE_CRISP
-            end,
-        },
     })
 
     -- RESOURCE FINDER HEALTH ROUTES
@@ -4042,10 +3835,6 @@ if ST._DefineSettingRoute then
             end,
         }):Settings({
             format = { label = "Text Format" },
-            size = { label = "Font Size" },
-            font = { label = "Font" },
-            outline = { label = "Font Outline" },
-            color = { label = "Text Color" },
             anchor = { label = "Text Anchor" },
             x = { label = "Text X Offset" },
             y = { label = "Text Y Offset" },
@@ -4299,10 +4088,6 @@ if ST._DefineSettingRoute then
             })
             detail.text.advanced = textAdvanced:Settings({
                 format = { label = "Text Format" },
-                size = { label = "Font Size" },
-                font = { label = "Font" },
-                outline = { label = "Font Outline" },
-                color = { label = "Text Color" },
                 anchor = { label = "Text Anchor" },
                 x = { label = "Text X Offset" },
                 y = { label = "Text Y Offset" },
@@ -4336,10 +4121,6 @@ if ST._DefineSettingRoute then
                     applies = appliesPower,
                 }):Settings({
                     mode = { label = "Show Recharge Text On" },
-                    size = { label = "Font Size" },
-                    font = { label = "Font" },
-                    outline = { label = "Font Outline" },
-                    color = { label = "Text Color" },
                     anchor = { label = "Text Anchor" },
                     x = { label = "Text X Offset" },
                     y = { label = "Text Y Offset" },
@@ -4664,18 +4445,14 @@ ST._BuildResourceSettingsPanel = WithResourceEditContext(BuildResourceSettingsPa
 if ST._DefineSettingRoute then
 ST._ResourceThicknessSetting = ST._DefineSettingRoute({
     idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
-    tab = "settings", tabLabel = "Settings", section = "barThickness", sectionLabel = "Appearance",
-    collapseStore = "resource", collapseKeys = function(context)
-        return { "rb_resource_appearance_" .. tostring(context.resourcePowerType) .. "_" .. tostring(context.resourceSpecID) }
-    end,
+    tab = "settings", tabLabel = "Settings", section = "barThickness", sectionLabel = "Bar Appearance",
+    collapseKeys = { ST._SharedBarStyleCollapseKey("barTexture", "resource") },
     applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
 }):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
 ST._ResourceSegmentGapSetting = ST._DefineSettingRoute({
     idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
-    tab = "settings", tabLabel = "Settings", section = "barCharges", sectionLabel = "Appearance",
-    collapseStore = "resource", collapseKeys = function(context)
-        return { "rb_resource_appearance_" .. tostring(context.resourcePowerType) .. "_" .. tostring(context.resourceSpecID) }
-    end,
+    tab = "settings", tabLabel = "Settings", section = "barCharges", sectionLabel = "Segments",
+    collapseKeys = { ST._SharedBarStyleCollapseKey("barSmoothing", "resource") },
     applies = function(context)
         local settings = RESOURCE_FINDER.Settings(context)
         local powerType = context.resourcePowerType

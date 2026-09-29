@@ -44,6 +44,7 @@ Core\Defaults.lua
 Core\RotationAssistant.lua
 Core\IndicatorPanels.lua
 Core\EntryPresentation.lua
+Core\BarStyle.lua
 Core\PanelSections.lua
 Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua

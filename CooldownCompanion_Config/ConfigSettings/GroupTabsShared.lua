@@ -151,13 +151,12 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
             end
 
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
-            -- column, so the rows go straight onto the panel scroll and the two
-            -- conditional rows indent under the toggles that gate them.
+            -- column, so the rows go straight onto the panel scroll and the edge
+            -- color indents under the toggle that gates it.
             --
-            -- The two structural toggles keep calling
-            -- RefreshActiveAdvancedSettingsPanel: this descriptor rebuilds ITS
-            -- OWN panel rather than the whole config, and that is what makes the
-            -- opacity slider and the edge color appear and disappear in place.
+            -- Show Cooldown Swipe itself draws the fill, so its opacity is
+            -- always here. The edge toggle rebuilds this descriptor's own panel
+            -- (style-advanced), which is what shows and hides the edge color.
 
             -- Reverse Swipe
             AddCheckboxRow(panel, {
@@ -170,32 +169,18 @@ local function MakeCooldownSwipeAdvancedDescriptor(styleTable, finderSettings)
                 end,
             })
 
-            -- Show Swipe Fill
-            AddCheckboxRow(panel, {
-                label = "Show Swipe Fill",
-                setting = finderSettings and finderSettings.fill,
-                value = style.showCooldownSwipeFill ~= false,
-                onChange = function(val)
-                    style.showCooldownSwipeFill = val
-                    ST._CompleteConfigEdit(target, "style-advanced")
-                end,
+            -- Swipe Fill Opacity. Row grammar has no percent readout, so this
+            -- reads 0 - 1 rather than the stock slider's 0% - 100%; same store,
+            -- same range. 0 leaves only the edge.
+            local opacityRow = AddSliderRow(panel, {
+                label = "Swipe Fill Opacity",
+                setting = finderSettings and finderSettings.fillOpacity,
+                min = 0, max = 1, step = 0.05,
+                value = style.cooldownSwipeAlpha or 0.8,
             })
-
-            -- Swipe Fill Opacity (only when fill is visible). Row grammar has
-            -- no percent readout, so this reads 0 - 1 rather than the stock
-            -- slider's 0% - 100%; same store, same range.
-            if style.showCooldownSwipeFill ~= false then
-                local opacityRow = AddSliderRow(panel, {
-                    label = "Swipe Fill Opacity",
-                    setting = finderSettings and finderSettings.fillOpacity,
-                    indent = true,
-                    min = 0, max = 1, step = 0.05,
-                    value = style.cooldownSwipeAlpha or 0.8,
-                })
-                WireMirrorFirstSlider(opacityRow, function(val)
-                    style.cooldownSwipeAlpha = val
-                end, RefreshSelectedGroupStyle, nil, style, "cooldownSwipeAlpha")
-            end
+            WireMirrorFirstSlider(opacityRow, function(val)
+                style.cooldownSwipeAlpha = val
+            end, RefreshSelectedGroupStyle, nil, style, "cooldownSwipeAlpha")
 
             -- Show Swipe Edge
             AddCheckboxRow(panel, {

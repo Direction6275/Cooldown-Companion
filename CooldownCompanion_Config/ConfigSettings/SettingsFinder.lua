@@ -494,7 +494,9 @@ local function IsDescriptorApplicable(descriptor, context)
         and not editing.contents[editing.presentation] then
         local section = descriptor.sectionId or descriptor.section
         if not (editing.presentation == "bars" and editing.contents.modules and descriptor.tab == "appearance"
-            and (section == "barThickness" or section == "barCharges")) then return false end
+            and (section == "barThickness" or section == "barCharges"
+                or ST._SharedBarStyleAllowed and ST.BAR_STYLE_KEY_SECTIONS and ST.OVERRIDE_SECTIONS[section]
+                    and ST._SharedBarStyleAllowed(context.group, section))) then return false end
     end
     if context.scope == "entry" and context.group and context.group._settingsContext then
         local sectionId = descriptor.sectionId or descriptor.section

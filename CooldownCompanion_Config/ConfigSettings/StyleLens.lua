@@ -104,7 +104,16 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
             return ST._RB.SupportsResourceAuraStackMode(context.powerType)
                 and not ST._RB.IsContinuousResourceShape(context.settings, context.powerType, context.spec), "entryType"
         end
-        return sectionId == "barThickness", "entryType"
+        if sectionId == "barThickness" then return true, "entryType" end
+        -- Shared appearance sections answer with the same rule that draws
+        -- their rows. The runtime gate stays wider so a parked customization
+        -- (e.g. smoothing on a resource now continuous) is kept, not pruned.
+        local context = buttonData._geometryContext
+        if ST._SharedBarStyleAllowed and context and context.group then
+            return ST._SharedBarStyleAllowed(context.group, sectionId) == true, "entryType"
+        end
+        return ST.CanModuleUseBarStyleSection
+            and ST.CanModuleUseBarStyleSection(buttonData._barGeometryKind, sectionId) or false, "entryType"
     end
     if sectionId == "barCharges" and group and not ST.CanUseBarSegmentGap(group, buttonData) then
         return false, "entryType"
@@ -218,6 +227,9 @@ local function BuildDetachedEffectiveStyle(groupStyle, buttonData, group)
         and not ST.IsPanelBarEntry(group, buttonData) then
         for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do effective[key] = CopyDetachedStyleValue(groupStyle[key]) end
         effective.barHeight = groupStyle.barHeight
+    end
+    if ST.ApplySharedBarTypography and group and group.displayMode == "bars" then
+        ST.ApplySharedBarTypography(effective, buttonData)
     end
     return effective
 end

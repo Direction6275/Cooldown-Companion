@@ -326,7 +326,8 @@ local MODULE_SELECTION_KEYS = { "selectedGroup", "selectedButton", "selectedReso
 function ST._CreateModuleSettingsContext(kind, powerType, spec)
     local settings = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()
     if not settings then return nil end
-    spec = spec or Addon._currentSpecId
+    -- Same "current spec" owner as the renderer (ST.ResolveModuleBarStyle).
+    spec = spec or (ST._RB and ST._RB.GetCurrentSpecID and ST._RB.GetCurrentSpecID()) or Addon._currentSpecId
     local canonical = kind == "resources" and ST._RB.GetCanonicalPowerType(powerType) or nil
     local panel = ST.GetModuleGeometryPanel(kind, spec)
     local captured = {}
@@ -369,8 +370,11 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
             local geometry = ST.ResolveResourceBarGeometry(settings, layout, nil, panel)
             baseline = geometry.thickness
         else baseline = ST.ResolveBarGeometry(panel, { baseline = settings.height or 15 }).thickness end
-        return { barHeight = baseline, barChargeSegmentGap = kind == "resources"
-            and ST.ResolveResourceSegmentGap(settings, self:GetLayout(false), nil, panel) or nil }
+        local style = ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle(kind, settings, powerType, spec, panel or false) or {}
+        style.barHeight = baseline
+        style.barChargeSegmentGap = kind == "resources"
+            and ST.ResolveResourceSegmentGap(settings, self:GetLayout(false), nil, panel) or nil
+        return style
     end
     function context:Refresh(operation, effect)
         return ST._CompleteConfigEdit(ST._CaptureConfigEditTarget(self.panelId, self), operation or "style", effect)
@@ -428,8 +432,7 @@ end
 
 function ST._BuildModuleGeometrySummary(container, kind, powerType, spec)
     local context = ST._CreateModuleSettingsContext(kind, powerType, spec)
-    if context and context.entry.overrideSections
-        and (context.entry.overrideSections.barThickness or context.entry.overrideSections.barCharges) then
+    if context and context.entry.overrideSections and next(context.entry.overrideSections) then
         local host = ST._NewPanelSettingsSectionHost(container, context)
         ST._BuildCustomizationsSection(host, context.group, context.entry, CS.tabInfoButtons)
     end

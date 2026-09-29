@@ -272,6 +272,7 @@ ST.ATTACHED_BAR_DEFAULTS.showKeybindText = false
 function ST.InitializeNewPanelBarStyle(group)
     if not ST.PanelSupportsAttachedBars(group) then return end
     group._barGeometryVersion = 1
+    group._sharedBarStyleVersion = 1
     group.attachedBarStyle = CopyTable(ST._defaults.profile.globalStyle)
     group.barOnlyLayout = { mode = "grid" }
 end
@@ -298,6 +299,7 @@ function ST.GetAttachedBarStyle(group, forEditing)
     wipe(style)
     for key, value in pairs(ST.ATTACHED_BAR_DEFAULTS) do style[key] = value end
     for key, value in pairs(group.attachedBarStyle) do style[key] = value end
+    if ST.ApplySharedBarTypography then ST.ApplySharedBarTypography(style) end
     return style
 end
 

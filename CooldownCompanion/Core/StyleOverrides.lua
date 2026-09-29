@@ -5,7 +5,19 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local effectiveStyleCache = setmetatable({}, { __mode = "k" })
+-- Weak values too: each base falls back to its key, and Lua 5.1 cannot
+-- collect a weak key its own value reaches. A base is refilled on every call,
+-- so losing one costs nothing.
+local sharedBarBaseCache = setmetatable({}, { __mode = "kv" })
 local DEFAULT_BAR_AURA_FILL_COLOR = { 0.2, 1.0, 0.2, 1.0 }
+
+-- Layout passes resolve every bar entry, so a reused table keeps its fallback
+-- metatable while it still points at the same style instead of allocating one.
+local function FallBackTo(tbl, style)
+    local mt = getmetatable(tbl)
+    if mt and mt.__index == style then return tbl end
+    return setmetatable(tbl, { __index = style })
+end
 
 local function PruneDisallowedOverrideSections(buttonData)
     if not (buttonData and buttonData.overrideSections) then
@@ -48,6 +60,16 @@ end
 function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData, group)
     PruneDisallowedOverrideSections(buttonData)
 
+    local isBar = ST.ApplySharedBarTypography and group and ST.GetEntryPresentation(group, buttonData) == "bars"
+    if isBar then
+        local base = sharedBarBaseCache[groupStyle] or {}
+        sharedBarBaseCache[groupStyle] = base
+        wipe(base)
+        FallBackTo(base, groupStyle)
+        ST.ApplySharedBarTypography(base)
+        groupStyle = base
+    end
+
     if buttonData and buttonData.styleOverrides
        and buttonData.overrideSections and next(buttonData.overrideSections) then
         local cache = effectiveStyleCache[buttonData]
@@ -62,13 +84,20 @@ function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData, group)
             for key, value in pairs(buttonData.styleOverrides) do filtered[key] = value end
             for _, key in ipairs(ST.OVERRIDE_SECTIONS.barShape.keys) do filtered[key] = nil end
             filtered.barHeight = nil
-            setmetatable(filtered, { __index = groupStyle })
-            return filtered
+            FallBackTo(filtered, groupStyle)
+            return isBar and ST.ApplySharedBarTypography(filtered, buttonData) or filtered
         end
         if cache.groupStyle ~= groupStyle or cache.overrides ~= buttonData.styleOverrides then
             setmetatable(buttonData.styleOverrides, { __index = groupStyle })
             cache.groupStyle = groupStyle
             cache.overrides = buttonData.styleOverrides
+        end
+        if isBar then
+            cache.barStyle = cache.barStyle or {}
+            wipe(cache.barStyle)
+            for key, value in pairs(buttonData.styleOverrides) do cache.barStyle[key] = value end
+            FallBackTo(cache.barStyle, groupStyle)
+            return ST.ApplySharedBarTypography(cache.barStyle, buttonData)
         end
         return buttonData.styleOverrides
     end

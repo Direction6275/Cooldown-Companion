@@ -8,7 +8,6 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
 local AddAnchorDropdown = ST._AddAnchorDropdown
-local AddFontControls = ST._AddFontControls
 local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
@@ -146,37 +145,18 @@ if ST._DefineSettingRoute then
         tabLabel = "Appearance",
         tabStateKey = "castBarHomeTab",
         section = "bar",
-        sectionLabel = "Bar",
-        collapseKeys = { "castbar_bar" },
+        sectionLabel = "Bar Appearance",
+        collapseKeys = { ST._SharedBarStyleCollapseKey("barTexture", "castbar") },
         rowScope = "detail",
         applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.bar = bar:Settings({
-        texture = { label = "Bar Texture" },
         height = { label = "Height", aliases = { "bar height" }, applies = function() return not ST.UsesSharedModuleGeometry("castbar") end },
         thickness = { label = "Bar Thickness", sectionId = "barThickness", applies = function() return ST.UsesSharedModuleGeometry("castbar") end },
-        color = { label = "Bar Color", aliases = { "fill color" } },
-        background = { label = "Background Color" },
+        color = { label = "Cast Color", aliases = { "bar color", "fill color" } },
     })
-
-    local border = ST._DefineSettingRoute({
-        idPrefix = "castBar.appearance.border",
-        scope = "castBar",
-        tab = "appearance",
-        tabLabel = "Appearance",
-        tabStateKey = "castBarHomeTab",
-        section = "border",
-        sectionLabel = "Border",
-        collapseKeys = { "castbar_border" },
-        rowScope = "detail",
-        applies = CastBarFinderEnabled,
-    })
-    CASTBAR_FINDER.border = border:Settings({
-        style = { label = "Border Style" },
-        color = { advancedKey = "castBorder", label = "Border Color", applies = CastBarFinderCacheFlag("pixelBorder") },
-        thickness = { advancedKey = "castBorder", label = "Border Thickness", applies = CastBarFinderCacheFlag("pixelBorder") },
-        size = { advancedKey = "castBorder", label = "Border Size", applies = CastBarFinderCacheFlag("customBorderSize") },
-    })
+    -- Customizations links land on the thickness row like the resource ones.
+    ST._CastBarThicknessSetting = CASTBAR_FINDER.bar.thickness
 
     local effects = ST._DefineSettingRoute({
         idPrefix = "castBar.appearance.effects",
@@ -205,7 +185,7 @@ if ST._DefineSettingRoute then
         tabLabel = "Appearance",
         tabStateKey = "castBarHomeTab",
         section = "contents",
-        sectionLabel = "Contents",
+        sectionLabel = "Text & Icon",
         collapseKeys = { "castbar_contents" },
         rowScope = "detail",
         applies = CastBarFinderEnabled,
@@ -231,10 +211,7 @@ if ST._DefineSettingRoute then
         applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.icon = icon:Settings({
-        zoom = { label = "Icon Zoom" },
-        rightSide = { label = "Icon on Right Side" },
         offset = { label = "Icon Offset" },
-        size = { label = "Icon Size", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         xOffset = { label = "Icon X Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         yOffset = { label = "Icon Y Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         borderThickness = {
@@ -265,26 +242,6 @@ if ST._DefineSettingRoute then
         highlightColor = { label = "Highlight Color", applies = CastBarFinderCacheFlag("penultimateHighlight") },
     })
 
-    local name = ST._DefineSettingRoute({
-        idPrefix = "castBar.appearance.contents.name",
-        scope = "castBar",
-        tab = "appearance",
-        tabLabel = "Appearance",
-        tabStateKey = "castBarHomeTab",
-        section = "contents",
-        sectionLabel = "Spell Name",
-        collapseKeys = { "castbar_contents" },
-        rowScope = "detail",
-        advancedKey = "castbarNameText",
-        applies = CastBarFinderEnabled,
-    })
-    CASTBAR_FINDER.name = name:Settings({
-        fontSize = { label = "Font Size" },
-        font = { label = "Font" },
-        outline = { label = "Font Outline" },
-        color = { label = "Font Color" },
-    })
-
     local castTime = ST._DefineSettingRoute({
         idPrefix = "castBar.appearance.contents.castTime",
         scope = "castBar",
@@ -299,10 +256,6 @@ if ST._DefineSettingRoute then
         applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.castTime = castTime:Settings({
-        fontSize = { label = "Font Size" },
-        font = { label = "Font" },
-        outline = { label = "Font Outline" },
-        color = { label = "Font Color" },
         xOffset = { label = "X Offset" },
         yOffset = { label = "Y Offset" },
     })
@@ -352,17 +305,12 @@ local function RefreshCastBarFinderCache()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local _, offsetEnabled = ST.GetCastBarAttachmentOffset(settings, layout)
     local attachedOffsetAvailable = CanShowAttachedCastBarOffsetControls(settings, layout)
-    local pixelBorder = settings and (settings.borderStyle or "pixel") == "pixel"
-    local borderMode = settings and ST.GetBorderRenderMode(settings, "borderRenderMode")
     local iconBorderMode = settings and ST.GetBorderRenderMode(settings, "iconBorderRenderMode")
 
     local cache = {
         settings = settings,
         attachedOffsetAvailable = attachedOffsetAvailable == true,
         attachedYOffsetEnabled = attachedOffsetAvailable == true and offsetEnabled,
-        pixelBorder = pixelBorder == true,
-        customBorderSize = pixelBorder == true
-            and borderMode ~= ST.BORDER_RENDER_MODE_CRISP,
         sparkShown = settings and settings.showSpark ~= false or false,
         iconOffsetEnabled = settings and settings.iconOffset == true or false,
         customIconBorderSize = settings and settings.iconOffset == true
@@ -667,147 +615,28 @@ local function BuildCastBarStylingPanel(container)
     local castPreviewOnly = RefreshBarsCanvasForDrag
     local cbAdvBtns = {}
 
-    -- ================================================================
-    -- Bar (the fill itself, what shows behind it, and how tall it is)
-    -- ================================================================
-    -- The CC bar is always CC-styled: the old "Enable Cast Bar Styling"
-    -- switch meant "restyle Blizzard's bar or leave it native", and that
-    -- choice died with the frame replacement (owner ruling 2026-08-08).
-    local _, barCollapsed = BuildCollapsibleSection(container, "Bar",
-        "castbar_bar", nil, nil, ROW_SECTION)
-
-    if not barCollapsed then
-        -- LEFT column: the bar's own shape. RIGHT column: the two colors it
-        -- draws with.
-        local barLeft, barRight = BeginRowGrid(container)
-
-        -- LibSharedMedia names run past the control column, so the menu is
-        -- widened - a 140px control would otherwise open a 140px menu.
-        local texRow = AddDropdownRow(barLeft, {
-            label = "Bar Texture",
-            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.texture,
-            pulloutWidth = WIDE_PULLOUT_WIDTH,
-        })
-        CS.SetupBarTextureDropdown(texRow)
-        texRow:SetValue(settings.barTexture or "Solid")
-        CS.SetBarTextureDropdownCallback(texRow, function(widget, event, val)
-            settings.barTexture = val
-            applyCastBar()
-        end)
-
-        -- The canvas sizes the cast slot from this value, so the whole
-        -- stack reflows under the drag; the live bar restyles on release.
-        if ST.UsesSharedModuleGeometry("castbar") then
-            ST._BuildModuleBarThickness(barLeft, "castbar", nil, nil, CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.thickness)
-        else
-        AddMirrorFirstSliderRow(barLeft, {
-            label = "Height",
-            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.height,
-            min = 4, max = 40, step = 0.1,
-            value = settings.height or 15,
-            set = function(val) settings.height = val end,
-            apply = applyCastBar,
-            stateOwner = settings,
-            stateKeys = "height",
-        })
-        end
-
-        AddColorRow(barRight, {
-            label = "Bar Color",
-            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.color,
-            tbl = settings,
-            key = "barColor",
-            default = {1.0, 0.7, 0.0, 1.0},
-            hasAlpha = true,
-            onConfirm = applyCastBar,
-            onPreview = castPreviewOnly,
-        })
-
-        AddColorRow(barRight, {
-            label = "Background Color",
-            setting = CASTBAR_FINDER.bar and CASTBAR_FINDER.bar.background,
-            tbl = settings,
-            key = "backgroundColor",
-            default = {0, 0, 0, 0.5},
-            hasAlpha = true,
-            onConfirm = applyCastBar,
-            onPreview = castPreviewOnly,
-        })
-    end
-
-    -- ================================================================
-    -- Border
-    -- ================================================================
-    local _, borderCollapsed = BuildCollapsibleSection(container, "Border",
-        "castbar_border", nil, nil, ROW_SECTION)
-
-    if not borderCollapsed then
-        -- LEFT column: which border is drawn, and the color it is drawn in.
-        -- RIGHT column: how thick it is - the mode and the size it gates, which
-        -- have to stay adjacent.
-        local borderLeft, borderRight = BeginRowGrid(container)
-
-        local borderRow = AddDropdownRow(borderLeft, {
-            label = "Border Style",
-            setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.style,
-            list = {
-                blizzard = "Blizzard",
-                pixel = "Pixel",
-                none = "None",
-            },
-            order = { "blizzard", "pixel", "none" },
-            value = settings.borderStyle or "pixel",
-            onChange = function(val)
-                settings.borderStyle = val
-                CooldownCompanion:ApplyCastBarSettings()
-                CooldownCompanion:RefreshConfigPanel()
-            end,
-        })
-
-        ST._AddAdvancedToggle(borderRow, "castBorder", {}, (settings.borderStyle or "pixel") == "pixel", {
-            build = function(panel)
-                AddColorRow(panel, {
-                    label = "Border Color",
-                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.color,
-                    indent = false,
-                    tbl = settings,
-                    key = "borderColor",
-                    default = {0, 0, 0, 1},
-                    hasAlpha = true,
-                    onConfirm = applyCastBar,
-                    onPreview = castPreviewOnly,
+    -- Size leads and the fill color closes the one Bar Appearance section.
+    ST._BuildModuleBarStyle(container, "castbar", nil, nil, "appearance", {
+        leadingRows = function(left)
+            if ST.UsesSharedModuleGeometry("castbar") then
+                ST._BuildModuleBarThickness(left, "castbar", nil, nil, CASTBAR_FINDER.bar.thickness)
+            else
+                -- Specialized hosts retain the cast bar's local height baseline.
+                AddMirrorFirstSliderRow(left, {
+                    label = "Height", setting = CASTBAR_FINDER.bar.height,
+                    min = 4, max = 40, step = 0.1, value = settings.height or 15,
+                    set = function(value) settings.height = value end,
+                    apply = applyCastBar, stateOwner = settings, stateKeys = "height",
                 })
-
-                local renderMode = AddBorderRenderModeDropdown(panel, settings, "borderRenderMode", function()
-                    CooldownCompanion:ApplyCastBarSettings()
-                    CooldownCompanion:RefreshConfigPanel()
-                end, nil, {
-                    row = true,
-                    setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.thickness,
-                })
-                local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-                if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                    AddMirrorFirstSliderRow(panel, {
-                        label = "Border Size",
-                        setting = CASTBAR_FINDER.border and CASTBAR_FINDER.border.size,
-                        indent = false,
-                        min = 0, max = 5, step = 0.1,
-                        value = settings.borderSize or 1,
-                        disabled = borderThicknessLocked,
-                        set = function(val)
-                            if borderThicknessLocked then return end
-                            settings.borderSize = val
-                        end,
-                        apply = applyCastBar,
-                        stateOwner = settings,
-                        stateKeys = "borderSize",
-                    })
-                end
-            end,
-        })
-    end
-
+            end
+        end,
+        trailingRows = function(left)
+            -- Fill color conveys casting; it does not inherit a spell's ready color.
+            AddColorRow(left, { label = "Cast Color", setting = CASTBAR_FINDER.bar.color,
+                tbl = settings, key = "barColor", default = {1, 0.7, 0, 1}, hasAlpha = true,
+                onConfirm = applyCastBar, onPreview = castPreviewOnly })
+        end,
+    })
     -- ================================================================
     -- Cast Effects
     -- ================================================================
@@ -880,15 +709,25 @@ local function BuildCastBarStylingPanel(container)
     -- ================================================================
     -- Contents (what the bar draws on top of the fill)
     -- ================================================================
-    local _, contentsCollapsed = BuildCollapsibleSection(container, "Contents",
-        "castbar_contents", nil, nil, ROW_SECTION)
+    local _, contentsCollapsed = BuildCollapsibleSection(container, "Text & Icon",
+        ST._SharedBarStyleCollapseKey("barNameTypography", "castbar"), nil, nil, ROW_SECTION)
 
     if contentsCollapsed then return end
 
-    -- LEFT column: the marks that ride the fill. RIGHT column: the two texts.
-    local contentsLeft, contentsRight = BeginRowGrid(container)
+    ST._AddSettingsSubheading(container, "Name Text")
+    local nameLeft, nameRight = BeginRowGrid(container)
+    ST._BuildModuleBarStyleRows(nameRight, "castbar", nil, nil, "barNameTypography")
+    ST._AddSettingsSubheading(container, "Duration Text")
+    local durationLeft, durationRight = BeginRowGrid(container)
+    ST._BuildModuleBarStyleRows(durationRight, "castbar", nil, nil, "barDurationTypography")
+    ST._AddSettingsSubheading(container, "Icon")
+    local iconLeft, iconRight = BeginRowGrid(container)
+    ST._BuildModuleBarStyleRows(iconRight, "castbar", nil, nil, "barIconAppearance")
+    ST._BuildModuleBarStyleRows(iconRight, "castbar", nil, nil, "iconZoom")
+    ST._AddSettingsSubheading(container, "Channel Ticks")
+    local contentsLeft = BeginRowGrid(container)
 
-    local iconRow = AddCheckboxRow(contentsLeft, {
+    local iconRow = AddCheckboxRow(iconLeft, {
         label = "Show Spell Icon",
         setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.icon,
         value = settings.showIcon ~= false,
@@ -906,20 +745,6 @@ local function BuildCastBarStylingPanel(container)
     local function BuildIconOffsetAdvanced(panel)
         -- The canvas reserves the icon's square out of the bar's length, so
         -- the fill re-measures under the drag.
-        AddMirrorFirstSliderRow(panel, {
-            label = "Icon Size",
-            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.size,
-            indent = true,
-            min = 8, max = 64, step = 0.1,
-            value = settings.iconSize or 16,
-            set = function(val) settings.iconSize = val end,
-            apply = applyCastBar,
-            stateOwner = settings,
-            stateKeys = "iconSize",
-        })
-
-        -- The two offsets below are NOT on the canvas: the facsimile pins its
-        -- icon flush to the slot's edge and never reads them.
         AddSliderRow(panel, {
             label = "Icon X Offset",
             setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.xOffset,
@@ -978,21 +803,6 @@ local function BuildCastBarStylingPanel(container)
     end
 
     local function BuildIconAdvanced(panel)
-        ST._BuildIconZoomControls(panel, settings, applyCastBar, {
-            previewRefresh = castPreviewOnly,
-            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.zoom,
-        })
-
-        AddCheckboxRow(panel, {
-            label = "Icon on Right Side",
-            setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.rightSide,
-            value = settings.iconFlipSide or false,
-            onChange = function(val)
-                settings.iconFlipSide = val
-                applyCastBar()
-            end,
-        })
-
         AddCheckboxRow(panel, {
             label = "Icon Offset",
             setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.offset,
@@ -1109,7 +919,7 @@ local function BuildCastBarStylingPanel(container)
         } or nil,
     })
 
-    local nameRow = AddCheckboxRow(contentsRight, {
+    local nameRow = AddCheckboxRow(nameLeft, {
         label = "Show Spell Name",
         setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.name,
         value = settings.showNameText ~= false,
@@ -1120,47 +930,7 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
-    -- Single rail: the font trio comes from the shared helper (its keys are
-    -- exactly nameFont / nameFontSize / nameFontOutline) and the color follows.
-    local function BuildNameTextAdvanced(panel)
-        AddFontControls(panel, settings, "name", {
-            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
-            font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, {
-            row = true,
-            previewRefresh = castPreviewOnly,
-            settings = CASTBAR_FINDER.name and {
-                size = CASTBAR_FINDER.name.fontSize,
-                font = CASTBAR_FINDER.name.font,
-                outline = CASTBAR_FINDER.name.outline,
-            },
-        })
-
-        AddColorRow(panel, {
-            label = "Font Color",
-            setting = CASTBAR_FINDER.name and CASTBAR_FINDER.name.color,
-            tbl = settings,
-            key = "nameFontColor",
-            default = {1, 1, 1, 1},
-            hasAlpha = true,
-            onConfirm = applyCastBar,
-            onPreview = castPreviewOnly,
-        })
-    end
-
-    AddAdvancedToggle(nameRow, "castbarNameText", cbAdvBtns, true, {
-        title = "Spell Name Advanced",
-        build = BuildNameTextAdvanced,
-        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
-        -- the contents checkboxes' apply-then-rebuild refresh sequence.
-        unlock = settings.showNameText == false and {
-            target = settings,
-            enable = TURNON_SHOW_NAME_TEXT,
-            refreshKind = "castBar",
-        } or nil,
-    })
-
-    local castTimeRow = AddCheckboxRow(contentsRight, {
+    local castTimeRow = AddCheckboxRow(durationLeft, {
         label = "Show Cast Time",
         setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.time,
         value = settings.showCastTimeText ~= false,
@@ -1175,30 +945,6 @@ local function BuildCastBarStylingPanel(container)
     -- AddOffsetSliders: that helper takes ONE symmetric range, and this pair is
     -- deliberately +/-50 across and only +/-20 up the bar.
     local function BuildCastTimeAdvanced(panel)
-        AddFontControls(panel, settings, "castTime", {
-            size = 10, sizeMin = 6, sizeMax = 24, sizeStep = 0.1,
-            font = "Friz Quadrata TT", outline = "OUTLINE",
-        }, applyCastBar, {
-            row = true,
-            previewRefresh = castPreviewOnly,
-            settings = CASTBAR_FINDER.castTime and {
-                size = CASTBAR_FINDER.castTime.fontSize,
-                font = CASTBAR_FINDER.castTime.font,
-                outline = CASTBAR_FINDER.castTime.outline,
-            },
-        })
-
-        AddColorRow(panel, {
-            label = "Font Color",
-            setting = CASTBAR_FINDER.castTime and CASTBAR_FINDER.castTime.color,
-            tbl = settings,
-            key = "castTimeFontColor",
-            default = {1, 1, 1, 1},
-            hasAlpha = true,
-            onConfirm = applyCastBar,
-            onPreview = castPreviewOnly,
-        })
-
         -- Both offsets place the countdown on the canvas facsimile too.
         AddMirrorFirstSliderRow(panel, {
             label = "X Offset",

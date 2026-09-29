@@ -913,12 +913,12 @@ function CooldownCompanion:ApplyAuraDurationSwipeStyle(swipe, style)
         return
     end
 
-    local fillEnabled = style.showAuraDurationSwipeFill ~= false
+    -- Show Aura Duration Swipe draws the fill; opacity 0 leaves only the edge.
     local edgeEnabled = style.auraDurationSwipeEdgeEnabled == true
     swipe:SetUseAuraDisplayTime(false)
     swipe:SetSwipeTexture(DEFAULT_SWIPE_TEXTURE, 1, 1, 1, 1)
     swipe:SetTexCoordRange(DEFAULT_SWIPE_TEX_LOW, DEFAULT_SWIPE_TEX_HIGH)
-    swipe:SetDrawSwipe(swipeEnabled and fillEnabled)
+    swipe:SetDrawSwipe(swipeEnabled)
     swipe:SetDrawEdge(swipeEnabled and edgeEnabled)
     swipe:SetReverse(swipeEnabled and style.auraDurationSwipeReverse ~= false)
     swipe:SetSwipeColor(0, 0, 0, style.auraDurationSwipeAlpha or 0.8)
@@ -2690,13 +2690,16 @@ local function BuildStackCountBreakpoints(showCountAtOne, policy, prefix, suffix
     return breakpoints
 end
 
-local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax)
+local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax, style)
     if not (kit and kit.stackFill) then return end
     local wantMax = stackBarMax or 1
     local wantSmooth = false
     if wantMax > 1 and ST.STATUS_BAR_INTERPOLATION_SMOOTH then
+        -- Segmented Smoothing is the shared bar setting (panel value or this
+        -- entry's customization). Continuous stack fills always smooth
+        -- (owner ruling 2026-07-24, resource parity).
         wantSmooth = CooldownCompanion:GetBarPanelAuraStackDisplayMode(buttonData) == "continuous"
-            or CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData) == ST.SEGMENTED_SMOOTHING_ON
+            or ST.NormalizeSegmentedSmoothing(style and style.barSegmentedSmoothing) == ST.SEGMENTED_SMOOTHING_ON
     end
     if kit.stackFillMax ~= wantMax or kit.stackFillSmooth ~= wantSmooth then
         slotButton:SetApplicationBar(kit.stackFill, {
@@ -2780,7 +2783,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.container:SetAuraSlotCandidateFilters(record.key,
         BuildCandidateFilters(unit, spellSet, groupScoped))
     if record.hostKind ~= "texturePanel" then
-        ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax)
+        ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax, style)
         ConvergeApplicationCount(record.slotButton, record.kit, buttonData)
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
@@ -3267,7 +3270,7 @@ local function BindBlockGroup(group, entry)
             host.proxy._ccWholeAuraPanel = false
             ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
         end
-        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax)
+        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
         ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
         StyleSlotKit({
             kit = host.kit,
@@ -4043,7 +4046,7 @@ local function BindPanelGroup(pgroup, entry)
         -- Before StyleSlotKit: the styler reads the square's texture and crop
         -- for the occluding cover and the aura icon's own texcoords.
         ApplyPanelHostIcon(pgroup, host, entry.buttonData, entry.style)
-        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax)
+        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
         ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
         StyleSlotKit({
             kit = host.kit,

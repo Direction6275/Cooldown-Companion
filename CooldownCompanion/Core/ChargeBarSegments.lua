@@ -83,6 +83,7 @@ function ChargeBarSegments.Layout(holder, width, height, maximum, gap, vertical,
     local fillLength, fillThickness = segmentLength - 2 * inset, thickness - 2 * inset
     holder.hasFill = fillLength > 0 and fillThickness > 0
     holder.rechargeInterpolation = style.rechargeInterpolation
+    holder.segmentedSmoothing = style.segmentedSmoothing or "off"
     -- WoW frames need nonzero dimensions; border-only tiny segments stay hidden.
     fillLength, fillThickness = math.max(0.001, fillLength), math.max(0.001, fillThickness)
     local orientation = vertical and "VERTICAL" or "HORIZONTAL"
@@ -195,7 +196,7 @@ function ChargeBarSegments.Update(holder, count, duration, recharging, rechargeC
         local color = (i == 1 and holder.cooldownColor or holder.rechargeColor) or rechargeColor
         segment.rechargeTexture:SetVertexColor(unpack(color))
         if hasCount then
-            ST.SetStatusBarImmediateValue(segment, count)
+            ST.SetStatusBarSegmentedValue(segment, count, holder.segmentedSmoothing)
         else
             ST.SetStatusBarImmediateValue(segment, 0)
         end
@@ -304,6 +305,7 @@ function ChargeBarSegments.PaintPanel(owner, count, maximum, duration, rechargin
         paint = {
             texture = ST.Addon:FetchEffectiveBarTexture(style.barTexture or "Solid"),
             rechargeInterpolation = Enum.StatusBarInterpolation.Immediate,
+            segmentedSmoothing = style.barSegmentedSmoothing or "on",
             readyColor = style.barColor or {0.2, 0.6, 1, 1},
             cooldownColor = style.barCooldownColor or {0.6, 0.13, 0.18, 1},
             rechargeColor = style.barChargeColor or {1, 0.82, 0, 1},

@@ -166,12 +166,10 @@ local defaults = {
                         desaturateWhileAuraNotActive = false, -- Desaturate icon while the tracked aura is missing
                         showCooldownSwipe = true,
                         showAuraDurationSwipe = true,
-                        showCooldownSwipeFill = true,
                         cooldownSwipeReverse = false,
                         cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
                         cooldownSwipeAlpha = 0.8,
                         cooldownSwipeEdgeColor = {1, 1, 1, 1},
-                        showAuraDurationSwipeFill = true,
                         auraDurationSwipeReverse = true,
                         auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
                         auraDurationSwipeAlpha = 0.8,
@@ -350,12 +348,10 @@ local defaults = {
             desaturateWhileAuraNotActive = false,
             showCooldownSwipe = true,
             showAuraDurationSwipe = true,
-            showCooldownSwipeFill = true,
             cooldownSwipeReverse = false,
             cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
             cooldownSwipeAlpha = 0.8,
             cooldownSwipeEdgeColor = {1, 1, 1, 1},
-            showAuraDurationSwipeFill = true,
             auraDurationSwipeReverse = true,
             auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
             auraDurationSwipeAlpha = 0.8,
@@ -499,7 +495,7 @@ local defaults = {
         resourceBars = {
             enabled = false,
             anchorGroupId = nil,
-            inheritAlpha = false,
+            inheritAlpha = true,
             orientation = "horizontal",
             yOffset = 3,
             verticalXOffset = 3,
@@ -615,6 +611,7 @@ local defaults = {
             barTexture = "Solid",
             showIcon = true,
             iconSize = 16,
+            iconSizeOverride = false,
             iconZoom = 0,
             iconFlipSide = false,
             iconOffset = false,
@@ -1106,7 +1103,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     cooldownSwipe = {
         label = "Cooldown Swipe",
-        keys = {"showCooldownSwipe", "showCooldownSwipeFill", "cooldownSwipeReverse", "cooldownSwipeEdgeEnabled", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
+        keys = {"showCooldownSwipe", "cooldownSwipeReverse", "cooldownSwipeEdgeEnabled", "cooldownSwipeAlpha", "cooldownSwipeEdgeColor"},
         modes = {icons = true},
     },
     showGCDSwipe = {
@@ -1208,7 +1205,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     auraDurationSwipe = {
         label = "Aura Duration Swipe",
-        keys = {"showAuraDurationSwipe", "showAuraDurationSwipeFill", "auraDurationSwipeReverse", "auraDurationSwipeEdgeEnabled", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
+        keys = {"showAuraDurationSwipe", "auraDurationSwipeReverse", "auraDurationSwipeEdgeEnabled", "auraDurationSwipeAlpha", "auraDurationSwipeEdgeColor", "auraUseBlizzardSwipe"},
         modes = {icons = true},
     },
     readyGlow = {
@@ -1542,11 +1539,10 @@ ST.PANEL_COPY_SCOPES = {
                 "auraStackText", "iconZoom", "whileAuraActive",
             },
             styleKeys = {
-                -- Bar Settings (shape, texture). barFillVertical and
-                -- barReverseFill render in this same section but are
-                -- deliberately absent: bar fill direction is outside the
-                -- quick-copy scopes, including Arrangement.
-                "barLength", "barHeight", "buttonSpacing", "barTexture",
+                -- Geometry outside the shared appearance sections.
+                -- Orientation stays with layout; fill direction has its own
+                -- appearance section, registered by BarStyle.lua.
+                "barLength", "barHeight", "buttonSpacing",
                 -- Duration Format is panel-owned; Low Time Threshold is the
                 -- durationLowTime override section above.
                 "durationFormat",
@@ -1635,6 +1631,9 @@ function ST.CanButtonUseOverrideSection(buttonData, sectionId)
         return false, "entryType"
     end
     if buttonData and buttonData._barGeometryKind then
+        if ST.CanModuleUseBarStyleSection then
+            return ST.CanModuleUseBarStyleSection(buttonData._barGeometryKind, sectionId), "entryType"
+        end
         return sectionId == "barThickness"
             or (sectionId == "barCharges" and buttonData._barGeometryKind == "resources"), "entryType"
     end

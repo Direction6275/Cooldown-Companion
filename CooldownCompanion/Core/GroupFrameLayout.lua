@@ -1036,6 +1036,8 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     ST.UpdateGroupSizeLabel(frame)
 
+    if ST.RefreshPanelBarAppearance then ST.RefreshPanelBarAppearance(groupId, scope) end
+
     local entries, buttonUsabilityOptions = GetStyleUpdateEntries(self, groupId, frame, group)
     if not entries then
         self:PopulateGroupButtons(groupId)

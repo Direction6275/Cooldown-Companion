@@ -50,12 +50,12 @@ local function RefreshSelectedButtonsPreview(outcome)
     end
 end
 
-local function RefreshActiveConfigPreview(outcome)
+local function RefreshActiveConfigPreview(outcome, mirrorReuse)
     -- The Resources destination intentionally leaves selectedContainer in
     -- memory when it clears selectedGroup, so workspace ownership has to win
     -- over the stale Buttons selection here.
     if CS.barsEntrySelected and ST._RefreshResourcesLayoutPreview then
-        ST._RefreshResourcesLayoutPreview()
+        ST._RefreshResourcesLayoutPreview(mirrorReuse)
     elseif CS.selectedGroup or CS.selectedContainer then
         RefreshSelectedButtonsPreview(outcome)
     end
@@ -1496,11 +1496,12 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     local outlineKey = prefix .. "FontOutline"
     local indent = opts and opts.indent
     local settings = opts and opts.settings or nil
-    -- The slider is mirror-first everywhere. Resources and cast bars provide
-    -- their own canvas callback; ordinary panel controls use the pinned
-    -- Buttons preview. Dropdowns have no drag phase and remain discrete live
-    -- commits through refreshFn.
-    local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
+    -- Default to the active workspace so shared controls cannot accidentally
+    -- repaint Buttons from a module editor. Keep explicit specialized previews
+    -- and reuse the panel mirror while dragging resource/cast typography.
+    local previewRefresh = (opts and opts.previewRefresh) or function(outcome)
+        RefreshActiveConfigPreview(outcome, true)
+    end
 
     ST._AddSliderRow(container, {
         label = "Font Size",
@@ -1645,7 +1646,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     key = key or "borderRenderMode"
     local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
     local modeList = {
-        [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom Thickness",
+        [ST.BORDER_RENDER_MODE_CUSTOM] = opts and opts.customLabel or "Custom Thickness",
         [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
     }
     local modeOrder = { ST.BORDER_RENDER_MODE_CUSTOM, ST.BORDER_RENDER_MODE_CRISP }
@@ -1659,7 +1660,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
     end
 
     local modeRow = ST._AddDropdownRow(container, {
-        label = "Border Thickness",
+        label = opts and opts.label or "Border Thickness",
         setting = opts and opts.setting,
         indent = opts and opts.indent,
         list = modeList,

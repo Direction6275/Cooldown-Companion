@@ -1868,14 +1868,7 @@ if ST._DefineSettingRoute then
         "cooldownSwipe", "cooldownSwipe")
     EFFECTS_FINDER.advanced.cooldownSwipe = cooldownSwipeRoute:Settings({
         reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
-            label = "Swipe Fill Opacity",
-            applies = function(context)
-                local _, read = EffectsFinderSectionState(context, "cooldownSwipe")
-                return read and read.showCooldownSwipeFill ~= false
-            end,
-        },
+        fillOpacity = { label = "Swipe Fill Opacity" },
         edge = { label = "Show Swipe Edge" },
         edgeColor = {
             label = "Swipe Edge Color",
@@ -1894,14 +1887,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.auraSwipe = auraSwipeRoute:Settings({
         blizzard = { label = "Blizzard Style Aura Swipe" },
         reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
-            label = "Swipe Fill Opacity",
-            applies = function(context)
-                local _, read = EffectsFinderSectionState(context, "auraDurationSwipe")
-                return read and read.showAuraDurationSwipeFill ~= false
-            end,
-        },
+        fillOpacity = { label = "Swipe Fill Opacity" },
         edge = { label = "Show Swipe Edge" },
         edgeColor = {
             label = "Swipe Edge Color",

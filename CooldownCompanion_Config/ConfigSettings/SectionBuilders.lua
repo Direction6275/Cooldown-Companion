@@ -1478,40 +1478,27 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         end,
     })
 
-    AddCheckboxRow(container, {
-        label = "Show Swipe Fill",
-        setting = opts.settings and opts.settings.fill,
-        value = styleTable.showAuraDurationSwipeFill ~= false,
+    -- Show Aura Duration Swipe itself draws the fill, so its opacity is always
+    -- here. Row grammar has no percent readout, so this reads 0 - 1 rather than
+    -- the pre-redesign slider's 0% - 100%; same store, same range. 0 leaves
+    -- only the edge.
+    AddSliderRow(container, {
+        label = "Swipe Fill Opacity",
+        setting = opts.settings and opts.settings.fillOpacity,
         indent = childIndent,
+        min = 0, max = 1, step = 0.05,
+        value = styleTable.auraDurationSwipeAlpha or 0.8,
         disabled = blizzardStyleActive,
         onChange = function(val)
             if blizzardStyleActive then return end
-            styleTable.showAuraDurationSwipeFill = val
-            RefreshStructuralControls(container, refreshCallback)
+            ST._PreviewScalarSetting(styleTable, "auraDurationSwipeAlpha", val, previewRefresh)
+        end,
+        onRelease = function(val)
+            if blizzardStyleActive then return end
+            styleTable.auraDurationSwipeAlpha = val
+            refreshCallback()
         end,
     })
-
-    if styleTable.showAuraDurationSwipeFill ~= false then
-        -- Row grammar has no percent readout, so this reads 0 - 1 rather than
-        -- the pre-redesign slider's 0% - 100%; same store, same range.
-        AddSliderRow(container, {
-            label = "Swipe Fill Opacity",
-            setting = opts.settings and opts.settings.fillOpacity,
-            indent = true,
-            min = 0, max = 1, step = 0.05,
-            value = styleTable.auraDurationSwipeAlpha or 0.8,
-            disabled = blizzardStyleActive,
-            onChange = function(val)
-                if blizzardStyleActive then return end
-                ST._PreviewScalarSetting(styleTable, "auraDurationSwipeAlpha", val, previewRefresh)
-            end,
-            onRelease = function(val)
-                if blizzardStyleActive then return end
-                styleTable.auraDurationSwipeAlpha = val
-                refreshCallback()
-            end,
-        })
-    end
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",

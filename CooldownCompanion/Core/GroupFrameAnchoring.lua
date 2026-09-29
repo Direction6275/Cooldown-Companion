@@ -434,10 +434,9 @@ local function RefreshGroupAnchorInteractionState(self, groupId, frame, group)
             -- through the normal layout path, including combat deferral.
             self:UpdateGroupStyle(groupId)
         else
-            local groupStyle = group.style or {}
             for _, button in ipairs(frame.buttons) do
                 if button.UpdateStyle then
-                    local effectiveStyle = self:GetEffectiveStyle(groupStyle, button.buttonData)
+                    local effectiveStyle = self:GetEntryEffectiveStyle(group, button.buttonData)
                     button:UpdateStyle(effectiveStyle)
                 end
             end
