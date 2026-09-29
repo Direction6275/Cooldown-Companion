@@ -1502,13 +1502,6 @@ local function BuildBarPandemicSection(container, group, style, lens)
             refreshStyle("style-settings")
         end,
     })
-    AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Pandemic Color",
-        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
-        {" ", 1, 1, 1, true},
-        {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
-    }, tabInfoButtons))
-    pandemicSec:Chrome(enableRow)
 
     ST._AddAdvancedToggle(enableRow, "barPandemicColor", {}, pandemicSec.scope ~= "denied", {
         unlock = { sec = pandemicSec, enable = not pandemicOn and { label = "Enable Pandemic Color", key = "pandemicEffectEnabled" } or nil },
@@ -1534,6 +1527,13 @@ local function BuildBarPandemicSection(container, group, style, lens)
             })
         end,
     })
+    AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Pandemic Color",
+        {"The bar fill wears this color instead of the aura color while the tracked aura is in its refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+        {" ", 1, 1, 1, true},
+        {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+    }, tabInfoButtons))
+    pandemicSec:Chrome(enableRow)
 
     pandemicSec:Finish()
 end
@@ -1595,6 +1595,7 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
                 enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_BAR_PANDEMIC_MARKER or nil },
         })
     end
+    ST._AddPandemicMarkerInfo(markerRow)
 
     markerSec:Finish()
 end
@@ -1806,7 +1807,7 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "desaturation") then
         local desatSec = BeginLensSection(lens, group, "desaturation")
         local desatRow = AddCheckboxRow(stateLeft, {
-            label = "Desaturate On Cooldown",
+            label = "Desaturate on Cooldown",
             setting = BAR_FINDER.effects.spell.desaturate,
             value = desatSec.read.desaturateOnCooldown or false,
             disabled = desatSec.disabled,
@@ -2375,8 +2376,8 @@ if ST._DefineSettingRoute then
         "panel.bars.effects.aura", EFFECTS_AURA_SECTION, "Aura Indicators",
         BarFinderTracksAura)
     BAR_FINDER.effects.aura = auraEffects:Settings({
-        missingIndicator = { label = "Missing Aura Indicator", sectionId = "missingAuraIndicator",
-            aliases = { "show missing indicator", "missing aura glow", "missing marker" },
+        missingIndicator = { label = "Show Missing Aura Indicator", sectionId = "missingAuraIndicator",
+            aliases = { "missing aura indicator", "missing aura glow", "missing marker" },
             applies = function(context)
                 return BarFinderIconShown(context) and BarFinderCanUse(context, "missingAuraIndicator")
             end },
@@ -2416,7 +2417,7 @@ if ST._DefineSettingRoute then
             end,
         },
         desaturate = {
-            label = "Desaturate On Cooldown", sectionId = "desaturation",
+            label = "Desaturate on Cooldown", sectionId = "desaturation",
             applies = SpellStates,
         },
         unusable = {

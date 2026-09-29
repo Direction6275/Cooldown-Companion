@@ -919,6 +919,13 @@ local PANDEMIC_MARKER_TOOLTIP_LINES = {
     {"Auto marks debuffs you place on your target and leaves your own buffs plain.", 1, 1, 1, true},
 }
 
+-- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+-- the end of the row's label chain.
+function ST._AddPandemicMarkerInfo(row)
+    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+        PANDEMIC_MARKER_TOOLTIP_LINES, row))
+end
+
 -- Three states, not two (owner ruling 2026-08-16): the per-entry checkbox this
 -- setting absorbed defaulted per tracked UNIT, so "Auto" is what carries that
 -- default now, and "On" is what forces the marker onto a player buff.
@@ -931,8 +938,9 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the mode row, returned so the caller can chain a
---                       gear and the section's scope chrome off it (the
---                       Indicators tab's Pandemic section).
+--                       gear, then ST._AddPandemicMarkerInfo's (?), and the
+--                       section's scope chrome off it (the Indicators tab's
+--                       Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a control that is elsewhere.
 --   neither           - both, with the three styling rows as children of the
@@ -961,10 +969,9 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
                 if refreshCallback("style-settings") == nil then rebuildCallback() end
             end,
         })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0,
-            PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
+        -- The enableOnly callers add their gear first, then this (?) through
+        -- ST._AddPandemicMarkerInfo, so the row reads label, gear, (?).
+        if not opts.enableOnly then ST._AddPandemicMarkerInfo(enableRow) end
     end
 
     -- childrenOnly is the advanced panel's shape, and that panel now opens
@@ -1261,7 +1268,7 @@ end
 -- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
-        label = "Desaturate On Cooldown",
+        label = "Desaturate on Cooldown",
         setting = opts and opts.setting,
         value = styleTable.desaturateOnCooldown or false,
         indent = opts and opts.indent,
@@ -1571,7 +1578,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     end
 
     local cb = AddCheckboxRow(container, {
-        label = "Icon Fill Timer",
+        label = "Show Icon Fill Timer",
         setting = opts.setting,
         value = styleTable.iconFillEnabled == true,
         disabled = disabledByMasque,
@@ -2560,7 +2567,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
         CooldownCompanion:RefreshConfigPanel()
     end
     local row = AddCheckboxRow(container, {
-        label = "Missing Aura Indicator", setting = opts.setting,
+        label = "Show Missing Aura Indicator", setting = opts.setting,
         value = enabled, disabled = sec.disabled,
         onChange = function(value)
             if not sec.write then return end
@@ -2568,21 +2575,6 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
             Refresh()
         end,
     })
-    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
-        "Missing Aura Indicator",
-        {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
-        " ",
-        {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
-        {"Group tracking checks only buffs applied by you. The reminder clears when your buff is active on any tracked member.", 1, 1, 1, true},
-        " ",
-        {"Harmful auras require a hostile target, with an optional combat requirement.", 1, 1, 1, true},
-        {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
-        " ",
-        {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
-        {"Show Only While Active also hides the reminder. Choose Normal or Dim While Inactive to show it when the aura is missing.", 1, 1, 1, true},
-        " ",
-        {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
-    }, opts.infoButtons))
     if enabled and lens and lens.mode == "entry" and lens.buttonData
         and lens.buttonData.hideWhileAuraNotActive == true then
         AddLabelRow(container, { label = "Inactive Reminder", controlText = "Hidden by Show Only While Active" })
@@ -2657,6 +2649,22 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
                 label = "Enable Missing Aura Indicator", key = "missingAuraIndicatorEnabled" } or nil },
         })
     end
+    -- After the gear, so the row reads label, gear, (?) like every other row.
+    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+        "Missing Aura Indicator",
+        {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
+        " ",
+        {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
+        {"Group tracking checks only buffs applied by you. The reminder clears when your buff is active on any tracked member.", 1, 1, 1, true},
+        " ",
+        {"Harmful auras require a hostile target, with an optional combat requirement.", 1, 1, 1, true},
+        {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
+        " ",
+        {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
+        {"Show Only While Active also hides the reminder. Choose Normal or Dim While Inactive to show it when the aura is missing.", 1, 1, 1, true},
+        " ",
+        {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
+    }, opts.infoButtons))
     sec:Chrome(row)
     sec:Finish()
 end
