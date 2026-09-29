@@ -1,8 +1,8 @@
 --[[
     CooldownCompanion - SpellbookPanel
-    A spellbook that replaces Settings in the three-column layout, or opens
-    beside the stacked config, so a spell can be dragged onto a Navigator row or
-    the live preview without leaving the config for Blizzard's spellbook.
+    A spellbook that replaces the Settings column, so a spell can be dragged
+    onto a Navigator row or the live preview without leaving the config for
+    Blizzard's spellbook.
 
     The rows are raw pooled frames on a persistent host rather than AceGUI
     children: the shell is a stock AceGUI container so UI skins style
@@ -21,8 +21,6 @@ local ADDON_NAME, ST = ...
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
-local WINDOW_WIDTH = 360
-local WINDOW_GAP = 4
 local CONTENT_INSET = 2
 local HINT_GAP = 5
 local TAB_HEIGHT = 26
@@ -584,7 +582,7 @@ RebuildList = function(keepScroll)
 end
 
 ------------------------------------------------------------------------
--- The content host: built once, re-parented into whichever Window frame
+-- The content host: built once, re-parented into whichever shell frame
 -- AceGUI hands us.
 ------------------------------------------------------------------------
 
@@ -699,7 +697,7 @@ local function EnsureChrome()
 
     -- A stock AceGUI EditBox rather than Blizzard's SearchBoxTemplate: UI skins
     -- style Ace3 widgets, which is what every other edit box in this config is.
-    -- It is acquired once and never released -- the chrome outlives every Window
+    -- It is acquired once and never released -- the chrome outlives every shell
     -- the panel opens -- so its frame is parked on the host by hand instead of
     -- being sized and shown by a container's layout.
     local searchBox = AceGUI:Create("EditBox")
@@ -803,7 +801,7 @@ local function DetachChrome()
     -- The search box keeps the keyboard while it has focus, and nothing else
     -- takes it back on the way out.
     chrome.searchBox:ClearFocus()
-    -- AceGUI recycles the Window frame, so nothing of ours may still hang off it.
+    -- AceGUI recycles the shell frame, so nothing of ours may still hang off it.
     chrome.host:Hide()
     chrome.host:ClearAllPoints()
     chrome.host:SetParent(UIParent)
@@ -839,36 +837,19 @@ end
 ------------------------------------------------------------------------
 
 -- The docked shell uses the Settings column's geometry while its original
--- contents stay hidden. The stacked layout uses the shared side-placement
--- rule; both placements follow config resizes.
+-- contents stay hidden, and follows config resizes.
 local function AnchorWindow()
     local configFrame = CS.configFrame
     if not (window and configFrame and configFrame.frame and configFrame.frame:IsShown()) then
         return
     end
-    local cf = configFrame.frame
     local wf = window.frame
     wf:ClearAllPoints()
 
-    if CS.spellbookPanelDocked then
-        local settings = configFrame.settingsColumn.frame
-        window:SetWidth(settings:GetWidth())
-        window:SetHeight(settings:GetHeight())
-        wf:SetPoint("TOPLEFT", settings, "TOPLEFT")
-        return
-    end
-
-    local side, xOff = "right", WINDOW_GAP
-    if ST._ComputeConfigSidePlacement then
-        side, xOff = ST._ComputeConfigSidePlacement(wf, WINDOW_WIDTH)
-    end
-    if side == "left" then
-        wf:SetPoint("TOPRIGHT", cf, "TOPLEFT", xOff, 0)
-        wf:SetPoint("BOTTOMRIGHT", cf, "BOTTOMLEFT", xOff, 0)
-    else
-        wf:SetPoint("TOPLEFT", cf, "TOPRIGHT", xOff, 0)
-        wf:SetPoint("BOTTOMLEFT", cf, "BOTTOMRIGHT", xOff, 0)
-    end
+    local settings = configFrame.settingsColumn.frame
+    window:SetWidth(settings:GetWidth())
+    window:SetHeight(settings:GetHeight())
+    wf:SetPoint("TOPLEFT", settings, "TOPLEFT")
 end
 ST._ReanchorSpellbookPanelWindow = AnchorWindow
 
@@ -880,18 +861,13 @@ local function CleanupWindow(widget)
     end
     window = nil
     CS.spellbookPanelWindow = nil
-    local wasDocked = CS.spellbookPanelDocked
-    CS.spellbookPanelDocked = nil
 
     SetEventsRegistered(false)
     ReleaseListFrames()
     DetachChrome()
-    if not wasDocked and CS.UnregisterConfigDragAlphaFrame then
-        CS.UnregisterConfigDragAlphaFrame(widget.frame)
-    end
     AceGUI:Release(widget)
     local configFrame = CS.configFrame
-    if wasDocked and configFrame and configFrame.frame:IsShown() then
+    if configFrame and configFrame.frame:IsShown() then
         configFrame.LayoutColumns()
         ST._UnifiedRowRefresh()
     end
@@ -907,7 +883,7 @@ local function CloseSpellbookPanel()
     if not window then
         return false
     end
-    -- InlineGroup has no OnClose event; both shells share explicit cleanup.
+    -- InlineGroup has no OnClose event, so closing runs the cleanup directly.
     CleanupWindow(window)
     return true
 end
@@ -935,54 +911,27 @@ local function OpenSpellbookPanel()
         return false
     end
     if window then
-        if not CS.spellbookPanelDocked then window.frame:Raise() end
         return true
     end
 
     CloseCompetingEditors()
 
-    local docked = ST._IsThreeColumnConfigLayout()
-    if docked then
-        -- Keep the panel as the add destination, but leave its entry/bar lens.
-        ST._SelectConfigPanel(CS.selectedGroup)
-        ST._ClearConfigButtonSelection() -- also discard the old lens scroll anchor
-        ST._ClearConfigBarsHomeSelection()
-    end
-    window = AceGUI:Create(docked and "InlineGroup" or "Window")
+    -- Keep the panel as the add destination, but leave its entry/bar lens.
+    ST._SelectConfigPanel(CS.selectedGroup)
+    ST._ClearConfigButtonSelection() -- also discard the old lens scroll anchor
+    ST._ClearConfigBarsHomeSelection()
+    window = AceGUI:Create("InlineGroup")
     window:SetTitle("Spellbook")
-    window:SetWidth(WINDOW_WIDTH)
-    if docked then
-        -- Navigator InlineGroups may enter the shared pool dimmed. AceGUI
-        -- does not reset their alpha; the config parent still owns drag fading.
-        window.frame:SetAlpha(1)
-        window:SetAutoAdjustHeight(false)
-        window:SetLayout("CDC_MANUAL")
-        window.frame:SetParent(configFrame.colParent)
-    else
-        window:SetLayout(nil) -- raw content, positioned by anchors
-        window:EnableResize(false)
-        window:SetCallback("OnClose", CleanupWindow)
-    end
-    -- Modern UIPanelCloseButton art (RedButton-Exit) fills the whole 24x24
-    -- button, so AceGUI's legacy (+2, +1) offset leaves the X hanging outside
-    -- the corner.
-    if window.closebutton then
-        window.closebutton:ClearAllPoints()
-        window.closebutton:SetPoint("TOPRIGHT", window.frame, "TOPRIGHT", -3, -3)
-    end
-    if not docked and CS.RegisterConfigDragAlphaFrame then
-        CS.RegisterConfigDragAlphaFrame(window.frame)
-    end
-    -- AceGUI hands back a recycled frame, which keeps whatever level it last
-    -- had; the window that just opened belongs on top.
-    if not docked then window.frame:Raise() end
+    -- Navigator InlineGroups may enter the shared pool dimmed. AceGUI
+    -- does not reset their alpha; the config parent still owns drag fading.
+    window.frame:SetAlpha(1)
+    window:SetAutoAdjustHeight(false)
+    window:SetLayout("CDC_MANUAL")
+    window.frame:SetParent(configFrame.colParent)
     CS.spellbookPanelWindow = window
-    CS.spellbookPanelDocked = docked
 
-    if docked then
-        configFrame.LayoutColumns()
-        CooldownCompanion:RefreshConfigPanel()
-    end
+    configFrame.LayoutColumns()
+    CooldownCompanion:RefreshConfigPanel()
     AnchorWindow()
     AttachChrome(window.content)
 

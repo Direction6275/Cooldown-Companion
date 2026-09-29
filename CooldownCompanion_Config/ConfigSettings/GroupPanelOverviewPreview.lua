@@ -4,9 +4,9 @@
     the same Panel destination as the Navigator, while runtime-relative
     positioning and entry interaction stay out of scope.
 
-    Creating a Panel happens here too. A populated Group gets an add tile beside
-    the grid's last row, or below the three-column stack, wearing the content
-    tiles' own border so it reads as part of the surface. An empty Group
+    Creating a Panel happens here too. A populated Group gets an add row below
+    the stacked Panel tiles, wearing the content tiles' own border so it reads
+    as part of the surface. An empty Group
     instead gets the create surface itself: a
     centered picker of clickable panel-type cards -- Panel and Indicator equally
     prominent, Aura and Totem families beneath them, with a header library for
@@ -22,7 +22,6 @@ local CS = ST._configState
 local math_ceil = math.ceil
 local math_max = math.max
 local math_min = math.min
-local table_sort = table.sort
 
 local OUTER_PADDING = 8
 local TILE_GAP = 8
@@ -48,11 +47,7 @@ local TILE_HOVER_BORDER_COLOR = CREATE_ACCENT.hoverBorder
 -- The add tile wears the content tiles' own border, idle and hover, so it
 -- reads as one of them rather than as separate chrome. Only the glyph tells
 -- them apart.
-local ADD_TILE_WIDTH = 64
 local ADD_ROW_HEIGHT = 40
--- Below this the grid is too cramped to give up a lane, so the tile steps
--- aside and the Group context menu carries the create action alone.
-local ADD_TILE_MIN_GRID_WIDTH = 120
 local ADD_TILE_GLYPH_COLOR = { 0.62, 0.72, 0.82 }
 
 -- Empty-Group create surface. The preview host is far wider than either the
@@ -139,82 +134,7 @@ local function Clamp(value, low, high)
     return math_max(low, math_min(value, high))
 end
 
-local function GetColumnCount(panelCount)
-    if panelCount <= 1 then return 1 end
-    if panelCount == 2 or panelCount == 4 then return 2 end
-    return 3
-end
-
-local function GetMedian(values)
-    table_sort(values)
-    local middle = (#values + 1) / 2
-    if middle == math.floor(middle) then
-        return values[middle]
-    end
-    local lower = math.floor(middle)
-    return (values[lower] + values[lower + 1]) / 2
-end
-
-local function GetRowMedian(records, firstIndex, count)
-    local weights = {}
-    for offset = 0, count - 1 do
-        weights[#weights + 1] = records[firstIndex + offset].weight
-    end
-    return GetMedian(weights)
-end
-
--- `lastRowWidth` narrows the final row only, which is how the add tile claims
--- its lane: every row above keeps the width it would have had, and the column
--- count, weight clamp, and centering are untouched. It defaults to
--- `layoutWidth`, so a caller that wants no lane passes nothing.
-local function BuildRowLayouts(records, columns, layoutWidth, lastRowWidth)
-    local rows = {}
-    local recordIndex = 1
-
-    while recordIndex <= #records do
-        local rowCount = math_min(columns, #records - recordIndex + 1)
-        local isLastRow = (recordIndex + rowCount - 1) >= #records
-        local rowWidth = (isLastRow and lastRowWidth) or layoutWidth
-        local baseColumnWidth = (rowWidth - ((columns - 1) * TILE_GAP))
-            / columns
-        local rowSpan = (baseColumnWidth * rowCount)
-            + ((rowCount - 1) * TILE_GAP)
-        local rowStartX = (rowWidth - rowSpan) / 2
-        local distributableWidth = rowSpan - ((rowCount - 1) * TILE_GAP)
-        local median = math_max(1, GetRowMedian(records, recordIndex, rowCount))
-        local weightSum = 0
-        local row = {
-            items = {},
-        }
-
-        for offset = 0, rowCount - 1 do
-            local record = records[recordIndex + offset]
-            record.layoutWeight = Clamp(record.weight,
-                median * 0.75, median * 1.5)
-            weightSum = weightSum + record.layoutWeight
-        end
-
-        local x = rowStartX
-        for offset = 0, rowCount - 1 do
-            local record = records[recordIndex + offset]
-            local tileWidth = distributableWidth
-                * (record.layoutWeight / weightSum)
-            row.items[#row.items + 1] = {
-                record = record,
-                x = x,
-                width = tileWidth,
-            }
-            x = x + tileWidth + TILE_GAP
-        end
-
-        rows[#rows + 1] = row
-        recordIndex = recordIndex + rowCount
-    end
-
-    return rows
-end
-
-local function LayoutTileHeader(record, showLabel)
+local function LayoutTileHeader(record)
     local tile = record.tile
     local label = tile.label
     local disabled = record.disabledReason ~= nil
@@ -227,13 +147,9 @@ local function LayoutTileHeader(record, showLabel)
     tile.resourceBadge:ClearAllPoints()
     tile.resourceBadge:SetPoint("TOPRIGHT", tile, "TOPRIGHT",
         -(RESOURCE_BADGE_INSET + statusReserve), -RESOURCE_BADGE_INSET)
-    local height = (showLabel or disabled) and LABEL_HEIGHT or 0
+    local height = LABEL_HEIGHT
     if disabled then
         height = math_max(height, STATUS_BADGE_SIZE + RESOURCE_BADGE_INSET)
-    end
-    if height == 0 then
-        label:Hide()
-        return 0
     end
     label:ClearAllPoints()
     label:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
@@ -416,7 +332,7 @@ local function EnsureTile(overview, index)
         local record = self._cdcOverviewRecord
         if not record then return end
         if button == "LeftButton" and ST._SelectConfigPanel then
-            if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+            if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
             ST._SelectConfigPanel(record.panelId, { containerId = record.containerId })
             CooldownCompanion:RefreshConfigPanel()
         elseif button == "RightButton" and ST._ShowPanelContextMenu then
@@ -525,7 +441,7 @@ local function EnsureAddTile(overview)
 end
 
 -- Pixel-snapped placement in scroll-child coordinates, matching how the Panel
--- tiles are placed so the add tile lands on the same grid lines they do.
+-- tiles are placed so the add tile lands on the same pixel lines they do.
 local function PlaceAddTile(overview, tile, x, y, width, height)
     local scale = tile:GetEffectiveScale()
     local snappedX = PixelUtil.GetNearestPixelSize(x, scale)
@@ -1473,11 +1389,11 @@ local function ResetOverview(overview)
     overview.scrollTrack:Hide()
 end
 
--- The tile grid's whole geometry pass: row layout, tile placement, labels,
--- scroll bookkeeping, and the add tile's lane. Shared between the full build
--- and the divider-drag reflow so the two can never disagree about where a
--- tile lands. `full` additionally re-renders each tile's read-only panel
--- preview — the expensive half a per-frame caller must skip.
+-- The tile stack's whole geometry pass: row layout, tile placement, labels,
+-- scroll bookkeeping, and the add row. Shared between the full build and the
+-- reflow so the two can never disagree about where a tile lands. `full`
+-- additionally re-renders each tile's read-only panel preview — the
+-- expensive half a geometry-only caller skips.
 local function LayoutPanelTileGrid(overview, host, records, full)
     local hostWidth = host:GetWidth() or 0
     local hostHeight = host:GetHeight() or 0
@@ -1485,39 +1401,17 @@ local function LayoutPanelTileGrid(overview, host, records, full)
     if hostHeight < 80 then hostHeight = 240 end
     local visibleWidth = math_max(1, hostWidth - (OUTER_PADDING * 2))
     local visibleHeight = math_max(1, hostHeight - (OUTER_PADDING * 2))
-    local stacked = ST._IsThreeColumnConfigLayout
-        and ST._IsThreeColumnConfigLayout()
     local showAddTile = ST._IsCreateTargetContainer
         and ST._IsCreateTargetContainer(overview.containerId)
-    local rows, rowHeight, contentHeight, layoutWidth, overflow
-    if stacked then
-        layoutWidth = visibleWidth
+    local layoutWidth = visibleWidth
+    local rows, contentHeight = BuildStackedRowLayouts(records,
+        layoutWidth, visibleHeight, showAddTile)
+    if contentHeight > visibleHeight + 0.5 then
+        layoutWidth = math_max(1, visibleWidth - SCROLL_RESERVE)
         rows, contentHeight = BuildStackedRowLayouts(records,
             layoutWidth, visibleHeight, showAddTile)
-        if contentHeight > visibleHeight + 0.5 then
-            layoutWidth = math_max(1, visibleWidth - SCROLL_RESERVE)
-            rows, contentHeight = BuildStackedRowLayouts(records,
-                layoutWidth, visibleHeight, showAddTile)
-        end
-        overflow = contentHeight > visibleHeight + 0.5
-    else
-        local columns = GetColumnCount(#records)
-        local rowCount = math_ceil(#records / columns)
-        local idealRowHeight = (visibleHeight - ((rowCount - 1) * TILE_GAP))
-            / rowCount
-        rowHeight = math_max(MIN_ROW_HEIGHT, idealRowHeight)
-        contentHeight = (rowCount * rowHeight)
-            + ((rowCount - 1) * TILE_GAP)
-        overflow = contentHeight > visibleHeight + 0.5
-        layoutWidth = math_max(1, visibleWidth - (overflow and SCROLL_RESERVE or 0))
-
-        -- The grid's add tile claims a lane in the final row only. Hide it
-        -- when giving up that lane would leave the Panels too narrow to read.
-        local gridWidth = layoutWidth - ADD_TILE_WIDTH - TILE_GAP
-        showAddTile = showAddTile and gridWidth >= ADD_TILE_MIN_GRID_WIDTH
-        rows = BuildRowLayouts(records, columns, layoutWidth,
-            showAddTile and gridWidth or nil)
     end
+    local overflow = contentHeight > visibleHeight + 0.5
 
     overview.visibleHeight = visibleHeight
     overview.contentHeight = contentHeight
@@ -1528,9 +1422,8 @@ local function LayoutPanelTileGrid(overview, host, records, full)
     overview.scrollTrack:SetShown(overflow)
 
     local tileTop = 0
-    local addTileX, addTileTop
     for _, row in ipairs(rows) do
-        local tileHeight = row.height or rowHeight
+        local tileHeight = row.height
         for _, item in ipairs(row.items) do
             local record = item.record
             local tile = record.tile
@@ -1546,7 +1439,7 @@ local function LayoutPanelTileGrid(overview, host, records, full)
             local snappedTileWidth = math_max(onePixel, snappedRight - snappedX)
             local snappedTileHeight = math_max(onePixel,
                 snappedBottom - snappedTop)
-            local labelHeight = LayoutTileHeader(record, stacked or #records > 1)
+            local labelHeight = LayoutTileHeader(record)
             local visualWidth = math_max(1,
                 snappedTileWidth - (TILE_INSET * 2))
             local visualHeight = math_max(1,
@@ -1569,29 +1462,16 @@ local function LayoutPanelTileGrid(overview, host, records, full)
                 if record.disabledReason then GrayOverviewContents(tile) end
             end
         end
-        -- Overwritten each pass, so after the loop these describe the last
-        -- row: the lane BuildRowLayouts just reserved sits right of its last
-        -- tile, at its top.
-        local lastItem = row.items[#row.items]
-        if lastItem then
-            addTileX = lastItem.x + lastItem.width + TILE_GAP
-            addTileTop = tileTop
-        end
         tileTop = tileTop + tileHeight + TILE_GAP
     end
 
-    if stacked then
-        addTileX, addTileTop = 0, tileTop
-    end
-    if showAddTile and addTileX then
+    if showAddTile then
         local addTile = EnsureAddTile(overview)
         addTile._cdcAddContainerId = overview.containerId
-        PlaceAddTile(overview, addTile, addTileX, addTileTop,
-            stacked and layoutWidth or ADD_TILE_WIDTH,
-            stacked and ADD_ROW_HEIGHT or rowHeight)
+        PlaceAddTile(overview, addTile, 0, tileTop, layoutWidth, ADD_ROW_HEIGHT)
     elseif overview.addTile then
-        -- A reflow can flip the lane ineligible (the scroll reserve narrowing
-        -- the grid) with no reset having hidden the tile first.
+        -- A reflow can flip the Group ineligible with no reset having hidden
+        -- the tile first.
         overview.addTile._cdcAddContainerId = nil
         overview.addTile:Hide()
     end
@@ -1673,12 +1553,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
     SetScrollOffset(overview, overview.scrollOffset or 0)
 end
 
--- Per-frame geometry catch-up for live host resizes (the preview split
--- divider). Re-flows the tiles the last build produced against the host's
--- current size without touching the previews inside them, so the tile
--- borders track the divider at frame rate; the throttled full rebuild
--- re-scales the preview contents moments later. Same split the unlock
--- movers use: anchored chrome at frame rate, restyle on the throttle.
+-- Geometry-only re-flow of the tiles the last build produced against the
+-- host's current size, without touching the previews inside them.
 function ST._ReflowGroupPanelOverview(host)
     local overview = host and host._cdcGroupPanelOverview
     if not (overview and overview.containerId and overview.root:IsShown()) then

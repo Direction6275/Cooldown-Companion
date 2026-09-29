@@ -390,7 +390,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         end
     end
     frame.OpenChangelogOverlay = function(version, opts)
-        if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+        if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
         local changelog = ST._Changelog
         local targetVersion = version
 

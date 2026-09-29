@@ -82,7 +82,6 @@ local CONTROL_GAP            = 6     -- gap between two controls inside the colu
 
 local BADGE_GAP              = 4     -- label -> badge and badge -> badge
 
-local ROW_GRID_COLUMN_GAP    = 16    -- gutter between the two grid columns
 -- Below this the grid cannot produce a sane two-column split, so a layout pass
 -- that resolves to less than this keeps the previous geometry instead. See the
 -- degenerate-width note on the layout itself.
@@ -1791,22 +1790,12 @@ end
 ------------------------------------------------------------------------
 -- SECTION ROW GRID
 --
--- Two columns of rows, side by side. The columns are TOP-ALIGNED BY DESIGN:
--- this layout anchors the left column to the content's TOPLEFT and the right
--- column to its TOPRIGHT, so columns of unequal height cannot drift.
---
--- HAZARD - do not swap this for "Flow". AceGUI's Flow layout vertically
--- CENTERS side-by-side children (frameoffset = child.alignoffset or
--- frameheight / 2, then the row is anchored by the larger offset), so two
--- half-width columns of unequal height start on different lines. That is
--- exactly the drift the first two-column attempt shipped and the owner
--- reversed. Nothing about the column contents fixes it; only the anchoring
--- does.
+-- Two columns of rows, stacked into one full-width lane: the second column
+-- anchors directly under the first, with no gutter between them.
 --
 -- Contract mirrors the stock "List" layout: resolve a width, size each child,
 -- drive its DoLayout, then report the used height through LayoutFinished so the
--- grid sizes itself. Height is max(left, right) - the columns overlap
--- vertically, they do not stack.
+-- grid sizes itself. Height is the sum of both columns.
 --
 -- The grid and its two columns are OUR OWN container types, not stock
 -- SimpleGroups. Two reasons, both structural:
@@ -1822,10 +1811,8 @@ end
 --     Our OnWidthSet re-lays, so a width change is self-correcting no matter
 --     who drives it.
 --
---  2. Pool hygiene. AceGUI's pools are shared with every other addon, and this
---     layout is the only thing in the game that anchors a child TOPRIGHT of its
---     parent content. Owning the types means a frame we anchored can only ever
---     be re-acquired by us. (AceGUI:Release does ClearAllPoints on the released
+--  2. Pool hygiene. AceGUI's pools are shared with every other addon. Owning
+--     the types means a frame we anchored can only ever be re-acquired by us. (AceGUI:Release does ClearAllPoints on the released
 --     frame - AceGUI-3.0.lua:196 - so nothing leaks either way, but keeping our
 --     geometry inside our own pool removes the question entirely.)
 ------------------------------------------------------------------------
@@ -1904,15 +1891,15 @@ end, ROW_WIDGET_VERSION)
 if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
     AceGUI:RegisterLayout(ROW_GRID_LAYOUT, function(content, children)
         -- LIVE GEOMETRY IS THE GROUND TRUTH. The columns are anchored to this
-        -- content frame's own left and right edges, so they have to be sized in
-        -- its real coordinate space. content.width is only bookkeeping pushed
-        -- down by whichever parent laid us out last, and the two genuinely
-        -- disagree - by exactly the scrollbar's 20px - every time a ScrollFrame
-        -- toggles its bar (AceGUIContainer-ScrollFrame.lua:104-118 moves the
-        -- scroll rect and rewrites content.width in the same breath, and
-        -- :152-156 recomputes it again from the widget width). A TOPLEFT column
-        -- and a TOPRIGHT column sized from a stale number stop meeting in the
-        -- middle; sized from the live rect they cannot.
+        -- content frame's own left edge, so they have to be sized in its real
+        -- coordinate space. content.width is only bookkeeping pushed down by
+        -- whichever parent laid us out last, and the two genuinely disagree -
+        -- by exactly the scrollbar's 20px - every time a ScrollFrame toggles
+        -- its bar (AceGUIContainer-ScrollFrame.lua:104-118 moves the scroll
+        -- rect and rewrites content.width in the same breath, and :152-156
+        -- recomputes it again from the widget width). Columns sized from a
+        -- stale number overrun the scroll rect; sized from the live rect they
+        -- cannot.
         local width = content:GetWidth() or 0
         if width < ROW_GRID_MIN_WIDTH then
             -- No usable rect yet (first pass, before anchors resolve): fall
@@ -1937,12 +1924,9 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
             return
         end
 
-        -- The three-column workspace uses one continuous settings lane.
-        -- Former grid columns flow directly into each other; their horizontal
-        -- gutter must not become a blank row in the single-lane layout.
-        local stacked = ST._IsThreeColumnConfigLayout
-            and ST._IsThreeColumnConfigLayout()
-        local columnWidth = stacked and width or floor((width - ROW_GRID_COLUMN_GAP) / 2)
+        -- The Settings column is one continuous lane. The grid's two columns
+        -- flow directly into each other, with no gutter between them.
+        local columnWidth = width
         local height = 0
 
         for i = 1, #children do
@@ -1954,25 +1938,14 @@ if not AceGUI:GetLayout(ROW_GRID_LAYOUT) then
             frame:ClearAllPoints()
             if i <= 2 then
                 frame:Show()
-                if stacked then
-                    frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -height)
-                elseif i == 1 then
-                    frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-                else
-                    frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
-                end
+                frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -height)
 
                 child:SetWidth(columnWidth)
                 if child.DoLayout then
                     child:DoLayout()
                 end
 
-                local childHeight = frame.height or frame:GetHeight() or 0
-                if stacked then
-                    height = height + childHeight
-                else
-                    height = max(height, childHeight)
-                end
+                height = height + (frame.height or frame:GetHeight() or 0)
             else
                 -- Exactly two columns by construction. A third child has no
                 -- home, so hide it rather than leave it floating on whatever

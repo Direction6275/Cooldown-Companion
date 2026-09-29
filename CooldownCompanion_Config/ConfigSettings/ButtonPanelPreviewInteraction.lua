@@ -1121,7 +1121,7 @@ local function EntryOnMouseUp(self, mouseButton)
             if CancelDrag then CancelDrag() else CS.dragState = nil end
         end
         if CopyMode.HandleClick(panelId, index, buttonData) then return end
-        local spellbookDocked = CS.spellbookPanelDocked
+        local spellbookDocked = CS.spellbookPanelWindow ~= nil
         SelectConfigButton(panelId, index, {
             multi = IsControlKeyDown(),
             force = spellbookDocked,

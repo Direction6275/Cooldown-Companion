@@ -3,7 +3,7 @@
     Shared resource, custom-bar, cast-bar and frame settings surfaces.
     Attached objects reuse these builders in the panel workspace. Independent,
     disabled or unplaced objects use their own inventory destination and pinned
-    preview, sharing the panel workspace's editing chrome and split divider.
+    preview, sharing the panel workspace's editing chrome.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -208,7 +208,7 @@ end
 
 ------------------------------------------------------------------------
 -- A disabled feature has one introduction and one Enable action. The full
--- editor, preview and split divider are built only once the feature is on.
+-- editor and preview are built only once the feature is on.
 ------------------------------------------------------------------------
 local BAR_WORKSPACE_INTROS = {
     resources = {
@@ -466,7 +466,7 @@ end
 -- explicit ticket rather than a staleness guess: only the mirror-first slider
 -- path passes it, and only a host still carrying a built mirror for THIS panel
 -- honours it. Every other build path (workspace switch, RefreshConfigPanel,
--- selection change, divider drag) rebuilds exactly as before.
+-- selection change, resize) rebuilds exactly as before.
 local function BuildResourcesPanelMirror(host, index, panelData, mirrorReuse)
     local panelId = panelData and panelData.groupId
     if not (panelId and ST._BuildReadOnlyPanelPreview) then
@@ -507,9 +507,8 @@ local function BuildResourcesPanelMirror(host, index, panelData, mirrorReuse)
     return inner
 end
 
--- Hides every surface this file owns and releases the shared divider if
--- the resources preview host holds it. Called from every view branch that
--- takes col3 over (buttons wide view, cast frames, the normal fall-through,
+-- Hides every surface this file owns and releases the resources preview
+-- registration. Called from every view branch that takes col3 over (buttons wide view, cast frames, the normal fall-through,
 -- the talent picker) and at the top of this view's own refresh.
 local function HideResourcesWideSurfaces(col3, preserveFinderState, preservePreview)
     HideWidgetFrame(col3._resourcesConflictScroll)
@@ -525,14 +524,6 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState, preservePrev
     local host = col3._resourcesPreviewHost
     if host and not preservePreview then
         ReleaseResourcesPanelMirrors(host)
-        if col3.buttonsSplitDivider and col3._cdcActiveWideHost == host then
-            if ST._HideWideEditingChrome then
-                ST._HideWideEditingChrome(col3)
-            else
-                col3.buttonsSplitDivider:CancelDrag()
-                col3.buttonsSplitDivider:Hide()
-            end
-        end
         if ST._ClearActiveWidePreview then
             ST._ClearActiveWidePreview(col3, host)
         end
@@ -574,7 +565,7 @@ end
 -- command center owns the host's bottom reserve, so it has to settle
 -- before the renderer measures itself; routing every rebuild through here
 -- keeps the two in step without a second hook, and refreshes the bar on
--- divider drags, split reapplies and workspace switches alike.
+-- resizes and workspace switches alike.
 local function BuildResourcesLayoutPreview(host, mirrorReuse)
     if ST._UpdateResourcesPreviewCommandCenter then
         ST._UpdateResourcesPreviewCommandCenter(host)
@@ -605,9 +596,8 @@ local function BuildResourcesLayoutPreview(host, mirrorReuse)
     end
 end
 
--- Pinned Layout & Order preview at the top of the wide column, registered
--- as the active wide preview so the shared divider drags and the persisted
--- split reapply rebuild it.
+-- Pinned Layout & Order preview filling the center column, registered as
+-- the active wide preview so the shared resize refit rebuilds it.
 local function UpdateResourcesPreviewHost(col3, edit, preservePreview)
     local host = col3._resourcesPreviewHost
     if not host then
@@ -631,6 +621,7 @@ local function UpdateResourcesPreviewHost(col3, edit, preservePreview)
     host:Show()
     if not preservePreview then
         BuildResourcesLayoutPreview(host)
+        if ST._StampWidePreviewLayout then ST._StampWidePreviewLayout(host) end
     else
         -- Controls teardown hides navigation even when its canvas stays mounted.
         SetBarsOffCanvasChips(col3)
@@ -942,7 +933,7 @@ end
 ------------------------------------------------------------------------
 
 -- Disabled standalone features show their introduction. Enabled destinations
--- build the preview and the selected object's settings beneath the divider.
+-- build the preview and the selected object's settings beside it.
 local function RefreshBarsWideColumn(col3, edit)
     local host = col3._resourcesPreviewHost
     local preservePreview = edit and edit.preservePreview and edit.previewHost == host
@@ -1002,12 +993,6 @@ local function RefreshBarsWideColumn(col3, edit)
     else
         ShowResourcesHomeSurfaces(col3)
     end
-
-    -- Final height pass: the settings surface just anchored below the
-    -- divider, so re-clamp the persisted split against current overhead.
-    if ST._ReapplyPanelPreviewSplit then
-        ST._ReapplyPanelPreviewSplit()
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1021,7 +1006,7 @@ ST._HideResourcesWideSurfaces = HideResourcesWideSurfaces
 ST._CollectBarsEnableItems = CollectBarsEnableItems
 ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview
 -- The unified anchor preview (buttons view) re-hosts these settings
--- surfaces below its divider when an attached bar is selected there.
+-- surfaces in the Settings column when an attached bar is selected there.
 ST._ShowResourceSettingsSurface = ShowResourceSettingsPanel
 ST._ShowCastBarSettingsSurface = ShowCastBarSettings
 

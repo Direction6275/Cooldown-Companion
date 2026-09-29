@@ -18,7 +18,7 @@ local function OpenWorkspace(kind, opts)
     local _, panelId = GetPlacement(kind)
     -- Explicit module navigation restores Settings for attached bars too.
     -- A refresh may keep browsing only while a buttons workspace remains.
-    if CS.spellbookPanelDocked
+    if CS.spellbookPanelWindow
         and (not panelId or not (opts and opts.preserveSpellbook)) then
         CS.CloseSpellbookPanel()
     end

@@ -979,7 +979,7 @@ local OBJECT_CONTROLS = {
 -- Which objects a surface hosts. The homes list the objects that
 -- workspace configures; the buttons workspace lists the bars its unified
 -- anchor preview actually draws as lanes, which is also exactly when a
--- bar's settings can be open below the divider there.
+-- bar's settings can be open in the Settings column there.
 local function CollectObjectControls(objects)
     local applicable = {}
     -- Resolved once and handed to the gates that want it, since resolving
@@ -1676,9 +1676,8 @@ local function EnsureMenuFrame()
             CS.previewCommandCenterMenuOpen = nil
             CS.previewCommandCenterMenuClosedAt = GetTime()
         end
-        -- Open UPWARD, over the preview canvas, instead of down over the
-        -- settings below the divider - a menu laid over live settings
-        -- reads as chaos. ToggleDropDownMenu prefers these fields over its
+        -- Open UPWARD, over the preview canvas, instead of down off the
+        -- bottom of the preview column. ToggleDropDownMenu prefers these fields over its
         -- own arguments when an anchor frame is passed, and still applies
         -- its own screen clamp afterwards. `relativeTo` is deliberately
         -- left unset so the anchor passed at open time wins.
@@ -1849,7 +1848,7 @@ local function ShouldShowSpellbookToggle(group)
     -- The dock has no close button, so retain its toggle when the last
     -- available slot is filled while browsing.
     return PanelAcceptsNewEntries(group)
-        or (CS.spellbookPanelDocked and IsSpellbookWindowShown())
+        or IsSpellbookWindowShown()
 end
 
 local function EnsureBar(host, surface)
@@ -2234,7 +2233,7 @@ end
 ------------------------------------------------------------------------
 -- Buttons workspace entry point. Called at the top of the buttons
 -- preview's build closure, so it runs on every rebuild path (selection
--- change, panel switch, divider drag, preview toggle) and - critically -
+-- change, panel switch, resize, preview toggle) and - critically -
 -- BEFORE the mirror measures itself, since it owns the host's bottom
 -- reserve.
 ------------------------------------------------------------------------

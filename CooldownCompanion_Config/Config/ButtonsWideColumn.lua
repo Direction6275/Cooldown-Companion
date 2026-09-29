@@ -4,8 +4,8 @@
     hosts the entry settings surfaces (bsTabGroup, entry multi-select),
     the panel batch actions, and the group-side settings surfaces (via
     GroupSettingsHost) in one unified surface. It frames two labeled areas:
-    the pinned Live Preview above the split divider (the column title names
-    it) and the editing surface, either below or to its right
+    the pinned Live Preview in the center column (the column title names
+    it) and the editing surface in the Settings column to its right
     (the "Editing:" path and selected-entry context on one line,
     followed by the add box and settings).
     Other Class browsing uses the same pinned preview cluster, so it never
@@ -23,15 +23,10 @@ local PREVIEW_GAP = 4
 -- Standalone resources use this parent crumb; attached objects use their panel.
 local BARS_HOME_LABEL = "Resource Bars"
 local ADD_BOX_HEIGHT = 26
-local EDIT_ACTION_COMPACT_GAP = 6
+local EDIT_ACTION_FIELD_GAP = 6
 local EDIT_CONTEXT_ICON_SIZE = 16
 local EDIT_CONTEXT_BADGE_SIZE = 16
 local EDIT_CONTEXT_BADGE_GAP = 3
-local DIVIDER_HEIGHT = 9
-local DIVIDER_HIT_EXTEND = 5
-local PREVIEW_SPLIT_DEFAULT = 0.42
-local PREVIEW_MIN_HEIGHT = 100
-local SETTINGS_MIN_HEIGHT = 150
 local EDIT_INSET = 6
 local EDIT_HEADER_TOP_GAP = 6
 local EDIT_HEADER_HEIGHT = 18
@@ -42,9 +37,6 @@ local EDIT_CHIPS_GAP = 4
 local EDIT_CHIPS_MORE_GAP = 8
 local UpdatePanelWorkspaceChips
 local EDIT_ACTION_FIELD_LEFT_NUDGE = -1
-local SETTINGS_FINDER_WIDTH_FRACTION = 0.38
-local SETTINGS_FINDER_MIN_WIDTH = 220
-local SETTINGS_FINDER_MAX_WIDTH = 360
 local SETTINGS_FINDER_MAX_ROWS = 8
 local SETTINGS_FINDER_ROW_HEIGHT = 25
 local SETTINGS_FINDER_FOOTER_HEIGHT = 19
@@ -59,30 +51,6 @@ local SETTINGS_FINDER_TOOLTIP = {
     {" ", 1, 1, 1, true},
     {"It does not search other Groups, Panels, or Entries.", 0.65, 0.65, 0.65, true},
 }
-
--- The preview/settings split is owner-adjustable via the drag divider below;
--- the chosen fraction persists per profile.
-local function GetPreviewSplit()
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local fraction = db and db.configPreviewSplit
-    if type(fraction) ~= "number" then
-        return PREVIEW_SPLIT_DEFAULT, false
-    end
-    return math.max(0.1, math.min(fraction, 0.75)), true
-end
-
-local function SetPreviewSplit(fraction)
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    if db then
-        db.configPreviewSplit = fraction
-    end
-end
-
--- The layout preference follows the account-wide window geometry.
-local function IsThreeColumnLayout()
-    local db = CooldownCompanion.db
-    return db and db.global and db.global.configLayout == "threeColumn"
-end
 
 local function AnchorWidePreviewHost(col3, host)
     host:ClearAllPoints()
@@ -101,23 +69,19 @@ end
 
 -- The wide col3 layout hosts exactly one pinned preview at a time: the
 -- buttons panel mirror or the Resources home's Layout & Order preview.
--- The split divider, persisted fraction, and height clamps below are
--- shared; each view registers its host frame and rebuild function while
--- its preview is showing, and clears the registration when it hides.
--- `refit` is optional: a cheap geometry-only pass the divider drag can
--- afford every frame, where the full rebuild only runs on its throttle.
-local function SetActiveWidePreview(col3, host, rebuild, refit)
+-- The host height and resize rebuild below are shared; each view registers
+-- its host frame and rebuild function while its preview is showing, and
+-- clears the registration when it hides.
+local function SetActiveWidePreview(col3, host, rebuild)
     AnchorWidePreviewHost(col3, host)
     col3._cdcActiveWideHost = host
     col3._cdcActiveWideRebuild = rebuild
-    col3._cdcActiveWideRefit = refit
 end
 
 local function ClearActiveWidePreview(col3, host)
     if col3._cdcActiveWideHost == host then
         col3._cdcActiveWideHost = nil
         col3._cdcActiveWideRebuild = nil
-        col3._cdcActiveWideRefit = nil
     end
 end
 
@@ -129,9 +93,9 @@ local function RebuildActiveWidePreview(col3)
     end
 end
 
--- Structural container below the split divider. The divider itself separates
--- Live Preview from Editing; this frame only hosts the Editing path (including
--- any selected entry context), the add box, and the settings surfaces.
+-- Structural container in the Settings column. It hosts the Editing path
+-- (including any selected entry context), the add box, and the settings
+-- surfaces.
 local function EnsureEditingSurface(col3)
     local surface = col3._cdcEditingSurface
     if surface then return surface end
@@ -310,7 +274,7 @@ ST._GetEditingAddResultsAnchor = function(input)
     local row = col3 and col3._cdcEditingActionRow
     local widget = row and row._cdcAddBox
     local activeInput = widget and (widget.editbox and widget or widget._cdcAddInput)
-    if IsThreeColumnLayout() and row and row:IsVisible()
+    if row and row:IsVisible()
         and input and input == activeInput
     then
         return row
@@ -515,7 +479,6 @@ local function GetOrCreateSettingsFinderDropdown(col3)
     end)
     dropdown:SetScript("OnHide", function(self)
         self._clickInProgress = nil
-        self._stableWidth = nil
         self._editbox = nil
         self._context = nil
         self._contextIdentity = nil
@@ -551,9 +514,7 @@ local function ShowSettingsFinderResults(col3, results, truncated, context, cont
 
     local finderWidth = math.max(1, widget.frame:GetWidth() or 1)
     local actionRow = col3._cdcEditingActionRow
-    local fullRowResults = IsThreeColumnLayout() and actionRow and actionRow:IsVisible()
-    local maximumDropdownWidth = math.max(
-        finderWidth, actionRow and actionRow:GetWidth() or finderWidth)
+    local fullRowResults = actionRow and actionRow:IsVisible()
     local widestName = 0
     local widestBreadcrumb = 0
 
@@ -586,21 +547,11 @@ local function ShowSettingsFinderResults(col3, results, truncated, context, cont
         end
     end
 
-    -- Keep compact one-line results, but size the popup and breadcrumb lane
-    -- from their actual content. It may grow leftward as far as the editing
-    -- row, so labels and routes do not compete for the Finder field's narrow
-    -- default width.
+    -- Keep compact one-line results spanning the whole editing row, so
+    -- labels and routes do not compete for the Finder field's half-row width.
     local resultHorizontalPadding = 1 + 7 + 8 + 6 + 1
-    local desiredDropdownWidth = math.ceil(
-        widestName + widestBreadcrumb + resultHorizontalPadding)
-    dropdown._stableWidth = math.min(maximumDropdownWidth, math.max(
-        dropdown._stableWidth or finderWidth,
-        finderWidth,
-        desiredDropdownWidth))
-    if fullRowResults then
-        dropdown._stableWidth = math.max(1, actionRow:GetWidth())
-    end
-    local dropdownWidth = dropdown._stableWidth
+    local dropdownWidth = fullRowResults
+        and math.max(1, actionRow:GetWidth() or 1) or finderWidth
     local breadcrumbWidth = math.min(
         math.ceil(widestBreadcrumb + 1),
         math.max(72, dropdownWidth - math.ceil(widestName) - resultHorizontalPadding))
@@ -716,7 +667,7 @@ local function EnsureSettingsFinder(col3)
     instructions:SetPoint("RIGHT", widget.editbox, "RIGHT", -6, 0)
     instructions:SetJustifyH("LEFT")
     instructions:SetTextColor(0.5, 0.5, 0.5)
-    instructions:SetText("Find a setting by name or keyword\226\128\166")
+    instructions:SetText("Search...")
     widget._cdcInstructions = instructions
 
     widget:SetCallback("OnTextChanged", function(_, _, text)
@@ -749,11 +700,6 @@ local function LayoutEditingActionRow(col3)
         return
     end
 
-    local compact = IsThreeColumnLayout()
-    if finder then
-        finder._cdcInstructions:SetText(compact and "Search..."
-            or "Find a setting by name or keyword\226\128\166")
-    end
     local height = ADD_BOX_HEIGHT
     if hasAdd then
         -- Anchors alone do not inherit the settings column's visibility.
@@ -764,14 +710,10 @@ local function LayoutEditingActionRow(col3)
     row:SetHeight(height)
     row._cdcEditingHeight = height
     if hasAdd and hasFinder then
+        -- The Settings column is narrow, so the two fields split it evenly.
         local rowWidth = math.max(1, row:GetWidth() or 1)
-        local finderWidth = math.max(SETTINGS_FINDER_MIN_WIDTH,
-            math.min(SETTINGS_FINDER_MAX_WIDTH, rowWidth * SETTINGS_FINDER_WIDTH_FRACTION))
-        finderWidth = math.min(math.max(1, rowWidth - 40), finderWidth)
-        local fieldGap = compact and EDIT_ACTION_COMPACT_GAP or 0
-        if compact then
-            finderWidth = math.max(1, (rowWidth - fieldGap) / 2)
-        end
+        local fieldGap = EDIT_ACTION_FIELD_GAP
+        local finderWidth = math.max(1, (rowWidth - fieldGap) / 2)
 
         finder.frame:ClearAllPoints()
         finder.frame:SetPoint("RIGHT", row, "RIGHT", 0, 0)
@@ -883,14 +825,6 @@ local function UpdateEditingActionRow(col3)
         end)
     end
     return row:IsShown() and row or nil
-end
-
-local function GetActiveEditingActionRow(col3)
-    local row = col3._cdcEditingActionRow
-    if row and row:IsShown() then
-        return row
-    end
-    return nil
 end
 
 local function RefreshEditingChipColor(button)
@@ -1231,14 +1165,14 @@ local function BreadcrumbToGroup()
     local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
     local containerId = (group and group.parentContainerId) or CS.selectedContainer
     if not (containerId and ST._SelectConfigContainer) then return end
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     CS.unifiedBarKind = nil
     ST._SelectConfigContainer(containerId)
     CooldownCompanion:RefreshConfigPanel()
 end
 
 local function BreadcrumbToPanel()
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     GameTooltip:Hide()
     CS.unifiedBarKind = nil
     if CS.selectedGroup and ST._SelectConfigPanel then
@@ -1250,7 +1184,7 @@ local function BreadcrumbToPanel()
 end
 
 local function BreadcrumbToResourcesHome()
-    if CS.spellbookPanelDocked then CS.CloseSpellbookPanel() end
+    if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     -- Drops the resource, custom bar, or cast/frames item being edited, so
     -- the workspace falls back to its Resources home.
     if ST._ClearConfigBarsHomeSelection then
@@ -1392,14 +1326,10 @@ local function UpdateEditingHeader(col3)
     end
 end
 
--- Shared hide for the divider and the editing surface: every path that
--- stops showing the preview/editing split must run this so the chrome
--- never lingers over a full-column surface.
+-- Shared hide for the editing surface: every path that stops showing the
+-- preview/editing pair must run this so the chrome never lingers over a
+-- full-column surface.
 local function HideEditingChrome(col3)
-    if col3.buttonsSplitDivider then
-        col3.buttonsSplitDivider:CancelDrag()
-        col3.buttonsSplitDivider:Hide()
-    end
     if col3._cdcEditingSurface then
         col3._cdcEditingSurface:Hide()
     end
@@ -1414,42 +1344,18 @@ local function HideEditingChrome(col3)
     ClearSettingsFinderUI(col3, true, true)
 end
 
--- Vertical space the editing surface's fixed chrome (header, add box, gaps,
--- and insets) claims below the split divider before the settings surface
--- (shared by the divider drag and the height computation below).
-local function GetEditingOverhead(col3)
-    local overhead = EDIT_HEADER_TOP_GAP + EDIT_HEADER_HEIGHT
-        + PREVIEW_GAP + EDIT_BOTTOM_INSET
-    local actionRow = GetActiveEditingActionRow(col3)
-    if actionRow then
-        overhead = overhead + EDIT_HEADER_GAP
-            + (actionRow._cdcEditingHeight or ADD_BOX_HEIGHT)
-    end
-    local chips = col3._cdcEditingChips
-    if chips and chips:IsShown() then
-        overhead = overhead + EDIT_CHIPS_GAP + EDIT_CHIPS_HEIGHT
-    end
-    return overhead
+-- Single source of truth for the preview host height: settings have their
+-- own column, so the preview fills the center column's full height.
+local function ComputePreviewHostHeight(col3)
+    return math.max(1, col3.content:GetHeight() or 0)
 end
 
--- Single source of truth for the preview host height: the persisted split
--- fraction, floored at the preview minimum (taller default floor when no
--- custom split is saved) and capped so the settings region below the
--- divider keeps its own minimum — the same clamp the divider drag applies.
-local function ComputePreviewHostHeight(col3)
-    local columnHeight = col3.content:GetHeight() or 0
-    if IsThreeColumnLayout() then return math.max(1, columnHeight) end
-    local fraction, custom = GetPreviewSplit()
-    local minHeight = custom and PREVIEW_MIN_HEIGHT or 170
-    local desired = math.max(minHeight, math.floor(columnHeight * fraction))
-    local maxHeight = columnHeight - DIVIDER_HEIGHT
-        - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
-    -- Degenerate tiny column: the preview floor wins (the config window's
-    -- own minimum height makes this a transient state at worst).
-    if maxHeight < PREVIEW_MIN_HEIGHT then
-        maxHeight = PREVIEW_MIN_HEIGHT
-    end
-    return math.min(desired, maxHeight)
+-- The size the host's preview was last laid out at. Every direct build
+-- records it, so a later column change (the Settings column appearing after
+-- a refresh built the preview at full width) is seen as a size change.
+local function StampWidePreviewLayout(host)
+    host._cdcLastLayoutWidth = host:GetWidth() or 0
+    host._cdcLastLayoutHeight = host:GetHeight() or 0
 end
 
 -- Anchored widths are not guaranteed to settle until the frame after the
@@ -1501,12 +1407,11 @@ local function ScheduleFinalWidePreviewLayout(col3, host, forceRebuild)
     end)
 end
 
--- Re-apply the persisted split against the CURRENT column height and
--- overhead. Called from LayoutColumns (which runs on every window resize)
--- and as the refresh pass's final step — the preview builds before the add
--- box settles its visibility, so the first computation can run against
--- stale overhead.
-local function ReapplyPanelPreviewSplit()
+-- Re-fit the preview host to the CURRENT column size. Called from
+-- LayoutColumns, which runs on every window resize and whenever the
+-- Settings column appears or hides; the trailing layout pass rebuilds from
+-- settled host dimensions whenever they differ from the last build.
+local function RefitWidePreviewHost()
     local col3 = CS.configFrame and CS.configFrame.col3
     local host = col3 and col3._cdcActiveWideHost
     if not (host and host:IsShown()) then return end
@@ -1518,7 +1423,7 @@ local function ReapplyPanelPreviewSplit()
     local newHeight = ComputePreviewHostHeight(col3)
     local heightChanged = math.abs((host:GetHeight() or 0) - newHeight) >= 0.5
     -- The preview's scale-to-fit reads the host width too, so a width-only
-    -- window resize still needs a rebuild even when the split height held.
+    -- window resize still needs a rebuild even when the height held.
     local width = host:GetWidth() or 0
     local widthChanged = math.abs((host._cdcLastLayoutWidth or 0) - width) >= 0.5
     if heightChanged then
@@ -1527,258 +1432,16 @@ local function ReapplyPanelPreviewSplit()
     ScheduleFinalWidePreviewLayout(col3, host, heightChanged or widthChanged)
 end
 
--- Draggable divider between the pinned preview and the editing surface:
--- drag to rebalance the split, double-click to reset to the default. The
--- fraction persists per profile.
-local function EnsurePreviewDivider(col3)
-    local divider = col3.buttonsSplitDivider
-    if divider then return divider end
-
-    -- A Button, not a Frame: OnDoubleClick is a Button-only script handler.
-    divider = CreateFrame("Button", nil, col3.content)
-    divider:SetHeight(DIVIDER_HEIGHT)
-    divider:EnableMouse(true)
-    -- The visual bar stays slim; the invisible drag target extends a few
-    -- pixels above and below it.
-    divider:SetHitRectInsets(0, 0, -DIVIDER_HIT_EXTEND, -DIVIDER_HIT_EXTEND)
-
-    -- All ornament geometry is specified in whole physical pixels via
-    -- the same one-physical-pixel unit the profile one-pixel-border
-    -- feature uses (PixelUtil with size 0 / minPixels 1). Sizes given
-    -- in UI units are fractional in physical pixels, and that fraction
-    -- is what made earlier lines change thickness with panel position
-    -- and earlier diamonds shimmer: exact-integer pixel sizes plus the
-    -- engine's default grid snapping render identically everywhere.
-    -- The lines are 2 pixels because exact 1-pixel hairlines can round
-    -- to zero rows and vanish at some positions.
-    local leftLine = divider:CreateTexture(nil, "ARTWORK")
-    leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-    local rightLine = divider:CreateTexture(nil, "ARTWORK")
-    rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-
-    -- Two-tone diamond ornament (the original design): a gold diamond
-    -- with a dark core, each a flat color square clipped by Blizzard's
-    -- pre-antialiased diamond mask, revived on the pixel-exact recipe
-    -- above after the UI-unit-sized version wobbled.
-    local diamond = divider:CreateTexture(nil, "OVERLAY")
-    diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
-    diamond:SetPoint("CENTER")
-    local diamondMask = divider:CreateMaskTexture()
-    diamondMask:SetTexture("Interface\\Common\\common-mask-diamond",
-        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    diamondMask:SetAllPoints(diamond)
-    diamond:AddMaskTexture(diamondMask)
-
-    local diamondCore = divider:CreateTexture(nil, "OVERLAY", nil, 1)
-    diamondCore:SetColorTexture(0.12, 0.08, 0.04, 0.95)
-    diamondCore:SetPoint("CENTER")
-    local coreMask = divider:CreateMaskTexture()
-    coreMask:SetTexture("Interface\\Common\\common-mask-diamond",
-        "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    coreMask:SetAllPoints(diamondCore)
-    diamondCore:AddMaskTexture(coreMask)
-
-    local LINE_HEIGHT_PIXELS = 2
-    local DIAMOND_PIXELS = 12
-    local CORE_PIXELS = 4 -- keeps the original 7:3 outer-to-core feel
-    -- Center to each line's inner end: the 6px half-diamond plus the
-    -- ~6px of clearance the original pre-pixel-recipe design had.
-    local LINE_GAP_PIXELS = 12
-
-    local function ApplyOrnamentLayout()
-        local onePx = PixelUtil.GetNearestPixelSize(0, divider:GetEffectiveScale(), 1)
-        leftLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
-        rightLine:SetHeight(onePx * LINE_HEIGHT_PIXELS)
-        diamond:SetSize(onePx * DIAMOND_PIXELS, onePx * DIAMOND_PIXELS)
-        diamondCore:SetSize(onePx * CORE_PIXELS, onePx * CORE_PIXELS)
-        local gap = onePx * LINE_GAP_PIXELS
-        leftLine:ClearAllPoints()
-        leftLine:SetPoint("LEFT", divider, "LEFT", 0, 0)
-        leftLine:SetPoint("RIGHT", divider, "CENTER", -gap, 0)
-        rightLine:ClearAllPoints()
-        rightLine:SetPoint("LEFT", divider, "CENTER", gap, 0)
-        rightLine:SetPoint("RIGHT", divider, "RIGHT", 0, 0)
-    end
-    ApplyOrnamentLayout()
-
-    local OPEN_HAND_CURSOR = "Interface\\CURSOR\\openhand"
-
-    -- The engine's mouse-focus list is the same source of truth that
-    -- drives OnEnter/OnLeave (hit rect extension included). A plain
-    -- IsMouseOver() rect test disagrees with it here.
-    local function IsMouseOnDivider()
-        return DoesAncestryIncludeAny(divider, GetMouseFoci())
-    end
-
-    -- Hover affordance is the open-hand cursor plus the normal instant
-    -- tooltip; the gold light-up is reserved for active drags (owner
-    -- ruling: no hover highlight, no delays).
-    local function SetDragLit(lit)
-        if lit then
-            leftLine:SetColorTexture(1, 0.72, 0.18, 0.85)
-            rightLine:SetColorTexture(1, 0.72, 0.18, 0.85)
-            diamond:SetColorTexture(1, 0.72, 0.18, 0.92)
-        else
-            leftLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-            rightLine:SetColorTexture(0.52, 0.44, 0.34, 0.42)
-            diamond:SetColorTexture(0.62, 0.48, 0.28, 0.72)
-        end
-    end
-
-    -- The preview rebuild at the end of every drag hides and re-shows
-    -- the divider, which can break the engine's OnEnter/OnLeave pairing
-    -- and strand the open-hand cursor. While the cursor is claimed, this
-    -- watcher rechecks real mouse state every frame and releases it the
-    -- moment the mouse is gone; it is hidden (free) otherwise. It is
-    -- parented to UIParent, not the divider: a child of a hidden frame
-    -- gets no OnUpdate, so a divider-parented watcher would go dead on
-    -- exactly the hide paths it has to clean up after.
-    local cursorWatch = CreateFrame("Frame", nil, UIParent)
-    cursorWatch:Hide()
-
-    local function ReleaseCursor()
-        cursorWatch:Hide()
-        SetCursor(nil)
-    end
-
-    cursorWatch:SetScript("OnUpdate", function()
-        if divider._dragging then return end
-        if not (divider:IsVisible() and IsMouseOnDivider()) then
-            ReleaseCursor()
-        end
-    end)
-
-    divider:SetScript("OnShow", function()
-        -- Re-derive pixel-exact geometry on every show so UI scale
-        -- changes made while hidden can't leave stale fractional sizes.
-        ApplyOrnamentLayout()
-    end)
-    -- Hiding a frame under the cursor does not reliably deliver OnLeave,
-    -- so release the open hand here rather than trusting the pairing.
-    divider:SetScript("OnHide", ReleaseCursor)
-
-    -- Scale and resolution changes alter the physical-pixel factor, so
-    -- the ornament has to be rebuilt even while it stays visible -
-    -- otherwise its sizes silently go fractional again.
-    local scaleWatch = CreateFrame("Frame", nil, UIParent)
-    scaleWatch:RegisterEvent("UI_SCALE_CHANGED")
-    scaleWatch:RegisterEvent("DISPLAY_SIZE_CHANGED")
-    scaleWatch:SetScript("OnEvent", ApplyOrnamentLayout)
-
-    -- View switches and config close can hide the divider mid-drag; the
-    -- OnUpdate persists on hidden frames and would resume on re-show with
-    -- no mouse button down, so every hide path must cancel the drag.
-    function divider:CancelDrag()
-        if not self._dragging then return end
-        self._dragging = false
-        self:SetScript("OnUpdate", nil)
-        SetDragLit(false)
-        -- Hide paths can cancel the drag while the cursor is elsewhere;
-        -- only release the open hand if the mouse has actually left.
-        if not IsMouseOnDivider() then
-            ReleaseCursor()
-        end
-    end
-
-    -- No tooltip here by design: the open-hand cursor is the only hover
-    -- indicator, and the drag/double-click help lives in the workspace
-    -- header's (?) Settings tooltip.
-    divider:SetScript("OnEnter", function()
-        SetCursor(OPEN_HAND_CURSOR)
-        cursorWatch:Show()
-    end)
-    divider:SetScript("OnLeave", function(self)
-        if not self._dragging then
-            ReleaseCursor()
-        end
-    end)
-
-    divider:SetScript("OnMouseDown", function(self, button)
-        if button ~= "LeftButton" then return end
-        local host = col3._cdcActiveWideHost
-        if not (host and host:IsShown()) then return end
-        self._dragging = true
-        self._rebuildElapsed = 0
-        self._lastRefitHeight = host:GetHeight() or 0
-        SetDragLit(true)
-        self:SetScript("OnUpdate", function(dividerSelf, elapsed)
-            local contentTop = col3.content:GetTop()
-            local columnHeight = col3.content:GetHeight() or 0
-            if not contentTop or columnHeight <= 0 then return end
-            local _, cursorY = GetCursorPosition()
-            cursorY = cursorY / col3.content:GetEffectiveScale()
-            local maxHeight = columnHeight - DIVIDER_HEIGHT
-                - GetEditingOverhead(col3) - SETTINGS_MIN_HEIGHT
-            if maxHeight < PREVIEW_MIN_HEIGHT then return end
-            local desired = (contentTop - cursorY) - (DIVIDER_HEIGHT / 2)
-            desired = math.max(PREVIEW_MIN_HEIGHT, math.min(desired, maxHeight))
-            host:SetHeight(desired)
-            -- Cheap geometry-only catch-up every frame the height actually
-            -- moves, so anchored chrome (tile borders) tracks the divider at
-            -- frame rate even though the full rebuild below is throttled.
-            local refit = col3._cdcActiveWideRefit
-            if refit and math.abs(dividerSelf._lastRefitHeight - desired) >= 0.5 then
-                dividerSelf._lastRefitHeight = desired
-                refit(host)
-            end
-            -- Rescale the preview as the host resizes, throttled.
-            dividerSelf._rebuildElapsed = dividerSelf._rebuildElapsed + elapsed
-            if dividerSelf._rebuildElapsed >= 0.08 then
-                dividerSelf._rebuildElapsed = 0
-                RebuildActiveWidePreview(col3)
-            end
-        end)
-    end)
-    divider:SetScript("OnMouseUp", function(self)
-        if not self._dragging then return end
-        self:CancelDrag()
-        local host = col3._cdcActiveWideHost
-        local columnHeight = col3.content:GetHeight() or 0
-        if host and columnHeight > 0 then
-            SetPreviewSplit(host:GetHeight() / columnHeight)
-            RebuildActiveWidePreview(col3)
-        end
-    end)
-    divider:SetScript("OnDoubleClick", function(self)
-        self:CancelDrag()
-        SetPreviewSplit(nil)
-        local host = col3._cdcActiveWideHost
-        if host and (col3.content:GetHeight() or 0) > 0 then
-            host:SetHeight(ComputePreviewHostHeight(col3))
-            RebuildActiveWidePreview(col3)
-        end
-    end)
-
-    col3.buttonsSplitDivider = divider
-    return divider
-end
-
-local function AnchorEditingSurface(col3, previewHost, surface)
+local function AnchorEditingSurface(col3, surface)
     surface:ClearAllPoints()
-    if IsThreeColumnLayout() then
-        if col3.buttonsSplitDivider then
-            col3.buttonsSplitDivider:CancelDrag()
-            col3.buttonsSplitDivider:Hide()
-        end
-        local settingsContent = col3._cdcSettingsColumn.content
-        surface:SetParent(settingsContent)
-        surface:SetAllPoints(settingsContent)
-    else
-        surface:SetParent(col3.content)
-        local divider = EnsurePreviewDivider(col3)
-        divider:ClearAllPoints()
-        divider:SetPoint("TOPLEFT", previewHost, "BOTTOMLEFT", 0, 0)
-        divider:SetPoint("TOPRIGHT", previewHost, "BOTTOMRIGHT", 0, 0)
-        divider:Show()
-        surface:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, 0)
-        surface:SetPoint("BOTTOMRIGHT", col3.content, "BOTTOMRIGHT", 0, 0)
-    end
+    local settingsContent = col3._cdcSettingsColumn.content
+    surface:SetParent(settingsContent)
+    surface:SetAllPoints(settingsContent)
 end
 
--- Settings surfaces anchor inside the editing surface below the split
--- divider (which sits directly under the pinned preview), beneath the
--- editing header and add box; they fill the whole column when no preview
--- is active.
+-- Settings surfaces anchor inside the editing surface in the Settings
+-- column, beneath the editing header and add box; they fill the whole
+-- center column when no preview is active.
 local function AnchorButtonsContentFrame(col3, frame)
     col3._cdcEditingContentFrame = frame
     frame:ClearAllPoints()
@@ -1786,7 +1449,7 @@ local function AnchorButtonsContentFrame(col3, frame)
     local previewHost = col3._cdcActiveWideHost
     if previewHost and previewHost:IsShown() then
         local surface = EnsureEditingSurface(col3)
-        AnchorEditingSurface(col3, previewHost, surface)
+        AnchorEditingSurface(col3, surface)
         frame:SetParent(surface)
         surface:Show()
         UpdateEditingHeader(col3)
@@ -1818,10 +1481,6 @@ local function AnchorButtonsContentFrame(col3, frame)
         local chips = col3._cdcEditingChips
         local hasChips = chips and chips:IsShown()
         if actionRow or hasChips then
-            if col3.buttonsSplitDivider then
-                col3.buttonsSplitDivider:CancelDrag()
-                col3.buttonsSplitDivider:Hide()
-            end
             local surface = EnsureEditingSurface(col3)
             surface:SetParent(col3.content)
             surface:ClearAllPoints()
@@ -2199,8 +1858,8 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
     local function BuildPreview(hostFrame, outcome)
         -- Owns the host's bottom reserve, so it must settle before either
         -- renderer measures itself. Sits inside the build closure so every
-        -- rebuild path (selection, resize, divider drag, preview toggle)
-        -- refreshes the strip without its own hook.
+        -- rebuild path (selection, resize, preview toggle) refreshes the
+        -- strip without its own hook.
         if ST._UpdatePreviewCommandCenter then
             ST._UpdatePreviewCommandCenter(hostFrame)
         end
@@ -2230,16 +1889,6 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
             ST._BuildGroupPanelOverview(hostFrame, activeContainerId)
         end
     end
-    -- The group overview alone offers a cheap per-frame refit: its tile
-    -- geometry re-flows without re-rendering the panel previews inside. The
-    -- panel mirror has no such split, so it keeps the throttled rebuild only.
-    local function RefitPreview(hostFrame)
-        if CS.selectedGroup then return end
-        if ST._ReflowGroupPanelOverview then
-            ST._ReflowGroupPanelOverview(hostFrame)
-        end
-    end
-
     if selectionOnly and panelId and host:IsShown()
         and col3._cdcActiveWideHost == host
         and ST._RefreshButtonPanelPreviewSelection then
@@ -2262,12 +1911,13 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         end
     end
 
-    SetActiveWidePreview(col3, host, BuildPreview, RefitPreview)
+    SetActiveWidePreview(col3, host, BuildPreview)
     if not emptyGroupTakeover then
         host:SetHeight(ComputePreviewHostHeight(col3))
     end
     host:Show()
     BuildPreview(host, edit and edit.previewOutcome)
+    StampWidePreviewLayout(host)
     if edit and edit.panelId == panelId then
         edit.previewBuilt = true
     end
@@ -2295,7 +1945,7 @@ local function EnsureAddBox(col3)
     instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
     instructions:SetJustifyH("LEFT")
     instructions:SetTextColor(0.5, 0.5, 0.5)
-    instructions:SetText("Add a spell, item, trinket slot, or ID\226\128\166")
+    instructions:SetText("Add...")
     addBox._cdcInstructions = instructions
     editFrame:SetPoint("BOTTOMRIGHT", addBox.frame, "BOTTOMRIGHT", -18, 0)
     CreateAddBoxInfoButton(addBox.frame, addBox.frame)
@@ -2381,9 +2031,7 @@ local function UpdateAddBox(col3)
     CS.panelAddModeQuery = nil
     addBox._cdcInstructions:SetText(replacement and "Choose a replacement source..."
         or indicator and (ST.Indicator.Primary(group) and "Add a condition source..." or "Choose a source...")
-        or IsThreeColumnLayout() and "Add..." or CooldownCompanion:IsAuraPanel(group)
-        and "Add an aura spell or ID\226\128\166"
-        or "Add a spell, item, trinket slot, or ID\226\128\166")
+        or "Add...")
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
     addBox.frame:Show()
     UpdateEditingActionRow(col3)
@@ -2677,7 +2325,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
             UpdateAddBox(col3)
 
             UpdateEditingContext(col3)
-            ReapplyPanelPreviewSplit()
             local host = EnsureInlineTextureBrowserHost(col3)
             AnchorButtonsContentFrame(col3, host)
             host:Show()
@@ -2698,7 +2345,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
         UpdateAddBox(col3)
 
         UpdateEditingContext(col3)
-        ReapplyPanelPreviewSplit()
 
         -- The selected object owns the settings area. Reuse exactly the
         -- standalone resource/cast surfaces, with the panel preview retained.
@@ -2726,9 +2372,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
         UpdateAddBox(col3)
 
         UpdateEditingContext(col3)
-        -- Final height pass: the add box just settled its visibility,
-        -- which feeds the settings-minimum clamp.
-        ReapplyPanelPreviewSplit()
 
         local host = EnsureGroupSettingsHost(col3)
         AnchorButtonsContentFrame(col3, host)
@@ -2751,8 +2394,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
     UpdateAddBox(col3)
 
     UpdateEditingContext(col3)
-    -- Final height pass (see the entry branch above).
-    ReapplyPanelPreviewSplit()
 
     -- The empty Group picker is the only actionable surface until a Panel is
     -- created. Keep stale Group settings and the split chrome fully out of the
@@ -2825,21 +2466,21 @@ end
 ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 -- Shared wide-preview plumbing (also used by the Resources wide column):
--- host registration for the split divider, the height computation, and
--- the persisted-split reapply.
+-- host registration, the height computation, the build-size record, and
+-- the resize refit.
 ST._SetActiveWidePreview = SetActiveWidePreview
 ST._ClearActiveWidePreview = ClearActiveWidePreview
 ST._ComputeWidePreviewHostHeight = ComputePreviewHostHeight
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
-ST._ReapplyPanelPreviewSplit = ReapplyPanelPreviewSplit
-ST._IsThreeColumnConfigLayout = IsThreeColumnLayout
+ST._RefitWidePreviewHost = RefitWidePreviewHost
+ST._StampWidePreviewLayout = StampWidePreviewLayout
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
 ST._SetWideEditingAddBox = SetWideEditingAddBox
 ST._SetWideEditingChips = SetWideEditingChips
 ST._ClearWideEditingExtras = ClearWideEditingExtras
--- Divider + editing-surface hide for view branches that release the split
--- while their own preview host holds it (Resources/cast homes).
+-- Editing-surface hide for view branches that release the preview/editing
+-- pair while their own preview host holds it (Resources/cast homes).
 ST._HideWideEditingChrome = HideEditingChrome
 -- Shared teardown for view switches away from the buttons view (resources,
 -- cast frames, talent picker, config close): hides the preview surfaces AND
