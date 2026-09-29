@@ -141,8 +141,7 @@ local function StyleSlot(button, style)
     if button.keybindText then button.keybindText:Hide() end
     button.cooldown:SetUseAuraDisplayTime(false)
     button.cooldown:SetDrawBling(false)
-    button.cooldown:SetDrawSwipe(not button._isBar and style.showCooldownSwipe ~= false
-        and style.showCooldownSwipeFill ~= false)
+    button.cooldown:SetDrawSwipe(not button._isBar and style.showCooldownSwipe ~= false)
     button.cooldown:SetDrawEdge(not button._isBar and style.showCooldownSwipe ~= false
         and style.cooldownSwipeEdgeEnabled == true)
     button.cooldown:SetReverse(style.cooldownSwipeReverse ~= false)

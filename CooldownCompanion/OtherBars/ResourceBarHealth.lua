@@ -73,8 +73,8 @@ HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorb
 -- Update logic: Player Health resource
 ------------------------------------------------------------------------
 
-function HealthBar.GetConfig(settings)
-    return GetResourceDisplayConfig(settings, RESOURCE_HEALTH)
+function HealthBar.GetConfig(settings, appearance)
+    return GetResourceDisplayConfig(settings, RESOURCE_HEALTH, appearance)
 end
 
 function HealthBar.GetColor(config, key, fallback)
@@ -840,13 +840,13 @@ function HealthBar.Update(bar, settings)
 
 end
 
-function HealthBar.Style(bar, settings)
-    local resourceConfig = HealthBar.GetConfig(settings)
+function HealthBar.Style(bar, settings, appearance)
+    local resourceConfig = HealthBar.GetConfig(settings, appearance)
     -- The resolved bucket for the poll body to read (HealthBar.Update). A new
     -- table every apply, so it doubles as the edge every per-effect style latch
     -- below keys off.
     bar._ccHealthConfig = resourceConfig
-    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
+    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid", RESOURCE_HEALTH, appearance))
     local isVertical = IsVerticalResourceLayout(settings)
     local reverseFill = IsVerticalFillReversed(settings)
     local texture = CooldownCompanion:FetchStatusBar(texName == "blizzard_class" and "Blizzard" or texName)
@@ -871,10 +871,10 @@ function HealthBar.Style(bar, settings)
     HealthBar.SetBackgroundAnchors(bar)
     HealthBar.ApplyBackgroundColor(bar, resourceConfig)
 
-    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
-    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
-    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
-    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
+    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel", RESOURCE_HEALTH, appearance)
+    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 }, RESOURCE_HEALTH, appearance)
+    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1, RESOURCE_HEALTH, appearance)
+    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM, RESOURCE_HEALTH, appearance)
 
     if borderStyle == "pixel" then
         ApplyPixelBorders(bar.borders, bar, borderColor, borderSize, borderRenderMode)

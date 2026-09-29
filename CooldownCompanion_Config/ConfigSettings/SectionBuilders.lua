@@ -712,10 +712,6 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         disabled = disabled,
         onChange = SetEnabled,
     })
-    -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-    -- onto the end of the row's label.
-    AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
-        LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
     rows[#rows + 1] = toggleRow
 
     -- Keep the current behavior readable while the editor is collapsed.
@@ -896,6 +892,10 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                 } or nil,
             },
         })
+    -- After the gear, so the row reads label, gear, (?) like every other row.
+    -- Anchor args are a placeholder - AnchorRowBadge re-points the button.
+    AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
+        LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
     return rows
 end
 
@@ -919,6 +919,13 @@ local PANDEMIC_MARKER_TOOLTIP_LINES = {
     {"Auto marks debuffs you place on your target and leaves your own buffs plain.", 1, 1, 1, true},
 }
 
+-- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
+-- the end of the row's label chain.
+function ST._AddPandemicMarkerInfo(row)
+    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0,
+        PANDEMIC_MARKER_TOOLTIP_LINES, row))
+end
+
 -- Three states, not two (owner ruling 2026-08-16): the per-entry checkbox this
 -- setting absorbed defaulted per tracked UNIT, so "Auto" is what carries that
 -- default now, and "On" is what forces the marker onto a player buff.
@@ -931,8 +938,9 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the mode row, returned so the caller can chain a
---                       gear and the section's scope chrome off it (the
---                       Indicators tab's Pandemic section).
+--                       gear, then ST._AddPandemicMarkerInfo's (?), and the
+--                       section's scope chrome off it (the Indicators tab's
+--                       Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a control that is elsewhere.
 --   neither           - both, with the three styling rows as children of the
@@ -961,10 +969,9 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
                 if refreshCallback("style-settings") == nil then rebuildCallback() end
             end,
         })
-        -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-        -- onto the end of the row's label.
-        AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0,
-            PANDEMIC_MARKER_TOOLTIP_LINES, enableRow))
+        -- The enableOnly callers add their gear first, then this (?) through
+        -- ST._AddPandemicMarkerInfo, so the row reads label, gear, (?).
+        if not opts.enableOnly then ST._AddPandemicMarkerInfo(enableRow) end
     end
 
     -- childrenOnly is the advanced panel's shape, and that panel now opens
@@ -1026,64 +1033,47 @@ end
 -- "Show Keybind Text" - it has no custom-text form.
 
 
--- Row grammar only: the render-mode dropdown reuses
--- AddBorderRenderModeDropdown's own row mode, the conditional thickness slider
--- is its child row, and the color is a color row. Three rows in one column -
--- splitting a parent from its children would orphan the indent.
+-- Row grammar only: Border Color, Border Thickness Mode and (unless
+-- one-pixel) Border Thickness, inline in one column like the icon and bar
+-- tabs' border rows. The Totem Panel is the caller.
 local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
+    local settings = opts.settings or {}
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
-
-    local function ApplyRenderModeChanged()
-        if opts.completeEdit then
-            opts.completeEdit(IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings")
-        else
-            RefreshStructuralControls(container, refreshCallback)
-        end
-    end
     local colorRow = AddColorRow(container, {
         label = "Border Color",
-        setting = opts.settings and opts.settings.color,
-        indent = opts.indent,
+        setting = settings.color,
         tbl = styleTable,
         key = "borderColor",
         default = {0, 0, 0, 1},
         hasAlpha = true,
         onConfirm = function() return refreshCallback(nil, "appearance") end,
     })
-    ST._AddAdvancedToggle(colorRow, "panelBorder", {}, not opts.sec or opts.sec.scope ~= "denied", {
-        unlock = opts.sec and { sec = opts.sec } or nil,
-        build = function(panel)
-            local renderMode = AddBorderRenderModeDropdown(panel, styleTable, "borderRenderMode",
-                ApplyRenderModeChanged, nil, {
-                    row = true,
-                    indent = opts.indent,
-                    setting = opts.settings and opts.settings.thickness,
-                })
-            local borderThicknessLocked = ST.IsBorderThicknessLocked()
-
-            if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
-                AddSliderRow(panel, {
-                    label = "Border Size",
-                    setting = opts.settings and opts.settings.size,
-                    indent = false,
-                    min = 0, max = 5, step = 0.1,
-                    value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
-                    disabled = borderThicknessLocked,
-                    onChange = function(val)
-                        if borderThicknessLocked then return end
-                        ST._PreviewScalarSetting(styleTable, "borderSize", val, previewRefresh)
-                    end,
-                    onRelease = function(val)
-                        if borderThicknessLocked then return end
-                        styleTable.borderSize = val
-                        refreshCallback()
-                    end,
-                })
-            end
-
-        end,
+    local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
+        RefreshStructuralControls(container, refreshCallback)
+    end, nil, {
+        row = true,
+        setting = settings.thickness,
     })
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderThicknessLocked = ST.IsBorderThicknessLocked()
+        AddSliderRow(container, {
+            label = "Border Thickness",
+            setting = settings.size,
+            min = 0, max = 5, step = 0.1,
+            value = styleTable.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = borderThicknessLocked,
+            onChange = function(val)
+                if borderThicknessLocked then return end
+                ST._PreviewScalarSetting(styleTable, "borderSize", val, previewRefresh)
+            end,
+            onRelease = function(val)
+                if borderThicknessLocked then return end
+                styleTable.borderSize = val
+                refreshCallback()
+            end,
+        })
+    end
     return colorRow
 end
 
@@ -1261,7 +1251,7 @@ end
 -- Row grammar only: one checkbox row.
 local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
     return AddCheckboxRow(container, {
-        label = "Desaturate On Cooldown",
+        label = "Desaturate on Cooldown",
         setting = opts and opts.setting,
         value = styleTable.desaturateOnCooldown or false,
         indent = opts and opts.indent,
@@ -1478,40 +1468,27 @@ local function BuildAuraDurationSwipeAdvancedControls(container, styleTable, ref
         end,
     })
 
-    AddCheckboxRow(container, {
-        label = "Show Swipe Fill",
-        setting = opts.settings and opts.settings.fill,
-        value = styleTable.showAuraDurationSwipeFill ~= false,
+    -- Show Aura Duration Swipe itself draws the fill, so its opacity is always
+    -- here. Row grammar has no percent readout, so this reads 0 - 1 rather than
+    -- the pre-redesign slider's 0% - 100%; same store, same range. 0 leaves
+    -- only the edge.
+    AddSliderRow(container, {
+        label = "Swipe Fill Opacity",
+        setting = opts.settings and opts.settings.fillOpacity,
         indent = childIndent,
+        min = 0, max = 1, step = 0.05,
+        value = styleTable.auraDurationSwipeAlpha or 0.8,
         disabled = blizzardStyleActive,
         onChange = function(val)
             if blizzardStyleActive then return end
-            styleTable.showAuraDurationSwipeFill = val
-            RefreshStructuralControls(container, refreshCallback)
+            ST._PreviewScalarSetting(styleTable, "auraDurationSwipeAlpha", val, previewRefresh)
+        end,
+        onRelease = function(val)
+            if blizzardStyleActive then return end
+            styleTable.auraDurationSwipeAlpha = val
+            refreshCallback()
         end,
     })
-
-    if styleTable.showAuraDurationSwipeFill ~= false then
-        -- Row grammar has no percent readout, so this reads 0 - 1 rather than
-        -- the pre-redesign slider's 0% - 100%; same store, same range.
-        AddSliderRow(container, {
-            label = "Swipe Fill Opacity",
-            setting = opts.settings and opts.settings.fillOpacity,
-            indent = true,
-            min = 0, max = 1, step = 0.05,
-            value = styleTable.auraDurationSwipeAlpha or 0.8,
-            disabled = blizzardStyleActive,
-            onChange = function(val)
-                if blizzardStyleActive then return end
-                ST._PreviewScalarSetting(styleTable, "auraDurationSwipeAlpha", val, previewRefresh)
-            end,
-            onRelease = function(val)
-                if blizzardStyleActive then return end
-                styleTable.auraDurationSwipeAlpha = val
-                refreshCallback()
-            end,
-        })
-    end
 
     AddCheckboxRow(container, {
         label = "Show Swipe Edge",
@@ -1584,7 +1561,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
     end
 
     local cb = AddCheckboxRow(container, {
-        label = "Icon Fill Timer",
+        label = "Show Icon Fill Timer",
         setting = opts.setting,
         value = styleTable.iconFillEnabled == true,
         disabled = disabledByMasque,
@@ -2573,7 +2550,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
         CooldownCompanion:RefreshConfigPanel()
     end
     local row = AddCheckboxRow(container, {
-        label = "Missing Aura Indicator", setting = opts.setting,
+        label = "Show Missing Aura Indicator", setting = opts.setting,
         value = enabled, disabled = sec.disabled,
         onChange = function(value)
             if not sec.write then return end
@@ -2581,21 +2558,6 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
             Refresh()
         end,
     })
-    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
-        "Missing Aura Indicator",
-        {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
-        " ",
-        {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
-        {"Group tracking checks only buffs applied by you. The reminder clears when your buff is active on any tracked member.", 1, 1, 1, true},
-        " ",
-        {"Harmful auras require a hostile target, with an optional combat requirement.", 1, 1, 1, true},
-        {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
-        " ",
-        {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
-        {"Show Only While Active also hides the reminder. Choose Normal or Dim While Inactive to show it when the aura is missing.", 1, 1, 1, true},
-        " ",
-        {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
-    }, opts.infoButtons))
     if enabled and lens and lens.mode == "entry" and lens.buttonData
         and lens.buttonData.hideWhileAuraNotActive == true then
         AddLabelRow(container, { label = "Inactive Reminder", controlText = "Hidden by Show Only While Active" })
@@ -2670,6 +2632,22 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
                 label = "Enable Missing Aura Indicator", key = "missingAuraIndicatorEnabled" } or nil },
         })
     end
+    -- After the gear, so the row reads label, gear, (?) like every other row.
+    AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+        "Missing Aura Indicator",
+        {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
+        " ",
+        {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
+        {"Group tracking checks only buffs applied by you. The reminder clears when your buff is active on any tracked member.", 1, 1, 1, true},
+        " ",
+        {"Harmful auras require a hostile target, with an optional combat requirement.", 1, 1, 1, true},
+        {"Helpful auras show reminders only in combat, regardless of your selected target.", 1, 1, 1, true},
+        " ",
+        {"Uses existing icon color and visibility settings, including Never Desaturate.", 1, 1, 1, true},
+        {"Show Only While Active also hides the reminder. Choose Normal or Dim While Inactive to show it when the aura is missing.", 1, 1, 1, true},
+        " ",
+        {"Unavailable in Aura Panels and Aura Only Sections. Bars require a visible icon.", 1, 1, 1, true},
+    }, opts.infoButtons))
     sec:Chrome(row)
     sec:Finish()
 end

@@ -39,9 +39,14 @@ function RB.GetResourceBarSize(frame)
     return frame._ccResourceWidth or 0, frame._ccResourceHeight or 0
 end
 
-local function GetResourceDisplayStyle(settings)
-    return GetSpecResourceDisplayProfile and GetSpecResourceDisplayProfile(settings) or settings
+local function GetResourceDisplayStyle(settings, powerType, appearance)
+    local saved = GetSpecResourceDisplayProfile and GetSpecResourceDisplayProfile(settings, appearance and appearance.spec) or settings
+    if not ST.ApplyModuleBarStyle then return saved end
+    local style = {}
+    for key, value in pairs(saved or {}) do style[key] = value end
+    return ST.ApplyModuleBarStyle("resources", style, settings, powerType, nil, nil, appearance)
 end
+RB.GetResourceDisplayStyle = GetResourceDisplayStyle
 
 local function ClampSegmentGapToFit(totalSize, segmentCount, gap)
     gap = tonumber(gap) or 0
@@ -254,7 +259,7 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
         end
     end
 
-    local style = GetResourceDisplayStyle(settings)
+    local style = bar._ccResourceDisplayStyle
     local borderStyle = style and style.borderStyle or "pixel"
     local borderRenderMode = ST.GetBorderRenderMode(style)
     local borderSize = (borderStyle == "pixel") and ST.GetEffectiveBorderLayoutSize(bar, style and style.borderSize or 1, borderRenderMode) or 0
@@ -291,7 +296,8 @@ local function UpdateContinuousTickMarker(bar, powerType, settings, maxPower, ma
             marker:SetHeight(tickWidth)
         else
             local usableWidth = math_max(width - (borderSize * 2), 1)
-            local x = borderSize + (usableWidth * ratio)
+            local localRatio = bar._reverseFill and (1 - ratio) or ratio
+            local x = borderSize + (usableWidth * localRatio)
             local xMax = width - borderSize
             if x > xMax then x = xMax end
             if x < borderSize then x = borderSize end
@@ -309,7 +315,7 @@ end
 local function ApplyContinuousFillColor(bar, powerType, settings)
     if not bar or not settings then return end
 
-    local style = GetResourceDisplayStyle(settings)
+    local style = bar._ccResourceDisplayStyle
     local texName = bar._effectiveBarTextureName or ST.GetEffectiveBarTextureName(style and style.barTexture or "Solid")
     local atlasInfo = (texName == "blizzard_class") and POWER_ATLAS_INFO[powerType] or nil
     if atlasInfo then
@@ -494,12 +500,15 @@ end
 -- Layout: position segments within a segmented bar
 ------------------------------------------------------------------------
 
-local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, orientationOverride, reverseFillOverride)
+local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, orientationOverride, reverseFillOverride, powerType, appearance)
     if not holder or not holder.segments then return end
     local n = holder._activeSegments or #holder.segments
     if n == 0 then return end
 
-    local style = GetResourceDisplayStyle(settings)
+    local style = GetResourceDisplayStyle(settings, powerType, appearance)
+    holder._segmentedSmoothing = style.segmentedSmoothing
+    local shared = appearance and appearance.style
+        or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
     local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
     local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = style and style.borderStyle or "pixel"
@@ -517,8 +526,9 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
     local reverseFill = false
     if reverseFillOverride ~= nil then
         reverseFill = reverseFillOverride == true
-    elseif isVertical then
-        reverseFill = IsVerticalFillReversed(settings)
+    else
+        reverseFill = shared and shared.barReverseFill
+        if reverseFill == nil then reverseFill = isVertical and IsVerticalFillReversed(settings) or false end
     end
     local subSize
     if isVertical then
@@ -633,10 +643,13 @@ local function CreateOverlayBar(parent, halfSegments)
     return holder
 end
 
-local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments, orientationOverride, reverseFillOverride)
+local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments, orientationOverride, reverseFillOverride, powerType, appearance)
     if not holder or not holder.segments then return end
 
-    local style = GetResourceDisplayStyle(settings)
+    local style = GetResourceDisplayStyle(settings, powerType, appearance)
+    holder._segmentedSmoothing = style.segmentedSmoothing
+    local shared = appearance and appearance.style
+        or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
     local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
     local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
     local borderStyle = style and style.borderStyle or "pixel"
@@ -654,8 +667,9 @@ local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, setti
     local reverseFill = false
     if reverseFillOverride ~= nil then
         reverseFill = reverseFillOverride == true
-    elseif isVertical then
-        reverseFill = IsVerticalFillReversed(settings)
+    else
+        reverseFill = shared and shared.barReverseFill
+        if reverseFill == nil then reverseFill = isVertical and IsVerticalFillReversed(settings) or false end
     end
     local subSize
     if isVertical then

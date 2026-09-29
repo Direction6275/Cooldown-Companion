@@ -304,14 +304,14 @@ local function ApplyDefaultCooldownSwipeStyle(button, style)
         return
     end
 
+    -- Show Cooldown Swipe draws the fill; opacity 0 leaves only the edge.
     local swipeEnabled = style.showCooldownSwipe ~= false
-    local fillEnabled = style.showCooldownSwipeFill ~= false
     local edgeEnabled = style.cooldownSwipeEdgeEnabled == true
     local reverse = style.cooldownSwipeReverse or false
     local alpha = style.cooldownSwipeAlpha or 0.8
     local edgeColor = style.cooldownSwipeEdgeColor or DEFAULT_WHITE
     button.cooldown:SetUseAuraDisplayTime(false)
-    button.cooldown:SetDrawSwipe(swipeEnabled and fillEnabled and button._hideCooldownChargesActive ~= true)
+    button.cooldown:SetDrawSwipe(swipeEnabled and button._hideCooldownChargesActive ~= true)
     button.cooldown:SetDrawEdge(swipeEnabled and edgeEnabled)
     button.cooldown:SetReverse(swipeEnabled and reverse)
     button.cooldown:SetSwipeColor(0, 0, 0, alpha)

@@ -275,15 +275,6 @@ local BAR_SHOWS_STACKS_TOOLTIP = {
     {"If the aura doesn't stack, the bar keeps the normal duration fill.", 1, 1, 1, true},
 }
 
-local SEGMENTED_SMOOTHING_TOOLTIP = {
-    "Segmented Smoothing",
-    {"Segmented stack bars animate smoothly between stack counts, or snap instantly. Same control as the resource bar option.", 1, 1, 1, true},
-    " ",
-    {"Continuous stack bars always animate smoothly.", 1, 1, 1, true},
-    " ",
-    {"Gaining or losing the aura entirely always snaps; the game only animates stack changes.", 1, 1, 1, true},
-}
-
 ------------------------------------------------------------------------
 -- SETTINGS FINDER CATALOG (entry Settings > Aura Tracking)
 ------------------------------------------------------------------------
@@ -398,14 +389,6 @@ local auraSettings = ST._DefineSettingRoute({
         aliases = { "segmented continuous" },
         applies = AuraStateApplies(function(state)
             return state.active and state.barShowsStacks and state.maxStacks ~= nil
-        end),
-    },
-    segmentedSmoothing = { advancedKey = "entryAuraStackDisplay",
-        label = "Segmented Smoothing",
-        aliases = { "smooth stacks", "snap stacks" },
-        applies = AuraStateApplies(function(state)
-            return state.active and state.barShowsStacks and state.maxStacks ~= nil
-                and state.stackStyle == "segmented"
         end),
     },
     showCountAtOne = {
@@ -852,28 +835,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                         end,
                     })
 
-                    -- Segmented style only: Continuous always animates smoothly
-                    -- (resource-bar parity), so the toggle would be dead there.
-                    if stackStyle == "segmented" then
-                        local smoothRow = AddDropdownRow(panel, {
-                            setting = auraSettings.segmentedSmoothing,
-                            indent = false,
-                            list = {
-                                [ST.SEGMENTED_SMOOTHING_ON] = "On",
-                                [ST.SEGMENTED_SMOOTHING_OFF] = "Off",
-                            },
-                            order = { ST.SEGMENTED_SMOOTHING_ON, ST.SEGMENTED_SMOOTHING_OFF },
-                            value = CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData),
-                            onChange = function(value)
-                                CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
-                                -- Rebind only: the option re-registers the stack bar
-                                -- in the next OOC bind pass; no panel rebuild needed.
-                                CooldownCompanion:RequestAuraRebind("config")
-                            end,
-                        })
-                        AnchorRowBadge(smoothRow, CreateInfoButton(smoothRow.frame, smoothRow.frame, "LEFT", "LEFT", 0, 0,
-                            SEGMENTED_SMOOTHING_TOOLTIP, CS.advancedSettingsInfoButtons))
-                    end
+
                 end
 
                 AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })

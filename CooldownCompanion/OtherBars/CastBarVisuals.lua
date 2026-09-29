@@ -125,11 +125,13 @@ local function IsInlineIcon(s)
 end
 
 local function Layout(frame, s, width, height)
+    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s) end
     if not frame then return end
 
     local inlineIcon = IsInlineIcon(s)
-    local inlineIconSize = height
-    local fillWidth = width - (inlineIcon and inlineIconSize or 0)
+    local inlineIconSize = s.iconSizeOverride and (tonumber(s.iconSize) or height) or height
+    local iconGap = s.iconGap or 0
+    local fillWidth = width - (inlineIcon and (inlineIconSize + iconGap) or 0)
     if fillWidth < 1 then fillWidth = 1 end
 
     frame.fillWidth = fillWidth
@@ -137,7 +139,7 @@ local function Layout(frame, s, width, height)
     local fill = frame.fill
     fill:ClearAllPoints()
     if inlineIcon and not s.iconFlipSide then
-        fill:SetPoint("TOPLEFT", frame.content, "TOPLEFT", inlineIconSize, 0)
+        fill:SetPoint("TOPLEFT", frame.content, "TOPLEFT", inlineIconSize + iconGap, 0)
     else
         fill:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
     end
@@ -149,7 +151,7 @@ local function Layout(frame, s, width, height)
         ST._ApplyIconTexCoord(icon, 1, 1, s.iconZoom)
         icon:ClearAllPoints()
         if s.iconOffset then
-            local iconSize = tonumber(s.iconSize) or 16
+            local iconSize = s.iconSizeOverride ~= nil and inlineIconSize or tonumber(s.iconSize) or 16
             icon:SetSize(iconSize, iconSize)
             local ox = tonumber(s.iconOffsetX) or 0
             local oy = tonumber(s.iconOffsetY) or 0
@@ -161,9 +163,9 @@ local function Layout(frame, s, width, height)
         else
             icon:SetSize(inlineIconSize, inlineIconSize)
             if s.iconFlipSide then
-                icon:SetPoint("LEFT", fill, "RIGHT", 0, 0)
+                icon:SetPoint("LEFT", fill, "RIGHT", iconGap, 0)
             else
-                icon:SetPoint("RIGHT", fill, "LEFT", 0, 0)
+                icon:SetPoint("RIGHT", fill, "LEFT", -iconGap, 0)
             end
         end
     end
@@ -196,6 +198,7 @@ local function Layout(frame, s, width, height)
 end
 
 local function Style(frame, s)
+    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s) end
     if not frame then return end
 
     frame.sparkEnabled = s.showSpark ~= false

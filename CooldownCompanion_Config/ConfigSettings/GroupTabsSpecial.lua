@@ -557,7 +557,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     ST._AddAdvancedToggle(borderModeRow, "triggerIconBorder", {}, renderMode ~= ST.BORDER_RENDER_MODE_CRISP, {
         build = function(panel)
             local borderRow = AddSliderRow(panel, {
-                label = "Border Size",
+                label = "Border Thickness",
                 setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
                 indent = false,
                 min = 0, max = 5, step = 0.1,
@@ -1389,8 +1389,8 @@ if ST._DefineSettingRoute then
         zoom = { label = "Icon Zoom" },
         baseColor = { label = "Icon Color", aliases = { "Base Icon Color" } },
         background = { label = "Background Color" },
-        borderThickness = { label = "Border Thickness" },
-        borderSize = { advancedKey = "triggerIconBorder", label = "Border Size", applies = SpecialFinderTriggerIconCustomBorder },
+        borderThickness = { label = "Border Thickness Mode" },
+        borderSize = { advancedKey = "triggerIconBorder", label = "Border Thickness", aliases = { "border size" }, applies = SpecialFinderTriggerIconCustomBorder },
         borderColor = { label = "Border Color" },
     })
 

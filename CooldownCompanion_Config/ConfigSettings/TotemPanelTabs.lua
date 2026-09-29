@@ -67,8 +67,11 @@ local fields = {
     background = Setting(shape, "background", "Background Color", IsIcons),
     border = {
         color = Setting(shape, "borderColor", "Border Color"),
-        thickness = shape:Setting({key = "borderMode", label = "Border Thickness", advancedKey = "panelBorder"}),
-        size = shape:Setting({key = "borderSize", label = "Border Size", advancedKey = "panelBorder"}),
+        thickness = shape:Setting({key = "borderMode", label = "Border Thickness Mode"}),
+        size = shape:Setting({key = "borderSize", label = "Border Thickness", aliases = {"border size"},
+            applies = function(context)
+                return ST.GetBorderRenderMode(SelectedGroup(context).style) ~= ST.BORDER_RENDER_MODE_CRISP
+            end}),
     },
     length = Setting(bars, "length", "Bar Length"),
     barHeight = Setting(bars, "height", "Bar Height"),
@@ -88,12 +91,9 @@ local fields = {
     format = Setting(duration, "format", "Duration Format", HasDuration),
     showName = Setting(name, "show", "Show Name Text"),
     swipe = Setting(effects, "swipe", "Show Duration Swipe", IsIcons),
-    swipeFill = Setting(effects, "fill", "Show Swipe Fill", HasSwipe),
     swipeReverse = Setting(effects, "reverse", "Reverse Swipe", HasSwipe),
     swipeEdge = Setting(effects, "edge", "Show Swipe Edge", HasSwipe),
-    swipeAlpha = Setting(effects, "alpha", "Swipe Opacity", function(c)
-        return HasSwipe(c) and SelectedGroup(c).style.showCooldownSwipeFill ~= false
-    end),
+    swipeAlpha = Setting(effects, "alpha", "Swipe Fill Opacity", HasSwipe),
     edgeColor = Setting(effects, "edgeColor", "Swipe Edge Color", function(c)
         return HasSwipe(c) and SelectedGroup(c).style.cooldownSwipeEdgeEnabled == true
     end),
@@ -241,13 +241,11 @@ function ST._BuildTotemEffectsTab(container, group)
     if not left then return end
     if group.displayMode ~= "bars" then
         Toggle(left, fields.swipe, style, "showCooldownSwipe", true, true)
+        -- Show Duration Swipe draws the fill; the rows below match the icon gears.
         if style.showCooldownSwipe ~= false then
-            Toggle(left, fields.swipeFill, style, "showCooldownSwipeFill", true, true)
             Toggle(left, fields.swipeReverse, style, "cooldownSwipeReverse", true)
+            Number(left, fields.swipeAlpha, style, "cooldownSwipeAlpha", 0.8, 0, 1, 0.05)
             Toggle(left, fields.swipeEdge, style, "cooldownSwipeEdgeEnabled", false, true)
-            if style.showCooldownSwipeFill ~= false then
-                Number(left, fields.swipeAlpha, style, "cooldownSwipeAlpha", 0.8, 0, 1, 0.05)
-            end
             if style.cooldownSwipeEdgeEnabled then
                 Tint(left, fields.edgeColor, style, "cooldownSwipeEdgeColor", {1, 1, 1, 1})
             end

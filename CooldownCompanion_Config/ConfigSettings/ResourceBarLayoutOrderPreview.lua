@@ -1192,6 +1192,12 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
     local rbSettings = preview.rbSettings
     local layout = preview.layout
     local segmentGap = ST.ResolveResourceSegmentGap(rbSettings, layout, slot.powerType, slot.anchorGroup)
+    -- Overview depicts the configured panel, which may differ from the live
+    -- fallback. Resolve once and carry that appearance through every painter.
+    local spec = CooldownCompanion._currentSpecId
+    local host = ST.PanelSupportsAttachedBars(slot.anchorGroup) and slot.anchorGroup or false
+    local style, panel, object = ST.ResolveModuleBarStyle("resources", rbSettings, slot.powerType, spec, host)
+    local appearance = { style = style, panel = panel, object = object, spec = spec }
 
     if slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
@@ -1205,7 +1211,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             }
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+        StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
     elseif slot.powerType == RESOURCE_HEALTH then
         if not barInfo or barInfo.barType ~= "health_continuous" then
             if barInfo and barInfo.frame then
@@ -1218,7 +1224,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             }
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        StyleHealthBar(barInfo.frame, rbSettings)
+        StyleHealthBar(barInfo.frame, rbSettings, appearance)
     elseif slot.powerType == RESOURCE_MAELSTROM_WEAPON then
         -- Mirrors the three real MW shapes exactly (ResourceBar.lua's apply
         -- branch); the canvas must show the shape the bar will actually be.
@@ -1236,7 +1242,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 }
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
         elseif mwStyle == "segments" then
             if not barInfo or barInfo.barType ~= "mw_segments"
                 or #barInfo.frame.segments ~= mwMaxStacks then
@@ -1250,12 +1256,12 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 }
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
             local baseColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, mwMaxStacks do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
             end
-            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings, appearance)
         else
             local halfSegments = (mwMaxStacks <= 5) and mwMaxStacks or (mwMaxStacks / 2)
             if not barInfo or barInfo.barType ~= "mw_segmented" or #barInfo.frame.segments ~= halfSegments then
@@ -1269,14 +1275,14 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 }
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments)
+            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, nil, nil, slot.powerType, appearance)
             local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, halfSegments do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
                 barInfo.frame.overlaySegments[i]:SetStatusBarColor(overlayColor[1], overlayColor[2], overlayColor[3], 1)
                 barInfo.frame.overlaySegments[i]:Show()
             end
-            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings, appearance)
         end
     elseif RB.AURA_STACK_RESOURCES[slot.powerType] then
         -- Mirrors the two real aura-stack shapes (ResourceBar.lua's apply
@@ -1307,7 +1313,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo.powerType = slot.powerType
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+            StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
         else
             if not barInfo or barInfo.barType ~= "stackaura_segments"
                 or #barInfo.frame.segments ~= stackMax then
@@ -1324,12 +1330,12 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo.powerType = slot.powerType
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
             local baseColor = GetResourceColors(slot.powerType, rbSettings)
             for i = 1, stackMax do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
             end
-            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings)
+            RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings, appearance)
         end
     elseif SEGMENTED_TYPES[slot.powerType] then
         local maxValue = UnitPowerMax("player", slot.powerType)
@@ -1356,8 +1362,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             barInfo.powerType = slot.powerType
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings)
-        StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings)
+        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+        StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings, appearance)
     else
         if not barInfo or barInfo.barType ~= "continuous" then
             if barInfo and barInfo.frame then
@@ -1377,10 +1383,11 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             barInfo.powerType = slot.powerType
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings)
+        StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
     end
 
     frame.previewBarInfo = barInfo
+    barInfo.appearance = appearance
     if barInfo and barInfo.frame then
         barInfo.frame:SetParent(frame.previewCanvas)
         barInfo.frame:ClearAllPoints()
@@ -1394,7 +1401,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         barInfo.frame._resourceAuraActivePreview = not preview.readOnly and barInfo.powerType ~= nil
             and CooldownCompanion:IsResourceAuraActivePreviewActive(barInfo.powerType)
             or nil
-        ApplyPreviewBarState(barInfo, rbSettings, preview.readOnly)
+        ApplyPreviewBarState(barInfo, rbSettings, preview.readOnly, appearance)
         if not preview.readOnly and barInfo.barType == "health_continuous"
             and RB.IsHealthEffectPreviewAnimated
             and RB.IsHealthEffectPreviewAnimated() then
@@ -1402,7 +1409,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo = barInfo,
                 -- Resolved here rather than per tick; see the exporter.
                 config = RB.GetHealthPreviewAnimationConfig
-                    and RB.GetHealthPreviewAnimationConfig(rbSettings) or nil,
+                    and RB.GetHealthPreviewAnimationConfig(rbSettings, appearance) or nil,
                 Tick = function(entry)
                     RB.AnimatePreviewHealthEffects(entry.barInfo, entry.config)
                 end,
@@ -3151,7 +3158,7 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
         local bar = barInfo and barInfo.frame
         local charges = bar and bar._chargeSegments
         if charges and charges._attached and charges._scale ~= bar:GetEffectiveScale() then
-            ApplyPreviewBarState(barInfo, preview.rbSettings)
+            ApplyPreviewBarState(barInfo, preview.rbSettings, nil, barInfo.appearance)
         end
         if bar then
             local auraEffect = bar.barAuraEffect

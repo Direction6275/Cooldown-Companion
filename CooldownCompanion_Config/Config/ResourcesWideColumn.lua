@@ -781,14 +781,17 @@ local function ShowResourcesTabPage(col3, stripOnly)
     local tabs = {
         { value = "general", text = "General" },
         { value = "layout", text = "Layout" },
-        { value = "appearance", text = "Appearance" },
     }
+    -- The spec being edited decides, as it does for the page and the Finder.
+    local localAppearance = ST.GetModuleGeometryPanel("resources",
+        CS._GetCurrentConfigSpecID and CS._GetCurrentConfigSpecID()) == nil
+    if localAppearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
     if healthEnabled then
         tabs[#tabs + 1] = { value = "health", text = "Health" }
     end
 
     local tab = CS.resourcesSettingsTab
-    local valid = { general = true, appearance = true, layout = true }
+    local valid = { general = true, appearance = localAppearance, layout = true }
     if healthEnabled then valid.health = true end
     if not tab or not valid[tab] then tab = "general" end
     CS.resourcesSettingsTab = tab

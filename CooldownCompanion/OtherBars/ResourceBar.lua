@@ -847,9 +847,9 @@ local function HideRechargeTexts(holder)
     end
 end
 
-local function StyleRechargeTexts(holder, powerType, settings)
+local function StyleRechargeTexts(holder, powerType, settings, appearance)
     if not (holder and holder.rechargeTexts) then return end
-    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local enabled = resourceConfig and resourceConfig.showRechargeText == true
     if not enabled or powerType ~= 5 then
         holder._showRechargeText = false
@@ -928,7 +928,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         settings = GetResourceBarSettings()
     end
 
-    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+    local segmentedSmoothing = holder._segmentedSmoothing or GetResourceSegmentedSmoothing(settings)
     local segmentCount = holder._activeSegments or #holder.segments
     -- Recharge text exists only on runes with the option on (StyleRechargeTexts
     -- owns _showRechargeText). Everywhere else the clear has to run once after
@@ -1349,7 +1349,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
     if not settings then
         settings = GetResourceBarSettings()
     end
-    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+    local segmentedSmoothing = isContinuous and "on" or holder._segmentedSmoothing or GetResourceSegmentedSmoothing(settings)
 
     -- Maelstrom Weapon stacks (the aura pass, Phase 2). MW carries the
     -- server-side per-spell never-secret flag — validated on PTR 7 by
@@ -1483,7 +1483,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
     if not settings then
         settings = GetResourceBarSettings()
     end
-    local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+    local segmentedSmoothing = isContinuous and "on" or holder._segmentedSmoothing or GetResourceSegmentedSmoothing(settings)
     local maxStacks, soundMaxConfirmed = RB.GetAuraStackResourceMax(powerType)
     -- The ACTIVE segment count. The holder is re-segmented in place, so its
     -- segments array is the high-water mark and everything past
@@ -1924,10 +1924,14 @@ local DisableEventFrame
 -- flashed an at-max bar the wrong colour for a frame on every in-place
 -- re-apply. Classic continuous bars pass nothing: their tick runs
 -- ApplyContinuousFillColor itself, so the apply-time write matches it.
-local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
-    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))
+local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, appearance)
+    bar._ccResourceDisplayStyle = RB.GetResourceDisplayStyle(settings, powerType, appearance)
+    local shared = appearance and appearance.style
+        or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
+    local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid", powerType, appearance))
     local isVertical = IsVerticalResourceLayout(settings)
-    local reverseFill = IsVerticalFillReversed(settings)
+    local reverseFill = shared and shared.barReverseFill
+    if reverseFill == nil then reverseFill = IsVerticalFillReversed(settings) end
     bar._effectiveBarTextureName = texName
 
     if texName == "blizzard_class" then
@@ -1945,7 +1949,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
         bar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texName))
     end
     bar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
-    bar:SetReverseFill(isVertical and reverseFill or false)
+    bar:SetReverseFill(reverseFill)
     bar._isVertical = isVertical
     bar._reverseFill = reverseFill
 
@@ -1953,15 +1957,15 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
         ApplyContinuousFillColor(bar, powerType, settings)
     end
 
-    local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
+    local bgc = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 }, powerType, appearance)
     bar.bg:ClearAllPoints()
     bar.bg:SetAllPoints(bar)
     bar.bg:SetColorTexture(bgc[1], bgc[2], bgc[3], bgc[4])
 
-    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
-    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
-    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
-    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
+    local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel", powerType, appearance)
+    local borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 }, powerType, appearance)
+    local borderSize = GetResourceDisplayValue(settings, "borderSize", 1, powerType, appearance)
+    local borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM, powerType, appearance)
 
     if borderStyle == "pixel" then
         ApplyPixelBorders(bar.borders, bar, borderColor, borderSize, borderRenderMode)
@@ -1978,7 +1982,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     if bar.tickLayer then
         bar.tickLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
     end
-    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
         textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
@@ -2042,7 +2046,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor)
     end
 end
 
-local function StyleSegmentedText(holder, powerType, settings)
+local function StyleSegmentedText(holder, powerType, settings, appearance)
     if not holder or not holder.text then return end
     if not IsSegmentedTextResource(powerType) then
         holder.text:SetShown(false)
@@ -2051,7 +2055,7 @@ local function StyleSegmentedText(holder, powerType, settings)
         return
     end
 
-    local resourceConfig = GetResourceDisplayConfig(settings, powerType)
+    local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
     if textFormat ~= "current" and textFormat ~= "current_max" then
         textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
@@ -2085,12 +2089,12 @@ local function StyleSegmentedText(holder, powerType, settings)
     end
 end
 
-local function StyleSegmentedBar(holder, powerType, settings)
+local function StyleSegmentedBar(holder, powerType, settings, appearance)
     -- Segment colors are live state, not static style. ApplyResourceBars() can
     -- run during combat events, so avoid briefly repainting every segment with
     -- the generic ready color before UpdateSegmentedBar restores per-segment state.
-    StyleSegmentedText(holder, powerType, settings)
-    StyleRechargeTexts(holder, powerType, settings)
+    StyleSegmentedText(holder, powerType, settings, appearance)
+    StyleRechargeTexts(holder, powerType, settings, appearance)
 end
 
 local function ApplySegmentedPreviewColors(holder, powerType, settings, previewValue)
@@ -2424,33 +2428,39 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local segmentGap = ST.ResolveResourceSegmentGap(settings, layout, powerType, geometryHost)
         local width = isVerticalLayout and effectiveThickness or primaryLength
         local height = isVerticalLayout and primaryLength or effectiveThickness
+        -- Resolve the shared appearance once and hand it to every painter.
+        -- Health keeps its own vertical-only fill direction.
+        local sharedStyle, sharedPanel, sharedObject = ST.ResolveModuleBarStyle("resources", settings, powerType)
+        local appearance = { style = sharedStyle, panel = sharedPanel, object = sharedObject }
+        local reverseFill = reverseVerticalFill
+        if powerType ~= RESOURCE_HEALTH then reverseFill = sharedStyle.barReverseFill == true end
 
         local barInfo, sameVisibleRenderer, countChanged = ResourceBars.Acquire(powerType, settings, targetContainer)
         local frame = barInfo.frame
         local geometryChanged = frame._ccResourceWidth ~= width or frame._ccResourceHeight ~= height
-            or frame._isVertical ~= isVerticalLayout or frame._reverseFill ~= reverseVerticalFill
+            or frame._isVertical ~= isVerticalLayout or frame._reverseFill ~= reverseFill
         resourceBarFrames[idx] = barInfo
         ResetResourceBarRuntimeState(frame, sameVisibleRenderer)
         if frame:GetParent() ~= targetContainer then frame:SetParent(targetContainer) end
         RB.SetResourceBarSize(frame, width, height)
 
         if powerType == RESOURCE_HEALTH then
-            HealthBar.Style(frame, settings)
+            HealthBar.Style(frame, settings, appearance)
         elseif barInfo.shape == "continuous" then
             local stackCounted = powerType == RESOURCE_MAELSTROM_WEAPON or RB.AURA_STACK_RESOURCES[powerType]
-            StyleContinuousBar(frame, powerType, settings, stackCounted and sameVisibleRenderer)
+            StyleContinuousBar(frame, powerType, settings, stackCounted and sameVisibleRenderer, appearance)
         elseif barInfo.shape == "overlay" then
-            LayoutOverlaySegments(frame, width, height, segmentGap, settings, 5)
-            StyleSegmentedText(frame, powerType, settings)
+            LayoutOverlaySegments(frame, width, height, segmentGap, settings, 5, nil, nil, powerType, appearance)
+            StyleSegmentedText(frame, powerType, settings, appearance)
         else
-            LayoutSegments(frame, width, height, segmentGap, settings)
+            LayoutSegments(frame, width, height, segmentGap, settings, nil, nil, powerType, appearance)
             if barInfo.barType == "segmented" then
-                StyleSegmentedBar(frame, powerType, settings)
+                StyleSegmentedBar(frame, powerType, settings, appearance)
             else
-                StyleSegmentedText(frame, powerType, settings)
+                StyleSegmentedText(frame, powerType, settings, appearance)
             end
         end
-        frame._isVertical, frame._reverseFill = isVerticalLayout, reverseVerticalFill
+        frame._isVertical, frame._reverseFill = isVerticalLayout, reverseFill
         barInfo._side, barInfo._order, barInfo._regionRank = sideList[idx], orderList[idx], regionRanks[idx]
         barInfo._effectiveThickness = effectiveThickness
         RB.CompileResourceBarConfig(frame, powerType, settings)

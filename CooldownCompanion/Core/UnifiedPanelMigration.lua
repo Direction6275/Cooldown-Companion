@@ -1367,6 +1367,7 @@ local function BuildConversion(source, context)
     end
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
+    if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(profile) end
     for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     NormalizeSegmentGaps(profile, context, report)
     valid, errorText = Validate(profile)
@@ -1421,6 +1422,7 @@ function Migration.Build(source, context)
     local candidate, report = Copy(source), EmptyReport()
     if not source._unifiedPanelMigration then ReportParkedResources(source, context, report) end
     RepairCastOffsets(candidate, context, report)
+    if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(candidate) end
     for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group) end
     NormalizeSegmentGaps(candidate, context, report)
     valid, errorText = Validate(candidate)
@@ -1450,6 +1452,7 @@ function Migration.Apply(profile, context)
             profile._castBarOffsetBackup = candidate._castBarOffsetBackup
             profile._unifiedPanelMigration = candidate._unifiedPanelMigration
         end
+        if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(profile) end
         for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
         NormalizeSegmentGaps(profile, context, report)
         return true, report

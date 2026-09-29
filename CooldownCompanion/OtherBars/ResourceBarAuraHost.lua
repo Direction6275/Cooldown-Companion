@@ -87,14 +87,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- exactly like the panel statusBar mount.
     ------------------------------------------------------------------------
 
-    local function GetResourceBarBorderInset(settings)
-        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
+    local function GetResourceBarBorderInset(settings, powerType, appearance)
+        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel", powerType, appearance)
         if borderStyle ~= "pixel" then
             return 0
         end
-        local borderSize = GetResourceDisplayValue(settings, "borderSize", 1)
+        local borderSize = GetResourceDisplayValue(settings, "borderSize", 1, powerType, appearance)
         local renderMode = ST.GetEffectiveBorderRenderMode(
-            GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM),
+            GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM, powerType, appearance),
             nil, borderSize)
         return ST.GetBorderLayoutSize(GetAuraHostRoot(), borderSize, renderMode)
     end
@@ -302,7 +302,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
             auraBar = {
                 mode = shapes.stackLane and "stacks" or "duration",
                 segmentGap = (layout and layout.segmentGap) or settings.segmentGap or 4,
-                segmentedSmoothing = GetResourceSegmentedSmoothing(settings),
             },
         }
     end
@@ -311,16 +310,19 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- plus the resourceShapes table the kit's resource branch lays shapes
     -- from. The aura border rides the barAura* effect family the kit glow
     -- reads natively, wrapping the whole bar rect on every shape.
-    local function BuildResourceOverlayStyleAdapter(entry, settings, shapes)
+    local function BuildResourceOverlayStyleAdapter(entry, settings, shapes, powerType, appearance)
         local style = {}
 
-        style.barTexture = GetResourceDisplayValue(settings, "barTexture", "Solid")
-        style.barBgColor = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 })
+        style.barTexture = GetResourceDisplayValue(settings, "barTexture", "Solid", powerType, appearance)
+        style.barBgColor = GetResourceDisplayValue(settings, "backgroundColor", { 0, 0, 0, 0.5 }, powerType, appearance)
+        style.barSegmentedSmoothing = GetResourceSegmentedSmoothing(settings, nil, powerType, appearance)
         style.backgroundColor = style.barBgColor
-        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel")
-        style.borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 })
-        style.borderSize = borderStyle == "pixel" and GetResourceDisplayValue(settings, "borderSize", 1) or 0
-        style.borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM)
+        local borderStyle = GetResourceDisplayValue(settings, "borderStyle", "pixel", powerType, appearance)
+        style.borderColor = GetResourceDisplayValue(settings, "borderColor", { 0, 0, 0, 1 }, powerType, appearance)
+        style.borderSize = borderStyle == "pixel" and GetResourceDisplayValue(settings, "borderSize", 1, powerType, appearance) or 0
+        style.borderRenderMode = GetResourceDisplayValue(settings, "borderRenderMode", ST.BORDER_RENDER_MODE_CUSTOM, powerType, appearance)
+        style.barReverseFill = appearance and appearance.style.barReverseFill == true
+        if borderStyle ~= "pixel" then style.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM end
 
         local color = entry.auraActiveColor
         if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
@@ -371,21 +373,21 @@ function RB.CreateResourceBarAuraHostModule(deps)
 
     -- The inset the kit will mount this bar's holder at, so the config
     -- canvas can stand the overlay in on the same rect the live one covers.
-    function RB.GetResourceOverlayHolderInset(barInfo)
-        local settings = GetResourceBarSettings()
+    function RB.GetResourceOverlayHolderInset(barInfo, settings, appearance)
+        settings = settings or GetResourceBarSettings()
         if not (settings and barInfo) then return 0 end
-        return GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings)) or 0
+        return GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, barInfo.powerType, appearance)) or 0
     end
 
     -- The automatic stack max for an overlay entry, resolved straight from
     -- game data through the same adapter the collector uses, for the config
     -- panel's status line. Deliberately does not touch the runtime cache:
     -- that cache is the in-combat safety net and the rebind pass owns it.
-    function RB.ResolveResourceOverlayStackMax(entry, powerType)
+    function RB.ResolveResourceOverlayStackMax(entry, powerType, settings, appearance)
         if type(entry) ~= "table" or not tonumber(entry.auraColorSpellID) then
             return nil
         end
-        local settings = GetResourceBarSettings()
+        settings = settings or GetResourceBarSettings()
         if not settings then return nil end
         local buttonData = BuildResourceOverlayEntryAdapter(
             entry, settings, ResolveResourceOverlayShapes(entry, powerType))
@@ -400,8 +402,12 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local settings = GetResourceBarSettings()
         local collectedResources
         if settings and settings.enabled then
-            local inset = GetResourceBarBorderInset(settings)
             for _, barInfo in ipairs(resourceBarFrames) do
+                local powerType = barInfo.powerType
+                -- One shared-appearance resolve per bar feeds the inset and the style adapter.
+                local appearance = powerType ~= nil
+                    and { style = ST.ResolveModuleBarStyle("resources", settings, powerType) } or nil
+                local inset = GetResourceBarBorderInset(settings, powerType, appearance)
                 local frame = barInfo and barInfo.frame
                 if frame and barInfo.powerType ~= nil
                     and RESOURCE_OVERLAY_BAR_TYPES[barInfo.barType]
@@ -453,9 +459,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             holder._isVertical = vertical
                             holder:Show()
 
-                            local style = BuildResourceOverlayStyleAdapter(entry, settings, shapes)
-                            style.barReverseFill = vertical
-                                and IsVerticalFillReversed(settings) == true or false
+                            local style = BuildResourceOverlayStyleAdapter(entry, settings, shapes, powerType, appearance)
 
                             wanted[#wanted + 1] = {
                                 button = holder,
@@ -499,7 +503,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
         if holder._ccAnchoredFrame ~= frame then
             AnchorHolderToBar(holder, frame,
-                GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings)),
+                GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, powerType)),
                 HOLDER_LEVEL_RESOURCE)
             -- Layout-derived, like the collector: cluster frames carry no
             -- _isVertical field for AnchorHolderToBar to read.

@@ -64,6 +64,7 @@ ConfigSettings\SettingsFinder.lua
 ConfigSettings\EntryPresentation.lua
 ConfigSettings\AdvancedSettingsPanel.lua
 ConfigSettings\SectionBuilders.lua
+ConfigSettings\SharedBarStyle.lua
 ConfigSettings\CastBarPanels.lua
 ConfigSettings\ResourceBarPanelsHelpers.lua
 ConfigSettings\ResourceBarLayoutOrderPreview.lua

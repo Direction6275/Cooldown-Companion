@@ -1362,8 +1362,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     if style.unusableVisualMode == nil then style.unusableVisualMode = "dim" end
     if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
     if style.showAuraDurationSwipe == nil then style.showAuraDurationSwipe = style.showCooldownSwipe ~= false end
-    if style.showCooldownSwipeFill == nil then style.showCooldownSwipeFill = true end
-    if style.showAuraDurationSwipeFill == nil then style.showAuraDurationSwipeFill = style.showCooldownSwipeFill ~= false end
     if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = true end
     if style.auraDurationSwipeEdgeEnabled == nil then style.auraDurationSwipeEdgeEnabled = style.cooldownSwipeEdgeEnabled == true end
     if style.auraDurationSwipeAlpha == nil then style.auraDurationSwipeAlpha = style.cooldownSwipeAlpha or 0.8 end

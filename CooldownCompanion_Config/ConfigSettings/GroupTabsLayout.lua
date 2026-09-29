@@ -143,6 +143,18 @@ local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, set
     }
 end
 
+-- The wrap count is named for what it counts along the axis it fills first
+-- (GroupFrameLayout: horizontal fills rows, vertical fills columns), the same
+-- way a panel section's own wrap row reads.
+local WRAP_COUNT_LABELS = {
+    iconsPerRow = "Icons Per Row", iconsPerColumn = "Icons Per Column",
+    barsPerRow = "Bars Per Row", barsPerColumn = "Bars Per Column",
+}
+local function WrapCountKey(group)
+    local perRow = ST.GetPanelLayoutOrientation(group.displayMode, group.style or {}) == "horizontal"
+    return (group.displayMode == "bars" and "bars" or "icons") .. (perRow and "PerRow" or "PerColumn")
+end
+
 local function ResolveLayoutArrangementState(group, layoutCount)
     local displayMode = group.displayMode or "icons"
     local standalone = displayMode == "indicator"
@@ -260,6 +272,7 @@ local function GetLayoutFinderState(context)
         for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
             "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
     end
+    if state.buttonsPerLine then state[WrapCountKey(group)] = true end
 
     if not standalone and hasIcons and ST.PanelSupportsSections(group)
         and type(group.sections) == "table" then
@@ -296,7 +309,7 @@ if ST._DefineSettingRoute then
         tab = "layout",
         tabLabel = "Layout",
         section = "anchor",
-        sectionLabel = "Anchor",
+        sectionLabel = "Position",
         collapseKeys = { "layout_anchor" },
         rowScope = "primary",
     })
@@ -314,7 +327,8 @@ if ST._DefineSettingRoute then
         tabLabel = "Layout",
         section = "position",
         sectionLabel = "Position",
-        collapseKeys = { "layout_position" },
+        -- One section with the anchor target (see the builders).
+        collapseKeys = { "layout_anchor" },
         rowScope = "primary",
     })
     LAYOUT_FINDER.position = position:Settings({
@@ -356,7 +370,10 @@ if ST._DefineSettingRoute then
         orientation = { label = "Orientation", applies = LayoutFinderFlag("orientation") },
         growth = { label = "Growth Direction", applies = LayoutFinderFlag("growth") },
         collapse = { label = "Collapse Direction", applies = LayoutFinderFlag("collapse") },
-        buttonsPerLine = { label = "Buttons Per Row/Column", aliases = { "wrap count" }, applies = LayoutFinderFlag("buttonsPerLine") },
+        iconsPerRow = { label = "Icons Per Row", aliases = { "wrap count", "buttons per row" }, applies = LayoutFinderFlag("iconsPerRow") },
+        iconsPerColumn = { label = "Icons Per Column", aliases = { "wrap count", "buttons per column" }, applies = LayoutFinderFlag("iconsPerColumn") },
+        barsPerRow = { label = "Bars Per Row", aliases = { "wrap count", "buttons per row" }, applies = LayoutFinderFlag("barsPerRow") },
+        barsPerColumn = { label = "Bars Per Column", aliases = { "wrap count", "buttons per column" }, applies = LayoutFinderFlag("barsPerColumn") },
         entriesPerLine = { label = "Entries per Row/Column", aliases = { "wrap count" }, applies = LayoutFinderFlag("entriesPerLine") },
         compact = { label = "Compact Mode", aliases = { "pack visible buttons" }, applies = LayoutFinderFlag("compact") },
     })
@@ -410,8 +427,8 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     LAYOUT_FINDER.strata = strata:Settings({
-        custom = { label = "Custom Icon Strata", aliases = { "layer order" }, applies = LayoutFinderFlag("customStrata") },
         frame = { label = "Frame Strata", aliases = { "panel layer" }, applies = LayoutFinderFlag("frameStrata") },
+        custom = { label = "Custom Icon Strata", aliases = { "layer order" }, applies = LayoutFinderFlag("customStrata") },
     })
 
     local layerRoute = ST._DefineSettingRoute({
@@ -606,9 +623,10 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- once there is something to wrap.
     if state.buttonsPerLine then
         local numButtons = math.max(state.showAll and 100 or 1, layoutCount)
+        local wrapKey = WrapCountKey(group)
         local wrapRow = AddSliderRow(arrangeRight, {
-            label = "Buttons Per Row/Column",
-            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.buttonsPerLine,
+            label = WRAP_COUNT_LABELS[wrapKey],
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement[wrapKey],
             min = 1, max = numButtons, step = 1,
             value = math.min(style.buttonsPerRow or 12, numButtons),
         })
@@ -773,9 +791,11 @@ local function BuildLayoutTab(container)
         end
 
         -- ============================================================
-        -- Anchor (what this texture hangs off)
+        -- Position (what this texture hangs off, and where it sits there)
         -- ============================================================
-        local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
+        -- One section: the target and the points/offsets answer the same
+        -- question. It keeps the "layout_anchor" key the mover menu opens.
+        local _, anchorCollapsed = BuildCollapsibleSection(container, positionHeadingText, "layout_anchor", nil, nil, ROW_SECTION)
 
         if not anchorCollapsed then
         -- LEFT column: the target itself, and nothing else here - the one
@@ -918,19 +938,15 @@ local function BuildLayoutTab(container)
         end
         end -- not anchorCollapsed
 
-        -- ============================================================
-        -- Position (where the anchor point sits, and the offset from it)
-        -- ============================================================
+        -- Points and offsets, under the same heading as the target above.
         -- Cursor anchoring pins the relative point; it is a stored setting,
         -- not a rendered control, so it is written whether or not the section
-        -- below is expanded.
+        -- is expanded.
         if targetMode == "cursor" then
             group.anchor.relativePoint = "CENTER"
         end
 
-        local _, positionCollapsed = BuildCollapsibleSection(container,
-            targetMode == "cursor" and "Cursor Offset" or positionHeadingText,
-            "layout_position", nil, nil, ROW_SECTION)
+        local positionCollapsed = anchorCollapsed
 
         if not positionCollapsed then
         -- LEFT column: the points that have to be read together (mine, then
@@ -1091,9 +1107,11 @@ local function BuildLayoutTab(container)
         or { "group", "frame" }
 
     -- ============================================================
-    -- Anchor (what this panel hangs off)
+    -- Position (what this panel hangs off, and where it sits there)
     -- ============================================================
-    local _, anchorCollapsed = BuildCollapsibleSection(container, "Anchor", "layout_anchor", nil, nil, ROW_SECTION)
+    -- One section: the target and the points/offsets answer the same
+    -- question. It keeps the "layout_anchor" key the mover menu opens.
+    local _, anchorCollapsed = BuildCollapsibleSection(container, "Position", "layout_anchor", nil, nil, ROW_SECTION)
 
     if not anchorCollapsed then
     -- LEFT column: the target itself. RIGHT column: whether other features may
@@ -1269,12 +1287,10 @@ local function BuildLayoutTab(container)
     end
     end -- not anchorCollapsed
 
-    -- ============================================================
-    -- Position (where the anchor point sits, and the offset from it)
-    -- ============================================================
+    -- Points and offsets, under the same heading as the target above.
     -- Cursor anchoring pins the relative point; it is a stored setting,
     -- not a rendered control, so it is written whether or not the section
-    -- below is expanded.
+    -- is expanded.
     if targetMode == "cursor" then
         group.anchor.relativePoint = "CENTER"
     end
@@ -1286,9 +1302,7 @@ local function BuildLayoutTab(container)
         end
     end
 
-    local _, positionCollapsed = BuildCollapsibleSection(container,
-        targetMode == "cursor" and "Cursor Offset" or "Position",
-        "layout_position", nil, nil, ROW_SECTION)
+    local positionCollapsed = anchorCollapsed
 
     if not positionCollapsed then
     -- LEFT column: the two points that have to be read together (mine,
@@ -1395,9 +1409,9 @@ local function BuildLayoutTab(container)
                     "layout_section_" .. anchor, nil, nil, ROW_SECTION)
 
                 if not sectionCollapsed then
-                -- WHAT this cluster is comes before where it sits, so the aura
-                -- toggle heads the block on its own full-width line above the
-                -- offsets grid.
+                -- WHAT this cluster is comes before where it sits: the aura
+                -- toggle and the wrap count share the first grid, and the
+                -- offsets pair sits below them.
                 --
                 -- A section holding anything the aura container cannot draw is
                 -- told so on a DISABLED checkbox rather than being allowed to
@@ -1424,11 +1438,11 @@ local function BuildLayoutTab(container)
                     end
                 end
 
-                AddCheckboxRow(container, {
+                local sectionTopLeft, sectionTopRight = BeginRowGrid(container)
+                AddCheckboxRow(sectionTopLeft, {
                     label = "Aura Only Section",
                     setting = LAYOUT_FINDER.sections[anchor]
                         and LAYOUT_FINDER.sections[anchor].auraOnly,
-                    relativeWidth = 0.5,
                     value = sectionAuraOnly,
                     tooltip = sectionToggleTooltip,
                     disabled = sectionBlocker ~= nil,
@@ -1446,6 +1460,34 @@ local function BuildLayoutTab(container)
                         CooldownCompanion:RefreshConfigPanel()
                     end,
                 })
+
+                -- The section's one layout-grammar control: a wrap count.
+                -- Direction is ALWAYS the anchor's own (owner ruling
+                -- 2026-08-28: a Growth Direction override was built, seen,
+                -- and removed -- do not revive it). Wrap only once there is
+                -- something to wrap, the same gate the base row's own wrap
+                -- slider keeps. Top of the range stores nil: "everything on
+                -- one line" must stay open-ended so a member added later
+                -- joins the line instead of wrapping under a count that
+                -- silently became a cap.
+                local sectionState = ResolveLayoutSectionState(group, anchor)
+                local axis, memberCount = sectionState.axis, sectionState.memberCount
+                if sectionState.iconsPerRow or sectionState.iconsPerColumn then
+                    local wrapLabel = (axis == "h") and "Icons Per Row" or "Icons Per Column"
+                    local sectionWrapRow = AddSliderRow(sectionTopRight, {
+                        label = wrapLabel,
+                        setting = LAYOUT_FINDER.sections[anchor] and (
+                            axis == "h" and LAYOUT_FINDER.sections[anchor].iconsPerRow
+                            or LAYOUT_FINDER.sections[anchor].iconsPerColumn),
+                        min = 1, max = memberCount, step = 1,
+                        value = math.min(section.maxPerLine or memberCount, memberCount),
+                    })
+                    WireMirrorFirstSlider(sectionWrapRow, function(val)
+                        section.maxPerLine = (val < memberCount) and val or nil
+                    end, function()
+                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+                    end, nil, section, "maxPerLine")
+                end
 
                 local sectionLeft, sectionRight = BeginRowGrid(container)
 
@@ -1470,34 +1512,6 @@ local function BuildLayoutTab(container)
                 WireMirrorFirstSlider(sectionYRow, function(val)
                     section.offsetY = val
                 end, nil, nil, section, "offsetY")
-
-                -- The section's one layout-grammar control: a wrap count.
-                -- Direction is ALWAYS the anchor's own (owner ruling
-                -- 2026-08-28: a Growth Direction override was built, seen,
-                -- and removed -- do not revive it). Wrap only once there is
-                -- something to wrap, the same gate the base row's own wrap
-                -- slider keeps. Top of the range stores nil: "everything on
-                -- one line" must stay open-ended so a member added later
-                -- joins the line instead of wrapping under a count that
-                -- silently became a cap.
-                local sectionState = ResolveLayoutSectionState(group, anchor)
-                local axis, memberCount = sectionState.axis, sectionState.memberCount
-                if sectionState.iconsPerRow or sectionState.iconsPerColumn then
-                    local wrapLabel = (axis == "h") and "Icons Per Row" or "Icons Per Column"
-                    local sectionWrapRow = AddSliderRow(sectionLeft, {
-                        label = wrapLabel,
-                        setting = LAYOUT_FINDER.sections[anchor] and (
-                            axis == "h" and LAYOUT_FINDER.sections[anchor].iconsPerRow
-                            or LAYOUT_FINDER.sections[anchor].iconsPerColumn),
-                        min = 1, max = memberCount, step = 1,
-                        value = math.min(section.maxPerLine or memberCount, memberCount),
-                    })
-                    WireMirrorFirstSlider(sectionWrapRow, function(val)
-                        section.maxPerLine = (val < memberCount) and val or nil
-                    end, function()
-                        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-                    end, nil, section, "maxPerLine")
-                end
                 end -- not sectionCollapsed
             end
         end
@@ -1520,17 +1534,13 @@ local function BuildLayoutTab(container)
     local showCustomStrata = HasCustomIconStrata(group, hasIcons)
     local customStrataEnabled = showCustomStrata and type(style.strataOrder) == "table"
 
-    -- LEFT column: the per-icon layer switch. RIGHT column: the whole
-    -- panel's draw layer. One row each - the layer dropdowns below
-    -- are a block of their own so the indent cannot read as belonging to
-    -- Frame Strata. Without the layer switch the section is a single row, so
-    -- Frame Strata moves left rather than leaving the left column empty.
+    -- LEFT column: the whole panel's draw layer, the row most players want.
+    -- RIGHT column: the per-icon layer switch, whose layers open in its gear.
     local strataLeft, strataRight = BeginRowGrid(container)
-    local frameStrataHost = showCustomStrata and strataRight or strataLeft
 
     local strataToggleRow
     if showCustomStrata then
-    strataToggleRow = AddCheckboxRow(strataLeft, {
+    strataToggleRow = AddCheckboxRow(strataRight, {
         label = "Custom Icon Strata",
         setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.custom,
         value = customStrataEnabled,
@@ -1566,7 +1576,7 @@ local function BuildLayoutTab(container)
     }, tabInfoButtons))
     end -- showCustomStrata (custom strata toggle)
 
-    local frameStrataRow = AddDropdownRow(frameStrataHost, {
+    local frameStrataRow = AddDropdownRow(strataLeft, {
         label = "Frame Strata",
         setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.frame,
         list = {

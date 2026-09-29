@@ -134,8 +134,8 @@ function RB.CreateResourceBarPreviewModule(deps)
     -- resource table. The canvas ticker is unthrottled, so calling it per
     -- frame meant a fresh table every frame for an animation that only needs
     -- the clock.
-    function RB.GetHealthPreviewAnimationConfig(settings)
-        return HealthBar.GetConfig(settings or GetResourceBarSettings())
+    function RB.GetHealthPreviewAnimationConfig(settings, appearance)
+        return HealthBar.GetConfig(settings or GetResourceBarSettings(), appearance)
     end
 
     function RB.AnimatePreviewHealthEffects(barInfo, config)
@@ -148,12 +148,12 @@ function RB.CreateResourceBarPreviewModule(deps)
     -- Ready-state rendering
     ------------------------------------------------------------------------
 
-    local function ApplyPreviewDataToBar(barInfo, settings, staticPreview)
+    local function ApplyPreviewDataToBar(barInfo, settings, staticPreview, appearance)
         if not (barInfo and barInfo.frame and barInfo.frame:IsShown()) then
             return
         end
 
-        local segmentedSmoothing = GetResourceSegmentedSmoothing(settings)
+        local segmentedSmoothing = GetResourceSegmentedSmoothing(settings, nil, barInfo.powerType, appearance)
 
         -- The resource aura overlay stand-in. The live shapes are
         -- Blizzard-driven regions on an AuraContainer slot, and the canvas
@@ -182,7 +182,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
 
             layer = EnsureResourceAuraOverlayStandIn(frame)
-            local inset = GetResourceOverlayHolderInset(barInfo)
+            local inset = GetResourceOverlayHolderInset(barInfo, settings, appearance)
             layer.host:ClearAllPoints()
             layer.host:SetPoint("TOPLEFT", frame, "TOPLEFT", inset, -inset)
             layer.host:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -inset, inset)
@@ -227,7 +227,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 and frame.GetStatusBarTexture then
                 local canvasFillTex = frame:GetStatusBarTexture()
                 local texName = ST.GetEffectiveBarTextureName(
-                    GetResourceDisplayValue(settings, "barTexture", "Solid"))
+                    GetResourceDisplayValue(settings, "barTexture", "Solid", barInfo.powerType, appearance))
                 layer.tint:SetTexture(CooldownCompanion:FetchStatusBar(
                     texName == "blizzard_class" and "Blizzard" or texName))
                 layer.tint:SetTexCoord(0, 1, 0, 1)
@@ -242,7 +242,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             end
 
             local stackMax = GetResourceOverlayTrackingMode(auraEntry, powerType) == "stacks"
-                and ResolveResourceOverlayStackMax(auraEntry, powerType)
+                and ResolveResourceOverlayStackMax(auraEntry, powerType, settings, appearance)
                 or nil
             if not stackMax then
                 layer.lane:Hide()
@@ -269,9 +269,11 @@ function RB.CreateResourceBarPreviewModule(deps)
                 layer.lane:SetHeight(size)
             end
             layer.lane:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(
-                ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid"))))
+                ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid", barInfo.powerType, appearance))))
             layer.lane:SetOrientation(vertical and "VERTICAL" or "HORIZONTAL")
-            layer.lane:SetReverseFill(vertical and IsVerticalFillReversed(settings) == true or false)
+            local reverseFill = appearance and appearance.style.barReverseFill
+            if reverseFill == nil then reverseFill = vertical and IsVerticalFillReversed(settings) == true or false end
+            layer.lane:SetReverseFill(reverseFill)
             -- Own colour per system: the lane resolves its key with the
             -- border-colour fallback, exactly as the runtime adapter does.
             local laneColor = GetResourceOverlayLaneColor(auraEntry)
@@ -303,7 +305,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             SetFullBarText(barInfo.frame, maxPower)
         elseif barInfo.barType == "health_continuous" then
             local maxHealth = UnitHealthMax("player")
-            local config = HealthBar.GetConfig(settings)
+            local config = HealthBar.GetConfig(settings, appearance)
             -- A health-effect preview needs a wounded player. Absorbs and
             -- incoming heals are drawn FORWARD from the fill, so a full bar
             -- leaves them nowhere to go, and the low-health alert has no

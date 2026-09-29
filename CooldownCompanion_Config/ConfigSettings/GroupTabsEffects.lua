@@ -434,6 +434,7 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
                 enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_PANDEMIC_MARKER or nil },
         })
     end
+    ST._AddPandemicMarkerInfo(markerRow)
 
     -- The shared helper takes no `disabled`, so the inert bracket is what makes
     -- this half read-only along with the rest of the section.
@@ -1187,7 +1188,7 @@ local function BuildEffectsTab(container, settingsGroup)
     if CanGroupUseOverrideSection(group, "desaturation") then
     local desatSec = BeginLensSection(lens, group, "desaturation")
     local desatCb = AddCheckboxRow(stateLeft, {
-        label = "Desaturate On Cooldown",
+        label = "Desaturate on Cooldown",
         setting = EFFECTS_FINDER.icons.spell.desaturate,
         value = desatSec.read.desaturateOnCooldown or false,
         disabled = desatSec.disabled,
@@ -1660,10 +1661,10 @@ if ST._DefineSettingRoute then
         keyPress = { label = "Show Key Press Highlight", applies = EffectsFinderIconsRow("keyPressHighlight") },
         pressFlash = { label = "Show Cooldown Press Flash", applies = EffectsFinderIconsRow("cooldownPressFlash") },
         assisted = { label = "Show Assisted Highlight", applies = EffectsFinderIconsRow("assistedHighlight") },
-        iconFill = { label = "Icon Fill Timer", applies = EffectsFinderIconsRow("iconFillTimer") },
+        iconFill = { label = "Show Icon Fill Timer", aliases = { "icon fill timer" }, applies = EffectsFinderIconsRow("iconFillTimer") },
         cooldownSwipe = { label = "Show Cooldown Swipe", applies = EffectsFinderIconsRow("cooldownSwipe") },
         gcd = { label = "Show GCD Swipe", applies = EffectsFinderIconsRow("showGCDSwipe") },
-        desaturate = { label = "Desaturate On Cooldown", applies = EffectsFinderIconsRow("desaturation") },
+        desaturate = { label = "Desaturate on Cooldown", applies = EffectsFinderIconsRow("desaturation") },
         unusable = { label = "Show Unusable Visual", applies = EffectsFinderIconsRow("unusableDimming") },
         outOfRange = { label = "Show Out of Range", applies = EffectsFinderIconsRow("showOutOfRange") },
         lossOfControl = { label = "Show Loss of Control", applies = EffectsFinderIconsRow("lossOfControl") },
@@ -1675,8 +1676,8 @@ if ST._DefineSettingRoute then
             return EffectsFinderIcons(context) and EffectsFinderTracksAura(context)
         end)
     EFFECTS_FINDER.icons.aura = aura:Settings({
-        missingIndicator = { label = "Missing Aura Indicator", sectionId = "missingAuraIndicator",
-            aliases = { "show missing indicator", "missing aura glow", "missing marker" },
+        missingIndicator = { label = "Show Missing Aura Indicator", sectionId = "missingAuraIndicator",
+            aliases = { "missing aura indicator", "missing aura glow", "missing marker" },
             applies = EffectsFinderIconsRow("missingAuraIndicator", true) },
         auraGlow = { label = "Show Aura Glow" },
         auraSwipe = { label = "Show Aura Duration Swipe" },
@@ -1868,14 +1869,7 @@ if ST._DefineSettingRoute then
         "cooldownSwipe", "cooldownSwipe")
     EFFECTS_FINDER.advanced.cooldownSwipe = cooldownSwipeRoute:Settings({
         reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
-            label = "Swipe Fill Opacity",
-            applies = function(context)
-                local _, read = EffectsFinderSectionState(context, "cooldownSwipe")
-                return read and read.showCooldownSwipeFill ~= false
-            end,
-        },
+        fillOpacity = { label = "Swipe Fill Opacity" },
         edge = { label = "Show Swipe Edge" },
         edgeColor = {
             label = "Swipe Edge Color",
@@ -1894,14 +1888,7 @@ if ST._DefineSettingRoute then
     EFFECTS_FINDER.advanced.auraSwipe = auraSwipeRoute:Settings({
         blizzard = { label = "Blizzard Style Aura Swipe" },
         reverse = { label = "Reverse Swipe" },
-        fill = { label = "Show Swipe Fill" },
-        fillOpacity = {
-            label = "Swipe Fill Opacity",
-            applies = function(context)
-                local _, read = EffectsFinderSectionState(context, "auraDurationSwipe")
-                return read and read.showAuraDurationSwipeFill ~= false
-            end,
-        },
+        fillOpacity = { label = "Swipe Fill Opacity" },
         edge = { label = "Show Swipe Edge" },
         edgeColor = {
             label = "Swipe Edge Color",

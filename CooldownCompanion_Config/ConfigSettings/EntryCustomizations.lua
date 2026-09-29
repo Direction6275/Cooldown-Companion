@@ -339,7 +339,9 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     revertAll:SetScript("OnClick", function()
         if moduleContext then
             if not moduleContext:IsCurrent() then return end
-            CooldownCompanion:RevertSection(buttonData, "barThickness")
+            for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER) do
+                CooldownCompanion:RevertSection(buttonData, sectionId)
+            end
             moduleContext:Refresh()
             CooldownCompanion:RefreshConfigPanel()
             return
@@ -479,12 +481,20 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
                     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
                     if not moduleContext:IsCurrent() then return end
                     if moduleContext.kind == "resources" then
-                        ST._NavigateToFinderSetting(sectionId == "barCharges"
-                            and ST._ResourceSegmentGapSetting or ST._ResourceThicknessSetting)
+                        local key = ST.OVERRIDE_SECTIONS[sectionId].keys[1]
+                        local finder = moduleContext.powerType == ST._RB.RESOURCE_HEALTH
+                            and ST._SharedBarStyleFinder.health or ST._SharedBarStyleFinder.resource
+                        ST._NavigateToFinderSetting(sectionId == "barCharges" and ST._ResourceSegmentGapSetting
+                            or sectionId == "barThickness" and ST._ResourceThicknessSetting
+                            or finder[key])
                         return
                     else
                         CS.castBarHomeTab = "appearance"
                         ST._UnifiedRowSetScope("detail")
+                        local key = ST.OVERRIDE_SECTIONS[sectionId].keys[1]
+                        local setting = sectionId == "barThickness" and ST._CastBarThicknessSetting
+                            or ST._SharedBarStyleFinder.castbar[key]
+                        if setting then ST._NavigateToFinderSetting(setting); return end
                     end
                     CooldownCompanion:RefreshConfigPanel()
                     return

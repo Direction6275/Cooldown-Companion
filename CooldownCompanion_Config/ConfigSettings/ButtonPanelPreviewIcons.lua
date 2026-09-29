@@ -396,7 +396,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
             local cd = slot.cooldown
             local swipeEnabled = not textOnly
                 and style.showCooldownSwipe ~= false and not fillActive
-            cd:SetDrawSwipe(swipeEnabled and style.showCooldownSwipeFill ~= false)
+            cd:SetDrawSwipe(swipeEnabled)
             cd:SetDrawEdge(swipeEnabled and style.cooldownSwipeEdgeEnabled == true)
             cd:SetReverse(style.cooldownSwipeReverse or false)
             cd:SetSwipeColor(0, 0, 0, style.cooldownSwipeAlpha or 0.8)

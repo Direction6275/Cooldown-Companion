@@ -1453,30 +1453,6 @@ function CooldownCompanion:GetBarPanelAuraSegmentGap(buttonData, style)
     return math.max(0, math.min(20, (style and style.barChargeSegmentGap) or 4))
 end
 
--- Segmented smoothing (live parity revival, tracker C2): whether a
--- segmented stack bar sweeps or snaps between stack counts. Same key and
--- "on"/"off" normalizer as the resource-side control — one feature in the
--- UI even though the mechanism differs (Blizzard's ApplicationBar
--- interpolation here, CC-side smoothing there). Live wrote the same
--- "on"/"off" vocabulary, so the aura-rebuild migration carries stored
--- values over unchanged and nil takes the "on" default. Continuous stack
--- fills always smooth and ignore this (owner ruling 2026-07-24, resource
--- parity: the toggle governs segmented displays only).
-function CooldownCompanion:GetBarPanelAuraSegmentedSmoothing(buttonData)
-    local auraBar = buttonData and buttonData.auraBar
-    local value = type(auraBar) == "table" and auraBar.segmentedSmoothing or nil
-    return ST.NormalizeSegmentedSmoothing(value)
-end
-
-function CooldownCompanion:SetBarPanelAuraSegmentedSmoothing(buttonData, value)
-    value = ST.NormalizeSegmentedSmoothing(value)
-    if type(buttonData.auraBar) ~= "table" then
-        if value == ST.SEGMENTED_SMOOTHING_ON then return end
-        buttonData.auraBar = {}
-    end
-    buttonData.auraBar.segmentedSmoothing = value ~= ST.SEGMENTED_SMOOTHING_ON and value or nil
-end
-
 -- Stack text formatter options. The count is SECRET in combat, so these
 -- settings only shape the engine-side NumericRuleFormatter breakpoints;
 -- nothing here reads or compares the live count. Stored in auraBar beside

@@ -687,7 +687,8 @@ local function BackfillUnusableVisualOverrideModes(profile)
 end
 
 local AURA_DURATION_SWIPE_STYLE_MIRRORS = {
-    { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true },
+    -- Retired by RetireSwipeFill: carried only as a fill-off for it to convert.
+    { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true, retired = true },
     { auraKey = "auraDurationSwipeReverse", cooldownKey = "cooldownSwipeReverse", default = false },
     { auraKey = "auraDurationSwipeAlpha", cooldownKey = "cooldownSwipeAlpha", default = 0.8 },
     { auraKey = "auraDurationSwipeEdgeColor", cooldownKey = "cooldownSwipeEdgeColor", default = {1, 1, 1, 1} },
@@ -780,8 +781,11 @@ local function BackfillAuraDurationSwipeStyle(style, fallbackStyle, styleState, 
 
     for _, mirror in ipairs(AURA_DURATION_SWIPE_STYLE_MIRRORS) do
         if ShouldBackfillAuraDurationSwipeKey(style, styleState, mirror.auraKey) then
-            style[mirror.auraKey] = ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, mirror.cooldownKey, mirror.default)
-            changed = true
+            local value = ResolveStyleValue(style, styleState, fallbackStyle, fallbackState, mirror.cooldownKey, mirror.default)
+            if not mirror.retired or value == false then
+                style[mirror.auraKey] = value
+                changed = true
+            end
         end
     end
 
@@ -891,6 +895,63 @@ local function StripRetiredSwipeEdgeKeys(profile)
                         StripRetiredSwipeEdgeKeysFromStyle(presetData.style)
                     end
                 end
+            end
+        end
+    end
+end
+
+-- Swipe fill retirement: Show Cooldown Swipe and Show Aura Duration Swipe draw
+-- the fill themselves, so the separate fill toggles are gone (no enabled swipe
+-- can draw nothing). A saved fill-off keeps its look: with the edge on it
+-- becomes fill opacity 0 (edge only); with the edge off nothing was drawn, so
+-- the swipe turns off. Deleting the key makes every later run a no-op, while an
+-- import that still carries it is converted the same way.
+local SWIPE_FILL_ROLES = {
+    { swipe = "showCooldownSwipe", fill = "showCooldownSwipeFill",
+        edge = "cooldownSwipeEdgeEnabled", alpha = "cooldownSwipeAlpha" },
+    { swipe = "showAuraDurationSwipe", fill = "showAuraDurationSwipeFill",
+        edge = "auraDurationSwipeEdgeEnabled", alpha = "auraDurationSwipeAlpha" },
+}
+
+-- `fallback` supplies values a partial table inherits (an entry's overrides
+-- fall back to its panel). `fields` is a current template's captured coverage.
+local function RetireSwipeFillFromStyle(style, fallback, fields)
+    if type(style) ~= "table" then return end
+    for _, role in ipairs(SWIPE_FILL_ROLES) do
+        if rawget(style, role.fill) == false then
+            local swipe = rawget(style, role.swipe)
+            if swipe == nil and type(fallback) == "table" then swipe = rawget(fallback, role.swipe) end
+            if swipe ~= false then
+                local edge = rawget(style, role.edge)
+                if edge == nil and type(fallback) == "table" then edge = rawget(fallback, role.edge) end
+                local key = edge == true and role.alpha or role.swipe
+                style[key] = edge == true and 0 or false
+                if type(fields) == "table" then fields[key] = true end
+            end
+        end
+        if rawget(style, role.fill) ~= nil then style[role.fill] = nil end
+        if type(fields) == "table" then fields[role.fill] = nil end
+    end
+end
+
+local function RetireSwipeFill(profile)
+    if type(profile) ~= "table" then return end
+    RetireSwipeFillFromStyle(profile.globalStyle)
+    for _, group in pairs(type(profile.groups) == "table" and profile.groups or {}) do
+        if type(group) == "table" then
+            -- Entries first: they read the panel's values as saved.
+            for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
+                if type(buttonData) == "table" then
+                    RetireSwipeFillFromStyle(buttonData.styleOverrides, group.style)
+                end
+            end
+            RetireSwipeFillFromStyle(group.style)
+        end
+    end
+    for _, presetStore in pairs(type(profile.groupSettingPresets) == "table" and profile.groupSettingPresets or {}) do
+        if type(presetStore) == "table" then
+            for _, presetData in pairs(presetStore) do
+                if type(presetData) == "table" then RetireSwipeFillFromStyle(presetData.style) end
             end
         end
     end
@@ -3490,6 +3551,7 @@ function ST._NormalizeBarStyleForPanelConversion(style)
     if type(style) ~= "table" then return end
     ClearInvalidStrataOrders({ globalStyle = style })
     StripRetiredSwipeEdgeKeysFromStyle(style)
+    RetireSwipeFillFromStyle(style)
     StripRetiredIconFillAuraColorFromStyle(style)
     StripRetiredTextSizeKeysFromStyle(style)
     MigrateAuraGlowStyleTable(style, { invert = 0, combatOnly = 0, textFormat = 0 })
@@ -3583,6 +3645,12 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     -- fall back to: a missing aura swipe key resolves to the shipped default,
     -- which is the right baseline for a template.
     BackfillAuraDurationSwipeSettings(iconsTemplates, nil)
+    RetireSwipeFill(store)
+    -- Current snapshots convert their values and captured coverage together.
+    for _, template in pairs(currentGroups) do
+        local fields = type(template.capturedFields) == "table" and template.capturedFields.style or nil
+        RetireSwipeFillFromStyle(template.style, nil, fields)
+    end
     StripRetiredSwipeEdgeKeys(store)
     StripRetiredIconFillAuraColor(store)
     -- Return discarded: its notice is profile-worded.
@@ -3593,6 +3661,7 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     MigrateBarAuraEffectStyles(quiet, store)
     MigratePandemicSwitchOwnership(quiet, store)
     ST.IndicatorMigration.ApplyTemplates(originalStore)
+    if ST.MigrateSharedBarStyleTemplates then ST.MigrateSharedBarStyleTemplates(originalStore) end
 end
 
 function CooldownCompanion:RunAllMigrations()
@@ -3649,6 +3718,7 @@ function CooldownCompanion:RunAllMigrations()
     ClearInvalidStrataOrders(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
+    RetireSwipeFill(self.db and self.db.profile)
     StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
     StripRetiredIconFillAuraColor(self.db and self.db.profile)
     StripRetiredCastBarStylingKey(self.db and self.db.profile)
@@ -3694,6 +3764,7 @@ function CooldownCompanion:RunAllMigrations()
     -- identities, including the legacy fallback when a conflict stays unresolved.
     self:PrepareResourceBarSettings()
     if not unifiedOK then return false end
+    if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
