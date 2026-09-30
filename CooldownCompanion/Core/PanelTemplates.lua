@@ -616,7 +616,7 @@ function CooldownCompanion:CreatePanelFromTemplate(containerId, templateId)
     local usable, reason = self:CanUsePanelTemplate(template)
     if not usable then return nil, reason end
     if ST.IsIndicatorGroup(template) and IndicatorFieldCaptured(template, "effects") then
-        local effects, _, effectReason = ST.Indicator.ReadEffects(template)
+        local effects, effectReason = ST.Indicator.ReadEffects(template)
         if not effects then return nil, effectReason end
     end
     local newGroupId = self:CreatePanel(containerId, self:GetPanelTemplateCreationMode(template))

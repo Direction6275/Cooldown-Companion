@@ -49,7 +49,6 @@ local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPane
 local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
-local EFFECTS_TEXTURE_INDICATORS_SECTION = ST._EFFECTS_TEXTURE_INDICATORS_SECTION
 
 -- Imports from BarModeTabs.lua
 local BuildBarEffectsTab = ST._BuildBarEffectsTab
@@ -778,12 +777,6 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     -- state. Bars draw the same section under
     -- the same key, so this one entry covers every mode that offers the gear.
     tooltipBehavior = EFFECTS_INTERACTION_SECTION,
-
-    -- Textures mode's own section (BuildTextureEffectsTab above). Its constant
-    -- is declared beside that builder because the builder reads it.
-    textureIndicator_proc = EFFECTS_TEXTURE_INDICATORS_SECTION,
-    textureIndicator_ready = EFFECTS_TEXTURE_INDICATORS_SECTION,
-    textureIndicator_unusable = EFFECTS_TEXTURE_INDICATORS_SECTION,
 }
 
 -- The icons Indicators tab's advanced gears, by the OVERRIDE SECTION each one

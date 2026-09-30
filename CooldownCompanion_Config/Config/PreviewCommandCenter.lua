@@ -293,13 +293,21 @@ local function PandemicMarkerEnabled(group, buttonIndex)
     return (buttonData.auraUnit or "player") == "target"
 end
 
-local function TextureIndicatorEnabled(group, indicatorKey)
-    -- Read-only: never pass createIfMissing here, a mere preview refresh
-    -- must not write indicator tables into the profile.
-    local indicators = CooldownCompanion.GetTexturePanelIndicatorSettings
-        and CooldownCompanion:GetTexturePanelIndicatorSettings(group)
-    local config = type(indicators) == "table" and indicators[indicatorKey] or nil
-    return type(config) == "table" and config.enabled and true or false
+-- Any effect an aura Indicator will play (Color Shift has nothing to tint on
+-- Text Only). Read-only: a mere preview refresh must not write effect tables
+-- into the profile, so this reads through the pure effect reader.
+local function AuraIndicatorEffectEnabled(group)
+    local effects = ST.Indicator.IsAura(group) and ST.Indicator.ReadEffects(group)
+    if type(effects) ~= "table" then
+        return false
+    end
+    local textOnly = group.indicatorSettings.displayType == "text"
+    for key, config in pairs(effects) do
+        if type(config) == "table" and config.enabled == true and not (textOnly and key == "colorShift") then
+            return true
+        end
+    end
+    return false
 end
 
 local function TextureAuraDisplayEnabled(group)
@@ -538,15 +546,15 @@ local CONTROLS = {
     },
     {
         id = "textureAura",
-        label = "Preview Aura Effect",
+        label = "Preview Aura Effects",
         group = GROUP_AURAS,
         menuOrder = 10,
         modes = { indicator = true },
-        indicatorKey = "aura",
+        requiresAuraIndicatorEffect = true,
         requiresTextureAuraDisplay = true,
-        -- Aura-controlled Texture options live directly in the Indicators
-        -- section; there is no advanced side panel to open.
-        settings = { tab = "effects", uncollapse = "effects_textureIndicators" },
+        -- No key: every enabled effect plays at once, each with its own
+        -- advanced panel, inside the tab's one Visual Effects section.
+        settings = { tab = "effects", uncollapse = "effects_triggerEffects" },
         preview = TextureIndicatorPreview("aura"),
     },
     {
@@ -773,7 +781,7 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if control.requiresPandemicMarker and not PandemicMarkerEnabled(group, buttonIndex) then
         return false
     end
-    if control.indicatorKey and not TextureIndicatorEnabled(group, control.indicatorKey) then
+    if control.requiresAuraIndicatorEffect and not AuraIndicatorEffectEnabled(group) then
         return false
     end
     if control.requiresTextureAuraDisplay and not TextureAuraDisplayEnabled(group) then

@@ -161,13 +161,13 @@ local function ConvertOne(source, entry, defaults, entryOrigins)
     group.textureSettings, group.triggerSettings = nil, nil
     -- Interpret effects using the retired renderer's ownership, not the newly
     -- selected tracking family. Text never rendered textureIndicators.
-    local effects, selection = {}, nil
+    local effects = {}
     if mode == 'textures' and settings.tracking == 'aura' then
-        effects, selection = I.ReadEffects(group)
+        effects = I.ReadEffects(group)
     elseif mode ~= 'text' then
         effects = settings.effects
     end
-    I.SetEffects(group, effects, selection)
+    I.SetEffects(group, effects)
     I.NormalizeSourceEnablement(group)
     return group
 end

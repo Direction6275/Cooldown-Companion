@@ -51,6 +51,56 @@ function I.CreateVisual(host, nativeSlot)
     end
 end
 
+-- The Pandemic effect rig: the panel pandemic glow kit, drawn above the
+-- artwork and below the readouts. Native texture-panel kits build it at slot
+-- creation and register it with the slot (Blizzard then owns its Shown state);
+-- the config preview builds its own and shows it itself. It is a child of
+-- visualRoot so Pulse, Shrink / Expand and Bounce carry it with the artwork.
+function I.CreatePandemicGlow(host, auraOwned)
+    local glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
+    local root = host.indicatorReadouts.root
+    local level = root:GetFrameLevel()
+    glow.host:SetFrameLevel(level)
+    glow.cdm.frame:SetFrameLevel(level)
+    root:SetFrameLevel(level + 1)
+    host.indicatorPandemicGlow = glow
+    return glow
+end
+
+-- Styles the rig from saved settings only. Off ("none") unless this is an
+-- aura Indicator showing Icon or Texture artwork with the effect enabled;
+-- `group` nil resets a pooled slot. The glow covers the visual's bounds,
+-- stamped by StyleVisual, so no frame is ever measured.
+function I.StylePandemicGlow(host, group, shown)
+    local glow = host.indicatorPandemicGlow
+    if not glow then return end
+    local settings = I.Settings(group)
+    local pandemic = settings and settings.pandemic
+    local enabled = shown and I.IsAura(group) and settings.displayType ~= "text"
+        and pandemic and pandemic.pandemicEffectEnabled == true or false
+    ST._StyleKitPandemicGlowRegions(glow, pandemic, host.visualRoot, enabled)
+end
+
+-- Preview stand-ins: CC-owned sample seconds on the same scale the drain uses.
+-- The timer text runs through the live features' manual twins, so Low Time
+-- and the Pandemic marker read exactly as they will in game.
+I.PREVIEW_SECONDS = 20
+function I.IsPreviewPandemicWindow(seconds)
+    return seconds > 0 and seconds < I.PREVIEW_SECONDS * 0.3
+end
+
+function I.PreviewTimerText(group, seconds)
+    local settings = I.Settings(group)
+    local options = settings and settings.readouts
+    if not (options and options.timer and seconds > 0) then return "" end
+    if I.IsAura(group) then
+        local marker = I.IsPreviewPandemicWindow(seconds) and I.PandemicMarkerOn(group)
+            and Addon:IsPandemicMarkerPreviewWanted(I.Primary(group), options)
+        return Addon:FormatAuraDurationPreviewText(seconds, options, marker, true)
+    end
+    return Addon.FormatDurationText(seconds, options, true, "cooldown")
+end
+
 -- `font`/`outline` are the shared text font StyleVisual already resolved; only
 -- a readout with its own font or outline needs another lookup.
 local function StyleReadouts(host, group, font, outline)
@@ -95,6 +145,8 @@ function I.StyleVisual(host, group, icon, font, outline)
     local geometry, alpha = Addon:GetTexturePanelRenderGeometry(visual)
     if not geometry then return false end
     host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
+    -- CC-owned bounds for the pandemic glow; a native slot's rect is never read.
+    host.visualRoot._ccKitRectW, host.visualRoot._ccKitRectH = geometry.boundsWidth, geometry.boundsHeight
     Addon:ResetTextureIndicatorRootState(host)
     Addon.HideStandaloneDisplayVisuals(host)
     host.indicatorProgress.clip:SetAlpha(0)
@@ -228,7 +280,7 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
     local preview = previewFraction ~= nil
     if preview then
         Addon.UnbindDurationText(readouts.timer, true)
-        readouts.timer:SetText(options.timer and previewFraction > 0 and Addon.FormatTime(previewFraction * 20, options) or "")
+        readouts.timer:SetText(I.PreviewTimerText(group, previewFraction * I.PREVIEW_SECONDS))
         readouts.count:SetText(options.count ~= "none" and "3" or "")
     elseif not I.IsAura(group) then
         local duration = driver and (driver._chargeRecharging and driver._chargeDurationObj or driver._durationObj)
@@ -242,11 +294,14 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
             or (settings.displayType == "texture" and settings.progress.enabled)) then
             Addon:PinCooldownTicker("indicator-item")
         end
+        -- Low Time applies to every Indicator timer (nil threshold = off).
         if options.timer and duration then
-            Addon.BindDurationText(readouts.timer, duration, options, false, "cooldown")
+            Addon.BindDurationText(readouts.timer, duration, options, true, "cooldown")
         else
             Addon.UnbindDurationText(readouts.timer, true)
-            if options.timer and itemRemaining > 0 then readouts.timer:SetText(Addon.FormatTime(itemRemaining, options)) end
+            if options.timer and itemRemaining > 0 then
+                readouts.timer:SetText(Addon.FormatDurationText(itemRemaining, options, true, "cooldown"))
+            end
         end
         if options.count ~= "none" and driver then
             -- Existing non-aura count text may be secret: pass it straight to a
@@ -307,7 +362,10 @@ function I.Render(host, driver, group, preview, fraction, effectsActive, resolve
 end
 
 -- Called only by the native aura owner's gated bind. No live updates use this.
-function I.StyleAura(slot, group, driver)
+-- `durationOptions` is the owner's composed timer formatter (Duration Format,
+-- Low Time and the Pandemic marker, built from `readouts`); this model never
+-- reads aura data to build it.
+function I.StyleAura(slot, group, durationOptions)
     local host = slot.kit.texturePanelHost
     slot.slotButton:ClearIcon()
     local shown = I.StyleVisual(host, group)
@@ -316,9 +374,9 @@ function I.StyleAura(slot, group, driver)
     if settings.displayType == "icon" and not settings.icon.manualIcon and not (source and source.manualIcon) then
         slot.slotButton:SetIcon(host.iconFrame.icon)
     end
-    local formatter = Addon.GetDurationTextFormatter(settings.readouts, false, "aura")
-    slot.slotButton:SetDurationText(host.indicatorReadouts.timer, {textFormatter = formatter})
+    slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
+    I.StylePandemicGlow(host, group, shown)
     host.visualRoot:SetAlpha(shown and 1 or 0)
     return shown
 end
