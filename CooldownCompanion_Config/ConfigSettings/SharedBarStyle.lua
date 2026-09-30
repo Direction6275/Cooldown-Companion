@@ -132,7 +132,7 @@ local function BuildRows(column, group, id)
         and ST.GetEffectiveBarTextureName(read.barTexture) == "blizzard_class"
     local iconSizeOverride = id == "barIconAppearance" and read.barIconSizeOverride
     local borderStyle = id == "borderSettings" and read.barBorderStyle
-    local crisp = id == "borderSettings" and ST.GetBorderRenderMode(read) == ST.BORDER_RENDER_MODE_CRISP
+    local crisp = id == "borderSettings" and ST.GetDrawnBorderRenderMode(read) == ST.BORDER_RENDER_MODE_CRISP
     for _, field in ipairs(fields[id]) do
         local key, label, widget = unpack(field)
         local setting = finder[scope][key]
@@ -383,7 +383,7 @@ if ST._DefineSettingRoute then
                         end
                         if key == "barIconSize" then return style.barIconSizeOverride == true end
                         if key == "barIconOffset" and scope == "castbar" and Addon:GetCastBarSettings().iconOffset then return false end
-                        if key == "borderSize" and ST.GetBorderRenderMode(style) == ST.BORDER_RENDER_MODE_CRISP then return false end
+                        if key == "borderSize" and ST.GetDrawnBorderRenderMode(style) == ST.BORDER_RENDER_MODE_CRISP then return false end
                         if key == "barDurationFontColor" and scope == "panel" and context.group
                             and ST.IsAuraPanelGroup(context.group) then return false end
                         return id ~= "borderSettings" or key == "barBorderStyle" or style.barBorderStyle == nil or style.barBorderStyle == "pixel"

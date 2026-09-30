@@ -223,6 +223,24 @@ local function AnchorRowBadge(row, btn, gap)
     return btn
 end
 
+-- A pooled AceGUI badge (CDC-RowIconBadge) hung after the label. The row owns
+-- it from here: every row type's OnRelease releases it back to its pool, so
+-- no caller has to remember to.
+local function AnchorRowBadgeWidget(row, widget, gap)
+    local owned = row._cdcOwnedBadges or {}
+    row._cdcOwnedBadges = owned
+    owned[#owned + 1] = widget
+    widget.frame:Show()
+    AnchorRowBadge(row, widget.frame, gap)
+    return widget
+end
+
+local function ReleaseOwnedBadges(self)
+    local owned = self._cdcOwnedBadges
+    self._cdcOwnedBadges = nil
+    for _, widget in ipairs(owned or {}) do AceGUI:Release(widget) end
+end
+
 local function ApplyLabelColor(self, colorOnly)
     local color = LABEL_COLOR
     if self.settingsDisclosureHovered then
@@ -661,6 +679,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             self.tooltipLines = nil
             -- ButtonConditions.SetupBatchCheckbox parks the previous batch
             -- value on the row and nothing else clears it, so it would
@@ -897,6 +916,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             self.editbox:ClearFocus()
             self.slider:EnableMouseWheel(false)
             self.min = nil
@@ -1201,6 +1221,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             local child = self.dropdown
             self.dropdown = nil
             self.pullout = nil
@@ -1339,6 +1360,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             local child = self.editBoxWidget
             self.editBoxWidget = nil
             self.editbox = nil
@@ -1438,6 +1460,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             local child = self.colorPicker
             -- Before the swatch goes back to the shared pool: parks the scope
             -- overlay, which is anchored to the swatch.
@@ -1520,6 +1543,7 @@ do
         end,
 
         ["OnRelease"] = function(self)
+            ReleaseOwnedBadges(self)
             local child = self.controlWidget
             self.controlWidget = nil
             self.tooltipLines = nil
@@ -1532,6 +1556,9 @@ do
         ["SetControlWidget"] = function(self, widget)
             self.controlWidget = widget
             if not widget then return end
+            -- A caller's control has a fixed width; a narrow row must not
+            -- shrink the column under it and push it over the label.
+            self:SetControlColumnWidth(widget.frame:GetWidth())
             widget.frame:SetParent(self.controlColumn)
             widget.frame:ClearAllPoints()
             widget.frame:SetPoint("RIGHT", self.controlColumn, "RIGHT", 0, 0)
@@ -1774,6 +1801,136 @@ local function AddColorRow(container, opts)
 
     container:AddChild(row)
     return row
+end
+
+-- Buttons that split a label row's control column evenly: the talent row's
+-- Edit and Clear, an Indicator's Icon/Texture choice. Each button takes an
+-- even share of the column, or the width its label needs (AceGUI's own
+-- autowidth rule) when that is wider; the strip, and so the row's control
+-- column, grows to fit rather than truncating a label.
+--
+-- The strip lays its buttons out itself, in one line. AceGUI's Flow wraps a
+-- child whose snapped width comes out a fraction past the space left, which
+-- dropped the second button under the first.
+local ACTION_STRIP_LAYOUT = "CDC-ActionStrip"
+local ACTION_STRIP_GUTTER = 4
+local ACTION_BUTTON_HEIGHT = 24
+AceGUI:RegisterLayout(ACTION_STRIP_LAYOUT, function(content, children)
+    local x = 0
+    for _, child in ipairs(children) do
+        child.frame:ClearAllPoints()
+        child.frame:SetPoint("LEFT", content, "LEFT", x, 0)
+        child.frame:Show()
+        x = x + child.frame:GetWidth() + ACTION_STRIP_GUTTER
+    end
+end)
+
+local function ActionButtonWidth(button, share)
+    return floor(max(share, button.text:GetStringWidth() + 30) + 0.5)
+end
+
+
+local function CreateRowActionStrip(buttons)
+    if #buttons == 1 then
+        buttons[1]:SetWidth(ActionButtonWidth(buttons[1], CONTROL_COLUMN_WIDTH))
+        buttons[1]:SetHeight(ACTION_BUTTON_HEIGHT)
+        return buttons[1]
+    end
+    local strip = AceGUI:Create("SimpleGroup")
+    strip:SetLayout(ACTION_STRIP_LAYOUT)
+    strip:SetHeight(ROW_HEIGHT)
+    strip.noAutoHeight = true
+    local share = floor((CONTROL_COLUMN_WIDTH - ACTION_STRIP_GUTTER * (#buttons - 1)) / #buttons)
+    local stripWidth = ACTION_STRIP_GUTTER * (#buttons - 1)
+    for _, button in ipairs(buttons) do
+        local buttonWidth = ActionButtonWidth(button, share)
+        button:SetWidth(buttonWidth)
+        button:SetHeight(ACTION_BUTTON_HEIGHT)
+        stripWidth = stripWidth + buttonWidth
+    end
+    strip:SetWidth(stripWidth)
+    for _, button in ipairs(buttons) do strip:AddChild(button) end
+    return strip
+end
+
+------------------------------------------------------------------------
+-- CDC-RowIconBadge
+--
+-- A small flat icon action hung after a row's label with AnchorRowBadge. It
+-- wears the config window's titlebar buttons (Panel.lua): a desaturated
+-- uitools icon in the titlebar's muted tone, tinted on hover. It starts as
+-- the remove X (red on hover); SetIcon picks another icon, hover color and
+-- rotation (the family has no up arrow: promote turns chevron-down over), and
+-- SetActive keeps it lit while its action is under way. Pooled, so the caller
+-- releases it with the row that carries it.
+------------------------------------------------------------------------
+do
+    local ICON_BADGE_TYPE = "CDC-RowIconBadge"
+    local ICON_BADGE_SIZE = 14
+    local REST_COLOR = { 0.82, 0.78, 0.70 }
+    local REMOVE_HOVER_COLOR = { 0.90, 0.30, 0.30 }
+
+    local function Tint(self)
+        local color = (self.hovered or self.active) and self.hoverColor or REST_COLOR
+        self.icon:SetVertexColor(color[1], color[2], color[3], 1)
+    end
+
+    local function Badge_OnClick(frame, mouseButton)
+        frame.obj:Fire("OnClick", mouseButton)
+        AceGUI:ClearFocus()
+    end
+
+    local function Badge_OnEnter(frame)
+        frame.obj.hovered = true
+        Tint(frame.obj)
+        frame.obj:Fire("OnEnter")
+    end
+
+    local function Badge_OnLeave(frame)
+        frame.obj.hovered = nil
+        Tint(frame.obj)
+        frame.obj:Fire("OnLeave")
+    end
+
+    local methods = {
+        ["OnAcquire"] = function(self)
+            self:SetWidth(ICON_BADGE_SIZE)
+            self:SetHeight(ICON_BADGE_SIZE)
+            self.hovered, self.active = nil, nil
+            self:SetIcon("uitools-icon-close", REMOVE_HOVER_COLOR)
+        end,
+
+        ["SetIcon"] = function(self, atlas, hoverColor, rotation)
+            self.icon:SetAtlas(atlas)
+            self.icon:SetDesaturated(true)
+            self.icon:SetRotation(rotation or 0)
+            self.hoverColor = hoverColor or REMOVE_HOVER_COLOR
+            Tint(self)
+        end,
+
+        ["SetActive"] = function(self, active)
+            self.active = active and true or nil
+            Tint(self)
+        end,
+    }
+
+    local function Constructor()
+        local frame = CreateFrame("Button", nil, UIParent)
+        frame:Hide()
+        frame:RegisterForClicks("LeftButtonUp")
+        frame:SetScript("OnClick", Badge_OnClick)
+        frame:SetScript("OnEnter", Badge_OnEnter)
+        frame:SetScript("OnLeave", Badge_OnLeave)
+        local icon = frame:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        local widget = { frame = frame, icon = icon, type = ICON_BADGE_TYPE }
+        for method, func in pairs(methods) do
+            widget[method] = func
+        end
+        return AceGUI:RegisterAsWidget(widget)
+    end
+
+    AceGUI:RegisterWidgetType(ICON_BADGE_TYPE, Constructor, ROW_WIDGET_VERSION)
 end
 
 -- opts.controlWidget hands the row an AceGUI widget to own (see CDC-LabelRow);
@@ -2044,7 +2201,9 @@ ST._AddSoundPreviewDropdownRow = AddSoundPreviewDropdownRow
 ST._AddEditBoxRow = AddEditBoxRow
 ST._AddColorRow = AddColorRow
 ST._AddLabelRow = AddLabelRow
+ST._CreateRowActionStrip = CreateRowActionStrip
 ST._AnchorRowBadge = AnchorRowBadge
+ST._AnchorRowBadgeWidget = AnchorRowBadgeWidget
 ST._BeginRowGrid = BeginRowGrid
 ST._BeginFullWidthRowGroup = BeginFullWidthRowGroup
 

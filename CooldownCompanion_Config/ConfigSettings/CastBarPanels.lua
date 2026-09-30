@@ -305,7 +305,7 @@ local function RefreshCastBarFinderCache()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local _, offsetEnabled = ST.GetCastBarAttachmentOffset(settings, layout)
     local attachedOffsetAvailable = CanShowAttachedCastBarOffsetControls(settings, layout)
-    local iconBorderMode = settings and ST.GetBorderRenderMode(settings, "iconBorderRenderMode")
+    local iconBorderMode = settings and ST.GetDrawnBorderRenderMode(settings, "iconBorderRenderMode")
 
     local cache = {
         settings = settings,

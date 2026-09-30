@@ -416,6 +416,20 @@ local function RestoreLensAnchor()
     end
 end
 
+-- The gold wash itself, over any visible frame. Callers flashing a pooled
+-- widget must also stop it when that widget is released (below).
+local function PlayNavFlash(frame)
+    local flash = EnsureNavFlashFrame()
+    flash._animation:Stop()
+    flash:SetParent(frame)
+    flash:SetFrameLevel(frame:GetFrameLevel() + 5)
+    flash:ClearAllPoints()
+    flash:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -NAV_FLASH_INSET_V)
+    flash:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, NAV_FLASH_INSET_V)
+    flash:Show()
+    flash._animation:Play()
+end
+
 local function FireNavSettingHighlight()
     local pending = CS.pendingSettingHighlight
     CS.pendingSettingHighlight = nil
@@ -429,16 +443,7 @@ local function FireNavSettingHighlight()
         return
     end
     ScrollNavTargetIntoView(widget)
-
-    local flash = EnsureNavFlashFrame()
-    flash._animation:Stop()
-    flash:SetParent(frame)
-    flash:SetFrameLevel(frame:GetFrameLevel() + 5)
-    flash:ClearAllPoints()
-    flash:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -NAV_FLASH_INSET_V)
-    flash:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, NAV_FLASH_INSET_V)
-    flash:Show()
-    flash._animation:Play()
+    PlayNavFlash(frame)
 
     -- The row can be released out from under a playing flash by any rebuild
     -- (a tab click does not pass through the config refresh entry points), and
@@ -482,6 +487,7 @@ local function BeginNavSettingHighlightRefresh()
 end
 
 ST._ScheduleNavSettingHighlight = ScheduleNavSettingHighlight
+ST._FlashConfigFrame = PlayNavFlash
 ST._BeginNavSettingHighlightRefresh = BeginNavSettingHighlightRefresh
 ST._RecordSettingHighlightWidget = RecordSettingHighlightWidget
 ST._BeginLensAnchorBuild = BeginLensAnchorBuild

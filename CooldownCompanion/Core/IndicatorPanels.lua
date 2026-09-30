@@ -48,7 +48,7 @@ function I.GetRemovalError(group, entries)
     if not removing[source] then return end
     for _, entry in ipairs(group.buttons) do
         if not removing[entry] then
-            return "Change or clear this Indicator's source in Tracking before removing it."
+            return "Change or remove this Indicator's source in Visibility before removing it."
         end
     end
 end
@@ -249,21 +249,33 @@ function I.OnSourceAdded(group, entry)
     return true
 end
 
+local function SourceIcon(source)
+    if source.manualIcon then return source.manualIcon end
+    if source.type == "spell" then return C_Spell.GetSpellTexture(source.id) end
+    if Addon.ResolveEffectiveItem then
+        local item = Addon.ResolveEffectiveItem(source, false)
+        return item and item.icon
+    end
+end
+
 function I.IconSettings(group)
     local settings = I.Settings(group)
     if not settings then return end
     local icon = Addon.NormalizeTriggerIconSettings(CopyTable(settings.icon))
     local source = I.Primary(group)
-    if not icon.manualIcon and source then
-        icon.manualIcon = source.manualIcon
-        if not icon.manualIcon and source.type == "spell" then
-            icon.manualIcon = C_Spell.GetSpellTexture(source.id)
-        elseif not icon.manualIcon and Addon.ResolveEffectiveItem then
-            local item = Addon.ResolveEffectiveItem(source, false)
-            icon.manualIcon = item and item.icon
-        end
-    end
+    if not icon.manualIcon and source then icon.manualIcon = SourceIcon(source) end
     return icon
+end
+
+-- Just the icon an Icon display draws (a valid chosen icon, else the main
+-- source's), without copying the icon settings: the preview asks per tick.
+function I.ArtworkIcon(group)
+    local settings = I.Settings(group)
+    if not settings then return end
+    local chosen = settings.icon and settings.icon.manualIcon
+    if chosen and Addon.IsValidTriggerPanelIconTexture(chosen) then return chosen end
+    local source = I.Primary(group)
+    return source and SourceIcon(source)
 end
 
 -- A render description only. Saved placement always belongs to signal.
@@ -285,6 +297,19 @@ function I.NativeSettings(group, resolvedIcon)
         visual.color = {1, 1, 1, 0}
     end
     return visual
+end
+
+-- Each readout keeps its own font in `text`, which every display type shares
+-- (positions stay per display in `readouts`). A field it has never set reads
+-- the shared text font every readout used before, so older Indicators keep
+-- their look.
+local DEFAULT_READOUT_COLOR = {1, 1, 1, 1}
+function I.ReadoutFont(settings, key)
+    local text = settings.text
+    return text[key .. "Font"] or text.textFont or "Friz Quadrata TT",
+        text[key .. "FontSize"] or text.textFontSize or 20,
+        text[key .. "FontOutline"] or text.textFontOutline or "OUTLINE",
+        text[key .. "FontColor"] or text.textFontColor or DEFAULT_READOUT_COLOR
 end
 
 function I.Label(group)
@@ -311,7 +336,7 @@ end
 
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
-    if I.Primary(group) and I.IsAura(group) then return "This Indicator already tracks an aura. Replace its source in Tracking." end
+    if I.Primary(group) and I.IsAura(group) then return "This Indicator already tracks an aura. Change its source in Visibility." end
     local entries = entry and (entry[1] and entry or {entry}) or {}
     for _, source in ipairs(entries) do
         if source.addedAs == "aura" and (I.Primary(group) or #entries > 1) then
@@ -360,6 +385,61 @@ function I.ClearSource(group)
     settings.tracking = "conditions"
 end
 
+-- A condition source that can drive the display. A migrated Trigger row added
+-- as an aura stays a condition: aura tracking is a different Indicator.
+function I.CanBeMainSource(group, entry)
+    return entry ~= I.Primary(group) and entry.addedAs ~= "aura" and not I.IsAura(group)
+end
+
+-- The source that takes over when the main source is removed.
+function I.NextMainSource(group)
+    for i = 2, #(group.buttons or {}) do
+        if I.CanBeMainSource(group, group.buttons[i]) then return group.buttons[i] end
+    end
+end
+
+-- Config's Make Main and Remove only; generic entry removal still refuses to
+-- promote (GetRemovalError). The chosen condition source takes slot one with
+-- its own rules. The main source is always checked, so it is turned on.
+function I.PromoteSource(group, entry)
+    local buttons = group.buttons or {}
+    local index
+    for i, button in ipairs(buttons) do if button == entry then index = i end end
+    if not index or not I.CanBeMainSource(group, entry) then return false end
+    local allowed, reason = I.CheckSourceEffects(group, entry)
+    if not allowed then return false, reason end
+    table.remove(buttons, index)
+    table.insert(buttons, 1, entry)
+    entry.enabled = true
+    -- Saved source visibility named the old main source's own rules.
+    I.Settings(group).sourceVisibility = nil
+    NormalizeCountReadouts(group)
+    return true
+end
+
+-- Remove one source. Removing the main source hands slot one to the next
+-- source that can take it; with none, the Indicator is cleared and keeps its
+-- look. A source that is no longer in the Indicator removes nothing.
+function I.RemoveSource(group, entry)
+    local buttons = group.buttons or {}
+    local index
+    for i, button in ipairs(buttons) do if button == entry then index = i end end
+    if not index then return false end
+    if index == 1 then
+        local nextSource = I.NextMainSource(group)
+        if not nextSource then I.ClearSource(group); return true end
+        local promoted, reason = I.PromoteSource(group, nextSource)
+        if not promoted then return false, reason end
+        index = 2
+    end
+    table.remove(buttons, index)
+    return true
+end
+
+local function SameSource(a, b)
+    return a.type == b.type and a.id == b.id and a.itemSlot == b.itemSlot
+end
+
 -- Build a replacement off to the side. Failed validation must leave the
 -- current source and its conditions intact until the add actually succeeds.
 function I.StageSourceReplacement(group, expectedSource)
@@ -378,6 +458,16 @@ end
 function I.CommitSourceReplacement(group, candidate)
     local allowed, reason = I.CheckSourceEffects(candidate, I.Primary(candidate))
     if not allowed then return false, reason end
+    -- Only the main source changes. The other sources keep their rules, unless
+    -- the new source is an aura (auras cannot be combined with conditions) or
+    -- is one of them (it starts fresh as the main source instead).
+    local newSource = I.Primary(candidate)
+    if I.Settings(candidate).tracking ~= "aura" then
+        for i = 2, #(group.buttons or {}) do
+            local entry = group.buttons[i]
+            if not SameSource(entry, newSource) then candidate.buttons[#candidate.buttons + 1] = entry end
+        end
+    end
     group.buttons = candidate.buttons
     local settings = I.Settings(group)
     settings.tracking = I.Settings(candidate).tracking

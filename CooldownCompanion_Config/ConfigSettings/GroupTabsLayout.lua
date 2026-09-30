@@ -239,9 +239,10 @@ local function GetLayoutFinderState(context)
     state.panelPoint = targetMode == "cursor"
     state.anchorPoint = not standalone and targetMode ~= "cursor"
     state.displayPoint = standalone and targetMode ~= "cursor"
-    state.targetPoint = standalone and targetMode ~= "cursor"
-        and (targetMode == "panel" or targetMode == "frame")
-    state.screenPoint = standalone and targetMode ~= "cursor" and targetMode == "group"
+    -- "Group" names the parent container when there is one, else the screen.
+    local targetsScreen = targetMode == "group" and not group.parentContainerId
+    state.targetPoint = standalone and targetMode ~= "cursor" and not targetsScreen
+    state.screenPoint = standalone and targetsScreen
     state.relativePoint = not standalone and targetMode ~= "cursor"
     state.xOffset = true
     state.yOffset = true
@@ -691,7 +692,6 @@ local function BuildLayoutTab(container)
             return
         end
         local textureGroupId = CS.selectedGroup
-        local positionHeadingText = "Indicator Position"
         local anchorLabel = "Display Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
         local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
@@ -795,7 +795,7 @@ local function BuildLayoutTab(container)
         -- ============================================================
         -- One section: the target and the points/offsets answer the same
         -- question. It keeps the "layout_anchor" key the mover menu opens.
-        local _, anchorCollapsed = BuildCollapsibleSection(container, positionHeadingText, "layout_anchor", nil, nil, ROW_SECTION)
+        local _, anchorCollapsed = BuildCollapsibleSection(container, "Position", "layout_anchor", nil, nil, ROW_SECTION)
 
         if not anchorCollapsed then
         -- LEFT column: the target itself, and nothing else here - the one
@@ -1008,15 +1008,16 @@ local function BuildLayoutTab(container)
                     row = true,
                     setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.displayPoint,
                 })
+            -- "Group" is the screen only for an Indicator outside a group.
+            local targetsScreen = targetMode == "group" and not group.parentContainerId
             AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
                 RefreshTextureVisual,
-                (targetMode == "panel" or targetMode == "frame") and "Target Point" or "Screen Point",
+                targetsScreen and "Screen Point" or "Target Point",
                 {
                     row = true,
-                    setting = LAYOUT_FINDER.position and (
-                        (targetMode == "panel" or targetMode == "frame")
-                            and LAYOUT_FINDER.position.targetPoint
-                            or LAYOUT_FINDER.position.screenPoint),
+                    setting = LAYOUT_FINDER.position and (targetsScreen
+                        and LAYOUT_FINDER.position.screenPoint
+                        or LAYOUT_FINDER.position.targetPoint),
                 })
             AddOffsetSliders(positionRight, settings, "x", "y", {
                 x = 0,

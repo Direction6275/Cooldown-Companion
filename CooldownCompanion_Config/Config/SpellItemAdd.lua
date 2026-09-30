@@ -28,7 +28,6 @@ local function SelectNewButton(panelId, buttonIndex)
     if ST.IsIndicatorGroup(group) then
         SelectConfigPanel(panelId, { containerId = group.parentContainerId })
         CS.addingToPanelId = nil
-        CS.selectedTab = "tracking"
         return
     end
     if not buttonIndex then
@@ -55,7 +54,7 @@ function CS.GetIndicatorSourceReplacement(groupId)
     if not pending then return end
     if pending.profile ~= CooldownCompanion.db.profile or CS.selectedGroup ~= pending.groupId
         or pending.profile.groups[pending.groupId] ~= pending.group
-        or ST.Indicator.Primary(pending.group) ~= pending.source or CS.selectedTab ~= "tracking" then
+        or ST.Indicator.Primary(pending.group) ~= pending.source then
         CS.indicatorSourceReplacement = nil
         return
     end

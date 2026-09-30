@@ -254,12 +254,12 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
             SetPreviewMessage(preview, "Empty Panel")
         elseif ST.IsAuraPanelGroup(group) then
             SetPreviewMessage(preview,
-                "Search for a spell in the field below, enter its ID, or drag it into this preview.",
+                "Search for a spell in the field at the top, enter its ID, or drag it into this preview.",
                 "Add your first aura",
                 "Your first aura sets whether this panel tracks your buffs or your target's debuffs.")
         else
             SetPreviewMessage(preview,
-                "Search for a spell or item in the field below, enter an ID, or drag one into this preview.",
+                "Search for a spell or item in the field at the top, enter an ID, or drag one into this preview.",
                 "Add your first entry")
         end
         -- The drop ghost may stand in for the first entry here (DropGhost).
@@ -726,7 +726,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         ST.Indicator.ReleaseVisual(preview.indicatorSurface)
         preview.indicatorSurface:Hide()
     end
-    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
+    if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)

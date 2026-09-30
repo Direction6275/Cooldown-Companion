@@ -413,7 +413,7 @@ local function RefreshAppearanceFinderState(context)
 
         state.iconsSquare = style.maintainAspectRatio == true
         state.iconsRectangular = style.maintainAspectRatio ~= true
-        state.customBorderSize = ST.GetBorderRenderMode(borderRead)
+        state.customBorderSize = ST.GetDrawnBorderRenderMode(borderRead)
             ~= ST.BORDER_RENDER_MODE_CRISP
         state.lowTimeAvailable = drawsCooldownLowTime or drawsAuraLowTime
         state.lowTimeActive = state.lowTimeAvailable and lowTimeActive

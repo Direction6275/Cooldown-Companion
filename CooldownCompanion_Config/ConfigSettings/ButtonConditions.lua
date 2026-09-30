@@ -50,15 +50,6 @@ local ELIGIBILITY_PULLOUT_WIDTH = 300
 -- Same overhang for the same reason: "Inherit Target Frame Alpha" does not fit
 -- the 140px control column.
 local PANEL_ALPHA_PULLOUT_WIDTH = 300
--- Row-grammar action strip: compact buttons sharing one grammar-height line
--- (the preset-trio shape in Helpers.lua). Flow insets its single row by 3px
--- top and bottom, so 3 + 24 + 3 centres inside the 30px band. The gutter's
--- height MATCHES the buttons on purpose - Flow offsets each child by half its
--- own height, so a shorter spacer makes the line step.
-local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
-local ACTION_STRIP_BUTTON_HEIGHT = 24
-local ACTION_STRIP_GUTTER = 4
-local ROW_CONTROL_WIDTH = (ST._RowGrammar and ST._RowGrammar.CONTROL_COLUMN_WIDTH) or 140
 local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 ------------------------------------------------------------------------
@@ -2968,7 +2959,6 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
 
     local pickBtn = AceGUI:Create("Button")
     pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
-    pickBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
         CooldownCompanion:OpenTalentPicker(function(results)
@@ -3043,31 +3033,12 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         end, initialConditions, group)
     end)
 
-    local talentActionControl
+    local talentActionButtons = { pickBtn }
     if hasTalent then
         -- Edit and Clear split the control column. Clear is destructive, so
-        -- it shares the row with the picker that owns what it clears. Flow
-        -- packs siblings at 0px, so the gutter is a fixed-size spacer group -
-        -- the same idiom the preset trio uses.
-        local strip = AceGUI:Create("SimpleGroup")
-        strip:SetLayout("Flow")
-        strip:SetWidth(ROW_CONTROL_WIDTH)
-        strip:SetHeight(ACTION_STRIP_HEIGHT)
-        strip.noAutoHeight = true
-
-        pickBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
-        strip:AddChild(pickBtn)
-
-        local gutter = AceGUI:Create("SimpleGroup")
-        gutter:SetWidth(ACTION_STRIP_GUTTER)
-        gutter:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
-        gutter.noAutoHeight = true
-        strip:AddChild(gutter)
-
+        -- it shares the row with the picker that owns what it clears.
         local clearBtn = AceGUI:Create("Button")
         clearBtn:SetText("Clear")
-        clearBtn:SetHeight(ACTION_STRIP_BUTTON_HEIGHT)
-        clearBtn:SetWidth((ROW_CONTROL_WIDTH - ACTION_STRIP_GUTTER) / 2)
         clearBtn:SetCallback("OnClick", function()
             if not IsCurrentSource() then return end
             ApplyToSelected("talentConditions", nil)
@@ -3079,17 +3050,12 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
             CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
             CooldownCompanion:RefreshConfigPanel()
         end)
-        strip:AddChild(clearBtn)
-
-        talentActionControl = strip
-    else
-        pickBtn:SetWidth(ROW_CONTROL_WIDTH)
-        talentActionControl = pickBtn
+        talentActionButtons[2] = clearBtn
     end
 
     AddLabelRow(talentLeft, {
         label = talentStatusText,
-        controlWidget = talentActionControl,
+        controlWidget = ST._CreateRowActionStrip(talentActionButtons),
     })
 
     end -- not talentCollapsed
@@ -3111,13 +3077,10 @@ end
 -- Raw (non-AceGUI) frames the previous tab left parented to widgets AceGUI
 -- is about to recycle. Cleared on the way in to whichever half of the
 -- Visibility tab builds, so a leftover badge cannot ride a pooled frame.
+-- CS.tabInfoButtons is not touched: the settings host clears it before every
+-- rebuild, and a section built ahead of this tab on the same page (an
+-- Indicator's When to Show) has already added its own.
 local function ReleaseVisibilityTabScratch()
-    for _, btn in ipairs(tabInfoButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(tabInfoButtons)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
         elem:Hide()

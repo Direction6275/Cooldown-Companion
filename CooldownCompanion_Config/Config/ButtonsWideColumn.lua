@@ -2012,6 +2012,11 @@ local function EnsureAddBox(col3)
 end
 
 local function UpdateAddBox(col3)
+    -- Change... on an Indicator's source also flashes the field, the way a
+    -- setting found by search is flashed, so the eye lands on it. Taken here,
+    -- first: a request the box cannot honor now must not fire later.
+    local wantFlash = CS.pendingWideAddFlash
+    CS.pendingWideAddFlash = nil
     local host = col3.buttonsPreviewHost
     local group = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
     local replacement = CS.GetIndicatorSourceReplacement(CS.selectedGroup)
@@ -2048,6 +2053,7 @@ local function UpdateAddBox(col3)
         C_Timer.After(0, function()
             if addBox.editbox and addBox.frame:IsShown() then
                 addBox:SetFocus()
+                if wantFlash then ST._FlashConfigFrame(addBox.editbox) end
             end
         end)
     end
