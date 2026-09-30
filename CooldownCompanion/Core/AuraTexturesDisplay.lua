@@ -30,7 +30,6 @@ local ResolveGroup = AT.ResolveGroup
 local LayoutTexturePieces = AT.LayoutTexturePieces
 local SetTextureIndicatorBaseVisuals = AT.SetTextureIndicatorBaseVisuals
 local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
-local ApplyTextureIndicatorEffects = AT.ApplyTextureIndicatorEffects
 local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
 local NUDGE_BTN_SIZE = 12

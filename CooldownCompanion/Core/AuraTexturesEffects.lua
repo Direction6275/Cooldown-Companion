@@ -27,7 +27,6 @@ local math_rad = math.rad
 local math_sin = math.sin
 local tonumber = tonumber
 local type = type
-local wipe = wipe
 
 local function IsRuntimeItemLike(buttonData)
     return buttonData
@@ -38,7 +37,6 @@ local LOCATION_CENTER = AT.LOCATION_CENTER
 local LOCATION_DIMENSIONS = AT.LOCATION_DIMENSIONS
 local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
 local DEFAULT_TEXTURE_PAIR_SPACING = AT.DEFAULT_TEXTURE_PAIR_SPACING
-local TEXTURE_INDICATOR_EFFECT_NONE = AT.TEXTURE_INDICATOR_EFFECT_NONE
 local TEXTURE_INDICATOR_EFFECT_PULSE = AT.TEXTURE_INDICATOR_EFFECT_PULSE
 local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
 local TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = AT.TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
@@ -49,7 +47,6 @@ local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
 local DEFAULT_TEXTURE_SHRINK_SCALE = AT.DEFAULT_TEXTURE_SHRINK_SCALE
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
-local TEXTURE_INDICATOR_SECTION_ORDER = AT.TEXTURE_INDICATOR_SECTION_ORDER
 local TRIGGER_EXPECTED_LABELS = AT.TRIGGER_EXPECTED_LABELS
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
@@ -794,82 +791,6 @@ local function DoesTriggerPanelMatch(frame)
     return ST.Indicator.Match(frame, group)
 end
 
-local function CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
-    local config = indicators[sectionKey]
-    local active, effectType = ResolveTextureIndicatorSectionState(button, sectionKey, config)
-    if active and effectType and effectType ~= TEXTURE_INDICATOR_EFFECT_NONE and not effectStates[effectType] then
-        effectStates[effectType] = config
-    end
-end
-
-local function ApplyTextureIndicatorEffects(host, button, group, onlySectionKey)
-    if not host or not button or type(group) ~= "table" then
-        return
-    end
-
-    -- The config Live Preview passes one section and owns its own safe effect
-    -- host, so geometry effects remain useful even when the panel is unlocked.
-    -- Production Aura transforms run in the separate native-animation kit
-    -- beneath Blizzard's AuraButton.
-    local freezeGeometryWhileUnlocked = group.locked == false and onlySectionKey == nil
-
-    local indicators = CooldownCompanion:GetTexturePanelIndicatorSettings(group)
-    if not indicators then
-        StopAllTextureIndicatorEffects(host)
-        return
-    end
-    local effectStates = host._textureIndicatorEffectStates
-    if effectStates then
-        wipe(effectStates)
-    else
-        effectStates = {}
-        host._textureIndicatorEffectStates = effectStates
-    end
-    if onlySectionKey then
-        CollectTextureIndicatorSectionEffect(effectStates, button, indicators, onlySectionKey)
-    else
-        for _, sectionKey in ipairs(TEXTURE_INDICATOR_SECTION_ORDER) do
-            CollectTextureIndicatorSectionEffect(effectStates, button, indicators, sectionKey)
-        end
-    end
-
-    local bounceAmplitude = math_max(
-        6,
-        math_min(
-            DEFAULT_TEXTURE_BOUNCE_PIXELS,
-            (host._activeTextureGeometry and host._activeTextureGeometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
-        )
-    )
-
-    SetTextureIndicatorAnimation(
-        host,
-        TEXTURE_INDICATOR_EFFECT_PULSE,
-        effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] ~= nil,
-        effectStates[TEXTURE_INDICATOR_EFFECT_PULSE] and effectStates[TEXTURE_INDICATOR_EFFECT_PULSE].speed or nil
-    )
-    SetTextureIndicatorAnimation(
-        host,
-        TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-        (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] ~= nil,
-        effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND] and effectStates[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND].speed or nil
-    )
-    SetTextureIndicatorAnimation(
-        host,
-        TEXTURE_INDICATOR_EFFECT_BOUNCE,
-        (not freezeGeometryWhileUnlocked) and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] ~= nil,
-        effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE] and effectStates[TEXTURE_INDICATOR_EFFECT_BOUNCE].speed or nil,
-        bounceAmplitude
-    )
-
-    local colorShift = effectStates[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
-    if colorShift then
-        StartTextureColorShift(host, colorShift.color, colorShift.speed)
-    else
-        StopTextureColorShift(host)
-    end
-
-end
-
 function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive, previewEffects)
     if not host or not button or type(group) ~= "table" then
         return
@@ -907,7 +828,10 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
             ((host:GetHeight() and host:GetHeight() > 0) and host:GetHeight() or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
         )
     )
-    local allowShrinkExpand = host._activeDisplayType ~= "text" and not freezeGeometryWhileUnlocked
+    -- Text Only drops Shrink / Expand for condition sources; aura sources keep
+    -- it (their native renderer scales the whole visual).
+    local allowShrinkExpand = (host._activeDisplayType ~= "text" or ST.Indicator.IsAura(group))
+        and not freezeGeometryWhileUnlocked
 
     SetTextureIndicatorAnimation(
         host,
@@ -939,6 +863,5 @@ end
 AT.LayoutTexturePieces = LayoutTexturePieces
 AT.SetTextureIndicatorBaseVisuals = SetTextureIndicatorBaseVisuals
 AT.StopAllTextureIndicatorEffects = StopAllTextureIndicatorEffects
-AT.ApplyTextureIndicatorEffects = ApplyTextureIndicatorEffects
 AT.DoesTriggerPanelMatch = DoesTriggerPanelMatch
 AT.EvaluateTriggerRowCondition = EvaluateTriggerRowCondition

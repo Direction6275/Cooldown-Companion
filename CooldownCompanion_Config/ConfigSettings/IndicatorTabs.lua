@@ -117,19 +117,86 @@ ST._IndicatorSoundSettings = soundRoute:Settings(soundDefinitions)
 -- One gear per readout, holding its font and position like a panel's text
 -- gears. Structural: the gear exists with the readout off, behind its unlock.
 local READOUT_SECTION_LABELS = {label="Label Text", timer="Duration Text", count="Count Text"}
+-- The panel Low Time family, drawn inside the Duration Text gear. Its keys
+-- live in `readouts` under the panel names; a missing threshold is off.
+local function LowTimeThreshold(settings)
+    local threshold = tonumber(settings.readouts.durationLowTimeThreshold)
+    return threshold and threshold > 0 and threshold or nil
+end
+local lowTimeOn = Applies(function(_,s) return LowTimeThreshold(s) ~= nil end)
+local criticalOn = Applies(function(_,s)
+    local threshold, second = LowTimeThreshold(s), tonumber(s.readouts.durationLowTimeThreshold2)
+    return threshold ~= nil and second ~= nil and second > 0 and second < threshold
+end)
+local LOW_TIME_ROWS = {
+    lowTime={label="Change Text Near Expiry",aliases={"low time","warning time"}},
+    lowTimeWarning={label="Start Warning Below",applies=lowTimeOn},
+    lowTimeWarningColor={label="Warning Color",applies=lowTimeOn},
+    lowTimeCritical={label="Add Critical Styling",applies=lowTimeOn},
+    lowTimeCriticalThreshold={label="Start Critical Below",applies=criticalOn},
+    lowTimeCriticalColor={label="Critical Color",applies=criticalOn},
+    lowTimeDecimals={label="Show Decimals Near Expiry",applies=lowTimeOn},
+}
 local positions = {}
 for _,key in ipairs({"label","timer","count"}) do
     local name=key:sub(1,1):upper()..key:sub(2)
-    positions[key]=Route("appearance", key.."Position", READOUT_SECTION_LABELS[key], "indicator_text",
-        {advancedKey="indicatorText_"..key}):Settings({
+    local definitions = {
         fontSize={label="Font Size",aliases={"text size"}},
         font={label="Font"},
         outline={label="Font Outline"},
         color={label="Font Color",aliases={"text color"}},
         anchor={label="Anchor",aliases={name.." Anchor"}},
         X={label="X Offset",aliases={name.." X"}}, Y={label="Y Offset",aliases={name.." Y"}},
-    })
+    }
+    if key == "timer" then
+        for field, definition in pairs(LOW_TIME_ROWS) do definitions[field] = definition end
+    end
+    positions[key]=Route("appearance", key.."Position", READOUT_SECTION_LABELS[key], "indicator_text",
+        {advancedKey="indicatorText_"..key}):Settings(definitions)
 end
+
+-- Pandemic, for aura Indicators: the panel's effect (a glow on Icon and
+-- Texture artwork) and marker (on the duration text) rows.
+local auraOnly = Applies(function(g) return I.IsAura(g) end)
+local auraArtwork = Applies(function(g,s) return I.IsAura(g) and s.displayType ~= "text" end)
+local auraTimer = Applies(function(g,s) return I.IsAura(g) and s.readouts.timer == true end)
+local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", {applies=auraOnly}):Settings({
+    effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic"},applies=auraArtwork},
+    marker={label="Pandemic Marker",aliases={"pandemic"},applies=auraTimer},
+})
+local function PandemicGlowStyle(settings)
+    return ST._NormalizeGlowStyleForDisplay(settings.pandemic and settings.pandemic.pandemicGlowStyle, "solid")
+end
+local function GlowUses(...)
+    local styles = {}
+    for index = 1, select("#", ...) do styles[select(index, ...)] = true end
+    return Applies(function(g,s) return I.IsAura(g) and s.displayType ~= "text" and styles[PandemicGlowStyle(s)] == true end)
+end
+-- Same rows the panel's Pandemic Effect gear draws for these styles.
+local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_pandemic",
+    {idPrefix="panel.indicator.pandemicGlow", advancedKey="indicatorPandemicGlow", applies=auraArtwork}):Settings({
+    style={label="Glow Style"},
+    color={label="Effect Color",applies=Applies(function(g,s)
+        return I.IsAura(g) and s.displayType ~= "text" and PandemicGlowStyle(s) ~= "cdm" end)},
+    color2={label="Second Color",applies=GlowUses("colorShift")},
+    borderSize={label="Border Size",applies=GlowUses("solid","pulse","colorShift")},
+    pulseDuration={label="Pulse Duration",applies=GlowUses("pulse")},
+    glowSize={label="Glow Size",applies=GlowUses("ants","proc")},
+    shiftDuration={label="Shift Duration",applies=GlowUses("colorShift")},
+    dashLength={label="Dash Length",applies=GlowUses("dashes")},
+    dashThickness={label="Dash Thickness",applies=GlowUses("dashes")},
+    dashCount={label="Number of Dashes",applies=GlowUses("dashes")},
+    lapDuration={label="Lap Duration",applies=GlowUses("dashes")},
+    particleScale={label="Particle Scale",applies=GlowUses("autocast")},
+    frequency={label="Frequency",applies=GlowUses("autocast")},
+})
+local pandemicMarker = Route("effects", "pandemic", "Pandemic Marker", "indicator_pandemic",
+    {idPrefix="panel.indicator.pandemicMarker", advancedKey="indicatorPandemicMarker", applies=auraTimer}):Settings({
+    text={label="Marker Text"},
+    coloring={label="Marker Coloring"},
+    color={label="Marker Color",applies=Applies(function(g,s)
+        return I.IsAura(g) and s.readouts.timer == true and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
+})
 
 -- Buttons sharing one row's control column (ST._CreateRowActionStrip), from
 -- {text, onClick, tooltip = {title, body}}.
@@ -533,6 +600,83 @@ local function BuildReadoutGear(panel, group, key, changed)
         Slider(panel,{setting=pos[axis],min=-300,max=300,step=1,value=r[field] or 0,
             onRelease=function(value) r[field]=value; changed() end})
     end
+    -- The panel's Low Time rows, on this Indicator's timer keys.
+    if key == "timer" then
+        ST._AddDurationLowTimeRows(panel, r, function() changed() end, {
+            inline=true, summaryTarget=I.IsAura(group) and "Aura" or "Cooldown",
+            settings={enabled=pos.lowTime, warningThreshold=pos.lowTimeWarning, warningColor=pos.lowTimeWarningColor,
+                critical=pos.lowTimeCritical, criticalThreshold=pos.lowTimeCriticalThreshold,
+                criticalColor=pos.lowTimeCriticalColor, decimals=pos.lowTimeDecimals},
+            rebuild=function() changed(true) end,
+            preview=function()
+                if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
+            end,
+        })
+    end
+end
+
+-- Effects tab, aura Indicators only: the panel Pandemic rows. The effect is a
+-- glow, so Text Only has just the marker; the marker rides the duration text.
+local TURNON_PANDEMIC_EFFECT = "Enable Pandemic Effect"
+local TURNON_PANDEMIC_MARKER = "Enable Pandemic Marker"
+local function BuildPandemic(container, group, changed)
+    local settings = I.Settings(group)
+    local r, p = settings.readouts, settings.pandemic
+    local showEffect, showMarker = settings.displayType ~= "text", r.timer == true
+    if not showMarker and CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicMarker"})
+    end
+    if not showEffect and CS.CloseAdvancedSettingsPanel then
+        CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicGlow"})
+    end
+    if not (showEffect or showMarker) then return end
+    local _, collapsed = Section(container,"Pandemic","indicator_pandemic")
+    if collapsed then return end
+    local column = ST._BeginRowGrid(container)
+    local groupId = CS.selectedGroup
+    local function refresh() changed() end
+    if showEffect then
+        local enabled = p.pandemicEffectEnabled == true
+        local row = Check(column,{setting=pandemic.effect,value=enabled,onChange=function(value)
+            p.pandemicEffectEnabled = value and true or false
+            changed(true)
+        end})
+        ST._AddAdvancedToggle(row,"indicatorPandemicGlow",CS.tabInfoButtons,true,{
+            title="Pandemic Effect Advanced",
+            build=function(panel)
+                ST._BuildPandemicGlowControls(panel, p, refresh, {settings=pandemicGlow,
+                    previewRefresh=function()
+                        if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
+                    end})
+            end,
+            unlock=not enabled and {enable={label=TURNON_PANDEMIC_EFFECT,run=function()
+                p.pandemicEffectEnabled=true; changed(true)
+            end}} or nil,
+        })
+        ST._AnchorRowBadge(row, ST._CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Effect",
+            {"Glows the Indicator while its aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
+        }, CS.tabInfoButtons))
+    end
+    if showMarker then
+        local row = ST._AddPandemicMarkerControls(column, r, function() changed(true); return true end, refresh,
+            {enableOnly=true, defaultMode="off", setting=pandemic.marker})
+        ST._AddAdvancedToggle(row,"indicatorPandemicMarker",CS.tabInfoButtons,true,{
+            title="Pandemic Marker Advanced",
+            build=function(panel)
+                ST._AddPandemicMarkerControls(panel, r, refresh, function() ST._RefreshActiveAdvancedSettingsPanel() end,
+                    {childrenOnly=true, settings=pandemicMarker})
+            end,
+            unlock=(r.pandemicMarkerMode or "off") == "off" and {enable={label=TURNON_PANDEMIC_MARKER,run=function()
+                -- On, not Auto: Auto marks target auras only, so it would do
+                -- nothing on an Indicator tracking a buff on the player.
+                r.pandemicMarkerMode="on"; changed(true)
+            end}} or nil,
+        })
+        ST._AddPandemicMarkerInfo(row)
+    end
 end
 
 local function BuildText(container, group, changed)
@@ -575,7 +719,14 @@ local function BuildAppearance(container, group, changed)
         local column = ST._BeginRowGrid(container)
         Dropdown(column,{setting=display.displayType,list={icon="Icon",texture="Texture",text="Text"},
             order={"icon","texture","text"},value=settings.displayType,
-            onChange=function(value) I.SetDisplayType(group,value); changed(true) end})
+            onChange=function(value)
+                I.SetDisplayType(group,value)
+                -- Text Only has no pandemic glow; don't leave its editor open.
+                if value == "text" and CS.CloseAdvancedSettingsPanel then
+                    CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicGlow"})
+                end
+                changed(true)
+            end})
         if settings.displayType == "icon" then
             local actions = {{text="Choose...",onClick=function() ST._OpenTriggerPanelIconPicker(CS.selectedGroup) end}}
             -- Only a chosen icon has anything to reset.
@@ -625,8 +776,10 @@ function ST._BuildIndicatorTab(container, group, tab)
     elseif not I.Primary(group) then Hint(container,"Add a spell, aura, or item using the field at the top.")
     elseif tab == "appearance" then BuildAppearance(container,group,changed)
     elseif tab == "effects" then
-        if I.IsAura(group) then ST._BuildTextureEffectsTab(container,group)
-        else ST._BuildTriggerEffectsTab(container,group) end
+        -- One effect grammar for every source; aura rows omit the controls
+        -- that would start or stop effects on their own.
+        ST._BuildTriggerEffectsTab(container,group)
+        if I.IsAura(group) then BuildPandemic(container,group,changed) end
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
             Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
                 list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},

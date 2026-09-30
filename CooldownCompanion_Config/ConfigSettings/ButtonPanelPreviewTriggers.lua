@@ -13,8 +13,6 @@ local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
 local math_ceil = math.ceil
-local AuraTextures = ST._AT
-local ApplyTextureIndicatorEffects = AuraTextures and AuraTextures.ApplyTextureIndicatorEffects
 
 local PP = ST._ButtonPanelPreview
 local AceGUI = LibStub("AceGUI-3.0")
@@ -140,6 +138,8 @@ local function BuildRulesCard(preview, model, width)
 end
 
 function PP.ReleaseIndicatorPreviewControls(preview)
+    local surface = preview.indicatorSurface
+    if surface and surface.countdownTicker then surface.countdownTicker:SetScript("OnUpdate", nil) end
     if preview.indicatorDuration then
         AceGUI:Release(preview.indicatorDuration)
         preview.indicatorDuration = nil
@@ -173,6 +173,29 @@ local function PinFooter(preview, footer)
         below = region
     end
     return height
+end
+
+-- The Countdown state sweeps the sample timer the way panel duration-text
+-- previews do, so Low Time colors and the Pandemic marker and effect appear
+-- as the sample crosses their windows. CC-side frames only. The sweep ticks on
+-- its own child frame: the effect runtime owns the surface's OnUpdate.
+local COUNTDOWN_FROM = 12
+local COUNTDOWN_INTERVAL = 0.1
+
+local function ShowPreviewCountdown(surface)
+    local I = ST.Indicator
+    local candidate = surface._countdownGroup
+    local remaining = COUNTDOWN_FROM - ((GetTime() - surface._countdownStart) % COUNTDOWN_FROM)
+    I.UpdateReadouts(surface, nil, candidate, remaining / I.PREVIEW_SECONDS)
+    surface.indicatorPandemicGlow.host:SetShown(I.IsPreviewPandemicWindow(remaining))
+end
+
+local function OnPreviewCountdownUpdate(ticker, elapsed)
+    local surface = ticker:GetParent()
+    surface._countdownElapsed = (surface._countdownElapsed or 0) + elapsed
+    if surface._countdownElapsed < COUNTDOWN_INTERVAL then return end
+    surface._countdownElapsed = 0
+    ShowPreviewCountdown(surface)
 end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
@@ -209,31 +232,50 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local state = not readOnly and CS.indicatorPreviewState or "half"
     local fraction = state == "full" and 1 or state == "empty" and 0 or 0.5
     if state == "timeless" then fraction=1 end
+    local settings = I.Settings(candidate)
+    local showDuration = not readOnly and (settings.readouts.timer
+        or settings.displayType == "texture" and settings.progress.enabled
+        or I.IsAura(candidate) and settings.displayType ~= "text" and settings.pandemic.pandemicEffectEnabled == true)
+    -- The sweep runs only while its Duration control is drawn: that control is
+    -- the only way to leave the Countdown state.
+    local countdown = showDuration and state == "countdown"
+    surface.countdownTicker = surface.countdownTicker or CreateFrame("Frame", nil, surface)
+    surface.countdownTicker:SetScript("OnUpdate", nil)
+    if countdown then
+        surface._countdownStart = surface._countdownStart or GetTime()
+        fraction = (COUNTDOWN_FROM - ((GetTime() - surface._countdownStart) % COUNTDOWN_FROM)) / I.PREVIEW_SECONDS
+    else
+        surface._countdownStart = nil
+    end
     if not I.Render(surface,nil,candidate,true,fraction) then
+        if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:Hide() end
         ReleaseSourceControls(preview)
         PP.SetPreviewMessage(preview,"Choose artwork in Appearance to preview this Indicator.")
         PP.FinalizePreviewState(preview)
         return
     end
     if state == "timeless" then surface.indicatorReadouts.timer:SetText("") end
+    -- The Pandemic effect stand-in: the live rig's styler on a CC-side kit,
+    -- shown while the sample sits in the refresh window.
+    if not surface.indicatorPandemicGlow then I.CreatePandemicGlow(surface, false) end
+    I.StylePandemicGlow(surface, candidate, true)
+    surface.indicatorPandemicGlow.host:SetShown(I.IsPreviewPandemicWindow(fraction * I.PREVIEW_SECONDS))
+    if countdown then
+        surface._countdownGroup, surface._countdownElapsed = candidate, 0
+        surface.countdownTicker:SetScript("OnUpdate", OnPreviewCountdownUpdate)
+    end
     if not readOnly then
         candidate.locked = true
         local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
-        if I.IsAura(candidate) then
-            -- Native text has no registered vertex-color artwork animation.
-            if candidate.indicatorSettings.displayType == "text" then
-                local effects=I.Effects(candidate)
-                if effects.colorShift then effects.colorShift.enabled=false end
-            end
-            ApplyTextureIndicatorEffects(surface,sample,candidate,"aura")
-        else
-            CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true,true)
+        -- Native text has no registered vertex-color artwork animation.
+        if I.IsAura(candidate) and candidate.indicatorSettings.displayType == "text" then
+            local effects=I.Effects(candidate)
+            if effects.colorShift then effects.colorShift.enabled=false end
         end
+        -- Every enabled effect plays together, for aura and condition sources.
+        CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true,true)
     end
     local width,height=surface:GetSize()
-    local settings = I.Settings(candidate)
-    local showDuration = not readOnly and (settings.readouts.timer
-        or settings.displayType == "texture" and settings.progress.enabled)
     local footerHeight = 0
     if not readOnly then
         -- GetHostFitBox returns width and height; only the width sizes the footer.
@@ -252,8 +294,8 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
                 -- Use the shared row's dropdown geometry and pool cleanup.
                 control = AceGUI:Create("CDC-DropdownRow")
                 control:SetLabel("Duration")
-                control:SetList({full="Full",half="Half",empty="Empty",timeless="No Timer"},
-                    {"full","half","empty","timeless"})
+                control:SetList({full="Full",half="Half",empty="Empty",countdown="Countdown",timeless="No Timer"},
+                    {"full","half","empty","countdown","timeless"})
                 control.frame:SetParent(preview.root)
                 preview.indicatorDuration = control
             end

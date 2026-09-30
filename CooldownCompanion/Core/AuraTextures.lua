@@ -137,16 +137,6 @@ local DEFAULT_TEXTURE_BOUNCE_PIXELS = 18
 
 -- No pandemic entry: Texture panels can use Blizzard-driven active-only
 -- visibility, but the addon still cannot read aura timing or pandemic state.
--- The "aura" indicator is rendered by native AnimationGroups beneath
--- Blizzard's AuraButton; the remaining sections use the ordinary readable
--- Texture runtime and stay dormant while active-only Aura display is enabled.
-local TEXTURE_INDICATOR_SECTION_ORDER = {
-    "proc",
-    "aura",
-    "ready",
-    "unusable",
-}
-
 local TEXTURE_INDICATOR_DEFAULTS = {
     proc = {
         enabled = false,
@@ -563,7 +553,6 @@ AT.DEFAULT_TEXTURE_INDICATOR_SPEED = DEFAULT_TEXTURE_INDICATOR_SPEED
 AT.DEFAULT_TEXTURE_PULSE_ALPHA = DEFAULT_TEXTURE_PULSE_ALPHA
 AT.DEFAULT_TEXTURE_SHRINK_SCALE = DEFAULT_TEXTURE_SHRINK_SCALE
 AT.DEFAULT_TEXTURE_BOUNCE_PIXELS = DEFAULT_TEXTURE_BOUNCE_PIXELS
-AT.TEXTURE_INDICATOR_SECTION_ORDER = TEXTURE_INDICATOR_SECTION_ORDER
 AT.TRIGGER_EXPECTED_LABELS = TRIGGER_EXPECTED_LABELS
 AT.BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY or {}
 AT.CopyColor = CopyColor
@@ -688,23 +677,6 @@ function CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
     return orderedCandidateIDs and orderedCandidateIDs[1] or nil
 end
 
--- The managed Texture path has one exact condition: while the aura is active.
--- Preserve the chosen effect/color/speed, but neutralize live-era qualifiers
--- that would require either reading aura absence or changing child animation
--- state at combat transitions.
-function CooldownCompanion:NormalizeTexturePanelAuraIndicatorSettings(group, createIfMissing)
-    local indicators = self:GetTexturePanelIndicatorSettings(group, createIfMissing == true)
-    local auraIndicator = indicators and indicators.aura
-    if type(auraIndicator) ~= "table" then
-        return false
-    end
-
-    local changed = auraIndicator.combatOnly == true or auraIndicator.invert == true
-    auraIndicator.combatOnly = false
-    auraIndicator.invert = false
-    return changed
-end
-
 -- Mutation helper for user actions that place a primary Aura entry into a
 -- Texture panel (new add, move, or panel conversion). Primary Aura entries do
 -- not have an opt-out in Texture panels; ordinary spell entries still do.
@@ -717,7 +689,6 @@ function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonDa
     end
 
     buttonData.textureAuraDisplayEnabled = true
-    self:NormalizeTexturePanelAuraIndicatorSettings(group, true)
     return true
 end
 
@@ -1055,9 +1026,4 @@ function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
 
     local options = TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive
     return options, { "true", "false" }
-end
-
-function CooldownCompanion:GetTexturePanelIndicatorSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return {aura = ST.Indicator.NativeEffect(group)} end
 end

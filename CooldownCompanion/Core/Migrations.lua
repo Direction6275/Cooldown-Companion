@@ -1993,7 +1993,7 @@ local function MigrateAuraTrackingRebuild(self, profile)
     local counts = {
         hideActive = 0, hidePandemic = 0, stackModes = 0,
         threshold = 0, maxGlow = 0, soundForm = 0, mixed = 0, unit = 0,
-        curated = 0, dormantPlacement = 0, textureAuraQualifier = 0,
+        curated = 0, dormantPlacement = 0,
     }
     local groups = profile.groups
     if type(groups) == "table" then
@@ -2023,11 +2023,6 @@ local function MigrateAuraTrackingRebuild(self, profile)
                                 buttonData.textureAuraDisplayEnabled = true
                             end
                             textureAuraChoice = buttonData.textureAuraDisplayEnabled
-                            if textureAuraChoice == true then
-                                if self:NormalizeTexturePanelAuraIndicatorSettings(group, false) then
-                                    counts.textureAuraQualifier = counts.textureAuraQualifier + 1
-                                end
-                            end
                         end
                         local auraEntryCapable = standardAuraCapable
                             or textureAuraChoice == true
@@ -2074,10 +2069,6 @@ local function MigrateAuraTrackingRebuild(self, profile)
     if counts.mixed > 0 then dropped[#dropped + 1] = ("mixed buff/debuff aura lists trimmed (x%d)"):format(counts.mixed) end
     if counts.unit > 0 then dropped[#dropped + 1] = ("tracked-unit corrections (x%d)"):format(counts.unit) end
     if counts.curated > 0 then dropped[#dropped + 1] = ("wrong game-data aura IDs removed (x%d)"):format(counts.curated) end
-    if counts.textureAuraQualifier > 0 then
-        dropped[#dropped + 1] = ("Texture Aura inactive/combat-only effect qualifiers (x%d)")
-            :format(counts.textureAuraQualifier)
-    end
     -- Dormant placements are an OBSERVATION, not a transform: nothing is
     -- cleared, so re-running finds the same entries forever. Its own flag
     -- survives ClearMigrationSentinels (which exists to re-run transforms

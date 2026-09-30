@@ -29,8 +29,7 @@ local tabInfoButtons = CS.tabInfoButtons
 
 -- A dropdown sizes its menu from the 140px control it hangs under, which is
 -- too narrow for user-named panels and the longer worded options below.
--- Captured in this file by BuildTextureIndicatorSection and
--- BuildTexturePanelAppearanceTab.
+-- Captured in this file by BuildTexturePanelAppearanceTab.
 local WIDE_PULLOUT_WIDTH = 300
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
@@ -43,7 +42,6 @@ local ROW_SECTION = { leftAligned = true }
 local SPECIAL_FINDER = {
     trigger = {},
     triggerEffects = {},
-    textureEffects = {},
     texture = {},
 }
 
@@ -66,26 +64,12 @@ local MIN_TEXTURE_ROTATION = -180
 local MAX_TEXTURE_ROTATION = 180
 local MIN_TEXTURE_STRETCH = -0.75
 local MAX_TEXTURE_STRETCH = 2
-local TEXTURE_INDICATOR_EFFECT_OPTIONS = {
-    pulse = "Pulse",
-    colorShift = "Color Shift",
-    shrinkExpand = "Shrink / Expand",
-    bounce = "Bounce",
-}
 local TEXTURE_INDICATOR_EFFECT_ORDER = {
     "pulse",
     "colorShift",
     "shrinkExpand",
     "bounce",
 }
-local TEXTURE_INDICATOR_SECTION_DEFS = {
-    aura = {label = "Show Aura Effect"},
-}
-
-local function GetTextureIndicatorStore(group)
-    return CooldownCompanion:GetTexturePanelIndicatorSettings(group, true)
-end
-
 local TRIGGER_PANEL_EFFECT_DEFS = {
     pulse = {
         label = "Pulse",
@@ -109,19 +93,10 @@ local function GetTriggerPanelEffectStore(group)
     return CooldownCompanion:GetTriggerPanelEffectSettings(group, true)
 end
 
-
-local function TextureEffectOffered(group, effectKey)
-    return not (ST.Indicator.IsAura(group) and group.indicatorSettings.displayType == "text" and effectKey == "colorShift")
-end
-
-local function GetTextureIndicatorEffectList(_, _, group)
-    local list, order = {}, {}
-    for _, key in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
-        if TextureEffectOffered(group, key) then
-            list[key], order[#order + 1] = TEXTURE_INDICATOR_EFFECT_OPTIONS[key], key
-        end
-    end
-    return list, order
+-- The effect Text Only cannot run: Color Shift for aura sources (the native
+-- renderer tints artwork only), Shrink / Expand for condition sources.
+local function TextOnlyUnavailableEffect(group)
+    return ST.Indicator.IsAura(group) and "colorShift" or "shrinkExpand"
 end
 
 
@@ -617,14 +592,9 @@ local function RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
     end
 end
 
-local function RefreshTextureIndicatorConfig(group, requestAuraRestyle)
-    RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
-    CooldownCompanion:RefreshConfigPanel()
-end
-
 -- Row grammar (RowWidgets.lua): a CDC-SliderRow. The row's own value box
 -- already accepts one decimal place, which is the whole job the pre-redesign
--- editbox hook it replaced did. Both effect gears draw it unindented.
+-- editbox hook it replaced did. The effect gears draw it unindented.
 local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, setting)
     local function RefreshSpeedPreview()
         local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
@@ -652,144 +622,38 @@ local function BuildTextureIndicatorSpeedSlider(container, config, label, onChan
     })
 end
 
--- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator, its gear
--- holding the effect choice and timing - the same shape as a panel's Show
--- Proc Glow row.
---
--- `container` is nil when there is nothing to draw into - the section is
--- collapsed. The preview reconciliation at the foot still has to run in that
--- case (the same shape BuildBarActiveAuraSection uses in BarModeTabs): an
--- indicator that is no longer on must not leave its preview playing.
-local function BuildTextureIndicatorSection(container, group, indicators, sectionKey, opts)
-    local config = indicators and indicators[sectionKey]
-    local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[sectionKey]
-    if not config or not sectionDef then
-        return
-    end
-    local auraControlled = opts and opts.auraControlled == true
-    local finder = SPECIAL_FINDER.textureEffects[sectionKey]
-    local function SaveEffect()
-        if ST.IsIndicatorGroup(group) then
-            ST.Indicator.SelectNativeEffect(group, config.effectType, config.enabled)
-        end
-    end
-    local function RefreshRuntime()
-        RefreshTextureIndicatorRuntime(group, auraControlled)
-    end
-    local function RefreshConfig()
-        SaveEffect()
-        RefreshTextureIndicatorConfig(group, auraControlled)
-    end
-
-    if container then
-    local function EnableTextureIndicator()
-        if config.effectType == "none" then
-            local _, order = GetTextureIndicatorEffectList(nil, nil, group)
-            config.effectType = order[1]
-        end
-        config.enabled = true
-        RefreshConfig()
-    end
-
-    local enableCb = AddCheckboxRow(container, {
-        label = sectionDef.label,
-        setting = finder and finder.enabled,
-        value = config.enabled,
-        onChange = function(value)
-            if value then
-                EnableTextureIndicator()
-                return
-            end
-            config.enabled = false
-            RefreshConfig()
-        end,
-    })
-
-    local function BuildTextureIndicatorOptions(panel)
-        -- Timings/colors bind the saved owner directly so the shared temporary
-        -- preview/restore transaction sees the same data as both renderers.
-        local effectConfig = ST.IsIndicatorGroup(group) and ST.Indicator.Effects(group)[config.effectType] or config
-        -- Aura-controlled Texture effects inherit Blizzard's aura visibility.
-        -- A combat-only transition would require touching the forbidden child
-        -- when combat changes, so that live-only refinement is intentionally
-        -- absent here.
-
-        local effectList, effectOrder = GetTextureIndicatorEffectList(indicators, sectionKey, group)
-        local dormant = not TextureEffectOffered(group, config.effectType)
-        if dormant then
-            effectList.none = "No Artwork Effect"
-            table.insert(effectOrder, 1, "none")
-            ST._AddLabelRow(panel, {label="Color Shift is saved for icon and texture displays."})
-        elseif config.effectType == "none" then
-            -- Only an effect that was never turned on has no type; its
-            -- read-only gear names that instead of showing a blank choice.
-            effectList.none = "None"
-            table.insert(effectOrder, 1, "none")
-        end
-        AddDropdownRow(panel, {
-            label = "Effect Type",
-            setting = finder and finder.effectType,
-            pulloutWidth = WIDE_PULLOUT_WIDTH,
-            list = effectList,
-            order = effectOrder,
-            value = dormant and "none" or config.effectType,
-            onChange = function(value)
-                config.effectType = value or "none"
-                RefreshConfig()
-            end,
-        })
-
-        if config.effectType == "colorShift" and not dormant then
-            AddColorRow(panel, {
-                label = "Shift Color",
-                setting = finder and finder.shiftColor,
-                tbl = effectConfig,
-                key = "color",
-                default = { 1, 1, 1, 1 },
-                hasAlpha = true,
-                onConfirm = RefreshRuntime,
-            })
-            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Shift Duration", RefreshRuntime,
-                finder and finder.shiftDuration)
-        elseif config.effectType == "pulse" then
-            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Pulse Duration", RefreshRuntime,
-                finder and finder.pulseDuration)
-        elseif config.effectType == "shrinkExpand" then
-            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Cycle Duration", RefreshRuntime,
-                finder and finder.cycleDuration)
-        elseif config.effectType == "bounce" then
-            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Bounce Duration", RefreshRuntime,
-                finder and finder.bounceDuration)
-        end
-    end
-
-    local title = sectionDef.label:gsub("^Show ", "")
-    AddAdvancedToggle(enableCb, "textureEffect_" .. sectionKey, tabInfoButtons, true, {
-        title = title .. " Advanced",
-        build = BuildTextureIndicatorOptions,
-        -- Enabling also picks a default effect and saves the selection, so
-        -- the unlock runs the row's own enable path.
-        unlock = not config.enabled and {
-            enable = { label = "Enable " .. title, run = EnableTextureIndicator },
-        } or nil,
-    })
-    end -- container
-
-    if not config.enabled and CS.selectedGroup then
-        ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
-    end
-end
-
 -- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per effect, its advanced
--- gear chained off the label. Called exactly once per effect from the trigger
--- Effects tab below, so it was converted outright rather than growing an
--- opts.row mode. `container` is the grid column the row belongs to.
-local function BuildTriggerPanelEffectSection(container, effects, effectKey)
+-- gear chained off the label. Called exactly once per effect from the
+-- Indicator Effects tab below, so it was converted outright rather than
+-- growing an opts.row mode. `container` is the grid column the row belongs to.
+--
+-- Aura sources draw the same rows without Animate When and Only In Combat:
+-- their effects always run while Blizzard shows the aura, since nothing in the
+-- aura slot may start or stop once bound. Their edits reach the native kit
+-- only through an aura restyle.
+local function BuildTriggerPanelEffectSection(container, group, effects, effectKey)
     local config = effects and effects[effectKey]
     local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
     local finder = SPECIAL_FINDER.triggerEffects[effectKey]
     if not config or not def then
         return
+    end
+    local auraSource = ST.Indicator.IsAura(group)
+    -- An aura effect runs as Always outside combat too. Enabling one clears
+    -- any rule it kept from a condition source, which it could not run and
+    -- would otherwise refuse to copy with no visible control to fix it.
+    local function SetEnabled(value)
+        config.enabled = value == true
+        if auraSource and config.enabled then
+            config.activation, config.combatOnly = nil, nil
+        end
+    end
+    local function RefreshRuntime()
+        if auraSource then
+            RefreshTextureIndicatorRuntime(group, true)
+        else
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end
     end
 
     local enableCb = AddCheckboxRow(container, {
@@ -797,8 +661,8 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         setting = finder and finder.enabled,
         value = config.enabled,
         onChange = function(value)
-            config.enabled = value == true
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
+            SetEnabled(value)
+            RefreshRuntime()
             CooldownCompanion:RefreshConfigPanel()
         end,
     })
@@ -806,6 +670,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll.
     local function BuildTriggerEffectAdvanced(panel)
+        if not auraSource then
         AddDropdownRow(panel, {
             label = "Animate When",
             list = {always="Indicator Is Shown",proc="Proc Active",ready="Ready",unusable="Unusable",aura="Aura (Unavailable)"},
@@ -821,6 +686,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
                 config.combatOnly=value
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
             end})
+        end -- not auraSource
         if effectKey == "colorShift" then
             AddColorRow(panel, {
                 label = "Shift Color",
@@ -829,7 +695,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
                 key = "color",
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
-                onConfirm = function() CooldownCompanion:RefreshAllAuraTextureVisuals() end,
+                onConfirm = RefreshRuntime,
                 onPreview = function()
                     local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
                         and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
@@ -840,7 +706,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
             })
         end
 
-        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel, nil,
+        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel, RefreshRuntime,
             finder and finder.duration)
 
     end
@@ -850,12 +716,19 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
         title = def.label .. " Advanced",
         build = BuildTriggerEffectAdvanced,
         -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
-        -- the trigger effects' restyle-then-rebuild refresh sequence.
-        unlock = not config.enabled and {
+        -- the trigger effects' restyle-then-rebuild refresh sequence. Aura
+        -- sources also restyle the native kit, so they run the row's own path.
+        unlock = not config.enabled and (auraSource and {
+            enable = { label = "Enable " .. def.label, run = function()
+                SetEnabled(true)
+                RefreshRuntime()
+                CooldownCompanion:RefreshConfigPanel()
+            end },
+        } or {
             target = config,
             enable = { label = "Enable " .. def.label, key = "enabled" },
             refreshKind = "auraTextures",
-        } or nil,
+        }) or nil,
     })
 end
 
@@ -865,9 +738,10 @@ local function GetTriggerPanelEffectOrderForDisplayType(group)
         return TEXTURE_INDICATOR_EFFECT_ORDER
     end
 
+    local unavailable = TextOnlyUnavailableEffect(group)
     local order = {}
     for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
-        if effectKey ~= "shrinkExpand" then
+        if effectKey ~= unavailable then
             order[#order + 1] = effectKey
         end
     end
@@ -900,53 +774,19 @@ local function BuildTriggerEffectsTab(container, group)
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
     if not effectsCollapsed then
-        -- The offered set is FILTERED (text displays drop Shrink / Expand), so
+        -- The offered set is FILTERED (Text Only drops one effect), so
         -- the rows fill the left column first: ceil(n/2) left, the rest right.
         local effectLeft, effectRight = BeginRowGrid(container)
         local splitAt = math.ceil(#effectOrder / 2)
         for index, effectKey in ipairs(effectOrder) do
-            BuildTriggerPanelEffectSection(index <= splitAt and effectLeft or effectRight, effects, effectKey)
+            BuildTriggerPanelEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
         end
     end
 
     if not anyEnabled and CS.selectedGroup then
         ST._ConfigPreview.StopCommand("triggerEffects", CS.selectedGroup)
+        ST._ConfigPreview.StopCommand("textureAura", CS.selectedGroup)
     end
-end
-
--- Declared here rather than beside the icons tab's three section constants
--- below, because the builder that reads it comes first; the gear-to-section map
--- further down still sees it.
-local EFFECTS_TEXTURE_INDICATORS_SECTION = "effects_textureIndicators"
-local STANDARD_TEXTURE_INDICATOR_SECTION_ORDER = { "proc", "ready", "unusable" }
-
-local function BuildTextureEffectsTab(container, group)
-    local indicators = GetTextureIndicatorStore(group)
-    if not indicators then
-        return
-    end
-
-    local buttonData = group.buttons and group.buttons[1] or nil
-    if CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData) then
-        for _, sectionKey in ipairs(STANDARD_TEXTURE_INDICATOR_SECTION_ORDER) do
-            ST._ConfigPreview.StopCommand("texture" .. sectionKey:gsub("^%l", string.upper), CS.selectedGroup)
-        end
-        local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Visual Effects",
-            EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
-        local indicatorLeft
-        if not indicatorsCollapsed then
-            indicatorLeft = BeginRowGrid(container)
-        end
-        -- Pass only the visible section into the uniqueness helper. Dormant
-        -- Proc/Ready/Unusable settings cannot reserve an effect that will not
-        -- run while Blizzard owns active-only visibility.
-        BuildTextureIndicatorSection(indicatorLeft, group, { aura = indicators.aura }, "aura", {
-            auraControlled = true,
-        })
-        return
-    end
-
-
 end
 
 -- Row grammar (RowWidgets.lua): shape and color sections of display rows. The
@@ -1302,24 +1142,9 @@ local function SpecialFinderTriggerType(displayType)
     end
 end
 
-local function SpecialFinderTexture(context)
-    return context and context.group and ST.Indicator.IsAura(context.group)
-end
-
 local function SpecialFinderTriggerIconSettings(context)
     local trigger = context and context.group and context.group.indicatorSettings
     return trigger and trigger.icon or nil
-end
-
-local function SpecialFinderTextureIndicators(context)
-    return context and context.group and CooldownCompanion:GetTexturePanelIndicatorSettings(context.group)
-end
-
-local function SpecialFinderTextureAuraControlled(context)
-    local group = context and context.group
-    local buttonData = group and group.buttons and group.buttons[1]
-    return SpecialFinderTexture(context)
-        and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
 end
 
 
@@ -1364,20 +1189,13 @@ local function SpecialFinderTriggerIconCustomBorder(context)
 end
 
 local function SpecialFinderTriggerEffectOffered(context, effectKey)
-    if not SpecialFinderTrigger(context) or ST.Indicator.IsAura(context.group) then return false end
-    return effectKey ~= "shrinkExpand" or SpecialFinderTriggerDisplayType(context) ~= "text"
+    if not SpecialFinderTrigger(context) then return false end
+    return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderTriggerDisplayType(context) ~= "text"
 end
 
-local function SpecialFinderTextureEffectShown(context)
-    return SpecialFinderTextureAuraControlled(context)
-end
-
-local function SpecialFinderTextureEffectType(context, sectionKey, effectType)
-    if not TextureEffectOffered(context and context.group, effectType) then return false end
-    if not SpecialFinderTextureEffectShown(context, sectionKey) then return false end
-    local indicators = SpecialFinderTextureIndicators(context)
-    return indicators and indicators[sectionKey]
-        and indicators[sectionKey].effectType == effectType
+-- Animate When and Only In Combat: condition sources only.
+local function SpecialFinderConditionEffect(context)
+    return not ST.Indicator.IsAura(context.group)
 end
 
 if ST._DefineSettingRoute then
@@ -1446,67 +1264,12 @@ if ST._DefineSettingRoute then
             applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
         })
         finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
-        finder.activation = advanced:Setting({key="activation",label="Animate When"})
-        finder.combatOnly = advanced:Setting({key="combatOnly",label="Only In Combat"})
+        finder.activation = advanced:Setting({key="activation",label="Animate When",applies=SpecialFinderConditionEffect})
+        finder.combatOnly = advanced:Setting({key="combatOnly",label="Only In Combat",applies=SpecialFinderConditionEffect})
         if key == "colorShift" then
             finder.shiftColor = advanced:Setting({ key = "color", label = "Shift Color" })
         end
         SPECIAL_FINDER.triggerEffects[key] = finder
-    end
-
-    for _, sectionKey in ipairs({ "aura" }) do
-        local key = sectionKey
-        local sectionDef = TEXTURE_INDICATOR_SECTION_DEFS[key]
-        local top = ST._DefineSettingRoute({
-            idPrefix = "panel.texture.effects." .. key,
-            scope = SPECIAL_FINDER_SCOPE,
-            tab = "effects",
-            tabLabel = "Effects",
-            section = "textureIndicators",
-            sectionLabel = "Visual Effects",
-            collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
-            rowScope = "primary",
-            applies = function(context) return SpecialFinderTextureEffectShown(context, key) end,
-        })
-        local finder = {
-            enabled = top:Setting({ key = "enabled", label = sectionDef.label }),
-        }
-        local options = ST._DefineSettingRoute({
-            idPrefix = "panel.texture.effects." .. key .. ".options",
-            scope = SPECIAL_FINDER_SCOPE,
-            tab = "effects",
-            tabLabel = "Effects",
-            section = "textureIndicators",
-            sectionLabel = (sectionDef.label:gsub("^Show ", "")),
-            collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
-            rowScope = "primary",
-            advancedKey = "textureEffect_" .. key,
-            -- Structural: the gear exists with the effect off too, opening its
-            -- panel read-only behind the unlock strip.
-            applies = function(context) return SpecialFinderTextureEffectShown(context, key) end,
-        })
-        finder.effectType = options:Setting({ key = "type", label = "Effect Type" })
-        finder.shiftColor = options:Setting({
-            key = "shiftColor", label = "Shift Color",
-            applies = function(context) return SpecialFinderTextureEffectType(context, key, "colorShift") end,
-        })
-        finder.shiftDuration = options:Setting({
-            key = "shiftDuration", label = "Shift Duration",
-            applies = function(context) return SpecialFinderTextureEffectType(context, key, "colorShift") end,
-        })
-        finder.pulseDuration = options:Setting({
-            key = "pulseDuration", label = "Pulse Duration",
-            applies = function(context) return SpecialFinderTextureEffectType(context, key, "pulse") end,
-        })
-        finder.cycleDuration = options:Setting({
-            key = "cycleDuration", label = "Cycle Duration",
-            applies = function(context) return SpecialFinderTextureEffectType(context, key, "shrinkExpand") end,
-        })
-        finder.bounceDuration = options:Setting({
-            key = "bounceDuration", label = "Bounce Duration",
-            applies = function(context) return SpecialFinderTextureEffectType(context, key, "bounce") end,
-        })
-        SPECIAL_FINDER.textureEffects[key] = finder
     end
 
     -- Stable IDs keep saved finder destinations valid; each control now reveals
@@ -1552,8 +1315,6 @@ end
 
 ST._BuildTriggerIconAppearanceTab = BuildTriggerIconAppearanceTab
 ST._BuildTriggerEffectsTab = BuildTriggerEffectsTab
-ST._BuildTextureEffectsTab = BuildTextureEffectsTab
 ST._BuildTexturePanelAppearanceTab = BuildTexturePanelAppearanceTab
 ST._GetStandaloneTextureSettings = GetStandaloneTextureSettings
 ST._OpenOrRebindStandaloneTexturePicker = OpenOrRebindStandaloneTexturePicker
-ST._EFFECTS_TEXTURE_INDICATORS_SECTION = EFFECTS_TEXTURE_INDICATORS_SECTION

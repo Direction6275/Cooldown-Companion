@@ -54,7 +54,6 @@ local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
 local LayoutTexturePieces = AT.LayoutTexturePieces
 local Clamp = AT.Clamp
-local NormalizeTextureIndicatorEffect = AT.NormalizeTextureIndicatorEffect
 local TEXTURE_INDICATOR_EFFECT_PULSE = AT.TEXTURE_INDICATOR_EFFECT_PULSE
 local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
 local TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = AT.TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
@@ -838,6 +837,14 @@ local function BuildTexturePanelSlotKit(slotButton)
     host.bounceAnim:SetSmoothing("OUT")
 
     ST.Indicator.CreateVisual(host, slotButton)
+    -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
+    -- descendant and moved by the effects): same creation-only registration as
+    -- the icon kit's rig, so every texture-panel slot carries it and "off" is
+    -- a style-time "none" (Indicator.StylePandemicGlow). Blizzard alone flips
+    -- its secret Shown state; CC styles it at OOC bind and never reads it.
+    if slotButton.AddPandemicRegion then
+        slotButton:AddPandemicRegion(ST.Indicator.CreatePandemicGlow(host, true).host)
+    end
     host.colorShift = {}
     local colorRegions = {
         {host.primaryTexture, "texture", true}, {host.secondaryTexture, "texture", true},
@@ -1467,6 +1474,22 @@ local function BuildAuraDurationOptions(baseDuration, style, allowLowTime)
     return formatter and { textFormatter = formatter } or nil
 end
 
+-- Aura Indicators compose their timer from `readouts`, which holds that
+-- Indicator's Duration Format, Low Time and Pandemic marker keys under the
+-- panel names. Low Time always applies (the timer is aura text only). The
+-- marker's base-duration lookup stays here with the other bind-time reads,
+-- so the Indicator model never reads aura data.
+local function BuildIndicatorAuraDurationOptions(slot, group)
+    local I = ST.Indicator
+    local readouts = I.Settings(group).readouts
+    local source = I.Primary(group)
+    local pandemicBaseDuration
+    if source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit) then
+        pandemicBaseDuration = GetPandemicBaseDuration(source, true)
+    end
+    return BuildAuraDurationOptions(pandemicBaseDuration, readouts, true)
+end
+
 ------------------------------------------------------------------------
 -- PREVIEW TWINS
 --
@@ -1556,7 +1579,16 @@ local function StopTexturePanelSlotIndicator(host)
     end
 end
 
-local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
+local function TexturePanelEffectSpeed(effect)
+    return Clamp(tonumber(effect.speed) or DEFAULT_TEXTURE_INDICATOR_SPEED,
+        MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+end
+
+-- `effects` is the Indicator's derived effect map (Indicator.NativeEffects):
+-- every entry plays, together. Each effect owns its own channel (Alpha, Scale
+-- and Translation groups on visualRoot, VertexColor groups on the artwork), so
+-- they compose; all are started here, once, and loop until the next bind.
+local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     local host = slot.kit and slot.kit.texturePanelHost
     if not host then return end
 
@@ -1566,6 +1598,8 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
     host._indicatorDimAlpha = nil
+    -- A pooled slot must not keep the previous entry's pandemic look.
+    ST.Indicator.StylePandemicGlow(host, nil, false)
 
     local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
     if not geometry then
@@ -1576,7 +1610,7 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
 
     local shown
     if ST.IsIndicatorGroup(group) then
-        shown = ST.Indicator.StyleAura(slot, group)
+        shown = ST.Indicator.StyleAura(slot, group, BuildIndicatorAuraDurationOptions(slot, group))
     else
         CooldownCompanion.HideStandaloneDisplayVisuals(host)
         slot.slotButton:ClearIcon()
@@ -1585,30 +1619,35 @@ local function StyleTexturePanelSlotKit(slot, settings, indicator, group)
         shown = LayoutTexturePieces(host, settings, geometry, alpha)
     end
     host.visualRoot:SetAlpha(shown and 1 or 0)
-    if not shown or type(indicator) ~= "table" or indicator.enabled ~= true then
+    if not shown or type(effects) ~= "table" then
         return
     end
 
-    local effectType = NormalizeTextureIndicatorEffect(indicator.effectType)
-    local speed = Clamp(tonumber(indicator.speed) or DEFAULT_TEXTURE_INDICATOR_SPEED,
-        MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
-    if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
-        host.pulseAnim:SetDuration(speed)
+    local pulse = effects[TEXTURE_INDICATOR_EFFECT_PULSE]
+    if pulse then
+        host.pulseAnim:SetDuration(TexturePanelEffectSpeed(pulse))
         host.pulseAG:Play()
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
-        host.shrinkAnim:SetDuration(speed / 2)
+    end
+    local shrink = effects[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND]
+    if shrink then
+        host.shrinkAnim:SetDuration(TexturePanelEffectSpeed(shrink) / 2)
         host.shrinkAG:Play()
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
+    end
+    local bounce = effects[TEXTURE_INDICATOR_EFFECT_BOUNCE]
+    if bounce then
         local amplitude = math.max(6, math.min(DEFAULT_TEXTURE_BOUNCE_PIXELS,
             (geometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
         host.bounceAnim:SetOffset(0, amplitude)
-        host.bounceAnim:SetDuration(speed / 2)
+        host.bounceAnim:SetDuration(TexturePanelEffectSpeed(bounce) / 2)
         host.bounceAG:Play()
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT then
+    end
+    local colorShiftEffect = effects[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
+    if colorShiftEffect then
+        local speed = TexturePanelEffectSpeed(colorShiftEffect)
         local displayType = ST.IsIndicatorGroup(group) and group.indicatorSettings.displayType or "texture"
         local base = settings.color or { 1, 1, 1, 1 }
         if displayType == "icon" then base = group.indicatorSettings.icon.iconTintColor or base end
-        local shift = indicator.color or { 1, 1, 1, 1 }
+        local shift = colorShiftEffect.color or { 1, 1, 1, 1 }
         for _, colorShift in ipairs(host.colorShift) do
             if colorShift.displayType == displayType then
                 local dim = colorShift.dim and host._indicatorDimAlpha or 1
@@ -2749,7 +2788,7 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
     kit.stackCountFormatterKey = wantKey
 end
 
-local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureIndicator)
+local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureEffects)
     local button = record.button
     local wasParked = record.parked
     local layer = record.hostKind == "texturePanel" and record.layer or EnsureAuraLayer(button)
@@ -2789,7 +2828,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
     if record.hostKind == "texturePanel" then
-        StyleTexturePanelSlotKit(record, textureSettings, textureIndicator,
+        StyleTexturePanelSlotKit(record, textureSettings, textureEffects,
             CooldownCompanion.db.profile.groups[button._groupId])
     else
         StyleSlotKit(record, button, buttonData, style)
@@ -4563,7 +4602,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
                     local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
                     if ST.Indicator.IsAura(group) then textureSettings = ST.Indicator.NativeSettings(group) end
-                    local textureIndicators = textureAura and self:GetTexturePanelIndicatorSettings(group) or nil
+                    local textureEffects = textureAura and ST.Indicator.NativeEffects(group) or nil
                     if spellSet and (not textureAura or (textureSettings and textureSettings.enabled)) then
                         -- Stack fill (tracker C2): bar hosts only; the max is
                         -- automatic (owner ruling). A nil resolve means "not
@@ -4583,7 +4622,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             hostKind = textureAura and "texturePanel" or "button",
                             missingIndicator = self:IsMissingAuraIndicatorEntry(buttonData, group, style),
                             textureSettings = textureSettings,
-                            textureIndicator = textureIndicators and textureIndicators.aura or nil,
+                            textureEffects = textureEffects,
                         }
                     end
                 end
@@ -4650,7 +4689,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                 record.missingIndicator = want.missingIndicator
                 BindDisplay(record, want.buttonData, want.spellSet, unit,
                     want.style, want.stackBarMax, soundsAllowed, want.groupScoped,
-                    want.textureSettings, want.textureIndicator)
+                    want.textureSettings, want.textureEffects)
             end
         end
         if want.missingIndicator and #want.units > 0 then

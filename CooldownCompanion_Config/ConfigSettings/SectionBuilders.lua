@@ -601,6 +601,8 @@ end
 --   advancedKey  stable editor identity; defaults to durationLowTime
 --   auraOnly     label the policy as aura-owned and omit the scope toggle
 --   summaryTarget optional duration owner label for other timed displays
+--   inline       draw the dependent rows under the toggle instead of behind
+--                its own gear (the caller is already a gear's panel)
 --   auraToggle   draw the "Also Apply to Aura Text" opt-in row; passed only on
 --                surfaces with both cooldown and aura text (aura-only
 --                surfaces apply unconditionally and never draw it)
@@ -880,6 +882,14 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             LOW_TIME_DECIMAL_TOOLTIP, infoButtons or decimalRow))
 
     end
+    -- Already inside a gear (an Indicator's Duration Text): the same rows
+    -- follow the toggle directly, since a second gear would replace the panel.
+    if opts.inline then
+        AnchorRowBadge(toggleRow, CreateInfoButton(toggleRow.frame, toggleRow.frame, "LEFT", "LEFT", 0, 0,
+            LOW_TIME_TOOLTIP, opts.infoButtons or toggleRow))
+        if active then BuildDetails(container) end
+        return rows
+    end
     ST._AddAdvancedToggle(toggleRow, opts.advancedKey or "durationLowTime", opts.infoButtons or {},
         not opts.sec or opts.sec.scope ~= "denied", {
             build = BuildDetails,
@@ -955,7 +965,9 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
     opts = opts or {}
     local enableRow
-    local mode = styleTable.pandemicMarkerMode or "auto"
+    -- opts.defaultMode: what a missing mode means to this caller (Indicators
+    -- read it as off; panels as auto).
+    local mode = styleTable.pandemicMarkerMode or opts.defaultMode or "auto"
     if not opts.childrenOnly then
         enableRow = AddDropdownRow(container, {
             label = "Pandemic Marker",
