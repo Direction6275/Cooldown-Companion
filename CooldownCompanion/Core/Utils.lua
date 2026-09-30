@@ -464,6 +464,13 @@ function ST.GetEffectiveBorderRenderMode(source, key, size)
     return ST.BORDER_RENDER_MODE_CRISP
 end
 
+-- The drawn mode for a saved border table. Its size lives beside the mode key
+-- (borderRenderMode/borderSize, iconBorderRenderMode/iconBorderSize).
+function ST.GetDrawnBorderRenderMode(tbl, key)
+    key = key or "borderRenderMode"
+    return ST.GetEffectiveBorderRenderMode(tbl, key, tbl and tbl[(key:gsub("RenderMode$", "Size"))])
+end
+
 -- Temporary effects own their thickness while active. The profile one-pixel
 -- option controls the normal border underneath, not the active effect override.
 -- Effect size 1 still denotes exactly one screen pixel.

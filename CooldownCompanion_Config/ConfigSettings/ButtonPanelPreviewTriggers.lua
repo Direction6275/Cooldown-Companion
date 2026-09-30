@@ -19,61 +19,170 @@ local ApplyTextureIndicatorEffects = AuraTextures and AuraTextures.ApplyTextureI
 local PP = ST._ButtonPanelPreview
 local AceGUI = LibStub("AceGUI-3.0")
 
-local conditionPhrases = {
-    cooldownActive = {[true]="on cooldown", [false]="off cooldown"},
-    procActive = {[true]="showing a proc", [false]="not showing a proc"},
-    rangeActive = {[true]="in range", [false]="out of range"},
-    usable = {[true]="usable", [false]="unusable"},
-    chargesRecharging = {[true]="recharging a charge", [false]="not recharging any charges"},
-    chargeState = {full="at full charges", missing="below full charges with at least one remaining", zero="out of charges"},
-    countTextActive = {[true]="showing count text", [false]="not showing count text"},
-    countState = {full="at its maximum display count", missing="below its maximum display count with a nonzero count",
-        zero="at zero display count"},
-}
+-- The rules card: every rule the Indicator checks, in the same row grammar as
+-- the settings (name on the left, value on the right), inside a titled
+-- InlineGroup. Built only from AceGUI widgets, so it wears the same skin as
+-- the rest of the config. It only shows: sources and rules are edited in
+-- Visibility's When to Show, and clicking a rule opens its exact row there.
+-- The model comes from ST._GetIndicatorSourceControls (IndicatorTabs.lua).
+local VALUE_HOVER = {1, 0.82, 0}
+local WARNING = {1, 0.72, 0.25}
 
-local function TrackingSummary(group)
-    local I = ST.Indicator
-    local source = I.Primary(group)
-    if source.enabled == false then return "Cannot show: the primary source is disabled." end
-    local prefix = group.enabled == false
-        and "This Indicator is disabled. When enabled, it shows when " or "Shows when "
-    if I.IsAura(group) then return prefix .. (source.name or tostring(source.id)) .. " is active." end
-    local sources = {}
-    -- Read the same saved clauses as I.Match: every enabled source and clause
-    -- must match, even when the primary selector says Always.
-    for _, entry in ipairs(group.buttons or {}) do
-        if entry.enabled ~= false then
-            local name, phrases = entry.name or tostring(entry.id), {}
-            for _, clause in ipairs(entry.triggerConditions or {}) do
-                local expected = clause.state
-                if expected == nil then expected = clause.expected ~= false end
-                local values = conditionPhrases[clause.key]
-                local phrase = values and values[expected]
-                if clause.unavailable or not I.ConditionKeys[clause.key] or not phrase then
-                    return "Cannot show: " .. name .. " has an unavailable condition. Replace or remove that condition."
-                end
-                phrases[#phrases + 1] = phrase
-            end
-            sources[#sources + 1] = name .. " is " .. (#phrases > 0 and table.concat(phrases, " and ") or "available to track")
+local function ShowTooltip(frame, lines)
+    GameTooltip:SetOwner(frame, "ANCHOR_TOP")
+    GameTooltip:SetText(lines[1])
+    if lines[2] then GameTooltip:AddLine(lines[2], 1, 1, 1, true) end
+    GameTooltip:Show()
+end
+
+-- A rule's value: right-aligned text that turns gold on hover, like a
+-- setting's name does when it opens something.
+local function RuleValue(text, color, tooltip, onClick)
+    local value = AceGUI:Create("InteractiveLabel")
+    -- Navigator rows leave their icons and badges on pooled labels.
+    ST._CleanRecycledEntry(value)
+    value:SetFontObject(GameFontHighlight)
+    value:SetText(text)
+    value:SetJustifyH("RIGHT")
+    value:SetWidth(math_min(math_ceil(value.label:GetStringWidth()) + 2, 200))
+    if color then value:SetColor(color[1], color[2], color[3]) end
+    value:SetCallback("OnEnter", function(widget)
+        widget:SetColor(VALUE_HOVER[1], VALUE_HOVER[2], VALUE_HOVER[3])
+        ShowTooltip(widget.frame, tooltip)
+    end)
+    value:SetCallback("OnLeave", function(widget)
+        if color then widget:SetColor(color[1], color[2], color[3]) else widget:SetColor() end
+        GameTooltip:Hide()
+    end)
+    -- The click rebuilds the preview and releases this hovered label.
+    value:SetCallback("OnClick", function() GameTooltip:Hide(); onClick() end)
+    return value
+end
+
+local function CardRow(card, label, indent)
+    local row = AceGUI:Create("CDC-LabelRow")
+    row:SetFullWidth(true)
+    row:SetLabel(label)
+    if indent then row:SetIndent(true) end
+    card:AddChild(row)
+    return row
+end
+
+-- One source: a row per rule, the first named for the source and the rest
+-- joined with "and", as they read in Visibility.
+local function AddSourceRows(card, source, model, parts)
+    local name = (source.icon and "|T" .. tostring(source.icon) .. ":16:16|t " or "") .. source.name
+    if not source.enabled then name = "|cff999999" .. name .. " (not checked)|r" end
+    local entry = {name = CardRow(card, name), rules = {}}
+    parts.rows[#parts.rows + 1] = entry
+    if model.aura then
+        entry.name:SetControlText("While Active")
+    elseif #source.rules == 0 then
+        entry.rules[1] = RuleValue("Always", nil,
+            {"No rules", "Shows whenever it can be tracked. Click to add rules in Visibility."},
+            function() model.openRule(nil) end)
+        entry.name:SetControlWidget(entry.rules[1])
+    else
+        for index, rule in ipairs(source.rules) do
+            local clause = rule.clause
+            local value = RuleValue(rule.label or "Unavailable", not rule.label and WARNING or nil,
+                rule.label and {rule.label, "Click to open this rule in Visibility."}
+                    or {"Unavailable rule", "This saved rule cannot match. Click to replace or remove it in Visibility."},
+                function() model.openRule(clause) end)
+            local row = index == 1 and entry.name or CardRow(card, "and", true)
+            row:SetControlWidget(value)
+            entry.rules[#entry.rules + 1] = value
         end
     end
-    return prefix .. table.concat(sources, ", and ") .. "."
+end
+
+local function ReleaseSourceControls(preview)
+    if preview.indicatorCard then
+        AceGUI:Release(preview.indicatorCard)
+        preview.indicatorCard, preview.indicatorCardKey = nil, nil
+    end
+end
+
+-- Build the card for `model` at `width`; returns the AceGUI group's frame.
+-- The model's key names everything the card draws and every closure it keeps,
+-- so an unchanged card is kept: previews refresh on every drag tick.
+local function BuildRulesCard(preview, model, width)
+    local cardKey = model.key .. "|" .. width
+    local card = preview.indicatorCard
+    if card and preview.indicatorCardKey == cardKey then
+        card.frame:Show()
+        return card.frame
+    end
+    ReleaseSourceControls(preview)
+    card = AceGUI:Create("InlineGroup")
+    card:SetLayout("List")
+    card.frame:SetParent(preview.root)
+    card:SetWidth(width)
+    card:SetTitle("When to Show")
+    local parts = {title = "When to Show", rows = {}}
+    card._cdcRulesCard = parts
+    if model.replacing or model.disabled then
+        local note = AceGUI:Create("Label")
+        note:SetFontObject(GameFontHighlight)
+        note:SetColor(WARNING[1], WARNING[2], WARNING[3])
+        local replacing = "Search for the new source in the field at the top. It starts with fresh rules; the look is kept."
+        if #model.sources > 1 then replacing = replacing .. " Other sources stay, unless it is an aura." end
+        note:SetText(model.replacing and replacing or "This Indicator is off. These rules apply once it is on.")
+        note:SetFullWidth(true)
+        card:AddChild(note)
+        parts.note = note
+    end
+    for _, source in ipairs(model.sources) do AddSourceRows(card, source, model, parts) end
+    card:DoLayout()
+    card.frame:Show()
+    preview.indicatorCard, preview.indicatorCardKey = card, cardKey
+    return card.frame
 end
 
 function PP.ReleaseIndicatorPreviewControls(preview)
-    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
     if preview.indicatorDuration then
         AceGUI:Release(preview.indicatorDuration)
         preview.indicatorDuration = nil
     end
+    ReleaseSourceControls(preview)
+end
+
+-- Adopt one AceGUI row into the preview footer; PinFooter places it.
+local function AddFooterRow(preview, footer, widget, width)
+    widget.frame:SetParent(preview.root)
+    widget:SetWidth(width)
+    widget.frame:Show()
+    footer[#footer + 1] = widget.frame
+end
+
+-- The footer hugs the preview's bottom edge, just above the add field, so the
+-- artwork keeps the open space above it. Regions are listed top to bottom and
+-- pinned bottom-up; returns the height the artwork must leave free.
+local FOOTER_GAP = 8
+local function PinFooter(preview, footer)
+    local height, below = 0, nil
+    for index = #footer, 1, -1 do
+        local region = footer[index]
+        region:ClearAllPoints()
+        if below then
+            region:SetPoint("BOTTOM", below, "TOP", 0, FOOTER_GAP)
+        else
+            region:SetPoint("BOTTOM", preview.root, "BOTTOM", 0, PP.PANEL_PREVIEW_PADDING)
+        end
+        height = height + FOOTER_GAP + region:GetHeight()
+        below = region
+    end
+    return height
 end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
-    if preview.indicatorCaption then preview.indicatorCaption:Hide() end
+    -- Hidden, not released: BuildRulesCard keeps an unchanged card.
+    if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     local I = ST.Indicator
+    if readOnly or not I.Primary(group) then ReleaseSourceControls(preview) end
     if not I.Primary(group) then
-        PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field below.", "Choose a source")
+        PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field at the top.", "Choose a source")
         PP.FinalizePreviewState(preview)
         return
     end
@@ -101,6 +210,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local fraction = state == "full" and 1 or state == "empty" and 0 or 0.5
     if state == "timeless" then fraction=1 end
     if not I.Render(surface,nil,candidate,true,fraction) then
+        ReleaseSourceControls(preview)
         PP.SetPreviewMessage(preview,"Choose artwork in Appearance to preview this Indicator.")
         PP.FinalizePreviewState(preview)
         return
@@ -126,21 +236,16 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         or settings.displayType == "texture" and settings.progress.enabled)
     local footerHeight = 0
     if not readOnly then
-        local caption=preview.indicatorCaption
-        if not caption then
-            caption=preview.root:CreateFontString(nil,"OVERLAY","GameFontDisableSmall")
-            ST._ConfigureWrappedHelperLabel(caption)
-            caption:SetJustifyH("CENTER")
-            caption:SetTextColor(0.75,0.75,0.75)
-            preview.indicatorCaption=caption
-        end
-        local captionWidth = PP.GetHostFitBox(host,false)
-        caption:ClearAllPoints()
-        caption:SetWidth(captionWidth)
-        caption:SetPoint("TOP",surface,"BOTTOM",0,-8)
-        caption:SetText(TrackingSummary(group))
-        caption:Show()
-        footerHeight = 8 + math_max(1,caption:GetStringHeight())
+        -- GetHostFitBox returns width and height; only the width sizes the footer.
+        local fitWidth = PP.GetHostFitBox(host,false)
+        local rowWidth = math_min(360,fitWidth)
+        -- The preview is the source workspace: every source and rule the
+        -- Indicator checks, Change/Remove for the main source, and for an
+        -- aura where it is tracked.
+        local footer = {}
+        local model = ST._GetIndicatorSourceControls(group)
+        if model then footer[#footer + 1] = BuildRulesCard(preview,model,rowWidth)
+        else ReleaseSourceControls(preview) end
         if showDuration then
             local control = preview.indicatorDuration
             if not control then
@@ -152,20 +257,18 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
                 control.frame:SetParent(preview.root)
                 preview.indicatorDuration = control
             end
-            control:SetWidth(math_min(260,captionWidth))
-            control.frame:ClearAllPoints()
-            control.frame:SetPoint("TOP",caption,"BOTTOM",0,-8)
+            AddFooterRow(preview,footer,control,rowWidth)
             control:SetValue(state)
             control:SetCallback("OnValueChanged",function(_,_,value)
                 CS.indicatorPreviewState=value
                 ST._RefreshButtonsPreviewMirror(panelId)
             end)
-            control.frame:Show()
-            footerHeight = footerHeight + 8 + control.frame:GetHeight()
         end
+        footerHeight = PinFooter(preview,footer)
     end
     -- Caption and controls stay readable at the host scale. Reserve their
-    -- measured height before fitting the artwork, then center the whole stack.
+    -- measured height before fitting the artwork, which centers in the space
+    -- left above the footer.
     local scale = PP.GetHostFitScale(host,width,height+(readOnly and 28 or 0),readOnly,footerHeight)
     surface:SetScale(scale)
     surface:ClearAllPoints()
@@ -220,7 +323,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
             SetPreviewMessage(preview, "Empty Panel")
         else
             SetPreviewMessage(preview,
-                "Search for a spell or item in the field below, enter an ID, or drag one into this preview.",
+                "Search for a spell or item in the field at the top, enter an ID, or drag one into this preview.",
                 "Add your first entry")
         end
         FinalizePreviewState(preview)

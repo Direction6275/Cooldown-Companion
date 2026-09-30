@@ -7,13 +7,21 @@ local Label, Edit = ST._AddLabelRow, ST._AddEditBoxRow
 local anchors = {TOPLEFT="Top Left",TOP="Top",TOPRIGHT="Top Right",LEFT="Left",CENTER="Center",
     RIGHT="Right",BOTTOMLEFT="Bottom Left",BOTTOM="Bottom",BOTTOMRIGHT="Bottom Right"}
 local anchorOrder = {"TOPLEFT","TOP","TOPRIGHT","LEFT","CENTER","RIGHT","BOTTOMLEFT","BOTTOM","BOTTOMRIGHT"}
+local ROW_SECTION = {leftAligned = true}
+local TAB_LABELS = {loadconditions = "Visibility", appearance = "Appearance", effects = "Effects"}
+-- The Entry identity line's muted grey, so "(Aura)" reads the same everywhere.
+local KIND_COLOR = "|cff7d7566"
 
-local function Route(tab, section)
-    return ST._DefineSettingRoute({idPrefix="panel.indicator."..section, scope="panel",rowScope="primary",
-        tab=tab,tabLabel=tab == "tracking" and "Tracking" or tab == "effects" and "Effects" or "Appearance",section=section,
-        sectionLabel="Indicator", applies=function(context)
-            return ST.IsIndicatorGroup(context.group) and (tab == "tracking" or I.Primary(context.group) ~= nil)
-        end})
+-- Each section owns its collapse key; finder routes force that key open.
+local function Route(tab, section, sectionLabel, collapseKey, extra)
+    local defaults = {idPrefix="panel.indicator."..section, scope="panel", rowScope="primary",
+        tab=tab, tabLabel=TAB_LABELS[tab], section=section, sectionLabel=sectionLabel,
+        collapseKeys={collapseKey},
+        applies=function(context)
+            return ST.IsIndicatorGroup(context.group) and (tab == "loadconditions" or I.Primary(context.group) ~= nil)
+        end}
+    for key, value in pairs(extra or {}) do defaults[key] = value end
+    return ST._DefineSettingRoute(defaults)
 end
 local function Applies(predicate)
     return function(context)
@@ -24,37 +32,63 @@ end
 local texture = Applies(function(_,s) return s.displayType == "texture" end)
 local drain = Applies(function(_,s) return s.displayType == "texture" and s.progress.enabled == true end)
 local textOnly = Applies(function(_,s) return s.displayType == "text" end)
-local function HasText(settings)
-    local r = settings.readouts
-    return r.label ~= "none" or r.timer == true or r.count ~= "none"
-end
-local textEnabled = Applies(function(_,s) return HasText(s) end)
-local labelEnabled = Applies(function(_,s) return s.readouts.label ~= "none" end)
 local function CountReadoutKey(group)
     return I.IsAura(group) and "stacks" or I.Primary(group).type == "spell" and "charges" or "item"
 end
-local appearance = Route("appearance", "display"):Settings({
-    displayType={label="Display",aliases={"indicator","texture","icon","text"}},
-    label={label="Label"},timer={label="Timer"},
-    stacks={label="Aura Stacks",aliases={"count"},applies=Applies(function(g) return CountReadoutKey(g) == "stacks" end)},
-    charges={label="Charges / Display Count",applies=Applies(function(g) return CountReadoutKey(g) == "charges" end)},
-    item={label="Item Count",applies=Applies(function(g) return CountReadoutKey(g) == "item" end)},
+local function Enabled(settings, key)
+    local r = settings.readouts
+    if key == "timer" then return r.timer == true end
+    return r[key] ~= "none"
+end
+
+-- Row labels match the panel Text rows. Descriptors are keyed by the old
+-- setting keys, so saved finder ids and old names keep working.
+local READOUT_ROWS = {
+    label = {label="Show Label Text", aliases={"label"}},
+    timer = {label="Show Cooldown Text", aliases={"timer"},
+        applies=Applies(function(g) return not I.IsAura(g) end)},
+    auraTimer = {label="Show Aura Duration Text", aliases={"timer"},
+        applies=Applies(function(g) return I.IsAura(g) end)},
+    stacks = {label="Show Aura Stack Text", aliases={"aura stacks","count"},
+        applies=Applies(function(g) return CountReadoutKey(g) == "stacks" end)},
+    charges = {label="Show Count Text (Charges / Uses)", aliases={"charges","display count"},
+        applies=Applies(function(g) return CountReadoutKey(g) == "charges" end)},
+    item = {label="Show Item Count Text", aliases={"item count"},
+        applies=Applies(function(g) return CountReadoutKey(g) == "item" end)},
+}
+local function ReadoutRowKey(group, key)
+    if key == "timer" then return I.IsAura(group) and "auraTimer" or "timer" end
+    if key == "count" then return CountReadoutKey(group) end
+    return key
+end
+
+local display = Route("appearance", "display", "Display", "indicator_display"):Settings({
+    displayType={label="Display As",aliases={"display","indicator","texture","icon","text"}},
+    width={label="Width",applies=textOnly},height={label="Height",applies=textOnly},
+    background={label="Background Color",aliases={"text background"},applies=textOnly},
+})
+READOUT_ROWS.timerFormat = {label="Duration Format",aliases={"timer format"},
+    applies=Applies(function(_,s) return s.readouts.timer == true end)}
+local text = Route("appearance", "text", "Text", "indicator_text", {idPrefix="panel.indicator.display"}):Settings(READOUT_ROWS)
+local drainSettings = Route("appearance", "drain", "Duration Drain", "indicator_drain",
+    {idPrefix="panel.indicator.display"}):Settings({
     progress={label="Duration Drain",aliases={"depletion","dim silhouette"},applies=texture},
     direction={label="Drain Direction",applies=drain},dim={label="Dim Silhouette",applies=drain},
-    labelType={label="Label Content",advancedKey="indicatorText",applies=labelEnabled},
-    fontSize={label="Text Size",advancedKey="indicatorText",applies=textEnabled},
-    customText={label="Custom Label",advancedKey="indicatorText",applies=Applies(function(_,s) return s.readouts.label == "custom" end)},
-    width={label="Width",applies=textOnly},height={label="Height",applies=textOnly},
-    font={label="Font",advancedKey="indicatorText",applies=textEnabled},
-    outline={label="Font Outline",advancedKey="indicatorText",applies=textEnabled},
-    color={label="Text Color",advancedKey="indicatorText",applies=textEnabled},
-    background={label="Text Background",advancedKey="indicatorText",applies=Applies(function(_,s) return s.displayType == "text" and HasText(s) end)},
-    timerFormat={label="Timer Format",advancedKey="indicatorText",applies=Applies(function(_,s) return s.readouts.timer == true end)},
 })
-local tracking = Route("tracking", "source"):Settings({source={label="Source"},
+local labelContent = Route("appearance", "labelPosition", "Label Text", "indicator_text",
+    {idPrefix="panel.indicator.display", advancedKey="indicatorText_label"}):Settings({
+    labelType={label="Label Content"},
+    customText={label="Custom Label",applies=Applies(function(_,s) return s.readouts.label == "custom" end)},
+})
+
+local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indicator_whenToShow",
+    {idPrefix="panel.indicator.source"}):Settings({
     sourceVisibility={label="Use Saved Source Visibility",applies=Applies(function(g,s) return s.sourceVisibility ~= nil and not I.IsAura(g) end)},
-    conditions={label="Show When",aliases={"conditions","ready","on cooldown","always"},applies=Applies(function(g) return not I.IsAura(g) end)},
-    unit={label="Aura Unit",applies=Applies(function(g) return I.IsAura(g) end)}})
+    -- Bound to the section heading: the rules themselves are one row each.
+    -- Every Indicator with a source has the section; an aura's holds the aura.
+    conditions={label="When to Show",aliases={"show when","conditions","rules","ready","on cooldown","always"},
+        applies=Applies(function() return true end)},
+    unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)}})
 
 local soundRoute = ST._DefineSettingRoute({
     idPrefix="panel.indicator.sounds",scope="panel",rowScope="primary",tab="effects",tabLabel="Effects",
@@ -80,35 +114,52 @@ for key, label in pairs({available="Available",availableWithCharges="Available /
 end
 ST._IndicatorSoundSettings = soundRoute:Settings(soundDefinitions)
 
+-- One gear per readout, holding its font and position like a panel's text
+-- gears. Structural: the gear exists with the readout off, behind its unlock.
+local READOUT_SECTION_LABELS = {label="Label Text", timer="Duration Text", count="Count Text"}
 local positions = {}
 for _,key in ipairs({"label","timer","count"}) do
-    local readout=key
     local name=key:sub(1,1):upper()..key:sub(2)
-    local shown=Applies(function(_,s)
-        local r=s.readouts
-        return readout == "timer" and r.timer == true or readout ~= "timer" and r[readout] ~= "none"
-    end)
-    positions[key]=Route("appearance", key.."Position"):Settings({
-        anchor={label=name.." Anchor",advancedKey="indicatorText",applies=shown},
-        X={label=name.." X",advancedKey="indicatorText",applies=shown}, Y={label=name.." Y",advancedKey="indicatorText",applies=shown},
+    positions[key]=Route("appearance", key.."Position", READOUT_SECTION_LABELS[key], "indicator_text",
+        {advancedKey="indicatorText_"..key}):Settings({
+        fontSize={label="Font Size",aliases={"text size"}},
+        font={label="Font"},
+        outline={label="Font Outline"},
+        color={label="Font Color",aliases={"text color"}},
+        anchor={label="Anchor",aliases={name.." Anchor"}},
+        X={label="X Offset",aliases={name.." X"}}, Y={label="Y Offset",aliases={name.." Y"}},
     })
 end
 
-local function Button(container, label, callback)
-    local button = AceGUI:Create("Button")
-    button:SetText(label)
-    button:SetAutoWidth(true)
-    button:SetCallback("OnClick", callback)
-    container:AddChild(button)
-    return button
+-- Buttons sharing one row's control column (ST._CreateRowActionStrip), from
+-- {text, onClick, tooltip = {title, body}}.
+local function ActionStrip(actions)
+    local buttons = {}
+    for index, action in ipairs(actions) do
+        local button = AceGUI:Create("Button")
+        button:SetText(action.text)
+        button:SetCallback("OnClick", function()
+            -- The click can rebuild the page and release this hovered button,
+            -- so its tooltip would never see OnLeave.
+            if GameTooltip:IsOwned(button.frame) then GameTooltip:Hide() end
+            action.onClick()
+        end)
+        if action.tooltip then
+            button:SetCallback("OnEnter", function(widget)
+                GameTooltip:SetOwner(widget.frame, "ANCHOR_TOP")
+                GameTooltip:SetText(action.tooltip[1])
+                GameTooltip:AddLine(action.tooltip[2], 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            button:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+        end
+        buttons[index] = button
+    end
+    return ST._CreateRowActionStrip(buttons)
 end
 
-local function Heading(container, text, setting)
-    local heading = AceGUI:Create("Heading")
-    heading:SetText(text)
-    heading:SetFullWidth(true)
-    ST._ApplyLeftAlignedHeading(heading,nil,true)
-    container:AddChild(heading)
+local function Section(container, text, key, setting)
+    local heading, collapsed = ST._BuildCollapsibleSection(container, text, key, nil, nil, ROW_SECTION)
     if setting and ST._BindSettingWidget then
         ST._BindSettingWidget(heading,setting,text)
         local onRelease = heading.events and heading.events.OnRelease
@@ -117,7 +168,7 @@ local function Heading(container, text, setting)
             if onRelease then onRelease(widget,event,...) end
         end)
     end
-    return heading
+    return heading, collapsed
 end
 
 local function Hint(container, text)
@@ -135,276 +186,443 @@ local function FocusSourceSearch()
     Addon:RefreshConfigPanel()
 end
 
-local function ShowWhen(entry)
-    local clauses = entry.triggerConditions or {}
-    -- Always can still have additional checks. Remember that explicit choice
-    -- so adding one does not silently turn the selector into Custom.
-    if entry.indicatorShowWhen == "always" then return "always" end
-    if #clauses == 0 then return "always" end
-    if clauses[1].unavailable then return "custom" end
-    if clauses[1].key == "cooldownActive" and clauses[1].state == nil then
-        return clauses[1].expected == false and "ready" or "cooldown"
-    end
-    return "custom"
-end
-
-local function BuildConditions(container, entry, first, changed)
-    local clauses = entry.triggerConditions or {}
-    for clauseIndex = first, #clauses do
-        local ci, clause = clauseIndex, clauses[clauseIndex]
-        local choices, order = Addon:GetTriggerConditionTypeOptions(entry)
-        local filtered = {}
-        for _, key in ipairs(order) do if I.ConditionKeys[key] then filtered[#filtered+1]=key end end
-        if clause.unavailable or not I.ConditionKeys[clause.key] then
-            local offered = false
-            for _, key in ipairs(filtered) do if key == clause.key then offered = true end end
-            choices[clause.key] = "Unavailable: " .. tostring(clause.key)
-            if not offered then filtered[#filtered+1] = clause.key end
-            Hint(container,"This saved condition cannot match. Replace or remove it to enable this display.")
-        end
-        local left, right = ST._BeginRowGrid(container)
-        Dropdown(left,{label="Check",list=choices,order=filtered,value=clause.key,
-            onChange=function(value)
-                local _,values=Addon:GetTriggerConditionExpectedOptions(value)
-                local initial=values[1]
-                clauses[ci]={key=value,expected=initial ~= "false",
-                    state=initial ~= "true" and initial ~= "false" and initial or nil}
-                entry.triggerConditions=clauses; changed(true)
-            end})
-        local states,stateOrder=Addon:GetTriggerConditionExpectedOptions(clause.key)
-        Dropdown(right,{label="State",list=states,order=stateOrder,
-            value=clause.state or (clause.expected == false and "false" or "true"),
-            onChange=function(value)
-                clause.state=value ~= "true" and value ~= "false" and value or nil
-                clause.expected=value ~= "false"; changed()
-            end})
-        Button(right,"Remove Condition",function() table.remove(clauses,ci); entry.triggerConditions=clauses; changed(true) end)
-    end
-    local left = ST._BeginRowGrid(container)
-    Button(left,"Add Condition",function()
-        clauses[#clauses+1]={key="usable",expected=true}; entry.triggerConditions=clauses; changed(true)
-    end)
-end
-
-local function BuildTracking(container, group, changed)
-    local source = I.Primary(group)
-    if not source then
-        Label(container, {setting=tracking.source, controlText="No source"})
-        Hint(container,"Add a spell, aura, or item using the search field below the preview.")
-        return
-    end
-    -- Search targets the stable heading; the source name is display content.
-    Heading(container,"Source",tracking.source)
-    local sourceLeft, sourceRight = ST._BeginRowGrid(container)
-    local kind = I.IsAura(group) and "Aura" or source.type == "spell" and "Spell"
-        or Addon.IsEquipmentSlotEntry(source) and "Equipment" or "Item"
-    local icon = ST._GetButtonIcon(source)
-    local sourceRow = Label(sourceLeft,{
-        label=(icon and "|T"..tostring(icon)..":16:16|t " or "")..(source.name or tostring(source.id)),controlText=kind})
-    ST._AddAdvancedToggle(sourceRow,"indicatorSource",CS.tabInfoButtons,true,{
-        title="Source Settings",build=function(panel)
-            Button(panel,#group.buttons > 1 and "Remove All Sources" or "Remove Source",
-                function() I.ClearSource(group); changed(true) end)
-        end,
-    })
-    local replacing = CS.GetIndicatorSourceReplacement(CS.selectedGroup)
-    Button(sourceRight,replacing and "Cancel Change" or "Change...",function()
-        CS.indicatorSourceReplacement = not replacing and {
-            groupId=CS.selectedGroup,group=group,profile=Addon.db.profile,source=source,
-        } or nil
-        CS.HideAutocomplete()
-        if replacing then
-            CS.pendingWideAddFocus = nil
-            CS.panelAddModeQuery = ""
-            Addon:RefreshConfigPanel()
-        else
-            FocusSourceSearch()
-        end
-    end)
-    if replacing then
-        Hint(container,"Choose a replacement below the preview. Replacing the source resets its conditions; appearance is kept.")
-    end
-    Heading(container,"When to Show")
-    local settings = I.Settings(group)
-    if settings.sourceVisibility ~= nil and not I.IsAura(group) then
-        local rules = ST._BeginRowGrid(container)
-        Check(rules,{label="Use Saved Source Visibility",setting=tracking.sourceVisibility,value=settings.sourceVisibility,
-            tooltip={"Source Visibility",{"Preserves the source's saved cooldown, charge, item, and usability visibility rules.",1,1,1,true}},
-            onChange=function(value) settings.sourceVisibility=value; changed() end})
-    end
-    if I.IsAura(group) then
-        local left = ST._BeginRowGrid(container)
-        local automaticSource = CopyTable(source)
-        automaticSource.auraUnitOverride = nil
-        local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
-        local units = {automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
-            player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"}
-        local scope = source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
-            or source.auraUnitOverride or "automatic"
-        Dropdown(left,{setting=tracking.unit,list=units,
-            order={"automatic","player","target","group","pet"},value=scope,
-            onChange=function(value)
-                source.auraUnitOverride=(value == "player" or value == "target") and value or nil
-                source.auraTrackGroup = value == "group" or nil
-                source.auraTrackPet = value == "pet" or nil
-                if source.auraTrackGroup or source.auraTrackPet then source.auraUnitOverride = "player" end
-                source.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(source)
-                changed()
-            end})
-    else
-        local left = ST._BeginRowGrid(container)
-        local mode = ShowWhen(source)
-        local list, order = {ready="Ready",cooldown="On Cooldown",always="Always"},{"ready","cooldown","always"}
-        if mode == "custom" then list.custom="Custom Conditions"; order[#order+1]="custom" end
-        Dropdown(left,{setting=tracking.conditions,list=list,order=order,value=mode,
-            tooltip={"When to Show",
-                {"Every enabled source and condition must match. Sources must be available to track. Visibility settings still apply.",1,1,1,true},
-                {"When Use Saved Source Visibility is enabled, those rules must also allow the Indicator to show.",1,1,1,true}},
-            onChange=function(value)
-                if value == "custom" then return end
-                local clauses=source.triggerConditions or {}
-                if mode == "ready" or mode == "cooldown" then table.remove(clauses,1) end
-                if value ~= "always" then table.insert(clauses,1,{key="cooldownActive",expected=value == "cooldown"}) end
-                source.indicatorShowWhen = value == "always" and "always" or nil
-                source.triggerConditions=clauses; changed(true)
-            end})
-        BuildConditions(container,source,(mode == "ready" or mode == "cooldown") and 2 or 1,changed)
-        for index, entry in ipairs(group.buttons or {}) do
-            if entry ~= source then
-                local entryIndex = index
-                Heading(container,"Also Check: " .. (entry.name or tostring(entry.id)))
-                local entryLeft, entryRight = ST._BeginRowGrid(container)
-                Check(entryLeft,{label="Use This Source",value=entry.enabled ~= false,
-                    onChange=function(value) entry.enabled=value; changed() end})
-                Button(entryRight,"Remove Source",function() table.remove(group.buttons, entryIndex); changed(true) end)
-                BuildConditions(container,entry,1,changed)
-            end
-        end
-        Hint(container,"Add another spell or item below the preview for an additional source.")
-    end
-end
-
-local function BuildTextFormatting(container, group, changed)
-    local settings = I.Settings(group)
-    local r = settings.readouts
-    if r.label ~= "none" then
-        Dropdown(container,{setting=appearance.labelType,list={name="Source Name",custom="Custom Text"},
-            order={"name","custom"},value=r.label,onChange=function(value)
-                r.label=value; changed(true)
-            end})
-        if r.label == "custom" then
-            Edit(container,{setting=appearance.customText,value=r.customText or "",onEnterPressed=function(value)
-                r.customText=value; settings.text.value=value; changed()
-            end})
-        end
-    end
-    if r.timer then
-        Dropdown(container,{setting=appearance.timerFormat,pulloutWidth=230,
-            list={clock="1:30 / 45 / 8",units="1m 30s / 45s / 8s",decimal_under_10="1:30 / 45 / 8.7"},
-            tooltip={"Timer Format",
-                {"Examples show 1 minute 30 seconds, 45 seconds, and 8.7 seconds remaining.",1,1,1,true},
-                {"The last option shows decimals only below 10 seconds.",1,1,1,true}},
-            order={"clock","units","decimal_under_10"},value=r.durationFormat,onChange=function(value) r.durationFormat=value; changed() end})
-    end
-    Slider(container,{setting=appearance.fontSize,min=6,max=72,step=1,value=settings.text.textFontSize,
-        onRelease=function(value) settings.text.textFontSize=value; changed() end})
-    local font = Dropdown(container,{setting=appearance.font,pulloutWidth=300})
-    CS.SetupFontDropdown(font)
-    font:SetValue(settings.text.textFont or "Friz Quadrata TT")
-    CS.SetFontDropdownCallback(font,function(_,_,value) settings.text.textFont=value; changed() end)
-    local outline = Dropdown(container,{setting=appearance.outline})
-    CS.SetupFontOutlineDropdown(outline)
-    outline:SetValue(settings.text.textFontOutline or "OUTLINE")
-    CS.SetFontOutlineDropdownCallback(outline,function(_,_,value) settings.text.textFontOutline=value; changed() end)
-    ST._AddColorRow(container,{setting=appearance.color,hasAlpha=true,tbl=settings.text,key="textFontColor",onConfirm=changed})
-    if settings.displayType == "text" then
-        ST._AddColorRow(container,{setting=appearance.background,hasAlpha=true,tbl=settings.text,key="textBgColor",onConfirm=changed})
-    end
-    for _, key in ipairs({"label","timer","count"}) do
-        local enabled=key == "label" and r.label ~= "none" or key == "timer" and r.timer or key == "count" and r.count ~= "none"
-        if enabled then
-            local function positionChanged()
-                changed()
-            end
-            Dropdown(container,{setting=positions[key].anchor,list=anchors,order=anchorOrder,value=r[key.."Anchor"],
-                onChange=function(value) r[key.."Anchor"]=value; r[key.."X"],r[key.."Y"]=0,0; positionChanged() end})
-            for _, axis in ipairs({"X","Y"}) do
-                local field=key..axis
-                Slider(container,{setting=positions[key][axis],min=-300,max=300,step=1,value=r[field] or 0,
-                    onRelease=function(value) r[field]=value; positionChanged() end})
-            end
-        end
-    end
-end
-
-local function BuildAppearance(container, group, changed)
-    local settings = I.Initialize(group)
-    Heading(container,"Display")
-    local displayLeft, displayRight = ST._BeginRowGrid(container)
-    Dropdown(displayLeft,{setting=appearance.displayType,list={icon="Icon",texture="Texture",text="Text"},
-        order={"icon","texture","text"},value=settings.displayType,
-        onChange=function(value) I.SetDisplayType(group,value); changed(true) end})
-    if settings.displayType == "icon" then
-        Button(displayRight,"Choose Icon",function() ST._OpenTriggerPanelIconPicker(CS.selectedGroup) end)
-        Button(displayRight,"Use Source Icon",function() settings.icon.manualIcon=nil; changed() end)
-        ST._BuildTriggerIconAppearanceTab(container,group)
-    elseif settings.displayType == "texture" then
-        Button(displayRight,"Choose Texture",function() ST._OpenStandaloneTexturePicker(CS.selectedGroup) end)
-        ST._BuildTexturePanelAppearanceTab(container,group)
-    else
-        local left, right = ST._BeginRowGrid(container)
-        Slider(left,{setting=appearance.width,min=20,max=600,step=1,value=settings.text.width or 180,
-            onRelease=function(value) settings.text.width=value; changed() end})
-        Slider(right,{setting=appearance.height,min=10,max=300,step=1,value=settings.text.height or 48,
-            onRelease=function(value) settings.text.height=value; changed() end})
-    end
-    Heading(container,"Text")
-    local r = settings.readouts
-    local left, right = ST._BeginRowGrid(container)
-    Check(left,{setting=appearance.label,value=r.label ~= "none",onChange=function(value)
-        if value then r.label=r.lastLabel or "name"
-        else r.lastLabel=r.label; r.label="none" end
-        changed(true)
-    end})
-    Check(left,{setting=appearance.timer,value=r.timer,onChange=function(value) r.timer=value; changed(true) end})
-    local countKey = CountReadoutKey(group)
-    Check(right,{setting=appearance[countKey],value=r.count ~= "none",
-        onChange=function(value) r.count=value and countKey or "none"; changed(true) end})
-    if HasText(settings) then
-        local formattingRow = Label(right,{label="Formatting & Position"})
-        ST._AddAdvancedToggle(formattingRow,"indicatorText",CS.tabInfoButtons,true,{
-            title="Text Formatting",isAvailable=function() return HasText(settings) end,
-            build=function(panel) BuildTextFormatting(panel,group,changed) end,
-        })
-    end
-    if not HasText(settings) then Hint(container,"Enable a text readout to access formatting and position settings.") end
-    if settings.displayType == "texture" then
-        Heading(container,"Duration Drain")
-        local container = ST._BeginRowGrid(container)
-        Check(container,{setting=appearance.progress,value=settings.progress.enabled,
-            onChange=function(value) settings.progress.enabled=value; changed(true) end})
-        if settings.progress.enabled then
-            Dropdown(container,{setting=appearance.direction,list={down="Top to Bottom",up="Bottom to Top",left="Right to Left",right="Left to Right"},
-                order={"down","up","right","left"},value=settings.progress.direction,
-                onChange=function(value) settings.progress.direction=value; changed() end})
-            Slider(container,{setting=appearance.dim,min=0,max=1,step=0.05,value=settings.progress.dimAlpha,
-                onRelease=function(value) settings.progress.dimAlpha=value; changed() end})
-        end
-    end
-end
-
-function ST._BuildIndicatorTab(container, group, tab)
+-- Edits are bound to the Indicator and profile they were built for.
+local function MakeChanged(group)
     local id, profile = CS.selectedGroup, Addon.db.profile
-    local function changed(rebuild)
+    return function(rebuild)
         if Addon.db.profile ~= profile or profile.groups[id] ~= group then return end
         Addon:RefreshGroupFrame(id)
         Addon:RequestAuraRebind("style", id)
         if rebuild then Addon:RefreshConfigPanel()
         elseif ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(id) end
     end
+end
+
+-- One short name per rule, shared by the Visibility editor and the Live
+-- Preview's rules card, so a tag and the row it opens read the same.
+local RULE_LABELS = {
+    cooldownActive = {["true"]="On Cooldown", ["false"]="Off Cooldown"},
+    procActive = {["true"]="Proc Active", ["false"]="No Proc"},
+    rangeActive = {["true"]="In Range", ["false"]="Out of Range"},
+    usable = {["true"]="Usable", ["false"]="Unusable"},
+    chargesRecharging = {["true"]="Recharging", ["false"]="Not Recharging"},
+    chargeState = {full="Full Charges", missing="Charges Missing", zero="No Charges"},
+    countTextActive = {["true"]="Count Shown", ["false"]="Count Hidden"},
+    countState = {full="Full Count", missing="Count Below Max", zero="Zero Count"},
+}
+
+local function RuleValue(clause)
+    return clause.state or (clause.expected == false and "false" or "true")
+end
+
+-- nil for a saved rule this client cannot evaluate; it fails closed.
+local function RuleLabel(clause)
+    if clause.unavailable or not I.ConditionKeys[clause.key] then return end
+    local labels = RULE_LABELS[clause.key]
+    return labels and labels[RuleValue(clause)]
+end
+
+-- Every rule an entry offers, as one dropdown of "key:value" choices. A saved
+-- rule the list no longer offers stays listed so it can be seen and replaced.
+local function RuleChoices(entry, clause)
+    local _, keys = Addon:GetTriggerConditionTypeOptions(entry)
+    local list, order = {}, {}
+    for _, key in ipairs(keys) do
+        local labels = I.ConditionKeys[key] and RULE_LABELS[key]
+        if labels then
+            local _, values = Addon:GetTriggerConditionExpectedOptions(key)
+            for _, value in ipairs(values) do
+                if labels[value] then
+                    local id = key .. ":" .. value
+                    list[id], order[#order + 1] = labels[value], id
+                end
+            end
+        end
+    end
+    local current = clause and (tostring(clause.key) .. ":" .. RuleValue(clause))
+    if current and (clause.unavailable or not list[current]) then
+        list[current] = "Unavailable: " .. tostring(clause.key)
+        table.insert(order, 1, current)
+    end
+    return list, order, current
+end
+
+local function RuleFromChoice(id)
+    local key, value = id:match("^(.-):(.+)$")
+    return {key=key, expected=value ~= "false", state=value ~= "true" and value ~= "false" and value or nil}
+end
+
+-- A tag clicked in the preview names its rule. Navigation opens When to Show;
+-- the rebuilt row for that rule then claims the settings highlight.
+local function OpenRule(clause)
+    CS.indicatorRuleFocus = clause and {clause=clause} or nil
+    ST._NavigateToFinderSetting(whenToShow.conditions.id)
+end
+
+local function ClaimRuleFocus(row, clause)
+    local focus = CS.indicatorRuleFocus
+    if not (focus and focus.clause == clause) then return end
+    CS.indicatorRuleFocus = nil
+    if CS.pendingSettingHighlight then CS.pendingSettingHighlight.settingWidget = row end
+end
+
+local CHANGE_HOVER_COLOR = {1, 0.82, 0}
+
+-- A small flat icon action after a row's label (CDC-RowIconBadge): the
+-- remove X unless `atlas` names another icon. `tooltip` is a title or
+-- {title, body}. The row owns it and releases it with itself.
+local function RowBadge(row, tooltip, onClick, atlas, hoverColor, rotation)
+    local badge = AceGUI:Create("CDC-RowIconBadge")
+    if atlas then badge:SetIcon(atlas, hoverColor, rotation) end
+    badge:SetCallback("OnClick", function()
+        GameTooltip:Hide()
+        onClick()
+    end)
+    badge:SetCallback("OnEnter", function(widget)
+        GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+        if type(tooltip) == "table" then
+            GameTooltip:SetText(tooltip[1])
+            GameTooltip:AddLine(tooltip[2], 1, 1, 1, true)
+        else
+            GameTooltip:SetText(tooltip)
+        end
+        GameTooltip:Show()
+    end)
+    badge:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+    return ST._AnchorRowBadgeWidget(row, badge)
+end
+
+local function SourceName(entry, icon)
+    return (icon and "|T"..tostring(icon)..":16:16|t " or "")..(entry.name or tostring(entry.id))
+end
+
+-- Change and Remove for the main source, as badges after its name. Change
+-- stays lit while a replacement is being picked; clicking it again cancels.
+local function AddMainSourceBadges(row, group, source, changed)
+    local replacing = CS.GetIndicatorSourceReplacement(CS.selectedGroup) ~= nil
+    -- The next source takes over; with none, the Indicator is cleared.
+    local nextSource = I.NextMainSource(group)
+    local removeText = nextSource
+        and ((nextSource.name or tostring(nextSource.id)) .. " is shown on the display instead, with its rules.")
+        or #group.buttons > 1 and "No other source can drive the display, so every source is removed. The look is kept."
+        or "Removes the source; the look is kept."
+    local change = RowBadge(row,
+        replacing and {"Cancel Change", "Keep the current source."}
+            or {"Change Source", "Search for a replacement in the field at the top."},
+        function()
+            CS.indicatorSourceReplacement = not replacing and {
+                groupId=CS.selectedGroup,group=group,profile=Addon.db.profile,source=source,
+            } or nil
+            CS.HideAutocomplete()
+            if replacing then
+                CS.pendingWideAddFocus = nil
+                CS.panelAddModeQuery = ""
+                Addon:RefreshConfigPanel()
+            else
+                CS.pendingWideAddFlash = true
+                FocusSourceSearch()
+            end
+        end, "uitools-icon-refresh", CHANGE_HOVER_COLOR)
+    change:SetActive(replacing)
+    RowBadge(row, {"Remove Source", removeText}, function()
+        local removed, reason = I.RemoveSource(group, source)
+        if reason then Addon:Print(I.EffectFailureText[reason]) end
+        if removed then changed(true) end
+    end)
+end
+
+-- Where an aura Indicator looks for its aura.
+local function AddTrackedOn(column, source, changed)
+    local automaticSource = CopyTable(source)
+    automaticSource.auraUnitOverride = nil
+    local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
+    Dropdown(column, {setting=whenToShow.unit, indent=true,
+        list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
+            player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
+        order={"automatic","player","target","group","pet"},
+        value=source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
+            or source.auraUnitOverride or "automatic",
+        onChange=function(value)
+            source.auraUnitOverride=(value == "player" or value == "target") and value or nil
+            source.auraTrackGroup = value == "group" or nil
+            source.auraTrackPet = value == "pet" or nil
+            if source.auraTrackGroup or source.auraTrackPet then source.auraUnitOverride = "player" end
+            source.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(source)
+            changed(true)
+        end})
+end
+
+-- One block per source: its name and actions, then one "When / And" row per
+-- rule, then a small Add Condition link. The main source changes or goes
+-- here; any other source can be made main, removed or turned off. An aura
+-- source shows only where it is tracked.
+local function BuildSourceRules(container, group, entry, changed)
+    local primary = entry == I.Primary(group)
+    local column = ST._BeginRowGrid(container)
+    local name = SourceName(entry, ST._GetButtonIcon(entry))
+    if primary then
+        local row = Label(column, {label=name, controlText=KIND_COLOR.."Shown on display|r"})
+        AddMainSourceBadges(row, group, entry, changed)
+        if I.IsAura(group) then
+            AddTrackedOn(column, entry, changed)
+            return
+        end
+    else
+        local row = Label(column, {label=name})
+        if I.CanBeMainSource(group, entry) then
+            -- Promote: an up chevron, like moving the source to the top.
+            local promoteText = "Use this source's icon, name, timer and count on the Indicator. It still has to pass its rules like every other source."
+            if entry.enabled == false then
+                promoteText = promoteText .. " It is off now, so promoting turns it back on."
+            end
+            RowBadge(row, {"Promote to Display", promoteText},
+                function()
+                    local promoted, reason = I.PromoteSource(group, entry)
+                    if reason then Addon:Print(I.EffectFailureText[reason]) end
+                    if promoted then changed(true) end
+                end, "uitools-icon-chevron-down", CHANGE_HOVER_COLOR, math.pi)
+        end
+        RowBadge(row, {"Remove Source", "Removes this source and its rules."},
+            function() if I.RemoveSource(group, entry) then changed(true) end end)
+        Check(column, {label="Check This Source", indent=true, value=entry.enabled ~= false,
+            tooltip={"Check This Source", {"Turn off to keep this source's rules without checking them.", 1, 1, 1, true}},
+            onChange=function(value) entry.enabled=value; changed(true) end})
+    end
+    local clauses = entry.triggerConditions or {}
+    if #clauses == 0 then
+        Label(column, {label="When", indent=true, controlText="Always",
+            tooltip={"Always", {"Shows whenever this source can be tracked. Add a condition to narrow it.", 1, 1, 1, true}}})
+    end
+    for clauseIndex, clause in ipairs(clauses) do
+        local ci = clauseIndex
+        if not RuleLabel(clause) then
+            Hint(column, "This saved rule cannot match. Replace or remove it to enable this display.")
+        end
+        local list, order, current = RuleChoices(entry, clause)
+        local row = Dropdown(column, {label=ci == 1 and "When" or "And", indent=true, list=list, order=order,
+            value=current, pulloutWidth=220,
+            onChange=function(value)
+                if value == current then return end
+                clauses[ci] = RuleFromChoice(value)
+                entry.triggerConditions = clauses; changed(true)
+            end})
+        RowBadge(row, "Remove this rule", function()
+            table.remove(clauses, ci); entry.triggerConditions = clauses; changed(true)
+        end)
+        ClaimRuleFocus(row, clause)
+    end
+    local add = Label(column, {label="+ Add Condition", indent=true})
+    add:SetSettingsDisclosure(function()
+        local have = {}
+        for _, clause in ipairs(clauses) do have[tostring(clause.key) .. ":" .. RuleValue(clause)] = true end
+        local _, order = RuleChoices(entry)
+        for _, id in ipairs(order) do
+            if not have[id] then
+                clauses[#clauses + 1] = RuleFromChoice(id)
+                entry.triggerConditions = clauses; changed(true)
+                return
+            end
+        end
+    end)
+end
+
+-- The Live Preview's rules card (ButtonPanelPreviewTriggers.lua) only shows:
+-- every source and its rules, each rule opening its row here. Everything it
+-- would edit lives in When to Show; the preview only draws this model.
+function ST._GetIndicatorSourceControls(group)
+    local source = I.Primary(group)
+    if not source then return end
+    local aura = I.IsAura(group)
+    local replacing = CS.GetIndicatorSourceReplacement(CS.selectedGroup) ~= nil
+    -- Everything the card draws and every closure it keeps, so an unchanged
+    -- card can be reused across preview refreshes (drags refresh per tick).
+    local key = {tostring(group), tostring(aura), tostring(replacing), tostring(group.enabled)}
+    local model = {
+        aura = aura, replacing = replacing, disabled = group.enabled == false,
+        openRule = OpenRule,
+        sources = {},
+    }
+    -- An Icon display showing this same icon as its artwork already names the
+    -- main source; repeating it small in the card adds nothing.
+    local artwork = I.Settings(group).displayType == "icon" and I.ArtworkIcon(group)
+    for _, entry in ipairs(group.buttons or {}) do
+        local primary = entry == source
+        local icon = ST._GetButtonIcon(entry)
+        if primary and artwork == icon then icon = nil end
+        local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
+            enabled=entry.enabled ~= false, rules={}}
+        key[#key + 1] = table.concat({tostring(entry), tostring(icon), item.name, tostring(item.enabled)}, ",")
+        if not aura then
+            for _, clause in ipairs(entry.triggerConditions or {}) do
+                local label = RuleLabel(clause)
+                item.rules[#item.rules + 1] = {label=label, clause=clause}
+                key[#key + 1] = tostring(clause) .. "=" .. tostring(label)
+            end
+        end
+        model.sources[#model.sources + 1] = item
+        if aura then break end
+    end
+    model.key = table.concat(key, "|")
+    return model
+end
+
+-- Top of an Indicator's Visibility tab: When to Show, where a panel entry
+-- keeps its Show & Hide Rules. It holds every source and its rules; an aura
+-- Indicator shows while its aura is active, so it holds only the aura.
+local function BuildWhenToShow(container, group, changed)
+    local source = I.Primary(group)
+    if not source then
+        Hint(container,"Add a spell, aura, or item using the field at the top.")
+        return
+    end
+    local aura = I.IsAura(group)
+
+    local whenHeading, whenCollapsed = Section(container,"When to Show","indicator_whenToShow",whenToShow.conditions)
+    ST._ChainHeadingBadges(whenHeading, ST._CreateInfoButton(whenHeading.frame, whenHeading.label,
+        "LEFT", "RIGHT", 4, 0, aura and {"When to Show",
+            {"Shows while this aura is active. Visibility settings still apply.", 1, 1, 1, true}}
+        or {"When to Show",
+            {"Every rule on every checked source must be true. Sources must be available to track, and Visibility settings still apply.", 1, 1, 1, true},
+            " ",
+            {"Add another spell or item in the field at the top to check more than one source.", 1, 1, 1, true}},
+        CS.tabInfoButtons))
+    if whenCollapsed then return end
+    local settings = I.Settings(group)
+    if settings.sourceVisibility ~= nil and not aura then
+        Check(ST._BeginRowGrid(container),{label="Use Saved Source Visibility",setting=whenToShow.sourceVisibility,value=settings.sourceVisibility,
+            tooltip={"Source Visibility",{"Preserves the source's saved cooldown, charge, item, and usability visibility rules. They must also allow the Indicator to show.",1,1,1,true}},
+            onChange=function(value) settings.sourceVisibility=value; changed() end})
+    end
+    for _, entry in ipairs(group.buttons or {}) do
+        BuildSourceRules(container, group, entry, changed)
+    end
+end
+
+local function BuildReadoutGear(panel, group, key, changed)
+    local settings = I.Settings(group)
+    local r = settings.readouts
+    local groupId = CS.selectedGroup
+    if key == "label" then
+        Dropdown(panel,{setting=labelContent.labelType,list={name="Source Name",custom="Custom Text"},
+            order={"name","custom"},value=r.label ~= "none" and r.label or r.lastLabel or "name",
+            onChange=function(value)
+                if r.label == "none" then r.lastLabel=value else r.label=value end
+                changed(true)
+            end})
+        if r.label == "custom" then
+            Edit(panel,{setting=labelContent.customText,value=r.customText or "",onEnterPressed=function(value)
+                r.customText=value; settings.text.value=value; changed()
+            end})
+        end
+    end
+    -- Fonts live in `text`, shared by every display type; positions stay in
+    -- the per-display readouts.
+    local pos = positions[key]
+    local font, size, outline, color = I.ReadoutFont(settings, key)
+    ST._AddFontControls(panel, settings.text, key, {font=font, size=size, outline=outline, sizeMin=6, sizeMax=72},
+        changed, {settings={size=pos.fontSize, font=pos.font, outline=pos.outline},
+            previewRefresh=function()
+                if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
+            end})
+    ST._AddColorRow(panel,{setting=pos.color,hasAlpha=true,tbl=settings.text,key=key.."FontColor",
+        default=CopyTable(color),onConfirm=changed})
+    Dropdown(panel,{setting=pos.anchor,list=anchors,order=anchorOrder,value=r[key.."Anchor"],
+        onChange=function(value) r[key.."Anchor"]=value; r[key.."X"],r[key.."Y"]=0,0; changed(true) end})
+    for _, axis in ipairs({"X","Y"}) do
+        local field=key..axis
+        Slider(panel,{setting=pos[axis],min=-300,max=300,step=1,value=r[field] or 0,
+            onRelease=function(value) r[field]=value; changed() end})
+    end
+end
+
+local function BuildText(container, group, changed)
+    local settings = I.Settings(group)
+    local r = settings.readouts
+    local _, collapsed = Section(container,"Text","indicator_text")
+    if collapsed then return end
+    local column = ST._BeginRowGrid(container)
+    for _, key in ipairs({"label","timer","count"}) do
+        local readout = key
+        local descriptor = text[ReadoutRowKey(group, readout)]
+        local countKey = CountReadoutKey(group)
+        local function SetEnabled(value)
+            if readout == "label" then
+                if value then r.label=r.lastLabel or "name"
+                else r.lastLabel=r.label; r.label="none" end
+            elseif readout == "timer" then r.timer=value
+            else r.count=value and countKey or "none" end
+            changed(true)
+        end
+        local enabled = Enabled(settings, readout)
+        local row = Check(column,{setting=descriptor,value=enabled,onChange=SetEnabled})
+        local title = descriptor.label:gsub("^Show ", "")
+        ST._AddAdvancedToggle(row,"indicatorText_"..readout,CS.tabInfoButtons,true,{
+            title=title.." Advanced",
+            build=function(panel) BuildReadoutGear(panel,group,readout,changed) end,
+            unlock=not enabled and {enable={label="Enable "..title,run=function() SetEnabled(true) end}} or nil,
+        })
+        -- Duration Format leads the duration text, as on a panel's Text section.
+        if readout == "timer" and enabled then
+            ST._AddDurationFormatDropdown(column, r, changed, {setting=text.timerFormat})
+        end
+    end
+end
+
+local function BuildAppearance(container, group, changed)
+    local settings = I.Initialize(group)
+    local _, displayCollapsed = Section(container,"Display","indicator_display")
+    if not displayCollapsed then
+        local column = ST._BeginRowGrid(container)
+        Dropdown(column,{setting=display.displayType,list={icon="Icon",texture="Texture",text="Text"},
+            order={"icon","texture","text"},value=settings.displayType,
+            onChange=function(value) I.SetDisplayType(group,value); changed(true) end})
+        if settings.displayType == "icon" then
+            local actions = {{text="Choose...",onClick=function() ST._OpenTriggerPanelIconPicker(CS.selectedGroup) end}}
+            -- Only a chosen icon has anything to reset.
+            if settings.icon.manualIcon then
+                actions[2] = {text="Reset",tooltip={"Reset Icon","Use the source's icon again."},
+                    onClick=function() settings.icon.manualIcon=nil; changed(true) end}
+            end
+            Label(column,{label="Icon",controlWidget=ActionStrip(actions)})
+        elseif settings.displayType == "texture" then
+            Label(column,{label="Texture",controlWidget=ActionStrip({{text="Choose...",
+                onClick=function() ST._OpenStandaloneTexturePicker(CS.selectedGroup) end}})})
+        else
+            Slider(column,{setting=display.width,min=20,max=600,step=1,value=settings.text.width or 180,
+                onRelease=function(value) settings.text.width=value; changed() end})
+            Slider(column,{setting=display.height,min=10,max=300,step=1,value=settings.text.height or 48,
+                onRelease=function(value) settings.text.height=value; changed() end})
+            ST._AddColorRow(column,{setting=display.background,hasAlpha=true,tbl=settings.text,key="textBgColor",onConfirm=changed})
+        end
+    end
+    if settings.displayType == "icon" then
+        ST._BuildTriggerIconAppearanceTab(container,group)
+    elseif settings.displayType == "texture" then
+        ST._BuildTexturePanelAppearanceTab(container,group)
+    end
+    BuildText(container, group, changed)
+    if settings.displayType == "texture" then
+        local _, drainCollapsed = Section(container,"Duration Drain","indicator_drain")
+        if not drainCollapsed then
+            local column = ST._BeginRowGrid(container)
+            Check(column,{setting=drainSettings.progress,value=settings.progress.enabled,
+                onChange=function(value) settings.progress.enabled=value; changed(true) end})
+            if settings.progress.enabled then
+                Dropdown(column,{setting=drainSettings.direction,list={down="Top to Bottom",up="Bottom to Top",left="Right to Left",right="Left to Right"},
+                    order={"down","up","right","left"},value=settings.progress.direction,
+                    onChange=function(value) settings.progress.direction=value; changed() end})
+                Slider(column,{setting=drainSettings.dim,min=0,max=1,step=0.05,value=settings.progress.dimAlpha,
+                    onRelease=function(value) settings.progress.dimAlpha=value; changed() end})
+            end
+        end
+    end
+end
+
+function ST._BuildIndicatorTab(container, group, tab)
+    local changed = MakeChanged(group)
     I.Initialize(group)
-    if tab == "tracking" then BuildTracking(container,group,changed)
-    elseif not I.Primary(group) then Hint(container,"Choose a source in Tracking to set up this Indicator.")
+    if tab == "loadconditions" then BuildWhenToShow(container,group,changed)
+    elseif not I.Primary(group) then Hint(container,"Add a spell, aura, or item using the field at the top.")
     elseif tab == "appearance" then BuildAppearance(container,group,changed)
     elseif tab == "effects" then
         if I.IsAura(group) then ST._BuildTextureEffectsTab(container,group)

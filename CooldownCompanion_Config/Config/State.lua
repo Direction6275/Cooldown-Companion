@@ -2547,7 +2547,7 @@ local function SelectConfigPanel(panelId, opts)
     FinishPreviewSelection(opts and opts.previewSession)
 end
 
--- Indicator sources are edited inside the panel's Tracking tab. Old texture
+-- Indicator sources are edited in the panel's Visibility tab. Old texture
 -- selection and retained entry routes must not turn them into an entry scope.
 local function NormalizeIndicatorConfigSelection()
     if CS.GetIndicatorSourceReplacement then CS.GetIndicatorSourceReplacement(CS.selectedGroup) end
@@ -2592,9 +2592,6 @@ local function SelectConfigButton(panelId, buttonIndex, opts)
     if ST.IsIndicatorGroup(group) then
         SelectConfigPanel(panelId, {containerId=opts and opts.containerId,
             previewSession=opts and opts.previewSession})
-        if opts and opts.scope == "detail" then
-            CS.selectedTab, CS.panelSettingsTab = "tracking", "tracking"
-        end
         return
     end
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
@@ -3178,6 +3175,9 @@ local function CompactUntitledInlineGroupConfig(group)
         end
 
         releaseTitle:Show()
+        -- The Navigator dims inactive groups; the pool is shared with every
+        -- other InlineGroup (the preview rules card faded after a rebuild).
+        widget.frame:SetAlpha(1)
         releaseBorder:ClearAllPoints()
         releaseBorder:SetPoint("TOPLEFT", 0, -17)
         releaseBorder:SetPoint("BOTTOMRIGHT", -1, 3)

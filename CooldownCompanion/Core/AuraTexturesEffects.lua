@@ -252,9 +252,7 @@ local function SetTextureIndicatorBaseVisuals(host)
     if displayType == "text" and host.textFrame and host.textFrame.text and host.textFrame.text:IsShown() then
         local color = CopyColor(host._triggerTextBaseColor) or { 1, 1, 1, 1 }
         host.textFrame.text:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-        if host.indicatorReadouts then
-            for _, key in ipairs({"label", "timer", "count"}) do host.indicatorReadouts[key]:SetTextColor(unpack(color)) end
-        end
+        ST.Indicator.PaintReadoutColors(host, color)
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
         host._indicatorBaseColor = color
         host._indicatorBaseVisualsReady = true
@@ -368,11 +366,7 @@ TextureIndicatorOnUpdate = function(self)
         elseif self._activeDisplayType == "icon" and self.iconFrame and self.iconFrame.icon and self.iconFrame.icon:IsShown() then
             self.iconFrame.icon:SetVertexColor(shiftedR, shiftedG, shiftedB, alpha)
         elseif self._activeDisplayType == "text" and self.textFrame and self.textFrame.text and self.textFrame.text:IsShown() then
-            if self.indicatorReadouts then
-                for _, key in ipairs({"label", "timer", "count"}) do
-                    self.indicatorReadouts[key]:SetTextColor(shiftedR, shiftedG, shiftedB, alpha)
-                end
-            end
+            ST.Indicator.PaintReadoutColors(self, baseColor, shift, t, shiftAlpha)
             self.textFrame.text:SetTextColor(
                 (baseColor[1] or 1) + (((shift[1] or 1) - (baseColor[1] or 1)) * t),
                 (baseColor[2] or 1) + (((shift[2] or 1) - (baseColor[2] or 1)) * t),

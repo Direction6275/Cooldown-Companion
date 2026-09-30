@@ -70,7 +70,7 @@ local fields = {
         thickness = shape:Setting({key = "borderMode", label = "Border Thickness Mode"}),
         size = shape:Setting({key = "borderSize", label = "Border Thickness", aliases = {"border size"},
             applies = function(context)
-                return ST.GetBorderRenderMode(SelectedGroup(context).style) ~= ST.BORDER_RENDER_MODE_CRISP
+                return ST.GetDrawnBorderRenderMode(SelectedGroup(context).style) ~= ST.BORDER_RENDER_MODE_CRISP
             end}),
     },
     length = Setting(bars, "length", "Bar Length"),

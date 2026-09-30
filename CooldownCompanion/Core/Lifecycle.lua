@@ -77,6 +77,8 @@ function CooldownCompanion:OnInitialize()
     -- Re-apply fonts/textures when shared media used elsewhere in the addon updates.
     LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
         if mediatype == "font" then
+            -- Styles cached by saved font name compare this to re-resolve.
+            ST.FontMediaGeneration = (ST.FontMediaGeneration or 0) + 1
             if ST._InvalidateFontCache then
                 ST._InvalidateFontCache()
             end

@@ -51,16 +51,24 @@ function I.CreateVisual(host, nativeSlot)
     end
 end
 
+-- `font`/`outline` are the shared text font StyleVisual already resolved; only
+-- a readout with its own font or outline needs another lookup.
 local function StyleReadouts(host, group, font, outline)
     local settings = I.Settings(group)
     local text, options = settings.text, settings.readouts
-    local color = text.textFontColor or WHITE
     local readouts = host.indicatorReadouts
     readouts.root:Show()
+    -- Text effects restore and shift each readout from its own color.
+    local baseColors = host._indicatorReadoutColors or {}
+    host._indicatorReadoutColors = baseColors
     for _, key in ipairs(READOUT_KEYS) do
         local fs = readouts[key]
-        fs:SetFont(font, text.textFontSize or 20, outline)
-        ST.ApplyFontShadowForOutline(fs, outline)
+        local fontName, size, outlineName, color = I.ReadoutFont(settings, key)
+        baseColors[key] = color
+        local fontPath = text[key .. "Font"] and Addon:FetchFont(fontName) or font
+        local fontOutline = text[key .. "FontOutline"] and ST.GetEffectiveFontOutline(outlineName) or outline
+        fs:SetFont(fontPath, size, fontOutline)
+        ST.ApplyFontShadowForOutline(fs, fontOutline)
         fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
         fs:ClearAllPoints()
         local anchor = options[key .. "Anchor"] or (key == "label" and "TOP" or key == "count" and "BOTTOM" or "CENTER")
@@ -125,6 +133,27 @@ function I.StyleVisual(host, group, icon, font, outline)
     return shown, geometry.boundsWidth, geometry.boundsHeight
 end
 
+-- Text effects paint readouts through here: with no shift each readout gets
+-- its own styled color back, otherwise it moves from that color toward the
+-- shift color. `fallback` covers a host whose readouts were never styled.
+function I.PaintReadoutColors(host, fallback, shift, t, shiftAlpha)
+    local readouts = host.indicatorReadouts
+    if not readouts then return end
+    local colors = host._indicatorReadoutColors or {}
+    for _, key in ipairs(READOUT_KEYS) do
+        local base = colors[key] or fallback
+        local r, g, b, a = base[1] or 1, base[2] or 1, base[3] or 1, base[4] or 1
+        if shift then
+            r = r + (((shift[1] or 1) - r) * t)
+            g = g + (((shift[2] or 1) - g) * t)
+            b = b + (((shift[3] or 1) - b) * t)
+            a = math.min(1, math.max(0, a))
+            a = a + ((shiftAlpha - a) * t)
+        end
+        readouts[key]:SetTextColor(r, g, b, a)
+    end
+end
+
 -- Compare saved values, not table identity: sliders/colors, imports and preview
 -- rollback can edit a table in place. No timer/count/aura observations enter this
 -- snapshot. Native aura kits still use the unconditional, access-gated styler.
@@ -156,7 +185,11 @@ local function RefreshRuntimeStyle(host, group, icon)
         assetType, assetValue = Addon:ResolveAuraTextureAsset(signal.sourceType, signal.sourceValue, signal.mediaType)
     end
     local previous = host._indicatorStyle
+    -- A SharedMedia font registering late changes what a saved font name
+    -- resolves to without changing any saved value.
+    local fontGeneration = ST.FontMediaGeneration
     local same = previous and previous.source == I.Primary(group)
+        and previous.fontGeneration == fontGeneration
         and previous.displayType == settings.displayType and previous.tracking == settings.tracking
         and previous.font == font and previous.outline == outline and previous.label == label
         and previous.borderMode == borderMode and previous.borderInset == borderInset
@@ -174,6 +207,7 @@ local function RefreshRuntimeStyle(host, group, icon)
     host:SetSize(width, height)
     local snapshot = {source=I.Primary(group), displayType=settings.displayType, tracking=settings.tracking,
         font=font, outline=outline, label=label, borderMode=borderMode, borderInset=borderInset,
+        fontGeneration=fontGeneration,
         assetType=assetType, assetValue=assetValue, icon=icon}
     for _, key in ipairs(STYLE_SECTIONS) do snapshot[key] = CopyTable(settings[key]) end
     host._indicatorStyle = snapshot

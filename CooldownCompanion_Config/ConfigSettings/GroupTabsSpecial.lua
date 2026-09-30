@@ -444,9 +444,6 @@ local function BuildTriggerIconAppearanceTab(container, group)
     local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
     local groupId = CS.selectedGroup
 
-    local _, iconCollapsed = BuildCollapsibleSection(container, "Icon",
-        "appearance_triggerIcon", nil, nil, ROW_SECTION)
-
     -- The icon renders in the Live Preview, which is also the picker: clicking
     -- it opens the icon picker and right-click clears. This tab holds only the
     -- settings rows, so a refresh repaints the runtime panel and that mirror.
@@ -455,10 +452,13 @@ local function BuildTriggerIconAppearanceTab(container, group)
         RefreshTriggerPreviewMirror(groupId)
     end
 
+    -- The same three sections as a panel's icons: Icon Settings, Border,
+    -- then Icon Tint.
+    local _, iconCollapsed = BuildCollapsibleSection(container, "Icon Settings",
+        "appearance_triggerIcon", nil, nil, ROW_SECTION)
+
     if not iconCollapsed then
-    -- LEFT column: the icon itself - its shape, its size, and the two colors
-    -- painted on it. RIGHT column: the border drawn around it.
-    local iconLeft, iconRight = BeginRowGrid(container)
+    local iconLeft = BeginRowGrid(container)
 
     AddCheckboxRow(iconLeft, {
         label = "Square Icon",
@@ -528,24 +528,24 @@ local function BuildTriggerIconAppearanceTab(container, group)
             RefreshTriggerPreviewMirror(groupId)
         end,
     })
+    end -- not iconCollapsed
 
-    AddColorRow(iconLeft, {
-        label = "Icon Color",
-        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.baseColor,
-        tbl = settings, key = "iconTintColor",
-        default = { 1, 1, 1, 1 }, hasAlpha = true,
+    local _, borderCollapsed = BuildCollapsibleSection(container, "Border",
+        "appearance_triggerIconBorder", nil, nil, ROW_SECTION)
+
+    if not borderCollapsed then
+    -- Drawn inline in the panel order: color, mode, then thickness.
+    local borderLeft = BeginRowGrid(container)
+
+    AddColorRow(borderLeft, {
+        label = "Border Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderColor,
+        tbl = settings, key = "borderColor",
+        default = { 0, 0, 0, 1 }, hasAlpha = true,
         onConfirm = RefreshIconPreview,
     })
 
-    AddColorRow(iconLeft, {
-        label = "Background Color",
-        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.background,
-        tbl = settings, key = "backgroundColor",
-        default = { 0, 0, 0, 0.5 }, hasAlpha = true,
-        onConfirm = RefreshIconPreview,
-    })
-
-    local renderMode, borderModeRow = AddBorderRenderModeDropdown(iconRight, settings, "borderRenderMode", function()
+    local renderMode = AddBorderRenderModeDropdown(borderLeft, settings, "borderRenderMode", function()
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
     end, nil, {
@@ -554,37 +554,49 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
 
-    ST._AddAdvancedToggle(borderModeRow, "triggerIconBorder", {}, renderMode ~= ST.BORDER_RENDER_MODE_CRISP, {
-        build = function(panel)
-            local borderRow = AddSliderRow(panel, {
-                label = "Border Thickness",
-                setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
-                indent = false,
-                min = 0, max = 5, step = 0.1,
-                value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
-                disabled = borderThicknessLocked and true or false,
-            })
-            WireMirrorFirstSlider(borderRow, function(value)
-                if borderThicknessLocked then return end
-                settings.borderSize = value
-            end, function()
-                if borderThicknessLocked then return end
-                RefreshStandaloneTriggerDisplay(groupId)
-            end, function()
-                if borderThicknessLocked then return end
-                RefreshTriggerPreviewMirror(groupId)
-            end, settings, "borderSize")
-        end,
-    })
+    if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
+        local borderRow = AddSliderRow(borderLeft, {
+            label = "Border Thickness",
+            setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderSize,
+            min = 0, max = 5, step = 0.1,
+            value = settings.borderSize or ST.DEFAULT_BORDER_SIZE,
+            disabled = borderThicknessLocked and true or false,
+        })
+        WireMirrorFirstSlider(borderRow, function(value)
+            if borderThicknessLocked then return end
+            settings.borderSize = value
+        end, function()
+            if borderThicknessLocked then return end
+            RefreshStandaloneTriggerDisplay(groupId)
+        end, function()
+            if borderThicknessLocked then return end
+            RefreshTriggerPreviewMirror(groupId)
+        end, settings, "borderSize")
+    end
+    end -- not borderCollapsed
 
-    AddColorRow(iconRight, {
-        label = "Border Color",
-        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderColor,
-        tbl = settings, key = "borderColor",
-        default = { 0, 0, 0, 1 }, hasAlpha = true,
+    local _, tintCollapsed = BuildCollapsibleSection(container, "Icon Tint",
+        "appearance_triggerIconTint", nil, nil, ROW_SECTION)
+
+    if not tintCollapsed then
+    local tintLeft = BeginRowGrid(container)
+
+    AddColorRow(tintLeft, {
+        label = "Base Icon Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.baseColor,
+        tbl = settings, key = "iconTintColor",
+        default = { 1, 1, 1, 1 }, hasAlpha = true,
         onConfirm = RefreshIconPreview,
     })
-    end -- not iconCollapsed
+
+    AddColorRow(tintLeft, {
+        label = "Background Color",
+        setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.background,
+        tbl = settings, key = "backgroundColor",
+        default = { 0, 0, 0, 0.5 }, hasAlpha = true,
+        onConfirm = RefreshIconPreview,
+    })
+    end -- not tintCollapsed
 
     RefreshTriggerPreviewMirror(groupId)
 end
@@ -612,9 +624,8 @@ end
 
 -- Row grammar (RowWidgets.lua): a CDC-SliderRow. The row's own value box
 -- already accepts one decimal place, which is the whole job the pre-redesign
--- editbox hook it replaced did. Aura-controlled Texture effects also use this
--- inline on the Indicators tab, so the caller decides whether it is indented.
-local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, indent, setting)
+-- editbox hook it replaced did. Both effect gears draw it unindented.
+local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, setting)
     local function RefreshSpeedPreview()
         local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
             and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
@@ -625,7 +636,6 @@ local function BuildTextureIndicatorSpeedSlider(container, config, label, onChan
     AddSliderRow(container, {
         label = label,
         setting = setting,
-        indent = indent == true,
         min = 0.1, max = 2.0, step = 0.05,
         value = config.speed or 0.5,
         onChange = function(value)
@@ -642,11 +652,9 @@ local function BuildTextureIndicatorSpeedSlider(container, config, label, onChan
     })
 end
 
--- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator. Standard
--- Texture indicators retain their established advanced gear. Aura-controlled
--- Texture effects show their small option set directly in the 12.1 two-column
--- Indicators section instead: toggle and effect on the left, effect-specific
--- color/timing on the right.
+-- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per indicator, its gear
+-- holding the effect choice and timing - the same shape as a panel's Show
+-- Proc Glow row.
 --
 -- `container` is nil when there is nothing to draw into - the section is
 -- collapsed. The preview reconciliation at the foot still has to run in that
@@ -697,8 +705,7 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         end,
     })
 
-    local function BuildTextureIndicatorOptions(primary, details, inline)
-        details = details or primary
+    local function BuildTextureIndicatorOptions(panel)
         -- Timings/colors bind the saved owner directly so the shared temporary
         -- preview/restore transaction sees the same data as both renderers.
         local effectConfig = ST.IsIndicatorGroup(group) and ST.Indicator.Effects(group)[config.effectType] or config
@@ -712,12 +719,16 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         if dormant then
             effectList.none = "No Artwork Effect"
             table.insert(effectOrder, 1, "none")
-            ST._AddLabelRow(primary, {label="Color Shift is saved for icon and texture displays."})
+            ST._AddLabelRow(panel, {label="Color Shift is saved for icon and texture displays."})
+        elseif config.effectType == "none" then
+            -- Only an effect that was never turned on has no type; its
+            -- read-only gear names that instead of showing a blank choice.
+            effectList.none = "None"
+            table.insert(effectOrder, 1, "none")
         end
-        AddDropdownRow(primary, {
+        AddDropdownRow(panel, {
             label = "Effect Type",
             setting = finder and finder.effectType,
-            indent = inline == true,
             pulloutWidth = WIDE_PULLOUT_WIDTH,
             list = effectList,
             order = effectOrder,
@@ -729,33 +740,39 @@ local function BuildTextureIndicatorSection(container, group, indicators, sectio
         })
 
         if config.effectType == "colorShift" and not dormant then
-            AddColorRow(details, {
+            AddColorRow(panel, {
                 label = "Shift Color",
                 setting = finder and finder.shiftColor,
-                indent = inline == true,
                 tbl = effectConfig,
                 key = "color",
                 default = { 1, 1, 1, 1 },
                 hasAlpha = true,
                 onConfirm = RefreshRuntime,
             })
-            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Shift Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Shift Duration", RefreshRuntime,
                 finder and finder.shiftDuration)
         elseif config.effectType == "pulse" then
-            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Pulse Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Pulse Duration", RefreshRuntime,
                 finder and finder.pulseDuration)
         elseif config.effectType == "shrinkExpand" then
-            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Cycle Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Cycle Duration", RefreshRuntime,
                 finder and finder.cycleDuration)
         elseif config.effectType == "bounce" then
-            BuildTextureIndicatorSpeedSlider(details, effectConfig, "Bounce Duration", RefreshRuntime, inline,
+            BuildTextureIndicatorSpeedSlider(panel, effectConfig, "Bounce Duration", RefreshRuntime,
                 finder and finder.bounceDuration)
         end
     end
 
-    if config.enabled then
-        BuildTextureIndicatorOptions(container, opts and opts.detailsContainer, true)
-    end
+    local title = sectionDef.label:gsub("^Show ", "")
+    AddAdvancedToggle(enableCb, "textureEffect_" .. sectionKey, tabInfoButtons, true, {
+        title = title .. " Advanced",
+        build = BuildTextureIndicatorOptions,
+        -- Enabling also picks a default effect and saves the selection, so
+        -- the unlock runs the row's own enable path.
+        unlock = not config.enabled and {
+            enable = { label = "Enable " .. title, run = EnableTextureIndicator },
+        } or nil,
+    })
     end -- container
 
     if not config.enabled and CS.selectedGroup then
@@ -823,7 +840,7 @@ local function BuildTriggerPanelEffectSection(container, effects, effectKey)
             })
         end
 
-        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel, nil, false,
+        BuildTextureIndicatorSpeedSlider(panel, config, def.speedLabel, nil,
             finder and finder.duration)
 
     end
@@ -916,16 +933,15 @@ local function BuildTextureEffectsTab(container, group)
         end
         local _, indicatorsCollapsed = BuildCollapsibleSection(container, "Visual Effects",
             EFFECTS_TEXTURE_INDICATORS_SECTION, nil, nil, ROW_SECTION)
-        local indicatorLeft, indicatorRight
+        local indicatorLeft
         if not indicatorsCollapsed then
-            indicatorLeft, indicatorRight = BeginRowGrid(container)
+            indicatorLeft = BeginRowGrid(container)
         end
         -- Pass only the visible section into the uniqueness helper. Dormant
         -- Proc/Ready/Unusable settings cannot reserve an effect that will not
         -- run while Blizzard owns active-only visibility.
         BuildTextureIndicatorSection(indicatorLeft, group, { aura = indicators.aura }, "aura", {
             auraControlled = true,
-            detailsContainer = indicatorRight,
         })
         return
     end
@@ -1344,7 +1360,7 @@ end
 local function SpecialFinderTriggerIconCustomBorder(context)
     if not SpecialFinderTriggerType("icon")(context) then return false end
     local settings = SpecialFinderTriggerIconSettings(context) or {}
-    return ST.GetBorderRenderMode(settings, "borderRenderMode") ~= ST.BORDER_RENDER_MODE_CRISP
+    return ST.GetDrawnBorderRenderMode(settings) ~= ST.BORDER_RENDER_MODE_CRISP
 end
 
 local function SpecialFinderTriggerEffectOffered(context, effectKey)
@@ -1356,43 +1372,47 @@ local function SpecialFinderTextureEffectShown(context)
     return SpecialFinderTextureAuraControlled(context)
 end
 
-local function SpecialFinderTextureEffectEnabled(context, sectionKey)
-    if not SpecialFinderTextureEffectShown(context, sectionKey) then return false end
-    local indicators = SpecialFinderTextureIndicators(context)
-    return indicators and indicators[sectionKey] and indicators[sectionKey].enabled == true
-end
-
 local function SpecialFinderTextureEffectType(context, sectionKey, effectType)
     if not TextureEffectOffered(context and context.group, effectType) then return false end
-    if not SpecialFinderTextureEffectEnabled(context, sectionKey) then return false end
+    if not SpecialFinderTextureEffectShown(context, sectionKey) then return false end
     local indicators = SpecialFinderTextureIndicators(context)
     return indicators and indicators[sectionKey]
         and indicators[sectionKey].effectType == effectType
 end
 
 if ST._DefineSettingRoute then
-    SPECIAL_FINDER.trigger.icon = ST._DefineSettingRoute({
-        idPrefix = "panel.trigger.appearance.icon",
-        scope = SPECIAL_FINDER_SCOPE,
-        tab = "appearance",
-        tabLabel = "Appearance",
-        section = "triggerIcon",
-        sectionLabel = "Icon",
-        collapseKeys = { "appearance_triggerIcon" },
-        rowScope = "primary",
-        applies = SpecialFinderTriggerType("icon"),
-    }):Settings({
+    -- One stable id prefix; each row reveals the section it now sits in.
+    local function IconRoute(section, sectionLabel, collapseKey)
+        return ST._DefineSettingRoute({
+            idPrefix = "panel.trigger.appearance.icon",
+            scope = SPECIAL_FINDER_SCOPE,
+            tab = "appearance",
+            tabLabel = "Appearance",
+            section = section,
+            sectionLabel = sectionLabel,
+            collapseKeys = { collapseKey },
+            rowScope = "primary",
+            applies = SpecialFinderTriggerType("icon"),
+        })
+    end
+    SPECIAL_FINDER.trigger.icon = IconRoute("triggerIcon", "Icon Settings", "appearance_triggerIcon"):Settings({
         square = { label = "Square Icon", aliases = { "Square Icons" } },
         size = { label = "Icon Size", aliases = { "Button Size" }, applies = SpecialFinderTriggerIconSquare },
         width = { label = "Icon Width", applies = SpecialFinderTriggerIconFreeform },
         height = { label = "Icon Height", applies = SpecialFinderTriggerIconFreeform },
         zoom = { label = "Icon Zoom" },
-        baseColor = { label = "Icon Color", aliases = { "Base Icon Color" } },
-        background = { label = "Background Color" },
-        borderThickness = { label = "Border Thickness Mode" },
-        borderSize = { advancedKey = "triggerIconBorder", label = "Border Thickness", aliases = { "border size" }, applies = SpecialFinderTriggerIconCustomBorder },
-        borderColor = { label = "Border Color" },
     })
+    local iconBorder = IconRoute("triggerIconBorder", "Border", "appearance_triggerIconBorder"):Settings({
+        borderColor = { label = "Border Color" },
+        borderThickness = { label = "Border Thickness Mode" },
+        borderSize = { label = "Border Thickness", aliases = { "border size" }, applies = SpecialFinderTriggerIconCustomBorder },
+    })
+    local iconTint = IconRoute("triggerIconTint", "Icon Tint", "appearance_triggerIconTint"):Settings({
+        baseColor = { label = "Base Icon Color", aliases = { "Icon Color" } },
+        background = { label = "Background Color" },
+    })
+    for key, descriptor in pairs(iconBorder) do SPECIAL_FINDER.trigger.icon[key] = descriptor end
+    for key, descriptor in pairs(iconTint) do SPECIAL_FINDER.trigger.icon[key] = descriptor end
 
     for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
         local key = effectKey
@@ -1457,10 +1477,13 @@ if ST._DefineSettingRoute then
             tab = "effects",
             tabLabel = "Effects",
             section = "textureIndicators",
-            sectionLabel = sectionDef.label:gsub("^Show ", ""),
+            sectionLabel = (sectionDef.label:gsub("^Show ", "")),
             collapseKeys = { EFFECTS_TEXTURE_INDICATORS_SECTION },
             rowScope = "primary",
-            applies = function(context) return SpecialFinderTextureEffectEnabled(context, key) end,
+            advancedKey = "textureEffect_" .. key,
+            -- Structural: the gear exists with the effect off too, opening its
+            -- panel read-only behind the unlock strip.
+            applies = function(context) return SpecialFinderTextureEffectShown(context, key) end,
         })
         finder.effectType = options:Setting({ key = "type", label = "Effect Type" })
         finder.shiftColor = options:Setting({

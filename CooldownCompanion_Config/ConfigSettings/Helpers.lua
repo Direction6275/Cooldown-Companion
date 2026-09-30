@@ -1644,7 +1644,10 @@ ST._AddDropdownItemTooltips = AddDropdownItemTooltips
 -- conversion packets.
 local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disabled, opts)
     key = key or "borderRenderMode"
-    local controlsDisabled = disabled == true or ST.IsBorderThicknessLocked()
+    local locked = ST.IsBorderThicknessLocked()
+    local controlsDisabled = disabled == true or locked
+    -- A locked row shows the mode the border actually draws with.
+    local shownMode = ST.GetDrawnBorderRenderMode(tbl, key)
     local modeList = {
         [ST.BORDER_RENDER_MODE_CUSTOM] = "Custom",
         [ST.BORDER_RENDER_MODE_CRISP] = "One-pixel",
@@ -1665,8 +1668,10 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
         indent = opts and opts.indent,
         list = modeList,
         order = modeOrder,
-        value = ST.GetBorderRenderMode(tbl, key),
+        value = shownMode,
         disabled = controlsDisabled,
+        tooltip = locked and {"Border Thickness Mode",
+            {"Profile One-pixel Borders is on in the settings menu, so this border uses one pixel.", 1, 1, 1, true}} or nil,
         onChange = ApplyRenderMode,
     })
     AddDropdownItemTooltips(modeRow, BORDER_THICKNESS_MODE_TOOLTIPS)
@@ -1674,7 +1679,7 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
         GameTooltip:Hide()
     end)
 
-    return ST.GetBorderRenderMode(tbl, key), modeRow
+    return shownMode, modeRow
 end
 
 -- Expose helpers for other ConfigSettings files

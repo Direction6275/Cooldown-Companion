@@ -380,8 +380,13 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             -- gearless tabs alike.
             CS.RunAdvancedGearBuildPass(function()
                 local selectedGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-                if ST.IsIndicatorGroup(selectedGroup) and (tab == "tracking" or tab == "appearance" or tab == "effects") then
+                if ST.IsIndicatorGroup(selectedGroup) and (tab == "appearance" or tab == "effects") then
                     ST._BuildIndicatorTab(scroll, selectedGroup, tab)
+                elseif ST.IsIndicatorGroup(selectedGroup) and tab == "loadconditions" then
+                    -- An Indicator's When to Show leads Visibility, where a
+                    -- panel entry keeps its Show & Hide Rules.
+                    ST._BuildIndicatorTab(scroll, selectedGroup, tab)
+                    ST._BuildVisibilityTab(scroll)
                 elseif tab == "appearance" then
                     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
                     if ST.IsTotemPanelGroup(group) then ST._BuildTotemAppearanceTab(scroll, group)
@@ -465,8 +470,10 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
         if ST.IsIndicatorGroup(group) then
-            tabs = {{value="tracking",text="Tracking"},{value="appearance",text="Appearance"},
-                {value="effects",text="Effects"},{value="layout",text="Layout"},{value="loadconditions",text="Visibility"}}
+            -- The panel tab order; the effects tab keeps its own name, since an
+            -- "Indicators" tab inside an Indicator would read as a list.
+            tabs = {{value="layout",text="Layout"},{value="appearance",text="Appearance"},
+                {value="effects",text="Effects"},{value="loadconditions",text="Visibility"}}
         else
             -- Entries expose Layout only when they own placement controls.
             if not isSingleEntry or (availableTabs and availableTabs.layout) then
@@ -483,8 +490,10 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     end
 
     -- Migrate stale tab keys from previous layout
-    if not ST.IsIndicatorGroup(group) and CS.selectedTab == "tracking" then CS.selectedTab = "appearance" end
-    if ST.IsIndicatorGroup(group) and not ST.Indicator.Primary(group) then CS.selectedTab = "tracking" end
+    -- The retired Tracking tab's rules now lead an Indicator's Visibility.
+    if CS.selectedTab == "tracking" then
+        CS.selectedTab = ST.IsIndicatorGroup(group) and "loadconditions" or "appearance"
+    end
     if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
     if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
     -- Retired Format destinations now land on Appearance.
