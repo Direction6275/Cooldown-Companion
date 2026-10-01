@@ -453,6 +453,14 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     -- Deterministic preview-off fill matches the live ready-state rule.
     -- Timed condition previews below replace this baseline when active.
     slot.statusBar:SetValue(buttonData.isPassive and 0 or 1)
+    -- Show Only While Inactive: while the aura is missing the entry is its
+    -- still picture, a full bar in the Missing Bar Color (AuraDisplay.lua).
+    if isAuraEntry and not auraPresentationActive
+        and CooldownCompanion:IsMissingPictureEntry(buttonData) then
+        local missingColor = style.barAuraMissingColor or { 0.6, 0.15, 0.15, 1 }
+        slot.statusBar:SetValue(1)
+        slot.statusBar:SetStatusBarColor(missingColor[1], missingColor[2], missingColor[3], missingColor[4] or 1)
+    end
 
     local chargePresentationKind = kind
     if not chargePresentationKind and UsesConfigOnlyBarChargeBehavior(buttonData) then

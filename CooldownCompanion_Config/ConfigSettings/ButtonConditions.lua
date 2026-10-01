@@ -2512,12 +2512,12 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         return bd.type == "spell" and (bd.auraTracking or bd.addedAs == "aura")
             and not ST.IsAuraSectionEntry(group, bd)
     end
-    local function ApplyToAuraEntries(field, value)
+    local function ApplyToAuraEntries(field, value, eligible)
         if isBatch then
             for idx in pairs(CS.selectedButtons) do
                 local bd = group.buttons[idx]
                 if bd then
-                    if not value or FilterAuraEntry(bd) then
+                    if not value or (FilterAuraEntry(bd) and (not eligible or eligible(bd))) then
                         bd[field] = value
                     end
                 end
@@ -2542,26 +2542,48 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- pair as well as the row families below.
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel then
+        -- Show Only While Inactive has no group-tracked form yet (that needs a
+        -- tracker per group member), so it is offered only while no selected
+        -- entry tracks a group. A stored one always shows, so it can be left.
+        local function NotGroupTracked(bd) return bd.auraTrackGroup ~= true end
+        local function HasMissingMode(bd) return FilterAuraEntry(bd) and bd.hideWhileAuraActive == true end
+        local offerMissing
+        if isBatch then
+            offerMissing = not AnySelectedMatch(function(bd) return FilterAuraEntry(bd) and not NotGroupTracked(bd) end)
+                or AnySelectedMatch(HasMissingMode)
+        else
+            offerMissing = NotGroupTracked(buttonData) or buttonData.hideWhileAuraActive == true
+        end
+        local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show Only While Active" }
+        local auraOrder = { "show", "dim", "hide" }
+        if offerMissing then
+            auraList.missing = "Show Only While Inactive"
+            auraOrder[#auraOrder + 1] = "missing"
+        end
         -- Visibility is independent of missing-aura effects.
         AddFamily(1, function(column)
             AddVisibilityDropdown(column, {
                 setting = entryVisibilitySettings.auraInactive,
                 filter = FilterAuraEntry,
-                list = { show = "Normal", dim = "Dim While Inactive", hide = "Show Only While Active" },
-                order = { "show", "dim", "hide" },
+                list = auraList,
+                order = auraOrder,
                 read = function(bd)
                     if bd.hideWhileAuraNotActive == true then return "hide" end
                     if bd.auraShellDim == true then return "dim" end
+                    if bd.hideWhileAuraActive == true then return "missing" end
                     return "show"
                 end,
                 tooltip = BuildVisibilityModeTooltip("Aura Visibility", {
                     {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show Only While Active hides it.", 1, 1, 1, true},
+                    VISIBILITY_TOOLTIP_SPACER,
+                    {"Show Only While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
                     {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
                 }, true),
                 write = function(value)
                     ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
                     ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
+                    ApplyToAuraEntries("hideWhileAuraActive", value == "missing" or nil, NotGroupTracked)
                     CooldownCompanion:RefreshAllGroups()
                     CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()

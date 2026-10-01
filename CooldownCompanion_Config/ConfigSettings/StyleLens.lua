@@ -86,6 +86,7 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     whileAuraActive = true,
     auraMissingDesaturation = true,
     missingAuraIndicator = true,
+    auraMissingBarColor = true,
 }
 
 -- Keybind and custom text never reach a packed aura cell: the renderer draws

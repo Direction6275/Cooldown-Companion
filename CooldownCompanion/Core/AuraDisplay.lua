@@ -386,14 +386,28 @@ local function EnsureTargetWatcher()
     end)
 end
 
+-- Two reminders share one rule: the ordinary one under the native slot, and
+-- the one Show Only While Inactive draws on its still picture (Picture.Style),
+-- whose own window decides when it can be seen, so only the first follows
+-- the shell's alpha.
 local function UpdateMissingReminderVisibility(button, inCombat)
-    local reminder = button._missingAuraReminder
-    if not reminder then return end
-    local style = reminder.style
-    reminder:SetAlpha(CooldownCompanion:GetAuraShellAlpha(button, button.buttonData))
-    reminder:SetShown(style ~= nil and reminder.boundEntry == button.buttonData
-        and (not button._isBar or style.showBarIcon ~= false)
-        and CooldownCompanion:ShouldShowMissingAuraCue(style, reminder.tracksTarget, inCombat))
+    for index = 1, 2 do
+        local reminder
+        if index == 1 then
+            reminder = button._missingAuraReminder
+        else
+            reminder = button._missingPictureReminder
+        end
+        if reminder then
+            local style = reminder.style
+            if index == 1 then
+                reminder:SetAlpha(CooldownCompanion:GetAuraShellAlpha(button, button.buttonData))
+            end
+            reminder:SetShown(style ~= nil and reminder.boundEntry == button.buttonData
+                and (not button._isBar or style.showBarIcon ~= false)
+                and CooldownCompanion:ShouldShowMissingAuraCue(style, reminder.tracksTarget, inCombat))
+        end
+    end
 end
 
 local missingCueWatcher
@@ -1713,6 +1727,129 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     end
 end
 
+-- Full-button chrome replicas: bg + border anchored to the host frames
+-- (pixel-identical to the CC shell). Bars carry two chrome sets, the bar ring
+-- and the icon square's own background/border, so bar shells style the second
+-- replica set too. Shared by the active display kit (shell entries) and the
+-- Show Only While Inactive picture; `chrome` carries bg, border, iconBg and
+-- iconBorder.
+local ShellChrome = {}
+
+function ShellChrome.Hide(chrome)
+    chrome.bg:SetAlpha(0)
+    for _, tex in ipairs(chrome.border) do
+        tex:SetAlpha(0)
+    end
+    chrome.iconBg:SetAlpha(0)
+    for _, tex in ipairs(chrome.iconBorder) do
+        tex:SetAlpha(0)
+    end
+end
+
+function ShellChrome.Style(chrome, button, style, isBar, barIconShown, barBackgroundAlpha,
+        isCustomBarHost, widgetShell)
+    if not isBar then
+        chrome.bg:ClearAllPoints()
+        chrome.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        chrome.bg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        local bgColor = style.backgroundColor or { 0, 0, 0, 0.5 }
+        chrome.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] or 0.5)
+        chrome.bg:SetAlpha(1)
+        local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+        -- Effective mode, not raw: the profile one-pixel-borders option
+        -- promotes CUSTOM to CRISP exactly like ApplyBorderEdgePositions.
+        local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
+        ST.ApplyBorderTexturesBetween(chrome.border, button, button,
+            style.borderColor or { 0, 0, 0, 1 }, borderSize, renderMode)
+        for _, tex in ipairs(chrome.border) do
+            tex:SetAlpha(1)
+        end
+        chrome.iconBg:SetAlpha(0)
+        for _, tex in ipairs(chrome.iconBorder) do
+            tex:SetAlpha(0)
+        end
+        return
+    end
+    local bgColor = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
+    local barBounds = button._barBounds or button
+    -- CC parity: with the icon square shown the background covers only
+    -- the bar area (the square has its own), otherwise the whole button.
+    -- Custom-bar hosts always use the bar bounds: the holder (button)
+    -- is the border-inset mount, and the shell bg must fill the bar's
+    -- real footprint. Widget-stack shells skip the slab AND the
+    -- whole-bar border ring: the capacity blocks laid out above ARE
+    -- the background, each with its own border ring (owner ruling:
+    -- every stack its own widget; a slab would fill the gaps and one
+    -- ring would wrap all stacks).
+    local bgAnchor = (barIconShown or isCustomBarHost) and barBounds or button
+    if widgetShell then
+        chrome.bg:SetAlpha(0)
+    else
+        chrome.bg:ClearAllPoints()
+        chrome.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
+        chrome.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
+        chrome.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, barBackgroundAlpha)
+        chrome.bg:SetAlpha(1)
+    end
+    local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
+    local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
+    local borderColor = style.borderColor or { 0, 0, 0, 1 }
+    if widgetShell then
+        for _, tex in ipairs(chrome.border) do
+            tex:SetAlpha(0)
+        end
+    else
+        ST.ApplyBorderTexturesBetween(chrome.border, barBounds, barBounds,
+            borderColor, borderSize, renderMode)
+        for _, tex in ipairs(chrome.border) do
+            tex:SetAlpha(1)
+        end
+    end
+    if barIconShown and button._iconBounds then
+        chrome.iconBg:ClearAllPoints()
+        chrome.iconBg:SetPoint("TOPLEFT", button._iconBounds, "TOPLEFT", 0, 0)
+        chrome.iconBg:SetPoint("BOTTOMRIGHT", button._iconBounds, "BOTTOMRIGHT", 0, 0)
+        chrome.iconBg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
+        chrome.iconBg:SetAlpha(1)
+        ST.ApplyBorderTexturesBetween(chrome.iconBorder, button._iconBounds, button._iconBounds,
+            borderColor, borderSize, renderMode)
+        for _, tex in ipairs(chrome.iconBorder) do
+            tex:SetAlpha(1)
+        end
+    else
+        chrome.iconBg:SetAlpha(0)
+        for _, tex in ipairs(chrome.iconBorder) do
+            tex:SetAlpha(0)
+        end
+    end
+end
+
+-- Keybind replica (icon shells only): same style keys, placement, and text
+-- resolution as CC's own keybindText (IconMode), read at bind time. Keybind
+-- edits are config-time and every restyle re-requests a rebind, so bind-time
+-- reads stay current. Bars keep their CC-side conventions (bar hosts never
+-- showed keybind text).
+function ShellChrome.Keybind(text, button, buttonData, style, allowed)
+    local keybindText
+    if allowed and style.showKeybindText then
+        keybindText = CooldownCompanion.GetDisplayedKeybindText
+            and CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
+    end
+    if keybindText and keybindText ~= "" then
+        if CooldownCompanion.ApplyFontStyle then
+            CooldownCompanion.ApplyFontStyle(text, style, "keybind", 10)
+        end
+        local kbAnchor = style.keybindAnchor or "TOPRIGHT"
+        ST.TextAnchorLayout.Apply(text, button, kbAnchor,
+            style.keybindXOffset or -2, style.keybindYOffset or -2)
+        text:SetText(keybindText)
+        text:SetAlpha(1)
+    else
+        text:SetText("")
+        text:SetAlpha(0)
+    end
+end
+
 local function StyleSlotKit(slot, button, buttonData, style)
     local kit = slot.kit
     if not kit then return end
@@ -2261,120 +2398,19 @@ local function StyleSlotKit(slot, button, buttonData, style)
 
     -- Full-button composition for show-only-while-active entries: bg + border
     -- replicas anchored to the host frames (pixel-identical to the CC shell).
-    -- Bars carry two chrome sets — the bar ring and the icon square's own
-    -- background/border — so bar shells style the second replica set too.
-    if shellEntry and not isBar then
-        kit.bg:ClearAllPoints()
-        kit.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-        kit.bg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-        local bgColor = style.backgroundColor or { 0, 0, 0, 0.5 }
-        kit.bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] or 0.5)
-        kit.bg:SetAlpha(1)
-        local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-        -- Effective mode, not raw: the profile one-pixel-borders option
-        -- promotes CUSTOM to CRISP exactly like ApplyBorderEdgePositions.
-        local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
-        ST.ApplyBorderTexturesBetween(kit.border, button, button,
-            style.borderColor or { 0, 0, 0, 1 }, borderSize, renderMode)
-        for _, tex in ipairs(kit.border) do
-            tex:SetAlpha(1)
-        end
-        kit.iconBg:SetAlpha(0)
-        for _, tex in ipairs(kit.iconBorder) do
-            tex:SetAlpha(0)
-        end
-    elseif shellEntry and isBar then
-        local bgColor = style.barBgColor or { 0.1, 0.1, 0.1, 0.8 }
-        local barBounds = button._barBounds or button
-        -- CC parity: with the icon square shown the background covers only
-        -- the bar area (the square has its own), otherwise the whole button.
-        -- Custom-bar hosts always use the bar bounds — the holder (button)
-        -- is the border-inset mount, and the shell bg must fill the bar's
-        -- real footprint. Widget-stack shells skip the slab AND the
-        -- whole-bar border ring — the capacity blocks laid out above ARE
-        -- the background, each with its own border ring (owner ruling:
-        -- every stack its own widget; a slab would fill the gaps and one
-        -- ring would wrap all stacks).
-        local bgAnchor = (barIconShown or isCustomBarHost) and barBounds or button
-        local widgetShell = IsWidgetStackBind(slot, buttonData)
-        if widgetShell then
-            kit.bg:SetAlpha(0)
-        else
-            kit.bg:ClearAllPoints()
-            kit.bg:SetPoint("TOPLEFT", bgAnchor, "TOPLEFT", 0, 0)
-            kit.bg:SetPoint("BOTTOMRIGHT", bgAnchor, "BOTTOMRIGHT", 0, 0)
-            kit.bg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, barBackgroundAlpha)
-            kit.bg:SetAlpha(1)
-        end
-        local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
-        local renderMode = ST.GetEffectiveBorderRenderMode(ST.GetBorderRenderMode(style), nil, borderSize)
-        local borderColor = style.borderColor or { 0, 0, 0, 1 }
-        if widgetShell then
-            for _, tex in ipairs(kit.border) do
-                tex:SetAlpha(0)
-            end
-        else
-            ST.ApplyBorderTexturesBetween(kit.border, barBounds, barBounds,
-                borderColor, borderSize, renderMode)
-            for _, tex in ipairs(kit.border) do
-                tex:SetAlpha(1)
-            end
-        end
-        if barIconShown and button._iconBounds then
-            kit.iconBg:ClearAllPoints()
-            kit.iconBg:SetPoint("TOPLEFT", button._iconBounds, "TOPLEFT", 0, 0)
-            kit.iconBg:SetPoint("BOTTOMRIGHT", button._iconBounds, "BOTTOMRIGHT", 0, 0)
-            kit.iconBg:SetColorTexture(bgColor[1] or 0.1, bgColor[2] or 0.1, bgColor[3] or 0.1, bgColor[4] or 0.8)
-            kit.iconBg:SetAlpha(1)
-            ST.ApplyBorderTexturesBetween(kit.iconBorder, button._iconBounds, button._iconBounds,
-                borderColor, borderSize, renderMode)
-            for _, tex in ipairs(kit.iconBorder) do
-                tex:SetAlpha(1)
-            end
-        else
-            kit.iconBg:SetAlpha(0)
-            for _, tex in ipairs(kit.iconBorder) do
-                tex:SetAlpha(0)
-            end
-        end
+    if shellEntry then
+        ShellChrome.Style(kit, button, style, isBar, barIconShown, barBackgroundAlpha,
+            isCustomBarHost, isBar and IsWidgetStackBind(slot, buttonData))
     else
-        kit.bg:SetAlpha(0)
-        for _, tex in ipairs(kit.border) do
-            tex:SetAlpha(0)
-        end
-        kit.iconBg:SetAlpha(0)
-        for _, tex in ipairs(kit.iconBorder) do
-            tex:SetAlpha(0)
-        end
+        ShellChrome.Hide(kit)
     end
 
-    -- Keybind replica (icon shells only): same style keys, placement, and
-    -- text resolution as CC's own keybindText (IconMode), read at bind time.
-    -- Keybind edits are config-time and every restyle re-requests a rebind,
-    -- so bind-time reads stay current. Bars keep their CC-side conventions
-    -- (bar hosts never showed keybind text).
     -- An Aura Panel offers no Keybind Text (owner ruling 2026-08-15): the
     -- toggle is gone from its Appearance tab, so a style value surviving a
     -- conversion or a copied customization is the only way showKeybindText can
     -- still read true here, and it must not put the replica back.
-    local keybindText
-    if shellEntry and not isBar and not isAuraPanelHost and style.showKeybindText then
-        keybindText = CooldownCompanion.GetDisplayedKeybindText
-            and CooldownCompanion:GetDisplayedKeybindText(buttonData, button._resolvedItemId, button)
-    end
-    if keybindText and keybindText ~= "" then
-        if ApplyFontStyle then
-            ApplyFontStyle(kit.keybindText, style, "keybind", 10)
-        end
-        local kbAnchor = style.keybindAnchor or "TOPRIGHT"
-        ST.TextAnchorLayout.Apply(kit.keybindText, button, kbAnchor,
-            style.keybindXOffset or -2, style.keybindYOffset or -2)
-        kit.keybindText:SetText(keybindText)
-        kit.keybindText:SetAlpha(1)
-    else
-        kit.keybindText:SetText("")
-        kit.keybindText:SetAlpha(0)
-    end
+    ShellChrome.Keybind(kit.keybindText, button, buttonData, style,
+        shellEntry and not isBar and not isAuraPanelHost)
 end
 
 ------------------------------------------------------------------------
@@ -2560,14 +2596,66 @@ end
 ------------------------------------------------------------------------
 local PRESENCE_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
 
+-- Record kinds built on a presence tracker: an Indicator's While Missing
+-- display, and a panel entry's Show Only While Inactive picture.
+local PRESENCE_KINDS = { presence = true, missingPicture = true }
+
+-- Show Only While Inactive pictures (below). One table: this file sits at
+-- Lua's 200-local ceiling.
+local Picture = {
+    -- The picture sits this far inside its cell on every side, so the ~1px
+    -- an empty tracker keeps never reaches it.
+    PAD = 2,
+}
+
+-- Show Only While Inactive (panel icon and bar entries): a still picture of
+-- the entry, drawn only while the aura is missing. The CC button underneath is
+-- a hidden shell (Aura.lua) and no native display is bound, so nothing shows
+-- while the aura is up. Every region anchors to the CC button's own frames
+-- and regions (the kit.bg precedent); only the frames are template-built.
+function Picture.Build(parent, button)
+    local root = CreateFrame("Frame", nil, parent, PRESENCE_TEMPLATE)
+    root:EnableMouse(false)
+    root:SetAllPoints(button)
+    local picture = { root = root }
+    picture.bg = root:CreateTexture(nil, "BACKGROUND")
+    picture.iconBg = root:CreateTexture(nil, "BACKGROUND", nil, 1)
+    picture.fill = root:CreateTexture(nil, "ARTWORK")
+    picture.icon = root:CreateTexture(nil, "ARTWORK", nil, 2)
+    -- Crisp borders size from the CC button (same effective scale); nothing
+    -- inside the window is measured. Restyled only by the rebind pass.
+    picture.border = { _cdcAuraOwned = true, _cdcBorderScaleSource = button }
+    picture.iconBorder = { _cdcAuraOwned = true, _cdcBorderScaleSource = button }
+    for i = 1, 4 do
+        picture.border[i] = root:CreateTexture(nil, "OVERLAY")
+        picture.iconBorder[i] = root:CreateTexture(nil, "OVERLAY")
+    end
+    picture.name = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    picture.keybind = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    -- The Missing Aura Indicator, prebuilt with template frames so the shared
+    -- styler (StyleMissingAuraReminder) only ever styles it.
+    local reminder = CreateFrame("Frame", nil, root, PRESENCE_TEMPLATE)
+    reminder:EnableMouse(false)
+    reminder.marker = reminder:CreateFontString(nil, "OVERLAY")
+    reminder.marker:SetPoint("CENTER", reminder, "CENTER", 0, 0)
+    reminder:SetClipsChildren(true)
+    reminder.glow = ST._BuildKitGlowRegions(reminder, false, false, PRESENCE_TEMPLATE)
+    reminder:Hide()
+    picture.reminder = reminder
+    return picture
+end
+
 local function PresenceLayout(width, height)
     return { elementWidth = width, elementHeight = height,
         elementSpacing = 0, groupSpacing = 0, lineSpacing = 0 }
 end
 
 local function BuildPresenceTracker(record, layer, unit)
+    local picture = record.hostKind == "missingPicture"
     local cell = CreateFrame("Frame", nil, record.visibilityRoot, PRESENCE_TEMPLATE)
-    cell:SetPoint("CENTER", layer, "CENTER", 0, 0)
+    -- A picture covers the whole entry (a bar's icon square included); the
+    -- aura layer covers only its icon or bar rect.
+    cell:SetPoint("CENTER", picture and record.button or layer, "CENTER", 0, 0)
     cell:SetSize(1, 1)
     -- The tracker draws nothing: its parent is transparent. Alpha never stops
     -- Blizzard's layout (the container stays visible, so it keeps parsing).
@@ -2604,10 +2692,14 @@ local function BuildPresenceTracker(record, layer, unit)
     clip:EnableMouse(false)
     clip:SetPoint("TOPLEFT", container, "TOPRIGHT", 0, 0)
     clip:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", 0, 0)
-    local presenceHost = CooldownCompanion.CreateIndicatorPresenceHost(clip, PRESENCE_TEMPLATE)
-    presenceHost:SetPoint("CENTER", cell, "CENTER", 0, 0)
     record.cell = cell
     record.container = container
+    if picture then
+        record.picture = Picture.Build(clip, record.button)
+        return
+    end
+    local presenceHost = CooldownCompanion.CreateIndicatorPresenceHost(clip, PRESENCE_TEMPLATE)
+    presenceHost:SetPoint("CENTER", cell, "CENTER", 0, 0)
     record.presenceHost = presenceHost
 end
 
@@ -2677,6 +2769,113 @@ local function StyleMissingAuraReminder(host, anchor, style)
 end
 ST._StyleMissingAuraReminder = StyleMissingAuraReminder
 
+-- Static desaturation of the picture's icon: the same intent the CC icon
+-- carries while the aura is missing (Tracking.lua ResolveDesaturationIntent).
+function Picture.Desaturated(buttonData, style)
+    if buttonData.isPassive then
+        return not (buttonData.neverDesaturate or style.invertAuraDesaturationLogic)
+    end
+    return style.desaturateWhileAuraNotActive == true
+end
+
+-- Shown while the shell is hidden; an unlock or preview that exposes the CC
+-- button hides the picture so the two never draw over each other.
+function Picture.SyncAlpha(button, shellAlpha)
+    local byUnit = displays[button]
+    if not byUnit then return end
+    for _, record in pairs(byUnit) do
+        if record.picture then
+            record.picture.root:SetAlpha(shellAlpha == 0 and 1 or 0)
+        end
+    end
+end
+ST._SyncMissingPictureAlpha = Picture.SyncAlpha
+
+-- OOC only, from the rebind pass. Reads CC-owned button regions for the icon
+-- (the active kit's iconCover precedent); a combat icon override can't reach
+-- the picture until the next rebind.
+function Picture.Style(record, button, buttonData, style)
+    local picture = record.picture
+    style = style or {}
+    local isBar = button._isBar == true
+    local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
+    local bgColor = style.barBgColor
+    ShellChrome.Style(picture, button, style, isBar, barIconShown,
+        bgColor and (bgColor[4] or 1) or 0.8, false, false)
+    ShellChrome.Keybind(picture.keybind, button, buttonData, style, not isBar)
+
+    -- The entry's icon, cropped and tinted like the CC icon underneath.
+    local iconAnchor = (not isBar or barIconShown) and button.icon or nil
+    local ccIcon = button.icon
+    local texture = ccIcon and ccIcon.GetTexture and ccIcon:GetTexture()
+    if not texture and buttonData.id then
+        texture = C_Spell.GetSpellTexture(buttonData.id)
+    end
+    if iconAnchor and texture then
+        picture.icon:ClearAllPoints()
+        picture.icon:SetAllPoints(iconAnchor)
+        picture.icon:SetTexture(texture)
+        picture.icon:SetTexCoord(ccIcon:GetTexCoord())
+        picture.icon:SetDesaturated(Picture.Desaturated(buttonData, style))
+        picture.icon:SetAlpha(1)
+        local tint = style.iconTintColor
+        -- 4-arg color carries the alpha (SetVertexColor-alpha gotcha).
+        picture.icon:SetVertexColor(tint and tint[1] or 1, tint and tint[2] or 1,
+            tint and tint[3] or 1, tint and tint[4] or 1)
+    else
+        picture.icon:SetAlpha(0)
+        picture.icon:SetVertexColor(1, 1, 1, 0)
+    end
+
+    -- Bars: a full bar in the Missing Bar Color, with the entry's name.
+    if isBar and button.statusBar then
+        local color = style.barAuraMissingColor or { 0.6, 0.15, 0.15, 1 }
+        picture.fill:ClearAllPoints()
+        picture.fill:SetAllPoints(button.statusBar)
+        picture.fill:SetTexture(CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"))
+        picture.fill:SetAlpha(1)
+        picture.fill:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        local showName = style.showBarNameText ~= false or buttonData.customName ~= nil
+        if showName then
+            if CooldownCompanion.ApplyFontStyle then
+                CooldownCompanion.ApplyFontStyle(picture.name, style, "barName", 10)
+            end
+            ST.BarTextLayout.ApplyName(picture.name, button.statusBar, nil,
+                style, button._isVertical, "aura", false)
+            local displayName = buttonData.customName
+            if not displayName and buttonData.id then
+                displayName = C_Spell.GetSpellName(button._displaySpellId or buttonData.id)
+            end
+            picture.name:SetText(displayName or buttonData.name or "")
+            picture.name:SetAlpha(1)
+        else
+            picture.name:SetText("")
+            picture.name:SetAlpha(0)
+        end
+    else
+        picture.fill:SetAlpha(0)
+        picture.fill:SetVertexColor(1, 1, 1, 0)
+        picture.name:SetText("")
+        picture.name:SetAlpha(0)
+    end
+
+    -- The Missing Aura Indicator decorates the picture, on its own When rule.
+    local reminder = picture.reminder
+    if record.missingIndicator and iconAnchor then
+        reminder.style = style
+        reminder.boundEntry = buttonData
+        reminder.tracksTarget = record.unit == "target"
+        StyleMissingAuraReminder(reminder, iconAnchor, style)
+        EnsureMissingCueWatcher()
+    else
+        reminder.style = nil
+        reminder.boundEntry = nil
+    end
+    button._missingPictureReminder = reminder
+    UpdateMissingReminderVisibility(button)
+    Picture.SyncAlpha(button, CooldownCompanion:GetAuraShellAlpha(button, buttonData))
+end
+
 local function BindMissingAuraReminder(button, buttonData, style, tracksTarget)
     local reminder = button._missingAuraReminder
     if not style then
@@ -2714,6 +2913,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         byUnit = {}
         displays[button] = byUnit
     end
+    -- A picture mounts on the button's own aura layer, like a native slot.
     local layer = hostKind == "texturePanel" and EnsureTexturePanelAuraLayer(button)
         or hostKind == "presence" and EnsurePresenceLayer(button)
         or EnsureAuraLayer(button)
@@ -2733,14 +2933,14 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     visibilityRoot:SetFrameLevel(layer:GetFrameLevel())
     visibilityRoot:Hide()
     record.visibilityRoot = visibilityRoot
-    if hostKind == "presence" then
+    if PRESENCE_KINDS[hostKind] then
         -- Born parked: the container stays hidden (inert) until a bind.
         record.parked = true
         BuildPresenceTracker(record, layer, unit)
         record.container:Hide()
         -- The host now carries a container: keep it across pooling
         -- (ReleaseAuraTextureVisual), exactly like a native slot's host.
-        button.auraTextureHost._auraSlotOwned = true
+        if hostKind == "presence" then button.auraTextureHost._auraSlotOwned = true end
         byUnit[recordKey] = record
         records[#records + 1] = record
         NoteRecordToken(unit)
@@ -2839,8 +3039,11 @@ local function ParkDisplay(record)
         -- wrote (the fill is alpha-0; the next bind converges it).
         record.boundStackMax = nil
         ReleaseSlotAuraSounds(record)
-        if record.hostKind == "presence" then
+        if PRESENCE_KINDS[record.hostKind] then
             record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
+            if record.picture then
+                record.picture.reminder.boundEntry = nil
+            end
         else
             record.container:SetAuraSlotCandidateFilters(record.key, BuildParkFilters(record.unit))
         end
@@ -2976,13 +3179,23 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
 end
 
 -- OOC only, from the rebind pass. Converges the cell to the saved design
--- (Indicator.PresenceCell) and the group to the entry's spell set. Group
--- (ally) scope never reaches here: While Missing has no multi-unit form yet.
-local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed)
+-- (Indicator.PresenceCell, or the entry's own size plus padding for a
+-- picture) and the group to the entry's spell set. Group (ally) scope never
+-- reaches here: neither form has a multi-unit version yet.
+local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style)
     local button = record.button
-    local group = CooldownCompanion.db.profile.groups[button._groupId]
-    local width, height = ST.Indicator.PresenceCell(group)
+    local width, height
+    if record.picture then
+        -- CC-owned button rect, read out of combat.
+        local buttonWidth, buttonHeight = button:GetSize()
+        width, height = buttonWidth + Picture.PAD * 2, buttonHeight + Picture.PAD * 2
+    else
+        width, height = ST.Indicator.PresenceCell(CooldownCompanion.db.profile.groups[button._groupId])
+    end
     if record.parked then record.container:Show() end
+    -- A picture's layer is the button's aura layer: re-anchor and re-level it
+    -- from the panel's strata order, as a native slot's bind does.
+    if record.picture then EnsureAuraLayer(button) end
     record.visibilityRoot:SetFrameLevel(record.layer:GetFrameLevel())
     if width and (record.cellWidth ~= width or record.cellHeight ~= height) then
         record.cell:SetSize(width, height)
@@ -3006,14 +3219,16 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed)
     record.identityApplicable = CanApplySpellIdentityFilter(unit)
     SetIdentityVisibility(record, record.presenceReady and record.identityApplicable)
     button._auraSlotHostToken = buttonData
-    if CooldownCompanion.UpdateAuraTextureVisual then
+    if record.picture then
+        Picture.Style(record, button, buttonData, style)
+    elseif CooldownCompanion.UpdateAuraTextureVisual then
         CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 end
 
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureEffects)
-    if record.hostKind == "presence" then
-        return BindPresence(record, buttonData, spellSet, unit, soundsAllowed)
+    if PRESENCE_KINDS[record.hostKind] then
+        return BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style)
     end
     local button = record.button
     local wasParked = record.parked
@@ -4831,6 +5046,14 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     and buttonData == ST.Indicator.Primary(group)
                     and buttonData.enabled ~= false
                     and not buttonData.auraTrackGroup
+                -- Show Only While Inactive: a presence tracker uncovers the
+                -- entry's still picture, and no native display is bound. A
+                -- group-tracked entry has no presence form yet and stays dark.
+                local missingPicture = standardAura and buttonData.hideWhileAuraActive == true
+                if missingPicture and not (self:IsMissingPictureEntry(buttonData)
+                    and not ST.IsAuraSectionEntry(group, buttonData)) then
+                    standardAura, missingPicture = false, false
+                end
                 if buttonData and buttonData.type == "spell" and (textureAura or standardAura or presence)
                     and not ST.IsCollapsingAttachedBar(group, buttonData) then
                     local style = self:GetEntryEffectiveStyle(group, buttonData)
@@ -4855,7 +5078,8 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             spellSet = spellSet,
                             style = style,
                             stackBarMax = stackBarMax,
-                            hostKind = textureAura and "texturePanel" or presence and "presence" or "button",
+                            hostKind = textureAura and "texturePanel" or presence and "presence"
+                                or missingPicture and "missingPicture" or "button",
                             missingIndicator = self:IsMissingAuraIndicatorEntry(buttonData, group, style),
                             textureSettings = textureSettings,
                             textureEffects = textureEffects,
@@ -4928,7 +5152,8 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     want.textureSettings, want.textureEffects)
             end
         end
-        if want.missingIndicator and #want.units > 0 then
+        -- A picture carries its own reminder (Picture.Style).
+        if want.missingIndicator and #want.units > 0 and want.hostKind ~= "missingPicture" then
             BindMissingAuraReminder(want.button, want.buttonData, want.style, want.units[1] == "target")
         end
     end
@@ -5104,7 +5329,7 @@ function CooldownCompanion:GetAuraDisplayStatus()
     -- While Missing trackers are records too, but not native slots.
     local presence = { trackers = 0, bound = 0 }
     for _, record in ipairs(records) do
-        if record.hostKind == "presence" then
+        if PRESENCE_KINDS[record.hostKind] then
             presence.trackers = presence.trackers + 1
             if record.boundEntry then presence.bound = presence.bound + 1 end
         else

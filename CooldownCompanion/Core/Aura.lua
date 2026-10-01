@@ -1136,12 +1136,16 @@ end
 
 -- Aura shell (12.1 compositing): an aura entry that yields its resting
 -- appearance so the native aura display renders the active visual on top.
--- Two visibility presentations, mutually exclusive in config:
+-- Three visibility presentations, mutually exclusive in config:
 --   hideWhileAuraNotActive -> hidden shell, alpha 0
 --   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
--- Both compose a full aura visual. Missing indicators are separate effects
--- and preserve the entry's ordinary resting presentation. Owned here because
--- four callers across Core and ButtonFrame need the same answer.
+--   hideWhileAuraActive    -> hidden shell, alpha 0, with NO native display:
+--                             a presence tracker uncovers a still picture of
+--                             the entry only while the aura is missing
+--                             (AuraDisplay.lua, IsMissingPictureEntry)
+-- The first two compose a full aura visual. Missing indicators are separate
+-- effects and preserve the entry's ordinary resting presentation. Owned here
+-- because four callers across Core and ButtonFrame need the same answer.
 --
 -- auraShellDim is 12.1-native and deliberately NOT the main-era
 -- useBaselineAlphaFallback key it replaces. That key's presence was
@@ -1191,6 +1195,19 @@ function CooldownCompanion:IsAuraShellEntry(buttonData)
     end
     return buttonData.hideWhileAuraNotActive == true
         or buttonData.auraShellDim == true
+        or buttonData.hideWhileAuraActive == true
+end
+
+-- Show Only While Inactive. Group tracking has no presence form yet, so a
+-- group-tracked entry carrying the key stays a dark shell (fails closed) and
+-- the config does not offer the pair together. The panel half of the gate
+-- (icons/bars, not an Aura Panel or Aura Only Section) is the caller's: the
+-- rebind pass only reaches entries those panels materialize.
+function CooldownCompanion:IsMissingPictureEntry(buttonData)
+    return buttonData ~= nil and buttonData.type == "spell"
+        and (buttonData.auraTracking or buttonData.addedAs == "aura")
+        and buttonData.hideWhileAuraActive == true
+        and not buttonData.auraTrackGroup or false
 end
 
 -- Resting alpha for a shell entry. Hide wins when both keys are somehow set,
@@ -1198,7 +1215,8 @@ end
 -- Callers gate on IsAuraShellEntry first, so a non-shell entry never
 -- reaches this.
 function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
-    if buttonData and buttonData.hideWhileAuraNotActive == true then
+    if buttonData and (buttonData.hideWhileAuraNotActive == true
+        or buttonData.hideWhileAuraActive == true) then
         return 0
     end
     return self.DIM_FALLBACK_ALPHA

@@ -242,6 +242,7 @@ local defaults = {
                         cooldownPressFlashDuration = 0.25,
                         cooldownPressFlashCombatOnly = false,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
+                        barAuraMissingColor = {0.6, 0.15, 0.15, 1.0}, -- Show Only While Inactive bars
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
                         barAuraEffectSize = 8,
@@ -424,6 +425,7 @@ local defaults = {
             cooldownPressFlashDuration = 0.25,
             cooldownPressFlashCombatOnly = false,
             barAuraColor = {0.2, 1.0, 0.2, 1.0},
+            barAuraMissingColor = {0.6, 0.15, 0.15, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
             barAuraEffectSize = 8,
@@ -1235,6 +1237,13 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },
+    -- The full bar a Show Only While Inactive entry draws while its aura is
+    -- missing. Read only in that mode: Normal and Dim keep their resting bar.
+    auraMissingBarColor = {
+        label = "Missing Bar Color",
+        keys = {"barAuraMissingColor"},
+        modes = {bars = true},
+    },
     barIcon = {
         label = "Bar Icon",
         keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
@@ -1304,7 +1313,7 @@ ST.OVERRIDE_SECTION_ORDER = {
     -- "pandemic" spans both display modes (like auraText above), so it sits in
     -- the icons run rather than being listed twice.
     "lossOfControl", "unusableDimming", "iconTint", "iconZoom", "assistedHighlight", "procGlow", "auraIndicator", "missingAuraIndicator", "pandemic", "readyGlow", "keyPressHighlight", "cooldownPressFlash",
-    "barThickness", "barShape", "barIcon", "barActiveAura", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
+    "barThickness", "barShape", "barIcon", "barActiveAura", "auraMissingBarColor", "barColor", "barCooldownColor", "barChargeColor", "barCharges", "barBgColor", "barNameText", "barReadyText",
 }
 
 -- Completeness backstop: a section added to ST.OVERRIDE_SECTIONS but
@@ -1331,6 +1340,7 @@ end
 
 ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
     missingAuraIndicator = true,
+    auraMissingBarColor = true,
     barCharges = true,
     auraText = true,
     auraStackText = true,
@@ -1350,6 +1360,7 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
 -- may drop stored overrides for these sections just as it does above.
 ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     missingAuraIndicator = true,
+    auraMissingBarColor = true,
     barCharges = true,
     cooldownPressFlash = true,
 }
@@ -1428,6 +1439,7 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 -- section, so ResolveBarAuraFillColor stays on their barAuraColor.
 ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS = {
     missingAuraIndicator = true,
+    auraMissingBarColor = true,
     keybindText = true,
     barColor = true,
     barCooldownColor = true,
@@ -1554,7 +1566,7 @@ ST.PANEL_COPY_SCOPES = {
             -- as part of the one section.
             sections = {
                 "barActiveAura", "pandemic", "showGCDSwipe", "desaturation",
-                "auraMissingDesaturation", "missingAuraIndicator", "unusableDimming", "showOutOfRange",
+                "auraMissingDesaturation", "missingAuraIndicator", "auraMissingBarColor", "unusableDimming", "showOutOfRange",
                 "lossOfControl", "showTooltips",
             },
             styleKeys = {
@@ -1620,6 +1632,7 @@ end
 ST.ASSISTANT_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     auraText = true, auraStackText = true, auraDurationSwipe = true,
     auraIndicator = true, auraMissingDesaturation = true, missingAuraIndicator = true,
+    auraMissingBarColor = true,
     pandemic = true, barActiveAura = true, barCharges = true,
     assistedHighlight = true, procGlow = true, readyGlow = true,
     keyPressHighlight = true, cooldownPressFlash = true,

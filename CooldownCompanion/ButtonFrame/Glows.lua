@@ -1547,8 +1547,10 @@ local function NormalizeKitGlowStyle(style)
     return "pulse"
 end
 
-local function BuildKitGlowRegions(parent, withCdm, auraOwned)
-    local host = CreateFrame("Frame", nil, parent)
+-- `template` lets a presence window (AuraDisplay.lua) build the host with
+-- DisableUntrustedLayoutScriptsTemplate; the kit's other parts are regions.
+local function BuildKitGlowRegions(parent, withCdm, auraOwned, template)
+    local host = CreateFrame("Frame", nil, parent, template)
     host:EnableMouse(false)
     host:SetAlpha(0)
 
