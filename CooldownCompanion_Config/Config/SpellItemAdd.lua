@@ -530,7 +530,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
             elseif reason == "target-aura" then
                 PrintCannotTrackAsAura(spellName)
             elseif reason == "aura-unsupported" then
-                PrintAuraPanelUnsupported(request.groupId)
+                PrintAuraPanelUnsupported()
             elseif detail then
                 CooldownCompanion:Print(detail)
             end

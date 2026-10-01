@@ -65,10 +65,14 @@ function I.AuraList(group)
     return list
 end
 
+-- On the per-update path: a flag scan only (past slot one an aura is in the
+-- list exactly when flagged).
 function I.IsMultiAura(group)
     if not I.IsAura(group) then return false end
-    for index = 2, #group.buttons do
-        if IsListedAura(group, group.buttons[index]) then return true end
+    local buttons = group.buttons
+    for index = 2, #buttons do
+        local entry = buttons[index]
+        if entry.indicatorAuraListed == true and entry.addedAs == "aura" then return true end
     end
     return false
 end
@@ -80,10 +84,13 @@ end
 I.AURA_MATCH_LABELS = {all="All", any="Any"}
 I.AURA_MATCH_ORDER = {"all", "any"}
 
-function I.AuraMatch(group)
-    if not I.IsMultiAura(group) then return nil end
+local function SavedMatch(group)
     local match = I.Settings(group).auraMatch
     return I.AURA_MATCH_LABELS[match] and match or "all"
+end
+
+function I.AuraMatch(group)
+    return I.IsMultiAura(group) and SavedMatch(group) or nil
 end
 
 -- An aura in a list shows its Indicator while active, or while missing.
@@ -103,7 +110,7 @@ end
 -- How the presence trackers combine: the list's Match, "all" for a lone
 -- aura While Missing (all of one), nil for a native aura.
 function I.PresenceMatch(group)
-    if I.IsMultiAura(group) then return I.AuraMatch(group) end
+    if I.IsMultiAura(group) then return SavedMatch(group) end
     if I.ShowsWhileMissing(group) then return "all" end
 end
 
@@ -213,8 +220,8 @@ function I.StackRuleLabel(compare, count)
     return label and label:format(count or 0) or "While Active"
 end
 
--- The aura row's When as text: the list's Show When, While Missing, a stack
--- rule, or While Active.
+-- The main aura row's When as text: While Missing, a stack rule, or While
+-- Active (in a list, its own While Active / While Missing).
 function I.AuraWhenLabel(group)
     if I.IsMultiAura(group) then return I.AuraEntryWhenLabel(I.Primary(group)) end
     if I.ShowsWhileMissing(group) then return "While Missing" end
@@ -635,8 +642,8 @@ function I.OnSourceAdded(group, entry)
     if auraArrives or firstSource then
         AdaptEffects(settings, SourceEffectFamily(group, entry), notes)
     end
-    -- Another aura joins the list: it has no rules of its own (the list's
-    -- Show When decides), and its old When stays behind.
+    -- Another aura joins the list: no spell rules of its own; its When
+    -- restarts on the main aura's side and Match combines them.
     if indicator and entry.addedAs == "aura" and I.IsAura(group) and I.Primary(group) ~= entry then
         -- Unflagged first, so the reshape sees the list it is growing.
         entry.indicatorAuraListed = nil
@@ -778,8 +785,9 @@ function I.SetAuraEntryWhen(group, entry, value)
 end
 
 -- Auras can arrive at any time: the first becomes the display
--- (OnSourceAdded), later ones join its list. Every aura in a list shares one
--- unit, and none twice. Spell and item sources are checked by their rules.
+-- (OnSourceAdded), later ones join its list, each on its own unit, never
+-- twice and never group-tracked. Spell and item sources are checked by their
+-- rules.
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
     local entries = entry and (entry[1] and entry or {entry}) or {}
@@ -864,6 +872,8 @@ function I.ClearSource(group)
     I.Effects(group)
     group.buttons = {}
     settings.tracking = "conditions"
+    -- A later list starts on All, not on this one's Match.
+    settings.auraMatch = nil
 end
 
 -- A condition source that could take over slot one. A migrated Trigger row
@@ -929,7 +939,7 @@ function I.PromoteSource(group, entry)
 end
 
 -- Another aura in the list takes slot one: its icon and name show on the
--- display. The list and its Show When are unchanged.
+-- display. The list, its Match and every aura's When are unchanged.
 function I.PromoteAura(group, entry)
     local index = IndexOf(group, entry)
     if not index or index == 1 or not I.IsListedAura(group, entry) then return false end
@@ -986,8 +996,8 @@ function I.RemoveSource(group, entry)
     local index = IndexOf(group, entry)
     if not index then return false end
     local notice
-    -- An aura leaving a list: the next aura takes over the display, and a
-    -- list of one hands its Show When back to that aura.
+    -- An aura leaving a list: the next aura takes over the display; a list
+    -- of one drops Match and the aura keeps its own When.
     if I.IsListedAura(group, entry) and I.IsMultiAura(group) then
         local notes = {}
         local nextAura = index == 1 and I.AuraList(group)[2] or nil

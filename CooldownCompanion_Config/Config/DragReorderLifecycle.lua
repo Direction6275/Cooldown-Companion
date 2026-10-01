@@ -371,13 +371,8 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     -- takes no membership with it, or it would silently join whatever section
     -- the destination happens to keep at that anchor -- and the anchor it just
     -- vacated goes with it if it was the last member there.
-    ST.DetachEntryFromPanelSection(sourceGroup, buttonData)
     ST.DetachEntryBarPlacement(buttonData)
-    local leaving = ST.Indicator.SourcesLeaving(sourceGroup)
-    table.remove(sourceGroup.buttons, sourceIndex)
-    -- The Indicator left behind adapts its aura list and effects.
-    local leftNotice = ST.Indicator.SourcesLeft(sourceGroup, leaving)
-    if leftNotice then CooldownCompanion:Print(leftNotice) end
+    CooldownCompanion:RemoveEntriesFromGroup(sourceGroup, {sourceIndex})
     -- Resolve "append" targets (nil targetIndex = after last button)
     if not targetIndex then
         targetIndex = #targetGroup.buttons + 1

@@ -636,14 +636,7 @@ local function DeleteEntrySelection(snapshot)
     if rejectMessage then CooldownCompanion:Print(rejectMessage); return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
-    local leaving = ST.Indicator.SourcesLeaving(snapshot.group)
-    for i = #snapshot.indices, 1, -1 do
-        ST.DetachEntryFromPanelSection(snapshot.group, snapshot.entries[i])
-        table.remove(snapshot.group.buttons, snapshot.indices[i])
-    end
-    -- An Indicator's aura list and effects follow the entries that left.
-    local leftNotice = ST.Indicator.SourcesLeft(snapshot.group, leaving)
-    if leftNotice then CooldownCompanion:Print(leftNotice) end
+    CooldownCompanion:RemoveEntriesFromGroup(snapshot.group, snapshot.indices)
     -- Detach already dissolves the sections these entries vacated. Leave
     -- unrelated empty template sections waiting for their first members.
     SelectEntryActionResults(snapshot.groupId, {})
@@ -680,15 +673,16 @@ local function MoveEntrySelection(snapshot, targetGroupId)
     end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
-    local leaving = ST.Indicator.SourcesLeaving(snapshot.group)
     local previousCount = #targetGroup.buttons
     local results = {}
+    -- Out of the source first (sections, and an Indicator's aura list and
+    -- effects, judged before the destination touches the entries).
+    CooldownCompanion:RemoveEntriesFromGroup(snapshot.group, snapshot.indices)
     for i, entry in ipairs(snapshot.entries) do
         if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
             CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entry)
         end
-        -- Section placement and aura keys belong to the panel being left.
-        ST.DetachEntryFromPanelSection(snapshot.group, entry)
+        -- Bar placement and aura keys belong to the panel being left.
         ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
@@ -702,12 +696,6 @@ local function MoveEntrySelection(snapshot, targetGroupId)
             if button == entry then results[i] = index; break end
         end
     end
-    for i = #snapshot.indices, 1, -1 do
-        table.remove(snapshot.group.buttons, snapshot.indices[i])
-    end
-    -- The Indicator left behind adapts its aura list and effects.
-    local leftNotice = ST.Indicator.SourcesLeft(snapshot.group, leaving)
-    if leftNotice then CooldownCompanion:Print(leftNotice) end
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     SelectEntryActionResults(targetGroupId, results)
     CooldownCompanion:RefreshGroupFrame(targetGroupId)

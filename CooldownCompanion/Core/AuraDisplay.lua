@@ -3404,8 +3404,11 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
     -- A design with no drawable artwork has no cell: stay dark, never guess.
     -- Token refreshes honor the same gate (RefreshSlotIdentityVisibility).
     record.presenceReady = width ~= nil
-    record.identityApplicable = record.picture and CanApplySpellIdentityFilter(unit)
-        or Presence.IdentityApplicable(record)
+    if record.picture then
+        record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    else
+        record.identityApplicable = Presence.IdentityApplicable(record)
+    end
     SetIdentityVisibility(record, record.presenceReady and record.identityApplicable)
     button._auraSlotHostToken = buttonData
     if record.picture then

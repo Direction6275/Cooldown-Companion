@@ -465,7 +465,10 @@ end
 local AURA_ENTRY_WHEN_LIST = {active="While Active", missing="While Missing"}
 local function AddListedAuraWhen(column, group, entry, changed)
     local current = I.AuraWantsActive(entry) and "active" or "missing"
-    Dropdown(column, {setting=whenToShow.auraEntryWhen, indent=true, list=AURA_ENTRY_WHEN_LIST,
+    -- The Finder row lands on the main aura's When, at the top of the list;
+    -- one descriptor can address one widget.
+    Dropdown(column, {setting=entry == I.Primary(group) and whenToShow.auraEntryWhen or nil,
+        label="When", indent=true, list=AURA_ENTRY_WHEN_LIST,
         order={"active", "missing"}, value=current,
         tooltip={"When", {"While Active counts this aura while it is on; While Missing while it is off.", 1, 1, 1, true}},
         onChange=function(value)
