@@ -1897,7 +1897,7 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
     -- lands on the row that replaced them.
     auraInactive = {
         label = "Aura Visibility",
-        aliases = { "while aura inactive", "show only while aura active", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
+        aliases = { "while aura inactive", "show only while aura active", "show while active", "show while inactive", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
         applies = EntryVisibilityApplies(function(state) return state.auraPair end),
     },
     cooldownVisibility = {
@@ -2542,7 +2542,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- pair as well as the row families below.
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel then
-        -- Show Only While Inactive has no group-tracked form yet (that needs a
+        -- Show While Inactive has no group-tracked form yet (that needs a
         -- tracker per group member), so it is offered only while no selected
         -- entry tracks a group. A stored one always shows, so it can be left.
         local function NotGroupTracked(bd) return bd.auraTrackGroup ~= true end
@@ -2554,10 +2554,10 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         else
             offerMissing = NotGroupTracked(buttonData) or buttonData.hideWhileAuraActive == true
         end
-        local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show Only While Active" }
+        local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show While Active" }
         local auraOrder = { "show", "dim", "hide" }
         if offerMissing then
-            auraList.missing = "Show Only While Inactive"
+            auraList.missing = "Show While Inactive"
             auraOrder[#auraOrder + 1] = "missing"
         end
         -- Visibility is independent of missing-aura effects.
@@ -2574,9 +2574,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     return "show"
                 end,
                 tooltip = BuildVisibilityModeTooltip("Aura Visibility", {
-                    {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show Only While Active hides it.", 1, 1, 1, true},
+                    {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show While Active hides it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
-                    {"Show Only While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target.", 1, 1, 1, true},
+                    {"Show While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
                     {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
                 }, true),

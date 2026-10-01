@@ -533,7 +533,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- A stored flag offers the choice regardless of the gate (same escape the
     -- pet side and the custom bar twin have): the runtime binds group tokens
     -- off the flag alone, so the row has to state it and give it a way out.
-    -- Show Only While Inactive has no group-tracked form yet (Aura
+    -- Show While Inactive has no group-tracked form yet (Aura
     -- Visibility), so the pair is never offered together.
     local offerGroup = (canTrackGroup and buttonData.hideWhileAuraActive ~= true)
         or buttonData.auraTrackGroup == true

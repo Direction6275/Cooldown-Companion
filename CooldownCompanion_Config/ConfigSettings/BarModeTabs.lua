@@ -209,7 +209,7 @@ local function BarsGroupTracksAura(group)
     return GroupHasAuraTrackingEntry(group)
 end
 
--- Missing Bar Color paints only Show Only While Inactive entries, so its row
+-- Missing Bar Color paints only Show While Inactive entries, so its row
 -- appears once the panel has one.
 local function BarsGroupHasMissingPicture(group)
     for _, entry in ipairs(group and group.buttons or {}) do
@@ -1713,7 +1713,7 @@ local function BuildBarEffectsTab(container, group, style)
             settings = BAR_FINDER.advanced.missingIndicator, infoButtons = tabInfoButtons,
         })
     end
-    -- The full bar a Show Only While Inactive entry draws while its aura is
+    -- The full bar a Show While Inactive entry draws while its aura is
     -- missing, with the other missing-aura looks.
     if auraRight and BarsGroupHasMissingPicture(group)
         and CanGroupUseOverrideSection(group, "auraMissingBarColor") then
@@ -1728,7 +1728,7 @@ local function BuildBarEffectsTab(container, group, style)
         })
         AnchorRowBadge(missingBarRow, CreateInfoButton(missingBarRow.frame, missingBarRow.frame, "LEFT", "LEFT", 0, 0, {
             "Missing Bar Color",
-            {"The full bar an entry set to Show Only While Inactive shows while its aura is missing.", 1, 1, 1, true},
+            {"The full bar an entry set to Show While Inactive shows while its aura is missing.", 1, 1, 1, true},
         }, tabInfoButtons))
         missingBarSec:Chrome(missingBarRow)
     end
@@ -2415,7 +2415,7 @@ if ST._DefineSettingRoute then
             end },
         active = { label = "Show Active Aura Indicator", sectionId = "barActiveAura" },
         missingBarColor = { label = "Missing Bar Color", sectionId = "auraMissingBarColor",
-            aliases = { "show only while inactive", "missing bar" },
+            aliases = { "show while inactive", "missing bar" },
             applies = function(context)
                 return BarsGroupHasMissingPicture(context.group)
                     and BarFinderCanUse(context, "auraMissingBarColor")

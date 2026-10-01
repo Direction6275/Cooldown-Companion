@@ -242,7 +242,7 @@ local defaults = {
                         cooldownPressFlashDuration = 0.25,
                         cooldownPressFlashCombatOnly = false,
                         barAuraColor = {0.2, 1.0, 0.2, 1.0},
-                        barAuraMissingColor = {0.6, 0.15, 0.15, 1.0}, -- Show Only While Inactive bars
+                        barAuraMissingColor = {0.6, 0.15, 0.15, 1.0}, -- Show While Inactive bars
                         barAuraEffect = "color",
                         barAuraEffectColor = {1, 0.84, 0, 0.9},
                         barAuraEffectSize = 8,
@@ -1237,7 +1237,7 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },
-    -- The full bar a Show Only While Inactive entry draws while its aura is
+    -- The full bar a Show While Inactive entry draws while its aura is
     -- missing. Read only in that mode: Normal and Dim keep their resting bar.
     auraMissingBarColor = {
         label = "Missing Bar Color",

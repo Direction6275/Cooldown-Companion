@@ -82,11 +82,11 @@ local BAR_PREVIEW_REASON_DEFS = {
     { key = "aura-inactive", label = "Aura inactive",
         rule = function(buttonData)
             return "Aura Visibility: " .. (buttonData.auraShellDim
-                and "Dim While Inactive" or "Show Only While Active")
+                and "Dim While Inactive" or "Show While Active")
         end,
         fallback = "auraShellDim" },
     { key = "aura-active", label = "Aura active",
-        rule = "Aura Visibility: Show Only While Inactive" },
+        rule = "Aura Visibility: Show While Inactive" },
     -- The cooldown labels are the dropdown's own (ST._COOLDOWN_VISIBILITY,
     -- Helpers.lua), so the preview can never name a choice the tab does not.
     { key = "on-cooldown", label = "On cooldown",
@@ -279,7 +279,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     -- is inactive; the dim key selects dimmed instead of hidden below. The
     -- predicate is the runtime's own so the mirror cannot disagree with what
     -- the panel will actually draw.
-    -- Show Only While Inactive is the mirror image: its picture shows only
+    -- Show While Inactive is the mirror image: its picture shows only
     -- while the aura is missing.
     if isAuraEntry and buttonData.hideWhileAuraActive == true then
         if auraActive then activeReasons["aura-active"] = true end

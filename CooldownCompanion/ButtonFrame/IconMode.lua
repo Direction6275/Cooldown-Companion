@@ -535,7 +535,7 @@ local function ApplyAuraShellVisuals(button, buttonData)
     SetGlowContainerShellAlpha(button.readyGlow, alpha)
     SetGlowContainerShellAlpha(button.keyPressHighlight, alpha)
     SetGlowContainerShellAlpha(button.assistedHighlight, alpha)
-    -- Show Only While Inactive: the still picture stands in for the hidden
+    -- Show While Inactive: the still picture stands in for the hidden
     -- shell, and steps aside whenever an unlock exposes the real button.
     if ST._SyncMissingPictureAlpha then ST._SyncMissingPictureAlpha(button, alpha) end
 end

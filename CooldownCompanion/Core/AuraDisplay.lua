@@ -387,7 +387,7 @@ local function EnsureTargetWatcher()
 end
 
 -- Two reminders share one rule: the ordinary one under the native slot, and
--- the one Show Only While Inactive draws on its still picture (Picture.Style),
+-- the one Show While Inactive draws on its still picture (Picture.Style),
 -- whose own window decides when it can be seen, so only the first follows
 -- the shell's alpha.
 local function UpdateMissingReminderVisibility(button, inCombat)
@@ -1731,7 +1731,7 @@ end
 -- (pixel-identical to the CC shell). Bars carry two chrome sets, the bar ring
 -- and the icon square's own background/border, so bar shells style the second
 -- replica set too. Shared by the active display kit (shell entries) and the
--- Show Only While Inactive picture; `chrome` carries bg, border, iconBg and
+-- Show While Inactive picture; `chrome` carries bg, border, iconBg and
 -- iconBorder.
 local ShellChrome = {}
 
@@ -2597,10 +2597,10 @@ end
 local PRESENCE_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
 
 -- Record kinds built on a presence tracker: an Indicator's While Missing
--- display, and a panel entry's Show Only While Inactive picture.
+-- display, and a panel entry's Show While Inactive picture.
 local PRESENCE_KINDS = { presence = true, missingPicture = true }
 
--- Show Only While Inactive pictures (below). One table: this file sits at
+-- Show While Inactive pictures (below). One table: this file sits at
 -- Lua's 200-local ceiling.
 local Picture = {
     -- The picture sits this far inside its cell on every side, so the ~1px
@@ -2608,7 +2608,7 @@ local Picture = {
     PAD = 2,
 }
 
--- Show Only While Inactive (panel icon and bar entries): a still picture of
+-- Show While Inactive (panel icon and bar entries): a still picture of
 -- the entry, drawn only while the aura is missing. The CC button underneath is
 -- a hidden shell (Aura.lua) and no native display is bound, so nothing shows
 -- while the aura is up. Every region anchors to the CC button's own frames
@@ -5046,7 +5046,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     and buttonData == ST.Indicator.Primary(group)
                     and buttonData.enabled ~= false
                     and not buttonData.auraTrackGroup
-                -- Show Only While Inactive: a presence tracker uncovers the
+                -- Show While Inactive: a presence tracker uncovers the
                 -- entry's still picture, and no native display is bound. A
                 -- group-tracked entry has no presence form yet and stays dark.
                 local missingPicture = standardAura and buttonData.hideWhileAuraActive == true

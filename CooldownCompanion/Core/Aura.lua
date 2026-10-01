@@ -1198,7 +1198,7 @@ function CooldownCompanion:IsAuraShellEntry(buttonData)
         or buttonData.hideWhileAuraActive == true
 end
 
--- Show Only While Inactive. Group tracking has no presence form yet, so a
+-- Show While Inactive. Group tracking has no presence form yet, so a
 -- group-tracked entry carrying the key stays a dark shell (fails closed) and
 -- the config does not offer the pair together. The panel half of the gate
 -- (icons/bars, not an Aura Panel or Aura Only Section) is the caller's: the
