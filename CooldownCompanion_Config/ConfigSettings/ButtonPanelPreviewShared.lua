@@ -82,9 +82,13 @@ local BAR_PREVIEW_REASON_DEFS = {
     { key = "aura-inactive", label = "Aura inactive",
         rule = function(buttonData)
             return "Aura Visibility: " .. (buttonData.auraShellDim
-                and "Dim While Inactive" or "Show Only While Active")
+                and "Dim While Inactive" or "Show While Active")
         end,
         fallback = "auraShellDim" },
+    { key = "aura-active", label = "Aura active",
+        rule = "Aura Visibility: Show While Inactive" },
+    { key = "inactive-group", label = "Group tracking",
+        rule = "Show While Inactive doesn't work with group tracking yet" },
     -- The cooldown labels are the dropdown's own (ST._COOLDOWN_VISIBILITY,
     -- Helpers.lua), so the preview can never name a choice the tab does not.
     { key = "on-cooldown", label = "On cooldown",
@@ -277,7 +281,16 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     -- is inactive; the dim key selects dimmed instead of hidden below. The
     -- predicate is the runtime's own so the mirror cannot disagree with what
     -- the panel will actually draw.
-    if isAuraEntry and not auraActive
+    -- Show While Inactive is the mirror image: its picture shows only
+    -- while the aura is missing.
+    if isAuraEntry and CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing" then
+        -- A group-tracked one has no presence form yet and stays dark.
+        if not CooldownCompanion:IsMissingPictureEntry(buttonData) then
+            activeReasons["inactive-group"] = true
+        elseif auraActive then
+            activeReasons["aura-active"] = true
+        end
+    elseif isAuraEntry and not auraActive
         and CooldownCompanion:IsAuraShellEntry(buttonData) then
         activeReasons["aura-inactive"] = true
     end
@@ -1002,7 +1015,8 @@ local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
         and not ST.IsCollapsingAttachedBar(group, buttonData)
         and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and buttonData.hideWhileAuraNotActive == true
+        and (buttonData.hideWhileAuraNotActive == true
+            or CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing")
 end
 
 -- Entry status signals shared with the workspace entry-row presentation.

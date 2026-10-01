@@ -457,6 +457,8 @@ local function ApplyBarAuraShellVisuals(button, buttonData)
     if button.barTextFrame then button.barTextFrame:SetAlpha(alpha) end
     if button.barNameFrame then button.barNameFrame:SetAlpha(alpha) end
     if button.iconGCDCooldown then button.iconGCDCooldown:SetAlpha(alpha) end
+    -- Show While Inactive picture: see IconMode's ApplyAuraShellVisuals.
+    if ST._SyncMissingPictureAlpha then ST._SyncMissingPictureAlpha(button, alpha) end
 end
 
 -- True-widget stack rendering (tracker C2): a standalone aura entry in

@@ -533,7 +533,11 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- A stored flag offers the choice regardless of the gate (same escape the
     -- pet side and the custom bar twin have): the runtime binds group tokens
     -- off the flag alone, so the row has to state it and give it a way out.
-    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
+    -- Show While Inactive has no group-tracked form yet (Aura
+    -- Visibility), so the pair is never offered together.
+    local offerGroup = (canTrackGroup
+            and CooldownCompanion:GetAuraVisibilityMode(buttonData) ~= "missing")
+        or buttonData.auraTrackGroup == true
     -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
     -- entries can follow pet self-buffs without a separate castable spell, and
     -- a harmful base spell applying a helpful pet aura is also valid (Barbed

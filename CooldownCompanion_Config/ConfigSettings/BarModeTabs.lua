@@ -209,6 +209,23 @@ local function BarsGroupTracksAura(group)
     return GroupHasAuraTrackingEntry(group)
 end
 
+-- Missing Bar Color paints only Show While Inactive entries, so its row
+-- appears once the panel has one, or for a selected entry, only when that
+-- entry is one.
+local function BarsGroupHasMissingPicture(group)
+    for _, entry in ipairs(group and group.buttons or {}) do
+        if CooldownCompanion:IsMissingPictureEntry(entry) then return true end
+    end
+    return false
+end
+
+local function BarsLensHasMissingPicture(lens, group)
+    if lens and lens.mode == "entry" and lens.buttonData then
+        return CooldownCompanion:IsMissingPictureEntry(lens.buttonData)
+    end
+    return BarsGroupHasMissingPicture(group)
+end
+
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
 -- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
 -- Duration Format remains a shared row in the duration options; time placement
@@ -387,6 +404,14 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = function(group, style)
             return BarsIconShown(group, style) and BarsGroupTracksAura(group)
+        end,
+    },
+    -- Beside the other missing-aura looks, and not icon-bound: it is the bar.
+    auraMissingBarColor = {
+        tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
+        -- The row's own gate, read through the current selection.
+        available = function(group)
+            return BarsLensHasMissingPicture(ResolveStyleLens(group), group)
         end,
     },
     unusableDimming = {
@@ -1699,6 +1724,25 @@ local function BuildBarEffectsTab(container, group, style)
             settings = BAR_FINDER.advanced.missingIndicator, infoButtons = tabInfoButtons,
         })
     end
+    -- The full bar a Show While Inactive entry draws while its aura is
+    -- missing, with the other missing-aura looks.
+    if auraRight and BarsLensHasMissingPicture(lens, group)
+        and CanGroupUseOverrideSection(group, "auraMissingBarColor") then
+        local missingBarSec = BeginLensSection(lens, group, "auraMissingBarColor")
+        local missingBarRow = AddColorRow(auraRight, {
+            label = "Missing Bar Color",
+            setting = BAR_FINDER.effects.aura.missingBarColor,
+            tbl = missingBarSec.tbl, key = "barAuraMissingColor",
+            default = {0.6, 0.15, 0.15, 1.0}, hasAlpha = true,
+            disabled = missingBarSec.disabled,
+            onConfirm = refreshStyle,
+        })
+        AnchorRowBadge(missingBarRow, CreateInfoButton(missingBarRow.frame, missingBarRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Missing Bar Color",
+            {"The full bar an entry set to Show While Inactive shows while its aura is missing.", 1, 1, 1, true},
+        }, tabInfoButtons))
+        missingBarSec:Chrome(missingBarRow)
+    end
 
     -- ---------------------------------------------------------------
     -- Pandemic
@@ -2381,6 +2425,12 @@ if ST._DefineSettingRoute then
                 return BarFinderIconShown(context) and BarFinderCanUse(context, "missingAuraIndicator")
             end },
         active = { label = "Show Active Aura Indicator", sectionId = "barActiveAura" },
+        missingBarColor = { label = "Missing Bar Color", sectionId = "auraMissingBarColor",
+            aliases = { "show while inactive", "missing bar" },
+            applies = function(context)
+                return BarsLensHasMissingPicture(BarFinderLens(context), context.group)
+                    and BarFinderCanUse(context, "auraMissingBarColor")
+            end },
         missing = {
             label = "Desaturate While Aura Missing", sectionId = "auraMissingDesaturation",
             applies = function(context)
