@@ -93,10 +93,11 @@ local function GetTriggerPanelEffectStore(group)
     return CooldownCompanion:GetTriggerPanelEffectSettings(group, true)
 end
 
--- The effect Text Only cannot run: Color Shift for aura sources (the native
--- renderer tints artwork only), Shrink / Expand for condition sources.
+-- The effect Text Only cannot run: Color Shift for native aura sources (the
+-- renderer tints artwork only), Shrink / Expand for everything CC draws
+-- (spell, item and While Missing).
 local function TextOnlyUnavailableEffect(group)
-    return ST.Indicator.IsAura(group) and "colorShift" or "shrinkExpand"
+    return ST.Indicator.IsNativeAura(group) and "colorShift" or "shrinkExpand"
 end
 
 
@@ -265,9 +266,16 @@ local function GetStandaloneTextureSelectionLabel(group, settings)
     return settings.label or tostring(settings.sourceValue)
 end
 
+-- Native aura kits restyle only through a rebind; a While Missing tracker's
+-- cell follows the saved design size the same way.
+local function NeedsAuraRestyle(group, buttonData)
+    return CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+        or ST.Indicator.ShowsWhileMissing(group)
+end
+
 local function RequestTexturePanelAuraRestyle(group, groupId)
     local buttonData = group and group.buttons and group.buttons[1] or nil
-    if CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData) then
+    if NeedsAuraRestyle(group, buttonData) then
         CooldownCompanion:RequestAuraRebind("style", groupId)
     end
 end
@@ -301,7 +309,7 @@ end
 -- overwriting the pending id costs nothing: either id flushes both.
 local function ThrottleTexturePanelAuraRestyle(group, groupId)
     local buttonData = group and group.buttons and group.buttons[1] or nil
-    if not (groupId and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)) then
+    if not (groupId and NeedsAuraRestyle(group, buttonData)) then
         return
     end
     local alreadyArmed = pendingTextureAuraRestyleGroupId ~= nil
@@ -627,10 +635,12 @@ end
 -- Indicator Effects tab below, so it was converted outright rather than
 -- growing an opts.row mode. `container` is the grid column the row belongs to.
 --
--- Aura sources draw the same rows without Animate When and Only In Combat:
--- their effects always run while Blizzard shows the aura, since nothing in the
--- aura slot may start or stop once bound. Their edits reach the native kit
--- only through an aura restyle.
+-- Native aura sources draw the same rows without Animate When and Only In
+-- Combat: their effects always run while Blizzard shows the aura, since
+-- nothing in the aura slot may start or stop once bound, and their edits
+-- reach the native kit only through an aura restyle. While Missing keeps Only
+-- In Combat (CC draws it) but never Animate When, which the store drops on
+-- read (Indicator.NormalizeEffectsForFamily).
 local function BuildTriggerPanelEffectSection(container, group, effects, effectKey)
     local config = effects and effects[effectKey]
     local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
@@ -638,7 +648,10 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
     if not config or not def then
         return
     end
-    local auraSource = ST.Indicator.IsAura(group)
+    local auraSource = ST.Indicator.IsNativeAura(group)
+    -- While Missing is drawn by CC: it keeps Only In Combat, but Animate When
+    -- would follow the aura entry's own spell state, so the row is hidden.
+    local missingSource = ST.Indicator.ShowsWhileMissing(group)
     -- An aura effect runs as Always outside combat too. Enabling one clears
     -- any rule it kept from a condition source, which it could not run and
     -- would otherwise refuse to copy with no visible control to fix it.
@@ -671,6 +684,7 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
     -- both rows go straight onto the panel scroll.
     local function BuildTriggerEffectAdvanced(panel)
         if not auraSource then
+        if not missingSource then
         AddDropdownRow(panel, {
             label = "Animate When",
             list = {always="Indicator Is Shown",proc="Proc Active",ready="Ready",unusable="Unusable",aura="Aura (Unavailable)"},
@@ -681,6 +695,7 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
             end,
         })
+        end -- not missingSource
         AddCheckboxRow(panel, {label="Only In Combat", setting=finder and finder.combatOnly, value=config.combatOnly == true,
             onChange=function(value)
                 config.combatOnly=value
@@ -1193,9 +1208,13 @@ local function SpecialFinderTriggerEffectOffered(context, effectKey)
     return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderTriggerDisplayType(context) ~= "text"
 end
 
--- Animate When and Only In Combat: condition sources only.
+-- Only In Combat: everything CC draws (not native auras). Animate When also
+-- leaves While Missing, which has no spell state of its own to follow.
 local function SpecialFinderConditionEffect(context)
-    return not ST.Indicator.IsAura(context.group)
+    return not ST.Indicator.IsNativeAura(context.group)
+end
+local function SpecialFinderActivationEffect(context)
+    return ST.Indicator.EffectFamily(context.group) == "conditions"
 end
 
 if ST._DefineSettingRoute then
@@ -1264,7 +1283,7 @@ if ST._DefineSettingRoute then
             applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
         })
         finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
-        finder.activation = advanced:Setting({key="activation",label="Animate When",applies=SpecialFinderConditionEffect})
+        finder.activation = advanced:Setting({key="activation",label="Animate When",applies=SpecialFinderActivationEffect})
         finder.combatOnly = advanced:Setting({key="combatOnly",label="Only In Combat",applies=SpecialFinderConditionEffect})
         if key == "colorShift" then
             finder.shiftColor = advanced:Setting({ key = "color", label = "Shift Color" })

@@ -6,16 +6,21 @@ local WHITE = {1, 1, 1, 1}
 local READOUT_KEYS = {"label", "timer", "count"}
 local STYLE_SECTIONS = {"signal", "text", "readouts", "progress"}
 
+-- A host may name a frame template for every frame built under it: the While
+-- Missing display sits inside a window anchored to Blizzard's aura tracker,
+-- and Blizzard never passes that layout restriction down implicitly
+-- (ForbiddenAspectTemplates.xml), so each frame must carry it from creation.
 function I.CreateVisual(host, nativeSlot)
     if host.indicatorReadouts then return end
     Addon.EnsureTriggerIconVisual(host)
     Addon.EnsureTriggerTextVisual(host)
-    local root = CreateFrame("Frame", nil, host.visualRoot)
+    local template = host._ccFrameTemplate
+    local root = CreateFrame("Frame", nil, host.visualRoot, template)
     root:SetAllPoints(host.visualRoot)
     root:EnableMouse(false)
     local readouts = {root = root, frames = {}}
     for _, key in ipairs(READOUT_KEYS) do
-        local wrapper = CreateFrame("Frame", nil, root)
+        local wrapper = CreateFrame("Frame", nil, root, template)
         wrapper:SetAllPoints(root)
         wrapper:SetAlpha(0)
         readouts.frames[key] = wrapper
@@ -23,18 +28,18 @@ function I.CreateVisual(host, nativeSlot)
     end
     host.indicatorReadouts = readouts
 
-    local bar = CreateFrame("StatusBar", nil, host.visualRoot)
+    local bar = CreateFrame("StatusBar", nil, host.visualRoot, template)
     bar:SetAllPoints(host.visualRoot)
     bar:EnableMouse(false)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     local fill = bar:GetStatusBarTexture() -- Creation-time only; never read after registration.
     bar:SetAlpha(0)
-    local clip = CreateFrame("Frame", nil, host.visualRoot)
+    local clip = CreateFrame("Frame", nil, host.visualRoot, template)
     clip:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
     clip:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0, 0)
     clip:SetClipsChildren(true)
     clip:EnableMouse(false)
-    local artwork = CreateFrame("Frame", nil, clip)
+    local artwork = CreateFrame("Frame", nil, clip, template)
     artwork:SetAllPoints(host.visualRoot)
     artwork:EnableMouse(false)
     local foreground = {visualRoot = artwork,
@@ -76,7 +81,7 @@ function I.StylePandemicGlow(host, group, shown)
     if not glow then return end
     local settings = I.Settings(group)
     local pandemic = settings and settings.pandemic
-    local enabled = shown and I.IsAura(group) and settings.displayType ~= "text"
+    local enabled = shown and I.IsNativeAura(group) and settings.displayType ~= "text"
         and pandemic and pandemic.pandemicEffectEnabled == true or false
     ST._StyleKitPandemicGlowRegions(glow, pandemic, host.visualRoot, enabled)
 end
@@ -111,6 +116,8 @@ local function StyleReadouts(host, group, font, outline)
     local settings = I.Settings(group)
     local text, options = settings.text, settings.readouts
     local readouts = host.indicatorReadouts
+    -- While Missing has no timer or count to show: the aura is absent.
+    local missing = I.ShowsWhileMissing(group)
     readouts.root:Show()
     -- Text effects restore and shift each readout from its own color.
     local baseColors = host._indicatorReadoutColors or {}
@@ -130,14 +137,20 @@ local function StyleReadouts(host, group, font, outline)
         fs:SetJustifyH("CENTER")
         fs:SetWordWrap(false)
         local enabled = key == "label" and options.label ~= "none"
-            or key == "timer" and options.timer == true
-            or key == "count" and (I.IsAura(group) and options.count == "stacks"
+            or key == "timer" and options.timer == true and not missing
+            or key == "count" and not missing and (I.IsAura(group) and options.count == "stacks"
                 or not I.IsAura(group) and (options.count == "charges" or options.count == "item"))
         -- The native duration binding owns FontString alpha. A separate,
         -- unregistered wrapper owns the saved choice to show this readout.
         readouts.frames[key]:SetAlpha(enabled and 1 or 0)
     end
     readouts.label:SetText(I.Label(group))
+    if missing then
+        -- Once per restyle, not per update: nothing here ever changes.
+        Addon.UnbindDurationText(readouts.timer, true)
+        readouts.timer:SetText("")
+        readouts.count:SetText("")
+    end
 end
 
 function I.StyleVisual(host, group, icon, font, outline)
@@ -163,7 +176,8 @@ function I.StyleVisual(host, group, icon, font, outline)
         if not icon.manualIcon then return false end
         Addon.ApplyTriggerIconVisual(host, icon)
     elseif settings.displayType == "texture" then
-        local draining = settings.progress.enabled == true
+        -- Nothing drains while the aura is missing.
+        local draining = settings.progress.enabled == true and not I.ShowsWhileMissing(group)
         local dim = draining and (settings.progress.dimAlpha or 0.35) or 1
         host._indicatorDimAlpha = dim
         shown = ST._AT.LayoutTexturePieces(host, visual, geometry, alpha * dim)
@@ -244,7 +258,8 @@ local function RefreshRuntimeStyle(host, group, icon)
     -- A SharedMedia font registering late changes what a saved font name
     -- resolves to without changing any saved value.
     local fontGeneration = ST.FontMediaGeneration
-    local same = previous and previous.source == I.Primary(group)
+    local missing = I.ShowsWhileMissing(group)
+    local same = previous and previous.source == I.Primary(group) and previous.missing == missing
         and previous.fontGeneration == fontGeneration
         and previous.displayType == settings.displayType and previous.tracking == settings.tracking
         and previous.font == font and previous.outline == outline and previous.label == label
@@ -261,7 +276,7 @@ local function RefreshRuntimeStyle(host, group, icon)
     local shown, width, height = I.StyleVisual(host, group, icon, font, outline)
     if not shown then host._indicatorStyle = nil; return false end
     host:SetSize(width, height)
-    local snapshot = {source=I.Primary(group), displayType=settings.displayType, tracking=settings.tracking,
+    local snapshot = {source=I.Primary(group), missing=missing, displayType=settings.displayType, tracking=settings.tracking,
         font=font, outline=outline, label=label, borderMode=borderMode, borderInset=borderInset,
         fontGeneration=fontGeneration,
         assetType=assetType, assetValue=assetValue, icon=icon}
@@ -289,6 +304,9 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
         -- text, one stack or none shows nothing.
         local stacks = host._previewStacks
         readouts.count:SetText(options.count ~= "none" and (not stacks and "3" or stacks > 1 and tostring(stacks)) or "")
+    elseif I.ShowsWhileMissing(group) then
+        -- The aura is absent while this shows: no timer, count or drain.
+        -- StyleReadouts cleared them once; nothing to do per update.
     elseif not I.IsAura(group) then
         local duration = driver and (driver._chargeRecharging and driver._chargeDurationObj or driver._durationObj)
         local itemDuration = driver and driver._itemCdDuration or 0
@@ -354,15 +372,18 @@ function I.Render(host, driver, group, preview, fraction, effectsActive, resolve
     local settings = I.Settings(group)
     if not settings then return false end
     local icon = settings.displayType == "icon" and (resolvedIcon or I.IconSettings(group)) or nil
-    if not preview and not I.IsAura(group) then
+    -- Spell, item and While Missing Indicators are drawn here at runtime;
+    -- native auras draw in their slot and reach this only for previews.
+    local ccDrawn = not I.IsNativeAura(group)
+    if not preview and ccDrawn then
         if not RefreshRuntimeStyle(host, group, icon) then return false end
     else
         local shown, width, height = I.StyleVisual(host, group, icon)
         if not shown then return false end
         host:SetSize(width, height)
     end
-    I.UpdateReadouts(host, driver, group, (preview or I.IsAura(group)) and (fraction or 0.5) or nil)
-    if not I.IsAura(group) and not preview then
+    I.UpdateReadouts(host, driver, group, (preview or not ccDrawn) and (fraction or 0.5) or nil)
+    if ccDrawn and not preview then
         Addon:ApplyTriggerPanelEffects(host, driver, group, effectsActive == true)
     end
     return true
@@ -389,6 +410,15 @@ local function StackGateCell(group, width, height)
         reachY = math.max(reachY, math.abs(y) + size * 2)
     end
     return math.ceil(reachX * 2), math.ceil(reachY * 2)
+end
+
+-- The While Missing window's cell: the same generous box around the display,
+-- from saved settings only. Bounce travel is already inside its padding.
+function I.PresenceCell(group)
+    local visual = I.NativeSettings(group)
+    local geometry = visual and Addon:GetTexturePanelRenderGeometry(visual)
+    if not geometry then return end
+    return StackGateCell(group, geometry.boundsWidth, geometry.boundsHeight)
 end
 
 -- The stack rule on a native slot. Each stack moves the hidden bar's fill by

@@ -728,6 +728,9 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     end
     if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
+    -- Every Indicator footer row, so none lingers over another panel's preview.
+    if preview.indicatorStacks then preview.indicatorStacks.frame:Hide() end
+    if preview.indicatorAura then preview.indicatorAura.frame:Hide() end
     if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
