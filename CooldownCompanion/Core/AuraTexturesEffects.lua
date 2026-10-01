@@ -204,7 +204,9 @@ local function LayoutTexturePieces(host, settings, geometry, alpha)
 end
 
 local function SetTextureIndicatorBaseVisuals(host)
-    if not host then
+    -- An animated Color Shift owns the artwork's color while it plays; a
+    -- vertex-color write here would fight it. Stopping it restores the base.
+    if not host or host._ccColorShiftAnimating then
         return
     end
 
@@ -452,6 +454,81 @@ local function EnsureTextureIndicatorAnimation(host, effectType)
     return animData
 end
 
+-- Animated effects (hosts flagged _ccAnimatedEffects, the While Missing
+-- display). That display is drawn the whole time the aura is UP too, only
+-- clipped away, so a per-frame Lua script there runs for nothing most of the
+-- session. Bounce and Color Shift on artwork run as Blizzard AnimationGroups
+-- instead, the way the native aura kit runs them (BuildTexturePanelSlotKit):
+-- same period, same easing. Shrink / Expand and Text Only Color Shift keep
+-- the script (a Scale group distorts text and borders; text color has no
+-- animation type).
+local function SetAnimatedBounce(host, active, speed, amplitude)
+    local animData = host._textureIndicatorAnimations
+        and host._textureIndicatorAnimations[TEXTURE_INDICATOR_EFFECT_BOUNCE]
+    if not active then
+        if animData then animData.group:Stop() end
+        host._ccBounceKey = nil
+        return
+    end
+    animData = EnsureTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_BOUNCE)
+    speed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    amplitude = amplitude or DEFAULT_TEXTURE_BOUNCE_PIXELS
+    local key = speed .. ":" .. amplitude
+    if host._ccBounceKey == key and animData.group:IsPlaying() then return end
+    animData.group:Stop()
+    animData.translation:SetOffset(0, amplitude)
+    animData.translation:SetDuration(speed / 2)
+    animData.translation:SetSmoothing("OUT")
+    animData.group:Play()
+    host._ccBounceKey = key
+end
+
+local function StopAnimatedColorShift(host)
+    if not host._ccColorShiftKey then return end
+    host._ccColorShiftKey = nil
+    host._ccColorShiftAnimating = nil
+    for _, entry in pairs(host._ccColorShiftGroups or {}) do entry.group:Stop() end
+end
+
+-- Returns false when the display has no artwork to tint (Text Only), so the
+-- caller falls back to the script.
+local function StartAnimatedColorShift(host, shiftColor, speed)
+    local displayType = host._activeDisplayType
+    local regions = displayType == "icon" and {host.iconFrame and host.iconFrame.icon}
+        or displayType == "texture" and {host.primaryTexture, host.secondaryTexture}
+    if not regions then return false end
+    speed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
+    local shift = shiftColor or { 1, 1, 1, 1 }
+    -- A restyle replaces the style snapshot, so it restarts from fresh base colors.
+    local key = table.concat({tostring(host._indicatorStyle), displayType, speed,
+        shift[1] or 1, shift[2] or 1, shift[3] or 1, shift[4] or 1}, ":")
+    if host._ccColorShiftKey == key then return true end
+    StopAnimatedColorShift(host)
+    SetTextureIndicatorBaseVisuals(host)
+    local base, baseAlpha = host._indicatorBaseColor or { 1, 1, 1, 1 }, host._indicatorBaseAlpha or 1
+    host._ccColorShiftGroups = host._ccColorShiftGroups or {}
+    for _, region in ipairs(regions) do
+        if region and region:IsShown() then
+            local entry = host._ccColorShiftGroups[region]
+            if not entry then
+                local group = region:CreateAnimationGroup()
+                group:SetLooping("BOUNCE")
+                local animation = group:CreateAnimation("VertexColor")
+                animation:SetSmoothing("IN_OUT")
+                entry = { group = group, animation = animation }
+                host._ccColorShiftGroups[region] = entry
+            end
+            entry.animation:SetStartColor(CreateColor(base[1] or 1, base[2] or 1, base[3] or 1, baseAlpha))
+            entry.animation:SetEndColor(CreateColor(shift[1] or 1, shift[2] or 1, shift[3] or 1, shift[4] or 1))
+            entry.animation:SetDuration(speed / 2)
+            entry.group:Play()
+        end
+    end
+    host._ccColorShiftKey = key
+    host._ccColorShiftAnimating = true
+    return true
+end
+
 local function SetTextureIndicatorAnimation(host, effectType, active, speed, amplitude)
     if not host or not host.visualRoot then
         return
@@ -467,6 +544,9 @@ local function SetTextureIndicatorAnimation(host, effectType, active, speed, amp
             host._textureShrinkStartTime = nil
         end
         RefreshTextureIndicatorUpdater(host)
+        return
+    elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE and host._ccAnimatedEffects then
+        SetAnimatedBounce(host, active, speed, amplitude)
         return
     elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
         local wasActive = host._textureBounceActive == true
@@ -510,6 +590,7 @@ local function StopTextureColorShift(host)
         return
     end
 
+    StopAnimatedColorShift(host)
     host._textureColorShiftActive = nil
     host._indicatorBaseVisualsReady = nil
     RefreshTextureIndicatorUpdater(host)
@@ -520,6 +601,12 @@ local function StartTextureColorShift(host, shiftColor, speed)
         return
     end
 
+    if host._ccAnimatedEffects and StartAnimatedColorShift(host, shiftColor, speed) then
+        host._textureColorShiftActive = nil
+        RefreshTextureIndicatorUpdater(host)
+        return
+    end
+    StopAnimatedColorShift(host)
     host._textureColorShiftActive = true
     host._textureColorShiftColor = CopyColor(shiftColor) or { 1, 1, 1, 1 }
     host._textureColorShiftSpeed = Clamp(tonumber(speed) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
@@ -532,6 +619,9 @@ local function StopAllTextureIndicatorEffects(host)
     end
 
     StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_PULSE)
+    StopTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_BOUNCE)
+    host._ccBounceKey = nil
+    StopAnimatedColorShift(host)
     host._textureShrinkActive = nil
     host._textureShrinkSpeed = nil
     host._textureShrinkStartTime = nil
@@ -826,9 +916,9 @@ function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effects
             ((host:GetHeight() and host:GetHeight() > 0) and host:GetHeight() or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12
         )
     )
-    -- Text Only drops Shrink / Expand for condition sources; aura sources keep
-    -- it (their native renderer scales the whole visual).
-    local allowShrinkExpand = (host._activeDisplayType ~= "text" or ST.Indicator.IsAura(group))
+    -- Text Only drops Shrink / Expand for everything CC draws; native aura
+    -- sources keep it (their renderer scales the whole visual).
+    local allowShrinkExpand = (host._activeDisplayType ~= "text" or ST.Indicator.IsNativeAura(group))
         and not freezeGeometryWhileUnlocked
 
     SetTextureIndicatorAnimation(

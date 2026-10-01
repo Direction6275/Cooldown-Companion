@@ -29,12 +29,17 @@ local function Applies(predicate)
         return ST.IsIndicatorGroup(g) and I.Primary(g) ~= nil and predicate(g,I.Settings(g))
     end
 end
-local texture = Applies(function(_,s) return s.displayType == "texture" end)
-local drain = Applies(function(_,s) return s.displayType == "texture" and s.progress.enabled == true end)
 local textOnly = Applies(function(_,s) return s.displayType == "text" end)
 local function CountReadoutKey(group)
     return I.IsAura(group) and "stacks" or I.Primary(group).type == "spell" and "charges" or "item"
 end
+-- While Missing shows only while the aura is absent: no timer, count or drain.
+local function LiveReadouts(group)
+    return not I.ShowsWhileMissing(group)
+end
+local drainable = Applies(function(g,s) return s.displayType == "texture" and LiveReadouts(g) end)
+local drain = Applies(function(g,s) return s.displayType == "texture" and s.progress.enabled == true
+    and LiveReadouts(g) end)
 local function Enabled(settings, key)
     local r = settings.readouts
     if key == "timer" then return r.timer == true end
@@ -48,9 +53,9 @@ local READOUT_ROWS = {
     timer = {label="Show Cooldown Text", aliases={"timer"},
         applies=Applies(function(g) return not I.IsAura(g) end)},
     auraTimer = {label="Show Aura Duration Text", aliases={"timer"},
-        applies=Applies(function(g) return I.IsAura(g) end)},
+        applies=Applies(function(g) return I.IsNativeAura(g) end)},
     stacks = {label="Show Aura Stack Text", aliases={"aura stacks","count"},
-        applies=Applies(function(g) return CountReadoutKey(g) == "stacks" end)},
+        applies=Applies(function(g) return CountReadoutKey(g) == "stacks" and LiveReadouts(g) end)},
     charges = {label="Show Count Text (Charges / Uses)", aliases={"charges","display count"},
         applies=Applies(function(g) return CountReadoutKey(g) == "charges" end)},
     item = {label="Show Item Count Text", aliases={"item count"},
@@ -68,11 +73,11 @@ local display = Route("appearance", "display", "Display", "indicator_display"):S
     background={label="Background Color",aliases={"text background"},applies=textOnly},
 })
 READOUT_ROWS.timerFormat = {label="Duration Format",aliases={"timer format"},
-    applies=Applies(function(_,s) return s.readouts.timer == true end)}
+    applies=Applies(function(g,s) return s.readouts.timer == true and LiveReadouts(g) end)}
 local text = Route("appearance", "text", "Text", "indicator_text", {idPrefix="panel.indicator.display"}):Settings(READOUT_ROWS)
 local drainSettings = Route("appearance", "drain", "Duration Drain", "indicator_drain",
     {idPrefix="panel.indicator.display"}):Settings({
-    progress={label="Duration Drain",aliases={"depletion","dim silhouette"},applies=texture},
+    progress={label="Duration Drain",aliases={"depletion","dim silhouette"},applies=drainable},
     direction={label="Drain Direction",applies=drain},dim={label="Dim Silhouette",applies=drain},
 })
 local labelContent = Route("appearance", "labelPosition", "Label Text", "indicator_text",
@@ -90,7 +95,8 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
     conditions={label="When to Show",aliases={"show when","conditions","rules","ready","on cooldown","always"},
         applies=Applies(function() return true end)},
     unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)},
-    auraWhen={label="When",aliases={"stacks","stack count","at least","fewer than","exactly","max stacks","while active"},
+    auraWhen={label="When",aliases={"stacks","stack count","at least","fewer than","exactly","max stacks","while active",
+        "while missing","missing","inactive"},
         applies=Applies(function(g) return I.IsAura(g) end)},
     stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
         local compare = I.StackCompare(g)
@@ -164,9 +170,9 @@ end
 
 -- Pandemic, for aura Indicators: the panel's effect (a glow on Icon and
 -- Texture artwork) and marker (on the duration text) rows.
-local auraOnly = Applies(function(g) return I.IsAura(g) end)
-local auraArtwork = Applies(function(g,s) return I.IsAura(g) and s.displayType ~= "text" end)
-local auraTimer = Applies(function(g,s) return I.IsAura(g) and s.readouts.timer == true end)
+local auraOnly = Applies(function(g) return I.IsNativeAura(g) end)
+local auraArtwork = Applies(function(g,s) return I.IsNativeAura(g) and s.displayType ~= "text" end)
+local auraTimer = Applies(function(g,s) return I.IsNativeAura(g) and s.readouts.timer == true end)
 local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", {applies=auraOnly}):Settings({
     effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic"},applies=auraArtwork},
     marker={label="Pandemic Marker",aliases={"pandemic"},applies=auraTimer},
@@ -177,14 +183,14 @@ end
 local function GlowUses(...)
     local styles = {}
     for index = 1, select("#", ...) do styles[select(index, ...)] = true end
-    return Applies(function(g,s) return I.IsAura(g) and s.displayType ~= "text" and styles[PandemicGlowStyle(s)] == true end)
+    return Applies(function(g,s) return I.IsNativeAura(g) and s.displayType ~= "text" and styles[PandemicGlowStyle(s)] == true end)
 end
 -- Same rows the panel's Pandemic Effect gear draws for these styles.
 local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicGlow", advancedKey="indicatorPandemicGlow", applies=auraArtwork}):Settings({
     style={label="Glow Style"},
     color={label="Effect Color",applies=Applies(function(g,s)
-        return I.IsAura(g) and s.displayType ~= "text" and PandemicGlowStyle(s) ~= "cdm" end)},
+        return I.IsNativeAura(g) and s.displayType ~= "text" and PandemicGlowStyle(s) ~= "cdm" end)},
     color2={label="Second Color",applies=GlowUses("colorShift")},
     borderSize={label="Border Size",applies=GlowUses("solid","pulse","colorShift")},
     pulseDuration={label="Pulse Duration",applies=GlowUses("pulse")},
@@ -202,7 +208,7 @@ local pandemicMarker = Route("effects", "pandemic", "Pandemic Marker", "indicato
     text={label="Marker Text"},
     coloring={label="Marker Coloring"},
     color={label="Marker Color",applies=Applies(function(g,s)
-        return I.IsAura(g) and s.readouts.timer == true and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
+        return I.IsNativeAura(g) and s.readouts.timer == true and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
 })
 
 -- Buttons sharing one row's control column (ST._CreateRowActionStrip), from
@@ -407,14 +413,17 @@ local function AddMainSourceBadges(row, group, source, changed)
 end
 
 -- Where an aura Indicator looks for its aura.
-local function AddTrackedOn(column, source, changed)
+local function AddTrackedOn(column, group, source, changed)
     local automaticSource = CopyTable(source)
     automaticSource.auraUnitOverride = nil
     local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
+    -- While Missing has no group form yet: Group is offered only if saved.
+    local order = {"automatic","player","target","group","pet"}
+    if I.ShowsWhileMissing(group) and not source.auraTrackGroup then table.remove(order, 4) end
     Dropdown(column, {setting=whenToShow.unit, indent=true,
         list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
             player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
-        order={"automatic","player","target","group","pet"},
+        order=order,
         value=source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
             or source.auraUnitOverride or "automatic",
         onChange=function(value)
@@ -429,7 +438,7 @@ end
 
 -- The aura's one rule: While Active, or a stack count it must reach, stay
 -- under, or match. Blizzard applies it in combat (see Indicator.StackRule).
-local AURA_WHEN_LIST = {active="While Active", atLeast="At Least N Stacks",
+local AURA_WHEN_LIST = {active="While Active", missing="While Missing", atLeast="At Least N Stacks",
     fewer="Fewer Than N Stacks", exactly="Exactly N Stacks", max="At Max Stacks"}
 local STACK_CHOICES = {"atLeast", "fewer", "exactly", "max"}
 local function AddAuraWhen(column, group, entry, changed)
@@ -438,12 +447,16 @@ local function AddAuraWhen(column, group, entry, changed)
     -- While Active is offered, plus a stack rule it already saved.
     local compare, count, max = I.StackRule(group)
     if not compare then max = I.StackMax(group) end
-    local current = compare or "active"
+    local current = I.AuraWhen(group)
+    local missing = current == "missing"
+    -- While Missing has no group form yet: not offered on Group tracking.
     local order = {"active"}
+    if missing or not entry.auraTrackGroup then order[2] = "missing" end
     for _, choice in ipairs(STACK_CHOICES) do
         if max or choice == current then order[#order + 1] = choice end
     end
-    local tooltip = {"When", {"While Active shows whenever this aura is on.", 1, 1, 1, true}}
+    local tooltip = {"When", {"While Active shows whenever this aura is on.", 1, 1, 1, true},
+        " ", {"While Missing shows only while it is off, with no timer or count. A target aura needs a hostile target.", 1, 1, 1, true}}
     if max then
         tooltip[#tooltip + 1] = " "
         tooltip[#tooltip + 1] = {"A stack choice also needs the aura's stacks to pass. At Max Stacks follows the aura's maximum from the game.", 1, 1, 1, true}
@@ -452,14 +465,17 @@ local function AddAuraWhen(column, group, entry, changed)
         value=current, tooltip=tooltip,
         onChange=function(value)
             if value == current then return end
-            if value == "active" then
-                entry.indicatorStackRule = nil
-            else
-                local keep = compare ~= "max" and count or 2
-                entry.indicatorStackRule = {compare=value, count=math.max(I.StackCountMin(value), keep)}
-            end
+            local keep = compare and compare ~= "max" and count or 2
+            local notice = I.SetAuraWhen(group, value, math.max(I.StackCountMin(value), keep))
+            if notice then Addon:Print(notice) end
             changed(true)
         end})
+    if missing then
+        if entry.auraTrackGroup then
+            Hint(column, "While Missing doesn't work with Group tracking yet, so this stays hidden.")
+        end
+        return
+    end
     if compare and not max then
         Hint(column, ("This aura doesn't stack, so this %s."):format(
             I.StackRuleOutcome(compare, count, max) == "always" and "always shows while it is active" or "never shows"))
@@ -495,7 +511,7 @@ local function BuildSourceRules(container, group, entry, changed)
         AddMainSourceBadges(row, group, entry, changed)
         if I.IsAura(group) then
             AddAuraWhen(column, group, entry, changed)
-            AddTrackedOn(column, entry, changed)
+            AddTrackedOn(column, group, entry, changed)
             return
         end
     else
@@ -587,8 +603,9 @@ function ST._GetIndicatorSourceControls(group)
         if item.aura then
             -- A rule the aura's max rules out reads as a warning.
             local compare, count, max = I.StackRule(group)
-            item.auraRule = I.StackRuleLabel(compare, count)
+            item.auraRule = I.AuraWhenLabel(group)
             item.auraRuleNever = I.StackRuleOutcome(compare, count, max) == "never"
+                or I.ShowsWhileMissing(group) and entry.auraTrackGroup == true
         end
         key[#key + 1] = table.concat({tostring(entry), tostring(icon), item.name, tostring(item.enabled),
             tostring(item.auraRule), tostring(item.auraRuleNever)}, ",")
@@ -760,7 +777,8 @@ local function BuildText(container, group, changed)
     local _, collapsed = Section(container,"Text","indicator_text")
     if collapsed then return end
     local column = ST._BeginRowGrid(container)
-    for _, key in ipairs({"label","timer","count"}) do
+    -- While Missing has no timer or count to show.
+    for _, key in ipairs(LiveReadouts(group) and {"label","timer","count"} or {"label"}) do
         local readout = key
         local descriptor = text[ReadoutRowKey(group, readout)]
         local countKey = CountReadoutKey(group)
@@ -827,7 +845,7 @@ local function BuildAppearance(container, group, changed)
         ST._BuildTexturePanelAppearanceTab(container,group)
     end
     BuildText(container, group, changed)
-    if settings.displayType == "texture" then
+    if settings.displayType == "texture" and LiveReadouts(group) then
         local _, drainCollapsed = Section(container,"Duration Drain","indicator_drain")
         if not drainCollapsed then
             local column = ST._BeginRowGrid(container)
@@ -854,7 +872,7 @@ function ST._BuildIndicatorTab(container, group, tab)
         -- One effect grammar for every source; aura rows omit the controls
         -- that would start or stop effects on their own.
         ST._BuildTriggerEffectsTab(container,group)
-        if I.IsAura(group) then BuildPandemic(container,group,changed) end
+        if I.IsNativeAura(group) then BuildPandemic(container,group,changed) end
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
             Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
                 list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},

@@ -318,9 +318,11 @@ local function TextureAuraDisplayEnabled(group)
 end
 
 local function AnyTriggerEffectEnabled(group)
-    if not ST.IsIndicatorGroup(group) or ST.Indicator.IsAura(group) then return false end
-    local effects = CooldownCompanion.GetTriggerPanelEffectSettings
-        and CooldownCompanion:GetTriggerPanelEffectSettings(group)
+    -- Everything CC draws, While Missing included; native auras use textureAura.
+    -- Read-only like AuraIndicatorEffectEnabled: an availability check must
+    -- never write effect tables into the profile.
+    if not ST.IsIndicatorGroup(group) or ST.Indicator.IsNativeAura(group) then return false end
+    local effects = ST.Indicator.ReadEffects(group)
     if type(effects) ~= "table" then
         return false
     end

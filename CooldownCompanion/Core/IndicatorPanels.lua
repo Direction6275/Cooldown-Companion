@@ -28,6 +28,39 @@ function I.Primary(group)
     return I.Settings(group) and group.buttons and group.buttons[1]
 end
 
+-- The aura row's one When rule, saved on the aura entry as
+-- `indicatorStackRule` so it leaves with the aura and Change... carries it:
+-- "missing" (While Missing), a stack comparison, or nil (While Active). Read
+-- it only through AuraWhenOf / ShowsWhileMissing / StackCompare, never by
+-- poking `compare` directly: "missing" is not a stack comparison.
+local function AuraWhenOf(source)
+    local rule = source and source.indicatorStackRule
+    local compare = type(rule) == "table" and rule.compare
+    return type(compare) == "string" and compare or "active"
+end
+
+-- While Missing: nothing is read. A hidden tracker sized by Blizzard opens a
+-- clip window over a CC-drawn display only while the aura is absent
+-- (AuraDisplay "presence"). Group (ally) tracking is not supported yet and
+-- fails closed.
+function I.ShowsWhileMissing(group)
+    return I.IsAura(group) and AuraWhenOf(I.Primary(group)) == "missing" or false
+end
+
+-- The aura draws in its native slot (live timer, count, drain). A While
+-- Missing aura is drawn by CC like a spell or item Indicator instead.
+function I.IsNativeAura(group)
+    return I.IsAura(group) and not I.ShowsWhileMissing(group)
+end
+
+-- Which effect rules apply: native auras run Always only; While Missing may
+-- add Only In Combat (CC draws it, but nothing it would animate on is the
+-- aura's own state); spell and item sources also get Animate When.
+function I.EffectFamily(group)
+    if I.IsNativeAura(group) then return "aura" end
+    return I.ShowsWhileMissing(group) and "missing" or "conditions"
+end
+
 -- A source checked by rules: every source of a conditions Indicator, and the
 -- extra spell/item sources of an aura Indicator. The aura itself has no
 -- condition rules; its only rule is its stack rule (StackRule).
@@ -65,9 +98,10 @@ end
 function I.StackCompare(group)
     if not I.IsAura(group) then return end
     local source = I.Primary(group)
-    local rule = source and source.indicatorStackRule
-    local compare = type(rule) == "table" and rule.compare
-    return STACK_COMPARE_LABELS[compare] and compare or nil, rule
+    local compare = AuraWhenOf(source)
+    -- Only stack comparisons: While Active and While Missing are not.
+    if not STACK_COMPARE_LABELS[compare] then return nil, source and source.indicatorStackRule end
+    return compare, source.indicatorStackRule
 end
 
 function I.StackRule(group)
@@ -82,6 +116,13 @@ end
 function I.StackRuleLabel(compare, count)
     local label = STACK_COMPARE_LABELS[compare]
     return label and label:format(count or 0) or "While Active"
+end
+
+-- The aura row's When as text: While Missing, a stack rule, or While Active.
+function I.AuraWhenLabel(group)
+    if I.ShowsWhileMissing(group) then return "While Missing" end
+    local compare, count = I.StackRule(group)
+    return I.StackRuleLabel(compare, count)
 end
 
 -- A rule from StackRule that the aura's max settles on its own: "never" when
@@ -132,6 +173,7 @@ I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
 I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
     indicator_effects_conditions = "Aura Indicators can't use Animate When or Only In Combat. Set each effect to Always with Only In Combat off first.",
+    indicator_effects_missing = "While Missing Indicators can't use Animate When. Set each effect to Always first.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
 }
 
@@ -184,8 +226,12 @@ function I.CheckEffects(effects, tracking, displayType)
     if not tracking then return true end
     for _, key in ipairs(I.EffectOrder) do
         if effects[key] and effects[key].enabled == true then
-            if tracking == "aura" and ((effects[key].activation or "always") ~= "always" or effects[key].combatOnly) then
+            local conditional = (effects[key].activation or "always") ~= "always"
+            if tracking == "aura" and (conditional or effects[key].combatOnly) then
                 return false, "indicator_effects_conditions"
+            end
+            if tracking == "missing" and conditional then
+                return false, "indicator_effects_missing"
             end
         end
     end
@@ -200,14 +246,25 @@ function I.CanApplyEffects(source, destination, appearance)
     local effects, reason = I.ReadEffects(source)
     if not effects then return false, reason end
     local saved, target = I.Settings(source) or {}, I.Settings(destination) or {}
-    return I.CheckEffects(effects, I.Primary(destination) and target.tracking,
+    return I.CheckEffects(effects, I.Primary(destination) and I.EffectFamily(destination),
         appearance and saved.displayType or target.displayType)
+end
+
+-- The effect family `source` gives `group` as its display: an aura draws
+-- natively unless it shows While Missing (its own rule, or the rule a staged
+-- Change... carries over from the aura it replaces).
+local function SourceEffectFamily(group, source)
+    if source.addedAs ~= "aura" then return "conditions" end
+    if AuraWhenOf(source) == "missing" or group._stagedAuraWhen == "missing" then
+        return "missing"
+    end
+    return "aura"
 end
 
 function I.CheckSourceEffects(group, source)
     local effects, reason = I.ReadEffects(group)
     if not effects then return false, reason end
-    return I.CheckEffects(effects, source.addedAs == "aura" and "aura" or "conditions",
+    return I.CheckEffects(effects, SourceEffectFamily(group, source),
         (I.Settings(group) or {}).displayType)
 end
 
@@ -216,7 +273,7 @@ end
 -- artwork to tint on Text Only. A derived description keyed by effect, never
 -- a second saved store.
 function I.NativeEffects(group)
-    if not I.IsAura(group) then return end
+    if not I.IsNativeAura(group) then return end
     I.Effects(group)
     local settings = I.Settings(group)
     local store = Addon.NormalizeTriggerPanelEffectStore(settings)
@@ -330,39 +387,59 @@ local function ListNames(names)
     return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
 end
 
--- Aura effects run only while the aura is shown, so an aura arriving adapts
--- them rather than being refused: Animate When and Only In Combat clear, and
--- Text Only drops Color Shift. Adds each change's chat note to `notes`.
-local function AdaptEffectsForAura(settings, notes)
+-- What each effect family can't run, for adapting effects when the display
+-- source or the aura's When changes (adapt rather than refuse). Native auras:
+-- no Animate When or Only In Combat, and Text Only has no Color Shift. While
+-- Missing: no Animate When (it would follow the aura entry's own spell
+-- state), and Text Only can't Shrink / Expand. Spell and item: Text Only
+-- can't Shrink / Expand.
+local FAMILY_LIMITS = {
+    aura = {rules = "auras can't use Animate When or Only In Combat", dropCombat = true,
+        textOff = "colorShift", textWhy = "Text Only auras can't use it"},
+    missing = {rules = "While Missing can't use Animate When",
+        textOff = "shrinkExpand", textWhy = "Text Only While Missing Indicators can't use it"},
+    conditions = {textOff = "shrinkExpand", textWhy = "Text Only spell and item Indicators can't use it"},
+}
+
+-- Adapts the enabled effects to `family` and adds each change's chat note to
+-- `notes`. Disabled effects keep their saved rules; for While Missing the
+-- store drops Animate When whenever it is read (I.NormalizeEffectsForFamily),
+-- and native auras clear theirs when an effect is enabled (Effects tab).
+local function AdaptEffects(settings, family, notes)
+    local limits = FAMILY_LIMITS[family]
     local effects = settings.effects or {}
     local converted, off = {}, {}
     for _, key in ipairs(I.EffectOrder) do
         local effect = effects[key]
         if effect and effect.enabled == true then
-            if key == "colorShift" and settings.displayType == "text" then
+            if key == limits.textOff and settings.displayType == "text" then
                 effect.enabled = false
                 off[#off + 1] = EFFECT_LABELS[key]
-            elseif (effect.activation or "always") ~= "always" or effect.combatOnly then
-                effect.activation, effect.combatOnly = nil, nil
+            elseif limits.rules and ((effect.activation or "always") ~= "always"
+                or limits.dropCombat and effect.combatOnly) then
+                effect.activation = nil
+                if limits.dropCombat then effect.combatOnly = nil end
                 converted[#converted + 1] = EFFECT_LABELS[key]
             end
         end
     end
     if #converted > 0 then
         notes[#notes + 1] = ListNames(converted) .. (#converted > 1 and " now run" or " now runs")
-            .. " while the Indicator is shown (auras can't use Animate When or Only In Combat)."
+            .. " while the Indicator is shown (" .. limits.rules .. ")."
     end
-    if #off > 0 then notes[#notes + 1] = ListNames(off) .. " is off (Text Only auras can't use it)." end
+    if #off > 0 then notes[#notes + 1] = ListNames(off) .. " is off (" .. limits.textWhy .. ")." end
 end
 
--- The same for a spell or item becoming the display: Text Only spell and item
--- Indicators can't Shrink / Expand, so it turns off instead of blocking.
-local function AdaptEffectsForConditions(settings, notes)
-    local shrink = (settings.effects or {}).shrinkExpand
-    if settings.displayType == "text" and shrink and shrink.enabled == true then
-        shrink.enabled = false
-        notes[#notes + 1] = EFFECT_LABELS.shrinkExpand .. " is off (Text Only spell and item Indicators can't use it)."
+-- The one read-time rule for While Missing: Animate When never applies, so a
+-- saved choice (from a spell past, a copy, or any enable path) is dropped
+-- whenever the store is read for the runtime or the config.
+function I.NormalizeEffectsForFamily(group, store)
+    if not (store and I.ShowsWhileMissing(group)) then return store end
+    for _, key in ipairs(I.EffectOrder) do
+        local effect = store[key]
+        if type(effect) == "table" then effect.activation = nil end
     end
+    return store
 end
 
 local function NoticeText(notes)
@@ -401,10 +478,10 @@ function I.OnSourceAdded(group, entry)
     I.Effects(group) -- Capture the previous family before tracking changes.
     if entry.enabled == nil then entry.enabled = true end
     local notes = {}
-    if auraArrives then
-        AdaptEffectsForAura(settings, notes)
-    elseif firstSource then
-        AdaptEffectsForConditions(settings, notes)
+    -- An aura that shows While Missing (its own rule, or one a Change...
+    -- carries over) adapts to the While Missing family instead.
+    if auraArrives or firstSource then
+        AdaptEffects(settings, SourceEffectFamily(group, entry), notes)
     end
     -- Checklist order never matters to the user: an aura added after spell or
     -- item sources still becomes the display.
@@ -639,7 +716,7 @@ local function Promote(group, entry, index)
     -- Leaving an aura: adapt the effects to the spell or item, as an arriving
     -- source does, rather than refusing the removal.
     local notes = {}
-    if I.IsAura(group) then AdaptEffectsForConditions(I.Settings(group), notes) end
+    if I.IsAura(group) then AdaptEffects(I.Settings(group), "conditions", notes) end
     local allowed, reason = I.CheckSourceEffects(group, entry)
     if not allowed then return false, reason end
     local buttons = group.buttons
@@ -658,6 +735,35 @@ function I.PromoteSource(group, entry)
     local index = IndexOf(group, entry)
     if not index or not I.CanBeMainSource(group, entry) then return false end
     return Promote(group, entry, index)
+end
+
+-- The aura row's When: "active", "missing", or a stack comparison (with
+-- `count`). Moving between native drawing and While Missing adapts effects
+-- the way a source change does. Returns an optional chat line.
+function I.SetAuraWhen(group, value, count)
+    local source = I.IsAura(group) and I.Primary(group)
+    if not source then return end
+    local before = I.EffectFamily(group)
+    I.Effects(group)
+    if value == "active" then
+        source.indicatorStackRule = nil
+    elseif value == "missing" then
+        source.indicatorStackRule = {compare = "missing"}
+    else
+        source.indicatorStackRule = {compare = value, count = count}
+    end
+    local notes = {}
+    local after = I.EffectFamily(group)
+    if after ~= before then AdaptEffects(I.Settings(group), after, notes) end
+    return NoticeText(notes)
+end
+
+-- The aura row's When as a choice key: "missing", a valid stack comparison,
+-- or "active" (also for anything unrecognised). nil when there is no aura.
+function I.AuraWhen(group)
+    if not I.IsAura(group) then return nil end
+    if I.ShowsWhileMissing(group) then return "missing" end
+    return I.StackCompare(group) or "active"
 end
 
 -- Remove one source. Removing the main source hands slot one to the next
@@ -695,6 +801,9 @@ function I.StageSourceReplacement(group, expectedSource)
     candidate.style = group.style and CopyTable(group.style)
     StoreEffects(candidate, (I.ReadEffects(group)))
     candidate.indicatorSettings.tracking = "conditions"
+    -- Transient, never saved: a replacement aura inherits While Missing
+    -- (CommitSourceReplacement), so its arrival must not adapt the effects.
+    candidate._stagedAuraWhen = I.ShowsWhileMissing(group) and "missing" or nil
     return candidate
 end
 

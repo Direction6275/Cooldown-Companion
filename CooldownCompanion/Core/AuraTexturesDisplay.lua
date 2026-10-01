@@ -911,6 +911,41 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
     return host
 end
 
+-- The While Missing display: a bare drawing host with the same visual fields
+-- the shared Indicator painters expect (visualRoot, primary/secondary
+-- texture), every frame carrying `template`. AuraDisplay parents it inside the
+-- presence window; placement, mover chrome and alpha stay on the ordinary
+-- host, which this sits centered on.
+function CooldownCompanion.CreateIndicatorPresenceHost(parent, template)
+    local host = CreateFrame("Frame", nil, parent, template)
+    host:EnableMouse(false)
+    host:SetSize(1, 1)
+    host._ccFrameTemplate = template
+    -- Drawn (clipped) while the aura is up too: run what effects can as
+    -- AnimationGroups rather than per-frame scripts (AuraTexturesEffects).
+    host._ccAnimatedEffects = true
+    local visualRoot = CreateFrame("Frame", nil, host, template)
+    visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
+    visualRoot:SetSize(1, 1)
+    host.visualRoot = visualRoot
+    host.primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
+    host.secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
+    host.primaryTexture:Hide()
+    host.secondaryTexture:Hide()
+    return host
+end
+
+-- Latched: callers on the per-update path (unlocked, other modes) run this
+-- every tick; the teardown happens once until the next presence render.
+local function ReleasePresenceDisplay(button)
+    local presence = CooldownCompanion.GetIndicatorPresenceHost and CooldownCompanion:GetIndicatorPresenceHost(button)
+    if not presence or presence._ccPresenceReleased then return end
+    presence._ccPresenceReleased = true
+    StopAllTextureIndicatorEffects(presence)
+    ST.Indicator.ReleaseVisual(presence)
+    CooldownCompanion.HideStandaloneDisplayVisuals(presence)
+end
+
 function CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
     local group = groupFrame and ResolveGroup(groupFrame.groupId)
     local button = ST.Indicator.RuntimeSource(groupFrame, group)
@@ -927,7 +962,7 @@ function CooldownCompanion.EnsureTriggerIconVisual(host)
         return host.iconFrame
     end
 
-    local frame = CreateFrame("Frame", nil, host.visualRoot)
+    local frame = CreateFrame("Frame", nil, host.visualRoot, host._ccFrameTemplate)
     frame:SetPoint("CENTER")
     frame:SetSize(36, 36)
     frame:Hide()
@@ -948,7 +983,7 @@ function CooldownCompanion.EnsureTriggerTextVisual(host)
         return host.textFrame
     end
 
-    local frame = CreateFrame("Frame", nil, host.visualRoot)
+    local frame = CreateFrame("Frame", nil, host.visualRoot, host._ccFrameTemplate)
     frame:SetPoint("CENTER")
     frame:SetSize(200, 20)
     frame:Hide()
@@ -1020,6 +1055,8 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     end
 
     StopAllTextureIndicatorEffects(host)
+    ReleasePresenceDisplay(button)
+    host._ccPresenceMode = nil
     StopStandalonePanelAlphaSync(host)
     if host._isDragging then
         host._isDragging = nil
@@ -1187,6 +1224,7 @@ end
 
 function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, settings, displayType, isTriggerPanel, effectsActive)
     host._standaloneTeardownFor = nil
+    host._ccPresenceMode = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     return ST.Indicator.Render(host, driverButton, group, false, nil, effectsActive,
@@ -1212,6 +1250,7 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
 
     -- Anything that repaints the host invalidates the teardown latch.
     host._standaloneTeardownFor = nil
+    host._ccPresenceMode = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host, false)
@@ -1672,13 +1711,66 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
     local useManagedRuntime = auraControlled
         and not visibilityState.bypassModuleAlpha
+    -- While Missing: the ordinary host keeps placement and alpha but draws
+    -- nothing; the display is painted into the presence host, which Blizzard's
+    -- tracker uncovers only while the aura is absent. Unlocked and layout
+    -- previews show the saved design on the ordinary host instead.
+    local presenceRuntime = ST.Indicator.ShowsWhileMissing(group)
+        and not visibilityState.bypassModuleAlpha
+    local presence = presenceRuntime and self:GetIndicatorPresenceHost(driverButton)
     local shown
-    if useManagedRuntime then
+    if presence then
+        -- Extra sources' rules hide the drawing and its effects; the tracker
+        -- and the aura's sounds keep running underneath.
+        local rulesPass = ST.Indicator.ExtraSourcesMatch(frame, group)
+        presence._ccPresenceReleased = nil
+        shown = ST.Indicator.Render(presence, driverButton, group, false, nil, rulesPass,
+            displayType == "icon" and settings or nil)
+        -- Only a successful render repaints the host. A design with nothing to
+        -- draw leaves the teardown latch alone, so the hide below stays cheap.
+        if shown then
+            host._standaloneTeardownFor = nil
+            -- Written only on change: these sit on the per-update path.
+            local strata, hostLevel = driverButton:GetFrameStrata(), (driverButton:GetFrameLevel() or 1) + 20
+            if not host._ccPresenceMode or host:GetFrameStrata() ~= strata or host:GetFrameLevel() ~= hostLevel then
+                host:SetFrameStrata(strata)
+                host:SetFrameLevel(hostLevel)
+                SyncAuraTextureControlLevels(host, false)
+            end
+            if not host._ccPresenceMode then
+                -- Entering presence mode: the ordinary host draws nothing from
+                -- here on, so its own visuals are cleared once, not every
+                -- update. Every other render path clears this latch.
+                host._ccPresenceMode = true
+                StopAllTextureIndicatorEffects(host)
+                CooldownCompanion.HideStandaloneDisplayVisuals(host)
+                if host.visualRoot then host.visualRoot:SetAlpha(0) end
+                if host.auraRuntimeRoot then host.auraRuntimeRoot:SetAlpha(0) end
+                host._activeDisplayType, host._activeTextureSettings, host._activeTextureGeometry = nil, nil, nil
+            end
+            local level = host:GetFrameLevel() + 1
+            if presence:GetFrameLevel() ~= level then presence:SetFrameLevel(level) end
+            -- Placement, anchors and drag use the ordinary host: size it from
+            -- the drawing (a CC-set size, never a measured one).
+            local width, height = presence:GetSize()
+            local hostWidth, hostHeight = host:GetSize()
+            if hostWidth ~= width or hostHeight ~= height then host:SetSize(width, height) end
+        end
+        presence:SetShown(shown and rulesPass)
+    elseif presenceRuntime then
+        -- Not bound yet (the rebind is queued or deferred by combat): keep
+        -- the host placed and sized from the saved design, drawing nothing.
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, false)
+    elseif useManagedRuntime then
+        -- A While Missing tracker can stay bound until a combat-deferred
+        -- rebind parks it; its drawing must not outlive the mode switch.
+        ReleasePresenceDisplay(driverButton)
         -- Extra sources' rules gate only the reveal alpha. The host and the
         -- native slot stay up, so the aura's own sounds keep following it.
         shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings,
             hasBoundSlot and ST.Indicator.ExtraSourcesMatch(frame, group))
     else
+        ReleasePresenceDisplay(driverButton)
         if host.auraRuntimeRoot then
             host.auraRuntimeRoot:SetAlpha(0)
         end

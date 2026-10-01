@@ -151,6 +151,10 @@ function PP.ReleaseIndicatorPreviewControls(preview)
         AceGUI:Release(preview.indicatorStacks)
         preview.indicatorStacks = nil
     end
+    if preview.indicatorAura then
+        AceGUI:Release(preview.indicatorAura)
+        preview.indicatorAura = nil
+    end
     ReleaseSourceControls(preview)
 end
 
@@ -224,6 +228,7 @@ end
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     if preview.indicatorStacks then preview.indicatorStacks.frame:Hide() end
+    if preview.indicatorAura then preview.indicatorAura.frame:Hide() end
     -- Hidden, not released: BuildRulesCard keeps an unchanged card.
     if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     local I = ST.Indicator
@@ -257,7 +262,10 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local fraction = state == "full" and 1 or state == "empty" and 0 or 0.5
     if state == "timeless" then fraction=1 end
     local settings = I.Settings(candidate)
-    local showDuration = not readOnly and (settings.readouts.timer
+    -- While Missing has no timer, drain or pandemic: it shows while the aura
+    -- is absent. Its Aura row tries the two states instead.
+    local missing = I.ShowsWhileMissing(candidate)
+    local showDuration = not readOnly and not missing and (settings.readouts.timer
         or settings.displayType == "texture" and settings.progress.enabled
         or I.IsAura(candidate) and settings.displayType ~= "text" and settings.pandemic.pandemicEffectEnabled == true)
     -- The sweep runs only while its Duration control is drawn: that control is
@@ -285,6 +293,12 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     else
         passes = I.StackRulePasses(compare, count, stacks or 0)
     end
+    -- While Missing starts on Missing so the display is visible; Active hides
+    -- it as the real tracker does.
+    local auraKey = tostring(panelId)
+    local saved = CS.indicatorPreviewAura
+    local auraState = missing and not readOnly and saved and saved.key == auraKey and saved.value or "missing"
+    if missing then passes = auraState == "missing" end
     surface:SetAlpha(passes and 1 or 0)
     if not I.Render(surface,nil,candidate,true,fraction) then
         if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:Hide() end
@@ -307,7 +321,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         candidate.locked = true
         local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
         -- Native text has no registered vertex-color artwork animation.
-        if I.IsAura(candidate) and candidate.indicatorSettings.displayType == "text" then
+        if I.IsNativeAura(candidate) and candidate.indicatorSettings.displayType == "text" then
             local effects=I.Effects(candidate)
             if effects.colorShift then effects.colorShift.enabled=false end
         end
@@ -342,6 +356,22 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
             control:SetValue(state)
             control:SetCallback("OnValueChanged",function(_,_,value)
                 CS.indicatorPreviewState=value
+                ST._RefreshButtonsPreviewMirror(panelId)
+            end)
+        end
+        if missing then
+            local control = preview.indicatorAura
+            if not control then
+                control = AceGUI:Create("CDC-DropdownRow")
+                control:SetLabel("Aura")
+                control:SetList({missing="Missing",active="Active"}, {"missing","active"})
+                control.frame:SetParent(preview.root)
+                preview.indicatorAura = control
+            end
+            AddFooterRow(preview,footer,control,rowWidth)
+            control:SetValue(auraState)
+            control:SetCallback("OnValueChanged",function(_,_,value)
+                CS.indicatorPreviewAura={key=auraKey,value=value}
                 ST._RefreshButtonsPreviewMirror(panelId)
             end)
         end
