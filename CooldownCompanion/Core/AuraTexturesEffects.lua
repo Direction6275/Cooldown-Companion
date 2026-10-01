@@ -375,12 +375,10 @@ TextureIndicatorOnUpdate = function(self)
 
     local scale = 1
     if self._textureShrinkActive then
-        local shrinkPhase = GetTextureIndicatorLoopPhase(
+        scale = AT.ShrinkScaleAtPhase(GetTextureIndicatorLoopPhase(
             now - (self._textureShrinkStartTime or now),
             self._textureShrinkSpeed
-        )
-        local shrinkT = 0.5 - (0.5 * math_cos(shrinkPhase * 2 * math_pi))
-        scale = 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * shrinkT)
+        ))
     end
     transformTarget:SetScale(scale)
 

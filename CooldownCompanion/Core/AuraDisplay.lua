@@ -62,7 +62,6 @@ local MIN_TEXTURE_INDICATOR_SPEED = AT.MIN_TEXTURE_INDICATOR_SPEED
 local MAX_TEXTURE_INDICATOR_SPEED = AT.MAX_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
-local DEFAULT_TEXTURE_SHRINK_SCALE = AT.DEFAULT_TEXTURE_SHRINK_SCALE
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
 
 -- Parking (P1b/P1c + V25 Q4): slots can never be removed, so an unbound slot is
@@ -1601,20 +1600,29 @@ end
 -- layer's own alpha (extra-source rules failing, or the config preview
 -- showing instead) or the Indicator host faded to zero. Both are plain alphas
 -- CC writes. A missing aura cannot pause it: that is Blizzard's secret.
+-- While the panel is unlocked it holds full size, as the CC-side path does
+-- (freezeGeometryWhileUnlocked), so arranging stays steady; read per tick so
+-- a lock toggle needs no rebind.
 local function OnSlotShrinkUpdate(layer, elapsed)
+    if layer._ccShrinkGroup.locked == false then
+        if layer._ccShrinkTime ~= 0 then
+            layer._ccShrinkTime = 0
+            layer:SetScale(1)
+        end
+        return
+    end
     if layer:GetAlpha() == 0 or layer._ccShrinkHost:GetAlpha() == 0 then return end
     local period = layer._ccShrinkPeriod
     layer._ccShrinkTime = (layer._ccShrinkTime + elapsed) % period
-    local t = 0.5 - 0.5 * math.cos(layer._ccShrinkTime / period * 2 * math.pi)
-    layer:SetScale(1 - (1 - DEFAULT_TEXTURE_SHRINK_SCALE) * t)
+    layer:SetScale(AT.ShrinkScaleAtPhase(layer._ccShrinkTime / period))
 end
 
 -- `period` nil stops it and restores the layer's scale.
-local function SetSlotShrink(layer, period)
+local function SetSlotShrink(layer, period, group)
     if not layer then return end
     if period then
         layer._ccShrinkPeriod, layer._ccShrinkTime = period, 0
-        layer._ccShrinkHost = layer:GetParent()
+        layer._ccShrinkHost, layer._ccShrinkGroup = layer:GetParent(), group
         layer:SetScript("OnUpdate", OnSlotShrinkUpdate)
     else
         layer:SetScript("OnUpdate", nil)
@@ -1675,7 +1683,7 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     end
     local shrink = effects[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND]
     if shrink then
-        SetSlotShrink(slot.layer, TexturePanelEffectSpeed(shrink))
+        SetSlotShrink(slot.layer, TexturePanelEffectSpeed(shrink), group)
     end
     local bounce = effects[TEXTURE_INDICATOR_EFFECT_BOUNCE]
     if bounce then

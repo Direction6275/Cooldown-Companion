@@ -553,6 +553,14 @@ AT.DEFAULT_TEXTURE_INDICATOR_SPEED = DEFAULT_TEXTURE_INDICATOR_SPEED
 AT.DEFAULT_TEXTURE_PULSE_ALPHA = DEFAULT_TEXTURE_PULSE_ALPHA
 AT.DEFAULT_TEXTURE_SHRINK_SCALE = DEFAULT_TEXTURE_SHRINK_SCALE
 AT.DEFAULT_TEXTURE_BOUNCE_PIXELS = DEFAULT_TEXTURE_BOUNCE_PIXELS
+
+-- Shrink / Expand's scale at `phase` (0-1) through one loop. The one curve
+-- for the preview / CC-side path (AuraTexturesEffects) and the native aura
+-- slot path (AuraDisplay), so the two can never drift apart.
+function AT.ShrinkScaleAtPhase(phase)
+    local t = 0.5 - (0.5 * math.cos(phase * 2 * math.pi))
+    return 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * t)
+end
 AT.TRIGGER_EXPECTED_LABELS = TRIGGER_EXPECTED_LABELS
 AT.BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY or {}
 AT.CopyColor = CopyColor
