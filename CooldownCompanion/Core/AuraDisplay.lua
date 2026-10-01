@@ -2677,8 +2677,9 @@ local Presence = {}
 -- A hidden tracker for one aura on `unit`, laid out from the record's cell.
 -- Built out of combat only (the rebind pass), and kept for reuse: groups and
 -- containers can never be removed.
-function Presence.AddTracker(record, unit, width, height)
-    local cell = record.cell
+-- A hidden one-aura container laid out from `cell`'s top-left, its single
+-- group keyed `key` and born parked. Shared by pictures and Indicators.
+function Presence.NewContainer(cell, unit, key, width, height)
     -- The tracker draws nothing: its parent is transparent. Alpha never stops
     -- Blizzard's layout (the container stays visible, so it keeps parsing).
     local hider = CreateFrame("Frame", nil, cell, PRESENCE_TEMPLATE)
@@ -2695,10 +2696,8 @@ function Presence.AddTracker(record, unit, width, height)
     container:SetFlowLayoutAnchorPoint("TOPLEFT")
     container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
     container:SetFlowLayoutPadding(0, 0, 0, 0)
-    local tracker = { unit = unit, container = container, key = record.key .. ":" .. (#record.trackers + 1),
-        width = width, height = height }
     -- maxFrameCount 1 is structural: one aura, and no frame creation in combat.
-    container:AddAuraGroup(tracker.key, SlotContract(unit).filter, {
+    container:AddAuraGroup(key, SlotContract(unit).filter, {
         candidateFilters = BuildParkFilters(unit),
         maxFrameCount = 1,
         layout = PresenceLayout(width, height),
@@ -2711,6 +2710,13 @@ function Presence.AddTracker(record, unit, width, height)
             frame:SetMouseMotionEnabled(false)
         end,
     })
+    return container
+end
+
+function Presence.AddTracker(record, unit, width, height)
+    local key = record.key .. ":" .. (#record.trackers + 1)
+    local tracker = { unit = unit, key = key, width = width, height = height,
+        container = Presence.NewContainer(record.cell, unit, key, width, height) }
     record.trackers[#record.trackers + 1] = tracker
     NoteRecordToken(unit)
     if unit == "target" then EnsureTargetWatcher() end
@@ -2821,6 +2827,7 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
         end
     end
     local shape = Presence.Shape(record, match, #auras)
+    if record.boundShape and record.boundShape ~= shape then Presence.ReleaseShape(record.boundShape) end
     for _, other in pairs(record.shapes) do other.root:SetShown(other == shape) end
     for copyIndex, copy in ipairs(shape.copies) do
         for windowIndex, window in ipairs(copy.windows) do
@@ -2831,6 +2838,14 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
         end
     end
     return shape
+end
+
+-- Stops and clears a shape's drawing copies (effects, visuals), so a later
+-- switch back starts them fresh.
+function Presence.ReleaseShape(shape)
+    local release = CooldownCompanion.ReleaseIndicatorPresenceHost
+    if not release then return end
+    for _, host in ipairs(shape.hosts) do release(host) end
 end
 
 function Presence.ParkTracker(tracker)
@@ -2855,36 +2870,7 @@ local function BuildPresenceTracker(record, layer, unit)
     -- From just above-left of the entry (a bar's icon square included),
     -- reaching far past it (Picture.SPAN).
     cell:SetPoint("TOPLEFT", record.button, "TOPLEFT", -Picture.PAD, Picture.PAD)
-    -- The tracker draws nothing: its parent is transparent. Alpha never stops
-    -- Blizzard's layout (the container stays visible, so it keeps parsing).
-    local hider = CreateFrame("Frame", nil, cell, PRESENCE_TEMPLATE)
-    hider:SetAllPoints(cell)
-    hider:SetAlpha(0)
-    local container = CreateFrame("AuraContainer", nil, hider,
-        "CustomAuraContainerTemplate, " .. PRESENCE_TEMPLATE)
-    container._ccNoTouch = true
-    container:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
-    -- Seed only; Blizzard resizes it and that size is never CC's to read.
-    container:SetSize(1, 1)
-    container:SetUnit(unit)
-    container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis.Horizontal)
-    container:SetFlowLayoutAnchorPoint("TOPLEFT")
-    container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
-    container:SetFlowLayoutPadding(0, 0, 0, 0)
-    -- maxFrameCount 1 is structural: one aura, and no frame creation in combat.
-    container:AddAuraGroup(record.key, SlotContract(unit).filter, {
-        candidateFilters = BuildParkFilters(unit),
-        maxFrameCount = 1,
-        layout = PresenceLayout(1, 1),
-        initializeFrame = function(frame)
-            -- Invisible but cell-sized while the aura is up: AuraButtons take
-            -- tooltips and clicks (incl. cancel-aura) by default, so make
-            -- this one click-through in the sanctioned setup window, as the
-            -- texture kit does (BuildTexturePanelSlotKit).
-            frame:SetMouseClickEnabled(false)
-            frame:SetMouseMotionEnabled(false)
-        end,
-    })
+    local container = Presence.NewContainer(cell, unit, record.key, 1, 1)
     local clip = CreateFrame("Frame", nil, cell, PRESENCE_TEMPLATE)
     clip:SetClipsChildren(true)
     clip:EnableMouse(false)
@@ -3230,6 +3216,7 @@ local function ParkDisplay(record)
                 record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
                 if record.picture.reminder then record.picture.reminder.boundEntry = nil end
             else
+                if record.boundShape then Presence.ReleaseShape(record.boundShape) end
                 record.boundShape = nil
                 for _, tracker in ipairs(record.trackers) do Presence.ParkTracker(tracker) end
             end
@@ -3401,8 +3388,14 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
         local auras = record.wantPresenceAuras or { { set = spellSet, unit = unit, active = false } }
         record.boundShape = Presence.Bind(record, buttonData, auras, record.wantPresenceMatch or "all",
             width, height, soundsAllowed)
+    else
+        -- Nothing to draw: no tracker may keep an old aura (or its sounds).
+        if record.boundShape then Presence.ReleaseShape(record.boundShape) end
+        record.boundShape = nil
+        for _, tracker in ipairs(record.trackers) do Presence.ParkTracker(tracker) end
     end
-    record.boundPresenceKey = record.wantPresenceKey
+    -- Only a real binding is kept as-is by the next pass (SlotBindingMatches).
+    record.boundPresenceKey = (record.picture or width) and record.wantPresenceKey or nil
     record.parked = nil
     record.boundEntry = buttonData
     record.boundGroupScoped = false
@@ -3539,21 +3532,18 @@ end
 -- the gate would silently refuse to filter — unrepresentable at runtime even if
 -- stored config drifts.
 local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
-    if self:IsAuraTrackedOnTarget(buttonData, allowGroupScope == false) then return { "target" } end
     -- Pet scope is EXCLUSIVE (owner ruling 2026-08-21): a pet-tracked buff
     -- lives only on the pet, so binding a player record beside it would waste
     -- a container and forfeit aura sounds (the single-unit rule below). The
-    -- config keeps the two opt-ins mutually exclusive; precedence here is the
-    -- runtime backstop for drifted stored data. Resolved to { "pet" } pet or
-    -- no pet: the set is computed at rebind time, and a pet summoned later
-    -- arrives via UNIT_PET — whose watcher can only wake a record that
-    -- already exists. A petless record stays hidden by the identity gate,
-    -- not by omission.
-    if allowGroupScope ~= false and buttonData.auraTrackPet then
-        return { "pet" }
-    end
-    if allowGroupScope ~= false and buttonData.auraTrackGroup then return GroupAuraTokens() end
-    return { "player" }
+    -- config keeps the two opt-ins mutually exclusive; precedence
+    -- (GetAuraEntryUnitKind) is the runtime backstop for drifted stored data.
+    -- Resolved to { "pet" } pet or no pet: the set is computed at rebind
+    -- time, and a pet summoned later arrives via UNIT_PET — whose watcher can
+    -- only wake a record that already exists. A petless record stays hidden
+    -- by the identity gate, not by omission.
+    local kind = self:GetAuraEntryUnitKind(buttonData, allowGroupScope)
+    if kind == "group" then return GroupAuraTokens() end
+    return { kind }
 end
 
 ------------------------------------------------------------------------

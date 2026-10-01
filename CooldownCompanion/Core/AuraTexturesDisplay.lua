@@ -938,15 +938,18 @@ end
 
 -- Latched: callers on the per-update path (unlocked, other modes) run this
 -- every tick; the teardown happens once until the next presence render.
+function CooldownCompanion.ReleaseIndicatorPresenceHost(presence)
+    if presence._ccPresenceReleased then return end
+    presence._ccPresenceReleased = true
+    StopAllTextureIndicatorEffects(presence)
+    ST.Indicator.ReleaseVisual(presence)
+    CooldownCompanion.HideStandaloneDisplayVisuals(presence)
+end
+
 local function ReleasePresenceDisplay(button)
     local presences = CooldownCompanion.GetIndicatorPresenceHosts and CooldownCompanion:GetIndicatorPresenceHosts(button)
     for _, presence in ipairs(presences or {}) do
-        if not presence._ccPresenceReleased then
-            presence._ccPresenceReleased = true
-            StopAllTextureIndicatorEffects(presence)
-            ST.Indicator.ReleaseVisual(presence)
-            CooldownCompanion.HideStandaloneDisplayVisuals(presence)
-        end
+        CooldownCompanion.ReleaseIndicatorPresenceHost(presence)
     end
 end
 
@@ -1729,10 +1732,22 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         -- Extra sources' rules hide the drawing and its effects; the trackers
         -- and the auras' sounds keep running underneath.
         local rulesPass = ST.Indicator.ExtraSourcesMatch(frame, group)
-        for _, copy in ipairs(presences) do
-            copy._ccPresenceReleased = nil
-            shown = ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass,
-                displayType == "icon" and settings or nil)
+        -- Every copy draws the same design: once the first finds its style
+        -- unchanged, the others only need their effects stepped.
+        local styleBefore = presence._indicatorStyle
+        presence._ccPresenceReleased = nil
+        shown = ST.Indicator.Render(presence, driverButton, group, false, nil, rulesPass,
+            displayType == "icon" and settings or nil)
+        local restyled = presence._indicatorStyle ~= styleBefore
+        for index = 2, #presences do
+            local copy = presences[index]
+            if restyled or copy._ccPresenceReleased or not copy._indicatorStyle then
+                copy._ccPresenceReleased = nil
+                ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass,
+                    displayType == "icon" and settings or nil)
+            elseif shown then
+                self:ApplyTriggerPanelEffects(copy, driverButton, group, rulesPass == true)
+            end
         end
         -- Only a successful render repaints the host. A design with nothing to
         -- draw leaves the teardown latch alone, so the hide below stays cheap.

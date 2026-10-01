@@ -120,13 +120,10 @@ function I.IsNativeAura(group)
     return I.IsAura(group) and not I.UsesPresence(group)
 end
 
--- Where an aura entry is tracked, by the runtime's precedence
--- (AuraDisplay ResolveEntryAuraUnits): "target", "pet", "group" or "player".
+-- Where an aura entry is tracked: "target", "pet", "group" or "player", by
+-- the runtime's own precedence (Addon:GetAuraEntryUnitKind).
 function I.AuraUnit(entry)
-    if Addon:IsAuraTrackedOnTarget(entry) then return "target" end
-    if entry.auraTrackPet then return "pet" end
-    if entry.auraTrackGroup then return "group" end
-    return "player"
+    return Addon:GetAuraEntryUnitKind(entry)
 end
 
 -- Each aura in a list has its own tracker on its own unit, but group
@@ -569,14 +566,35 @@ local function SyncAuraList(group, notes)
     end
 end
 
--- Runs `change` (a list edit), then syncs the list and adapts the effects to
--- whichever family the Indicator ends up in. Adds chat notes to `notes`.
-local function ReshapeAuraList(group, notes, change)
-    local before = I.Primary(group) and I.EffectFamily(group)
-    change()
+-- The effect family before a list edit, for SourcesLeft / ReshapeAuraList.
+function I.SourcesLeaving(group)
+    return ST.IsIndicatorGroup(group) and I.Primary(group) and I.EffectFamily(group) or nil
+end
+
+-- After sources leave by any path (Remove, delete, a move to another panel):
+-- syncs the list and adapts the effects to the family the Indicator ends up
+-- in. Adds chat notes to `notes`.
+local function SyncAfterLeave(group, before, notes)
+    if not I.Settings(group) then return end
     SyncAuraList(group, notes)
     local after = I.Primary(group) and I.EffectFamily(group)
     if before and after and after ~= before then AdaptEffects(I.Settings(group), after, notes) end
+end
+
+-- Generic entry actions call SourcesLeaving before touching the Indicator and
+-- this after its entries are gone. Returns an optional chat line.
+function I.SourcesLeft(group, before)
+    if not ST.IsIndicatorGroup(group) then return end
+    local notes = {}
+    SyncAfterLeave(group, before, notes)
+    return NoticeText(notes)
+end
+
+-- Runs `change` (a list edit), then syncs the list and adapts the effects.
+local function ReshapeAuraList(group, notes, change)
+    local before = I.SourcesLeaving(group)
+    change()
+    SyncAfterLeave(group, before, notes)
 end
 
 -- An aura joining a spell/item Indicator becomes what it shows: it takes slot
@@ -832,8 +850,13 @@ end
 -- tracker's, never rules). With no extras there is nothing to check (and
 -- nothing to pay).
 function I.ExtraSourcesMatch(frame, group)
-    if not I.IsAura(group) or not group.buttons or #group.buttons < 2 then return true end
-    return RulesPass(RuntimeButtons(frame), group, 2)
+    if not I.IsAura(group) or not group.buttons then return true end
+    for index = 2, #group.buttons do
+        if not I.IsListedAura(group, group.buttons[index]) then
+            return RulesPass(RuntimeButtons(frame), group, 2)
+        end
+    end
+    return true
 end
 
 function I.ClearSource(group)
@@ -1019,19 +1042,25 @@ function I.CommitSourceReplacement(group, candidate)
     -- A list's other auras need an aura on their unit to stay with.
     local others = I.AuraList(group)
     table.remove(others, 1)
+    local listed
     if #others > 0 then
         if not I.IsAura(candidate) then return false, "indicator_aura_change" end
         local auras = {newSource}
         for _, aura in ipairs(others) do
-            if not SameSource(aura, newSource) then auras[#auras + 1] = aura end
+            if SameSource(aura, newSource) then listed = aura else auras[#auras + 1] = aura end
         end
         local refusal = AuraListRefusal(auras)
         if refusal then return false, refusal end
     end
-    -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
-    local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
-    if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
-        newSource.indicatorStackRule = CopyTable(oldRule)
+    if listed then
+        -- Already in the list: the aura keeps its own When there.
+        newSource.indicatorStackRule = listed.indicatorStackRule and CopyTable(listed.indicatorStackRule)
+    else
+        -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
+        local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
+        if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
+            newSource.indicatorStackRule = CopyTable(oldRule)
+        end
     end
     for i = 2, #(group.buttons or {}) do
         local entry = group.buttons[i]

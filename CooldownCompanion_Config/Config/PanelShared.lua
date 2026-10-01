@@ -636,10 +636,14 @@ local function DeleteEntrySelection(snapshot)
     if rejectMessage then CooldownCompanion:Print(rejectMessage); return end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
+    local leaving = ST.Indicator.SourcesLeaving(snapshot.group)
     for i = #snapshot.indices, 1, -1 do
         ST.DetachEntryFromPanelSection(snapshot.group, snapshot.entries[i])
         table.remove(snapshot.group.buttons, snapshot.indices[i])
     end
+    -- An Indicator's aura list and effects follow the entries that left.
+    local leftNotice = ST.Indicator.SourcesLeft(snapshot.group, leaving)
+    if leftNotice then CooldownCompanion:Print(leftNotice) end
     -- Detach already dissolves the sections these entries vacated. Leave
     -- unrelated empty template sections waiting for their first members.
     SelectEntryActionResults(snapshot.groupId, {})
@@ -676,6 +680,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
     end
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
+    local leaving = ST.Indicator.SourcesLeaving(snapshot.group)
     local previousCount = #targetGroup.buttons
     local results = {}
     for i, entry in ipairs(snapshot.entries) do
@@ -700,6 +705,9 @@ local function MoveEntrySelection(snapshot, targetGroupId)
     for i = #snapshot.indices, 1, -1 do
         table.remove(snapshot.group.buttons, snapshot.indices[i])
     end
+    -- The Indicator left behind adapts its aura list and effects.
+    local leftNotice = ST.Indicator.SourcesLeft(snapshot.group, leaving)
+    if leftNotice then CooldownCompanion:Print(leftNotice) end
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     SelectEntryActionResults(targetGroupId, results)
     CooldownCompanion:RefreshGroupFrame(targetGroupId)
