@@ -262,9 +262,9 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local fraction = state == "full" and 1 or state == "empty" and 0 or 0.5
     if state == "timeless" then fraction=1 end
     local settings = I.Settings(candidate)
-    -- While Missing has no timer, drain or pandemic: it shows while the aura
-    -- is absent. Its Aura row tries the two states instead.
-    local missing = I.ShowsWhileMissing(candidate)
+    -- A presence-drawn display (While Missing, several auras) has no timer,
+    -- drain or pandemic. Its Aura(s) row tries the states instead.
+    local missing = I.UsesPresence(candidate)
     local showDuration = not readOnly and not missing and (settings.readouts.timer
         or settings.displayType == "texture" and settings.progress.enabled
         or I.IsAura(candidate) and settings.displayType ~= "text" and settings.pandemic.pandemicEffectEnabled == true)
@@ -294,11 +294,20 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         passes = I.StackRulePasses(compare, count, stacks or 0)
     end
     -- While Missing starts on Missing so the display is visible; Active hides
-    -- it as the real tracker does.
-    local auraKey = tostring(panelId)
+    -- it as the real tracker does. A list tries its auras' Whens met or not,
+    -- starting met.
+    local list = I.IsMultiAura(candidate)
+    local auraStates, auraOrder, auraPass
+    if list then
+        auraStates, auraOrder, auraPass = {met="Met", unmet="Not Met"}, {"met", "unmet"}, "met"
+    else
+        auraStates, auraOrder, auraPass = {missing="Missing", active="Active"}, {"missing", "active"}, "missing"
+    end
+    local auraKey = tostring(panelId) .. ":" .. tostring(list)
     local saved = CS.indicatorPreviewAura
-    local auraState = missing and not readOnly and saved and saved.key == auraKey and saved.value or "missing"
-    if missing then passes = auraState == "missing" end
+    local auraState = missing and not readOnly and saved and saved.key == auraKey and auraStates[saved.value]
+        and saved.value or auraPass
+    if missing then passes = auraState == auraPass end
     surface:SetAlpha(passes and 1 or 0)
     if not I.Render(surface,nil,candidate,true,fraction) then
         if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:Hide() end
@@ -363,11 +372,11 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
             local control = preview.indicatorAura
             if not control then
                 control = AceGUI:Create("CDC-DropdownRow")
-                control:SetLabel("Aura")
-                control:SetList({missing="Missing",active="Active"}, {"missing","active"})
                 control.frame:SetParent(preview.root)
                 preview.indicatorAura = control
             end
+            control:SetLabel(list and "Auras" or "Aura")
+            control:SetList(auraStates, auraOrder)
             AddFooterRow(preview,footer,control,rowWidth)
             control:SetValue(auraState)
             control:SetCallback("OnValueChanged",function(_,_,value)

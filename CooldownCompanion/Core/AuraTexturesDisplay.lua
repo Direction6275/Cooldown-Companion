@@ -911,7 +911,8 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
     return host
 end
 
--- The While Missing display: a bare drawing host with the same visual fields
+-- A presence display (While Missing, aura lists): a bare drawing host with
+-- the same visual fields
 -- the shared Indicator painters expect (visualRoot, primary/secondary
 -- texture), every frame carrying `template`. AuraDisplay parents it inside the
 -- presence window; placement, mover chrome and alpha stay on the ordinary
@@ -938,12 +939,15 @@ end
 -- Latched: callers on the per-update path (unlocked, other modes) run this
 -- every tick; the teardown happens once until the next presence render.
 local function ReleasePresenceDisplay(button)
-    local presence = CooldownCompanion.GetIndicatorPresenceHost and CooldownCompanion:GetIndicatorPresenceHost(button)
-    if not presence or presence._ccPresenceReleased then return end
-    presence._ccPresenceReleased = true
-    StopAllTextureIndicatorEffects(presence)
-    ST.Indicator.ReleaseVisual(presence)
-    CooldownCompanion.HideStandaloneDisplayVisuals(presence)
+    local presences = CooldownCompanion.GetIndicatorPresenceHosts and CooldownCompanion:GetIndicatorPresenceHosts(button)
+    for _, presence in ipairs(presences or {}) do
+        if not presence._ccPresenceReleased then
+            presence._ccPresenceReleased = true
+            StopAllTextureIndicatorEffects(presence)
+            ST.Indicator.ReleaseVisual(presence)
+            CooldownCompanion.HideStandaloneDisplayVisuals(presence)
+        end
+    end
 end
 
 function CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
@@ -1711,21 +1715,25 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     local hasBoundSlot = slotToken ~= nil and slotToken == driverButton.buttonData
     local useManagedRuntime = auraControlled
         and not visibilityState.bypassModuleAlpha
-    -- While Missing: the ordinary host keeps placement and alpha but draws
-    -- nothing; the display is painted into the presence host, which Blizzard's
-    -- tracker uncovers only while the aura is absent. Unlocked and layout
-    -- previews show the saved design on the ordinary host instead.
-    local presenceRuntime = ST.Indicator.ShowsWhileMissing(group)
+    -- While Missing and aura lists: the ordinary host keeps placement and
+    -- alpha but draws nothing; the display is painted into the presence
+    -- copies, which Blizzard's trackers uncover only while the auras match
+    -- (one copy, or one per aura for Any). Unlocked and layout previews show
+    -- the saved design on the ordinary host instead.
+    local presenceRuntime = ST.Indicator.UsesPresence(group)
         and not visibilityState.bypassModuleAlpha
-    local presence = presenceRuntime and self:GetIndicatorPresenceHost(driverButton)
+    local presences = presenceRuntime and self:GetIndicatorPresenceHosts(driverButton)
+    local presence = presences and presences[1]
     local shown
     if presence then
-        -- Extra sources' rules hide the drawing and its effects; the tracker
-        -- and the aura's sounds keep running underneath.
+        -- Extra sources' rules hide the drawing and its effects; the trackers
+        -- and the auras' sounds keep running underneath.
         local rulesPass = ST.Indicator.ExtraSourcesMatch(frame, group)
-        presence._ccPresenceReleased = nil
-        shown = ST.Indicator.Render(presence, driverButton, group, false, nil, rulesPass,
-            displayType == "icon" and settings or nil)
+        for _, copy in ipairs(presences) do
+            copy._ccPresenceReleased = nil
+            shown = ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass,
+                displayType == "icon" and settings or nil)
+        end
         -- Only a successful render repaints the host. A design with nothing to
         -- draw leaves the teardown latch alone, so the hide below stays cheap.
         if shown then
@@ -1749,14 +1757,16 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
                 host._activeDisplayType, host._activeTextureSettings, host._activeTextureGeometry = nil, nil, nil
             end
             local level = host:GetFrameLevel() + 1
-            if presence:GetFrameLevel() ~= level then presence:SetFrameLevel(level) end
+            for _, copy in ipairs(presences) do
+                if copy:GetFrameLevel() ~= level then copy:SetFrameLevel(level) end
+            end
             -- Placement, anchors and drag use the ordinary host: size it from
             -- the drawing (a CC-set size, never a measured one).
             local width, height = presence:GetSize()
             local hostWidth, hostHeight = host:GetSize()
             if hostWidth ~= width or hostHeight ~= height then host:SetSize(width, height) end
         end
-        presence:SetShown(shown and rulesPass)
+        for _, copy in ipairs(presences) do copy:SetShown(shown and rulesPass) end
     elseif presenceRuntime then
         -- Not bound yet (the rebind is queued or deferred by combat): keep
         -- the host placed and sized from the saved design, drawing nothing.

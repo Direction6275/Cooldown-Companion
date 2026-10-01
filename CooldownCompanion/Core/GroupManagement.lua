@@ -1995,12 +1995,16 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         )
     end
 
-    -- One aura per Indicator. An aura joining spell or item sources becomes
-    -- the display (OnSourceAdded moves it to slot one).
+    -- An aura joining spell or item sources becomes the display
+    -- (OnSourceAdded moves it to slot one); one joining an aura Indicator
+    -- joins its list, on the same unit and never twice.
     if ST.Indicator.Primary(group) ~= newButton and ST.Indicator.IsAura(group) and newButton.addedAs == "aura" then
-        table.remove(group.buttons, buttonIndex)
-        self:Print(ST.Indicator.OneAuraText)
-        return nil
+        local reason = ST.Indicator.AddRestriction(group, newButton)
+        if reason then
+            table.remove(group.buttons, buttonIndex)
+            self:Print(reason)
+            return nil
+        end
     end
     local added, detail = ST.Indicator.OnSourceAdded(group, newButton)
     if not added then
@@ -2025,6 +2029,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     if replacementTarget then
         local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
         if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+        -- A list that changed shape (its Show When or effects) says so too.
+        if reason then detail = detail and (detail .. " " .. reason) or reason end
     end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
@@ -2089,6 +2095,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     if replacementTarget then
         local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
         if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+        if reason then detail = detail and (detail .. " " .. reason) or reason end
     end
     -- Effects adapted for the slot becoming the display (a Text Only Shrink).
     if detail then self:Print(detail) end

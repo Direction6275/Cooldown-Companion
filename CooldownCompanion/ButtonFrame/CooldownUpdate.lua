@@ -210,7 +210,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
     local group = buttonGroup
     -- Condition sources only drive their Indicator and never show themselves:
     -- every source of a conditions Indicator, an aura Indicator's extras.
-    local isTriggerPanel = ST.Indicator.IsConditionSource(group, buttonData)
+    local isTriggerPanel = ST.Indicator.IsHiddenSource(group, buttonData)
     -- An unlocked panel shows every entry so there is something to grab and
     -- arrange, whether the whole Group is unlocked or just this panel. Read
     -- off the per-refresh cached frame flags (set in RefreshGroupFrame,

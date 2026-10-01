@@ -35,7 +35,7 @@ local function CountReadoutKey(group)
 end
 -- While Missing shows only while the aura is absent: no timer, count or drain.
 local function LiveReadouts(group)
-    return not I.ShowsWhileMissing(group)
+    return not I.UsesPresence(group)
 end
 local drainable = Applies(function(g,s) return s.displayType == "texture" and LiveReadouts(g) end)
 local drain = Applies(function(g,s) return s.displayType == "texture" and s.progress.enabled == true
@@ -97,7 +97,11 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
     unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)},
     auraWhen={label="When",aliases={"stacks","stack count","at least","fewer than","exactly","max stacks","while active",
         "while missing","missing","inactive"},
-        applies=Applies(function(g) return I.IsAura(g) end)},
+        applies=Applies(function(g) return I.IsAura(g) and not I.IsMultiAura(g) end)},
+    auraMatch={label="Match",aliases={"all","any","and","or","several auras","multiple auras"},
+        applies=Applies(function(g) return I.IsMultiAura(g) end)},
+    auraEntryWhen={label="When",aliases={"while active","while missing","missing","inactive"},
+        applies=Applies(function(g) return I.IsMultiAura(g) end)},
     stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
         local compare = I.StackCompare(g)
         return compare ~= nil and compare ~= "max"
@@ -383,7 +387,8 @@ local function AddMainSourceBadges(row, group, source, changed)
     -- The next source takes over; with none, the Indicator is cleared.
     local nextSource = I.NextMainSource(group)
     local removeText = nextSource
-        and ((nextSource.name or tostring(nextSource.id)) .. " is shown on the display instead, with its rules.")
+        and ((nextSource.name or tostring(nextSource.id)) .. " is shown on the display instead"
+            .. (I.IsListedAura(group, nextSource) and "." or ", with its rules."))
         or #group.buttons > 1 and "No other source can drive the display, so every source is removed. The look is kept."
         or "Removes the source; the look is kept."
     local change = RowBadge(row,
@@ -412,14 +417,15 @@ local function AddMainSourceBadges(row, group, source, changed)
     end)
 end
 
--- Where an aura Indicator looks for its aura.
+-- Where an aura Indicator looks for an aura. Each aura in a list has its own
+-- (each gets its own hidden tracker).
 local function AddTrackedOn(column, group, source, changed)
     local automaticSource = CopyTable(source)
     automaticSource.auraUnitOverride = nil
     local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
-    -- While Missing has no group form yet: Group is offered only if saved.
+    -- Presence-drawn auras have no group form yet: Group is offered only if saved.
     local order = {"automatic","player","target","group","pet"}
-    if I.ShowsWhileMissing(group) and not source.auraTrackGroup then table.remove(order, 4) end
+    if I.UsesPresence(group) and not source.auraTrackGroup then table.remove(order, 4) end
     Dropdown(column, {setting=whenToShow.unit, indent=true,
         list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
             player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
@@ -432,6 +438,39 @@ local function AddTrackedOn(column, group, source, changed)
             source.auraTrackPet = value == "pet" or nil
             if source.auraTrackGroup or source.auraTrackPet then source.auraUnitOverride = "player" end
             source.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(source)
+            changed(true)
+        end})
+end
+
+-- An aura list's Match: every aura's When must hold, or at least one.
+local AURA_MATCH_TOOLTIP = {"Match",
+    {"All shows when every aura matches its When. Any shows when at least one does.", 1, 1, 1, true},
+    " ",
+    {"There is no timer or count. With a target aura and no hostile target, it stays hidden.", 1, 1, 1, true}}
+local function AddAuraMatch(column, group, changed)
+    local current = I.AuraMatch(group)
+    Dropdown(column, {setting=whenToShow.auraMatch, indent=true, list=I.AURA_MATCH_LABELS,
+        order=I.AURA_MATCH_ORDER, value=current, tooltip=AURA_MATCH_TOOLTIP,
+        onChange=function(value)
+            if value == current then return end
+            I.SetAuraMatch(group, value)
+            changed(true)
+        end})
+    if I.AuraListProblem(group) == "indicator_aura_group" then
+        Hint(column, "Group tracking works with a single aura, so this stays hidden. Choose another Tracked On.")
+    end
+end
+
+-- One aura's When inside a list.
+local AURA_ENTRY_WHEN_LIST = {active="While Active", missing="While Missing"}
+local function AddListedAuraWhen(column, group, entry, changed)
+    local current = I.AuraWantsActive(entry) and "active" or "missing"
+    Dropdown(column, {setting=whenToShow.auraEntryWhen, indent=true, list=AURA_ENTRY_WHEN_LIST,
+        order={"active", "missing"}, value=current,
+        tooltip={"When", {"While Active counts this aura while it is on; While Missing while it is off.", 1, 1, 1, true}},
+        onChange=function(value)
+            if value == current then return end
+            I.SetAuraEntryWhen(group, entry, value)
             changed(true)
         end})
 end
@@ -509,11 +548,31 @@ local function BuildSourceRules(container, group, entry, changed)
     if primary then
         local row = Label(column, {label=name, controlText=KIND_COLOR.."Shown on display|r"})
         AddMainSourceBadges(row, group, entry, changed)
-        if I.IsAura(group) then
+        if I.IsMultiAura(group) then
+            AddAuraMatch(column, group, changed)
+            AddListedAuraWhen(column, group, entry, changed)
+            AddTrackedOn(column, group, entry, changed)
+            return
+        elseif I.IsAura(group) then
             AddAuraWhen(column, group, entry, changed)
             AddTrackedOn(column, group, entry, changed)
             return
         end
+    elseif I.IsListedAura(group, entry) then
+        -- Another aura in the list: its own When and unit, no spell rules.
+        local row = Label(column, {label=name})
+        RowBadge(row, {"Promote to Display", "Use this aura's icon and name on the Indicator. The list and Match stay the same."},
+            function() if I.PromoteAura(group, entry) then changed(true) end end,
+            "uitools-icon-chevron-down", CHANGE_HOVER_COLOR, math.pi)
+        RowBadge(row, {"Remove Aura", "Removes this aura from the list."}, function()
+            local removed, reason, notice = I.RemoveSource(group, entry)
+            if reason then Addon:Print(I.EffectFailureText[reason]) end
+            if notice then Addon:Print(notice) end
+            if removed then changed(true) end
+        end)
+        AddListedAuraWhen(column, group, entry, changed)
+        AddTrackedOn(column, group, entry, changed)
+        return
     else
         local row = Label(column, {label=name})
         if I.CanBeMainSource(group, entry) then
@@ -592,20 +651,30 @@ function ST._GetIndicatorSourceControls(group)
     -- An Icon display showing this same icon as its artwork already names the
     -- main source; repeating it small in the card adds nothing.
     local artwork = I.Settings(group).displayType == "icon" and I.ArtworkIcon(group)
+    -- Same order as When to Show: the aura list, then the rule sources.
+    local ordered = I.AuraList(group)
     for _, entry in ipairs(group.buttons or {}) do
+        if not I.IsListedAura(group, entry) then ordered[#ordered + 1] = entry end
+    end
+    for _, entry in ipairs(ordered) do
         local primary = entry == source
         local icon = ST._GetButtonIcon(entry)
         if primary and artwork == icon then icon = nil end
         -- An aura's one rule is its stack rule (or While Active); its extras
         -- carry the spell/item rules.
         local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
-            aura=aura and primary, enabled=entry.enabled ~= false, rules={}}
-        if item.aura then
+            aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}}
+        if item.aura and primary then
             -- A rule the aura's max rules out reads as a warning.
             local compare, count, max = I.StackRule(group)
             item.auraRule = I.AuraWhenLabel(group)
             item.auraRuleNever = I.StackRuleOutcome(compare, count, max) == "never"
-                or I.ShowsWhileMissing(group) and entry.auraTrackGroup == true
+                or I.UsesPresence(group) and entry.auraTrackGroup == true
+                or I.AuraListProblem(group) ~= nil
+        elseif item.aura then
+            -- Later auras read joined by the list's Match.
+            item.auraRule = (I.AuraMatch(group) == "any" and "or " or "and ") .. I.AuraEntryWhenLabel(entry)
+            item.enabled = true
         end
         key[#key + 1] = table.concat({tostring(entry), tostring(icon), item.name, tostring(item.enabled),
             tostring(item.auraRule), tostring(item.auraRuleNever)}, ",")
@@ -628,7 +697,7 @@ end
 local function BuildWhenToShow(container, group, changed)
     local source = I.Primary(group)
     if not source then
-        Hint(container,"Add spells, items, or one aura in the field at the top.")
+        Hint(container,"Add spells, items, or auras in the field at the top.")
         return
     end
     local aura = I.IsAura(group)
@@ -641,9 +710,11 @@ local function BuildWhenToShow(container, group, changed)
             " ",
             {"Checked spells and items must be available to you, or it stays hidden.", 1, 1, 1, true},
             " ",
-            {"Add spells, items, or one aura in the field at the top.", 1, 1, 1, true},
+            {"Add spells, items, or auras in the field at the top.", 1, 1, 1, true},
             " ",
-            {"With an aura, its timer and stacks feed the display. Its sounds still play when other rules hide it.", 1, 1, 1, true}},
+            {"With one aura, its timer and stacks feed the display. Its sounds still play when other rules hide it.", 1, 1, 1, true},
+            " ",
+            {"With several auras, each has its own When and unit, and Match decides whether all or any must hold. There is no timer or count.", 1, 1, 1, true}},
         CS.tabInfoButtons))
     if whenCollapsed then return end
     local settings = I.Settings(group)
@@ -652,8 +723,11 @@ local function BuildWhenToShow(container, group, changed)
             tooltip={"Source Visibility",{"Preserves the source's saved cooldown, charge, item, and usability visibility rules. They must also allow the Indicator to show.",1,1,1,true}},
             onChange=function(value) settings.sourceVisibility=value; changed() end})
     end
+    -- The aura list first (main aura heading it), then the rule sources.
+    local list = I.AuraList(group)
+    for _, entry in ipairs(list) do BuildSourceRules(container, group, entry, changed) end
     for _, entry in ipairs(group.buttons or {}) do
-        BuildSourceRules(container, group, entry, changed)
+        if not I.IsListedAura(group, entry) then BuildSourceRules(container, group, entry, changed) end
     end
 end
 
