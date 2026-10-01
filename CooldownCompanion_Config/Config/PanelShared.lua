@@ -687,8 +687,15 @@ local function MoveEntrySelection(snapshot, targetGroupId)
         ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
-        ST.Indicator.OnSourceAdded(targetGroup, entry)
-        results[i] = previousCount + i
+        -- An aura joining an Indicator notes what its effects became.
+        local _, notice = ST.Indicator.OnSourceAdded(targetGroup, entry)
+        if notice then CooldownCompanion:Print(notice) end
+    end
+    -- Select by identity: an aura joining an Indicator moves to slot one.
+    for i, entry in ipairs(snapshot.entries) do
+        for index, button in ipairs(targetGroup.buttons) do
+            if button == entry then results[i] = index; break end
+        end
     end
     for i = #snapshot.indices, 1, -1 do
         table.remove(snapshot.group.buttons, snapshot.indices[i])

@@ -1431,7 +1431,8 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
         driverButton._lastVisAlpha = 0
     end
     if ST.SetFrameClickThroughRecursive then
-        if isTriggerPanel and frame and type(frame.buttons) == "table" then
+        -- Every hidden source, including an aura Indicator's extra sources.
+        if frame and type(frame.buttons) == "table" then
             for _, backingButton in ipairs(frame.buttons) do
                 ST.SetFrameClickThroughRecursive(backingButton, true, true)
             end
@@ -1673,7 +1674,10 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         and not visibilityState.bypassModuleAlpha
     local shown
     if useManagedRuntime then
-        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, hasBoundSlot)
+        -- Extra sources' rules gate only the reveal alpha. The host and the
+        -- native slot stay up, so the aura's own sounds keep following it.
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings,
+            hasBoundSlot and ST.Indicator.ExtraSourcesMatch(frame, group))
     else
         if host.auraRuntimeRoot then
             host.auraRuntimeRoot:SetAlpha(0)

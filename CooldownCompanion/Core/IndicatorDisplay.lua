@@ -101,6 +101,10 @@ function I.PreviewTimerText(group, seconds)
     return Addon.FormatDurationText(seconds, options, true, "cooldown")
 end
 
+local function ReadoutAnchor(options, key)
+    return options[key .. "Anchor"] or (key == "label" and "TOP" or key == "count" and "BOTTOM" or "CENTER")
+end
+
 -- `font`/`outline` are the shared text font StyleVisual already resolved; only
 -- a readout with its own font or outline needs another lookup.
 local function StyleReadouts(host, group, font, outline)
@@ -121,7 +125,7 @@ local function StyleReadouts(host, group, font, outline)
         ST.ApplyFontShadowForOutline(fs, fontOutline)
         fs:SetTextColor(color[1], color[2], color[3], color[4] or 1)
         fs:ClearAllPoints()
-        local anchor = options[key .. "Anchor"] or (key == "label" and "TOP" or key == "count" and "BOTTOM" or "CENTER")
+        local anchor = ReadoutAnchor(options, key)
         fs:SetPoint(anchor, host.visualRoot, anchor, options[key .. "X"] or 0, options[key .. "Y"] or 0)
         fs:SetJustifyH("CENTER")
         fs:SetWordWrap(false)
@@ -281,7 +285,10 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
     if preview then
         Addon.UnbindDurationText(readouts.timer, true)
         readouts.timer:SetText(I.PreviewTimerText(group, previewFraction * I.PREVIEW_SECONDS))
-        readouts.count:SetText(options.count ~= "none" and "3" or "")
+        -- A stack rule's preview sets its sample count; like Blizzard's count
+        -- text, one stack or none shows nothing.
+        local stacks = host._previewStacks
+        readouts.count:SetText(options.count ~= "none" and (not stacks and "3" or stacks > 1 and tostring(stacks)) or "")
     elseif not I.IsAura(group) then
         local duration = driver and (driver._chargeRecharging and driver._chargeDurationObj or driver._durationObj)
         local itemDuration = driver and driver._itemCdDuration or 0
@@ -361,6 +368,88 @@ function I.Render(host, driver, group, preview, fraction, effectsActive, resolve
     return true
 end
 
+-- The stack gate's cell: a box around the slot center wide enough for all the
+-- display draws (artwork, pandemic glow, Bounce, readouts at their offsets),
+-- estimated from saved settings so nothing in the slot is ever measured.
+local function StackGateCell(group, width, height)
+    local settings = I.Settings(group)
+    local options = settings.readouts
+    local glow = tonumber(settings.pandemic and settings.pandemic.pandemicGlowSize) or 0
+    local pad = math.max(width, height) / 2 + glow + 24
+    local reachX, reachY = width / 2 + pad, height / 2 + pad
+    local label = I.Label(group) or ""
+    for _, key in ipairs(READOUT_KEYS) do
+        local _, size = I.ReadoutFont(settings, key)
+        local anchor = ReadoutAnchor(options, key)
+        local x = (anchor:find("LEFT") and -width / 2 or anchor:find("RIGHT") and width / 2 or 0) + (options[key .. "X"] or 0)
+        local y = (anchor:find("TOP") and height / 2 or anchor:find("BOTTOM") and -height / 2 or 0) + (options[key .. "Y"] or 0)
+        -- About one font size per character, generous for any font.
+        local chars = key == "label" and math.max(#label, 4) or key == "timer" and 6 or 3
+        reachX = math.max(reachX, math.abs(x) + size * chars)
+        reachY = math.max(reachY, math.abs(y) + size * 2)
+    end
+    return math.ceil(reachX * 2), math.ceil(reachY * 2)
+end
+
+-- The stack rule on a native slot. Each stack moves the hidden bar's fill by
+-- one cell, so whole stacks decide whether the cell is covered:
+--   At Least N    gate = the filled part of an N-cell bar ending at the cell's
+--                 right edge, so the cell is covered from N stacks up. At Max
+--                 is At Least the aura's max.
+--   Fewer Than N  gate = the unfilled part of that bar: covered below N.
+--   Exactly N     gate = the cell itself; the host rides the fill's right edge
+--                 on an (N+1)-cell bar whose Nth step ends on the cell, so it
+--                 sits inside only at exactly N (the bar clamps above its max).
+-- Anchored to the slot center and the creation-time fill texture; no rect or
+-- bar value is read. OOC bind only. `group` nil or no rule: unclipped.
+function I.StyleStackGate(slot, group, width, height)
+    local host = slot.kit and slot.kit.texturePanelHost
+    local stack = host and host.stackGate
+    if not stack then return end
+    local slotButton, gate, bar, fill = slot.slotButton, stack.gate, stack.bar, stack.fill
+    local compare, count, auraMax = I.StackRule(group)
+    gate:ClearAllPoints()
+    host:ClearAllPoints()
+    host:SetAllPoints(slotButton)
+    -- A rule the aura's max settles needs no bar: one that cannot pass (or be
+    -- checked) fails closed with the gate hidden until a bind changes it, and
+    -- one that always passes is the unclipped gate. This also keeps the bar
+    -- from being built wider than the max ever needs.
+    local outcome = I.StackRuleOutcome(compare, count, auraMax)
+    gate:SetShown(outcome ~= "never")
+    if not compare or outcome then
+        gate:SetAllPoints(slotButton)
+        gate:SetClipsChildren(false)
+        return
+    end
+    local cell, barHeight = StackGateCell(group, width, height)
+    local max = compare == "exactly" and count + 1 or count
+    if stack.max ~= max then
+        slotButton:SetApplicationBar(bar, {maxApplications = max})
+        stack.max = max
+    end
+    bar:ClearAllPoints()
+    bar:SetSize(cell * max, barHeight)
+    if compare == "exactly" then
+        bar:SetPoint("LEFT", slotButton, "CENTER", cell / 2 - cell * count, 0)
+        gate:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
+        gate:SetSize(cell, barHeight)
+        host:ClearAllPoints()
+        host:SetPoint("CENTER", fill, "RIGHT", -cell / 2, 0)
+        host:SetSize(width, height)
+    else
+        bar:SetPoint("RIGHT", slotButton, "CENTER", cell / 2, 0)
+        if compare == "atLeast" or compare == "max" then
+            gate:SetPoint("TOPLEFT", fill, "TOPLEFT", 0, 0)
+            gate:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0, 0)
+        else
+            gate:SetPoint("TOPLEFT", fill, "TOPRIGHT", 0, 0)
+            gate:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+        end
+    end
+    gate:SetClipsChildren(true)
+end
+
 -- Called only by the native aura owner's gated bind. No live updates use this.
 -- `durationOptions` is the owner's composed timer formatter (Duration Format,
 -- Low Time and the Pandemic marker, built from `readouts`); this model never
@@ -368,7 +457,7 @@ end
 function I.StyleAura(slot, group, durationOptions)
     local host = slot.kit.texturePanelHost
     slot.slotButton:ClearIcon()
-    local shown = I.StyleVisual(host, group)
+    local shown, width, height = I.StyleVisual(host, group)
     local settings = I.Settings(group)
     local source = I.Primary(group)
     if settings.displayType == "icon" and not settings.icon.manualIcon and not (source and source.manualIcon) then
@@ -377,6 +466,7 @@ function I.StyleAura(slot, group, durationOptions)
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
     I.StylePandemicGlow(host, group, shown)
+    I.StyleStackGate(slot, shown and group or nil, width, height)
     host.visualRoot:SetAlpha(shown and 1 or 0)
     return shown
 end
