@@ -839,13 +839,7 @@ local function BuildTexturePanelSlotKit(slotButton)
     host.pulseAnim:SetFromAlpha(1)
     host.pulseAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
 
-    host.shrinkAG = visualRoot:CreateAnimationGroup()
-    host.shrinkAG:SetLooping("BOUNCE")
-    host.shrinkAnim = host.shrinkAG:CreateAnimation("Scale")
-    host.shrinkAnim:SetScaleFrom(1, 1)
-    host.shrinkAnim:SetScaleTo(DEFAULT_TEXTURE_SHRINK_SCALE, DEFAULT_TEXTURE_SHRINK_SCALE)
-    host.shrinkAnim:SetOrigin("CENTER", 0, 0)
-    host.shrinkAnim:SetSmoothing("IN_OUT")
+    -- Shrink / Expand has no AnimationGroup here: see SetSlotShrink.
 
     host.bounceAG = visualRoot:CreateAnimationGroup()
     host.bounceAG:SetLooping("BOUNCE")
@@ -1588,10 +1582,43 @@ end
 
 local function StopTexturePanelSlotIndicator(host)
     host.pulseAG:Stop()
-    host.shrinkAG:Stop()
     host.bounceAG:Stop()
     for _, colorShift in ipairs(host.colorShift) do
         colorShift.group:Stop()
+    end
+end
+
+-- Shrink / Expand for a native slot. A Scale AnimationGroup distorts child
+-- text and borders (in-game probe 2026-09-30: FontStrings grow from their
+-- left edge, border edges stay put, wherever the animation sits), so the whole
+-- display is scaled from its CC-owned layer above the aura container instead,
+-- the way the preview scales. SetScale there is combat-safe: the layer is
+-- outside Blizzard's AuraButton subtree (probed in combat). Everything below
+-- it is either anchored to it or sized in its units, so the display shrinks
+-- about its center. Same curve as the preview (AuraTexturesEffects).
+--
+-- The loop skips its work while CC itself has the display invisible: the
+-- layer's own alpha (extra-source rules failing, or the config preview
+-- showing instead) or the Indicator host faded to zero. Both are plain alphas
+-- CC writes. A missing aura cannot pause it: that is Blizzard's secret.
+local function OnSlotShrinkUpdate(layer, elapsed)
+    if layer:GetAlpha() == 0 or layer._ccShrinkHost:GetAlpha() == 0 then return end
+    local period = layer._ccShrinkPeriod
+    layer._ccShrinkTime = (layer._ccShrinkTime + elapsed) % period
+    local t = 0.5 - 0.5 * math.cos(layer._ccShrinkTime / period * 2 * math.pi)
+    layer:SetScale(1 - (1 - DEFAULT_TEXTURE_SHRINK_SCALE) * t)
+end
+
+-- `period` nil stops it and restores the layer's scale.
+local function SetSlotShrink(layer, period)
+    if not layer then return end
+    if period then
+        layer._ccShrinkPeriod, layer._ccShrinkTime = period, 0
+        layer._ccShrinkHost = layer:GetParent()
+        layer:SetScript("OnUpdate", OnSlotShrinkUpdate)
+    else
+        layer:SetScript("OnUpdate", nil)
+        layer:SetScale(1)
     end
 end
 
@@ -1611,6 +1638,7 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     -- BindDisplay is OOC. Stop/reset before writing the selected texture so a
     -- pooled slot cannot retain the previous entry's animation or end state.
     StopTexturePanelSlotIndicator(host)
+    SetSlotShrink(slot.layer, nil)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
     host._indicatorDimAlpha = nil
@@ -1647,8 +1675,7 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     end
     local shrink = effects[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND]
     if shrink then
-        host.shrinkAnim:SetDuration(TexturePanelEffectSpeed(shrink) / 2)
-        host.shrinkAG:Play()
+        SetSlotShrink(slot.layer, TexturePanelEffectSpeed(shrink))
     end
     local bounce = effects[TEXTURE_INDICATOR_EFFECT_BOUNCE]
     if bounce then
@@ -2687,6 +2714,18 @@ local function ParkDisplay(record)
         ReleaseSlotAuraSounds(record)
         record.container:SetAuraSlotCandidateFilters(record.key, BuildParkFilters(record.unit))
         record.container:Hide()
+        -- An Indicator's Shrink / Expand runs on the shared texture layer;
+        -- stop it once no live record (an ally unit's) still uses the layer.
+        if record.hostKind == "texturePanel" then
+            local shared = false
+            for _, other in ipairs(records) do
+                if other ~= record and not other.parked and other.layer == record.layer then
+                    shared = true
+                    break
+                end
+            end
+            if not shared then SetSlotShrink(record.layer, nil) end
+        end
     end
 end
 
