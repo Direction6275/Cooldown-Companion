@@ -391,7 +391,9 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     -- stale key comes off rather than waiting to collide inside an aura section.
     CooldownCompanion:AdoptAuraEntryKey(targetGroup, buttonData)
     table.insert(targetGroup.buttons, targetIndex, buttonData)
-    ST.Indicator.OnSourceAdded(targetGroup, buttonData)
+    -- An aura joining an Indicator notes what its effects became.
+    local _, notice = ST.Indicator.OnSourceAdded(targetGroup, buttonData)
+    if notice then CooldownCompanion:Print(notice) end
     CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
     return buttonData
 end

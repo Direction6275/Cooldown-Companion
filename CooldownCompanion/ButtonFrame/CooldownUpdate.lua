@@ -173,7 +173,9 @@ local function DispatchStandaloneTextureVisual(button, group)
         group = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
             and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     end
-    if CooldownCompanion:IsTriggerPanelGroup(group) then
+    -- One Indicator display reads every source's fresh state: update it once,
+    -- after the walk reaches the last source (a lone aura source is the last).
+    if ST.IsIndicatorGroup(group) then
         local frame = button:GetParent()
         local runtimeButtons = frame and frame.buttons
         if type(runtimeButtons) == "table" and runtimeButtons[#runtimeButtons] == button then
@@ -206,7 +208,9 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
     button._rawVisibilityReasonMode = button._visibilityReasonMode
 
     local group = buttonGroup
-    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
+    -- Condition sources only drive their Indicator and never show themselves:
+    -- every source of a conditions Indicator, an aura Indicator's extras.
+    local isTriggerPanel = ST.Indicator.IsConditionSource(group, buttonData)
     -- An unlocked panel shows every entry so there is something to grab and
     -- arrange, whether the whole Group is unlocked or just this panel. Read
     -- off the per-refresh cached frame flags (set in RefreshGroupFrame,

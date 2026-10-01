@@ -1995,22 +1995,24 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         )
     end
 
-    if ST.IsIndicatorGroup(group) and buttonIndex > 1 and newButton.addedAs == "aura" then
+    -- One aura per Indicator. An aura joining spell or item sources becomes
+    -- the display (OnSourceAdded moves it to slot one).
+    if ST.Indicator.Primary(group) ~= newButton and ST.Indicator.IsAura(group) and newButton.addedAs == "aura" then
         table.remove(group.buttons, buttonIndex)
-        self:Print("Aura displays cannot be combined with conditions. Create an aura Indicator instead.")
+        self:Print(ST.Indicator.OneAuraText)
         return nil
     end
-    local added, reason = ST.Indicator.OnSourceAdded(group, newButton)
+    local added, detail = ST.Indicator.OnSourceAdded(group, newButton)
     if not added then
         table.remove(group.buttons, buttonIndex)
-        self:Print(ST.Indicator.EffectFailureText[reason])
+        self:Print(ST.Indicator.EffectFailureText[detail])
         return nil
     end
     if self.EnableTexturePanelAuraDisplayForEntry then
         self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
     end
 
-    if self:IsTriggerPanelGroup(group) and self.NormalizeTriggerConditionRowData then
+    if ST.Indicator.IsConditionSource(group, newButton) and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
@@ -2026,7 +2028,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
-    return buttonIndex, transformNotified
+    -- An aura that joined an Indicator now sits in slot one. Its note (effects
+    -- adapted) is the caller's to print.
+    if group.buttons[buttonIndex] ~= newButton then buttonIndex = 1 end
+    return buttonIndex, transformNotified, detail
 end
 
 function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKind, replaceIndicatorSource)
@@ -2071,13 +2076,13 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local buttonIndex = #group.buttons + 1
     group.buttons[buttonIndex] = newButton
 
-    local added, reason = ST.Indicator.OnSourceAdded(group, newButton)
+    local added, detail = ST.Indicator.OnSourceAdded(group, newButton)
     if not added then
         table.remove(group.buttons, buttonIndex)
-        self:Print(ST.Indicator.EffectFailureText[reason])
+        self:Print(ST.Indicator.EffectFailureText[detail])
         return nil
     end
-    if self:IsTriggerPanelGroup(group) and self.NormalizeTriggerConditionRowData then
+    if ST.Indicator.IsConditionSource(group, newButton) and self.NormalizeTriggerConditionRowData then
         self:NormalizeTriggerConditionRowData(newButton)
     end
 
@@ -2085,6 +2090,8 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
         local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
         if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
     end
+    -- Effects adapted for the slot becoming the display (a Text Only Shrink).
+    if detail then self:Print(detail) end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
     return buttonIndex

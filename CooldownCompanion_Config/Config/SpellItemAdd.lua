@@ -66,8 +66,9 @@ local function TargetPanelAcceptsAuraEntries(groupId)
     groupId = groupId or CS.addingToPanelId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
+    -- An Indicator takes one aura, at any time; a second only as a replacement.
     return displayMode == "icons" or displayMode == "bars" or (displayMode == "indicator"
-            and (not ST.Indicator.Primary(group) or CS.GetIndicatorSourceReplacement(groupId) ~= nil))
+            and (not ST.Indicator.IsAura(group) or CS.GetIndicatorSourceReplacement(groupId) ~= nil))
 end
 
 -- An Aura Panel takes aura entries only, and only for the one unit it derived
@@ -303,7 +304,12 @@ local function PrintCannotTrackAsAura(spellName)
     CooldownCompanion:Print("Cannot track " .. spellName .. " as an aura.")
 end
 
-local function PrintAuraPanelUnsupported()
+local function PrintAuraPanelUnsupported(groupId)
+    -- An Indicator refuses an aura only once it already checks one.
+    if ST.IsIndicatorGroup(GetTargetGroup(groupId)) then
+        CooldownCompanion:Print(ST.Indicator.OneAuraText)
+        return
+    end
     CooldownCompanion:Print("Use an icon, bar, or Indicator panel for aura tracking.")
 end
 
@@ -529,7 +535,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
             elseif reason == "target-aura" then
                 PrintCannotTrackAsAura(spellName)
             elseif reason == "aura-unsupported" then
-                PrintAuraPanelUnsupported()
+                PrintAuraPanelUnsupported(request.groupId)
             elseif detail then
                 CooldownCompanion:Print(detail)
             end
@@ -537,7 +543,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
         end
         local addAsAura, routedToAura = route.addAsAura, route.routedToAura
         forceAura = route.forceAura
-        local idx, notified = CooldownCompanion:AddButtonToGroup(request.groupId, "spell", spellId, spellName,
+        local idx, notified, notice = CooldownCompanion:AddButtonToGroup(request.groupId, "spell", spellId, spellName,
             isPetSpell, addAsAura or nil, forceAura, nil, nil, request.section, request.presentation,
             request.replacement and request.replacement.source)
         if not idx then
@@ -549,6 +555,8 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
         elseif not notified then
             CooldownCompanion:Print((addAsAura and "Added aura: " or "Added spell: ") .. spellName)
         end
+        -- An aura joining an Indicator: what its effects became.
+        if notice then CooldownCompanion:Print(notice) end
         return true
     else
         CooldownCompanion:Print("Spell not found: " .. input .. ". Try using the spell ID or drag from spellbook.")
@@ -575,7 +583,7 @@ local function FinalizeAddItem(itemId, request)
         CooldownCompanion:Print("Item has no usable effect: " .. itemName)
         return false
     end
-    local idx = CooldownCompanion:AddButtonToGroup(request.groupId, "item", itemId, itemName,
+    local idx, _, notice = CooldownCompanion:AddButtonToGroup(request.groupId, "item", itemId, itemName,
         nil, nil, nil, nil, nil, request.section, request.presentation,
         request.replacement and request.replacement.source)
     if not idx then
@@ -583,6 +591,8 @@ local function FinalizeAddItem(itemId, request)
     end
     CompleteAdd(request, idx)
     CooldownCompanion:Print("Added item: " .. itemName)
+    -- An Indicator's effects adapted for the item becoming the display.
+    if notice then CooldownCompanion:Print(notice) end
     return true
 end
 

@@ -324,7 +324,9 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
-    local isTriggerMode = CooldownCompanion:IsTriggerPanelGroup(group)
+    -- An Indicator's source buttons never show; they stack on one spot so
+    -- extra sources (conditions, or an aura's extras) do not grow the frame.
+    local isTriggerMode = ST.IsIndicatorGroup(group)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local centeredEdge = not ST.IsAuraPanelGroup(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, orientation) or nil

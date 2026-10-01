@@ -28,6 +28,81 @@ function I.Primary(group)
     return I.Settings(group) and group.buttons and group.buttons[1]
 end
 
+-- A source checked by rules: every source of a conditions Indicator, and the
+-- extra spell/item sources of an aura Indicator. The aura itself has no
+-- condition rules; its only rule is its stack rule (StackRule).
+function I.IsConditionSource(group, entry)
+    return ST.IsIndicatorGroup(group) and not (I.IsAura(group) and entry == I.Primary(group))
+end
+
+-- An aura Indicator's stack rule, saved on the aura entry so it leaves with
+-- the aura. Blizzard drives a hidden stack bar with the secret count and the
+-- display is clipped by its fill (AuraDisplay), so the rule never reads stacks.
+-- One rule per Indicator: a slot holds a single application bar.
+I.STACK_COUNT_MAX = 99
+local STACK_COMPARE_LABELS = {atLeast="At Least %d Stacks", fewer="Fewer Than %d Stacks",
+    exactly="Exactly %d Stacks", max="At Max Stacks"}
+
+-- Lowest count each comparison accepts: "Fewer Than 1" could never show.
+function I.StackCountMin(compare)
+    return compare == "fewer" and 2 or 1
+end
+
+-- The aura's maximum stacks from spell data (the stack bars' resolver), or
+-- nil when the game reports none. Caps the Stacks slider and drives At Max.
+function I.StackMax(group)
+    local source = I.IsAura(group) and I.Primary(group)
+    return source and Addon:GetAuraStackBarMax(source, true) or nil
+end
+
+-- compare, count, max for an aura Indicator with a valid rule; nil otherwise.
+-- `max` is the aura's reported max (nil when none), resolved once here so
+-- callers never look it up again. The saved count keeps its meaning: only the
+-- Stacks slider stops at the max. At Max with no max reported returns a nil
+-- count and fails closed (the Indicator stays hidden), like any rule that
+-- cannot be checked.
+-- The saved comparison alone, without the max lookup (Finder checks).
+function I.StackCompare(group)
+    if not I.IsAura(group) then return end
+    local source = I.Primary(group)
+    local rule = source and source.indicatorStackRule
+    local compare = type(rule) == "table" and rule.compare
+    return STACK_COMPARE_LABELS[compare] and compare or nil, rule
+end
+
+function I.StackRule(group)
+    local compare, rule = I.StackCompare(group)
+    if not compare then return end
+    local max = I.StackMax(group)
+    if compare == "max" then return compare, max, max end
+    local count = math.floor(tonumber(rule.count) or 0)
+    return compare, math.max(I.StackCountMin(compare), math.min(I.STACK_COUNT_MAX, count)), max
+end
+
+function I.StackRuleLabel(compare, count)
+    local label = STACK_COMPARE_LABELS[compare]
+    return label and label:format(count or 0) or "While Active"
+end
+
+-- A rule from StackRule that the aura's max settles on its own: "never" when
+-- it cannot pass, "always" when it always does, nil otherwise. An aura with
+-- no max reported is treated as not stacking (owner ruling 2026-09-30): it
+-- has 0 stacks, so At Least, Exactly and At Max never pass and Fewer Than
+-- always does. With a max, only a count above it is settled.
+function I.StackRuleOutcome(compare, count, max)
+    if not compare then return end
+    if not max or count > max then return compare == "fewer" and "always" or "never" end
+end
+
+-- Preview only: whether a sample stack count passes a rule from StackRule.
+function I.StackRulePasses(compare, count, stacks)
+    if not compare then return true end
+    if not count then return false end
+    if compare == "atLeast" or compare == "max" then return stacks >= count end
+    if compare == "fewer" then return stacks < count end
+    return stacks == count
+end
+
 -- Saved slot one owns the display; runtime lists omit unavailable entries.
 -- Never substitute the first surviving condition for a missing source.
 function I.RuntimeSource(frame, group)
@@ -56,7 +131,7 @@ end
 I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
 I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
-    indicator_effects_conditions = "Conditional visual effects require a spell or item source. Choose Always and turn off Only In Combat for each effect before choosing an aura source.",
+    indicator_effects_conditions = "Aura Indicators can't use Animate When or Only In Combat. Set each effect to Always with Only In Combat off first.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
 }
 
@@ -244,15 +319,99 @@ local function NormalizeCountReadouts(group)
     for _, readouts in pairs(settings.readoutsByDisplay or {}) do adaptReadouts(readouts) end
 end
 
+local function IndexOf(group, entry)
+    for i, button in ipairs(group.buttons or {}) do if button == entry then return i end end
+end
+
+local EFFECT_LABELS = {pulse = "Pulse", colorShift = "Color Shift", shrinkExpand = "Shrink / Expand", bounce = "Bounce"}
+
+local function ListNames(names)
+    if #names < 2 then return names[1] end
+    return table.concat(names, ", ", 1, #names - 1) .. " and " .. names[#names]
+end
+
+-- Aura effects run only while the aura is shown, so an aura arriving adapts
+-- them rather than being refused: Animate When and Only In Combat clear, and
+-- Text Only drops Color Shift. Adds each change's chat note to `notes`.
+local function AdaptEffectsForAura(settings, notes)
+    local effects = settings.effects or {}
+    local converted, off = {}, {}
+    for _, key in ipairs(I.EffectOrder) do
+        local effect = effects[key]
+        if effect and effect.enabled == true then
+            if key == "colorShift" and settings.displayType == "text" then
+                effect.enabled = false
+                off[#off + 1] = EFFECT_LABELS[key]
+            elseif (effect.activation or "always") ~= "always" or effect.combatOnly then
+                effect.activation, effect.combatOnly = nil, nil
+                converted[#converted + 1] = EFFECT_LABELS[key]
+            end
+        end
+    end
+    if #converted > 0 then
+        notes[#notes + 1] = ListNames(converted) .. (#converted > 1 and " now run" or " now runs")
+            .. " while the Indicator is shown (auras can't use Animate When or Only In Combat)."
+    end
+    if #off > 0 then notes[#notes + 1] = ListNames(off) .. " is off (Text Only auras can't use it)." end
+end
+
+-- The same for a spell or item becoming the display: Text Only spell and item
+-- Indicators can't Shrink / Expand, so it turns off instead of blocking.
+local function AdaptEffectsForConditions(settings, notes)
+    local shrink = (settings.effects or {}).shrinkExpand
+    if settings.displayType == "text" and shrink and shrink.enabled == true then
+        shrink.enabled = false
+        notes[#notes + 1] = EFFECT_LABELS.shrinkExpand .. " is off (Text Only spell and item Indicators can't use it)."
+    end
+end
+
+local function NoticeText(notes)
+    return #notes > 0 and table.concat(notes, " ") or nil
+end
+
+-- An aura joining a spell/item Indicator becomes what it shows: it takes slot
+-- one, and every other row stays with its rules (older aura-added rows too:
+-- they are rule rows, and only the main source owns an aura slot).
+local function JoinAura(group, entry)
+    local buttons = group.buttons
+    table.remove(buttons, IndexOf(group, entry))
+    -- The old main source stays checked with its rules. Saved source
+    -- visibility named its own rules as the display, so it goes.
+    if buttons[1] then buttons[1].enabled = true end
+    table.insert(buttons, 1, entry)
+    entry.enabled = true
+    I.Settings(group).sourceVisibility = nil
+end
+
+-- Returns true plus an optional chat line for the caller to print, or false
+-- plus a failure reason.
 function I.OnSourceAdded(group, entry)
-    if ST.IsIndicatorGroup(group) and (not I.Primary(group) or I.Primary(group) == entry) then
-        local allowed, reason = I.CheckSourceEffects(group, entry)
-        if not allowed then return false, reason end
+    local indicator = ST.IsIndicatorGroup(group)
+    -- A source that becomes the display (an aura arriving into an Indicator
+    -- without one, or the first source, however it gets there: added, moved,
+    -- or Change...) adapts the effects to what it can run instead of refusing.
+    local auraArrives = indicator and entry.addedAs == "aura" and not I.IsAura(group)
+    local firstSource = indicator and (not I.Primary(group) or I.Primary(group) == entry)
+    if firstSource then
+        local effects, reason = I.ReadEffects(group)
+        if not effects then return false, reason end
     end
     local settings = I.Initialize(group)
     if not settings then return true end
     I.Effects(group) -- Capture the previous family before tracking changes.
     if entry.enabled == nil then entry.enabled = true end
+    local notes = {}
+    if auraArrives then
+        AdaptEffectsForAura(settings, notes)
+    elseif firstSource then
+        AdaptEffectsForConditions(settings, notes)
+    end
+    -- Checklist order never matters to the user: an aura added after spell or
+    -- item sources still becomes the display.
+    if auraArrives and (IndexOf(group, entry) or 1) > 1 then
+        JoinAura(group, entry)
+    end
+    local notice = NoticeText(notes)
     if I.Primary(group) == entry then
         I.NormalizeSourceEnablement(group)
         settings.tracking = entry.addedAs == "aura" and "aura" or "conditions"
@@ -261,7 +420,7 @@ function I.OnSourceAdded(group, entry)
         end
         NormalizeCountReadouts(group)
     end
-    if not I.IsAura(group) and entry.triggerConditions == nil then
+    if I.IsConditionSource(group, entry) and entry.triggerConditions == nil then
         if entry.triggerCondition then
             -- Moving a source preserves its existing rule, including an
             -- unsupported rule that must stay fail-closed until edited.
@@ -272,7 +431,7 @@ function I.OnSourceAdded(group, entry)
             entry.triggerCondition, entry.triggerExpected = "cooldownActive", false
         end
     end
-    return true
+    return true, notice
 end
 
 local function SourceIcon(source)
@@ -363,34 +522,43 @@ function I.SetDisplayType(group, displayType)
     settings.displayType = displayType
 end
 
+I.OneAuraText = "This Indicator already checks an aura. Remove it first, or create another Indicator."
+
+-- One aura per Indicator. It can arrive at any time and always becomes the
+-- display (OnSourceAdded); spell and item sources are checked by their rules.
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
-    if I.Primary(group) and I.IsAura(group) then return "This Indicator already tracks an aura. Change its source in Visibility." end
     local entries = entry and (entry[1] and entry or {entry}) or {}
+    local auras = I.Primary(group) and I.IsAura(group) and 1 or 0
     for _, source in ipairs(entries) do
-        if source.addedAs == "aura" and (I.Primary(group) or #entries > 1) then
-            return "Aura displays cannot be combined with conditions. Create an aura Indicator instead."
-        end
-        if not I.Primary(group) then
-            local allowed, reason = I.CheckSourceEffects(group, source)
-            if not allowed then return I.EffectFailureText[reason] end
+        if source.addedAs == "aura" then
+            auras = auras + 1
+            if auras > 1 then return I.OneAuraText end
         end
     end
+    if I.Primary(group) then return end
+    -- The first source adapts the effects to what it can run (OnSourceAdded),
+    -- so they only need to be readable.
+    local effects, reason = I.ReadEffects(group)
+    if not effects then return I.EffectFailureText[reason] end
 end
 
 I.ConditionKeys = {cooldownActive=true, procActive=true, rangeActive=true, usable=true,
     chargesRecharging=true, chargeState=true, countTextActive=true, countState=true}
 
-function I.Match(frame, group)
-    local settings = I.Settings(group)
-    if not settings or I.IsAura(group) then return false end
-    local primary = I.Primary(group)
-    if not primary then return false end
+local function RuntimeButtons(frame)
     local runtime = {}
-    for _, button in ipairs(frame.buttons or {}) do runtime[button.buttonData] = button end
-    if not runtime[primary] then return false end
-    if settings.sourceVisibility and runtime[primary]._rawVisibilityHidden then return false end
-    for _, entry in ipairs(group.buttons or {}) do
+    for _, button in ipairs(frame and frame.buttons or {}) do runtime[button.buttonData] = button end
+    return runtime
+end
+
+-- Every rule on every checked source from slot `first` on must be true. Fails
+-- closed: a source missing at runtime, a rule this client cannot evaluate, or
+-- a secret or unknown reading never matches.
+local function RulesPass(runtime, group, first)
+    local entries = group.buttons or {}
+    for index = first, #entries do
+        local entry = entries[index]
         if entry.enabled ~= false then
             if not runtime[entry] then return false end
             for _, clause in ipairs(entry.triggerConditions or {}) do
@@ -403,8 +571,27 @@ function I.Match(frame, group)
             end
         end
     end
+    return true
+end
+
+function I.Match(frame, group)
+    local settings = I.Settings(group)
+    if not settings or I.IsAura(group) then return false end
+    local primary = I.Primary(group)
+    if not primary then return false end
+    local runtime = RuntimeButtons(frame)
+    if not runtime[primary] then return false end
+    if settings.sourceVisibility and runtime[primary]._rawVisibilityHidden then return false end
+    if not RulesPass(runtime, group, 1) then return false end
     -- Empty rules deliberately mean Always, provided the source is available.
     return primary.enabled ~= false
+end
+
+-- An aura Indicator's extra sources: the aura itself shows while active and
+-- has no rules. With no extras there is nothing to check (and nothing to pay).
+function I.ExtraSourcesMatch(frame, group)
+    if not I.IsAura(group) or not group.buttons or #group.buttons < 2 then return true end
+    return RulesPass(RuntimeButtons(frame), group, 2)
 end
 
 function I.ClearSource(group)
@@ -414,55 +601,83 @@ function I.ClearSource(group)
     settings.tracking = "conditions"
 end
 
--- A condition source that can drive the display. A migrated Trigger row added
--- as an aura stays a condition: aura tracking is a different Indicator.
+-- A condition source that could take over slot one. A migrated Trigger row
+-- added as an aura stays a condition; an aura that joins removes it.
+local function CanTakeOver(group, entry)
+    return entry ~= I.Primary(group) and entry.addedAs ~= "aura"
+end
+
+-- Make Main. An aura Indicator always displays its aura, so its extra
+-- sources are never offered; they take over only when the aura is removed.
 function I.CanBeMainSource(group, entry)
-    return entry ~= I.Primary(group) and entry.addedAs ~= "aura" and not I.IsAura(group)
+    return CanTakeOver(group, entry) and not I.IsAura(group)
 end
 
 -- The source that takes over when the main source is removed.
 function I.NextMainSource(group)
     for i = 2, #(group.buttons or {}) do
-        if I.CanBeMainSource(group, group.buttons[i]) then return group.buttons[i] end
+        if CanTakeOver(group, group.buttons[i]) then return group.buttons[i] end
     end
 end
 
--- Config's Make Main and Remove only; generic entry removal still refuses to
--- promote (GetRemovalError). The chosen condition source takes slot one with
--- its own rules. The main source is always checked, so it is turned on.
-function I.PromoteSource(group, entry)
-    local buttons = group.buttons or {}
-    local index
-    for i, button in ipairs(buttons) do if button == entry then index = i end end
-    if not index or not I.CanBeMainSource(group, entry) then return false end
+-- Tracking follows the main source. Capture the effects of the previous
+-- family before it changes, then adapt the count readouts to the new one.
+local function SetTracking(group, tracking)
+    local settings = I.Settings(group)
+    if settings.tracking ~= tracking then
+        I.Effects(group)
+        settings.tracking = tracking
+    end
+    NormalizeCountReadouts(group)
+end
+
+-- The chosen condition source takes slot one with its own rules. The main
+-- source is always checked, so it is turned on. Leaving an aura makes this a
+-- spell/item Indicator.
+-- Returns true plus an optional chat line, or false plus a failure reason.
+local function Promote(group, entry, index)
+    -- Leaving an aura: adapt the effects to the spell or item, as an arriving
+    -- source does, rather than refusing the removal.
+    local notes = {}
+    if I.IsAura(group) then AdaptEffectsForConditions(I.Settings(group), notes) end
     local allowed, reason = I.CheckSourceEffects(group, entry)
     if not allowed then return false, reason end
+    local buttons = group.buttons
     table.remove(buttons, index)
     table.insert(buttons, 1, entry)
     entry.enabled = true
     -- Saved source visibility named the old main source's own rules.
     I.Settings(group).sourceVisibility = nil
-    NormalizeCountReadouts(group)
-    return true
+    SetTracking(group, "conditions")
+    return true, NoticeText(notes)
+end
+
+-- Config's Make Main only; generic entry removal still refuses to promote
+-- (GetRemovalError).
+function I.PromoteSource(group, entry)
+    local index = IndexOf(group, entry)
+    if not index or not I.CanBeMainSource(group, entry) then return false end
+    return Promote(group, entry, index)
 end
 
 -- Remove one source. Removing the main source hands slot one to the next
 -- source that can take it; with none, the Indicator is cleared and keeps its
--- look. A source that is no longer in the Indicator removes nothing.
+-- look. A source that is no longer in the Indicator removes nothing. Returns
+-- removed, a failure reason, and an optional chat line.
 function I.RemoveSource(group, entry)
     local buttons = group.buttons or {}
-    local index
-    for i, button in ipairs(buttons) do if button == entry then index = i end end
+    local index = IndexOf(group, entry)
     if not index then return false end
+    local notice
     if index == 1 then
         local nextSource = I.NextMainSource(group)
         if not nextSource then I.ClearSource(group); return true end
-        local promoted, reason = I.PromoteSource(group, nextSource)
-        if not promoted then return false, reason end
-        index = 2
+        local promoted, detail = Promote(group, nextSource, IndexOf(group, nextSource))
+        if not promoted then return false, detail end
+        notice, index = detail, 2
     end
     table.remove(buttons, index)
-    return true
+    return true, nil, notice
 end
 
 local function SameSource(a, b)
@@ -487,13 +702,18 @@ function I.CommitSourceReplacement(group, candidate)
     local allowed, reason = I.CheckSourceEffects(candidate, I.Primary(candidate))
     if not allowed then return false, reason end
     -- Only the main source changes. The other sources keep their rules, unless
-    -- the new source is an aura (auras cannot be combined with conditions) or
-    -- is one of them (it starts fresh as the main source instead).
+    -- one is the new source (it starts fresh as the main source instead).
+    -- Older aura-added rows are rule rows; only the main source owns an aura.
     local newSource = I.Primary(candidate)
-    if I.Settings(candidate).tracking ~= "aura" then
-        for i = 2, #(group.buttons or {}) do
-            local entry = group.buttons[i]
-            if not SameSource(entry, newSource) then candidate.buttons[#candidate.buttons + 1] = entry end
+    -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
+    local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
+    if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
+        newSource.indicatorStackRule = CopyTable(oldRule)
+    end
+    for i = 2, #(group.buttons or {}) do
+        local entry = group.buttons[i]
+        if not SameSource(entry, newSource) then
+            candidate.buttons[#candidate.buttons + 1] = entry
         end
     end
     group.buttons = candidate.buttons

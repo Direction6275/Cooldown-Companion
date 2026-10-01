@@ -650,10 +650,13 @@ end
 
 -- Primary Aura entries in Texture panels are intrinsically aura-controlled.
 -- Ordinary spell entries retain the explicit Texture-only opt-in so legacy
--- auraTracking residue cannot silently reactivate them.
+-- auraTracking residue cannot silently reactivate them. Only the main source
+-- is the aura: an aura Indicator's extra spell sources are rule sources and
+-- never own an aura slot.
 function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
     return self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"
+        and buttonData == ST.Indicator.Primary(group)
         and buttonData.type == "spell"
         and buttonData.enabled ~= false
         and (buttonData.addedAs == "aura"

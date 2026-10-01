@@ -67,14 +67,17 @@ local function CardRow(card, label, indent)
 end
 
 -- One source: a row per rule, the first named for the source and the rest
--- joined with "and", as they read in Visibility.
+-- joined with "and", as they read in Visibility. An aura reads its stack rule
+-- (or While Active).
 local function AddSourceRows(card, source, model, parts)
     local name = (source.icon and "|T" .. tostring(source.icon) .. ":16:16|t " or "") .. source.name
     if not source.enabled then name = "|cff999999" .. name .. " (not checked)|r" end
     local entry = {name = CardRow(card, name), rules = {}}
     parts.rows[#parts.rows + 1] = entry
-    if model.aura then
-        entry.name:SetControlText("While Active")
+    if source.aura then
+        -- A rule that can never pass reads in the warning color; the reason
+        -- sits under the rule in Visibility.
+        entry.name:SetControlText(source.auraRuleNever and "|cffffb840" .. source.auraRule .. "|r" or source.auraRule)
     elseif #source.rules == 0 then
         entry.rules[1] = RuleValue("Always", nil,
             {"No rules", "Shows whenever it can be tracked. Click to add rules in Visibility."},
@@ -124,7 +127,7 @@ local function BuildRulesCard(preview, model, width)
         note:SetFontObject(GameFontHighlight)
         note:SetColor(WARNING[1], WARNING[2], WARNING[3])
         local replacing = "Search for the new source in the field at the top. It starts with fresh rules; the look is kept."
-        if #model.sources > 1 then replacing = replacing .. " Other sources stay, unless it is an aura." end
+        if #model.sources > 1 then replacing = replacing .. " Other spell and item sources stay." end
         note:SetText(model.replacing and replacing or "This Indicator is off. These rules apply once it is on.")
         note:SetFullWidth(true)
         card:AddChild(note)
@@ -144,7 +147,27 @@ function PP.ReleaseIndicatorPreviewControls(preview)
         AceGUI:Release(preview.indicatorDuration)
         preview.indicatorDuration = nil
     end
+    if preview.indicatorStacks then
+        AceGUI:Release(preview.indicatorStacks)
+        preview.indicatorStacks = nil
+    end
     ReleaseSourceControls(preview)
+end
+
+-- The sample stack count for a stack rule (from Indicator.StackRule): the one
+-- tried in the Stacks row, or a count that passes the rule. A changed rule
+-- starts over at a passing count so the display is visible. Also returns the
+-- row's key and its top: the aura's max when reported (or the rule's own
+-- count, if higher). A saved sample never sits above the top. None for a rule
+-- that cannot be checked.
+local function PreviewStacks(panelId, compare, count, stackMax, readOnly)
+    if not count then return end
+    local top = stackMax and math_max(stackMax, count) or math_min(ST.Indicator.STACK_COUNT_MAX, math_max(10, count + 3))
+    local passing = compare == "fewer" and count - 1 or count
+    local key = tostring(panelId) .. ":" .. compare .. ":" .. count
+    local saved = CS.indicatorPreviewStacks
+    if readOnly or not (saved and saved.key == key) then return passing, key, top end
+    return math_min(saved.value, top), key, top
 end
 
 -- Adopt one AceGUI row into the preview footer; PinFooter places it.
@@ -200,12 +223,13 @@ end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
+    if preview.indicatorStacks then preview.indicatorStacks.frame:Hide() end
     -- Hidden, not released: BuildRulesCard keeps an unchanged card.
     if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     local I = ST.Indicator
     if readOnly or not I.Primary(group) then ReleaseSourceControls(preview) end
     if not I.Primary(group) then
-        PP.SetPreviewMessage(preview, "Add a spell, aura, or item using the field at the top.", "Choose a source")
+        PP.SetPreviewMessage(preview, "Add spells, items, or one aura in the field at the top.", "Choose a source")
         PP.FinalizePreviewState(preview)
         return
     end
@@ -247,6 +271,21 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     else
         surface._countdownStart = nil
     end
+    -- A stack rule shows or hides the sample like the real display does. A
+    -- rule the aura's max settles (or one that cannot be checked) ignores the
+    -- sample, as in game, and offers no Stacks row.
+    local compare, count, stackMax = I.StackRule(candidate)
+    local outcome = I.StackRuleOutcome(compare, count, stackMax)
+    local stacks, stacksKey, stacksTop
+    if not outcome then stacks, stacksKey, stacksTop = PreviewStacks(panelId, compare, count, stackMax, readOnly) end
+    surface._previewStacks = stacks
+    local passes
+    if outcome then
+        passes = outcome == "always"
+    else
+        passes = I.StackRulePasses(compare, count, stacks or 0)
+    end
+    surface:SetAlpha(passes and 1 or 0)
     if not I.Render(surface,nil,candidate,true,fraction) then
         if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:Hide() end
         ReleaseSourceControls(preview)
@@ -303,6 +342,22 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
             control:SetValue(state)
             control:SetCallback("OnValueChanged",function(_,_,value)
                 CS.indicatorPreviewState=value
+                ST._RefreshButtonsPreviewMirror(panelId)
+            end)
+        end
+        if stacks then
+            local control = preview.indicatorStacks
+            if not control then
+                control = AceGUI:Create("CDC-SliderRow")
+                control:SetLabel("Stacks")
+                control.frame:SetParent(preview.root)
+                preview.indicatorStacks = control
+            end
+            control:SetSliderValues(0, stacksTop, 1)
+            AddFooterRow(preview,footer,control,rowWidth)
+            control:SetValue(stacks)
+            control:SetCallback("OnValueChanged",function(_,_,value)
+                CS.indicatorPreviewStacks={key=stacksKey,value=math_floor(value + 0.5)}
                 ST._RefreshButtonsPreviewMirror(panelId)
             end)
         end

@@ -85,10 +85,17 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
     {idPrefix="panel.indicator.source"}):Settings({
     sourceVisibility={label="Use Saved Source Visibility",applies=Applies(function(g,s) return s.sourceVisibility ~= nil and not I.IsAura(g) end)},
     -- Bound to the section heading: the rules themselves are one row each.
-    -- Every Indicator with a source has the section; an aura's holds the aura.
+    -- Every Indicator with a source has the section; an aura's holds the aura
+    -- and any extra spell/item sources with their rules.
     conditions={label="When to Show",aliases={"show when","conditions","rules","ready","on cooldown","always"},
         applies=Applies(function() return true end)},
-    unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)}})
+    unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)},
+    auraWhen={label="When",aliases={"stacks","stack count","at least","fewer than","exactly","max stacks","while active"},
+        applies=Applies(function(g) return I.IsAura(g) end)},
+    stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
+        local compare = I.StackCompare(g)
+        return compare ~= nil and compare ~= "max"
+    end)}})
 
 local soundRoute = ST._DefineSettingRoute({
     idPrefix="panel.indicator.sounds",scope="panel",rowScope="primary",tab="effects",tabLabel="Effects",
@@ -392,8 +399,9 @@ local function AddMainSourceBadges(row, group, source, changed)
         end, "uitools-icon-refresh", CHANGE_HOVER_COLOR)
     change:SetActive(replacing)
     RowBadge(row, {"Remove Source", removeText}, function()
-        local removed, reason = I.RemoveSource(group, source)
+        local removed, reason, notice = I.RemoveSource(group, source)
         if reason then Addon:Print(I.EffectFailureText[reason]) end
+        if notice then Addon:Print(notice) end
         if removed then changed(true) end
     end)
 end
@@ -419,10 +427,65 @@ local function AddTrackedOn(column, source, changed)
         end})
 end
 
+-- The aura's one rule: While Active, or a stack count it must reach, stay
+-- under, or match. Blizzard applies it in combat (see Indicator.StackRule).
+local AURA_WHEN_LIST = {active="While Active", atLeast="At Least N Stacks",
+    fewer="Fewer Than N Stacks", exactly="Exactly N Stacks", max="At Max Stacks"}
+local STACK_CHOICES = {"atLeast", "fewer", "exactly", "max"}
+local function AddAuraWhen(column, group, entry, changed)
+    -- `max` is the aura's max from spell data: it caps the slider. An aura
+    -- with none reported does not stack (owner ruling 2026-09-30), so only
+    -- While Active is offered, plus a stack rule it already saved.
+    local compare, count, max = I.StackRule(group)
+    if not compare then max = I.StackMax(group) end
+    local current = compare or "active"
+    local order = {"active"}
+    for _, choice in ipairs(STACK_CHOICES) do
+        if max or choice == current then order[#order + 1] = choice end
+    end
+    local tooltip = {"When", {"While Active shows whenever this aura is on.", 1, 1, 1, true}}
+    if max then
+        tooltip[#tooltip + 1] = " "
+        tooltip[#tooltip + 1] = {"A stack choice also needs the aura's stacks to pass. At Max Stacks follows the aura's maximum from the game.", 1, 1, 1, true}
+    end
+    Dropdown(column, {setting=whenToShow.auraWhen, indent=true, list=AURA_WHEN_LIST, order=order,
+        value=current, tooltip=tooltip,
+        onChange=function(value)
+            if value == current then return end
+            if value == "active" then
+                entry.indicatorStackRule = nil
+            else
+                local keep = compare ~= "max" and count or 2
+                entry.indicatorStackRule = {compare=value, count=math.max(I.StackCountMin(value), keep)}
+            end
+            changed(true)
+        end})
+    if compare and not max then
+        Hint(column, ("This aura doesn't stack, so this %s."):format(
+            I.StackRuleOutcome(compare, count, max) == "always" and "always shows while it is active" or "never shows"))
+        return
+    end
+    if not compare or compare == "max" then return end
+    -- A saved count above the max keeps its meaning and stays reachable.
+    Slider(column, {setting=whenToShow.stackCount, indent=true, min=I.StackCountMin(compare),
+        max=max and math.max(max, count) or I.STACK_COUNT_MAX, step=1, value=count,
+        onRelease=function(value)
+            entry.indicatorStackRule.count = math.floor(value + 0.5)
+            changed(true)
+        end})
+    local outcome = I.StackRuleOutcome(compare, count, max)
+    if outcome then
+        Hint(column, ("This aura stacks to %d, so this %s."):format(max,
+            outcome == "never" and "never shows" or "always shows while it is active"))
+    end
+end
+
 -- One block per source: its name and actions, then one "When / And" row per
 -- rule, then a small Add Condition link. The main source changes or goes
--- here; any other source can be made main, removed or turned off. An aura
--- source shows only where it is tracked.
+-- here; any other source can be made main, removed or turned off. An aura is
+-- always the main source (slot one, so it heads the checklist): its one rule
+-- is While Active or a stack rule, then where it is tracked. Its spell/item
+-- sources are never made main (CanBeMainSource).
 local function BuildSourceRules(container, group, entry, changed)
     local primary = entry == I.Primary(group)
     local column = ST._BeginRowGrid(container)
@@ -431,6 +494,7 @@ local function BuildSourceRules(container, group, entry, changed)
         local row = Label(column, {label=name, controlText=KIND_COLOR.."Shown on display|r"})
         AddMainSourceBadges(row, group, entry, changed)
         if I.IsAura(group) then
+            AddAuraWhen(column, group, entry, changed)
             AddTrackedOn(column, entry, changed)
             return
         end
@@ -505,7 +569,7 @@ function ST._GetIndicatorSourceControls(group)
     -- card can be reused across preview refreshes (drags refresh per tick).
     local key = {tostring(group), tostring(aura), tostring(replacing), tostring(group.enabled)}
     local model = {
-        aura = aura, replacing = replacing, disabled = group.enabled == false,
+        replacing = replacing, disabled = group.enabled == false,
         openRule = OpenRule,
         sources = {},
     }
@@ -516,10 +580,19 @@ function ST._GetIndicatorSourceControls(group)
         local primary = entry == source
         local icon = ST._GetButtonIcon(entry)
         if primary and artwork == icon then icon = nil end
+        -- An aura's one rule is its stack rule (or While Active); its extras
+        -- carry the spell/item rules.
         local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
-            enabled=entry.enabled ~= false, rules={}}
-        key[#key + 1] = table.concat({tostring(entry), tostring(icon), item.name, tostring(item.enabled)}, ",")
-        if not aura then
+            aura=aura and primary, enabled=entry.enabled ~= false, rules={}}
+        if item.aura then
+            -- A rule the aura's max rules out reads as a warning.
+            local compare, count, max = I.StackRule(group)
+            item.auraRule = I.StackRuleLabel(compare, count)
+            item.auraRuleNever = I.StackRuleOutcome(compare, count, max) == "never"
+        end
+        key[#key + 1] = table.concat({tostring(entry), tostring(icon), item.name, tostring(item.enabled),
+            tostring(item.auraRule), tostring(item.auraRuleNever)}, ",")
+        if not item.aura then
             for _, clause in ipairs(entry.triggerConditions or {}) do
                 local label = RuleLabel(clause)
                 item.rules[#item.rules + 1] = {label=label, clause=clause}
@@ -527,31 +600,33 @@ function ST._GetIndicatorSourceControls(group)
             end
         end
         model.sources[#model.sources + 1] = item
-        if aura then break end
     end
     model.key = table.concat(key, "|")
     return model
 end
 
 -- Top of an Indicator's Visibility tab: When to Show, where a panel entry
--- keeps its Show & Hide Rules. It holds every source and its rules; an aura
--- Indicator shows while its aura is active, so it holds only the aura.
+-- keeps its Show & Hide Rules. A checklist: every source and its rules, the
+-- aura (if any) first with its stack rule. It shows when every row passes.
 local function BuildWhenToShow(container, group, changed)
     local source = I.Primary(group)
     if not source then
-        Hint(container,"Add a spell, aura, or item using the field at the top.")
+        Hint(container,"Add spells, items, or one aura in the field at the top.")
         return
     end
     local aura = I.IsAura(group)
 
+    -- One checklist text for both kinds: order never matters to the user.
     local whenHeading, whenCollapsed = Section(container,"When to Show","indicator_whenToShow",whenToShow.conditions)
     ST._ChainHeadingBadges(whenHeading, ST._CreateInfoButton(whenHeading.frame, whenHeading.label,
-        "LEFT", "RIGHT", 4, 0, aura and {"When to Show",
-            {"Shows while this aura is active. Visibility settings still apply.", 1, 1, 1, true}}
-        or {"When to Show",
-            {"Every rule on every checked source must be true. Sources must be available to track, and Visibility settings still apply.", 1, 1, 1, true},
+        "LEFT", "RIGHT", 4, 0, {"When to Show",
+            {"Shows when every rule on every checked row is true. Visibility settings still apply.", 1, 1, 1, true},
             " ",
-            {"Add another spell or item in the field at the top to check more than one source.", 1, 1, 1, true}},
+            {"Checked spells and items must be available to you, or it stays hidden.", 1, 1, 1, true},
+            " ",
+            {"Add spells, items, or one aura in the field at the top.", 1, 1, 1, true},
+            " ",
+            {"With an aura, its timer and stacks feed the display. Its sounds still play when other rules hide it.", 1, 1, 1, true}},
         CS.tabInfoButtons))
     if whenCollapsed then return end
     local settings = I.Settings(group)
@@ -773,7 +848,7 @@ function ST._BuildIndicatorTab(container, group, tab)
     local changed = MakeChanged(group)
     I.Initialize(group)
     if tab == "loadconditions" then BuildWhenToShow(container,group,changed)
-    elseif not I.Primary(group) then Hint(container,"Add a spell, aura, or item using the field at the top.")
+    elseif not I.Primary(group) then Hint(container,"Add spells, items, or one aura in the field at the top.")
     elseif tab == "appearance" then BuildAppearance(container,group,changed)
     elseif tab == "effects" then
         -- One effect grammar for every source; aura rows omit the controls

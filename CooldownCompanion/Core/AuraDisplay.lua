@@ -807,8 +807,24 @@ local function BuildTexturePanelSlotKit(slotButton)
     slotButton:SetMouseClickEnabled(false)
     slotButton:SetMouseMotionEnabled(false)
 
-    local host = CreateFrame("Frame", nil, slotButton)
+    -- Stack rule gate (Indicator.StyleStackGate): the kit hangs under a CC
+    -- clip frame whose rectangle follows a hidden application bar Blizzard
+    -- fills with the secret stack count. It covers the slot unclipped until a
+    -- rule is styled. The fill texture is captured here and never read.
+    local stackGate = CreateFrame("Frame", nil, slotButton)
+    stackGate:SetAllPoints(slotButton)
+    local stackBar = CreateFrame("StatusBar", nil, slotButton)
+    stackBar:SetAllPoints(slotButton)
+    stackBar:EnableMouse(false)
+    stackBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    stackBar:SetStatusBarColor(1, 1, 1, 0)
+    local stackFill = stackBar:GetStatusBarTexture()
+    -- Max is always a number: Blizzard's refresh runs math.max(max, 1).
+    slotButton:SetApplicationBar(stackBar, { maxApplications = 1 })
+
+    local host = CreateFrame("Frame", nil, stackGate)
     host:SetAllPoints(slotButton)
+    host.stackGate = { gate = stackGate, bar = stackBar, fill = stackFill, max = 1 }
     local visualRoot = CreateFrame("Frame", nil, host)
     visualRoot:SetAllPoints(slotButton)
     visualRoot:SetAlpha(0)
@@ -1598,8 +1614,9 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
     host._indicatorDimAlpha = nil
-    -- A pooled slot must not keep the previous entry's pandemic look.
+    -- A pooled slot must not keep the previous entry's pandemic look or clip.
     ST.Indicator.StylePandemicGlow(host, nil, false)
+    ST.Indicator.StyleStackGate(slot, nil)
 
     local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
     if not geometry then
