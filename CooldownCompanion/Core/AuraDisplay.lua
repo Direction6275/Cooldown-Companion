@@ -386,27 +386,38 @@ local function EnsureTargetWatcher()
     end)
 end
 
--- Two reminders share one rule: the ordinary one under the native slot, and
--- the one Show While Inactive draws on its still picture (Picture.Style),
--- whose own window decides when it can be seen, so only the first follows
--- the shell's alpha.
+-- Show While Inactive pictures (Picture.Build / Picture.Style, below the
+-- presence trackers). One table: this file sits at Lua's 200-local ceiling.
+local Picture = {
+    -- The picture sits this far inside its cell, so the ~1px an empty
+    -- tracker keeps never reaches it.
+    PAD = 2,
+    -- The cell's size. Far larger than any entry, so a bar refit outside a
+    -- rebind (attached bars follow their panel's width) still draws whole;
+    -- the tracker's element size must equal it to close the window.
+    SPAN = 8192,
+}
+
+-- The Missing Aura Indicator's one visibility rule, for both of its hosts:
+-- the ordinary reminder under the native slot (BindMissingAuraReminder) and
+-- the one a Show While Inactive picture draws on itself (Picture.Style).
+local function MissingReminderShown(reminder, button, inCombat)
+    local style = reminder.style
+    return style ~= nil and reminder.boundEntry == button.buttonData
+        and (not button._isBar or style.showBarIcon ~= false)
+        and CooldownCompanion:ShouldShowMissingAuraCue(style, reminder.tracksTarget, inCombat)
+end
+
 local function UpdateMissingReminderVisibility(button, inCombat)
-    for index = 1, 2 do
-        local reminder
-        if index == 1 then
-            reminder = button._missingAuraReminder
-        else
-            reminder = button._missingPictureReminder
-        end
-        if reminder then
-            local style = reminder.style
-            if index == 1 then
-                reminder:SetAlpha(CooldownCompanion:GetAuraShellAlpha(button, button.buttonData))
-            end
-            reminder:SetShown(style ~= nil and reminder.boundEntry == button.buttonData
-                and (not button._isBar or style.showBarIcon ~= false)
-                and CooldownCompanion:ShouldShowMissingAuraCue(style, reminder.tracksTarget, inCombat))
-        end
+    local reminder = button._missingAuraReminder
+    if reminder then
+        reminder:SetAlpha(CooldownCompanion:GetAuraShellAlpha(button, button.buttonData))
+        reminder:SetShown(MissingReminderShown(reminder, button, inCombat))
+    end
+    -- The picture's own window decides when its reminder can be seen.
+    local pictureReminder = button._missingPictureReminder
+    if pictureReminder then
+        pictureReminder:SetShown(MissingReminderShown(pictureReminder, button, inCombat))
     end
 end
 
@@ -2600,14 +2611,6 @@ local PRESENCE_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
 -- display, and a panel entry's Show While Inactive picture.
 local PRESENCE_KINDS = { presence = true, missingPicture = true }
 
--- Show While Inactive pictures (below). One table: this file sits at
--- Lua's 200-local ceiling.
-local Picture = {
-    -- The picture sits this far inside its cell on every side, so the ~1px
-    -- an empty tracker keeps never reaches it.
-    PAD = 2,
-}
-
 -- Show While Inactive (panel icon and bar entries): a still picture of
 -- the entry, drawn only while the aura is missing. The CC button underneath is
 -- a hidden shell (Aura.lua) and no native display is bound, so nothing shows
@@ -2632,9 +2635,16 @@ function Picture.Build(parent, button)
     end
     picture.name = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     picture.keybind = root:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
-    -- The Missing Aura Indicator, prebuilt with template frames so the shared
-    -- styler (StyleMissingAuraReminder) only ever styles it.
-    local reminder = CreateFrame("Frame", nil, root, PRESENCE_TEMPLATE)
+    return picture
+end
+
+-- The picture's Missing Aura Indicator, built on its first use (out of
+-- combat, from the rebind pass) with template frames, so the shared styler
+-- (StyleMissingAuraReminder) only ever styles it.
+function Picture.EnsureReminder(picture)
+    local reminder = picture.reminder
+    if reminder then return reminder end
+    reminder = CreateFrame("Frame", nil, picture.root, PRESENCE_TEMPLATE)
     reminder:EnableMouse(false)
     reminder.marker = reminder:CreateFontString(nil, "OVERLAY")
     reminder.marker:SetPoint("CENTER", reminder, "CENTER", 0, 0)
@@ -2642,7 +2652,7 @@ function Picture.Build(parent, button)
     reminder.glow = ST._BuildKitGlowRegions(reminder, false, false, PRESENCE_TEMPLATE)
     reminder:Hide()
     picture.reminder = reminder
-    return picture
+    return reminder
 end
 
 local function PresenceLayout(width, height)
@@ -2653,9 +2663,13 @@ end
 local function BuildPresenceTracker(record, layer, unit)
     local picture = record.hostKind == "missingPicture"
     local cell = CreateFrame("Frame", nil, record.visibilityRoot, PRESENCE_TEMPLATE)
-    -- A picture covers the whole entry (a bar's icon square included); the
-    -- aura layer covers only its icon or bar rect.
-    cell:SetPoint("CENTER", picture and record.button or layer, "CENTER", 0, 0)
+    if picture then
+        -- From just above-left of the entry (a bar's icon square included),
+        -- reaching far past it (Picture.SPAN).
+        cell:SetPoint("TOPLEFT", record.button, "TOPLEFT", -Picture.PAD, Picture.PAD)
+    else
+        cell:SetPoint("CENTER", layer, "CENTER", 0, 0)
+    end
     cell:SetSize(1, 1)
     -- The tracker draws nothing: its parent is transparent. Alpha never stops
     -- Blizzard's layout (the container stays visible, so it keeps parsing).
@@ -2769,15 +2783,6 @@ local function StyleMissingAuraReminder(host, anchor, style)
 end
 ST._StyleMissingAuraReminder = StyleMissingAuraReminder
 
--- Static desaturation of the picture's icon: the same intent the CC icon
--- carries while the aura is missing (Tracking.lua ResolveDesaturationIntent).
-function Picture.Desaturated(buttonData, style)
-    if buttonData.isPassive then
-        return not (buttonData.neverDesaturate or style.invertAuraDesaturationLogic)
-    end
-    return style.desaturateWhileAuraNotActive == true
-end
-
 -- Shown while the shell is hidden; an unlock or preview that exposes the CC
 -- button hides the picture so the two never draw over each other.
 function Picture.SyncAlpha(button, shellAlpha)
@@ -2816,7 +2821,8 @@ function Picture.Style(record, button, buttonData, style)
         picture.icon:SetAllPoints(iconAnchor)
         picture.icon:SetTexture(texture)
         picture.icon:SetTexCoord(ccIcon:GetTexCoord())
-        picture.icon:SetDesaturated(Picture.Desaturated(buttonData, style))
+        -- The same rule the CC icon follows while the aura is missing.
+        picture.icon:SetDesaturated(ST.AuraMissingDesaturates(buttonData, style))
         picture.icon:SetAlpha(1)
         local tint = style.iconTintColor
         -- 4-arg color carries the alpha (SetVertexColor-alpha gotcha).
@@ -2862,12 +2868,13 @@ function Picture.Style(record, button, buttonData, style)
     -- The Missing Aura Indicator decorates the picture, on its own When rule.
     local reminder = picture.reminder
     if record.missingIndicator and iconAnchor then
+        reminder = Picture.EnsureReminder(picture)
         reminder.style = style
         reminder.boundEntry = buttonData
         reminder.tracksTarget = record.unit == "target"
         StyleMissingAuraReminder(reminder, iconAnchor, style)
         EnsureMissingCueWatcher()
-    else
+    elseif reminder then
         reminder.style = nil
         reminder.boundEntry = nil
     end
@@ -3041,7 +3048,7 @@ local function ParkDisplay(record)
         ReleaseSlotAuraSounds(record)
         if PRESENCE_KINDS[record.hostKind] then
             record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
-            if record.picture then
+            if record.picture and record.picture.reminder then
                 record.picture.reminder.boundEntry = nil
             end
         else
@@ -3179,16 +3186,14 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
 end
 
 -- OOC only, from the rebind pass. Converges the cell to the saved design
--- (Indicator.PresenceCell, or the entry's own size plus padding for a
--- picture) and the group to the entry's spell set. Group (ally) scope never
+-- (Indicator.PresenceCell, or Picture.SPAN for a picture) and the group to
+-- the entry's spell set. Group (ally) scope never
 -- reaches here: neither form has a multi-unit version yet.
 local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style)
     local button = record.button
     local width, height
     if record.picture then
-        -- CC-owned button rect, read out of combat.
-        local buttonWidth, buttonHeight = button:GetSize()
-        width, height = buttonWidth + Picture.PAD * 2, buttonHeight + Picture.PAD * 2
+        width, height = Picture.SPAN, Picture.SPAN
     else
         width, height = ST.Indicator.PresenceCell(CooldownCompanion.db.profile.groups[button._groupId])
     end
@@ -5049,7 +5054,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                 -- Show While Inactive: a presence tracker uncovers the
                 -- entry's still picture, and no native display is bound. A
                 -- group-tracked entry has no presence form yet and stays dark.
-                local missingPicture = standardAura and buttonData.hideWhileAuraActive == true
+                local missingPicture = standardAura and self:GetAuraVisibilityMode(buttonData) == "missing"
                 if missingPicture and not (self:IsMissingPictureEntry(buttonData)
                     and not ST.IsAuraSectionEntry(group, buttonData)) then
                     standardAura, missingPicture = false, false

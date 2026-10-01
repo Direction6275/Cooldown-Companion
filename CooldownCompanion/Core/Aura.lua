@@ -1139,7 +1139,7 @@ end
 -- Three visibility presentations, mutually exclusive in config:
 --   hideWhileAuraNotActive -> hidden shell, alpha 0
 --   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
---   hideWhileAuraActive    -> hidden shell, alpha 0, with NO native display:
+--   showWhileAuraMissing    -> hidden shell, alpha 0, with NO native display:
 --                             a presence tracker uncovers a still picture of
 --                             the entry only while the aura is missing
 --                             (AuraDisplay.lua, IsMissingPictureEntry)
@@ -1195,7 +1195,23 @@ function CooldownCompanion:IsAuraShellEntry(buttonData)
     end
     return buttonData.hideWhileAuraNotActive == true
         or buttonData.auraShellDim == true
-        or buttonData.hideWhileAuraActive == true
+        or buttonData.showWhileAuraMissing == true
+end
+
+-- The Aura Visibility choice the three keys above spell: "show", "hide"
+-- (Show While Active), "dim" or "missing" (Show While Inactive). The config
+-- keeps them exclusive, but imported or copied data can carry more than one,
+-- so every reader (config, runtime, previews) resolves them through this one
+-- precedence and they can never disagree.
+--
+-- showWhileAuraMissing is a fresh key on purpose: the old main-era
+-- hideWhileAuraActive is stripped by MigrateEntryAuraResidue on every import.
+function CooldownCompanion:GetAuraVisibilityMode(buttonData)
+    if not buttonData then return "show" end
+    if buttonData.hideWhileAuraNotActive == true then return "hide" end
+    if buttonData.auraShellDim == true then return "dim" end
+    if buttonData.showWhileAuraMissing == true then return "missing" end
+    return "show"
 end
 
 -- Show While Inactive. Group tracking has no presence form yet, so a
@@ -1206,7 +1222,7 @@ end
 function CooldownCompanion:IsMissingPictureEntry(buttonData)
     return buttonData ~= nil and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and buttonData.hideWhileAuraActive == true
+        and self:GetAuraVisibilityMode(buttonData) == "missing"
         and not buttonData.auraTrackGroup or false
 end
 
@@ -1215,11 +1231,10 @@ end
 -- Callers gate on IsAuraShellEntry first, so a non-shell entry never
 -- reaches this.
 function CooldownCompanion:GetAuraShellRestingAlpha(buttonData)
-    if buttonData and (buttonData.hideWhileAuraNotActive == true
-        or buttonData.hideWhileAuraActive == true) then
-        return 0
+    if self:GetAuraVisibilityMode(buttonData) == "dim" then
+        return self.DIM_FALLBACK_ALPHA
     end
-    return self.DIM_FALLBACK_ALPHA
+    return 0
 end
 
 -- Keep Cooldown Swipe (12.1 compositing): the entry opts out of the

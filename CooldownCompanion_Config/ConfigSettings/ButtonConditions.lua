@@ -2516,8 +2516,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         if isBatch then
             for idx in pairs(CS.selectedButtons) do
                 local bd = group.buttons[idx]
-                if bd then
-                    if not value or (FilterAuraEntry(bd) and (not eligible or eligible(bd))) then
+                if bd and (not eligible or eligible(bd)) then
+                    if not value or FilterAuraEntry(bd) then
                         bd[field] = value
                     end
                 end
@@ -2546,13 +2546,16 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         -- tracker per group member), so it is offered only while no selected
         -- entry tracks a group. A stored one always shows, so it can be left.
         local function NotGroupTracked(bd) return bd.auraTrackGroup ~= true end
-        local function HasMissingMode(bd) return FilterAuraEntry(bd) and bd.hideWhileAuraActive == true end
+        local function HasMissingMode(bd)
+            return FilterAuraEntry(bd) and CooldownCompanion:GetAuraVisibilityMode(bd) == "missing"
+        end
         local offerMissing
         if isBatch then
             offerMissing = not AnySelectedMatch(function(bd) return FilterAuraEntry(bd) and not NotGroupTracked(bd) end)
                 or AnySelectedMatch(HasMissingMode)
         else
-            offerMissing = NotGroupTracked(buttonData) or buttonData.hideWhileAuraActive == true
+            offerMissing = NotGroupTracked(buttonData)
+                or CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing"
         end
         local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show While Active" }
         local auraOrder = { "show", "dim", "hide" }
@@ -2567,12 +2570,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 filter = FilterAuraEntry,
                 list = auraList,
                 order = auraOrder,
-                read = function(bd)
-                    if bd.hideWhileAuraNotActive == true then return "hide" end
-                    if bd.auraShellDim == true then return "dim" end
-                    if bd.hideWhileAuraActive == true then return "missing" end
-                    return "show"
-                end,
+                read = function(bd) return CooldownCompanion:GetAuraVisibilityMode(bd) end,
                 tooltip = BuildVisibilityModeTooltip("Aura Visibility", {
                     {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show While Active hides it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
@@ -2581,14 +2579,24 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
                 }, true),
                 write = function(value)
-                    ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
-                    ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
-                    ApplyToAuraEntries("hideWhileAuraActive", value == "missing" or nil, NotGroupTracked)
+                    -- Group-tracked entries can't take Show While Inactive,
+                    -- so that pick leaves them exactly as they were.
+                    local eligible = value == "missing" and NotGroupTracked or nil
+                    ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil, eligible)
+                    ApplyToAuraEntries("auraShellDim", value == "dim" or nil, eligible)
+                    ApplyToAuraEntries("showWhileAuraMissing", value == "missing" or nil, eligible)
                     CooldownCompanion:RefreshAllGroups()
                     CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
+            -- Stored together only by imported or copied data: say why the
+            -- entry never shows.
+            if not isBatch and buttonData.auraTrackGroup == true
+                and CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing" then
+                AddLabelRow(column, { label = "Show While Inactive", indent = true,
+                    controlText = "Not with group tracking" })
+            end
         end)
     end
 

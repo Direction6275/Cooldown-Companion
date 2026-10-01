@@ -210,12 +210,20 @@ local function BarsGroupTracksAura(group)
 end
 
 -- Missing Bar Color paints only Show While Inactive entries, so its row
--- appears once the panel has one.
+-- appears once the panel has one, or for a selected entry, only when that
+-- entry is one.
 local function BarsGroupHasMissingPicture(group)
     for _, entry in ipairs(group and group.buttons or {}) do
         if CooldownCompanion:IsMissingPictureEntry(entry) then return true end
     end
     return false
+end
+
+local function BarsLensHasMissingPicture(lens, group)
+    if lens and lens.mode == "entry" and lens.buttonData then
+        return CooldownCompanion:IsMissingPictureEntry(lens.buttonData)
+    end
+    return BarsGroupHasMissingPicture(group)
 end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
@@ -401,7 +409,10 @@ ST._SECTION_HOME.bars = {
     -- Beside the other missing-aura looks, and not icon-bound: it is the bar.
     auraMissingBarColor = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
-        available = BarsGroupHasMissingPicture,
+        -- The row's own gate, read through the current selection.
+        available = function(group)
+            return BarsLensHasMissingPicture(ResolveStyleLens(group), group)
+        end,
     },
     unusableDimming = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
@@ -1715,7 +1726,7 @@ local function BuildBarEffectsTab(container, group, style)
     end
     -- The full bar a Show While Inactive entry draws while its aura is
     -- missing, with the other missing-aura looks.
-    if auraRight and BarsGroupHasMissingPicture(group)
+    if auraRight and BarsLensHasMissingPicture(lens, group)
         and CanGroupUseOverrideSection(group, "auraMissingBarColor") then
         local missingBarSec = BeginLensSection(lens, group, "auraMissingBarColor")
         local missingBarRow = AddColorRow(auraRight, {
@@ -2417,7 +2428,7 @@ if ST._DefineSettingRoute then
         missingBarColor = { label = "Missing Bar Color", sectionId = "auraMissingBarColor",
             aliases = { "show while inactive", "missing bar" },
             applies = function(context)
-                return BarsGroupHasMissingPicture(context.group)
+                return BarsLensHasMissingPicture(BarFinderLens(context), context.group)
                     and BarFinderCanUse(context, "auraMissingBarColor")
             end },
         missing = {

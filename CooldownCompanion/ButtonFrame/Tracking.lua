@@ -317,6 +317,17 @@ local function UpdateIconTint(button, buttonData, style)
     end
 end
 
+-- The static desaturate an aura entry carries while its aura is missing.
+-- Shared with the Show While Inactive picture (AuraDisplay.lua), which must
+-- look like this icon at rest.
+local function AuraMissingDesaturates(buttonData, style)
+    if buttonData.isPassive then
+        return not (buttonData.neverDesaturate or style.invertAuraDesaturationLogic)
+    end
+    return style.desaturateWhileAuraNotActive == true
+end
+ST.AuraMissingDesaturates = AuraMissingDesaturates
+
 local function ResolveDesaturationIntent(button, buttonData, style, target)
     target = target or {}
     target.active = false
@@ -337,15 +348,12 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
     -- The non-passive opt-in is a STYLE key too (desaturation section), so
     -- both static desat rules resolve from the same effective style.
     if buttonData.auraTracking or buttonData.addedAs == "aura" then
-        if buttonData.isPassive then
-            if not (buttonData.neverDesaturate or style.invertAuraDesaturationLogic) then
-                target.active = true
-                target.reason = "aura-missing"
-            end
-            return target
-        elseif style.desaturateWhileAuraNotActive == true then
+        if AuraMissingDesaturates(buttonData, style) then
             target.active = true
             target.reason = "aura-missing"
+            return target
+        end
+        if buttonData.isPassive then
             return target
         end
     end

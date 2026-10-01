@@ -60,6 +60,7 @@ local function SummarizeButton(button)
         auraTrackGroup = button.auraTrackGroup == true,
         auraTrackPet = button.auraTrackPet == true,
         hideWhenInactive = button.hideWhenInactive == true,
+        auraVisibility = CooldownCompanion:GetAuraVisibilityMode(button),
         loadConditionCount = CountTableEntries(button.loadConditions),
         overrideCount = CountTableEntries(button.styleOverrides),
     }
@@ -853,7 +854,7 @@ local function FormatDiagnosticBugReportAsText(diag, includeDetails)
     end
     if c.selectedButtonSummary then
         local button = c.selectedButtonSummary
-        add(("Selected Entry: %s:%s %q auraTracking=%s auraUnit=%s auraTrackGroup=%s auraTrackPet=%s hideWhenInactive=%s loadConditions=%s overrides=%s"):format(
+        add(("Selected Entry: %s:%s %q auraTracking=%s auraUnit=%s auraTrackGroup=%s auraTrackPet=%s hideWhenInactive=%s auraVisibility=%s loadConditions=%s overrides=%s"):format(
             tostring(button.type or "?"),
             tostring(button.id or "?"),
             tostring(button.name or "?"),
@@ -862,6 +863,7 @@ local function FormatDiagnosticBugReportAsText(diag, includeDetails)
             tostring(button.auraTrackGroup),
             tostring(button.auraTrackPet),
             tostring(button.hideWhenInactive),
+            tostring(button.auraVisibility or "show"),
             tostring(button.loadConditionCount or 0),
             tostring(button.overrideCount or 0)))
     end
