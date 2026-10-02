@@ -46,14 +46,74 @@ function I.CreateVisual(host, nativeSlot)
         primaryTexture = artwork:CreateTexture(nil, "ARTWORK"),
         secondaryTexture = artwork:CreateTexture(nil, "ARTWORK")}
     clip:SetAlpha(0)
-    root:SetFrameLevel(artwork:GetFrameLevel() + 1)
+    -- Levels above visualRoot's own artwork: +1 the artwork's Pandemic
+    -- recolor, +2 the drain clip, +3 the drained copy, +4 its recolor, +5 the
+    -- readouts. The recolor levels stay reserved when no recolor is built.
+    local level = host.visualRoot:GetFrameLevel()
+    clip:SetFrameLevel(level + 2)
+    artwork:SetFrameLevel(level + 3)
+    root:SetFrameLevel(level + 5)
     host.indicatorProgress = {bar = bar, clip = clip, foreground = foreground}
     if nativeSlot then
+        -- Registered now, in the slot's setup window; previews build theirs
+        -- when first styled on (StylePandemicTint).
+        I.CreatePandemicTint(host, nativeSlot)
         nativeSlot:SetDurationText(readouts.timer)
         nativeSlot:SetApplicationCount(readouts.count)
         nativeSlot:SetDurationBar(bar, {interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH,
             direction = ST.STATUS_BAR_TIMER_DIRECTION_REMAINING})
     end
+end
+
+-- Pandemic recolor (Texture and Text displays; Icons glow instead,
+-- CreatePandemicGlow): tinted copies of the artwork, the drained artwork and
+-- the label, each in a frame a native slot registers as a pandemic region, so
+-- Blizzard reveals them only inside the refresh window. Born hidden; a
+-- preview shows them itself. Only native slots and previews build one.
+function I.CreatePandemicTint(host, nativeSlot)
+    if host.indicatorPandemicTint then return host.indicatorPandemicTint end
+    local template = host._ccFrameTemplate
+    local level = host.visualRoot:GetFrameLevel()
+    local readouts, clip = host.indicatorReadouts, host.indicatorProgress.clip
+    local labelTint = CreateFrame("Frame", nil, readouts.frames.label, template)
+    labelTint:SetAllPoints(readouts.root)
+    labelTint:EnableMouse(false)
+    labelTint:Hide()
+    -- Above the artwork, below the drained copy.
+    local tintBase = CreateFrame("Frame", nil, host.visualRoot, template)
+    tintBase:SetAllPoints(host.visualRoot)
+    tintBase:EnableMouse(false)
+    tintBase:Hide()
+    tintBase:SetFrameLevel(level + 1)
+    -- The drained copy's recolor rides the same clip, above it.
+    local tintFore = CreateFrame("Frame", nil, clip, template)
+    tintFore:SetAllPoints(host.visualRoot)
+    tintFore:EnableMouse(false)
+    tintFore:Hide()
+    tintFore:SetFrameLevel(level + 4)
+    local tint = {labelFrame = labelTint, baseFrame = tintBase, foreFrame = tintFore,
+        label = labelTint:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline"),
+        base = {visualRoot = tintBase,
+            primaryTexture = tintBase:CreateTexture(nil, "ARTWORK"),
+            secondaryTexture = tintBase:CreateTexture(nil, "ARTWORK")},
+        fore = {visualRoot = tintFore,
+            primaryTexture = tintFore:CreateTexture(nil, "ARTWORK"),
+            secondaryTexture = tintFore:CreateTexture(nil, "ARTWORK")},
+        -- The artwork fields LayoutTexturePieces reads, refilled per style.
+        settings = {color = {1, 1, 1, 1}}}
+    -- A recolor, not a multiply: the copies go gray before the tint, so any
+    -- artwork turns the effect color instead of its own color times it.
+    tint.base.primaryTexture:SetDesaturated(true)
+    tint.base.secondaryTexture:SetDesaturated(true)
+    tint.fore.primaryTexture:SetDesaturated(true)
+    tint.fore.secondaryTexture:SetDesaturated(true)
+    if nativeSlot and nativeSlot.AddPandemicRegion then
+        nativeSlot:AddPandemicRegion(tintBase)
+        nativeSlot:AddPandemicRegion(tintFore)
+        nativeSlot:AddPandemicRegion(labelTint)
+    end
+    host.indicatorPandemicTint = tint
+    return tint
 end
 
 -- The Pandemic effect rig: the panel pandemic glow kit, drawn above the
@@ -72,19 +132,111 @@ function I.CreatePandemicGlow(host, auraOwned)
     return glow
 end
 
+-- The host draws the aura's live display: a native aura Indicator, or the
+-- Also During Pandemic twin of a While Missing one (AuraDisplay
+-- "pandemicTexture", the preview's Pandemic Window state).
+local function DrawsLiveAura(host, group)
+    return I.IsNativeAura(group) or host._ccPandemicTwin == true and I.AlsoDuringPandemic(group)
+end
+
+-- The host draws a presence picture (While Missing, several auras): no
+-- timer, count or drain. The pandemic twin is the live display instead.
+local function DrawsPresence(host, group)
+    return I.UsesPresence(group) and not host._ccPandemicTwin
+end
+
 -- Styles the rig from saved settings only. Off ("none") unless this is an
--- aura Indicator showing Icon or Texture artwork with the effect enabled;
+-- aura Indicator showing Icon artwork with the effect enabled (Texture and
+-- Text recolor instead, StylePandemicTint);
 -- `group` nil resets a pooled slot. The glow covers the visual's bounds,
 -- stamped by StyleVisual, so no frame is ever measured.
 function I.StylePandemicGlow(host, group, shown)
     local glow = host.indicatorPandemicGlow
     if not glow then return end
     local settings = I.Settings(group)
-    local pandemic = settings and settings.pandemic
-    local enabled = shown and I.IsNativeAura(group) and settings.displayType ~= "text"
-        and pandemic and pandemic.pandemicEffectEnabled == true or false
-    ST._StyleKitPandemicGlowRegions(glow, pandemic, host.visualRoot, enabled)
+    local enabled = shown and DrawsLiveAura(host, group) and settings.displayType == "icon"
+        and I.PandemicEffectOn(group) or false
+    ST._StyleKitPandemicGlowRegions(glow, settings and settings.pandemic, host.visualRoot, enabled)
 end
+
+-- The Pandemic effect on Texture and Text displays: the artwork (and its
+-- drained copy) or the label in the effect color, laid over the original.
+-- Same saved-settings-only rule as the glow; `group` nil resets a pooled
+-- slot. Reads only the CC-styled artwork state StyleVisual just stamped.
+function I.StylePandemicTint(host, group, shown)
+    local settings = I.Settings(group)
+    local pandemic = settings and settings.pandemic
+    local on = shown and settings and DrawsLiveAura(host, group) and I.PandemicEffectOn(group) or false
+    local displayType = settings and settings.displayType
+    -- A native slot's rig exists from creation; a preview's is built on first use.
+    local tint = host.indicatorPandemicTint
+        or on and displayType ~= "icon" and I.CreatePandemicTint(host)
+    if not tint then return end
+    local color = pandemic and pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
+    local visual, geometry = host._activeTextureSettings, host._activeTextureGeometry
+    if on and displayType == "texture" and visual and geometry then
+        -- The artwork fields LayoutTexturePieces reads, in the effect color;
+        -- one table per rig, refilled on each style.
+        local tinted = tint.settings
+        tinted.sourceType, tinted.sourceValue, tinted.mediaType = visual.sourceType, visual.sourceValue, visual.mediaType
+        tinted.blendMode = visual.blendMode
+        local tintColor = tinted.color
+        tintColor[1], tintColor[2], tintColor[3] = color[1] or 1, color[2] or 1, color[3] or 1
+        tintColor[4] = visual.color and visual.color[4] or 1
+        local alpha = host._indicatorTextureAlpha or 1
+        ST._AT.LayoutTexturePieces(tint.base, tinted, geometry, alpha * (host._indicatorDimAlpha or 1))
+        ST._AT.LayoutTexturePieces(tint.fore, tinted, geometry, alpha)
+        -- Kept gray whatever a texture swap does (see CreateVisual).
+        tint.base.primaryTexture:SetDesaturated(true)
+        tint.base.secondaryTexture:SetDesaturated(true)
+        tint.fore.primaryTexture:SetDesaturated(true)
+        tint.fore.secondaryTexture:SetDesaturated(true)
+    else
+        tint.base.primaryTexture:Hide()
+        tint.base.secondaryTexture:Hide()
+        tint.fore.primaryTexture:Hide()
+        tint.fore.secondaryTexture:Hide()
+    end
+    local label = host.indicatorReadouts and host.indicatorReadouts.label
+    if on and displayType == "text" and label then
+        local font, size, flags = label:GetFont()
+        if font then
+            tint.label:SetFont(font, size, flags)
+            ST.ApplyFontShadowForOutline(tint.label, flags)
+        end
+        tint.label:ClearAllPoints()
+        tint.label:SetPoint("CENTER", label, "CENTER", 0, 0)
+        tint.label:SetJustifyH("CENTER")
+        tint.label:SetWordWrap(false)
+        tint.label:SetText(label:GetText() or "")
+        -- Hue only, like the Texture recolor: the copy keeps the label's own
+        -- opacity (StyleReadouts' color), so it covers the original exactly.
+        local base = host._indicatorReadoutColors and host._indicatorReadoutColors.label
+        tint.label:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, base and base[4] or 1)
+    else
+        tint.label:SetText("")
+    end
+end
+
+-- A Text display recolors its whole text in the window: the label through
+-- StylePandemicTint, the timer through the duration formatter's whole-text
+-- Pandemic coloring. The marker keeps its text only when `markerWanted`
+-- (the caller's own marker decision, Auto's unit rule included). The
+-- readouts as the formatter should read them, or nil when this doesn't
+-- apply. `into` (optional) is reused, so a per-frame caller allocates nothing.
+function I.PandemicTimerStyle(group, markerWanted, into)
+    if not I.PandemicRecolorsText(group) then return end
+    local settings = I.Settings(group)
+    local pandemic = settings.pandemic
+    local style = into or {}
+    if into then wipe(into) end
+    for key, value in pairs(settings.readouts) do style[key] = value end
+    style.pandemicMarkerColorMode = "whole"
+    style.pandemicMarkerColor = pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
+    if not markerWanted then style.pandemicMarkerText = "" end
+    return style
+end
+local previewTimerStyle = {}
 
 -- Preview stand-ins: CC-owned sample seconds on the same scale the drain uses.
 -- The timer text runs through the live features' manual twins, so Low Time
@@ -93,15 +245,22 @@ I.PREVIEW_SECONDS = 20
 function I.IsPreviewPandemicWindow(seconds)
     return seconds > 0 and seconds < I.PREVIEW_SECONDS * 0.3
 end
+-- A sample inside that window (5 of 20 seconds), for the Pandemic Window state.
+I.PREVIEW_PANDEMIC_FRACTION = 0.25
 
 function I.PreviewTimerText(group, seconds)
     local settings = I.Settings(group)
     local options = settings and settings.readouts
     if not (options and options.timer and seconds > 0) then return "" end
     if I.IsAura(group) then
-        local marker = I.IsPreviewPandemicWindow(seconds) and I.PandemicMarkerOn(group)
+        local window = I.IsPreviewPandemicWindow(seconds)
+        local markerWanted = I.PandemicMarkerOn(group)
             and Addon:IsPandemicMarkerPreviewWanted(I.Primary(group), options)
-        return Addon:FormatAuraDurationPreviewText(seconds, options, marker, true)
+        local recolor = I.PandemicTimerStyle(group, markerWanted, previewTimerStyle)
+        if recolor then
+            return Addon:FormatAuraDurationPreviewText(seconds, recolor, window, true)
+        end
+        return Addon:FormatAuraDurationPreviewText(seconds, options, window and markerWanted, true)
     end
     return Addon.FormatDurationText(seconds, options, true, "cooldown")
 end
@@ -116,9 +275,7 @@ local function StyleReadouts(host, group, font, outline)
     local settings = I.Settings(group)
     local text, options = settings.text, settings.readouts
     local readouts = host.indicatorReadouts
-    -- A presence-drawn display (While Missing, several auras) has no timer
-    -- or count to show.
-    local missing = I.UsesPresence(group)
+    local missing = DrawsPresence(host, group)
     readouts.root:Show()
     -- Text effects restore and shift each readout from its own color.
     local baseColors = host._indicatorReadoutColors or {}
@@ -177,8 +334,7 @@ function I.StyleVisual(host, group, icon, font, outline)
         if not icon.manualIcon then return false end
         Addon.ApplyTriggerIconVisual(host, icon)
     elseif settings.displayType == "texture" then
-        -- Nothing drains on a presence-drawn display.
-        local draining = settings.progress.enabled == true and not I.UsesPresence(group)
+        local draining = settings.progress.enabled == true and not DrawsPresence(host, group)
         local dim = draining and (settings.progress.dimAlpha or 0.35) or 1
         host._indicatorDimAlpha = dim
         shown = ST._AT.LayoutTexturePieces(host, visual, geometry, alpha * dim)
@@ -497,6 +653,7 @@ function I.StyleAura(slot, group, durationOptions)
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
     I.StylePandemicGlow(host, group, shown)
+    I.StylePandemicTint(host, group, shown)
     I.StyleStackGate(slot, shown and group or nil, width, height)
     host.visualRoot:SetAlpha(shown and 1 or 0)
     return shown
