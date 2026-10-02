@@ -127,6 +127,23 @@ function I.IsNativeAura(group)
     return I.IsAura(group) and not I.UsesPresence(group)
 end
 
+-- Also During Pandemic (a lone aura While Missing): the aura's own native
+-- display also shows inside its pandemic window, gated by Blizzard
+-- (AuraDisplay "pandemicTexture"). Saved on the aura entry, the same key a
+-- panel entry uses (showWhileAuraPandemic). Group tracking has no form.
+function I.AlsoDuringPandemic(group)
+    if not I.ShowsWhileMissing(group) then return false end
+    local source = I.Primary(group)
+    -- Same group rule as the presence tracker it rides (AuraDisplay rebind).
+    return source.showWhileAuraPandemic == true and source.auraTrackGroup ~= true
+end
+
+-- The aura's live display can show (always, or in its pandemic window): the
+-- timer, count, drain and pandemic settings apply.
+function I.ShowsLiveDisplay(group)
+    return I.IsNativeAura(group) or I.AlsoDuringPandemic(group)
+end
+
 -- Where an aura entry is tracked: "target", "pet", "group" or "player", by
 -- the runtime's own precedence (Addon:GetAuraEntryUnitKind).
 function I.AuraUnit(entry)
@@ -378,19 +395,32 @@ end
 -- as Blizzard shows the slot: Always, never combat-gated. Color Shift has no
 -- artwork to tint on Text Only. A derived description keyed by effect, never
 -- a second saved store.
-function I.NativeEffects(group)
-    if not I.IsNativeAura(group) then return end
+local function CollectNativeEffects(group, skipCombatOnly)
     I.Effects(group)
     local settings = I.Settings(group)
     local store = Addon.NormalizeTriggerPanelEffectStore(settings)
     local effects = {}
     for _, key in ipairs(I.EffectOrder) do
         local effect = store[key]
-        if effect.enabled and not (key == "colorShift" and settings.displayType == "text") then
+        if effect.enabled and not (key == "colorShift" and settings.displayType == "text")
+            and not (skipCombatOnly and effect.combatOnly) then
             effects[key] = {speed = effect.speed, color = effect.color and CopyTable(effect.color)}
         end
     end
     return effects
+end
+
+function I.NativeEffects(group)
+    if not I.IsNativeAura(group) then return end
+    return CollectNativeEffects(group)
+end
+
+-- The pandemic window's native display plays the While Missing look's
+-- enabled effects too, except Only In Combat ones: a native slot can't follow
+-- combat, so those stay on the missing look only.
+function I.PandemicTwinEffects(group)
+    if not I.AlsoDuringPandemic(group) then return end
+    return CollectNativeEffects(group, true)
 end
 
 -- Timer behavior that belongs to the Indicator rather than to one display
@@ -447,7 +477,38 @@ function I.Initialize(group)
     -- Pandemic effect for aura Indicators: the panel pandemicGlow* key family
     -- plus its explicit-true pandemicEffectEnabled. Empty means off.
     settings.pandemic = settings.pandemic or {}
+    -- Text displays gained a Pandemic effect (a recolor) in 2026-10. An "on"
+    -- stored from an earlier Icon or Texture look was invisible on Text, so
+    -- it is turned off once per Indicator. The marker lives in the data, not
+    -- a profile sentinel: imports clear sentinels and re-run passes, which
+    -- would turn off an effect chosen since.
+    if not settings.pandemic.textRecolorReviewed then
+        if settings.displayType == "text" then settings.pandemic.pandemicEffectEnabled = nil end
+        settings.pandemic.textRecolorReviewed = true
+    end
     return settings
+end
+
+-- The Pandemic effect is on: the Icon glow, the Texture and Text recolor.
+function I.PandemicEffectOn(group)
+    local settings = I.Settings(group)
+    local pandemic = settings and settings.pandemic
+    return pandemic ~= nil and pandemic.pandemicEffectEnabled == true
+end
+
+-- A Text display's Pandemic effect recolors its whole text, the timer and
+-- its marker included (I.PandemicTimerStyle).
+function I.PandemicRecolorsText(group)
+    local settings = I.Settings(group)
+    return settings ~= nil and settings.displayType == "text" and I.PandemicEffectOn(group)
+end
+
+-- The effect has something to show: Icon and Texture artwork always, Text
+-- only its label or timer (the stack count is Blizzard's own text).
+function I.PandemicEffectApplies(group)
+    local settings = I.Settings(group)
+    if not settings then return false end
+    return settings.displayType ~= "text" or settings.readouts.label ~= "none" or settings.readouts.timer == true
 end
 
 -- The Pandemic marker keys live in `readouts` beside the timer's Duration
@@ -997,6 +1058,9 @@ function I.SetAuraWhen(group, value, count)
     if not source then return end
     local before = I.EffectFamily(group)
     I.Effects(group)
+    -- Also During Pandemic belongs to While Missing: another choice clears it,
+    -- so a later While Missing never brings it back unseen.
+    if value ~= "missing" then source.showWhileAuraPandemic = nil end
     if value == "active" then
         source.indicatorStackRule = nil
     elseif value == "missing" then
@@ -1101,6 +1165,10 @@ function I.CommitSourceReplacement(group, candidate)
         local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
         if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
             newSource.indicatorStackRule = CopyTable(oldRule)
+            -- Its Also During Pandemic goes with While Missing.
+            if I.Primary(group).showWhileAuraPandemic == true and newSource.showWhileAuraPandemic == nil then
+                newSource.showWhileAuraPandemic = true
+            end
         end
     end
     for i = 2, #(group.buttons or {}) do
@@ -1163,6 +1231,9 @@ function I.ApplyPresentation(source, destination, appearance, effects)
     if effects then
         StoreEffects(destination, (I.ReadEffects(source)))
         target.pandemic = CopyTable(saved.pandemic or {})
+        -- A deliberate copy: keep the copied effect even from a source saved
+        -- before the Text recolor (I.Initialize's one-time turn-off).
+        target.pandemic.textRecolorReviewed = true
     end
     I.Initialize(destination)
     CopyTimerPolicy(marker, target.readouts, I.PandemicMarkerKeys)

@@ -33,9 +33,10 @@ local textOnly = Applies(function(_,s) return s.displayType == "text" end)
 local function CountReadoutKey(group)
     return I.IsAura(group) and "stacks" or I.Primary(group).type == "spell" and "charges" or "item"
 end
--- While Missing shows only while the aura is absent: no timer, count or drain.
+-- While Missing shows only while the aura is absent: no timer, count or drain,
+-- unless Also During Pandemic adds the live display in the refresh window.
 local function LiveReadouts(group)
-    return not I.UsesPresence(group)
+    return not I.UsesPresence(group) or I.AlsoDuringPandemic(group)
 end
 local drainable = Applies(function(g,s) return s.displayType == "texture" and LiveReadouts(g) end)
 local drain = Applies(function(g,s) return s.displayType == "texture" and s.progress.enabled == true
@@ -53,7 +54,7 @@ local READOUT_ROWS = {
     timer = {label="Show Cooldown Text", aliases={"timer"},
         applies=Applies(function(g) return not I.IsAura(g) end)},
     auraTimer = {label="Show Aura Duration Text", aliases={"timer"},
-        applies=Applies(function(g) return I.IsNativeAura(g) end)},
+        applies=Applies(function(g) return I.ShowsLiveDisplay(g) end)},
     stacks = {label="Show Aura Stack Text", aliases={"aura stacks","count"},
         applies=Applies(function(g) return CountReadoutKey(g) == "stacks" and LiveReadouts(g) end)},
     charges = {label="Show Count Text (Charges / Uses)", aliases={"charges","display count"},
@@ -102,6 +103,8 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
         applies=Applies(function(g) return I.IsMultiAura(g) end)},
     auraEntryWhen={label="When",aliases={"while active","while missing","missing","inactive"},
         applies=Applies(function(g) return I.IsMultiAura(g) end)},
+    auraPandemic={label="Also During Pandemic",aliases={"pandemic window","refresh window","while missing or pandemic"},
+        applies=Applies(function(g) return I.ShowsWhileMissing(g) and I.Primary(g).auraTrackGroup ~= true end)},
     stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
         local compare = I.StackCompare(g)
         return compare ~= nil and compare ~= "max"
@@ -172,13 +175,19 @@ for _,key in ipairs({"label","timer","count"}) do
         {advancedKey="indicatorText_"..key}):Settings(definitions)
 end
 
--- Pandemic, for aura Indicators: the panel's effect (a glow on Icon and
--- Texture artwork) and marker (on the duration text) rows.
-local auraOnly = Applies(function(g) return I.IsNativeAura(g) end)
-local auraArtwork = Applies(function(g,s) return I.IsNativeAura(g) and s.displayType ~= "text" end)
-local auraTimer = Applies(function(g,s) return I.IsNativeAura(g) and s.readouts.timer == true end)
+-- Pandemic, for aura Indicators whose live display shows: the effect (a
+-- glow on Icon artwork, a recolor on Texture and Text) and the marker (on
+-- the duration text) rows.
+local auraOnly = Applies(function(g) return I.ShowsLiveDisplay(g) end)
+local auraArtwork = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" end)
+local auraTimer = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.readouts.timer == true end)
 local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", {applies=auraOnly}):Settings({
-    effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic"},applies=auraArtwork},
+    effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic","pandemic recolor"},
+        applies=Applies(function(g) return I.ShowsLiveDisplay(g) and I.PandemicEffectApplies(g) end)},
+    -- Texture and Text recolor in the effect color (Icons glow).
+    color={label="Pandemic Color",aliases={"pandemic recolor","pandemic tint"},
+        applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType ~= "icon"
+            and I.PandemicEffectApplies(g) and I.PandemicEffectOn(g) end)},
     marker={label="Pandemic Marker",aliases={"pandemic"},applies=auraTimer},
 })
 local function PandemicGlowStyle(settings)
@@ -187,14 +196,14 @@ end
 local function GlowUses(...)
     local styles = {}
     for index = 1, select("#", ...) do styles[select(index, ...)] = true end
-    return Applies(function(g,s) return I.IsNativeAura(g) and s.displayType ~= "text" and styles[PandemicGlowStyle(s)] == true end)
+    return Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" and styles[PandemicGlowStyle(s)] == true end)
 end
 -- Same rows the panel's Pandemic Effect gear draws for these styles.
 local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicGlow", advancedKey="indicatorPandemicGlow", applies=auraArtwork}):Settings({
     style={label="Glow Style"},
     color={label="Effect Color",applies=Applies(function(g,s)
-        return I.IsNativeAura(g) and s.displayType ~= "text" and PandemicGlowStyle(s) ~= "cdm" end)},
+        return I.ShowsLiveDisplay(g) and s.displayType == "icon" and PandemicGlowStyle(s) ~= "cdm" end)},
     color2={label="Second Color",applies=GlowUses("colorShift")},
     borderSize={label="Border Size",applies=GlowUses("solid","pulse","colorShift")},
     pulseDuration={label="Pulse Duration",applies=GlowUses("pulse")},
@@ -207,12 +216,16 @@ local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_
     particleScale={label="Particle Scale",applies=GlowUses("autocast")},
     frequency={label="Frequency",applies=GlowUses("autocast")},
 })
+-- A Text display's Pandemic effect colors the whole timer, marker included
+-- (I.PandemicRecolorsText), so the marker's own coloring rows step aside.
 local pandemicMarker = Route("effects", "pandemic", "Pandemic Marker", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicMarker", advancedKey="indicatorPandemicMarker", applies=auraTimer}):Settings({
     text={label="Marker Text"},
-    coloring={label="Marker Coloring"},
+    coloring={label="Marker Coloring",applies=Applies(function(g,s)
+        return I.ShowsLiveDisplay(g) and s.readouts.timer == true and not I.PandemicRecolorsText(g) end)},
     color={label="Marker Color",applies=Applies(function(g,s)
-        return I.IsNativeAura(g) and s.readouts.timer == true and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
+        return I.ShowsLiveDisplay(g) and s.readouts.timer == true and not I.PandemicRecolorsText(g)
+            and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
 })
 
 -- Buttons sharing one row's control column (ST._CreateRowActionStrip), from
@@ -531,6 +544,18 @@ local function AddAuraWhen(column, group, entry, changed)
     if missing then
         if entry.auraTrackGroup then
             Hint(column, "While Missing doesn't work with Group tracking yet, so this stays hidden.")
+        else
+            Check(column, {setting=whenToShow.auraPandemic, indent=true, value=entry.showWhileAuraPandemic == true,
+                tooltip={"Also During Pandemic",
+                    {"Also shows the Indicator near the end of the aura, in the window where recasting keeps the leftover time.", 1, 1, 1, true},
+                    " ",
+                    {"In that window it shows the aura's live display, timer included. Only auras with that window use it; leave it off for others.", 1, 1, 1, true},
+                    " ",
+                    {"Effects set to Only In Combat play on the missing look only.", 1, 1, 1, true}},
+                onChange=function(value)
+                    entry.showWhileAuraPandemic = value or nil
+                    changed(true)
+                end})
         end
         return
     end
@@ -804,18 +829,21 @@ local function BuildReadoutGear(panel, group, key, changed)
     end
 end
 
--- Effects tab, aura Indicators only: the panel Pandemic rows. The effect is a
--- glow, so Text Only has just the marker; the marker rides the duration text.
+-- Effects tab, aura Indicators whose live display shows: the Pandemic rows.
+-- The effect glows an Icon and recolors Texture and Text; the marker rides
+-- the duration text.
 local TURNON_PANDEMIC_EFFECT = "Enable Pandemic Effect"
 local TURNON_PANDEMIC_MARKER = "Enable Pandemic Marker"
 local function BuildPandemic(container, group, changed)
     local settings = I.Settings(group)
     local r, p = settings.readouts, settings.pandemic
-    local showEffect, showMarker = settings.displayType ~= "text", r.timer == true
+    -- Icons glow, Texture and Text recolor; Text needs a label or timer to.
+    local showEffect, showMarker = I.PandemicEffectApplies(group), r.timer == true
+    local glow = settings.displayType == "icon"
     if not showMarker and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicMarker"})
     end
-    if not showEffect and CS.CloseAdvancedSettingsPanel then
+    if not glow and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicGlow"})
     end
     if not (showEffect or showMarker) then return end
@@ -824,12 +852,27 @@ local function BuildPandemic(container, group, changed)
     local column = ST._BeginRowGrid(container)
     local groupId = CS.selectedGroup
     local function refresh() changed() end
-    if showEffect then
-        local enabled = p.pandemicEffectEnabled == true
-        local row = Check(column,{setting=pandemic.effect,value=enabled,onChange=function(value)
-            p.pandemicEffectEnabled = value and true or false
-            changed(true)
-        end})
+    local enabled = I.PandemicEffectOn(group)
+    local row = showEffect and Check(column,{setting=pandemic.effect,value=enabled,onChange=function(value)
+        p.pandemicEffectEnabled = value and true or false
+        changed(true)
+    end})
+    -- No effect row on Text with neither label nor timer: nothing to recolor.
+    if row and not glow then
+        local texture = settings.displayType == "texture"
+        ST._AnchorRowBadge(row, ST._CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
+            "Pandemic Effect",
+            {texture and "Recolors the texture while its aura is in the refresh window, where recasting adds bonus time."
+                or "Recolors the text while its aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+            {" ", 1, 1, 1, true},
+            {texture and "Auras that gain no time when refreshed never show it."
+                or "On auras that gain no time when refreshed, only the timer recolors, in its last 30%.", 1, 1, 1, true},
+        }, CS.tabInfoButtons))
+        if enabled then
+            ST._AddColorRow(column,{setting=pandemic.color,tbl=p,key="pandemicGlowColor",
+                default=CopyTable(ST.DEFAULT_PANDEMIC_COLOR),indent=true,onConfirm=function() changed(true) end})
+        end
+    elseif row then
         ST._AddAdvancedToggle(row,"indicatorPandemicGlow",CS.tabInfoButtons,true,{
             title="Pandemic Effect Advanced",
             build=function(panel)
@@ -856,7 +899,7 @@ local function BuildPandemic(container, group, changed)
             title="Pandemic Marker Advanced",
             build=function(panel)
                 ST._AddPandemicMarkerControls(panel, r, refresh, function() ST._RefreshActiveAdvancedSettingsPanel() end,
-                    {childrenOnly=true, settings=pandemicMarker})
+                    {childrenOnly=true, settings=pandemicMarker, noColoring=I.PandemicRecolorsText(group)})
             end,
             unlock=(r.pandemicMarkerMode or "off") == "off" and {enable={label=TURNON_PANDEMIC_MARKER,run=function()
                 -- On, not Auto: Auto marks target auras only, so it would do
@@ -969,7 +1012,7 @@ function ST._BuildIndicatorTab(container, group, tab)
         -- One effect grammar for every source; aura rows omit the controls
         -- that would start or stop effects on their own.
         ST._BuildTriggerEffectsTab(container,group)
-        if I.IsNativeAura(group) then BuildPandemic(container,group,changed) end
+        if I.ShowsLiveDisplay(group) then BuildPandemic(container,group,changed) end
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
             Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
                 list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},

@@ -209,12 +209,24 @@ end
 local COUNTDOWN_FROM = 12
 local COUNTDOWN_INTERVAL = 0.1
 
+-- The Pandemic effect stand-ins (Icon glow, Texture and Text recolor),
+-- shown while the sample sits in the refresh window.
+local function ShowPandemicStandIns(surface, shown)
+    if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:SetShown(shown) end
+    local tint = surface.indicatorPandemicTint
+    if tint then
+        tint.baseFrame:SetShown(shown)
+        tint.foreFrame:SetShown(shown)
+        tint.labelFrame:SetShown(shown)
+    end
+end
+
 local function ShowPreviewCountdown(surface)
     local I = ST.Indicator
     local candidate = surface._countdownGroup
     local remaining = COUNTDOWN_FROM - ((GetTime() - surface._countdownStart) % COUNTDOWN_FROM)
     I.UpdateReadouts(surface, nil, candidate, remaining / I.PREVIEW_SECONDS)
-    surface.indicatorPandemicGlow.host:SetShown(I.IsPreviewPandemicWindow(remaining))
+    ShowPandemicStandIns(surface, I.IsPreviewPandemicWindow(remaining))
 end
 
 local function OnPreviewCountdownUpdate(ticker, elapsed)
@@ -267,7 +279,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local missing = I.UsesPresence(candidate)
     local showDuration = not readOnly and not missing and (settings.readouts.timer
         or settings.displayType == "texture" and settings.progress.enabled
-        or I.IsAura(candidate) and settings.displayType ~= "text" and settings.pandemic.pandemicEffectEnabled == true)
+        or I.IsAura(candidate) and I.PandemicEffectOn(candidate))
     -- The sweep runs only while its Duration control is drawn: that control is
     -- the only way to leave the Countdown state.
     local countdown = showDuration and state == "countdown"
@@ -302,26 +314,36 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         auraStates, auraOrder, auraPass = {met="Met", unmet="Not Met"}, {"met", "unmet"}, "met"
     else
         auraStates, auraOrder, auraPass = {missing="Missing", active="Active"}, {"missing", "active"}, "missing"
+        -- Also During Pandemic: the window shows the aura's live display.
+        if missing and I.AlsoDuringPandemic(candidate) then
+            auraStates.pandemic = "Pandemic Window"
+            auraOrder = {"missing", "pandemic", "active"}
+        end
     end
     local auraKey = tostring(panelId) .. ":" .. tostring(list)
     local saved = CS.indicatorPreviewAura
     local auraState = missing and not readOnly and saved and saved.key == auraKey and auraStates[saved.value]
         and saved.value or auraPass
-    if missing then passes = auraState == auraPass end
+    -- The window sample: the live display (timer, pandemic glow) with time
+    -- left inside the window, styled as the native twin is.
+    local inWindow = missing and auraState == "pandemic"
+    surface._ccPandemicTwin = inWindow or nil
+    if inWindow then fraction = I.PREVIEW_PANDEMIC_FRACTION end
+    if missing then passes = auraState == auraPass or inWindow end
     surface:SetAlpha(passes and 1 or 0)
     if not I.Render(surface,nil,candidate,true,fraction) then
-        if surface.indicatorPandemicGlow then surface.indicatorPandemicGlow.host:Hide() end
+        ShowPandemicStandIns(surface, false)
         ReleaseSourceControls(preview)
         PP.SetPreviewMessage(preview,"Choose artwork in Appearance to preview this Indicator.")
         PP.FinalizePreviewState(preview)
         return
     end
-    if state == "timeless" then surface.indicatorReadouts.timer:SetText("") end
-    -- The Pandemic effect stand-in: the live rig's styler on a CC-side kit,
-    -- shown while the sample sits in the refresh window.
+    if state == "timeless" and not inWindow then surface.indicatorReadouts.timer:SetText("") end
+    -- The Pandemic effect stand-ins: the live rigs' stylers on CC-side kits.
     if not surface.indicatorPandemicGlow then I.CreatePandemicGlow(surface, false) end
     I.StylePandemicGlow(surface, candidate, true)
-    surface.indicatorPandemicGlow.host:SetShown(I.IsPreviewPandemicWindow(fraction * I.PREVIEW_SECONDS))
+    I.StylePandemicTint(surface, candidate, true)
+    ShowPandemicStandIns(surface, I.IsPreviewPandemicWindow(fraction * I.PREVIEW_SECONDS))
     if countdown then
         surface._countdownGroup, surface._countdownElapsed = candidate, 0
         surface.countdownTicker:SetScript("OnUpdate", OnPreviewCountdownUpdate)
@@ -329,10 +351,14 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if not readOnly then
         candidate.locked = true
         local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
-        -- Native text has no registered vertex-color artwork animation.
-        if I.IsNativeAura(candidate) and candidate.indicatorSettings.displayType == "text" then
-            local effects=I.Effects(candidate)
-            if effects.colorShift then effects.colorShift.enabled=false end
+        -- A native display plays only what its slot can (no Color Shift on
+        -- Text; the window's twin also no Only In Combat): the runtime's own
+        -- lists decide, so the sample matches the game.
+        local plays = inWindow and I.PandemicTwinEffects(candidate) or I.NativeEffects(candidate)
+        if plays then
+            for key, effect in pairs(I.Effects(candidate)) do
+                if type(effect) == "table" and effect.enabled and not plays[key] then effect.enabled=false end
+            end
         end
         -- Every enabled effect plays together, for aura and condition sources.
         CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true,true)

@@ -1009,6 +1009,10 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         end,
     })
 
+    -- opts.noColoring: the caller colors the marker itself (an Indicator's
+    -- Text recolor), so these rows would do nothing.
+    if opts.noColoring then return enableRow end
+
     AddDropdownRow(container, {
         label = "Marker Coloring",
         setting = opts.settings and opts.settings.coloring,

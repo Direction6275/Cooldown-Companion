@@ -792,22 +792,24 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
 
     if host.dragHandle then
         host.dragHandle:SetFrameStrata(strata)
-        host.dragHandle:SetFrameLevel(baseLevel + 5)
+        -- Above the display's whole subtree (artwork, pandemic tints,
+        -- readouts reach visualRoot + 5).
+        host.dragHandle:SetFrameLevel(baseLevel + 8)
     end
     if host.coordLabel then
         host.coordLabel:SetFrameStrata(strata)
-        host.coordLabel:SetFrameLevel(baseLevel + 6)
+        host.coordLabel:SetFrameLevel(baseLevel + 9)
     end
     if host.dragHandle and host.dragHandle.menuButton then
         host.dragHandle.menuButton:SetFrameStrata(strata)
-        host.dragHandle.menuButton:SetFrameLevel(baseLevel + 7)
+        host.dragHandle.menuButton:SetFrameLevel(baseLevel + 10)
     end
     if host.nudger then
         host.nudger:SetFrameStrata(strata)
-        host.nudger:SetFrameLevel(baseLevel + 10)
+        host.nudger:SetFrameLevel(baseLevel + 13)
         for index, btn in ipairs(host.nudger.buttons or {}) do
             btn:SetFrameStrata(strata)
-            btn:SetFrameLevel(baseLevel + 11 + index)
+            btn:SetFrameLevel(baseLevel + 14 + index)
         end
     end
 end
@@ -1782,6 +1784,14 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             if hostWidth ~= width or hostHeight ~= height then host:SetSize(width, height) end
         end
         for _, copy in ipairs(presences) do copy:SetShown(shown and rulesPass) end
+        -- Also During Pandemic: the aura's native display (gated by Blizzard
+        -- to the refresh window) rides the texture layer, so the layer follows
+        -- the same rules as the drawing. Written only on change.
+        if host.auraRuntimeRoot then
+            local twinAlpha = shown and rulesPass and ST.Indicator.AlsoDuringPandemic(group)
+                and self:HasIndicatorPandemicTwin(driverButton) and 1 or 0
+            if host.auraRuntimeRoot:GetAlpha() ~= twinAlpha then host.auraRuntimeRoot:SetAlpha(twinAlpha) end
+        end
     elseif presenceRuntime then
         -- Not bound yet (the rebind is queued or deferred by combat): keep
         -- the host placed and sized from the saved design, drawing nothing.
