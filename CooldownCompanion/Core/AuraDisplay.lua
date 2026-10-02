@@ -2770,14 +2770,26 @@ function Presence.Anchor(window, cell, tracker, active)
     end
 end
 
--- Every unit the bound trackers watch passes the identity gate (CC's
--- fail-closed rule): one closed unit hides the whole display.
-function Presence.IdentityApplicable(record)
-    if not CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped) then return false end
-    for _, tracker in ipairs(record.trackers or {}) do
-        if tracker.bound and not CanApplySpellIdentityFilter(tracker.unit) then return false end
+-- The identity gate (CC's fail-closed rule), per drawing copy: a copy whose
+-- window chain reads a tracker on a unit Blizzard won't filter right now (no
+-- target, a friendly one for a debuff, no pet) is hidden, the others stay.
+-- All has one copy over every tracker, so any closed unit hides it; Any
+-- keeps the copies built only from your own auras (Presence.Bind orders
+-- them first). Returns whether any copy can show, for the record's root.
+function Presence.ApplyIdentity(record)
+    local shape = record.boundShape
+    if not shape then return CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped) end
+    local any = false
+    for _, copy in ipairs(shape.copies) do
+        local open = true
+        for _, tracker in ipairs(copy.trackers) do
+            if not CanApplySpellIdentityFilter(tracker.unit) then open = false; break end
+        end
+        -- A CC frame above only CC drawing: combat-safe to toggle.
+        copy.windows[1]:SetShown(open)
+        any = any or open
     end
-    return true
+    return any
 end
 
 -- Whether a token event concerns this record: its own unit, or one of its
@@ -2791,9 +2803,24 @@ function Presence.MatchesToken(record, isMatch)
 end
 
 -- OOC only. `auras` = { {set, unit, active}, ... } in list order; `match`
--- "all" or "any". Converges trackers (one per aura, reused by unit), sizes,
--- the shape's windows and each tracker's sounds. Returns the shape.
-function Presence.Bind(record, buttonData, auras, match, width, height, soundsAllowed)
+-- "all" or "any"; `key` names the whole binding (RunAuraRebind). Converges
+-- trackers (one per aura, reused by unit), sizes, the shape's windows and
+-- each tracker's sounds. An unchanged binding only refreshes the sounds.
+-- Returns the shape.
+function Presence.Bind(record, buttonData, auras, match, width, height, soundsAllowed, key)
+    -- Any: the auras on units that can close the gate go last.
+    if match == "any" then auras = ST.Indicator.OrderForAny(auras) end
+    local cellKey = width .. "x" .. height
+    if record.boundShape and key and record.boundPresenceKey == key and record.boundCellKey == cellKey then
+        for index, tracker in ipairs(record.boundTrackers) do
+            if soundsAllowed then
+                RegisterSlotAuraSounds(tracker, buttonData, auras[index].set)
+            else
+                ReleaseSlotAuraSounds(tracker)
+            end
+        end
+        return record.boundShape
+    end
     local used, assigned = {}, {}
     for index, aura in ipairs(auras) do
         local tracker
@@ -2830,13 +2857,16 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
     if record.boundShape and record.boundShape ~= shape then Presence.ReleaseShape(record.boundShape) end
     for _, other in pairs(record.shapes) do other.root:SetShown(other == shape) end
     for copyIndex, copy in ipairs(shape.copies) do
+        copy.trackers = {}
         for windowIndex, window in ipairs(copy.windows) do
             local active = auras[windowIndex].active
             -- Any: the copy's own aura passes, every earlier one fails.
             if match == "any" and windowIndex < copyIndex then active = not active end
             Presence.Anchor(window, record.cell, assigned[windowIndex], active)
+            copy.trackers[windowIndex] = assigned[windowIndex]
         end
     end
+    record.boundTrackers, record.boundCellKey = assigned, cellKey
     return shape
 end
 
@@ -3387,7 +3417,7 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
         -- No list from the pass means a lone While Missing aura: all of one.
         local auras = record.wantPresenceAuras or { { set = spellSet, unit = unit, active = false } }
         record.boundShape = Presence.Bind(record, buttonData, auras, record.wantPresenceMatch or "all",
-            width, height, soundsAllowed)
+            width, height, soundsAllowed, record.wantPresenceKey)
     else
         -- Nothing to draw: no tracker may keep an old aura (or its sounds).
         if record.boundShape then Presence.ReleaseShape(record.boundShape) end
@@ -3407,7 +3437,7 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
     if record.picture then
         record.identityApplicable = CanApplySpellIdentityFilter(unit)
     else
-        record.identityApplicable = Presence.IdentityApplicable(record)
+        record.identityApplicable = Presence.ApplyIdentity(record)
     end
     SetIdentityVisibility(record, record.presenceReady and record.identityApplicable)
     button._auraSlotHostToken = buttonData
@@ -3601,7 +3631,7 @@ local blockChainBlocked = 0 -- entries the last bind dropped for a dead chain
 function RefreshSlotIdentityVisibility(record)
     local applicable
     if record.trackers then
-        applicable = Presence.IdentityApplicable(record)
+        applicable = Presence.ApplyIdentity(record)
     else
         applicable = CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped)
     end

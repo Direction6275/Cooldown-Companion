@@ -2120,17 +2120,18 @@ end
 -- would otherwise sit in the profile as a Layout-tab block for a cluster
 -- nothing is in, and as a drop target promising offset (0,0) while quietly
 -- holding the old one's offsets. An Indicator left behind keeps its aura
--- list and effects in step (Indicator.SourcesLeft) and says what changed.
+-- list and effects in step (Indicator.RemoveSources) and says what changed.
 function CooldownCompanion:RemoveEntriesFromGroup(group, indices)
-    local before = ST.Indicator.SourcesLeaving(group)
     local ordered = {}
     for i, index in ipairs(indices) do ordered[i] = index end
-    table.sort(ordered, function(a, b) return a > b end)
-    for _, index in ipairs(ordered) do
-        ST.DetachEntryFromPanelSection(group, group.buttons and group.buttons[index])
-        table_remove(group.buttons, index)
-    end
-    local notice = ST.Indicator.SourcesLeft(group, before)
+    -- Highest first, so earlier indices still point at their entries.
+    table_sort(ordered, function(a, b) return a > b end)
+    local notice = ST.Indicator.RemoveSources(group, function()
+        for _, index in ipairs(ordered) do
+            ST.DetachEntryFromPanelSection(group, group.buttons and group.buttons[index])
+            table_remove(group.buttons, index)
+        end
+    end)
     if notice then self:Print(notice) end
 end
 

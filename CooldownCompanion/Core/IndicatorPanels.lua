@@ -573,35 +573,26 @@ local function SyncAuraList(group, notes)
     end
 end
 
--- The effect family before a list edit, for SourcesLeft / ReshapeAuraList.
-function I.SourcesLeaving(group)
-    return ST.IsIndicatorGroup(group) and I.Primary(group) and I.EffectFamily(group) or nil
-end
-
--- After sources leave by any path (Remove, delete, a move to another panel):
--- syncs the list and adapts the effects to the family the Indicator ends up
--- in. Adds chat notes to `notes`.
-local function SyncAfterLeave(group, before, notes)
-    if not I.Settings(group) then return end
+-- Runs `change` (any edit of an Indicator's sources), then syncs the aura
+-- list and adapts the effects to the family the Indicator ends up in. Adds
+-- chat notes to `notes`. A non-Indicator just runs `change`.
+local function ReshapeAuraList(group, notes, change)
+    local indicator = ST.IsIndicatorGroup(group) and I.Settings(group)
+    local before = indicator and I.Primary(group) and I.EffectFamily(group)
+    change()
+    if not indicator then return end
     SyncAuraList(group, notes)
     local after = I.Primary(group) and I.EffectFamily(group)
     if before and after and after ~= before then AdaptEffects(I.Settings(group), after, notes) end
 end
 
--- Generic entry actions call SourcesLeaving before touching the Indicator and
--- this after its entries are gone. Returns an optional chat line.
-function I.SourcesLeft(group, before)
-    if not ST.IsIndicatorGroup(group) then return end
+-- Generic entry removal (delete, a move or drag to another panel) runs its
+-- removal through here so an Indicator's list and effects follow. Returns an
+-- optional chat line.
+function I.RemoveSources(group, remove)
     local notes = {}
-    SyncAfterLeave(group, before, notes)
+    ReshapeAuraList(group, notes, remove)
     return NoticeText(notes)
-end
-
--- Runs `change` (a list edit), then syncs the list and adapts the effects.
-local function ReshapeAuraList(group, notes, change)
-    local before = I.SourcesLeaving(group)
-    change()
-    SyncAfterLeave(group, before, notes)
 end
 
 -- An aura joining a spell/item Indicator becomes what it shows: it takes slot
@@ -772,7 +763,8 @@ function I.SetDisplayType(group, displayType)
     settings.displayType = displayType
 end
 
-I.SameAuraText = "This Indicator already checks that aura."
+I.SameAuraText = "This Indicator already checks that aura there. Change its Tracked On first to check it on another unit."
+I.SameAuraUnitText = "This Indicator already checks that aura on that unit."
 
 -- One aura's When inside a list, as text and as a saved choice.
 function I.AuraEntryWhenLabel(entry)
@@ -784,9 +776,30 @@ function I.SetAuraEntryWhen(group, entry, value)
     entry.indicatorStackRule = value == "missing" and {compare = "missing"} or nil
 end
 
+-- Any's window chains read every earlier aura, so the auras on units that
+-- can close the identity gate go last: yours, then your pet's, then your
+-- target's (list order otherwise). Returns a new list of `auras` ({unit}).
+local ANY_UNIT_ORDER = { player = 1, pet = 2, target = 3 }
+function I.OrderForAny(auras)
+    local ordered, position = {}, {}
+    for index, aura in ipairs(auras) do ordered[index], position[aura] = aura, index end
+    table.sort(ordered, function(a, b)
+        local rankA, rankB = ANY_UNIT_ORDER[a.unit] or 4, ANY_UNIT_ORDER[b.unit] or 4
+        if rankA ~= rankB then return rankA < rankB end
+        return position[a] < position[b]
+    end)
+    return ordered
+end
+
+-- The same aura on the same unit: a list never checks it twice, but may check
+-- it on two units (you and your pet).
+function I.SameAura(a, b)
+    return SameSource(a, b) and I.AuraUnit(a) == I.AuraUnit(b)
+end
+
 -- Auras can arrive at any time: the first becomes the display
 -- (OnSourceAdded), later ones join its list, each on its own unit, never
--- twice and never group-tracked. Spell and item sources are checked by their
+-- twice on one unit and never group-tracked. Spell and item sources are checked by their
 -- rules.
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
@@ -795,7 +808,7 @@ function I.AddRestriction(group, entry)
     for _, source in ipairs(entries) do
         if source.addedAs == "aura" then
             for _, aura in ipairs(auras) do
-                if aura ~= source and SameSource(aura, source) then return I.SameAuraText end
+                if aura ~= source and I.SameAura(aura, source) then return I.SameAuraText end
             end
             auras[#auras + 1] = source
             incoming = true
@@ -821,7 +834,8 @@ end
 
 -- Every rule on every checked source from slot `first` on must be true. Fails
 -- closed: a source missing at runtime, a rule this client cannot evaluate, or
--- a secret or unknown reading never matches.
+-- a secret or unknown reading never matches. Listed auras have no rules
+-- (ExtraSourcesMatch checks that they are available).
 local function RulesPass(runtime, group, first)
     local entries = group.buttons or {}
     for index = first, #entries do
@@ -859,12 +873,29 @@ end
 -- nothing to pay).
 function I.ExtraSourcesMatch(frame, group)
     if not I.IsAura(group) or not group.buttons then return true end
+    -- Listed auras have no rules but, like any checked source, must be
+    -- available (their own load rules): every one needs a runtime button.
+    -- Counted in one pass, so a list without spell or item sources allocates
+    -- nothing per update.
+    local extras, listed = false, 0
     for index = 2, #group.buttons do
-        if not I.IsListedAura(group, group.buttons[index]) then
-            return RulesPass(RuntimeButtons(frame), group, 2)
+        local entry = group.buttons[index]
+        if not I.IsListedAura(group, entry) then
+            extras = true
+        elseif entry.enabled ~= false then
+            listed = listed + 1
         end
     end
-    return true
+    if listed > 0 then
+        for _, button in ipairs(frame and frame.buttons or {}) do
+            local entry = button.buttonData
+            if entry ~= I.Primary(group) and entry.enabled ~= false and I.IsListedAura(group, entry) then
+                listed = listed - 1
+            end
+        end
+        if listed > 0 then return false end
+    end
+    return not extras or RulesPass(RuntimeButtons(frame), group, 2)
 end
 
 function I.ClearSource(group)
@@ -1057,7 +1088,7 @@ function I.CommitSourceReplacement(group, candidate)
         if not I.IsAura(candidate) then return false, "indicator_aura_change" end
         local auras = {newSource}
         for _, aura in ipairs(others) do
-            if SameSource(aura, newSource) then listed = aura else auras[#auras + 1] = aura end
+            if I.SameAura(aura, newSource) then listed = aura else auras[#auras + 1] = aura end
         end
         local refusal = AuraListRefusal(auras)
         if refusal then return false, refusal end
@@ -1074,7 +1105,7 @@ function I.CommitSourceReplacement(group, candidate)
     end
     for i = 2, #(group.buttons or {}) do
         local entry = group.buttons[i]
-        if not SameSource(entry, newSource) then
+        if entry ~= listed and not (SameSource(entry, newSource) and not I.IsListedAura(group, entry)) then
             candidate.buttons[#candidate.buttons + 1] = entry
         end
     end

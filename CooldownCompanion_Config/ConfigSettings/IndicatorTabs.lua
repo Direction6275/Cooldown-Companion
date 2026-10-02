@@ -393,6 +393,7 @@ local function AddMainSourceBadges(row, group, source, changed)
         or "Removes the source; the look is kept."
     local change = RowBadge(row,
         replacing and {"Cancel Change", "Keep the current source."}
+            or I.IsMultiAura(group) and {"Change Source", "Search for another aura in the field at the top. With several auras, only an aura can replace it."}
             or {"Change Source", "Search for a replacement in the field at the top."},
         function()
             CS.indicatorSourceReplacement = not replacing and {
@@ -433,11 +434,24 @@ local function AddTrackedOn(column, group, source, changed)
         value=source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
             or source.auraUnitOverride or "automatic",
         onChange=function(value)
-            source.auraUnitOverride=(value == "player" or value == "target") and value or nil
-            source.auraTrackGroup = value == "group" or nil
-            source.auraTrackPet = value == "pet" or nil
-            if source.auraTrackGroup or source.auraTrackPet then source.auraUnitOverride = "player" end
-            source.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(source)
+            local function Apply(entry)
+                entry.auraUnitOverride=(value == "player" or value == "target") and value or nil
+                entry.auraTrackGroup = value == "group" or nil
+                entry.auraTrackPet = value == "pet" or nil
+                if entry.auraTrackGroup or entry.auraTrackPet then entry.auraUnitOverride = "player" end
+                entry.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(entry)
+            end
+            -- A list never checks the same aura twice on one unit.
+            local probe = CopyTable(source)
+            Apply(probe)
+            for _, other in ipairs(I.AuraList(group)) do
+                if other ~= source and I.SameAura(other, probe) then
+                    Addon:Print(I.SameAuraUnitText)
+                    changed(true)
+                    return
+                end
+            end
+            Apply(source)
             changed(true)
         end})
 end
@@ -446,7 +460,9 @@ end
 local AURA_MATCH_TOOLTIP = {"Match",
     {"All shows when every aura matches its When. Any shows when at least one does.", 1, 1, 1, true},
     " ",
-    {"There is no timer or count. With a target aura and no hostile target, it stays hidden.", 1, 1, 1, true}}
+    {"There is no timer or count.", 1, 1, 1, true},
+    " ",
+    {"Target auras need a hostile target, pet auras your pet. Without them, All stays hidden. Any still shows from auras on you.", 1, 1, 1, true}}
 local function AddAuraMatch(column, group, changed)
     local current = I.AuraMatch(group)
     Dropdown(column, {setting=whenToShow.auraMatch, indent=true, list=I.AURA_MATCH_LABELS,
@@ -540,10 +556,12 @@ end
 
 -- One block per source: its name and actions, then one "When / And" row per
 -- rule, then a small Add Condition link. The main source changes or goes
--- here; any other source can be made main, removed or turned off. An aura is
--- always the main source (slot one, so it heads the checklist): its one rule
--- is While Active or a stack rule, then where it is tracked. Its spell/item
--- sources are never made main (CanBeMainSource).
+-- here; any other spell/item source can be made main, removed or turned off.
+-- An aura Indicator's main source is an aura (slot one): a lone aura has its
+-- When (While Active, While Missing or a stack rule) and Tracked On; with
+-- several, the main aura also holds Match, and every listed aura has its own
+-- When and Tracked On plus Promote and Remove. Spell/item sources of an aura
+-- Indicator are never made main (CanBeMainSource).
 local function BuildSourceRules(container, group, entry, changed)
     local primary = entry == I.Primary(group)
     local column = ST._BeginRowGrid(container)
@@ -663,8 +681,9 @@ function ST._GetIndicatorSourceControls(group)
         local primary = entry == source
         local icon = ST._GetButtonIcon(entry)
         if primary and artwork == icon then icon = nil end
-        -- An aura's one rule is its stack rule (or While Active); its extras
-        -- carry the spell/item rules.
+        -- Auras show their When (a lone aura's may be a stack rule; later
+        -- auras in a list read joined by Match); spell/item sources carry
+        -- their rules.
         local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
             aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}}
         if item.aura and primary then
@@ -695,8 +714,9 @@ function ST._GetIndicatorSourceControls(group)
 end
 
 -- Top of an Indicator's Visibility tab: When to Show, where a panel entry
--- keeps its Show & Hide Rules. A checklist: every source and its rules, the
--- aura (if any) first with its stack rule. It shows when every row passes.
+-- keeps its Show & Hide Rules. A checklist: the auras first (the main one
+-- with Match when there are several), then every spell/item source and its
+-- rules. It shows when the auras pass and every rule row does.
 local function BuildWhenToShow(container, group, changed)
     local source = I.Primary(group)
     if not source then
