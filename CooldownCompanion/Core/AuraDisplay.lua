@@ -500,8 +500,27 @@ end
 -- across entries; per-entry enable/disable is alpha at bind time (P6).
 ------------------------------------------------------------------------
 
-local function BuildSlotKit(slotButton)
+local function BuildSlotKit(slotButton, pandemicGated)
     local kit = {}
+
+    -- Also During Pandemic (a Show While Inactive entry's second display):
+    -- the whole kit hangs under one frame registered as a pandemic region,
+    -- so Blizzard shows the entry's full active look only inside the aura's
+    -- refresh window (probe-proven 2026-10-02). Every region and frame moves
+    -- one level up together, so their order is unchanged; registrations stay
+    -- on the button. Every other slot builds straight onto the button. With
+    -- no pandemic API the gate stays hidden: never the display all aura long.
+    local parent = slotButton
+    if pandemicGated then
+        parent = CreateFrame("Frame", nil, slotButton)
+        parent:SetAllPoints(slotButton)
+        parent:EnableMouse(false)
+        if slotButton.AddPandemicRegion then
+            slotButton:AddPandemicRegion(parent)
+        else
+            parent:Hide()
+        end
+    end
 
     -- Shell composition (show-only-while-active entries): background and
     -- border replicas let the slot render the ENTIRE visible button while the
@@ -509,13 +528,13 @@ local function BuildSlotKit(slotButton)
     -- overhang the slot (which covers only the icon rect); geometry is
     -- anchored to the host button at bind time and they stay alpha-0 for
     -- ordinary entries.
-    kit.bg = slotButton:CreateTexture(nil, "BACKGROUND")
+    kit.bg = parent:CreateTexture(nil, "BACKGROUND")
     kit.bg:SetAlpha(0)
     -- All live kit descendants inherit UIParent scale (no scaled ancestor).
     -- Scale changes restyle them through RequestAuraRebind, never a region sweep.
     kit.border = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
     for i = 1, 4 do
-        local tex = slotButton:CreateTexture(nil, "OVERLAY")
+        local tex = parent:CreateTexture(nil, "OVERLAY")
         tex:SetAlpha(0)
         kit.border[i] = tex
     end
@@ -524,21 +543,21 @@ local function BuildSlotKit(slotButton)
     -- covers the CC button's own icon + cooldown swipe, so the aura display
     -- REPLACES the cooldown display instead of stacking on it. CC-authored,
     -- never registered with the button.
-    kit.iconCover = slotButton:CreateTexture(nil, "ARTWORK", nil, 1)
+    kit.iconCover = parent:CreateTexture(nil, "ARTWORK", nil, 1)
     kit.iconCover:SetAllPoints(slotButton)
     kit.iconCover:SetAlpha(0)
 
     -- Prebuilt with every kit so toggling the missing cue reuses its slot.
     -- Visible only when needed, below the active icon and above the reminder.
-    kit.missingCover = slotButton:CreateTexture(nil, "ARTWORK", nil, 0)
+    kit.missingCover = parent:CreateTexture(nil, "ARTWORK", nil, 0)
     kit.missingCover:SetColorTexture(0, 0, 0, 1)
     kit.missingCover:SetAlpha(0)
 
-    kit.auraIcon = slotButton:CreateTexture(nil, "ARTWORK", nil, 2)
+    kit.auraIcon = parent:CreateTexture(nil, "ARTWORK", nil, 2)
     kit.auraIcon:SetAllPoints(slotButton)
     slotButton:SetIcon(kit.auraIcon)
 
-    kit.swipe = CreateFrame("Cooldown", nil, slotButton, "CooldownFrameTemplate")
+    kit.swipe = CreateFrame("Cooldown", nil, parent, "CooldownFrameTemplate")
     kit.swipe:SetAllPoints(slotButton)
     kit.swipe:SetHideCountdownNumbers(true)
     kit.swipe:SetDrawBling(false)
@@ -549,7 +568,7 @@ local function BuildSlotKit(slotButton)
     -- (the iconCover analog), and Blizzard drains the registered StatusBar
     -- while the aura runs (V8b: keeps animating in combat). Alpha-0 until a
     -- bar bind.
-    kit.barBackdrop = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
+    kit.barBackdrop = parent:CreateTexture(nil, "BACKGROUND", nil, 2)
     kit.barBackdrop:SetAllPoints(slotButton)
     kit.barBackdrop:SetAlpha(0)
 
@@ -568,11 +587,12 @@ local function BuildSlotKit(slotButton)
     -- Level discipline: nesting adds default frame levels (each child
     -- spawns at parent+1), which would lift the tint ABOVE the
     -- direct-child stack lane and into a tie with the glow — frame level
-    -- beats creation order. Both tint frames are pinned back to the slot
-    -- button's own level: child frames still render above their parent's
+    -- beats creation order. Both tint frames are pinned back to the kit
+    -- host's own level (the slot button, or the pandemic gate one level
+    -- above it): child frames still render above their parent's
     -- textures, and every other kit frame (lane and fills at +1, swipe at
     -- +1, glow at swipe+1) outranks the tint.
-    kit.resourceFillTintClip = CreateFrame("Frame", nil, slotButton)
+    kit.resourceFillTintClip = CreateFrame("Frame", nil, parent)
     kit.resourceFillTintClip:SetAllPoints(slotButton)
     kit.resourceFillTintClip:EnableMouse(false)
     kit.resourceFillTintClip:SetClipsChildren(true)
@@ -585,7 +605,7 @@ local function BuildSlotKit(slotButton)
     kit.resourceFillTint:SetAlpha(0)
 
     if slotButton.SetDurationBar then
-        kit.barFill = CreateFrame("StatusBar", nil, slotButton)
+        kit.barFill = CreateFrame("StatusBar", nil, parent)
         kit.barFill:SetAllPoints(slotButton)
         kit.barFill:EnableMouse(false)
         kit.barFill:SetAlpha(0)
@@ -644,7 +664,7 @@ local function BuildSlotKit(slotButton)
     -- pools sized to the atlas cap — the bound max varies per bind now, and
     -- regions can only be created here (write-once subtree).
     if slotButton.SetApplicationBar then
-        kit.stackFill = CreateFrame("StatusBar", nil, slotButton)
+        kit.stackFill = CreateFrame("StatusBar", nil, parent)
         kit.stackFill:SetAllPoints(slotButton)
         kit.stackFill:EnableMouse(false)
         kit.stackFill:SetAlpha(0)
@@ -694,7 +714,7 @@ local function BuildSlotKit(slotButton)
         -- replace in widget mode.
         kit.stackBgBlocks = {}
         for i = 1, ST.STACK_SEGMENT_MAX do
-            local tex = slotButton:CreateTexture(nil, "BACKGROUND", nil, 2)
+            local tex = parent:CreateTexture(nil, "BACKGROUND", nil, 2)
             tex:SetAlpha(0)
             kit.stackBgBlocks[i] = tex
         end
@@ -719,11 +739,11 @@ local function BuildSlotKit(slotButton)
     -- Bar shell composition (show-only-while-active bar entries): the bar's
     -- icon square carries its own background and border ring, so the kit
     -- needs a second replica set beside kit.bg/kit.border.
-    kit.iconBg = slotButton:CreateTexture(nil, "BACKGROUND", nil, 1)
+    kit.iconBg = parent:CreateTexture(nil, "BACKGROUND", nil, 1)
     kit.iconBg:SetAlpha(0)
     kit.iconBorder = { _cdcAuraOwned = true, _cdcBorderScaleSource = UIParent }
     for i = 1, 4 do
-        local tex = slotButton:CreateTexture(nil, "OVERLAY")
+        local tex = parent:CreateTexture(nil, "OVERLAY")
         tex:SetAlpha(0)
         kit.iconBorder[i] = tex
     end
@@ -732,7 +752,7 @@ local function BuildSlotKit(slotButton)
     -- glows exactly while the aura runs. Animated styles are AnimationGroup-
     -- driven (P3: they keep playing on the forbidden subtree in combat).
     -- Above the swipe, below the texts.
-    kit.glow = ST._BuildKitGlowRegions(slotButton, false, true)
+    kit.glow = ST._BuildKitGlowRegions(parent, false, true)
     kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
 
     -- Pandemic glow (PTR 8, Phase 0-validated): a second glow kit registered
@@ -744,7 +764,7 @@ local function BuildSlotKit(slotButton)
     -- the aura glow, created after it, so the pandemic effect draws above.
     if slotButton.AddPandemicRegion then
         -- withCdm: only pandemic rigs carry the CDM-parity region set.
-        kit.pandemicGlow = ST._BuildKitGlowRegions(slotButton, true, true)
+        kit.pandemicGlow = ST._BuildKitGlowRegions(parent, true, true)
         kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
         -- The CDM rig is a child FRAME of the host; left at its default
         -- level it would TIE kit.textOverlay at swipe+2. Pin it to swipe+1
@@ -753,7 +773,7 @@ local function BuildSlotKit(slotButton)
         slotButton:AddPandemicRegion(kit.pandemicGlow.host)
     end
 
-    kit.textOverlay = CreateFrame("Frame", nil, slotButton)
+    kit.textOverlay = CreateFrame("Frame", nil, parent)
     kit.textOverlay:SetAllPoints(slotButton)
     kit.textOverlay:SetFrameLevel(kit.swipe:GetFrameLevel() + 2)
 
@@ -2620,6 +2640,11 @@ local PRESENCE_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
 -- display, and a panel entry's Show While Inactive picture.
 local PRESENCE_KINDS = { presence = true, missingPicture = true }
 
+-- Record kinds that carry the full icon/bar slot kit on a CC button: the
+-- ordinary display, and an Also During Pandemic twin (the same kit, gated
+-- to the refresh window, BuildSlotKit).
+local NATIVE_BUTTON_KINDS = { button = true, pandemicButton = true }
+
 -- Show While Inactive (panel icon and bar entries): a still picture of
 -- the entry, drawn only while the aura is missing. The CC button underneath is
 -- a hidden shell (Aura.lua) and no native display is bound, so nothing shows
@@ -3161,9 +3186,19 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
-            if hostKind == "button" then frame:SetFrameLevel(layer:GetFrameLevel() + 1) end
+            if NATIVE_BUTTON_KINDS[hostKind] then
+                frame:SetFrameLevel(layer:GetFrameLevel() + 1)
+            end
             if hostKind == "texturePanel" then
                 record.kit = BuildTexturePanelSlotKit(frame)
+            elseif hostKind == "pandemicButton" then
+                -- Up for the whole aura but drawn only in the window, and
+                -- Blizzard's window state is secret: never take clicks
+                -- (cancel-aura) or hover over a hidden entry. The CC button
+                -- underneath keeps the entry's own tooltip.
+                frame:SetMouseClickEnabled(false)
+                frame:SetMouseMotionEnabled(false)
+                record.kit = BuildSlotKit(frame, true)
             else
                 record.kit = BuildSlotKit(frame)
             end
@@ -3511,8 +3546,10 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     else
         ReleaseSlotAuraSounds(record)
     end
+    -- A pandemic twin never takes hover (EnsureDisplay): the aura is up for
+    -- far longer than its window shows, so it would answer over empty space.
     record.slotButton:SetMouseMotionEnabled(
-        record.hostKind ~= "texturePanel" and button._ccTooltipMotion == true)
+        record.hostKind == "button" and button._ccTooltipMotion == true)
     -- Tooltip position + combat hide (tracker D-C1): plain per-bind mixin
     -- state on the slot button, same OOC re-call pattern as the motion line
     -- above; Blizzard's OnEnter path reads it. ANCHOR_NONE with zero offsets
@@ -5344,6 +5381,24 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             textureSettings = textureSettings,
                             textureEffects = textureEffects,
                         }
+                        -- Also During Pandemic: the entry's own active
+                        -- display as well, gated to the refresh window
+                        -- (BuildSlotKit). The picture keeps the sounds and
+                        -- the Missing Aura Indicator. One more slot per
+                        -- entry and unit, reused like any record (keyed by
+                        -- host kind), so toggling never adds another.
+                        if missingPicture and self:IsMissingPicturePandemicEntry(buttonData) then
+                            wanted[#wanted + 1] = {
+                                button = button,
+                                buttonData = buttonData,
+                                spellSet = spellSet,
+                                style = style,
+                                stackBarMax = stackBarMax,
+                                hostKind = "pandemicButton",
+                                missingIndicator = false,
+                                noSounds = true,
+                            }
+                        end
                     end
                 end
             end
@@ -5401,7 +5456,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
         -- register one per member and fire a removed+applied pair every time the
         -- aura moved between people — a false "it dropped" alert. Single-unit
         -- entries keep today's behavior exactly.
-        local soundsAllowed = #want.units == 1
+        local soundsAllowed = #want.units == 1 and not want.noSounds
         for _, unit in ipairs(want.units) do
             local record = want.records[unit]
                 or EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
@@ -5589,12 +5644,17 @@ function CooldownCompanion:GetAuraDisplayStatus()
     -- can't silently vanish from diagnostics.
     status.units.player = { slots = 0, bound = 0, stackBound = 0 }
     status.units.target = { slots = 0, bound = 0, stackBound = 0 }
-    -- While Missing trackers are records too, but not native slots.
+    -- While Missing trackers are records too, but not native slots; nor
+    -- are Also During Pandemic twins (a second slot for one entry).
     local presence = { trackers = 0, bound = 0 }
+    local pandemic = { slots = 0, bound = 0 }
     for _, record in ipairs(records) do
         if PRESENCE_KINDS[record.hostKind] then
             presence.trackers = presence.trackers + 1
             if record.boundEntry then presence.bound = presence.bound + 1 end
+        elseif record.hostKind == "pandemicButton" then
+            pandemic.slots = pandemic.slots + 1
+            if record.boundEntry then pandemic.bound = pandemic.bound + 1 end
         else
             local unitStatus = status.units[record.unit]
             if not unitStatus then
@@ -5607,6 +5667,7 @@ function CooldownCompanion:GetAuraDisplayStatus()
         end
     end
     status.presence = presence
+    status.pandemic = pandemic
     -- Aura blocks: containers created (permanent once created), groups by
     -- bind state, how many sides run a two-bucket chain, and any entries the
     -- chain safety dropped (see BindBlockBucket — clears on /reload).

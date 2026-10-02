@@ -1900,6 +1900,15 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         aliases = { "while aura inactive", "show only while aura active", "show while active", "show while inactive", "dim while aura inactive", "hide aura inactive", "aura inactive alpha" },
         applies = EntryVisibilityApplies(function(state) return state.auraPair end),
     },
+    auraPandemic = {
+        label = "Also During Pandemic",
+        aliases = { "show while inactive or pandemic", "pandemic window", "refresh window" },
+        -- The row's own eligibility (PandemicEligible): the runtime's
+        -- presence predicate, inside the aura pair's panels.
+        applies = EntryVisibilityApplies(function(state)
+            return state.auraPair and CooldownCompanion:IsMissingPictureEntry(state.buttonData)
+        end),
+    },
     cooldownVisibility = {
         label = "Cooldown Visibility",
         aliases = {
@@ -2585,11 +2594,51 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil, eligible)
                     ApplyToAuraEntries("auraShellDim", value == "dim" or nil, eligible)
                     ApplyToAuraEntries("showWhileAuraMissing", value == "missing" or nil, eligible)
+                    -- Its pandemic option goes with it, so a later pick never
+                    -- brings it back unseen.
+                    if value ~= "missing" then ApplyToAuraEntries("showWhileAuraPandemic", nil) end
                     CooldownCompanion:RefreshAllGroups()
                     CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
+            -- Also During Pandemic: only under Show While Inactive, never with
+            -- group tracking (no presence form for it).
+            local function PandemicEligible(bd)
+                return FilterAuraEntry(bd) and CooldownCompanion:IsMissingPictureEntry(bd)
+            end
+            local offerPandemic
+            if isBatch then offerPandemic = AnySelectedMatch(PandemicEligible)
+            else offerPandemic = PandemicEligible(buttonData) end
+            if offerPandemic then
+                AddVisibilityRow(column, "Also During Pandemic", "showWhileAuraPandemic", {
+                    setting = entryVisibilitySettings.auraPandemic,
+                    filter = PandemicEligible,
+                    indent = true,
+                    tooltip = { "Also During Pandemic",
+                        {"Also shows the entry near the end of the aura, in the window where recasting keeps the leftover time.", 1, 1, 1, true},
+                        VISIBILITY_TOOLTIP_SPACER,
+                        {"Only auras with that window use it, mostly your own damage and healing over time. Leave it off for others.", 1, 1, 1, true},
+                        VISIBILITY_TOOLTIP_SPACER,
+                        {"In that window the entry looks as it does while the aura is up, timer included. Once the aura is gone, it shows the inactive look.", 1, 1, 1, true},
+                    },
+                    onChanged = function(widget, event, val)
+                        if isBatch then
+                            for idx in pairs(CS.selectedButtons) do
+                                local bd = group.buttons[idx]
+                                if bd and (not val or PandemicEligible(bd)) then
+                                    bd.showWhileAuraPandemic = val or nil
+                                end
+                            end
+                        else
+                            buttonData.showWhileAuraPandemic = val or nil
+                        end
+                        CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
+                        -- The Live Preview reads this key too.
+                        CooldownCompanion:RefreshConfigPanel()
+                    end,
+                })
+            end
             -- Stored together only by imported or copied data: say why the
             -- entry never shows.
             if not isBatch and buttonData.auraTrackGroup == true

@@ -86,7 +86,11 @@ local BAR_PREVIEW_REASON_DEFS = {
         end,
         fallback = "auraShellDim" },
     { key = "aura-active", label = "Aura active",
-        rule = "Aura Visibility: Show While Inactive" },
+        rule = function(buttonData)
+            return buttonData.showWhileAuraPandemic == true
+                and "Aura Visibility: Show While Inactive (also shows in the pandemic window)"
+                or "Aura Visibility: Show While Inactive"
+        end },
     { key = "inactive-group", label = "Group tracking",
         rule = "Show While Inactive doesn't work with group tracking yet" },
     -- The cooldown labels are the dropdown's own (ST._COOLDOWN_VISIBILITY,
@@ -285,9 +289,14 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     -- while the aura is missing.
     if isAuraEntry and CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing" then
         -- A group-tracked one has no presence form yet and stays dark.
+        -- Also During Pandemic: a pandemic preview shows the entry's
+        -- active look, as the runtime does inside the refresh window.
+        local pandemicPreview = kind == "pandemic_marker"
+            or (effectFlags and effectFlags._pandemicPreview == true)
         if not CooldownCompanion:IsMissingPictureEntry(buttonData) then
             activeReasons["inactive-group"] = true
-        elseif auraActive then
+        elseif auraActive and not (pandemicPreview
+            and CooldownCompanion:IsMissingPicturePandemicEntry(buttonData)) then
             activeReasons["aura-active"] = true
         end
     elseif isAuraEntry and not auraActive
