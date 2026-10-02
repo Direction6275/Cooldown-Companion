@@ -1142,10 +1142,15 @@ end
 --   showWhileAuraMissing    -> hidden shell, alpha 0, with NO native display:
 --                             a presence tracker uncovers a still picture of
 --                             the entry only while the aura is missing
---                             (AuraDisplay.lua, IsMissingPictureEntry)
+--                             (AuraDisplay.lua, IsMissingPictureEntry);
+--                             showWhileAuraPandemic adds the entry's own
+--                             active display, gated to the aura's pandemic
+--                             window (BuildSlotKit, "pandemicButton")
 -- The first two compose a full aura visual. Missing indicators are separate
 -- effects and preserve the entry's ordinary resting presentation. Owned here
--- because four callers across Core and ButtonFrame need the same answer.
+-- because four callers across Core and ButtonFrame need the same answer
+-- (the pandemic option's own readers in the runtime, config and preview use
+-- IsMissingPicturePandemicEntry below).
 --
 -- auraShellDim is 12.1-native and deliberately NOT the main-era
 -- useBaselineAlphaFallback key it replaces. That key's presence was
@@ -1236,6 +1241,13 @@ function CooldownCompanion:IsMissingPictureEntry(buttonData)
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and self:GetAuraVisibilityMode(buttonData) == "missing"
         and not buttonData.auraTrackGroup or false
+end
+
+-- Also During Pandemic: a Show While Inactive entry that also shows its own
+-- active display inside the aura's pandemic window. Only meaningful with a
+-- presence form, so it shares that predicate (runtime, config and preview).
+function CooldownCompanion:IsMissingPicturePandemicEntry(buttonData)
+    return self:IsMissingPictureEntry(buttonData) and buttonData.showWhileAuraPandemic == true
 end
 
 -- Resting alpha for a shell entry. Hide wins when both keys are somehow set,
