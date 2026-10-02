@@ -66,9 +66,9 @@ local function TargetPanelAcceptsAuraEntries(groupId)
     groupId = groupId or CS.addingToPanelId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
-    -- An Indicator takes one aura, at any time; a second only as a replacement.
-    return displayMode == "icons" or displayMode == "bars" or (displayMode == "indicator"
-            and (not ST.Indicator.IsAura(group) or CS.GetIndicatorSourceReplacement(groupId) ~= nil))
+    -- An Indicator takes auras at any time: the first is the display, later
+    -- ones join its list (Indicator.AddRestriction judges which).
+    return displayMode == "icons" or displayMode == "bars" or displayMode == "indicator"
 end
 
 -- An Aura Panel takes aura entries only, and only for the one unit it derived
@@ -304,12 +304,7 @@ local function PrintCannotTrackAsAura(spellName)
     CooldownCompanion:Print("Cannot track " .. spellName .. " as an aura.")
 end
 
-local function PrintAuraPanelUnsupported(groupId)
-    -- An Indicator refuses an aura only once it already checks one.
-    if ST.IsIndicatorGroup(GetTargetGroup(groupId)) then
-        CooldownCompanion:Print(ST.Indicator.OneAuraText)
-        return
-    end
+local function PrintAuraPanelUnsupported()
     CooldownCompanion:Print("Use an icon, bar, or Indicator panel for aura tracking.")
 end
 
@@ -535,7 +530,7 @@ local function TryAddSpell(input, isPetSpell, forceAura, opts)
             elseif reason == "target-aura" then
                 PrintCannotTrackAsAura(spellName)
             elseif reason == "aura-unsupported" then
-                PrintAuraPanelUnsupported(request.groupId)
+                PrintAuraPanelUnsupported()
             elseif detail then
                 CooldownCompanion:Print(detail)
             end

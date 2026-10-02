@@ -266,11 +266,11 @@ local function GetStandaloneTextureSelectionLabel(group, settings)
     return settings.label or tostring(settings.sourceValue)
 end
 
--- Native aura kits restyle only through a rebind; a While Missing tracker's
+-- Native aura kits restyle only through a rebind; a presence tracker's
 -- cell follows the saved design size the same way.
 local function NeedsAuraRestyle(group, buttonData)
     return CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
-        or ST.Indicator.ShowsWhileMissing(group)
+        or ST.Indicator.UsesPresence(group)
 end
 
 local function RequestTexturePanelAuraRestyle(group, groupId)
@@ -649,9 +649,9 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
         return
     end
     local auraSource = ST.Indicator.IsNativeAura(group)
-    -- While Missing is drawn by CC: it keeps Only In Combat, but Animate When
+    -- While Missing and aura lists are drawn by CC: they keep Only In Combat, but Animate When
     -- would follow the aura entry's own spell state, so the row is hidden.
-    local missingSource = ST.Indicator.ShowsWhileMissing(group)
+    local missingSource = ST.Indicator.UsesPresence(group)
     -- An aura effect runs as Always outside combat too. Enabling one clears
     -- any rule it kept from a condition source, which it could not run and
     -- would otherwise refuse to copy with no visible control to fix it.

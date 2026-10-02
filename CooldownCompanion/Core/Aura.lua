@@ -1179,6 +1179,18 @@ function CooldownCompanion:IsAuraTrackedOnTarget(buttonData, texturePanel)
     return buttonData.auraUnit == "target"
 end
 
+-- Where an aura entry is tracked: "target", "pet", "group" or "player".
+-- Target wins, then pet, then group (owner ruling 2026-08-21: pet scope is
+-- exclusive; precedence is the backstop for drifted stored data). Without
+-- group scope only target or player. The one precedence for the runtime's
+-- unit tokens (AuraDisplay) and the Indicator list rules (IndicatorPanels).
+function CooldownCompanion:GetAuraEntryUnitKind(buttonData, allowGroupScope)
+    if self:IsAuraTrackedOnTarget(buttonData, allowGroupScope == false) then return "target" end
+    if allowGroupScope ~= false and buttonData.auraTrackPet then return "pet" end
+    if allowGroupScope ~= false and buttonData.auraTrackGroup then return "group" end
+    return "player"
+end
+
 -- Ordinary player context only; aura presence is never queried here.
 function CooldownCompanion:ShouldShowMissingAuraCue(style, tracksTarget, inCombat)
     if inCombat == nil then inCombat = InCombatLockdown() end

@@ -116,8 +116,9 @@ local function StyleReadouts(host, group, font, outline)
     local settings = I.Settings(group)
     local text, options = settings.text, settings.readouts
     local readouts = host.indicatorReadouts
-    -- While Missing has no timer or count to show: the aura is absent.
-    local missing = I.ShowsWhileMissing(group)
+    -- A presence-drawn display (While Missing, several auras) has no timer
+    -- or count to show.
+    local missing = I.UsesPresence(group)
     readouts.root:Show()
     -- Text effects restore and shift each readout from its own color.
     local baseColors = host._indicatorReadoutColors or {}
@@ -176,8 +177,8 @@ function I.StyleVisual(host, group, icon, font, outline)
         if not icon.manualIcon then return false end
         Addon.ApplyTriggerIconVisual(host, icon)
     elseif settings.displayType == "texture" then
-        -- Nothing drains while the aura is missing.
-        local draining = settings.progress.enabled == true and not I.ShowsWhileMissing(group)
+        -- Nothing drains on a presence-drawn display.
+        local draining = settings.progress.enabled == true and not I.UsesPresence(group)
         local dim = draining and (settings.progress.dimAlpha or 0.35) or 1
         host._indicatorDimAlpha = dim
         shown = ST._AT.LayoutTexturePieces(host, visual, geometry, alpha * dim)
@@ -258,7 +259,7 @@ local function RefreshRuntimeStyle(host, group, icon)
     -- A SharedMedia font registering late changes what a saved font name
     -- resolves to without changing any saved value.
     local fontGeneration = ST.FontMediaGeneration
-    local missing = I.ShowsWhileMissing(group)
+    local missing = I.UsesPresence(group)
     local same = previous and previous.source == I.Primary(group) and previous.missing == missing
         and previous.fontGeneration == fontGeneration
         and previous.displayType == settings.displayType and previous.tracking == settings.tracking
@@ -304,8 +305,8 @@ function I.UpdateReadouts(host, driver, group, previewFraction)
         -- text, one stack or none shows nothing.
         local stacks = host._previewStacks
         readouts.count:SetText(options.count ~= "none" and (not stacks and "3" or stacks > 1 and tostring(stacks)) or "")
-    elseif I.ShowsWhileMissing(group) then
-        -- The aura is absent while this shows: no timer, count or drain.
+    elseif I.UsesPresence(group) then
+        -- Presence-drawn: no timer, count or drain.
         -- StyleReadouts cleared them once; nothing to do per update.
     elseif not I.IsAura(group) then
         local duration = driver and (driver._chargeRecharging and driver._chargeDurationObj or driver._durationObj)
@@ -412,7 +413,7 @@ local function StackGateCell(group, width, height)
     return math.ceil(reachX * 2), math.ceil(reachY * 2)
 end
 
--- The While Missing window's cell: the same generous box around the display,
+-- A presence tracker's cell (one per aura): the same generous box around the display,
 -- from saved settings only. Bounce travel is already inside its padding.
 function I.PresenceCell(group)
     local visual = I.NativeSettings(group)

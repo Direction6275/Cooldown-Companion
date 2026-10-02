@@ -1995,12 +1995,16 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         )
     end
 
-    -- One aura per Indicator. An aura joining spell or item sources becomes
-    -- the display (OnSourceAdded moves it to slot one).
+    -- An aura joining spell or item sources becomes the display
+    -- (OnSourceAdded moves it to slot one); one joining an aura Indicator
+    -- joins its list, never twice and never group-tracked.
     if ST.Indicator.Primary(group) ~= newButton and ST.Indicator.IsAura(group) and newButton.addedAs == "aura" then
-        table.remove(group.buttons, buttonIndex)
-        self:Print(ST.Indicator.OneAuraText)
-        return nil
+        local reason = ST.Indicator.AddRestriction(group, newButton)
+        if reason then
+            table.remove(group.buttons, buttonIndex)
+            self:Print(reason)
+            return nil
+        end
     end
     local added, detail = ST.Indicator.OnSourceAdded(group, newButton)
     if not added then
@@ -2025,6 +2029,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     if replacementTarget then
         local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
         if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+        -- A list that changed shape (its Match or effects) says so too.
+        if reason then detail = detail and (detail .. " " .. reason) or reason end
     end
     self:KeepPanelSingleLineOnGrowth(group, buttonIndex - 1)
     self:RefreshGroupFrame(groupId)
@@ -2089,6 +2095,7 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     if replacementTarget then
         local committed, reason = ST.Indicator.CommitSourceReplacement(replacementTarget, group)
         if not committed then self:Print(ST.Indicator.EffectFailureText[reason]); return nil end
+        if reason then detail = detail and (detail .. " " .. reason) or reason end
     end
     -- Effects adapted for the slot becoming the display (a Text Only Shrink).
     if detail then self:Print(detail) end
@@ -2103,14 +2110,29 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     local rejectMessage = ST.Indicator.GetRemovalError(group, {group.buttons[buttonIndex]})
     if rejectMessage then self:Print(rejectMessage); return end
 
-    -- A section IS its members: take the leaving entry out of its cluster before
-    -- it goes, so the last one out dissolves it. An orphaned section table would
-    -- otherwise sit in the profile as a Layout-tab block for a cluster nothing
-    -- is in, and as a drop target promising offset (0,0) while quietly holding
-    -- the old one's offsets.
-    ST.DetachEntryFromPanelSection(group, group.buttons and group.buttons[buttonIndex])
-    table_remove(group.buttons, buttonIndex)
+    self:RemoveEntriesFromGroup(group, {buttonIndex})
     self:RefreshGroupFrame(groupId)
+end
+
+-- The one way entries leave a panel (delete, move away, cross-panel drag).
+-- A section IS its members: each leaving entry comes out of its cluster
+-- before it goes, so the last one out dissolves it. An orphaned section table
+-- would otherwise sit in the profile as a Layout-tab block for a cluster
+-- nothing is in, and as a drop target promising offset (0,0) while quietly
+-- holding the old one's offsets. An Indicator left behind keeps its aura
+-- list and effects in step (Indicator.RemoveSources) and says what changed.
+function CooldownCompanion:RemoveEntriesFromGroup(group, indices)
+    local ordered = {}
+    for i, index in ipairs(indices) do ordered[i] = index end
+    -- Highest first, so earlier indices still point at their entries.
+    table_sort(ordered, function(a, b) return a > b end)
+    local notice = ST.Indicator.RemoveSources(group, function()
+        for _, index in ipairs(ordered) do
+            ST.DetachEntryFromPanelSection(group, group.buttons and group.buttons[index])
+            table_remove(group.buttons, index)
+        end
+    end)
+    if notice then self:Print(notice) end
 end
 
 -- Walk the class talent tree using the active config, calling visitor(defInfo)

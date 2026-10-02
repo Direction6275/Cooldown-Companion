@@ -660,11 +660,11 @@ end
 -- Ordinary spell entries retain the explicit Texture-only opt-in so legacy
 -- auraTracking residue cannot silently reactivate them. Only the main source
 -- is the aura: an aura Indicator's extra spell sources are rule sources and
--- never own an aura slot. A While Missing aura owns no slot either: CC draws
--- it behind a presence tracker instead (AuraDisplay hostKind "presence").
+-- never own an aura slot. A While Missing aura or an aura list owns no slot
+-- either: CC draws it behind a presence tracker (AuraDisplay "presence").
 function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
     return self:IsTexturePanelGroup(group)
-        and not ST.Indicator.ShowsWhileMissing(group)
+        and not ST.Indicator.UsesPresence(group)
         and type(buttonData) == "table"
         and buttonData == ST.Indicator.Primary(group)
         and buttonData.type == "spell"

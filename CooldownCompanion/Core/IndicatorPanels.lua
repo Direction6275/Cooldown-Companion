@@ -39,33 +39,135 @@ local function AuraWhenOf(source)
     return type(compare) == "string" and compare or "active"
 end
 
+local function SameSource(a, b)
+    return a.type == b.type and a.id == b.id and a.itemSlot == b.itemSlot
+end
+
+-- Several auras (AND/OR). The first aura is the main source (slot one); every
+-- other aura in the list is flagged `indicatorAuraListed`. Older aura-added
+-- rule rows carry no flag and stay rule rows.
+local function IsListedAura(group, entry)
+    return entry ~= nil and entry.addedAs == "aura"
+        and (entry == I.Primary(group) or entry.indicatorAuraListed == true)
+end
+
+function I.IsListedAura(group, entry)
+    return I.IsAura(group) and IsListedAura(group, entry) or false
+end
+
+-- The auras an aura Indicator checks, main source first.
+function I.AuraList(group)
+    local list = {}
+    if not I.IsAura(group) then return list end
+    for _, entry in ipairs(group.buttons) do
+        if IsListedAura(group, entry) then list[#list + 1] = entry end
+    end
+    return list
+end
+
+-- On the per-update path: a flag scan only (past slot one an aura is in the
+-- list exactly when flagged).
+function I.IsMultiAura(group)
+    if not I.IsAura(group) then return false end
+    local buttons = group.buttons
+    for index = 2, #buttons do
+        local entry = buttons[index]
+        if entry.indicatorAuraListed == true and entry.addedAs == "aura" then return true end
+    end
+    return false
+end
+
+-- With two or more auras, each keeps its own When (While Active or While
+-- Missing, AuraWhenOf) and the list has one Match, saved in
+-- `indicatorSettings.auraMatch`: All (every aura's When holds) or Any (at
+-- least one does). A lone aura ignores it.
+I.AURA_MATCH_LABELS = {all="All", any="Any"}
+I.AURA_MATCH_ORDER = {"all", "any"}
+
+local function SavedMatch(group)
+    local match = I.Settings(group).auraMatch
+    return I.AURA_MATCH_LABELS[match] and match or "all"
+end
+
+function I.AuraMatch(group)
+    return I.IsMultiAura(group) and SavedMatch(group) or nil
+end
+
+-- An aura in a list shows its Indicator while active, or while missing.
+function I.AuraWantsActive(entry)
+    return AuraWhenOf(entry) ~= "missing"
+end
+
 -- While Missing: nothing is read. A hidden tracker sized by Blizzard opens a
 -- clip window over a CC-drawn display only while the aura is absent
 -- (AuraDisplay "presence"). Group (ally) tracking is not supported yet and
 -- fails closed.
 function I.ShowsWhileMissing(group)
-    return I.IsAura(group) and AuraWhenOf(I.Primary(group)) == "missing" or false
+    return I.IsAura(group) and not I.IsMultiAura(group)
+        and AuraWhenOf(I.Primary(group)) == "missing" or false
+end
+
+-- How the presence trackers combine: the list's Match, "all" for a lone
+-- aura While Missing (all of one), nil for a native aura.
+function I.PresenceMatch(group)
+    if I.IsMultiAura(group) then return SavedMatch(group) end
+    if I.ShowsWhileMissing(group) then return "all" end
+end
+
+-- Drawn by CC behind a presence tracker: While Missing, or several auras.
+-- Nothing live (timer, count, drain) can show.
+function I.UsesPresence(group)
+    return I.PresenceMatch(group) ~= nil
 end
 
 -- The aura draws in its native slot (live timer, count, drain). A While
--- Missing aura is drawn by CC like a spell or item Indicator instead.
+-- Missing or multi-aura Indicator is drawn by CC like a spell or item
+-- Indicator instead.
 function I.IsNativeAura(group)
-    return I.IsAura(group) and not I.ShowsWhileMissing(group)
+    return I.IsAura(group) and not I.UsesPresence(group)
 end
 
--- Which effect rules apply: native auras run Always only; While Missing may
--- add Only In Combat (CC draws it, but nothing it would animate on is the
--- aura's own state); spell and item sources also get Animate When.
+-- Where an aura entry is tracked: "target", "pet", "group" or "player", by
+-- the runtime's own precedence (Addon:GetAuraEntryUnitKind).
+function I.AuraUnit(entry)
+    return Addon:GetAuraEntryUnitKind(entry)
+end
+
+-- Each aura in a list has its own tracker on its own unit, but group
+-- tracking (several units per aura) has no presence form. Why `auras` (two or
+-- more) can't be tracked together, as an EffectFailureText key, or nil.
+local function AuraListRefusal(auras)
+    if #auras < 2 then return end
+    for _, aura in ipairs(auras) do
+        if I.AuraUnit(aura) == "group" then return "indicator_aura_group" end
+    end
+end
+
+-- A saved list that can't be tracked (Tracked On changed after adding)
+-- stays hidden: the refusal key, or nil.
+function I.AuraListProblem(group)
+    return AuraListRefusal(I.AuraList(group))
+end
+
+-- Which effect rules apply: native auras run Always only; presence-drawn
+-- auras may add Only In Combat (CC draws them, but nothing they would animate
+-- on is the aura's own state); spell and item sources also get Animate When.
 function I.EffectFamily(group)
     if I.IsNativeAura(group) then return "aura" end
-    return I.ShowsWhileMissing(group) and "missing" or "conditions"
+    return I.UsesPresence(group) and "missing" or "conditions"
+end
+
+-- Never shown on its own: every source of a conditions Indicator, and every
+-- source of an aura Indicator except the main aura.
+function I.IsHiddenSource(group, entry)
+    return ST.IsIndicatorGroup(group) and not (I.IsAura(group) and entry == I.Primary(group))
 end
 
 -- A source checked by rules: every source of a conditions Indicator, and the
--- extra spell/item sources of an aura Indicator. The aura itself has no
--- condition rules; its only rule is its stack rule (StackRule).
+-- extra spell/item sources of an aura Indicator. Its auras have no condition
+-- rules; a lone aura's only rule is its When (StackRule).
 function I.IsConditionSource(group, entry)
-    return ST.IsIndicatorGroup(group) and not (I.IsAura(group) and entry == I.Primary(group))
+    return I.IsHiddenSource(group, entry) and not I.IsListedAura(group, entry)
 end
 
 -- An aura Indicator's stack rule, saved on the aura entry so it leaves with
@@ -96,7 +198,7 @@ end
 -- cannot be checked.
 -- The saved comparison alone, without the max lookup (Finder checks).
 function I.StackCompare(group)
-    if not I.IsAura(group) then return end
+    if not I.IsAura(group) or I.IsMultiAura(group) then return end
     local source = I.Primary(group)
     local compare = AuraWhenOf(source)
     -- Only stack comparisons: While Active and While Missing are not.
@@ -118,8 +220,10 @@ function I.StackRuleLabel(compare, count)
     return label and label:format(count or 0) or "While Active"
 end
 
--- The aura row's When as text: While Missing, a stack rule, or While Active.
+-- The main aura row's When as text: While Missing, a stack rule, or While
+-- Active (in a list, its own While Active / While Missing).
 function I.AuraWhenLabel(group)
+    if I.IsMultiAura(group) then return I.AuraEntryWhenLabel(I.Primary(group)) end
     if I.ShowsWhileMissing(group) then return "While Missing" end
     local compare, count = I.StackRule(group)
     return I.StackRuleLabel(compare, count)
@@ -173,7 +277,9 @@ I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
 I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
     indicator_effects_conditions = "Aura Indicators can't use Animate When or Only In Combat. Set each effect to Always with Only In Combat off first.",
-    indicator_effects_missing = "While Missing Indicators can't use Animate When. Set each effect to Always first.",
+    indicator_effects_missing = "Indicators that show While Missing or check several auras can't use Animate When. Set each effect to Always first.",
+    indicator_aura_group = "Group tracking works with a single aura per Indicator.",
+    indicator_aura_change = "This Indicator checks several auras, so it can only change to another aura. Remove the other auras first to use a spell or item.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
 }
 
@@ -396,8 +502,8 @@ end
 local FAMILY_LIMITS = {
     aura = {rules = "auras can't use Animate When or Only In Combat", dropCombat = true,
         textOff = "colorShift", textWhy = "Text Only auras can't use it"},
-    missing = {rules = "While Missing can't use Animate When",
-        textOff = "shrinkExpand", textWhy = "Text Only While Missing Indicators can't use it"},
+    missing = {rules = "While Missing and several auras can't use Animate When",
+        textOff = "shrinkExpand", textWhy = "Text Only can't use it here"},
     conditions = {textOff = "shrinkExpand", textWhy = "Text Only spell and item Indicators can't use it"},
 }
 
@@ -434,7 +540,7 @@ end
 -- saved choice (from a spell past, a copy, or any enable path) is dropped
 -- whenever the store is read for the runtime or the config.
 function I.NormalizeEffectsForFamily(group, store)
-    if not (store and I.ShowsWhileMissing(group)) then return store end
+    if not (store and I.UsesPresence(group)) then return store end
     for _, key in ipairs(I.EffectOrder) do
         local effect = store[key]
         if type(effect) == "table" then effect.activation = nil end
@@ -444,6 +550,49 @@ end
 
 local function NoticeText(notes)
     return #notes > 0 and table.concat(notes, " ") or nil
+end
+
+-- Keeps a list's rules valid for how many auras it has. Growing to two
+-- starts Match on All and drops a stack rule (it needs a single aura); each
+-- aura keeps its own While Active / While Missing. Shrinking to one clears
+-- Match, and the remaining aura keeps its When.
+local function SyncAuraList(group, notes)
+    local settings = I.Settings(group)
+    local list = I.AuraList(group)
+    if #list >= 2 then
+        if not I.AURA_MATCH_LABELS[settings.auraMatch] then settings.auraMatch = "all" end
+        for _, aura in ipairs(list) do
+            if STACK_COMPARE_LABELS[AuraWhenOf(aura)] then
+                notes[#notes + 1] = (aura.name or tostring(aura.id))
+                    .. "'s stack rule was removed (it needs a single aura)."
+                aura.indicatorStackRule = nil
+            end
+        end
+    else
+        settings.auraMatch = nil
+    end
+end
+
+-- Runs `change` (any edit of an Indicator's sources), then syncs the aura
+-- list and adapts the effects to the family the Indicator ends up in. Adds
+-- chat notes to `notes`. A non-Indicator just runs `change`.
+local function ReshapeAuraList(group, notes, change)
+    local indicator = ST.IsIndicatorGroup(group) and I.Settings(group)
+    local before = indicator and I.Primary(group) and I.EffectFamily(group)
+    change()
+    if not indicator then return end
+    SyncAuraList(group, notes)
+    local after = I.Primary(group) and I.EffectFamily(group)
+    if before and after and after ~= before then AdaptEffects(I.Settings(group), after, notes) end
+end
+
+-- Generic entry removal (delete, a move or drag to another panel) runs its
+-- removal through here so an Indicator's list and effects follow. Returns an
+-- optional chat line.
+function I.RemoveSources(group, remove)
+    local notes = {}
+    ReshapeAuraList(group, notes, remove)
+    return NoticeText(notes)
 end
 
 -- An aura joining a spell/item Indicator becomes what it shows: it takes slot
@@ -457,6 +606,7 @@ local function JoinAura(group, entry)
     if buttons[1] then buttons[1].enabled = true end
     table.insert(buttons, 1, entry)
     entry.enabled = true
+    entry.indicatorAuraListed = nil
     I.Settings(group).sourceVisibility = nil
 end
 
@@ -482,6 +632,20 @@ function I.OnSourceAdded(group, entry)
     -- carries over) adapts to the While Missing family instead.
     if auraArrives or firstSource then
         AdaptEffects(settings, SourceEffectFamily(group, entry), notes)
+    end
+    -- Another aura joins the list: no spell rules of its own; its When
+    -- restarts on the main aura's side and Match combines them.
+    if indicator and entry.addedAs == "aura" and I.IsAura(group) and I.Primary(group) ~= entry then
+        -- Unflagged first, so the reshape sees the list it is growing.
+        entry.indicatorAuraListed = nil
+        ReshapeAuraList(group, notes, function()
+            entry.indicatorAuraListed = true
+            -- It starts with the main aura's side: a missing-aura reminder
+            -- most likely wants another one.
+            entry.indicatorStackRule = AuraWhenOf(I.Primary(group)) == "missing"
+                and {compare = "missing"} or nil
+            entry.enabled = true
+        end)
     end
     -- Checklist order never matters to the user: an aura added after spell or
     -- item sources still becomes the display.
@@ -599,20 +763,59 @@ function I.SetDisplayType(group, displayType)
     settings.displayType = displayType
 end
 
-I.OneAuraText = "This Indicator already checks an aura. Remove it first, or create another Indicator."
+I.SameAuraText = "This Indicator already checks that aura there. Change its Tracked On first to check it on another unit."
+I.SameAuraUnitText = "This Indicator already checks that aura on that unit."
 
--- One aura per Indicator. It can arrive at any time and always becomes the
--- display (OnSourceAdded); spell and item sources are checked by their rules.
+-- One aura's When inside a list, as text and as a saved choice.
+function I.AuraEntryWhenLabel(entry)
+    return I.AuraWantsActive(entry) and "While Active" or "While Missing"
+end
+
+function I.SetAuraEntryWhen(group, entry, value)
+    if not (I.IsMultiAura(group) and I.IsListedAura(group, entry)) then return end
+    entry.indicatorStackRule = value == "missing" and {compare = "missing"} or nil
+end
+
+-- Any's window chains read every earlier aura, so the auras on units that
+-- can close the identity gate go last: yours, then your pet's, then your
+-- target's (list order otherwise). Returns a new list of `auras` ({unit}).
+local ANY_UNIT_ORDER = { player = 1, pet = 2, target = 3 }
+function I.OrderForAny(auras)
+    local ordered, position = {}, {}
+    for index, aura in ipairs(auras) do ordered[index], position[aura] = aura, index end
+    table.sort(ordered, function(a, b)
+        local rankA, rankB = ANY_UNIT_ORDER[a.unit] or 4, ANY_UNIT_ORDER[b.unit] or 4
+        if rankA ~= rankB then return rankA < rankB end
+        return position[a] < position[b]
+    end)
+    return ordered
+end
+
+-- The same aura on the same unit: a list never checks it twice, but may check
+-- it on two units (you and your pet).
+function I.SameAura(a, b)
+    return SameSource(a, b) and I.AuraUnit(a) == I.AuraUnit(b)
+end
+
+-- Auras can arrive at any time: the first becomes the display
+-- (OnSourceAdded), later ones join its list, each on its own unit, never
+-- twice on one unit and never group-tracked. Spell and item sources are checked by their
+-- rules.
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
     local entries = entry and (entry[1] and entry or {entry}) or {}
-    local auras = I.Primary(group) and I.IsAura(group) and 1 or 0
+    local auras, incoming = I.AuraList(group), false
     for _, source in ipairs(entries) do
         if source.addedAs == "aura" then
-            auras = auras + 1
-            if auras > 1 then return I.OneAuraText end
+            for _, aura in ipairs(auras) do
+                if aura ~= source and I.SameAura(aura, source) then return I.SameAuraText end
+            end
+            auras[#auras + 1] = source
+            incoming = true
         end
     end
+    local refusal = incoming and AuraListRefusal(auras)
+    if refusal then return I.EffectFailureText[refusal] end
     if I.Primary(group) then return end
     -- The first source adapts the effects to what it can run (OnSourceAdded),
     -- so they only need to be readable.
@@ -631,12 +834,13 @@ end
 
 -- Every rule on every checked source from slot `first` on must be true. Fails
 -- closed: a source missing at runtime, a rule this client cannot evaluate, or
--- a secret or unknown reading never matches.
+-- a secret or unknown reading never matches. Listed auras have no rules
+-- (ExtraSourcesMatch checks that they are available).
 local function RulesPass(runtime, group, first)
     local entries = group.buttons or {}
     for index = first, #entries do
         local entry = entries[index]
-        if entry.enabled ~= false then
+        if entry.enabled ~= false and not I.IsListedAura(group, entry) then
             if not runtime[entry] then return false end
             for _, clause in ipairs(entry.triggerConditions or {}) do
                 if clause.unavailable or not I.ConditionKeys[clause.key] then return false end
@@ -664,11 +868,34 @@ function I.Match(frame, group)
     return primary.enabled ~= false
 end
 
--- An aura Indicator's extra sources: the aura itself shows while active and
--- has no rules. With no extras there is nothing to check (and nothing to pay).
+-- An aura Indicator's extra spell/item sources (its other auras are the
+-- tracker's, never rules). With no extras there is nothing to check (and
+-- nothing to pay).
 function I.ExtraSourcesMatch(frame, group)
-    if not I.IsAura(group) or not group.buttons or #group.buttons < 2 then return true end
-    return RulesPass(RuntimeButtons(frame), group, 2)
+    if not I.IsAura(group) or not group.buttons then return true end
+    -- Listed auras have no rules but, like any checked source, must be
+    -- available (their own load rules): every one needs a runtime button.
+    -- Counted in one pass, so a list without spell or item sources allocates
+    -- nothing per update.
+    local extras, listed = false, 0
+    for index = 2, #group.buttons do
+        local entry = group.buttons[index]
+        if not I.IsListedAura(group, entry) then
+            extras = true
+        elseif entry.enabled ~= false then
+            listed = listed + 1
+        end
+    end
+    if listed > 0 then
+        for _, button in ipairs(frame and frame.buttons or {}) do
+            local entry = button.buttonData
+            if entry ~= I.Primary(group) and entry.enabled ~= false and I.IsListedAura(group, entry) then
+                listed = listed - 1
+            end
+        end
+        if listed > 0 then return false end
+    end
+    return not extras or RulesPass(RuntimeButtons(frame), group, 2)
 end
 
 function I.ClearSource(group)
@@ -676,6 +903,8 @@ function I.ClearSource(group)
     I.Effects(group)
     group.buttons = {}
     settings.tracking = "conditions"
+    -- A later list starts on All, not on this one's Match.
+    settings.auraMatch = nil
 end
 
 -- A condition source that could take over slot one. A migrated Trigger row
@@ -690,8 +919,11 @@ function I.CanBeMainSource(group, entry)
     return CanTakeOver(group, entry) and not I.IsAura(group)
 end
 
--- The source that takes over when the main source is removed.
+-- The source that takes over when the main source is removed: the next
+-- aura in the list first, so the Indicator stays an aura Indicator.
 function I.NextMainSource(group)
+    local list = I.AuraList(group)
+    if list[2] then return list[2] end
     for i = 2, #(group.buttons or {}) do
         if CanTakeOver(group, group.buttons[i]) then return group.buttons[i] end
     end
@@ -737,6 +969,26 @@ function I.PromoteSource(group, entry)
     return Promote(group, entry, index)
 end
 
+-- Another aura in the list takes slot one: its icon and name show on the
+-- display. The list, its Match and every aura's When are unchanged.
+function I.PromoteAura(group, entry)
+    local index = IndexOf(group, entry)
+    if not index or index == 1 or not I.IsListedAura(group, entry) then return false end
+    local old = group.buttons[1]
+    table.remove(group.buttons, index)
+    table.insert(group.buttons, 1, entry)
+    entry.indicatorAuraListed = nil
+    old.indicatorAuraListed = true
+    return true
+end
+
+-- The list's Match. The list is presence-drawn either way, so effects never
+-- change family here.
+function I.SetAuraMatch(group, value)
+    if not (I.IsMultiAura(group) and I.AURA_MATCH_LABELS[value]) then return end
+    I.Settings(group).auraMatch = value
+end
+
 -- The aura row's When: "active", "missing", or a stack comparison (with
 -- `count`). Moving between native drawing and While Missing adapts effects
 -- the way a source change does. Returns an optional chat line.
@@ -775,6 +1027,22 @@ function I.RemoveSource(group, entry)
     local index = IndexOf(group, entry)
     if not index then return false end
     local notice
+    -- An aura leaving a list: the next aura takes over the display; a list
+    -- of one drops Match and the aura keeps its own When.
+    if I.IsListedAura(group, entry) and I.IsMultiAura(group) then
+        local notes = {}
+        local nextAura = index == 1 and I.AuraList(group)[2] or nil
+        ReshapeAuraList(group, notes, function()
+            if nextAura then
+                table.remove(buttons, IndexOf(group, nextAura))
+                nextAura.indicatorAuraListed = nil
+                buttons[1] = nextAura
+            else
+                table.remove(buttons, index)
+            end
+        end)
+        return true, nil, NoticeText(notes)
+    end
     if index == 1 then
         local nextSource = I.NextMainSource(group)
         if not nextSource then I.ClearSource(group); return true end
@@ -784,10 +1052,6 @@ function I.RemoveSource(group, entry)
     end
     table.remove(buttons, index)
     return true, nil, notice
-end
-
-local function SameSource(a, b)
-    return a.type == b.type and a.id == b.id and a.itemSlot == b.itemSlot
 end
 
 -- Build a replacement off to the side. Failed validation must leave the
@@ -803,34 +1067,57 @@ function I.StageSourceReplacement(group, expectedSource)
     candidate.indicatorSettings.tracking = "conditions"
     -- Transient, never saved: a replacement aura inherits While Missing
     -- (CommitSourceReplacement), so its arrival must not adapt the effects.
-    candidate._stagedAuraWhen = I.ShowsWhileMissing(group) and "missing" or nil
+    -- A list stays presence-drawn too, so it adapts like While Missing.
+    candidate._stagedAuraWhen = I.UsesPresence(group) and "missing" or nil
     return candidate
 end
 
+-- Returns true plus an optional chat line, or false plus a failure reason.
 function I.CommitSourceReplacement(group, candidate)
     local allowed, reason = I.CheckSourceEffects(candidate, I.Primary(candidate))
     if not allowed then return false, reason end
     -- Only the main source changes. The other sources keep their rules, unless
     -- one is the new source (it starts fresh as the main source instead).
-    -- Older aura-added rows are rule rows; only the main source owns an aura.
+    -- Older aura-added rows are rule rows; listed auras stay in the list.
     local newSource = I.Primary(candidate)
-    -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
-    local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
-    if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
-        newSource.indicatorStackRule = CopyTable(oldRule)
+    -- A list's other auras need an aura on their unit to stay with.
+    local others = I.AuraList(group)
+    table.remove(others, 1)
+    local listed
+    if #others > 0 then
+        if not I.IsAura(candidate) then return false, "indicator_aura_change" end
+        local auras = {newSource}
+        for _, aura in ipairs(others) do
+            if I.SameAura(aura, newSource) then listed = aura else auras[#auras + 1] = aura end
+        end
+        local refusal = AuraListRefusal(auras)
+        if refusal then return false, refusal end
+    end
+    if listed then
+        -- Already in the list: the aura keeps its own When there.
+        newSource.indicatorStackRule = listed.indicatorStackRule and CopyTable(listed.indicatorStackRule)
+    else
+        -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
+        local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
+        if oldRule and I.IsAura(candidate) and newSource.indicatorStackRule == nil then
+            newSource.indicatorStackRule = CopyTable(oldRule)
+        end
     end
     for i = 2, #(group.buttons or {}) do
         local entry = group.buttons[i]
-        if not SameSource(entry, newSource) then
+        if entry ~= listed and not (SameSource(entry, newSource) and not I.IsListedAura(group, entry)) then
             candidate.buttons[#candidate.buttons + 1] = entry
         end
     end
-    group.buttons = candidate.buttons
-    local settings = I.Settings(group)
-    settings.tracking = I.Settings(candidate).tracking
-    StoreEffects(group, I.Effects(candidate))
+    local notes = {}
+    ReshapeAuraList(group, notes, function()
+        group.buttons = candidate.buttons
+        local settings = I.Settings(group)
+        settings.tracking = I.Settings(candidate).tracking
+        StoreEffects(group, I.Effects(candidate))
+    end)
     NormalizeCountReadouts(group)
-    return true
+    return true, NoticeText(notes)
 end
 
 local SIGNAL_APPEARANCE = {"sourceType","sourceValue","mediaType","label","scale","alpha","blendMode",
