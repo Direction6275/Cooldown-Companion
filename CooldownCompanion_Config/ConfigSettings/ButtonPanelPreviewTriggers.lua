@@ -246,7 +246,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local I = ST.Indicator
     if readOnly or not I.Primary(group) then ReleaseSourceControls(preview) end
     if not I.Primary(group) then
-        PP.SetPreviewMessage(preview, "Add spells, items, or one aura in the field at the top.", "Choose a source")
+        PP.SetPreviewMessage(preview, "Add spells, items, or auras in the field at the top.", "Choose a source")
         PP.FinalizePreviewState(preview)
         return
     end
