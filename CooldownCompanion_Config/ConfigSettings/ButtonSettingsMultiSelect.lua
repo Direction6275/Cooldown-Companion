@@ -163,18 +163,24 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
         {
             text = anyDisabled and "Enable All" or "Disable All",
             onClick = function()
+                -- One attachment operation across every selected group, so
+                -- the cast bar and resource bars settle once at the end.
+                local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, containerId in ipairs(multiGroupIds) do
                     CooldownCompanion:SetContainerEnabled(containerId, anyDisabled)
                 end
+                CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         },
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, containerId in ipairs(multiGroupIds) do
                     CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
                 end
+                CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
                 if not anyUnlocked and ST.CollapseConfigForUnlock then
                     ST.CollapseConfigForUnlock()
@@ -271,6 +277,9 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         {
             text = anyDisabled and "Enable All" or "Disable All",
             onClick = function()
+                -- One attachment operation across every selected panel, so
+                -- the cast bar and resource bars settle once at the end.
+                local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, pid in ipairs(multiPanelIds) do
                     local panel = db.groups[pid]
                     if panel then
@@ -278,12 +287,14 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                         CooldownCompanion:RefreshGroupFrame(pid)
                     end
                 end
+                CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         },
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, pid in ipairs(multiPanelIds) do
                     local panel = db.groups[pid]
                     if panel
@@ -291,6 +302,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                         CooldownCompanion:SetPanelLocked(pid, anyUnlocked)
                     end
                 end
+                CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
                 if not anyUnlocked and ST.CollapseConfigForUnlock then
                     ST.CollapseConfigForUnlock()

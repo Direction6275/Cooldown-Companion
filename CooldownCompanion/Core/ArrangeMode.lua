@@ -1373,13 +1373,17 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
     self:RefreshUnlockToolbar()
 end
 
--- Refresh all panel frames belonging to a container.
+-- Refresh all panel frames belonging to a container. One attachment operation
+-- for the whole group: each panel refresh would otherwise re-place the cast
+-- bar and resource bars on its own.
 function CooldownCompanion:RefreshContainerPanels(containerId)
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     for gid, group in pairs(self.db.profile.groups) do
         if group.parentContainerId == containerId then
             self:RefreshGroupFrame(gid)
         end
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation)
 end
 
 -- Show or hide the drag handle on a container frame to match its lock state.
