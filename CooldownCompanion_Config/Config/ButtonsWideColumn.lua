@@ -2459,7 +2459,10 @@ local function RefreshButtonsPreviewMirror(groupId, visualOnly, outcome)
     end
 end
 
-ST._RefreshButtonsWideColumn = RefreshButtonsWideColumn
+-- One rebuild of the column is one module-bars memo scope.
+ST._RefreshButtonsWideColumn = function(...)
+    return ST._WithModuleBarsMemo(RefreshButtonsWideColumn, ...)
+end
 ST._AnchorButtonsContentFrame = AnchorButtonsContentFrame
 -- Shared wide-preview plumbing (also used by the Resources wide column):
 -- host registration, the height computation, the build-size record, and

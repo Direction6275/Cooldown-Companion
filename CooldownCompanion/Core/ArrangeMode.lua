@@ -30,6 +30,11 @@ function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId
         containerId = containerOrContainerId
         container = self.db.profile.groupContainers and self.db.profile.groupContainers[containerId]
     elseif type(containerOrContainerId) == "table" then
+        -- A locked container answers no before its id matters; skip the id
+        -- scan, which every IsGroupActive call would otherwise pay.
+        if containerOrContainerId.locked ~= false then
+            return false
+        end
         for id, candidate in pairs(self.db.profile.groupContainers or {}) do
             if candidate == containerOrContainerId then
                 containerId = id
@@ -1494,12 +1499,16 @@ function CooldownCompanion:EnterArrangeMode()
     self._arrangeTreeRevealEntry = nil
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
+    -- One attachment operation for the whole unlock: each panel refresh would
+    -- otherwise re-place the cast bar and resource bars on its own.
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and self:ContainerHasArrangeEligiblePanel(containerId) then
             self:SetContainerLocked(containerId, false)
         end
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, false, "enter-arrange")
     if self.SetIndependentCastBarLocked then
         self:SetIndependentCastBarLocked(false)
     end

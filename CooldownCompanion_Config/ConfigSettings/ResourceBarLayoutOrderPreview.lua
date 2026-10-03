@@ -3363,9 +3363,30 @@ ST._GetLayoutPreviewIcon = GetLayoutPreviewIcon
 -- home.
 ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
 
+local PanelHasConfiguredModuleBars
+
 -- Ordinary panels render modules inside the same attachment composition as
 -- their entries. Reuse this file's resource/cast painters and preview state.
+-- Inside one settings rebuild the answer is reused (ST._WithModuleBarsMemo,
+-- Config/State.lua), filed under the raw panel id so 12 and "12" stay apart.
 function ST._PanelHasConfiguredModuleBars(panelId, kind)
+    local memo = panelId ~= nil and ST._GetModuleBarsMemo()
+    if not memo then return PanelHasConfiguredModuleBars(panelId, kind) end
+    local answers = memo[panelId]
+    if not answers then
+        answers = {}
+        memo[panelId] = answers
+    end
+    local slot = kind or "any"
+    local answer = answers[slot]
+    if answer == nil then
+        answer = PanelHasConfiguredModuleBars(panelId, kind)
+        answers[slot] = answer
+    end
+    return answer
+end
+
+PanelHasConfiguredModuleBars = function(panelId, kind)
     local group = CooldownCompanion.db.profile.groups[panelId]
     if not ST.PanelSupportsAttachedBars(group) then return false end
     local cast = ST.GetConfiguredModuleBarSettings("castbar")
