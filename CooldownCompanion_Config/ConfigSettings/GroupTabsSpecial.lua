@@ -24,7 +24,7 @@ local tabInfoButtons = CS.tabInfoButtons
 
 -- A dropdown sizes its menu from the 140px control it hangs under, which is
 -- too narrow for user-named panels and the longer worded options below.
--- Captured in this file by BuildTexturePanelAppearanceTab.
+-- Captured in this file by BuildIndicatorTextureAppearance.
 local WIDE_PULLOUT_WIDTH = 300
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
@@ -56,13 +56,7 @@ local MIN_TEXTURE_ROTATION = -180
 local MAX_TEXTURE_ROTATION = 180
 local MIN_TEXTURE_STRETCH = -0.75
 local MAX_TEXTURE_STRETCH = 2
-local TEXTURE_INDICATOR_EFFECT_ORDER = {
-    "pulse",
-    "colorShift",
-    "shrinkExpand",
-    "bounce",
-}
-local TRIGGER_PANEL_EFFECT_DEFS = {
+local INDICATOR_EFFECT_DEFS = {
     pulse = {
         label = "Pulse",
         speedLabel = "Pulse Duration",
@@ -81,8 +75,8 @@ local TRIGGER_PANEL_EFFECT_DEFS = {
     },
 }
 
-local function GetTriggerPanelEffectStore(group)
-    return CooldownCompanion:GetTriggerPanelEffectSettings(group, true)
+local function GetIndicatorEffectStore(group)
+    return CooldownCompanion:GetIndicatorEffectSettings(group, true)
 end
 
 -- The effect Text Only cannot run: Color Shift for native aura sources (the
@@ -236,14 +230,7 @@ local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previ
     end)
 end
 
-local function GetStandaloneTextureSettings(group, createIfMissing)
-    if not group then
-        return nil
-    end
-    return CooldownCompanion:GetTexturePanelSettings(group, createIfMissing)
-end
-
-local function GetStandaloneTextureSelectionLabel(group, settings)
+local function GetIndicatorTextureSelectionLabel(group, settings)
     if not settings or not settings.sourceType then
         return nil
     end
@@ -253,11 +240,11 @@ end
 -- Native aura kits restyle only through a rebind; a presence tracker's
 -- cell follows the saved design size the same way.
 local function NeedsAuraRestyle(group, buttonData)
-    return CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+    return CooldownCompanion:IsIndicatorAuraDisplayEnabled(group, buttonData)
         or ST.Indicator.UsesPresence(group)
 end
 
-local function RequestTexturePanelAuraRestyle(group, groupId)
+local function RequestAuraIndicatorRestyle(group, groupId)
     local buttonData = group and group.buttons and group.buttons[1] or nil
     if NeedsAuraRestyle(group, buttonData) then
         CooldownCompanion:RequestAuraRebind("style", groupId)
@@ -278,7 +265,7 @@ end
 local TEXTURE_AURA_RESTYLE_THROTTLE = 0.25
 local pendingTextureAuraRestyleGroupId
 
-local function FlushTexturePanelAuraRestyle()
+local function FlushAuraIndicatorRestyle()
     local groupId = pendingTextureAuraRestyleGroupId
     pendingTextureAuraRestyleGroupId = nil
     if not groupId then
@@ -286,12 +273,12 @@ local function FlushTexturePanelAuraRestyle()
     end
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId] or nil
-    RequestTexturePanelAuraRestyle(group, groupId)
+    RequestAuraIndicatorRestyle(group, groupId)
 end
 
 -- The rebind is profile-wide, so a second panel edited inside the window
 -- overwriting the pending id costs nothing: either id flushes both.
-local function ThrottleTexturePanelAuraRestyle(group, groupId)
+local function ThrottleAuraIndicatorRestyle(group, groupId)
     local buttonData = group and group.buttons and group.buttons[1] or nil
     if not (groupId and NeedsAuraRestyle(group, buttonData)) then
         return
@@ -299,19 +286,19 @@ local function ThrottleTexturePanelAuraRestyle(group, groupId)
     local alreadyArmed = pendingTextureAuraRestyleGroupId ~= nil
     pendingTextureAuraRestyleGroupId = groupId
     if not alreadyArmed then
-        C_Timer.After(TEXTURE_AURA_RESTYLE_THROTTLE, FlushTexturePanelAuraRestyle)
+        C_Timer.After(TEXTURE_AURA_RESTYLE_THROTTLE, FlushAuraIndicatorRestyle)
     end
 end
 
-local function GetStandaloneTextureCommitCallback(group, groupId)
+local function GetIndicatorTextureCommitCallback(group, groupId)
     return function(selection)
-        local liveSettings = GetStandaloneTextureSettings(group, true)
+        local liveSettings = CooldownCompanion:GetIndicatorTextureSettings(group)
         if not liveSettings then
             return
         end
 
         if selection then
-            CooldownCompanion:ApplyTexturePanelEntry(liveSettings, selection)
+            CooldownCompanion:ApplyIndicatorTextureEntry(liveSettings, selection)
         else
             liveSettings.libraryKey = nil
             liveSettings.sourceType = nil
@@ -324,12 +311,12 @@ local function GetStandaloneTextureCommitCallback(group, groupId)
         liveSettings.enabled = nil
 
         CooldownCompanion:RefreshAllAuraTextureVisuals()
-        RequestTexturePanelAuraRestyle(group, groupId)
+        RequestAuraIndicatorRestyle(group, groupId)
         CooldownCompanion:RefreshConfigPanel()
     end
 end
 
-local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
+local function OpenOrRebindIndicatorTexturePicker(group, settings, forceOpen)
     if not (group and CS.StartPickAuraTexture) then
         return
     end
@@ -340,7 +327,7 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
         groupId = groupId,
         buttonIndex = buttonIndex,
         initialSelection = settings and settings.sourceType and settings or nil,
-        callback = GetStandaloneTextureCommitCallback(group, groupId),
+        callback = GetIndicatorTextureCommitCallback(group, groupId),
     }
 
     if forceOpen or not (CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen()) then
@@ -354,16 +341,16 @@ end
 -- Used by the big-preview click-to-browse affordance, which only has the
 -- panel id at click time. Resolves the group + its texture settings and forces
 -- the browser open.
-function ST._OpenStandaloneTexturePicker(groupId)
+function ST._OpenIndicatorTexturePicker(groupId)
     local group = groupId and CooldownCompanion.db.profile.groups[groupId]
     if not group then
         return
     end
-    local settings = GetStandaloneTextureSettings(group, true)
-    OpenOrRebindStandaloneTexturePicker(group, settings, true)
+    local settings = CooldownCompanion:GetIndicatorTextureSettings(group)
+    OpenOrRebindIndicatorTexturePicker(group, settings, true)
 end
 
-local function RefreshStandaloneTriggerDisplay(groupId)
+local function RefreshIndicatorDisplay(groupId)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if ST.Indicator.IsAura(group) then CooldownCompanion:RequestAuraRebind("style", groupId) end
     local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
@@ -381,8 +368,8 @@ end
 -- load-condition queries and re-wire every selection-strip slot each frame.
 -- Falls back to the full rebuild when there is no live mirror yet (the first
 -- build of a tab, or a preview that is not showing).
-local function RefreshTriggerPreviewMirror(groupId)
-    if ST._RefreshTriggerDisplayVisual and ST._RefreshTriggerDisplayVisual(groupId) then
+local function RefreshIndicatorPreviewMirror(groupId)
+    if ST._RefreshIndicatorDisplayVisual and ST._RefreshIndicatorDisplayVisual(groupId) then
         return
     end
     if ST._RefreshButtonsPreviewMirror then
@@ -395,16 +382,16 @@ end
 
 -- Row grammar (RowWidgets.lua): one collapsible section. The icon itself is
 -- shown and picked in the Live Preview above, so the tab is settings rows only.
-local function BuildTriggerIconAppearanceTab(container, group)
-    local settings = CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+local function BuildIndicatorIconAppearance(container, group)
+    local settings = CooldownCompanion:GetIndicatorIconSettings(group, true)
     local groupId = CS.selectedGroup
 
     -- The icon renders in the Live Preview, which is also the picker: clicking
     -- it opens the icon picker and right-click clears. This tab holds only the
     -- settings rows, so a refresh repaints the runtime panel and that mirror.
     local function RefreshIconPreview()
-        RefreshStandaloneTriggerDisplay(groupId)
-        RefreshTriggerPreviewMirror(groupId)
+        RefreshIndicatorDisplay(groupId)
+        RefreshIndicatorPreviewMirror(groupId)
     end
 
     -- The same three sections as a panel's icons: Icon Settings, Border,
@@ -443,9 +430,9 @@ local function BuildTriggerIconAppearanceTab(container, group)
             settings.iconWidth = value
             settings.iconHeight = value
         end, function()
-            RefreshStandaloneTriggerDisplay(groupId)
+            RefreshIndicatorDisplay(groupId)
         end, function()
-            RefreshTriggerPreviewMirror(groupId)
+            RefreshIndicatorPreviewMirror(groupId)
         end, settings, { "buttonSize", "iconWidth", "iconHeight" })
     else
         local widthRow = AddSliderRow(iconLeft, {
@@ -457,9 +444,9 @@ local function BuildTriggerIconAppearanceTab(container, group)
         WireMirrorFirstSlider(widthRow, function(value)
             settings.iconWidth = value
         end, function()
-            RefreshStandaloneTriggerDisplay(groupId)
+            RefreshIndicatorDisplay(groupId)
         end, function()
-            RefreshTriggerPreviewMirror(groupId)
+            RefreshIndicatorPreviewMirror(groupId)
         end, settings, "iconWidth")
 
         local heightRow = AddSliderRow(iconLeft, {
@@ -471,16 +458,16 @@ local function BuildTriggerIconAppearanceTab(container, group)
         WireMirrorFirstSlider(heightRow, function(value)
             settings.iconHeight = value
         end, function()
-            RefreshStandaloneTriggerDisplay(groupId)
+            RefreshIndicatorDisplay(groupId)
         end, function()
-            RefreshTriggerPreviewMirror(groupId)
+            RefreshIndicatorPreviewMirror(groupId)
         end, settings, "iconHeight")
     end
 
     ST._BuildIconZoomControls(iconLeft, settings, RefreshIconPreview, {
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.zoom,
         previewRefresh = function()
-            RefreshTriggerPreviewMirror(groupId)
+            RefreshIndicatorPreviewMirror(groupId)
         end,
     })
     end -- not iconCollapsed
@@ -522,10 +509,10 @@ local function BuildTriggerIconAppearanceTab(container, group)
             settings.borderSize = value
         end, function()
             if borderThicknessLocked then return end
-            RefreshStandaloneTriggerDisplay(groupId)
+            RefreshIndicatorDisplay(groupId)
         end, function()
             if borderThicknessLocked then return end
-            RefreshTriggerPreviewMirror(groupId)
+            RefreshIndicatorPreviewMirror(groupId)
         end, settings, "borderSize")
     end
     end -- not borderCollapsed
@@ -553,7 +540,7 @@ local function BuildTriggerIconAppearanceTab(container, group)
     })
     end -- not tintCollapsed
 
-    RefreshTriggerPreviewMirror(groupId)
+    RefreshIndicatorPreviewMirror(groupId)
 end
 
 -- Row grammar (RowWidgets.lua): one collapsible section. The rendered text is
@@ -568,7 +555,7 @@ local function RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
         ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
     end
     if requestAuraRestyle then
-        ThrottleTexturePanelAuraRestyle(group, CS.selectedGroup)
+        ThrottleAuraIndicatorRestyle(group, CS.selectedGroup)
     end
 end
 
@@ -613,9 +600,9 @@ end
 -- reach the native kit only through an aura restyle. While Missing keeps Only
 -- In Combat (CC draws it) but never Animate When, which the store drops on
 -- read (Indicator.NormalizeEffectsForFamily).
-local function BuildTriggerPanelEffectSection(container, group, effects, effectKey)
+local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     local config = effects and effects[effectKey]
-    local def = TRIGGER_PANEL_EFFECT_DEFS[effectKey]
+    local def = INDICATOR_EFFECT_DEFS[effectKey]
     local finder = SPECIAL_FINDER.triggerEffects[effectKey]
     if not config or not def then
         return
@@ -654,7 +641,7 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll.
-    local function BuildTriggerEffectAdvanced(panel)
+    local function BuildIndicatorEffectAdvanced(panel)
         if not auraSource then
         if not missingSource then
         AddDropdownRow(panel, {
@@ -701,7 +688,7 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
     local advKey = "triggerEffect_" .. effectKey
     AddAdvancedToggle(enableCb, advKey, tabInfoButtons, true, {
         title = def.label .. " Advanced",
-        build = BuildTriggerEffectAdvanced,
+        build = BuildIndicatorEffectAdvanced,
         -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
         -- the trigger effects' restyle-then-rebuild refresh sequence. Aura
         -- sources also restyle the native kit, so they run the row's own path.
@@ -719,15 +706,15 @@ local function BuildTriggerPanelEffectSection(container, group, effects, effectK
     })
 end
 
-local function GetTriggerPanelEffectOrderForDisplayType(group)
-    local displayType = CooldownCompanion:GetTriggerPanelDisplayType(group, true)
+local function GetIndicatorEffectOrderForDisplayType(group)
+    local displayType = CooldownCompanion:GetIndicatorDisplayType(group, true)
     if displayType ~= "text" then
-        return TEXTURE_INDICATOR_EFFECT_ORDER
+        return ST.Indicator.EffectOrder
     end
 
     local unavailable = TextOnlyUnavailableEffect(group)
     local order = {}
-    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+    for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
         if effectKey ~= unavailable then
             order[#order + 1] = effectKey
         end
@@ -735,14 +722,14 @@ local function GetTriggerPanelEffectOrderForDisplayType(group)
     return order
 end
 
-local function BuildTriggerEffectsTab(container, group)
-    local effects = GetTriggerPanelEffectStore(group)
+local function BuildIndicatorEffectsTab(container, group)
+    local effects = GetIndicatorEffectStore(group)
     if not effects then
         return
     end
 
     local anyEnabled = false
-    local effectOrder = GetTriggerPanelEffectOrderForDisplayType(group)
+    local effectOrder = GetIndicatorEffectOrderForDisplayType(group)
     for _, effectKey in ipairs(effectOrder) do
         if effects[effectKey] and effects[effectKey].enabled then
             anyEnabled = true
@@ -766,7 +753,7 @@ local function BuildTriggerEffectsTab(container, group)
         local effectLeft, effectRight = BeginRowGrid(container)
         local splitAt = math.ceil(#effectOrder / 2)
         for index, effectKey in ipairs(effectOrder) do
-            BuildTriggerPanelEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
+            BuildIndicatorEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
         end
     end
 
@@ -786,9 +773,9 @@ end
 -- It is owner-validated behaviour: runtime refreshes read the SAVED table, so a
 -- Texture Indicator edits a copy until the interaction is confirmed, and the row
 -- conversion only changes which widget holds the control.
-local function BuildTexturePanelAppearanceTab(container, group)
-    local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
-    local settings = GetStandaloneTextureSettings(group, true)
+local function BuildIndicatorTextureAppearance(container, group)
+    local isConditionsIndicator = CooldownCompanion:IsConditionsIndicatorGroup(group)
+    local settings = CooldownCompanion:GetIndicatorTextureSettings(group)
     if not settings then
         return
     end
@@ -829,8 +816,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
             groupId = groupId,
             settings = previewSettings,
         }
-        if isTriggerPanel then
-            RefreshTriggerPreviewMirror(groupId)
+        if isConditionsIndicator then
+            RefreshIndicatorPreviewMirror(groupId)
         elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(groupId)
         end
@@ -844,8 +831,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
         else
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
-        if requestAuraRestyle and not isTriggerPanel then
-            RequestTexturePanelAuraRestyle(group, groupId)
+        if requestAuraRestyle and not isConditionsIndicator then
+            RequestAuraIndicatorRestyle(group, groupId)
         end
     end
 
@@ -854,8 +841,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
         -- Both tracking kinds repaint the pinned mirror after the saved value
         -- has been committed. Conditions Indicators can reuse their
         -- display-only repaint; aura Indicators rebuild the mirror outright.
-        if isTriggerPanel then
-            RefreshTriggerPreviewMirror(groupId)
+        if isConditionsIndicator then
+            RefreshIndicatorPreviewMirror(groupId)
         elseif ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(groupId)
         end
@@ -891,10 +878,10 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end, textureValueChanged, confirmValue, cancelValue)
     end
 
-    local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
+    local selectionLabel = GetIndicatorTextureSelectionLabel(group, settings)
 
     if not selectionLabel then
-        if not isTriggerPanel then
+        if not isConditionsIndicator then
             local emptyStateLabel = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(emptyStateLabel)
             emptyStateLabel:SetFullWidth(true)
@@ -903,7 +890,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end
 
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-            OpenOrRebindStandaloneTexturePicker(group, settings, false)
+            OpenOrRebindIndicatorTexturePicker(group, settings, false)
         end
 
         RefreshTexturePreview()
@@ -916,8 +903,8 @@ local function BuildTexturePanelAppearanceTab(container, group)
     -- Geometry keeps the same staged values and commit boundaries as before.
     local textureLeft, textureRight = BeginRowGrid(container)
 
-    local locationOptions, locationOrder = CooldownCompanion:GetTexturePanelLocationOptions()
-    local selectedLayoutValue = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
+    local locationOptions, locationOrder = CooldownCompanion:GetIndicatorTextureLayoutOptions()
+    local selectedLayoutValue = CooldownCompanion:GetIndicatorTextureLayoutValue(settings.locationType or 0)
     AddDropdownRow(textureLeft, {
         label = "Arrangement",
         setting = SPECIAL_FINDER.texture.layout,
@@ -1065,7 +1052,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
     end -- not colorCollapsed
 
     if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-        OpenOrRebindStandaloneTexturePicker(group, settings, false)
+        OpenOrRebindIndicatorTexturePicker(group, settings, false)
     end
 
     RefreshTexturePreview()
@@ -1077,11 +1064,11 @@ end
 
 local SPECIAL_FINDER_SCOPE = { "panel", "entry" }
 
-local function SpecialFinderTrigger(context)
+local function SpecialFinderIndicator(context)
     return context and context.group and ST.IsIndicatorGroup(context.group)
 end
 
-local function SpecialFinderTriggerDisplayType(context)
+local function SpecialFinderIndicatorDisplayType(context)
     local settings = context and context.group and context.group.indicatorSettings
     local displayType = settings and settings.displayType
     if displayType == "icon" or displayType == "text" then
@@ -1090,14 +1077,14 @@ local function SpecialFinderTriggerDisplayType(context)
     return "texture"
 end
 
-local function SpecialFinderTriggerType(displayType)
+local function SpecialFinderIndicatorType(displayType)
     return function(context)
-        return SpecialFinderTrigger(context)
-            and SpecialFinderTriggerDisplayType(context) == displayType
+        return SpecialFinderIndicator(context)
+            and SpecialFinderIndicatorDisplayType(context) == displayType
     end
 end
 
-local function SpecialFinderTriggerIconSettings(context)
+local function SpecialFinderIndicatorIconSettings(context)
     local trigger = context and context.group and context.group.indicatorSettings
     return trigger and trigger.icon or nil
 end
@@ -1110,7 +1097,7 @@ end
 
 local function SpecialFinderTextureAppearance(context)
     local group = context and context.group
-    local rightMode = SpecialFinderTriggerType("texture")(context)
+    local rightMode = SpecialFinderIndicatorType("texture")(context)
     if not rightMode then
         return false
     end
@@ -1121,31 +1108,31 @@ end
 local function SpecialFinderTexturePair(context)
     if not SpecialFinderTextureAppearance(context) then return false end
     local settings = SpecialFinderTextureSettings(context)
-    local layout = CooldownCompanion:GetTexturePanelLayoutSelectionValue(settings.locationType or 0)
+    local layout = CooldownCompanion:GetIndicatorTextureLayoutValue(settings.locationType or 0)
     return layout == PREVIEW_LOCATION_LEFTRIGHT or layout == PREVIEW_LOCATION_TOPBOTTOM
 end
 
-local function SpecialFinderTriggerIconSquare(context)
-    if not SpecialFinderTriggerType("icon")(context) then return false end
-    local settings = SpecialFinderTriggerIconSettings(context)
+local function SpecialFinderIndicatorIconSquare(context)
+    if not SpecialFinderIndicatorType("icon")(context) then return false end
+    local settings = SpecialFinderIndicatorIconSettings(context)
     return not settings or settings.maintainAspectRatio ~= false
 end
 
-local function SpecialFinderTriggerIconFreeform(context)
-    if not SpecialFinderTriggerType("icon")(context) then return false end
-    local settings = SpecialFinderTriggerIconSettings(context)
+local function SpecialFinderIndicatorIconFreeform(context)
+    if not SpecialFinderIndicatorType("icon")(context) then return false end
+    local settings = SpecialFinderIndicatorIconSettings(context)
     return settings and settings.maintainAspectRatio == false
 end
 
-local function SpecialFinderTriggerIconCustomBorder(context)
-    if not SpecialFinderTriggerType("icon")(context) then return false end
-    local settings = SpecialFinderTriggerIconSettings(context) or {}
+local function SpecialFinderIndicatorIconCustomBorder(context)
+    if not SpecialFinderIndicatorType("icon")(context) then return false end
+    local settings = SpecialFinderIndicatorIconSettings(context) or {}
     return ST.GetDrawnBorderRenderMode(settings) ~= ST.BORDER_RENDER_MODE_CRISP
 end
 
-local function SpecialFinderTriggerEffectOffered(context, effectKey)
-    if not SpecialFinderTrigger(context) then return false end
-    return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderTriggerDisplayType(context) ~= "text"
+local function SpecialFinderIndicatorEffectOffered(context, effectKey)
+    if not SpecialFinderIndicator(context) then return false end
+    return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderIndicatorDisplayType(context) ~= "text"
 end
 
 -- Only In Combat: everything CC draws (not native auras). Animate When also
@@ -1169,20 +1156,20 @@ if ST._DefineSettingRoute then
             sectionLabel = sectionLabel,
             collapseKeys = { collapseKey },
             rowScope = "primary",
-            applies = SpecialFinderTriggerType("icon"),
+            applies = SpecialFinderIndicatorType("icon"),
         })
     end
     SPECIAL_FINDER.trigger.icon = IconRoute("triggerIcon", "Icon Settings", "appearance_triggerIcon"):Settings({
         square = { label = "Square Icon", aliases = { "Square Icons" } },
-        size = { label = "Icon Size", aliases = { "Button Size" }, applies = SpecialFinderTriggerIconSquare },
-        width = { label = "Icon Width", applies = SpecialFinderTriggerIconFreeform },
-        height = { label = "Icon Height", applies = SpecialFinderTriggerIconFreeform },
+        size = { label = "Icon Size", aliases = { "Button Size" }, applies = SpecialFinderIndicatorIconSquare },
+        width = { label = "Icon Width", applies = SpecialFinderIndicatorIconFreeform },
+        height = { label = "Icon Height", applies = SpecialFinderIndicatorIconFreeform },
         zoom = { label = "Icon Zoom" },
     })
     local iconBorder = IconRoute("triggerIconBorder", "Border", "appearance_triggerIconBorder"):Settings({
         borderColor = { label = "Border Color" },
         borderThickness = { label = "Border Thickness Mode" },
-        borderSize = { label = "Border Thickness", aliases = { "border size" }, applies = SpecialFinderTriggerIconCustomBorder },
+        borderSize = { label = "Border Thickness", aliases = { "border size" }, applies = SpecialFinderIndicatorIconCustomBorder },
     })
     local iconTint = IconRoute("triggerIconTint", "Icon Tint", "appearance_triggerIconTint"):Settings({
         baseColor = { label = "Base Icon Color", aliases = { "Icon Color" } },
@@ -1191,9 +1178,9 @@ if ST._DefineSettingRoute then
     for key, descriptor in pairs(iconBorder) do SPECIAL_FINDER.trigger.icon[key] = descriptor end
     for key, descriptor in pairs(iconTint) do SPECIAL_FINDER.trigger.icon[key] = descriptor end
 
-    for _, effectKey in ipairs(TEXTURE_INDICATOR_EFFECT_ORDER) do
+    for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
         local key = effectKey
-        local def = TRIGGER_PANEL_EFFECT_DEFS[key]
+        local def = INDICATOR_EFFECT_DEFS[key]
         local top = ST._DefineSettingRoute({
             idPrefix = "panel.trigger.effects." .. key,
             scope = SPECIAL_FINDER_SCOPE,
@@ -1203,7 +1190,7 @@ if ST._DefineSettingRoute then
             sectionLabel = "Visual Effects",
             collapseKeys = { "effects_triggerEffects" },
             rowScope = "primary",
-            applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
+            applies = function(context) return SpecialFinderIndicatorEffectOffered(context, key) end,
         })
         local finder = {
             enabled = top:Setting({ key = "enabled", label = def.label }),
@@ -1220,7 +1207,7 @@ if ST._DefineSettingRoute then
             advancedKey = "triggerEffect_" .. key,
             -- Structural only: the gear exists with the effect off too, opening
             -- its panel read-only behind the unlock strip.
-            applies = function(context) return SpecialFinderTriggerEffectOffered(context, key) end,
+            applies = function(context) return SpecialFinderIndicatorEffectOffered(context, key) end,
         })
         finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
         finder.activation = advanced:Setting({key="activation",label="Animate When",applies=SpecialFinderActivationEffect})
@@ -1272,8 +1259,7 @@ if ST._DefineSettingRoute then
     end
 end
 
-ST._BuildTriggerIconAppearanceTab = BuildTriggerIconAppearanceTab
-ST._BuildTriggerEffectsTab = BuildTriggerEffectsTab
-ST._BuildTexturePanelAppearanceTab = BuildTexturePanelAppearanceTab
-ST._GetStandaloneTextureSettings = GetStandaloneTextureSettings
-ST._OpenOrRebindStandaloneTexturePicker = OpenOrRebindStandaloneTexturePicker
+ST._BuildIndicatorIconAppearance = BuildIndicatorIconAppearance
+ST._BuildIndicatorEffectsTab = BuildIndicatorEffectsTab
+ST._BuildIndicatorTextureAppearance = BuildIndicatorTextureAppearance
+ST._OpenOrRebindIndicatorTexturePicker = OpenOrRebindIndicatorTexturePicker

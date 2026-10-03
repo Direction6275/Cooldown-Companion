@@ -372,8 +372,8 @@ function CooldownCompanion:ReanchorPanelSectionDependents(groupId)
     -- anchor in their own display settings rather than group.anchor,
     -- so neither pass above sees them. Their one re-anchor path is the display
     -- refresh.
-    if self.ReanchorStandaloneDisplayDependents then
-        self:ReanchorStandaloneDisplayDependents(targetFrameName)
+    if self.ReanchorIndicatorDependents then
+        self:ReanchorIndicatorDependents(targetFrameName)
     end
 end
 

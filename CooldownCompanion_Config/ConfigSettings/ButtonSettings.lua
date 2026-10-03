@@ -442,11 +442,11 @@ end
 -- Row grammar (RowWidgets.lua): the same shape as the spell section above,
 -- with a single panel-level event instead of a filtered set. One row, so it
 -- takes the left column and the right one stays empty.
-local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     -- Function-local, not an upvalue: see the note by the row-grammar imports.
     local BeginRowGrid = ST._BeginRowGrid
 
-    if not CooldownCompanion:IsTriggerPanelGroup(group) then
+    if not CooldownCompanion:IsConditionsIndicatorGroup(group) then
         return
     end
 
@@ -475,12 +475,12 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
         pulloutWidth = SOUND_PULLOUT_WIDTH,
         list = soundOptions,
         order = soundOptionOrder,
-        value = CooldownCompanion:GetTriggerPanelSoundAlertSelection(group, "onShow"),
+        value = CooldownCompanion:GetConditionsIndicatorSoundAlertSelection(group, "onShow"),
         onChange = function(value)
-            CooldownCompanion:SetTriggerPanelSoundAlertEvent(group, "onShow", value)
+            CooldownCompanion:SetConditionsIndicatorSoundAlertEvent(group, "onShow", value)
         end,
         onPreview = function(value)
-            CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(group, value)
+            CooldownCompanion:PreviewConditionsIndicatorSoundAlertSelection(group, value)
         end,
     })
 end
@@ -497,8 +497,8 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
         return
     end
 
-    if CooldownCompanion:IsTriggerPanelGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
-        BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+    if CooldownCompanion:IsConditionsIndicatorGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
+        BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
         return
     end
 

@@ -677,8 +677,8 @@ local function MoveEntrySelection(snapshot, targetGroupId)
     -- effects, judged before the destination touches the entries).
     CooldownCompanion:RemoveEntriesFromGroup(snapshot.group, snapshot.indices)
     for i, entry in ipairs(snapshot.entries) do
-        if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
-            CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, entry)
+        if CooldownCompanion.EnableIndicatorAuraDisplayForEntry then
+            CooldownCompanion:EnableIndicatorAuraDisplayForEntry(targetGroup, entry)
         end
         -- Bar placement and aura keys belong to the panel being left.
         ST.DetachEntryBarPlacement(entry)

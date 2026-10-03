@@ -75,7 +75,7 @@ ConfigSettings\ButtonPanelPreviewIcons.lua
 ConfigSettings\ButtonPanelPreviewBars.lua
 ConfigSettings\ButtonPanelPreviewEffects.lua
 ConfigSettings\ButtonPanelPreviewInteraction.lua
-ConfigSettings\ButtonPanelPreviewTriggers.lua
+ConfigSettings\ButtonPanelPreviewIndicators.lua
 ConfigSettings\PanelAttachmentDragPreview.lua
 ConfigSettings\PanelAttachmentDrag.lua
 ConfigSettings\ButtonPanelPreview.lua

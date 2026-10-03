@@ -75,7 +75,7 @@ local SOUND_ALERT_EVENT_LABELS = {
     onAuraStackGained = "Aura Stack Gained",
     onAuraRemoved = "Aura Removed",
 }
-local TRIGGER_PANEL_SOUND_EVENT_LABELS = {
+local CONDITIONS_INDICATOR_SOUND_EVENT_LABELS = {
     onShow = "Triggered",
 }
 
@@ -339,35 +339,35 @@ function CooldownCompanion:GetButtonSoundAlertChannel(buttonData)
     return DEFAULT_SOUND_CHANNEL
 end
 
-function CooldownCompanion:GetTriggerPanelSoundAlertConfig(groupOrId, createIfMissing)
+function CooldownCompanion:GetConditionsIndicatorSoundAlertConfig(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
-    if not self:IsTriggerPanelGroup(group) then return end
+    if not self:IsConditionsIndicatorGroup(group) then return end
     local settings = ST.Indicator.Initialize(group)
     if not settings.soundAlerts and createIfMissing then settings.soundAlerts = {} end
     return settings.soundAlerts
 end
 
-function CooldownCompanion:GetTriggerPanelSoundAlertSelection(groupOrId, eventKey)
-    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+function CooldownCompanion:GetConditionsIndicatorSoundAlertSelection(groupOrId, eventKey)
+    if CONDITIONS_INDICATOR_SOUND_EVENT_LABELS[eventKey] == nil then
         return SOUND_NONE_KEY
     end
 
-    local cfg = self:GetTriggerPanelSoundAlertConfig(groupOrId, false)
+    local cfg = self:GetConditionsIndicatorSoundAlertConfig(groupOrId, false)
     local soundName = cfg and cfg[eventKey]
     return soundName or SOUND_NONE_KEY
 end
 
-function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, soundName)
-    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+function CooldownCompanion:SetConditionsIndicatorSoundAlertEvent(groupOrId, eventKey, soundName)
+    if CONDITIONS_INDICATOR_SOUND_EVENT_LABELS[eventKey] == nil then
         return
     end
 
     local group = ResolveGroup(groupOrId)
-    if not self:IsTriggerPanelGroup(group) then
+    if not self:IsConditionsIndicatorGroup(group) then
         return
     end
 
-    local cfg = self:GetTriggerPanelSoundAlertConfig(group, true)
+    local cfg = self:GetConditionsIndicatorSoundAlertConfig(group, true)
     if not cfg then
         return
     end
@@ -545,11 +545,11 @@ local function GetButtonSpeechText(buttonData)
     return "Cooldown alert"
 end
 
-local function GetTriggerPanelSpeechText(group)
+local function GetConditionsIndicatorSpeechText(group)
     if type(group) == "table" and type(group.name) == "string" and group.name ~= "" then
         return group.name
     end
-    return "Trigger alert"
+    return "Indicator alert"
 end
 
 local function PlaySharedMediaSound(soundName, channel, speechText)
@@ -675,9 +675,9 @@ function CooldownCompanion:HasAnyAuraSoundForButton(buttonData)
     return false
 end
 
-function CooldownCompanion:PreviewTriggerPanelSoundAlertSelection(groupOrId, soundName)
+function CooldownCompanion:PreviewConditionsIndicatorSoundAlertSelection(groupOrId, soundName)
     local group = ResolveGroup(groupOrId)
-    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetConditionsIndicatorSpeechText(group))
 end
 
 function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
@@ -695,18 +695,18 @@ function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
 end
 
-function CooldownCompanion:PlayTriggerPanelSoundAlertEvent(groupOrId, eventKey)
-    if TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] == nil then
+function CooldownCompanion:PlayConditionsIndicatorSoundAlertEvent(groupOrId, eventKey)
+    if CONDITIONS_INDICATOR_SOUND_EVENT_LABELS[eventKey] == nil then
         return false
     end
 
     local group = ResolveGroup(groupOrId)
-    local soundName = self:GetTriggerPanelSoundAlertSelection(group, eventKey)
+    local soundName = self:GetConditionsIndicatorSoundAlertSelection(group, eventKey)
     if not soundName or soundName == SOUND_NONE_KEY then
         return false
     end
 
-    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetTriggerPanelSpeechText(group))
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetConditionsIndicatorSpeechText(group))
 end
 
 -- Necessary condition for CollectEnabledSoundAlertEvents below to return
@@ -861,8 +861,8 @@ function CooldownCompanion:UpdateButtonSoundAlerts(button, cooldownSpellID, cool
     end
 end
 
-function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMatched)
-    if not frame or not self:IsTriggerPanelGroup(group) then
+function CooldownCompanion:UpdateConditionsIndicatorSoundAlerts(frame, group, triggerMatched)
+    if not frame or not self:IsConditionsIndicatorGroup(group) then
         return
     end
     if ST.Indicator.UsesSourceSounds(group) then
@@ -879,7 +879,7 @@ function CooldownCompanion:UpdateTriggerPanelSoundAlerts(frame, group, triggerMa
     end
 
     if triggerMatched and not frame._triggerSoundWasVisible then
-        self:PlayTriggerPanelSoundAlertEvent(group, "onShow")
+        self:PlayConditionsIndicatorSoundAlertEvent(group, "onShow")
     end
 
     frame._triggerSoundWasVisible = triggerMatched

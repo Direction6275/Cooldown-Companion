@@ -129,7 +129,7 @@ end
 
 -- Also During Pandemic (a lone aura While Missing): the aura's own native
 -- display also shows inside its pandemic window, gated by Blizzard
--- (AuraDisplay "pandemicTexture"). Saved on the aura entry, the same key a
+-- (AuraDisplay "pandemicIndicatorAura"). Saved on the aura entry, the same key a
 -- panel entry uses (showWhileAuraPandemic). Group tracking has no form.
 function I.AlsoDuringPandemic(group)
     if not I.ShowsWhileMissing(group) then return false end
@@ -398,7 +398,7 @@ end
 local function CollectNativeEffects(group, skipCombatOnly)
     I.Effects(group)
     local settings = I.Settings(group)
-    local store = Addon.NormalizeTriggerPanelEffectStore(settings)
+    local store = Addon.NormalizeIndicatorEffectStore(settings)
     local effects = {}
     for _, key in ipairs(I.EffectOrder) do
         local effect = store[key]
@@ -748,7 +748,7 @@ end
 function I.IconSettings(group)
     local settings = I.Settings(group)
     if not settings then return end
-    local icon = Addon.NormalizeTriggerIconSettings(CopyTable(settings.icon))
+    local icon = Addon.NormalizeIndicatorIconSettings(CopyTable(settings.icon))
     local source = I.Primary(group)
     if not icon.manualIcon and source then icon.manualIcon = SourceIcon(source) end
     return icon
@@ -760,7 +760,7 @@ function I.ArtworkIcon(group)
     local settings = I.Settings(group)
     if not settings then return end
     local chosen = settings.icon and settings.icon.manualIcon
-    if chosen and Addon.IsValidTriggerPanelIconTexture(chosen) then return chosen end
+    if chosen and Addon.IsValidIndicatorIconTexture(chosen) then return chosen end
     local source = I.Primary(group)
     return source and SourceIcon(source)
 end
@@ -770,14 +770,14 @@ function I.NativeSettings(group, resolvedIcon)
     local settings = I.Settings(group)
     if not settings then return end
     if settings.displayType == "texture" then
-        return Addon:GetTexturePanelSettings(group, true)
+        return Addon:GetIndicatorTextureSettings(group, true)
     end
     local visual = { enabled = true, sourceType = "file", sourceValue = "Interface\\Buttons\\WHITE8x8",
         blendMode = "BLEND", locationType = "CENTER", color = {1, 1, 1, 1} }
     if settings.displayType == "icon" then
         local icon = resolvedIcon or I.IconSettings(group)
         visual.sourceValue = icon.manualIcon
-        visual.width, visual.height = Addon.GetTriggerIconDimensions(icon)
+        visual.width, visual.height = Addon.GetIndicatorIconDimensions(icon)
         visual.enabled = icon.manualIcon ~= nil
     else
         visual.width, visual.height = settings.text.width or 180, settings.text.height or 48

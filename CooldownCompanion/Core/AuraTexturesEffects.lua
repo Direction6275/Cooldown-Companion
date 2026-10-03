@@ -94,7 +94,7 @@ local function ApplyTextureVisual(texture, settings, alpha, flipH, flipV, rotati
     texture:Show()
 end
 
-function CooldownCompanion:BuildTexturePanelGeometry(settings, baseWidth, baseHeight)
+function CooldownCompanion:BuildIndicatorTextureGeometry(settings, baseWidth, baseHeight)
     local dims = LOCATION_DIMENSIONS[settings.locationType] or LOCATION_DIMENSIONS[LOCATION_CENTER]
     local pieceWidth = math_max(1, (baseWidth or DEFAULT_TEXTURE_SIZE) * (dims.width or 1) * GetStretchMultiplier(settings.stretchX))
     local pieceHeight = math_max(1, (baseHeight or DEFAULT_TEXTURE_SIZE) * (dims.height or 1) * GetStretchMultiplier(settings.stretchY))
@@ -158,7 +158,7 @@ end
 
 -- Shared by the ordinary preview renderer and the AuraSlot-owned production
 -- renderer so both paths use identical bounds and selected-texture alpha.
-function CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+function CooldownCompanion:GetIndicatorTextureRenderGeometry(settings)
     if type(settings) ~= "table" then
         return nil, nil
     end
@@ -166,7 +166,7 @@ function CooldownCompanion:GetTexturePanelRenderGeometry(settings)
     local sourceWidth = settings.width and settings.width > 0 and settings.width or DEFAULT_TEXTURE_SIZE
     local sourceHeight = settings.height and settings.height > 0 and settings.height or DEFAULT_TEXTURE_SIZE
     local scale = settings.scale or 1
-    local geometry = self:BuildTexturePanelGeometry(settings, sourceWidth * scale, sourceHeight * scale)
+    local geometry = self:BuildIndicatorTextureGeometry(settings, sourceWidth * scale, sourceHeight * scale)
     local color = settings.color or { 1, 1, 1, 1 }
     local alpha = Clamp((color[4] or 1) * (settings.alpha or 1), 0.05, 1)
     return geometry, alpha
@@ -240,7 +240,7 @@ local function SetTextureIndicatorBaseVisuals(host)
     end
 
     if displayType == "icon" and host.iconFrame and host.iconFrame.icon and host.iconFrame.icon:IsShown() then
-        local color = CopyColor(host._triggerIconBaseColor) or { 1, 1, 1, 1 }
+        local color = CopyColor(host._indicatorIconBaseColor) or { 1, 1, 1, 1 }
         host.iconFrame.icon:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
         host._indicatorBaseColor = color
@@ -249,7 +249,7 @@ local function SetTextureIndicatorBaseVisuals(host)
     end
 
     if displayType == "text" and host.textFrame and host.textFrame.text and host.textFrame.text:IsShown() then
-        local color = CopyColor(host._triggerTextBaseColor) or { 1, 1, 1, 1 }
+        local color = CopyColor(host._indicatorTextBaseColor) or { 1, 1, 1, 1 }
         host.textFrame.text:SetTextColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
         ST.Indicator.PaintReadoutColors(host, color)
         host._indicatorBaseAlpha = Clamp(color[4] ~= nil and color[4] or 1, 0, 1)
@@ -458,7 +458,7 @@ end
 -- display). That display is drawn the whole time the aura is UP too, only
 -- clipped away, so a per-frame Lua script there runs for nothing most of the
 -- session. Bounce and Color Shift on artwork run as Blizzard AnimationGroups
--- instead, the way the native aura kit runs them (BuildTexturePanelSlotKit):
+-- instead, the way the native aura kit runs them (BuildAuraIndicatorSlotKit):
 -- same period, same easing. Shrink / Expand and Text Only Color Shift keep
 -- the script (a Scale group distorts text and borders; text color has no
 -- animation type).
@@ -874,17 +874,17 @@ local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
     return false
 end
 
-local function DoesTriggerPanelMatch(frame)
+local function DoesIndicatorMatch(frame)
     local group = frame and frame.groupId and ResolveGroup(frame.groupId)
     return ST.Indicator.Match(frame, group)
 end
 
-function CooldownCompanion:ApplyTriggerPanelEffects(host, button, group, effectsActive, previewEffects)
+function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsActive, previewEffects)
     if not host or not button or type(group) ~= "table" then
         return
     end
 
-    local effects = CooldownCompanion:GetTriggerPanelEffectSettings(group)
+    local effects = CooldownCompanion:GetIndicatorEffectSettings(group)
     if not effects or not effectsActive then
         StopAllTextureIndicatorEffects(host)
         return
@@ -951,5 +951,5 @@ end
 AT.LayoutTexturePieces = LayoutTexturePieces
 AT.SetTextureIndicatorBaseVisuals = SetTextureIndicatorBaseVisuals
 AT.StopAllTextureIndicatorEffects = StopAllTextureIndicatorEffects
-AT.DoesTriggerPanelMatch = DoesTriggerPanelMatch
+AT.DoesIndicatorMatch = DoesIndicatorMatch
 AT.EvaluateTriggerRowCondition = EvaluateTriggerRowCondition

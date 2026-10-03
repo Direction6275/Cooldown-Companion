@@ -46,7 +46,7 @@ if hooksecurefunc and CloseDropDownMenus then
     hooksecurefunc("CloseDropDownMenus", CloseQuickMenuPin)
 end
 
-local function RefreshStandalone(groupId, group)
+local function RefreshIndicatorAnchor(groupId, group)
     CooldownCompanion:RebuildPanelAlphaDependencyTargets()
     CooldownCompanion:RefreshGroupFrame(groupId)
     if group.parentContainerId then
@@ -55,7 +55,7 @@ local function RefreshStandalone(groupId, group)
     CooldownCompanion:RefreshConfigPanel()
 end
 
-local function SetStandaloneAnchor(groupId, group, target)
+local function SetIndicatorAnchor(groupId, group, target)
     if target == CooldownCompanion:GetCursorAnchorTargetName() then
         return CooldownCompanion:SetGroupAnchor(groupId, target)
     end
@@ -67,7 +67,7 @@ local function SetStandaloneAnchor(groupId, group, target)
             return false
         end
     end
-    local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(group)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(group)
     if type(settings) ~= "table" then return false end
     local options = CooldownCompanion:GetGroupAnchorValidationOptions(groupId)
     if not CooldownCompanion:ValidateAddonFrameAnchorTarget(target, options) then
@@ -89,7 +89,7 @@ local function SetStandaloneAnchor(groupId, group, target)
         CooldownCompanion:Print("Frame '" .. tostring(target) .. "' not found.")
         return false
     end
-    RefreshStandalone(groupId, group)
+    RefreshIndicatorAnchor(groupId, group)
     return true
 end
 
@@ -137,8 +137,8 @@ function CooldownCompanion:ApplyMoverQuickAnchor(descriptor, target)
         local group = self.db.profile.groups[descriptor.id]
         if not group then return false end
         local applied
-        if self:IsStandaloneTexturePanelGroup(group) then
-            applied = SetStandaloneAnchor(descriptor.id, group, target)
+        if ST.IsIndicatorGroup(group) then
+            applied = SetIndicatorAnchor(descriptor.id, group, target)
         else
             applied = self:SetGroupAnchor(descriptor.id, target)
         end
@@ -156,9 +156,9 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
         if not group then return end
         if self:IsGroupCursorAnchored(group) then
             self:SetGroupAnchor(descriptor.id, self:GetCursorAnchorTargetName())
-        elseif self:IsStandaloneTexturePanelGroup(group) then
-            local settings = self:GetStandaloneTextureAnchorSettings(group)
-            SetStandaloneAnchor(descriptor.id, group, settings and settings.relativeTo or "UIParent")
+        elseif ST.IsIndicatorGroup(group) then
+            local settings = self:GetIndicatorAnchorSettings(group)
+            SetIndicatorAnchor(descriptor.id, group, settings and settings.relativeTo or "UIParent")
         else
             local target = type(group.anchor) == "table" and group.anchor.relativeTo
             if not target then
@@ -178,8 +178,8 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
                 point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = 0,
             }
             self:AnchorContainerFrame(frame, container.anchor)
-            if self.SyncGroupedStandalonePreviewSettings then
-                self:SyncGroupedStandalonePreviewSettings(descriptor.id, -oldX, -oldY)
+            if self.SyncGroupedIndicatorPreviewSettings then
+                self:SyncGroupedIndicatorPreviewSettings(descriptor.id, -oldX, -oldY)
             end
             self:RefreshContainerWrapper(descriptor.id)
             self:RefreshConfigPanel()

@@ -52,7 +52,7 @@ local ResetBarSlotWorkspaceState = PP.ResetBarSlotWorkspaceState
 -- ButtonPanelPreviewSections.lua
 local SectionDrag = PP.SectionDrag
 
--- ButtonPanelPreviewTriggers.lua
+-- ButtonPanelPreviewIndicators.lua
 local BuildSelectionStrip = PP.BuildSelectionStrip
 
 -- ButtonPanelPreviewInteraction.lua
@@ -899,7 +899,7 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     end
 
     local slots = preview.layoutDrag and preview.layoutDrag.slots
-    if CooldownCompanion:IsTexturePanelGroup(group) then
+    if ST.Indicator.IsAura(group) then
         return true
     end
     if not slots then

@@ -1473,8 +1473,7 @@ local function IsIconModePanel(group)
     if group.displayMode ~= nil and group.displayMode ~= "icons" then
         return false
     end
-    if CooldownCompanion.IsStandaloneTexturePanelGroup
-        and CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+    if ST.IsIndicatorGroup(group) then
         return false
     end
     return true
@@ -1526,7 +1525,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
 
     if ST.IsIndicatorGroup(group) then
         local settings = ST.Indicator.NativeSettings(group)
-        local geometry = settings and CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+        local geometry = settings and CooldownCompanion:GetIndicatorTextureRenderGeometry(settings)
         if geometry then return geometry.boundsWidth, geometry.boundsHeight end
         return 220, 90
     end

@@ -67,7 +67,7 @@ local function IsPanelButton(button)
     end
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
-    return CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    return ST.IsIndicatorGroup(group)
 end
 
 -- ForEachIndexedSpellButton callback: collect this fire's matched buttons and

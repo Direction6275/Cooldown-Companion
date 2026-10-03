@@ -939,15 +939,15 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
 -- Group export and apply
 ------------------------------------------------------------------------
 
-local function GetCustomBarExportConflictBlockMessage()
+local function GetResourceBarConflictExportBlockMessage()
     if CooldownCompanion.GetCurrentResourceBarConflictExportMessage then
         return CooldownCompanion:GetCurrentResourceBarConflictExportMessage()
     end
     return nil
 end
 
-local function BlockCustomBarExportForResourceBarConflict()
-    local message = GetCustomBarExportConflictBlockMessage()
+local function BlockExportForResourceBarConflict()
+    local message = GetResourceBarConflictExportBlockMessage()
     if message then
         if CooldownCompanion.Print then
             CooldownCompanion:Print(message)
@@ -971,7 +971,7 @@ end
 
 local function EncodeExportData(payload)
     if type(payload) == "table" and payload.type == "setup" and payload.resources then
-        local blocked = BlockCustomBarExportForResourceBarConflict()
+        local blocked = BlockExportForResourceBarConflict()
         if blocked then
             return nil
         end
@@ -1088,8 +1088,8 @@ local function BuildImportedRootAnchor(relativeTo)
     }
 end
 
-local function ResetImportedStandalonePanelAnchor(panel)
-    local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
+local function ResetImportedIndicatorAnchor(panel)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     if type(settings) ~= "table" then
         return
     end
@@ -1342,14 +1342,14 @@ local function PrintImportSanitizerNotes(importState)
     end
 end
 
-local function RemapImportedStandalonePanelAnchor(panel, newGroupId, importState)
-    local settings = CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
+local function RemapImportedIndicatorAnchor(panel, newGroupId, importState)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     if not relativeTo or relativeTo == "UIParent" then
         return
     end
     if type(relativeTo) ~= "string" then
-        ResetImportedStandalonePanelAnchor(panel)
+        ResetImportedIndicatorAnchor(panel)
         return
     end
     local groupRef = tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
@@ -1362,7 +1362,7 @@ local function RemapImportedStandalonePanelAnchor(panel, newGroupId, importState
         if targetFrameName then
             settings.relativeTo = targetFrameName
         else
-            ResetImportedStandalonePanelAnchor(panel)
+            ResetImportedIndicatorAnchor(panel)
         end
         return
     end
@@ -1371,12 +1371,12 @@ local function RemapImportedStandalonePanelAnchor(panel, newGroupId, importState
         if targetContainerId then
             settings.relativeTo = "CooldownCompanionContainer" .. tostring(targetContainerId)
         else
-            ResetImportedStandalonePanelAnchor(panel)
+            ResetImportedIndicatorAnchor(panel)
         end
         return
     end
     if relativeTo:find("^CooldownCompanion") then
-        ResetImportedStandalonePanelAnchor(panel)
+        ResetImportedIndicatorAnchor(panel)
         return
     end
 end
@@ -1412,7 +1412,7 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
                 end
             end
         end
-        RemapImportedStandalonePanelAnchor(panel, newGid, importState)
+        RemapImportedIndicatorAnchor(panel, newGid, importState)
     end
 end
 
@@ -1686,7 +1686,7 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
 -- classKey defaults to the current class. Setup imports pass the class the
 -- payload targets, so a cross-class import respects THAT class's pending
 -- conflict, not the importing character's.
-local function BlockCustomBarsImportForResourceBarConflict(classKey)
+local function BlockImportForResourceBarConflict(classKey)
     classKey = classKey
         or (CooldownCompanion.GetCurrentResourceBarClassKey
             and CooldownCompanion:GetCurrentResourceBarClassKey())
@@ -1777,7 +1777,7 @@ local function ApplySetupImportData(data, existingPanelIds)
         return false
     end
 
-    if resourcesClassKey and BlockCustomBarsImportForResourceBarConflict(resourcesClassKey) then
+    if resourcesClassKey and BlockImportForResourceBarConflict(resourcesClassKey) then
         return false
     end
 
@@ -1878,7 +1878,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     return applied and migrationOk
 end
 
-ST._BlockCustomBarsImportForResourceBarConflict = BlockCustomBarsImportForResourceBarConflict
+ST._BlockImportForResourceBarConflict = BlockImportForResourceBarConflict
 ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 ST._ApplySetupImportData = ApplySetupImportData
 

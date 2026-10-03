@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - ButtonPanelPreviewTriggers
+    CooldownCompanion - ButtonPanelPreviewIndicators
     Indicator previews and fallback entry selection strips.
 
     Part of the ButtonPanelPreview family; see its ordered block in the addon TOC.
@@ -361,7 +361,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
             end
         end
         -- Every enabled effect plays together, for aura and condition sources.
-        CooldownCompanion:ApplyTriggerPanelEffects(surface,sample,candidate,true,true)
+        CooldownCompanion:ApplyIndicatorEffects(surface,sample,candidate,true,true)
     end
     local width,height=surface:GetSize()
     local footerHeight = 0
@@ -569,7 +569,7 @@ end
 
 PP.BuildSelectionStrip = BuildSelectionStrip
 
-function ST._RefreshTriggerDisplayVisual(groupId)
+function ST._RefreshIndicatorDisplayVisual(groupId)
     if groupId ~= CS.selectedGroup then return false end
     ST._RefreshButtonsPreviewMirror(groupId)
     return true

@@ -485,8 +485,8 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                 if type(row.visibility.reasonNames) == "table" and #row.visibility.reasonNames > 0 then
                     parts[#parts + 1] = "visibilityReason=" .. table.concat(row.visibility.reasonNames, "+")
                 end
-                if row.visibility.triggerSuppressed then
-                    parts[#parts + 1] = "triggerSuppressed=true"
+                if row.visibility.indicatorSourceSuppressed then
+                    parts[#parts + 1] = "indicatorSourceSuppressed=true"
                 end
             end
             if row.visuals then

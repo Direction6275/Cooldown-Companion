@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Core/AuraTexturesDisplay.lua
-    Aura texture host creation, standalone display rendering, and refresh flow.
+    Aura texture host creation, Indicator display rendering, and refresh flow.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -24,7 +24,7 @@ local Clamp = AT.Clamp
 local NormalizeAnchorPoint = AT.NormalizeAnchorPoint
 local ResolveGroup = AT.ResolveGroup
 local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
-local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
+local DoesIndicatorMatch = AT.DoesIndicatorMatch
 
 local NUDGE_BTN_SIZE = 12
 local PANEL_HIGHLIGHT_R = 0.6
@@ -113,7 +113,7 @@ local function GetGroupedPreviewContainerFrame(group, groupId)
     return CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[group.parentContainerId] or nil
 end
 
-local function GetStandaloneScreenAnchorPoint(settings)
+local function GetIndicatorScreenAnchorPoint(settings)
     local point = settings and settings.point or "CENTER"
     local relativePoint = settings and settings.relativePoint or "CENTER"
     local x = tonumber(settings and settings.x) or 0
@@ -156,12 +156,12 @@ local function GetTextureHostDisplayCoords(host, point, relativePoint)
     return x, y, normalizedPoint, normalizedRelativePoint
 end
 
-local function HasStandaloneAnchorTarget(settings)
+local function HasIndicatorAnchorTarget(settings)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     return type(relativeTo) == "string" and relativeTo ~= "" and relativeTo ~= UI_PARENT_NAME
 end
 
-local function GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
+local function GetIndicatorAnchorValidationOptions(relativeTo, groupId, domain)
     if domain == "panel" then
         return {
             domain = "panel",
@@ -180,7 +180,7 @@ local function IsFrameLikeAnchorTarget(frame)
     return type(frame) == "table" and type(frame.GetObjectType) == "function"
 end
 
-local function GetStandaloneAnchorTargetFrame(group, settings, groupId, domain)
+local function GetIndicatorAnchorTargetFrame(group, settings, groupId, domain)
     if not (group and type(settings) == "table") then
         return nil
     end
@@ -191,7 +191,7 @@ local function GetStandaloneAnchorTargetFrame(group, settings, groupId, domain)
 
     local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(
         relativeTo,
-        GetStandaloneAnchorValidationOptions(relativeTo, groupId, domain)
+        GetIndicatorAnchorValidationOptions(relativeTo, groupId, domain)
     )
     if not ok then
         return nil, relativeTo
@@ -203,17 +203,17 @@ local function GetStandaloneAnchorTargetFrame(group, settings, groupId, domain)
     return frame, relativeTo
 end
 
-local function GetStandalonePanelAnchorFrame(group, settings, groupId)
+local function GetIndicatorPanelAnchorFrame(group, settings, groupId)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     if not (group and group.parentContainerId)
         or type(relativeTo) ~= "string"
         or not relativeTo:match("^CooldownCompanionGroup%d+$") then
         return nil
     end
-    return GetStandaloneAnchorTargetFrame(group, settings, groupId, "panel")
+    return GetIndicatorAnchorTargetFrame(group, settings, groupId, "panel")
 end
 
-local function GetStandaloneFrameAnchorFrame(group, settings, groupId)
+local function GetIndicatorFrameAnchorFrame(group, settings, groupId)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     if type(relativeTo) ~= "string"
         or relativeTo == ""
@@ -221,20 +221,20 @@ local function GetStandaloneFrameAnchorFrame(group, settings, groupId)
         or (group and group.parentContainerId and relativeTo:match("^CooldownCompanionGroup%d+$")) then
         return nil
     end
-    return GetStandaloneAnchorTargetFrame(group, settings, groupId, "external")
+    return GetIndicatorAnchorTargetFrame(group, settings, groupId, "external")
 end
 
---- The frame a standalone display's host is POSITIONED against.
+--- The frame an Indicator display's host is POSITIONED against.
 --- Both callers -- the SetPoint that places the host and the drag save that
 --- decides whether the host still sits on its target -- have to agree, and both
 --- want the target's ANCHORING BODY: a sectioned panel's frame spans the union
 --- of its base cluster and its sections, and the base row is what a dependent
 --- is glued to. The alpha-inheritance lookup deliberately does NOT come through
 --- here; identity stays on the real panel frame.
-local function GetStandaloneResolvedAnchorFrame(group, settings, groupId)
-    local frame, name = GetStandalonePanelAnchorFrame(group, settings, groupId)
+local function GetIndicatorResolvedAnchorFrame(group, settings, groupId)
+    local frame, name = GetIndicatorPanelAnchorFrame(group, settings, groupId)
     if not frame then
-        frame, name = GetStandaloneFrameAnchorFrame(group, settings, groupId)
+        frame, name = GetIndicatorFrameAnchorFrame(group, settings, groupId)
     end
     if not frame then
         return nil, name
@@ -242,16 +242,16 @@ local function GetStandaloneResolvedAnchorFrame(group, settings, groupId)
     return ST.GetPanelAnchorBodyFrame(frame), name
 end
 
-local function StopStandalonePanelAlphaSync(host)
-    if host and host.standalonePanelAlphaSyncFrame then
-        host.standalonePanelAlphaSyncFrame:SetScript("OnUpdate", nil)
+local function StopIndicatorAlphaSync(host)
+    if host and host.indicatorAlphaSyncFrame then
+        host.indicatorAlphaSyncFrame:SetScript("OnUpdate", nil)
     end
     if host then
-        host._standalonePanelAlphaTarget = nil
-        host._standalonePanelAlphaVisibilityAlpha = nil
-        host._standalonePanelAlphaLastAlpha = nil
-        host._standalonePanelAlphaAccumulator = nil
-        host._standalonePanelAlphaSyncActive = nil
+        host._indicatorAlphaTarget = nil
+        host._indicatorAlphaVisibilityAlpha = nil
+        host._indicatorAlphaLastAlpha = nil
+        host._indicatorAlphaAccumulator = nil
+        host._indicatorAlphaSyncActive = nil
         if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
             CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
         end
@@ -311,28 +311,28 @@ local function GetInheritedFrameAlpha(frame)
     return 1
 end
 
-local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
+local function StartIndicatorAlphaSync(host, targetFrame, visibilityAlpha)
     if not (host and targetFrame) then
-        StopStandalonePanelAlphaSync(host)
+        StopIndicatorAlphaSync(host)
         return
     end
 
     visibilityAlpha = Clamp(visibilityAlpha or 1, 0, 1)
-    local wasSyncing = host._standalonePanelAlphaSyncActive == true
-    local syncChanged = host._standalonePanelAlphaTarget ~= targetFrame
-        or host._standalonePanelAlphaVisibilityAlpha ~= visibilityAlpha
+    local wasSyncing = host._indicatorAlphaSyncActive == true
+    local syncChanged = host._indicatorAlphaTarget ~= targetFrame
+        or host._indicatorAlphaVisibilityAlpha ~= visibilityAlpha
 
-    host._standalonePanelAlphaTarget = targetFrame
-    host._standalonePanelAlphaVisibilityAlpha = visibilityAlpha
+    host._indicatorAlphaTarget = targetFrame
+    host._indicatorAlphaVisibilityAlpha = visibilityAlpha
     if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
         CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
     end
     if syncChanged or not wasSyncing then
-        host._standalonePanelAlphaAccumulator = 0
+        host._indicatorAlphaAccumulator = 0
         local inheritedAlpha = GetInheritedFrameAlpha(targetFrame)
         if inheritedAlpha ~= nil then
             local alpha = Clamp(inheritedAlpha * visibilityAlpha, 0, 1)
-            host._standalonePanelAlphaLastAlpha = alpha
+            host._indicatorAlphaLastAlpha = alpha
             host:SetAlpha(alpha)
         end
     end
@@ -340,43 +340,43 @@ local function StartStandalonePanelAlphaSync(host, targetFrame, visibilityAlpha)
         return
     end
 
-    if not host.standalonePanelAlphaSyncFrame then
-        host.standalonePanelAlphaSyncFrame = CreateFrame("Frame", nil, host)
+    if not host.indicatorAlphaSyncFrame then
+        host.indicatorAlphaSyncFrame = CreateFrame("Frame", nil, host)
     end
 
-    host._standalonePanelAlphaSyncActive = true
-    host.standalonePanelAlphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-        local activeTarget = host._standalonePanelAlphaTarget
+    host._indicatorAlphaSyncActive = true
+    host.indicatorAlphaSyncFrame:SetScript("OnUpdate", function(self, dt)
+        local activeTarget = host._indicatorAlphaTarget
         if not activeTarget then
             self:SetScript("OnUpdate", nil)
-            host._standalonePanelAlphaSyncActive = nil
+            host._indicatorAlphaSyncActive = nil
             return
         end
 
-        host._standalonePanelAlphaAccumulator = (host._standalonePanelAlphaAccumulator or 0) + dt
-        if host._standalonePanelAlphaAccumulator < (1 / 30) then
+        host._indicatorAlphaAccumulator = (host._indicatorAlphaAccumulator or 0) + dt
+        if host._indicatorAlphaAccumulator < (1 / 30) then
             return
         end
-        host._standalonePanelAlphaAccumulator = 0
+        host._indicatorAlphaAccumulator = 0
 
         local inheritedAlpha = GetInheritedFrameAlpha(activeTarget)
         if inheritedAlpha == nil then
             return
         end
-        local alpha = Clamp(inheritedAlpha * (host._standalonePanelAlphaVisibilityAlpha or 1), 0, 1)
-        if alpha ~= host._standalonePanelAlphaLastAlpha then
-            host._standalonePanelAlphaLastAlpha = alpha
+        local alpha = Clamp(inheritedAlpha * (host._indicatorAlphaVisibilityAlpha or 1), 0, 1)
+        if alpha ~= host._indicatorAlphaLastAlpha then
+            host._indicatorAlphaLastAlpha = alpha
             host:SetAlpha(alpha)
         end
     end)
 end
 
-local function SaveGroupedStandalonePreviewSettings(host, group, settings, groupId)
+local function SaveGroupedIndicatorPreviewSettings(host, group, settings, groupId)
     local containerFrame = GetGroupedPreviewContainerFrame(group, groupId)
     if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
         return false
     end
-    if HasStandaloneAnchorTarget(settings) then
+    if HasIndicatorAnchorTarget(settings) then
         return false
     end
 
@@ -456,11 +456,11 @@ local function SaveTextureHostPosition(host)
     end
 
     local previousRelativeTo = settings.relativeTo
-    if not SaveGroupedStandalonePreviewSettings(host, group, settings, owner and owner._groupId) then
+    if not SaveGroupedIndicatorPreviewSettings(host, group, settings, owner and owner._groupId) then
         local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
         settings.point = NormalizeAnchorPoint(point)
         settings.relativePoint = NormalizeAnchorPoint(relPoint)
-        local targetFrame, targetName = GetStandaloneResolvedAnchorFrame(group, settings, owner and owner._groupId)
+        local targetFrame, targetName = GetIndicatorResolvedAnchorFrame(group, settings, owner and owner._groupId)
         if targetFrame and relativeFrame == targetFrame then
             settings.relativeTo = targetName
         else
@@ -483,7 +483,7 @@ local function SaveTextureHostPosition(host)
     end
 end
 
-local function StartGroupedStandaloneWrapperTracking(host)
+local function StartGroupedIndicatorWrapperTracking(host)
     local owner = host and host._ownerButton or nil
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
     local containerId = group and group.parentContainerId or nil
@@ -492,7 +492,7 @@ local function StartGroupedStandaloneWrapperTracking(host)
     end
 end
 
-local function StopGroupedStandaloneWrapperTracking(host)
+local function StopGroupedIndicatorWrapperTracking(host)
     local owner = host and host._ownerButton or nil
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
     local containerId = group and group.parentContainerId or nil
@@ -545,7 +545,7 @@ local function BeginTextureHostDrag(host, surfaceDrag)
     host._dragCancelPending = nil
     host._isDragging = true
     host._arrangePanelSurfaceDrag = surfaceDrag and true or nil
-    StartGroupedStandaloneWrapperTracking(host)
+    StartGroupedIndicatorWrapperTracking(host)
     host:StartMoving()
     CooldownCompanion:UpdateIndicatorAnchorBody(CooldownCompanion.groupFrames[owner._groupId], group, host)
     CooldownCompanion:BeginMoverChromeFade(host)
@@ -587,8 +587,8 @@ local function FinishTextureHostDrag(host)
         and CooldownCompanion.IsGroupCursorAnchored
         and CooldownCompanion:IsGroupCursorAnchored(finishOwner._groupId) then
         -- A cursor-anchored host whose drag never began must not fall through
-        -- to the standalone save; that would write the host's parked screen
-        -- position into the standalone settings.
+        -- to the Indicator save; that would write the host's parked screen
+        -- position into the Indicator's anchor settings.
         host._arrangePanelSurfaceDrag = nil
         return false
     end
@@ -610,7 +610,7 @@ local function FinishTextureHostDrag(host)
     if snapDX ~= nil or snapDY ~= nil then
         host:AdjustPointsOffset(snapDX or 0, snapDY or 0)
     end
-    StopGroupedStandaloneWrapperTracking(host)
+    StopGroupedIndicatorWrapperTracking(host)
     if cancelSave then
         local owner, group = GetTextureHostPositionContext(host)
         CooldownCompanion:UpdateIndicatorAnchorBody(CooldownCompanion.groupFrames[owner._groupId], group)
@@ -667,10 +667,10 @@ local function EnsureAuraTextureNudger(host)
         local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        local settings = group and CooldownCompanion:GetTexturePanelSettings(group)
+        local settings = group and CooldownCompanion:GetIndicatorTextureSettings(group)
         local displayX, displayY
         if settings and group and group.parentContainerId
-            and not HasStandaloneAnchorTarget(settings)
+            and not HasIndicatorAnchorTarget(settings)
             and CooldownCompanion.IsContainerUnlockPreviewActive
             and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
         then
@@ -698,7 +698,7 @@ local function EnsureAuraTextureNudger(host)
     host.nudger = nudger
 end
 
-local function LockAuraTexturePanelFromMover(host)
+local function LockAuraIndicatorFromMover(host)
     local owner = host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
     if not group then
@@ -722,7 +722,7 @@ local function EnsureAuraTextureDragHandle(host)
     if host.dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
 
     local dragHandle = ST.MoverChrome.CreateHeader(host, "", function()
-        LockAuraTexturePanelFromMover(host)
+        LockAuraIndicatorFromMover(host)
     end, function()
         local groupId = host._ownerButton and host._ownerButton._groupId
         local group = groupId and CooldownCompanion.db.profile.groups[groupId]
@@ -875,7 +875,7 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
     if button.auraTextureHost then
         EnsureAuraTextureRuntimeRoot(button.auraTextureHost)
         -- Acquisition for a live display: the teardown latch never survives it.
-        button.auraTextureHost._standaloneTeardownFor = nil
+        button.auraTextureHost._indicatorTeardownFor = nil
         return button.auraTextureHost
     end
 
@@ -909,7 +909,7 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
         FinishTextureHostDrag(self)
     end)
 
-    -- Arrange selection for grouped standalone displays, including parked
+    -- Arrange selection for grouped Indicator displays, including parked
     -- cursor panels: clicking the visible host uses the same toggle/solo
     -- grammar as ordinary panel overlays and toolbar rows.
     host:SetScript("OnMouseUp", function(self, mouseButton)
@@ -962,7 +962,7 @@ function CooldownCompanion.ReleaseIndicatorPresenceHost(presence)
     presence._ccPresenceReleased = true
     StopAllTextureIndicatorEffects(presence)
     ST.Indicator.ReleaseVisual(presence)
-    CooldownCompanion.HideStandaloneDisplayVisuals(presence)
+    CooldownCompanion.HideIndicatorDisplayVisuals(presence)
 end
 
 local function ReleasePresenceDisplay(button)
@@ -983,7 +983,7 @@ function CooldownCompanion:GetAuraTextureMoverChromeForGroupFrame(groupFrame)
     return host and host.dragHandle, host and host.coordLabel, host and host.nudger
 end
 
-function CooldownCompanion.EnsureTriggerIconVisual(host)
+function CooldownCompanion.EnsureIndicatorIconVisual(host)
     if host.iconFrame then
         return host.iconFrame
     end
@@ -1004,7 +1004,7 @@ function CooldownCompanion.EnsureTriggerIconVisual(host)
     return frame
 end
 
-function CooldownCompanion.EnsureTriggerTextVisual(host)
+function CooldownCompanion.EnsureIndicatorTextVisual(host)
     if host.textFrame then
         return host.textFrame
     end
@@ -1030,7 +1030,7 @@ function CooldownCompanion.EnsureTriggerTextVisual(host)
     return frame
 end
 
-function CooldownCompanion.HideStandaloneDisplayVisuals(host)
+function CooldownCompanion.HideIndicatorDisplayVisuals(host)
     if not host then
         return
     end
@@ -1051,7 +1051,7 @@ function CooldownCompanion.HideStandaloneDisplayVisuals(host)
     host._indicatorBaseVisualsReady = nil
 end
 
-function CooldownCompanion.GetTriggerIconDimensions(settings)
+function CooldownCompanion.GetIndicatorIconDimensions(settings)
     if settings.maintainAspectRatio then
         local size = settings.buttonSize or 36
         return size, size
@@ -1074,7 +1074,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     -- dragging) so anything that shows or grabs the host reopens the teardown.
     -- Cleared explicitly on every prepare/render/finalize/release path.
     if groupId ~= nil
-        and host._standaloneTeardownFor == groupId
+        and host._indicatorTeardownFor == groupId
         and not host:IsShown()
         and not host._isDragging then
         return
@@ -1083,16 +1083,16 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     StopAllTextureIndicatorEffects(host)
     ReleasePresenceDisplay(button)
     host._ccPresenceMode = nil
-    StopStandalonePanelAlphaSync(host)
+    StopIndicatorAlphaSync(host)
     if host._isDragging then
         host._isDragging = nil
         host:StopMovingOrSizing()
-        StopGroupedStandaloneWrapperTracking(host)
+        StopGroupedIndicatorWrapperTracking(host)
         self:EndMoverChromeFade(host)
     end
     CooldownCompanion:EndDragSnapSession(host, false)
     ST.Indicator.ReleaseVisual(host)
-    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    CooldownCompanion.HideIndicatorDisplayVisuals(host)
     if host.visualRoot then
         host.visualRoot:SetAlpha(1)
     end
@@ -1110,7 +1110,7 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     SetAuraTextureOutlineShown(host, false)
     SetAuraTextureDragControlsShown(host, false)
     host:Hide()
-    host._standaloneTeardownFor = groupId
+    host._indicatorTeardownFor = groupId
 
     local group = groupId and ResolveGroup(groupId) or nil
     self:UpdateIndicatorAnchorBody(self.groupFrames and self.groupFrames[groupId], group)
@@ -1127,7 +1127,7 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     self:HideAuraTextureVisual(button)
     -- A retained host outlives this release, so the next hide must run the full
     -- body rather than trust a latch set before the entry changed hands.
-    button.auraTextureHost._standaloneTeardownFor = nil
+    button.auraTextureHost._indicatorTeardownFor = nil
     -- AuraButton has a permanent ChangeParent forbidden aspect. Once this
     -- host owns an AuraContainer, retain the whole topology across pooling;
     -- AuraDisplay parks the container and owns the pool token reconciliation.
@@ -1137,12 +1137,7 @@ function CooldownCompanion:ReleaseAuraTextureVisual(button)
     end
 end
 
-local function GetStandaloneTextureSettings(group)
-    local settings = ST.Indicator.Settings(group)
-    return settings and settings.signal
-end
-
-function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
+function CooldownCompanion.ResolveActiveIndicatorDisplay(button)
     local group = button._groupId and ResolveGroup(button._groupId)
     local settings = ST.Indicator.Settings(group)
     if not settings then return end
@@ -1151,9 +1146,9 @@ function CooldownCompanion.ResolveActiveStandaloneDisplay(button)
     return "texture", settings.signal
 end
 
-function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
-    local iconFrame = CooldownCompanion.EnsureTriggerIconVisual(host)
-    local width, height = CooldownCompanion.GetTriggerIconDimensions(settings)
+function CooldownCompanion.ApplyIndicatorIconVisual(host, settings)
+    local iconFrame = CooldownCompanion.EnsureIndicatorIconVisual(host)
+    local width, height = CooldownCompanion.GetIndicatorIconDimensions(settings)
     local borderSize = settings.borderSize or 0
     local borderRenderMode = ST.GetBorderRenderMode(settings)
     local borderLayoutSize = ST.GetEffectiveBorderLayoutSize(iconFrame, borderSize, borderRenderMode)
@@ -1162,14 +1157,14 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
     local borderColor = settings.borderColor or { 0, 0, 0, 1 }
 
     CooldownCompanion:ResetTextureIndicatorRootState(host)
-    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    CooldownCompanion.HideIndicatorDisplayVisuals(host)
 
     host._activeTextureSettings = nil
     host._activeTextureGeometry = nil
     host._activeDisplayType = "icon"
     host._indicatorBaseVisualsReady = nil
-    host._triggerTextBaseColor = nil
-    host._triggerIconBaseColor = CopyColor(iconTint) or { 1, 1, 1, 1 }
+    host._indicatorTextBaseColor = nil
+    host._indicatorIconBaseColor = CopyColor(iconTint) or { 1, 1, 1, 1 }
 
     host:SetSize(width, height)
     host.visualRoot:SetSize(width, height)
@@ -1210,7 +1205,7 @@ function CooldownCompanion.ApplyTriggerIconVisual(host, settings)
 end
 
 
-function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
+function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driverButton, displayType, settings, isConditionsIndicator)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
     local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
@@ -1223,14 +1218,14 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
         isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
-        triggerMatched = isTriggerPanel and frame and frame:IsShown() and DoesTriggerPanelMatch(frame) or false,
+        triggerMatched = isConditionsIndicator and frame and frame:IsShown() and DoesIndicatorMatch(frame) or false,
         showDisplay = false,
     }
 
     if settings then
         if state.isCursorLayoutPreview then
             state.showDisplay = true
-        elseif isTriggerPanel then
+        elseif isConditionsIndicator then
             state.showDisplay = state.triggerMatched or state.isUnlocked
         elseif state.isUnlocked then
             state.showDisplay = true
@@ -1248,8 +1243,8 @@ function CooldownCompanion:GetStandaloneDisplayVisibilityState(group, frame, dri
     return state
 end
 
-function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, settings, displayType, isTriggerPanel, effectsActive)
-    host._standaloneTeardownFor = nil
+function CooldownCompanion:RenderIndicatorDisplay(host, driverButton, group, settings, displayType, isConditionsIndicator, effectsActive)
+    host._indicatorTeardownFor = nil
     host._ccPresenceMode = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
@@ -1269,19 +1264,19 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
         settings.sourceValue,
         settings.mediaType
     )
-    local geometry = self:GetTexturePanelRenderGeometry(settings)
+    local geometry = self:GetIndicatorTextureRenderGeometry(settings)
     if not resolvedSourceType or not geometry then
         return false
     end
 
     -- Anything that repaints the host invalidates the teardown latch.
-    host._standaloneTeardownFor = nil
+    host._indicatorTeardownFor = nil
     host._ccPresenceMode = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
     host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
     SyncAuraTextureControlLevels(host, false)
     StopAllTextureIndicatorEffects(host)
-    CooldownCompanion.HideStandaloneDisplayVisuals(host)
+    CooldownCompanion.HideIndicatorDisplayVisuals(host)
     host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
     if host.visualRoot then
         host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
@@ -1297,7 +1292,7 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
     return true
 end
 
-local function PlaceStandaloneDisplay(self, host, group, sharedSettings, groupId, groupedPreviewFrame)
+local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId, groupedPreviewFrame)
     if not host._isDragging then
         local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
         if isCursorAnchored and self.AnchorFrameToCursor then
@@ -1305,7 +1300,7 @@ local function PlaceStandaloneDisplay(self, host, group, sharedSettings, groupId
         else
             local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
-            local anchorTargetFrame = GetStandaloneResolvedAnchorFrame(group, sharedSettings, groupId)
+            local anchorTargetFrame = GetIndicatorResolvedAnchorFrame(group, sharedSettings, groupId)
             if anchorTargetFrame then
                 host:SetPoint(
                     sharedSettings.point or "TOPLEFT",
@@ -1314,7 +1309,7 @@ local function PlaceStandaloneDisplay(self, host, group, sharedSettings, groupId
                     sharedSettings.x or 0,
                     sharedSettings.y or -5
                 )
-            elseif HasStandaloneAnchorTarget(sharedSettings) then
+            elseif HasIndicatorAnchorTarget(sharedSettings) then
                 host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
             elseif groupedPreviewFrame then
                 local preserveRelativeOffset = host._wrapperManaged
@@ -1325,7 +1320,7 @@ local function PlaceStandaloneDisplay(self, host, group, sharedSettings, groupId
                 if preserveRelativeOffset then
                     host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
                 else
-                    local screenAnchorX, screenAnchorY, point = GetStandaloneScreenAnchorPoint(sharedSettings)
+                    local screenAnchorX, screenAnchorY, point = GetIndicatorScreenAnchorPoint(sharedSettings)
                     local containerX, containerY = groupedPreviewFrame:GetCenter()
                     if screenAnchorX and screenAnchorY and containerX and containerY then
                         host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
@@ -1358,14 +1353,14 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost)
         frame._indicatorAnchorBody = body
     end
     frame._indicatorAnchorBodyActive = true
-    local settings = self:GetTexturePanelSettings(group)
+    local settings = self:GetIndicatorTextureSettings(group)
     local display = ST.Indicator.Settings(group)
     local width, height
     if display.displayType == "texture" then
-        local geometry = self:GetTexturePanelRenderGeometry(settings)
+        local geometry = self:GetIndicatorTextureRenderGeometry(settings)
         width, height = geometry.boundsWidth, geometry.boundsHeight
     elseif display.displayType == "icon" then
-        width, height = self.GetTriggerIconDimensions(self.NormalizeTriggerIconSettings(display.icon))
+        width, height = self.GetIndicatorIconDimensions(self.NormalizeIndicatorIconSettings(display.icon))
     else
         width, height = display.text.width or 180, display.text.height or 48
     end
@@ -1377,23 +1372,23 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost)
     else
         local previewFrame = GetGroupedPreviewContainerFrame(group, frame.groupId)
         body._wrapperManaged = previewFrame ~= nil
-        PlaceStandaloneDisplay(self, body, group, settings, frame.groupId, previewFrame)
+        PlaceIndicatorDisplay(self, body, group, settings, frame.groupId, previewFrame)
     end
     self:RefreshIndicatorAnchorAlpha(frame, group)
     return body
 end
 
-function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
+function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, isConditionsIndicator, visibilityState)
     -- This is the only path that shows the host, so it clears the teardown latch.
-    host._standaloneTeardownFor = nil
-    local sharedSettings = GetStandaloneTextureSettings(group) or {
+    host._indicatorTeardownFor = nil
+    local sharedSettings = CooldownCompanion:GetIndicatorAnchorSettings(group) or {
         point = "CENTER",
         relativePoint = "CENTER",
         x = 0,
         y = 0,
     }
 
-    PlaceStandaloneDisplay(self, host, group, sharedSettings, driverButton and driverButton._groupId,
+    PlaceIndicatorDisplay(self, host, group, sharedSettings, driverButton and driverButton._groupId,
         visibilityState and visibilityState.groupedPreviewFrame)
     host:Show()
 
@@ -1402,12 +1397,12 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
     local honorSourceVisibility = ST.Indicator.Settings(group).sourceVisibility ~= false
     local visibilityAlpha = honorSourceVisibility and Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1) or 1
     if visibilityState.bypassModuleAlpha then
-        StopStandalonePanelAlphaSync(host)
+        StopIndicatorAlphaSync(host)
         host:SetAlpha(bypassAlpha)
     else
         -- The owner supplies natural panel alpha; source dimming belongs only
         -- to this display and must never leak into downstream panel anchors.
-        StartStandalonePanelAlphaSync(host, frame, visibilityAlpha)
+        StartIndicatorAlphaSync(host, frame, visibilityAlpha)
     end
 
     local indicatorSettings = ST.Indicator.Settings(group)
@@ -1465,7 +1460,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
             -- or nudge writes back to the anchor.
             local anchor = group and group.anchor
             UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
-        elseif visibilityState.isGroupedPreview and not HasStandaloneAnchorTarget(sharedSettings) then
+        elseif visibilityState.isGroupedPreview and not HasIndicatorAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
                 sharedSettings.point or "CENTER",
@@ -1508,7 +1503,7 @@ function CooldownCompanion:FinalizeStandaloneDisplay(host, frame, driverButton, 
 
 end
 
--- Chrome for a PARKED cursor-anchored standalone panel. The cursor-preview
+-- Chrome for a PARKED cursor-anchored Indicator. The cursor-preview
 -- owner calls this when parking state or selection changes; the periodic
 -- visibility refresh computes the same answers, so the two never fight.
 -- Selection shows the host's own mover chrome; parked-unselected keeps the
@@ -1533,9 +1528,9 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
     end
 end
 
-function CooldownCompanion:SetIndependentStandalonePanelMoverShown(groupId, shown)
+function CooldownCompanion:SetIndependentIndicatorMoverShown(groupId, shown)
     local group = groupId and ResolveGroup(groupId) or nil
-    if not (group and self:IsStandaloneTexturePanelGroup(group)) then
+    if not (group and ST.IsIndicatorGroup(group)) then
         return
     end
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
@@ -1554,9 +1549,9 @@ function CooldownCompanion:SetIndependentStandalonePanelMoverShown(groupId, show
     SetAuraTextureDragControlsShown(host, shown, groupFrame and groupFrame._unlockGhost)
 end
 
-function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
+function CooldownCompanion:UpdateGroupedIndicatorPreviewSelection(groupId)
     local group = groupId and ResolveGroup(groupId) or nil
-    if not (group and group.parentContainerId and self:IsStandaloneTexturePanelGroup(group)) then
+    if not (group and group.parentContainerId and ST.IsIndicatorGroup(group)) then
         return
     end
 
@@ -1590,7 +1585,7 @@ function CooldownCompanion:UpdateGroupedStandalonePreviewSelection(groupId)
     SetAuraTextureDragControlsShown(host, showControls, groupFrame and groupFrame._unlockGhost)
 end
 
-function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, containerId)
+function CooldownCompanion:StartGroupedIndicatorPreviewHostDrag(groupId, containerId)
     local group = groupId and ResolveGroup(groupId) or nil
     if self._combatForcedLock or not (group and group.parentContainerId == containerId) then
         return false
@@ -1615,7 +1610,7 @@ function CooldownCompanion:StartGroupedStandalonePreviewHostDrag(groupId, contai
     return BeginTextureHostDrag(host)
 end
 
-function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
+function CooldownCompanion:StopGroupedIndicatorPreviewHostDrag(groupId, containerId)
     local group = groupId and ResolveGroup(groupId) or nil
     if not (group and group.parentContainerId == containerId) then
         return
@@ -1631,11 +1626,11 @@ function CooldownCompanion:StopGroupedStandalonePreviewHostDrag(groupId, contain
     FinishTextureHostDrag(host)
 end
 
-local function RoundGroupedStandaloneOffset(value)
+local function RoundGroupedIndicatorOffset(value)
     return math_floor(((tonumber(value) or 0) * 10) + 0.5) / 10
 end
 
-local function ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
+local function ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
     if not settings then
         return false
     end
@@ -1643,12 +1638,12 @@ local function ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
         return false
     end
 
-    settings.x = RoundGroupedStandaloneOffset((tonumber(settings.x) or 0) + (tonumber(deltaX) or 0))
-    settings.y = RoundGroupedStandaloneOffset((tonumber(settings.y) or 0) + (tonumber(deltaY) or 0))
+    settings.x = RoundGroupedIndicatorOffset((tonumber(settings.x) or 0) + (tonumber(deltaX) or 0))
+    settings.y = RoundGroupedIndicatorOffset((tonumber(settings.y) or 0) + (tonumber(deltaY) or 0))
     return true
 end
 
-function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, deltaX, deltaY)
+function CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, deltaX, deltaY)
     if not (containerId and self.GetPanels) then
         return
     end
@@ -1656,31 +1651,31 @@ function CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, del
     local panels = self:GetPanels(containerId)
     for _, panelInfo in ipairs(panels) do
         local group = panelInfo.group
-        if group and self:IsStandaloneTexturePanelGroup(group) then
+        if group and ST.IsIndicatorGroup(group) then
             local groupFrame = self.groupFrames and self.groupFrames[panelInfo.groupId] or nil
             local driverButton = ST.Indicator.RuntimeSource(groupFrame, group)
             local host = driverButton and driverButton.auraTextureHost or nil
-            local settings = self:GetTexturePanelSettings(group)
+            local settings = self:GetIndicatorTextureSettings(group)
 
             local didSync = false
-            local hasStandaloneAnchorTarget = HasStandaloneAnchorTarget(settings)
+            local hasIndicatorAnchorTarget = HasIndicatorAnchorTarget(settings)
             if host
                 and settings
-                and not hasStandaloneAnchorTarget
+                and not hasIndicatorAnchorTarget
                 and self.IsGroupVisibleInUnlockPreview
                 and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
                     group = group,
                     groupFrame = groupFrame,
                     checkCharVisibility = true,
                 })
-                and SaveGroupedStandalonePreviewSettings(host, group, settings, panelInfo.groupId)
+                and SaveGroupedIndicatorPreviewSettings(host, group, settings, panelInfo.groupId)
             then
                 didSync = true
                 UpdateTextureHostCoordLabel(host, settings.x, settings.y)
             end
             if not didSync
-                and not hasStandaloneAnchorTarget
-                and ApplyGroupedStandaloneSettingsDelta(settings, deltaX, deltaY)
+                and not hasIndicatorAnchorTarget
+                and ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
             then
                 if host and host.coordLabel and host:IsShown() then
                     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
@@ -1696,25 +1691,25 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local group = button._groupId and ResolveGroup(button._groupId) or nil
-    if not self:IsStandaloneTexturePanelGroup(group) then
+    if not ST.IsIndicatorGroup(group) then
         self:HideAuraTextureVisual(button)
         return
     end
 
     local frame = button:GetParent()
-    local isTriggerPanel = self:IsTriggerPanelGroup(group)
+    local isConditionsIndicator = self:IsConditionsIndicatorGroup(group)
     local driverButton = ST.Indicator.RuntimeSource(frame, group)
     if not driverButton then
         self:HideAuraTextureVisual(button)
         return
     end
 
-    local displayType, settings = CooldownCompanion.ResolveActiveStandaloneDisplay(driverButton)
+    local displayType, settings = CooldownCompanion.ResolveActiveIndicatorDisplay(driverButton)
     self:UpdateIndicatorAnchorBody(frame, group, driverButton.auraTextureHost)
-    local visibilityState = self:GetStandaloneDisplayVisibilityState(group, frame, driverButton, displayType, settings, isTriggerPanel)
+    local visibilityState = self:GetIndicatorDisplayVisibilityState(group, frame, driverButton, displayType, settings, isConditionsIndicator)
 
-    if isTriggerPanel and self.UpdateTriggerPanelSoundAlerts then
-        self:UpdateTriggerPanelSoundAlerts(frame, group, visibilityState.triggerSoundVisible)
+    if isConditionsIndicator and self.UpdateConditionsIndicatorSoundAlerts then
+        self:UpdateConditionsIndicatorSoundAlerts(frame, group, visibilityState.triggerSoundVisible)
     end
 
     if not settings or not visibilityState.showDisplay then
@@ -1727,8 +1722,8 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local host = self:EnsureAuraTextureHost(driverButton)
-    local auraControlled = not isTriggerPanel
-        and self:IsTexturePanelAuraDisplayEnabled(group, driverButton.buttonData)
+    local auraControlled = not isConditionsIndicator
+        and self:IsIndicatorAuraDisplayEnabled(group, driverButton.buttonData)
     -- Aura Indicators render production artwork only inside their native slot.
     -- Reveal it once the access-gated rebind has installed this source's token;
     -- a pooled host may still carry the previous source's slot. Layout/unlock
@@ -1765,13 +1760,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
                 ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass,
                     displayType == "icon" and settings or nil)
             elseif shown then
-                self:ApplyTriggerPanelEffects(copy, driverButton, group, rulesPass == true)
+                self:ApplyIndicatorEffects(copy, driverButton, group, rulesPass == true)
             end
         end
         -- Only a successful render repaints the host. A design with nothing to
         -- draw leaves the teardown latch alone, so the hide below stays cheap.
         if shown then
-            host._standaloneTeardownFor = nil
+            host._indicatorTeardownFor = nil
             -- Written only on change: these sit on the per-update path.
             local strata, hostLevel = driverButton:GetFrameStrata(), (driverButton:GetFrameLevel() or 1) + 20
             if not host._ccPresenceMode or host:GetFrameStrata() ~= strata or host:GetFrameLevel() ~= hostLevel then
@@ -1785,7 +1780,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
                 -- update. Every other render path clears this latch.
                 host._ccPresenceMode = true
                 StopAllTextureIndicatorEffects(host)
-                CooldownCompanion.HideStandaloneDisplayVisuals(host)
+                CooldownCompanion.HideIndicatorDisplayVisuals(host)
                 if host.visualRoot then host.visualRoot:SetAlpha(0) end
                 if host.auraRuntimeRoot then host.auraRuntimeRoot:SetAlpha(0) end
                 host._activeDisplayType, host._activeTextureSettings, host._activeTextureGeometry = nil, nil, nil
@@ -1829,13 +1824,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         if host.visualRoot then
             host.visualRoot:SetAlpha(1)
         end
-        shown = self:RenderStandaloneDisplay(
+        shown = self:RenderIndicatorDisplay(
             host,
             driverButton,
             group,
             settings,
             displayType,
-            isTriggerPanel,
+            isConditionsIndicator,
             visibilityState.triggerMatched
         )
     end
@@ -1849,7 +1844,7 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         return
     end
 
-    self:FinalizeStandaloneDisplay(host, frame, driverButton, group, settings, displayType, isTriggerPanel, visibilityState)
+    self:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, isConditionsIndicator, visibilityState)
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -1865,21 +1860,21 @@ function CooldownCompanion:RefreshAllAuraTextureVisuals()
     end
 end
 
---- Re-place every standalone display anchored to one panel.
+--- Re-place every Indicator display anchored to one panel.
 --- Called when that panel's sectioned state flips: the frame a host is pointed
 --- at changes hands between the panel frame and its base-cluster body, and a
 --- host left on the outgoing one would keep resolving positionally -- a hidden
 --- base anchor still reports its last rectangle -- so it would sit at a stale
---- spot rather than visibly break. A standalone display's anchor lives in its
+--- spot rather than visibly break. An Indicator display's anchor lives in its
 --- own display settings, not in group.anchor, which is why the panel and
 --- container passes in ReanchorPanelSectionDependents cannot find these.
-function CooldownCompanion:ReanchorStandaloneDisplayDependents(targetFrameName)
+function CooldownCompanion:ReanchorIndicatorDependents(targetFrameName)
     if type(targetFrameName) ~= "string" then return end
 
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = ResolveGroup(groupId)
-        if self:IsStandaloneTexturePanelGroup(group) then
-            local settings = GetStandaloneTextureSettings(group)
+        if ST.IsIndicatorGroup(group) then
+            local settings = CooldownCompanion:GetIndicatorAnchorSettings(group)
             if settings and settings.relativeTo == targetFrameName then
                 local driverButton = ST.Indicator.RuntimeSource(frame, group)
                 if driverButton then

@@ -9,7 +9,7 @@ local CooldownCompanion = ST.Addon
 local BuildGroupExportData = ST._BuildGroupExportData
 local BuildContainerExportData = ST._BuildContainerExportData
 local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
-local BlockCustomBarsImportForResourceBarConflict = ST._BlockCustomBarsImportForResourceBarConflict
+local BlockImportForResourceBarConflict = ST._BlockImportForResourceBarConflict
 
 local EMPTY_TABLE = {}
 -- Custom Bars are retired. Converted profiles never carry them; the customBar
@@ -1013,8 +1013,8 @@ local function ApplyCustomBarsPayload(profile, payload)
 end
 
 local function ShouldBlockSelectedCustomBarsImport()
-    local block = BlockCustomBarsImportForResourceBarConflict
-        or ST._BlockCustomBarsImportForResourceBarConflict
+    local block = BlockImportForResourceBarConflict
+        or ST._BlockImportForResourceBarConflict
     return block and block() == true
 end
 

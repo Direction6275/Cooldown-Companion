@@ -155,7 +155,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         mode = visibility.mode,
         rawMode = visibility.rawMode,
         overrideSource = visibility.overrideSource,
-        triggerSuppressed = visibility.triggerSuppressed,
+        indicatorSourceSuppressed = visibility.indicatorSourceSuppressed,
         hiddenPhase = visibility.hiddenPhase,
     }
     row.visuals = {
@@ -208,7 +208,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "visibility.mode", visibility.mode, button._visibilityFinalMode or ResolveVisibilityMode(button._visibilityHidden, button._visibilityAlphaOverride))
     CompareValue(row, "visibility.rawMode", visibility.rawMode, button._rawVisibilityReasonMode or ResolveVisibilityMode(button._rawVisibilityHidden, button._rawVisibilityAlphaOverride))
     CompareValue(row, "visibility.overrideSource", visibility.overrideSource, button._visibilityOverrideSource)
-    CompareValue(row, "visibility.triggerSuppressed", visibility.triggerSuppressed, IsTrue(button._visibilityTriggerSuppressed))
+    CompareValue(row, "visibility.indicatorSourceSuppressed", visibility.indicatorSourceSuppressed, IsTrue(button._visibilityIndicatorSourceSuppressed))
     local compareVisibleIconIntent = row.displayMode == "icons"
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true

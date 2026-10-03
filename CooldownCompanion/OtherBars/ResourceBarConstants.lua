@@ -23,7 +23,7 @@ PERCENT_SCALE_CURVE:AddPoint(1.0, 100)
 local RAGING_MAELSTROM_SPELL_ID = 384143
 -- The Active Aura stand-in: the stack count a resource aura overlay shows
 -- while its preview runs. Deliberately invented (no aura is running).
-local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
+local RESOURCE_AURA_PREVIEW_STACKS = 3
 local RESOURCE_HEALTH = -1
 local RESOURCE_MAELSTROM_WEAPON = 100
 -- Stagger power type ID: 101 (used inline to stay under Lua 200-local limit)
@@ -316,7 +316,7 @@ ST._RB = {
     -- Timing & limits
     UPDATE_INTERVAL = UPDATE_INTERVAL,
     PERCENT_SCALE_CURVE = PERCENT_SCALE_CURVE,
-    CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS,
+    RESOURCE_AURA_PREVIEW_STACKS = RESOURCE_AURA_PREVIEW_STACKS,
     RAGING_MAELSTROM_SPELL_ID = RAGING_MAELSTROM_SPELL_ID,
     -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
     -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger

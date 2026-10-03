@@ -2345,7 +2345,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     BuildGlowStyleControls(effectsLeft, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
         previewRefresh = opts.previewRefresh,
         settings = opts.settings,
-        advancedKey = not opts.singleRail and "customBarAuraBorder" or nil,
+        advancedKey = not opts.singleRail and "barAuraEffectBorder" or nil,
     })
 
     local pulseRow = AddCheckboxRow(effectsRight, {
@@ -2386,7 +2386,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     if opts.singleRail then
         if styleTable.barAuraPulseEnabled == true then BuildPulseDetails(effectsRight) end
     else
-        ST._AddAdvancedToggle(pulseRow, "customBarAuraPulse", {}, true, {
+        ST._AddAdvancedToggle(pulseRow, "barAuraEffectPulse", {}, true, {
             unlock = styleTable.barAuraPulseEnabled ~= true and { enable = {
                 label = "Enable Bar Fill Pulse", run = function()
                     styleTable.barAuraPulseEnabled = true
@@ -2439,7 +2439,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     if opts.singleRail then
         if styleTable.barAuraColorShiftEnabled == true then BuildShiftDetails(effectsRight) end
     else
-        ST._AddAdvancedToggle(shiftRow, "customBarAuraShift", {}, true, {
+        ST._AddAdvancedToggle(shiftRow, "barAuraEffectShift", {}, true, {
             unlock = styleTable.barAuraColorShiftEnabled ~= true and { enable = {
                 label = "Enable Bar Fill Color Shift", run = function()
                     styleTable.barAuraColorShiftEnabled = true

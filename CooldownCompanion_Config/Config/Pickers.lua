@@ -179,7 +179,7 @@ local function ResolveOwnedAddonPanel(frame)
     return nil, nil
 end
 
-local function FindStandaloneAddonPanelAtPoint(x, y)
+local function FindIndicatorHostAtPoint(x, y)
     if not (pickFrameOptions and pickFrameOptions.requireAddonPanel) then
         return nil, nil
     end
@@ -332,7 +332,7 @@ local function StartPickFrame(callback, sourceGroupId, options)
             local scale = UIParent:GetEffectiveScale()
             cx, cy = cx / scale, cy / scale
 
-            local resolvedFrame, name = FindStandaloneAddonPanelAtPoint(cx, cy)
+            local resolvedFrame, name = FindIndicatorHostAtPoint(cx, cy)
             local resolvedOwnedPanel = name ~= nil
 
             -- Try GetMouseFoci first

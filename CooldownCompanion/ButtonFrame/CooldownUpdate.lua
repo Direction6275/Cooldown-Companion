@@ -156,7 +156,7 @@ local function RestoreBaseDisplayName(button, buttonData)
     end
 end
 
-local function DispatchStandaloneTextureVisual(button, group)
+local function DispatchIndicatorVisual(button, group)
     if not button then
         return
     end
@@ -205,21 +205,21 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
     local group = buttonGroup
     -- Condition sources only drive their Indicator and never show themselves:
     -- every source of a conditions Indicator, an aura Indicator's extras.
-    local isTriggerPanel = ST.Indicator.IsHiddenSource(group, buttonData)
+    local isHiddenSource = ST.Indicator.IsHiddenSource(group, buttonData)
     -- An unlocked panel shows every entry so there is something to grab and
     -- arrange, whether the whole Group is unlocked or just this panel. Read
     -- off the per-refresh cached frame flags (set in RefreshGroupFrame,
     -- cleared by the combat forced lock): this runs at tick rate, so the
     -- predicates themselves are never called from here.
-    local unlockFrame = not isTriggerPanel and button:GetParent() or nil
+    local unlockFrame = not isHiddenSource and button:GetParent() or nil
     local forceVisibleByUnlockPreview = unlockFrame ~= nil
         and (unlockFrame._containerUnlockPreviewActive == true
             or unlockFrame._panelUnlockPreviewActive == true)
     local visibilityOverrideSource
-    if isTriggerPanel then
+    if isHiddenSource then
         button._visibilityHidden = true
         button._visibilityAlphaOverride = 0
-        visibilityOverrideSource = "trigger"
+        visibilityOverrideSource = "indicator-source"
     end
 
     -- Explicit positioning previews stay visible on the real display. Ordinary
@@ -240,12 +240,12 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             button._visibilityAlphaOverride = 1
         end
         visibilityOverrideSource = "unlock-preview"
-    elseif forceVisibleByLayoutPreview and not isTriggerPanel then
+    elseif forceVisibleByLayoutPreview and not isHiddenSource then
         button._visibilityHidden = false
         button._visibilityAlphaOverride = collapsingPlaceholder and CooldownCompanion.DIM_FALLBACK_ALPHA or 1
         visibilityOverrideSource = "layout-preview"
     end
-    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isTriggerPanel) or nil
+    button._forceVisibleByConfig = ((forceVisibleByLayoutPreview or forceVisibleByUnlockPreview) and not isHiddenSource) or nil
     if button._visibilityHidden == true then
         button._visibilityFinalMode = "hidden"
     elseif button._visibilityAlphaOverride ~= nil and button._visibilityAlphaOverride ~= 1 then
@@ -254,7 +254,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
         button._visibilityFinalMode = "visible"
     end
     button._visibilityOverrideSource = visibilityOverrideSource
-    button._visibilityTriggerSuppressed = visibilityOverrideSource == "trigger" or nil
+    button._visibilityIndicatorSourceSuppressed = visibilityOverrideSource == "indicator-source" or nil
     local visualStateContext
     local shouldCaptureVisualState = CooldownCompanion:ShouldRefreshButtonVisualStateSnapshot()
     if shouldCaptureVisualState then
@@ -296,7 +296,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
                     SetEntryPingReceiver(button._ccPingSurface, false, button)
                 end
             end
-            DispatchStandaloneTextureVisual(button, group)
+            DispatchIndicatorVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
@@ -327,7 +327,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             -- and icon mode force-show both read stale true on next tick.
             button.cooldown:Hide()
             HideIconFillForHiddenButton(button)
-            DispatchStandaloneTextureVisual(button, group)
+            DispatchIndicatorVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
             end
@@ -404,7 +404,7 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     if UpdateIconModeGlows then
         UpdateIconModeGlows(button, buttonData, style or {}, false)
     end
-    DispatchStandaloneTextureVisual(button)
+    DispatchIndicatorVisual(button)
 end
 
 local function IsReadyGlowMaxChargeEligible(buttonData)
@@ -1243,11 +1243,11 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Mode-specific visual dispatch
     if button._isBar then
         UpdateBarDisplay(button)
-        DispatchStandaloneTextureVisual(button, group)
+        DispatchIndicatorVisual(button, group)
     else
         UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
         UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
-        DispatchStandaloneTextureVisual(button, group)
+        DispatchIndicatorVisual(button, group)
     end
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")

@@ -227,7 +227,7 @@ local function ClearReusableButtonRuntime(button)
     button._rawVisibilityHidden = nil
     button._rawVisibilityAlphaOverride = nil
     button._visibilityOverrideSource = nil
-    button._visibilityTriggerSuppressed = nil
+    button._visibilityIndicatorSourceSuppressed = nil
     button._visibilityReasonBits = nil
     button._rawVisibilityReasonBits = nil
     button._lastVisAlpha = 1
@@ -492,7 +492,7 @@ local function PreparePooledButtonForUse(self, frame, group, button, index, butt
     if self.UpdateButtonIcon then
         self:UpdateButtonIcon(button)
     end
-    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+    if ST.IsIndicatorGroup(group) then
         button:SetAlpha(0)
         button._lastVisAlpha = 0
     else

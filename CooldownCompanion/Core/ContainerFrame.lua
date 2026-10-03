@@ -369,25 +369,25 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     HideContainerMemberOverlays(frame)
 
     -- Only the selected panel can have container-owned drag controls showing,
-    -- while a hovered standalone panel can own an outline. Clear that chrome
+    -- while a hovered Indicator can own an outline. Clear that chrome
     -- directly instead of rebuilding every runtime panel in the container.
     local group = selectedGroupId and self.db.profile.groups[selectedGroupId] or nil
     local groupFrame = selectedGroupId and self.groupFrames and self.groupFrames[selectedGroupId] or nil
-    local isStandaloneDisplay = group and self:IsStandaloneTexturePanelGroup(group)
-    if groupFrame and not isStandaloneDisplay then
+    local isIndicator = group and ST.IsIndicatorGroup(group)
+    if groupFrame and not isIndicator then
         if not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)) then
             SyncGroupControlLevels(groupFrame, false)
             self:SetGroupDragControlsShown(groupFrame, false)
         end
         self:UpdateGroupClickthrough(selectedGroupId)
-    elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
-        self:UpdateGroupedStandalonePreviewSelection(selectedGroupId)
+    elseif isIndicator and self.UpdateGroupedIndicatorPreviewSelection then
+        self:UpdateGroupedIndicatorPreviewSelection(selectedGroupId)
     end
 
-    if hoveredGroupId ~= selectedGroupId and self.UpdateGroupedStandalonePreviewSelection then
+    if hoveredGroupId ~= selectedGroupId and self.UpdateGroupedIndicatorPreviewSelection then
         local hoveredGroup = hoveredGroupId and self.db.profile.groups[hoveredGroupId] or nil
-        if hoveredGroup and self:IsStandaloneTexturePanelGroup(hoveredGroup) then
-            self:UpdateGroupedStandalonePreviewSelection(hoveredGroupId)
+        if hoveredGroup and ST.IsIndicatorGroup(hoveredGroup) then
+            self:UpdateGroupedIndicatorPreviewSelection(hoveredGroupId)
         end
     end
 end
@@ -821,8 +821,8 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
-    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
-        if self.StartGroupedStandalonePreviewHostDrag and self:StartGroupedStandalonePreviewHostDrag(groupId, containerId) then
+    if ST.IsIndicatorGroup(group) then
+        if self.StartGroupedIndicatorPreviewHostDrag and self:StartGroupedIndicatorPreviewHostDrag(groupId, containerId) then
             return true
         end
         self:StopContainerMemberPreviewTracking(containerId)
@@ -850,9 +850,9 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
         return
     end
 
-    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
-        if self.StopGroupedStandalonePreviewHostDrag then
-            self:StopGroupedStandalonePreviewHostDrag(groupId, containerId)
+    if ST.IsIndicatorGroup(group) then
+        if self.StopGroupedIndicatorPreviewHostDrag then
+            self:StopGroupedIndicatorPreviewHostDrag(groupId, containerId)
         end
         self:StopContainerMemberPreviewTracking(containerId)
         return
@@ -923,16 +923,16 @@ end
 
 local function GetContainerMemberDisplayFrame(self, groupId, group)
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
-    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
 
-    if isStandaloneDisplay then
+    if isIndicator then
         local host = self:GetAuraTextureHostForGroupFrame(groupFrame)
         if host and host:IsShown() then
             return host
         end
     end
 
-    if not isStandaloneDisplay and groupFrame and groupFrame:IsShown() then
+    if not isIndicator and groupFrame and groupFrame:IsShown() then
         return groupFrame
     end
 
@@ -1145,7 +1145,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     for labelIndex, rect in ipairs(previewRects) do
         if not rect.panelSuppressed then
             local isHovered = hoveredGroupId == rect.groupId
-            local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(rect.group)
+            local isIndicator = ST.IsIndicatorGroup(rect.group)
 
             local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
             usedOverlayIndices[labelIndex] = true
@@ -1157,7 +1157,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
             overlay:SetShown(true)
 
             local fillAlpha = 0
-            if selectedGroupId == nil and not isStandaloneDisplay then
+            if selectedGroupId == nil and not isIndicator then
                 if isHovered then
                     fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
                 end
@@ -1206,10 +1206,10 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupId = panelInfo.groupId
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
-        local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+        local isIndicator = ST.IsIndicatorGroup(group)
         local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
-        if groupFrame and not isStandaloneDisplay then
+        if groupFrame and not isIndicator then
             -- Cursor-anchored panels are owned by the cursor positioning
             -- preview, not the container mover: leave their chrome alone.
             if not isCursorAnchored then
@@ -1219,8 +1219,8 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
                 end
             end
             self:UpdateGroupClickthrough(groupId)
-        elseif isStandaloneDisplay and self.UpdateGroupedStandalonePreviewSelection then
-            self:UpdateGroupedStandalonePreviewSelection(groupId)
+        elseif isIndicator and self.UpdateGroupedIndicatorPreviewSelection then
+            self:UpdateGroupedIndicatorPreviewSelection(groupId)
         end
     end
 
@@ -1273,8 +1273,8 @@ local function ApplyContainerCoordinates(frame, containerId, x, y)
     container.anchor.relativeTo = "UIParent"
     container.anchor.relativePoint = "CENTER"
     CooldownCompanion:AnchorContainerFrame(frame, container.anchor)
-    if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-        CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId, x - oldX, y - oldY)
+    if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
+        CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, x - oldX, y - oldY)
     end
     UpdateCoordLabel(frame, x, y)
     if CooldownCompanion.RefreshContainerWrapper then
@@ -1299,8 +1299,8 @@ local function CreateContainerNudger(frame, containerId)
             local _, _, _, x, y = cFrame:GetPoint()
             container.anchor.x = math_floor(x * 10 + 0.5) / 10
             container.anchor.y = math_floor(y * 10 + 0.5) / 10
-            if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-                CooldownCompanion:SyncGroupedStandalonePreviewSettings(
+            if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
+                CooldownCompanion:SyncGroupedIndicatorPreviewSettings(
                     containerId,
                     container.anchor.x - oldX,
                     container.anchor.y - oldY
@@ -1320,8 +1320,8 @@ function ST.LockContainerFromMover(containerId)
         return
     end
 
-    if CooldownCompanion.SyncGroupedStandalonePreviewSettings then
-        CooldownCompanion:SyncGroupedStandalonePreviewSettings(containerId)
+    if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
+        CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId)
     end
     if CooldownCompanion._arrangeFocusContainerId == containerId then
         CooldownCompanion._arrangeFocusContainerId = nil
@@ -1575,8 +1575,8 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", newX, newY)
 
-    if self.SyncGroupedStandalonePreviewSettings then
-        self:SyncGroupedStandalonePreviewSettings(containerId, newX - oldX, newY - oldY)
+    if self.SyncGroupedIndicatorPreviewSettings then
+        self:SyncGroupedIndicatorPreviewSettings(containerId, newX - oldX, newY - oldY)
     end
     UpdateCoordLabel(frame, newX, newY)
     if self.RefreshContainerWrapper then

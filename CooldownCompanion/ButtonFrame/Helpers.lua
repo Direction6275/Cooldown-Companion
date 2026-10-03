@@ -141,8 +141,7 @@ local function IsPingAllowedForButton(owner)
     if owner._visibilityHidden then
         return false
     end
-    if CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
-        and CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+    if ST.IsIndicatorGroup(group) then
         return false
     end
     return true
