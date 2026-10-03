@@ -3295,3 +3295,53 @@ local function GetClassColoredText(text)
     return safeText
 end
 ST._GetClassColoredText = GetClassColoredText
+
+------------------------------------------------------------------------
+-- Per-rebuild reuse of the "does this panel host module bars?" answer
+------------------------------------------------------------------------
+-- One settings rebuild asks ST._PanelHasConfiguredModuleBars hundreds of
+-- times, always with the same answer. Inside a rebuild scope the first answer
+-- per panel and kind is reused; outside one every call works it out fresh, so
+-- edits made between rebuilds are always seen (owner sign-off 2026-10-03).
+-- It lives here so every rebuild entry point loads after it.
+do
+    local memo, memoDepth, memoTime = nil, 0, nil
+    local guard = CreateFrame("Frame")
+    guard:Hide()
+
+    local function Discard()
+        memo, memoDepth, memoTime = nil, 0, nil
+        guard:Hide()
+    end
+
+    -- A rebuild cannot span frames. An error that skipped the end of a scope
+    -- must not leave later rebuilds reading that rebuild's answers.
+    guard:SetScript("OnUpdate", Discard)
+
+    local function EndScope(...)
+        memoDepth = memoDepth - 1
+        if memoDepth <= 0 then Discard() end
+        return ...
+    end
+
+    function ST._WithModuleBarsMemo(fn, ...)
+        -- GetTime updates at most once per frame, so a changed value marks a
+        -- scope from an earlier frame and it is discarded here, even when this
+        -- rebuild runs before the guard's OnUpdate does. GetTime can also
+        -- repeat across frames on low-resolution timers; the guard is what
+        -- still clears a leaked scope then, so keep both.
+        if memoDepth > 0 and memoTime ~= GetTime() then Discard() end
+        if memoDepth == 0 then
+            memo, memoTime = {}, GetTime()
+            guard:Show()
+        end
+        memoDepth = memoDepth + 1
+        return EndScope(fn(...))
+    end
+
+    -- This rebuild's answers, keyed by panel id, or nil outside a rebuild.
+    function ST._GetModuleBarsMemo()
+        if memo and memoTime ~= GetTime() then Discard() end
+        return memo
+    end
+end

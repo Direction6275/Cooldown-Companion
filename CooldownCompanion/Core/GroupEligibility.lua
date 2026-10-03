@@ -277,38 +277,37 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         end
     end
 
-    -- Aura Panels are placed and sized before they have entries (each keeps a
-    -- reserved one-cell footprint for exactly this), so "no saved entry" must
-    -- not mean "not on screen to arrange".
-    local skipEntryChecks = ST.IsAuraPanelGroup(group)
-        or ST.IsTotemPanelGroup(group) or HasAttachedModuleForUnlock(self, groupId, group)
-    if not skipEntryChecks and not (group.buttons and #group.buttons > 0) then
-        return false
-    end
-    if not skipEntryChecks and not self:GroupHasUsableButtons(group, {
-        checkLoadConditions = false,
-    }) then
-        return false
-    end
-
     local groupFrame = opts.groupFrame
     if groupFrame == nil and groupId then
         groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
     end
-    -- Same exemption on the runtime side. An Aura Panel renders its entries
-    -- through its own aura container and materializes no CC buttons at all, so
-    -- an empty button list is its normal state rather than the "nothing
-    -- rendered yet" signal this check reads it as everywhere else.
-    -- The same emptiness, one cluster at a time. A MIXED panel whose entries all
-    -- sit in aura sections materializes no CC button either, so its frame reads
-    -- empty while those sections still own a rectangle to arrange. Only the
-    -- FRAME check is exempted: the data checks above stay in force, because
-    -- those entries are saved entries and answer them honestly.
-    if groupFrame
-        and not skipEntryChecks
-        and not ST.PanelHasAuraSection(group)
-        and (not groupFrame.buttons or #groupFrame.buttons == 0) then
-        return false
+    -- Aura Panels are placed and sized before they have entries (each keeps a
+    -- reserved one-cell footprint for exactly this), so "no saved entry" must
+    -- not mean "not on screen to arrange".
+    if not (ST.IsAuraPanelGroup(group) or ST.IsTotemPanelGroup(group)) then
+        -- Same exemption on the runtime side. An Aura Panel renders its entries
+        -- through its own aura container and materializes no CC buttons at all, so
+        -- an empty button list is its normal state rather than the "nothing
+        -- rendered yet" signal this check reads it as everywhere else.
+        -- The same emptiness, one cluster at a time. A MIXED panel whose entries all
+        -- sit in aura sections materializes no CC button either, so its frame reads
+        -- empty while those sections still own a rectangle to arrange. Only the
+        -- FRAME check is exempted: the data checks stay in force, because
+        -- those entries are saved entries and answer them honestly.
+        local failsEntryChecks = not (group.buttons and #group.buttons > 0)
+            or not self:GroupHasUsableButtons(group, {
+                checkLoadConditions = false,
+            })
+            or (groupFrame
+                and not ST.PanelHasAuraSection(group)
+                and (not groupFrame.buttons or #groupFrame.buttons == 0))
+        -- A panel hosting attached bars is exempt too, but that answer resolves
+        -- the module panels. Ask it only when an entry check fails: in unlock
+        -- mode IsGroupActive routes every panel through here, so asking up
+        -- front re-ran the whole anchor walk once per panel inside each walk.
+        if failsEntryChecks and not HasAttachedModuleForUnlock(self, groupId, group) then
+            return false
+        end
     end
 
     local checkCharVisibility = opts.checkCharVisibility

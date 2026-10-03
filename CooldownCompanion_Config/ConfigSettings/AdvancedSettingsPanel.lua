@@ -569,8 +569,9 @@ local function RunAdvancedGearBuildPass(fn, ...)
     wipe(registrations)
     buildingPage = true
     -- End the registration pass even when an individual page builder fails.
+    -- One page build is one module-bars memo scope.
     local args, count = {...}, select("#", ...)
-    local ok = xpcall(function() fn(unpack(args, 1, count)) end, CallErrorHandler)
+    local ok = ST._WithModuleBarsMemo(xpcall, function() fn(unpack(args, 1, count)) end, CallErrorHandler)
     buildingPage = false
     queuedOpen = nil
     if not ok then

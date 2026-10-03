@@ -288,13 +288,20 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
     end)
 
     for _, containerInfo in ipairs(orderedContainers) do
-        local panels = panelsByContainer[containerInfo.id]
-        table.sort(panels, ST.ComparePanelOrder)
-        for _, panelInfo in ipairs(panels) do
-            if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId, options) then
-                local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
-                if not (options and options.requireShown) or (frame and frame:IsShown()) then
-                    return panelInfo.groupId
+        -- A container hidden from this character can never supply a panel:
+        -- every IsGroupActive branch ends in the character check. Ask once per
+        -- container, and only for containers the walk reaches, instead of
+        -- running the full check on each of its panels. On shared profiles
+        -- most panels belong to other characters.
+        if self:IsContainerVisibleToCurrentChar(containerInfo.id) then
+            local panels = panelsByContainer[containerInfo.id]
+            table.sort(panels, ST.ComparePanelOrder)
+            for _, panelInfo in ipairs(panels) do
+                if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId, options) then
+                    local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
+                    if not (options and options.requireShown) or (frame and frame:IsShown()) then
+                        return panelInfo.groupId
+                    end
                 end
             end
         end
