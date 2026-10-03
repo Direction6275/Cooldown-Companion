@@ -16,7 +16,6 @@ local tonumber = tonumber
 local type = type
 
 -- Color constants
-local DEFAULT_BAR_AURA_COLOR = {0.2, 1.0, 0.2, 1.0}
 local DEFAULT_BAR_CHARGE_COLOR = {1.0, 0.82, 0.0, 1.0}
 local HEALTHSTONE_ITEM_ID = 5512
 local EQUIPMENT_SLOT_TYPE = "equipmentSlot"
@@ -253,8 +252,8 @@ end
 -- 2026-08-25). Reads the shared durationLowTime* policy beside durationFormat.
 -- Returns nil when the feature is off, else:
 -- threshold seconds, decimal-window scope, and the color as a raw "rrggbb"
--- hex (nil when no recolor). Text panels and resource-bar recharge text deliberately
--- remain outside this policy; their callers keep using FormatTime/plain
+-- hex (nil when no recolor). Resource-bar recharge text deliberately remains
+-- outside this policy; its callers keep using FormatTime/plain
 -- formatters rather than opting into the variants below.
 local function LowTimeHex(color)
     if type(color) ~= "table" then return nil end
@@ -361,8 +360,8 @@ end
 CooldownCompanion.GetDurationLowTime = GetDurationLowTime
 
 -- Aura duration text applies the low-time policy only when opted in
--- (durationLowTimeAuras, default off). Aura-only surfaces (Aura Panels,
--- standalone aura custom bars) have no cooldown text for the policy to
+-- (durationLowTimeAuras, default off). Aura-only surfaces (Aura Panels)
+-- have no cooldown text for the policy to
 -- serve, so enabling the threshold means aura application there and the
 -- caller passes auraOnlySurface. Cooldown-lane text never consults this.
 local function AllowAuraDurationLowTime(source, auraOnlySurface)
@@ -791,7 +790,7 @@ local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })
 -- Second return is the CACHE key (formatKey when low-time is off, composite
 -- when on) — BindDurationText uses it for change detection, so a low-time
 -- config edit re-applies the formatter even when the format key is unchanged.
--- allowLowTime is explicit so text panels and recharge text stay excluded;
+-- allowLowTime is explicit so recharge text stays excluded;
 -- both cooldown and aura duration surfaces may pass it.
 local function GetDurationTextFormatter(source, allowLowTime, visibilityKind)
     local allowLow = (allowLowTime and true) or false
@@ -1580,11 +1579,11 @@ end
 -- enough: an old import can carry the right count with a retired key in it (the
 -- aura display replaced "auraGlow"), which would leave a layer unassigned.
 --
--- Exported, because the profile normalizer and the preset-apply path have to
--- test the SAME definition of valid. When they each kept their own length
--- check, a saved order could be rejected here while both of those still
--- believed it was fine, leaving the Custom Icon Strata checkbox reading ON with
--- none of its values in effect.
+-- Exported, because the profile normalizer (Migrations.lua) and the runtime
+-- here have to test the SAME definition of valid. When they each kept their
+-- own length check, a saved order could be rejected here while the normalizer
+-- still believed it was fine, leaving the Custom Icon Strata checkbox reading
+-- ON with none of its values in effect.
 local function IsUsableStrataOrder(order)
     if type(order) ~= "table" or #order ~= #ST.DEFAULT_STRATA_ORDER then
         return false
@@ -1794,7 +1793,6 @@ function ST.ResetButtonFullStyleState(button)
     button._chargeText = nil
     button._chargeCountReadable = nil
     button._zeroChargesConfirmed = nil
-    button._nilConfirmPending = nil
     button._displaySpellId = nil
     button._liveOverrideSpellId = nil
     button._itemCount = nil
@@ -1817,7 +1815,6 @@ function ST.ApplyButtonShellAlpha(button, alpha)
 end
 
 -- Exports
-ST._DEFAULT_BAR_AURA_COLOR = DEFAULT_BAR_AURA_COLOR
 ST._DEFAULT_BAR_CHARGE_COLOR = DEFAULT_BAR_CHARGE_COLOR
 ST._SetIconAreaPoints = SetIconAreaPoints
 ST._SetBarAreaPoints = SetBarAreaPoints

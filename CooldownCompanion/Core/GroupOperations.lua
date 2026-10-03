@@ -334,10 +334,6 @@ local function CollectStableExternalAnchorCompactReasons(self)
     return byPanel
 end
 
-function CooldownCompanion:IsGroupStableExternalAnchor(groupId)
-    return CollectStableExternalAnchorCompactReasons(self)[tonumber(groupId)] ~= nil
-end
-
 function CooldownCompanion:GetGroupCompactLayoutSuppressionReasons(groupId)
     return self._compactLayoutSuppressionByPanel and self._compactLayoutSuppressionByPanel[tonumber(groupId)]
 end
@@ -621,7 +617,6 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
                 button._currentReadableCharges = nil
                 button._chargeCountReadable = nil
                 button._zeroChargesConfirmed = nil
-                button._displayCountZeroUsabilityFallback = nil
                 ClearButtonVisualState(button)
             end
         end
@@ -1110,7 +1105,7 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     -- Masque registration survives dormancy, so reconcile it in both directions:
     -- rebuild it when the group should be skinned but isn't, and release it when
     -- the group stopped being skinned while the frame was parked. The second case
-    -- matters because writers that bypass ToggleGroupMasque (preset/style copies,
+    -- matters because writers that bypass ToggleGroupMasque (panel settings copies,
     -- combat-deferred edits) can clear masqueEnabled on a dormant group, and only
     -- RemoveButtonFromMasque restores CC's native borders.
     local group = self.db.profile.groups[groupId]
@@ -1299,13 +1294,4 @@ function CooldownCompanion:GetSpellInfo(spellId)
         return spellInfo.name, spellInfo.iconID, spellInfo.castTime
     end
     return nil
-end
-
-function CooldownCompanion:GetItemInfo(itemId)
-    local itemName, _, _, _, _, _, _, _, _, itemIcon = C_Item.GetItemInfo(itemId)
-    if not itemName then
-        local _, _, _, _, icon = C_Item.GetItemInfoInstant(itemId)
-        return nil, icon
-    end
-    return itemName, itemIcon
 end

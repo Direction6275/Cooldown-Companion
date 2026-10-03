@@ -271,7 +271,7 @@ do
     --- held (a rebuild cancels the drag), so this runs once per build, never
     --- per OnUpdate.
     function SectionDrag.Build(group, sections, lists, sectionLayout,
-                               entryWidth, entryHeight, spacing, headerHeight,
+                               entryWidth, entryHeight, spacing,
                                contentWidth, contentHeight)
         local model = { free = {}, lanes = {} }
 
@@ -349,7 +349,7 @@ do
         end
         local synth = ST.BuildPanelSectionLayout(group, synthSections,
             { base = lists.base, members = synthMembers },
-            entryWidth, entryHeight, spacing, headerHeight)
+            entryWidth, entryHeight, spacing)
         -- Both layouts place from the same base-cluster origin underneath;
         -- undoing the synthetic union's shift and applying the real one is
         -- the whole conversion.
@@ -389,7 +389,7 @@ do
         -- What MoveLayout needs to lay a whole section out somewhere else:
         -- asked per (from, to) on first need, never up front.
         model.inputs = { group, sections, lists, sectionLayout,
-            entryWidth, entryHeight, spacing, headerHeight }
+            entryWidth, entryHeight, spacing }
         model.moves = {}
 
         return model
@@ -433,7 +433,7 @@ do
         end
         local synth = ST.BuildPanelSectionLayout(group, synthSections,
             { base = lists.base, members = synthMembers },
-            inputs[5], inputs[6], inputs[7], inputs[8])
+            inputs[5], inputs[6], inputs[7])
         local info = synth.sections[toAnchor]
         local layout = false
         if info and info.positions and info.positions[1] then
@@ -1505,8 +1505,8 @@ do
             -- model no payload might ever ask for. Indexed, never unpacked:
             -- `sections` is nil on every build that takes this path.
             model = SectionDrag.Build(inputs[1], inputs[2], inputs[3], inputs[4],
-                inputs[5], inputs[6], inputs[7], inputs[8], inputs[9], inputs[10])
-            SectionDrag.FloorEmptyBase(model, inputs[11], inputs[9], inputs[10])
+                inputs[5], inputs[6], inputs[7], inputs[8], inputs[9])
+            SectionDrag.FloorEmptyBase(model, inputs[10], inputs[8], inputs[9])
             preview.cursorPadModel = model
             preview.cursorPadInputs = nil
         end

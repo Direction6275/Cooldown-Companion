@@ -251,8 +251,8 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
                 or nil
             local cid = group and group.parentContainerId
             if cid and cid ~= frame.containerId then
-                -- Texture panels live on their aura texture host, not the
-                -- group frame; both contribute so texture-only groups get a
+                -- Indicators live on their display host, not the group
+                -- frame; both contribute so Indicator-only groups get a
                 -- center and mixed groups get the true midpoint.
                 if not self:IsStandaloneTexturePanelGroup(group)
                     and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then

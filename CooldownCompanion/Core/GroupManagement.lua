@@ -82,10 +82,6 @@ local function IsAddonAnchorFrameName(frameName)
         or frameName == "CooldownCompanionCursor"
 end
 
-local function IsFrameLikeAnchorTarget(frame)
-    return type(frame) == "table" and type(frame.GetObjectType) == "function"
-end
-
 local function RefreshPanelAlphaDependencyTargets(self)
     if self.RebuildPanelAlphaDependencyTargets then
         self:RebuildPanelAlphaDependencyTargets()
@@ -219,8 +215,8 @@ end
 ST._CopyPresetValue = CopyPresetValue
 
 -- Panel arrangement orientation is remembered PER MODE so a display-mode
--- swap can never destroy another mode's layout: bars and text panels read
--- their own keys (unset = vertical), everything else keeps style.orientation
+-- swap can never destroy another mode's layout: bars read their own key
+-- (unset = vertical), everything else keeps style.orientation
 -- (unset = horizontal). Every layout read goes through here.
 function ST.GetPanelLayoutOrientation(displayMode, style)
     if displayMode == "bars" then
@@ -462,7 +458,6 @@ end
 
 -- Template snapshots use the same field writers as direct panel copying.
 ST._CopyPanelVisibility = CopyPanelVisibility
-ST._CopyPanelArrangement = CopyPanelArrangement
 ST._CopyPanelPosition = CopyPanelPosition
 
 local function RefreshCopiedPanelLayout(self, groupId, position)
@@ -1475,7 +1470,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     group.parentContainerId = targetContainerId
 
     -- Only the owning Group changes. Explicit targets and relative placement
-    -- belong to the panel, including the separate Texture/Trigger display.
+    -- belong to the panel, including an Indicator's separate display.
     local sourceFrameName = "CooldownCompanionContainer" .. sourceContainerId
     local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
     RetargetMovedPanelAnchor(group.anchor, sourceFrameName, containerFrameName)
@@ -1564,9 +1559,8 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
 
 
 
-    -- Primary aura entries only display through the aura system, which binds
-    -- to icon, bar, text and Texture panels; refuse conversions that would
-    -- strand them.
+    -- Primary aura entries only convert between icon and bar panels; refuse
+    -- conversions to any other mode that would strand them.
     if oldMode ~= newMode
         and newMode ~= "icons"
         and newMode ~= "bars"
@@ -1918,8 +1912,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             -- Explicit aura adds (picked as an aura, not a passive that
             -- auto-classified) default to showing only while the aura is
             -- active — the entry exists to display the aura. Icon and bar
-            -- groups both compose a full shell; text panels show auras through
-            -- their format's aura tokens, so no shell default applies.
+            -- groups both compose a full shell; other modes get no shell
+            -- default.
             local displayMode = group.displayMode or "icons"
             if forceAura == true and (displayMode == "icons" or displayMode == "bars") then
                 group.buttons[buttonIndex].hideWhileAuraNotActive = true

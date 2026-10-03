@@ -1,3 +1,7 @@
+-- LEGACY CONVERSION ONLY. Converts retired Custom Bars and old Bar Panel
+-- payloads into ordinary panel entries, one way, for saved profiles and old
+-- import strings. Nothing here is a live feature; remove it when the data
+-- checkpoint moves past the release that converted them.
 -- Detached conversion for supported profiles and imports. No frames, current
 -- aura state, or runtime panel visibility participate in destination selection.
 local _, ST = ...

@@ -510,10 +510,6 @@ local function ApplyPanelDisplayModeChange(panelId, containerId, targetMode, fla
                 ST.FlattenPanelSections(panel)
             end
         end
-        if targetMode == "textures" then
-            CS.pendingTexturePickerOpen = panelId
-            SelectConfigPanel(panelId, { containerId = containerId })
-        end
         CooldownCompanion:RefreshConfigPanel()
     end
 end
@@ -822,9 +818,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 elseif scopeName == "position" then
                     info.tooltipText = "Copies anchor points and offsets relative to each destination's existing target. Anchor targets stay unchanged. Cursor panels copy only to cursor panels."
                 elseif scopeName == "all" then
-                    info.tooltipText = (copyMode == "text"
-                        and "Copies Appearance, Visibility, and Arrangement for matching panel types."
-                        or "Copies Appearance, Indicators, Visibility, and Arrangement for matching panel types.")
+                    info.tooltipText = "Copies Appearance, Indicators, Visibility, and Arrangement for matching panel types."
                         .. " Position, anchor targets, entries, eligibility, and Alpha inheritance stay unchanged."
                 end
                 if info.tooltipText then

@@ -77,11 +77,6 @@ function CooldownCompanion:GetExternalAnchorPanelId(specId)
     return groupId
 end
 
-function CooldownCompanion:IsExternalAnchorPanel(groupId)
-    groupId = tonumber(groupId)
-    return groupId ~= nil and self:GetExternalAnchorPanelId() == groupId
-end
-
 --- Mark a panel for the current spec. groupId nil clears the spec's mark.
 function CooldownCompanion:SetExternalAnchorPanel(groupId)
     local specId = tonumber(self._currentSpecId)

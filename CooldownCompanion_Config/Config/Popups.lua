@@ -37,25 +37,12 @@ local function ProfileNameExists(name)
     return false
 end
 
-local function TrimPopupText(text)
-    if type(text) ~= "string" then return "" end
-    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
-end
-
 local function RejectUnsupportedImportPayload(data, dataLabel)
     if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
         CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
         return true
     end
     return false
-end
-
-local function ShowPopupOverConfig(which, textArg1, data)
-    local showFn = (CS and CS.ShowPopupAboveConfig) or ST._ShowPopupAboveConfig
-    if showFn then
-        return showFn(which, textArg1, data)
-    end
-    return StaticPopup_Show(which, textArg1, nil, data)
 end
 
 local function CountTableEntries(value)
@@ -223,7 +210,7 @@ local function ShowResourceBarConflictChooser(classKey, opts)
 
     local bullets = {
         "The Resource settings from the setup you KEEP will be saved for the whole class.",
-        "Custom Bars from every listed same-class setup will be preserved and added to the saved class setup.",
+        "Legacy Custom Bars from every listed same-class setup will be kept and converted into panel entries.",
         "The other listed character Resource settings will be removed.",
         "Going forward, every character of this class will use the saved setup.",
         "Per-spec layouts and resource overrides still work inside that class setup.",
@@ -983,14 +970,7 @@ local function BuildGroupExportData(group)
 end
 
 local function EncodeExportData(payload)
-    if type(payload) == "table" and payload.type == "customBars" then
-        local blocked = BlockCustomBarExportForResourceBarConflict()
-        if blocked then
-            return nil
-        end
-    end
-    if type(payload) == "table" and payload.type == "setup"
-        and (payload.resources or payload.customBars) then
+    if type(payload) == "table" and payload.type == "setup" and payload.resources then
         local blocked = BlockCustomBarExportForResourceBarConflict()
         if blocked then
             return nil
@@ -999,11 +979,8 @@ local function EncodeExportData(payload)
     return EncodeSharedPayload(payload, "entity")
 end
 
--- Assembles the one-string setup payload from its sections. Any section may
--- be nil. `customBars` accepts the standalone customBars payload shape (the
--- `type` marker is dropped; sections carry no type of their own). A Resources
--- section already contains its class's Custom Bars, so callers must not pass
--- both for the same class.
+-- Assembles the one-string setup payload from its sections (containers,
+-- resources). Any section may be nil.
 local function BuildSetupExportPayload(sections)
     if type(sections) ~= "table" then
         return nil
@@ -1013,18 +990,6 @@ local function BuildSetupExportPayload(sections)
 
     if type(sections.containers) == "table" and #sections.containers > 0 then
         payload.containers = sections.containers
-        hasAny = true
-    end
-    if type(sections.customBars) == "table"
-        and type(sections.customBars.bars) == "table"
-        and #sections.customBars.bars > 0 then
-        payload.customBars = {
-            version = sections.customBars.version or 1,
-            classID = sections.customBars.classID,
-            classFilename = sections.customBars.classFilename,
-            bars = sections.customBars.bars,
-            layouts = sections.customBars.layouts,
-        }
         hasAny = true
     end
     if type(sections.resources) == "table"
@@ -1186,8 +1151,8 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     panel.cdmPanelSource = nil
     panel.parentContainerId = containerId
     panel.order = panelIndex
-    -- Piece imports land in an already-migrated profile, so pre-split
-    -- bar/text panels get their per-mode orientation key mapped here.
+    -- Piece imports land in an already-migrated profile, so pre-split bar
+    -- panels get their per-mode orientation key mapped here.
     if ST._NormalizePanelOrientationKeys then
         ST._NormalizePanelOrientationKeys(panel)
     end
@@ -1735,7 +1700,7 @@ local function BlockCustomBarsImportForResourceBarConflict(classKey)
 
     local message = "Resolve the pending Resource Bar conflict"
         .. (classKey and (" for " .. tostring(classKey)) or "")
-        .. " before importing Custom Bars. Choose the setup to keep, then import again."
+        .. " before importing. Choose the setup to keep, then import again."
     CooldownCompanion:Print(message)
     if ST._ShowResourceBarConflictChooser then
         ST._ShowResourceBarConflictChooser(classKey, { force = true })
@@ -1743,6 +1708,9 @@ local function BlockCustomBarsImportForResourceBarConflict(classKey)
     return true
 end
 
+-- LEGACY CONVERSION ONLY: a standalone Custom Bars export string. Custom Bars
+-- no longer exist; the payload is converted into panel entries and applied as
+-- an ordinary group import. Kept for parked legacy stores in profile import.
 local function ApplyCustomBarsImportData(data, options)
     if type(data) ~= "table" or data.type ~= "customBars" then
         if RejectUnsupportedImportPayload(data, "custom bars import") then
@@ -1775,8 +1743,9 @@ local function GetSetupSectionClassKey(section)
 end
 
 -- Applies a `setup` payload: groups additively, then the Resources section as
--- a whole-bucket replace for its class, then any Custom Bars section
--- additively. Order matters: groups first so the Resources anchor can remap
+-- a whole-bucket replace for its class. Legacy Custom Bars sections were
+-- converted into panel entries by _ConvertUnifiedPanelImport above. Order
+-- matters: groups first so the Resources anchor can remap
 -- onto the groups imported from the same string.
 local function ApplySetupImportData(data, existingPanelIds)
     if type(data) ~= "table" or data.type ~= "setup" then
@@ -1793,16 +1762,11 @@ local function ApplySetupImportData(data, existingPanelIds)
     data, replayPanelIds = ST._FilterConvertedPanelImport(converted)
 
     local hasContainers = type(data.containers) == "table" and #data.containers > 0
-    local customBarsSection = type(data.customBars) == "table"
-        and type(data.customBars.bars) == "table"
-        and #data.customBars.bars > 0
-        and data.customBars
-        or nil
     local resourcesSection = type(data.resources) == "table"
         and type(data.resources.settings) == "table"
         and data.resources
         or nil
-    if not hasContainers and not customBarsSection and not resourcesSection then
+    if not hasContainers and not resourcesSection then
         CooldownCompanion:Print("Import failed: this setup export is empty.")
         return false
     end
@@ -1812,17 +1776,8 @@ local function ApplySetupImportData(data, existingPanelIds)
         CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
         return false
     end
-    local barsClassKey = customBarsSection and GetSetupSectionClassKey(customBarsSection) or nil
-    if customBarsSection and not barsClassKey then
-        CooldownCompanion:Print("Import failed: the Custom Bars do not name their class.")
-        return false
-    end
 
     if resourcesClassKey and BlockCustomBarsImportForResourceBarConflict(resourcesClassKey) then
-        return false
-    end
-    if barsClassKey and barsClassKey ~= resourcesClassKey
-        and BlockCustomBarsImportForResourceBarConflict(barsClassKey) then
         return false
     end
 
@@ -1830,7 +1785,6 @@ local function ApplySetupImportData(data, existingPanelIds)
     local applied = false
     local failed = false
     local containersApplied = false
-    local customBarsApplied = false
 
     -- One migration run owns this whole click: each section would otherwise
     -- walk the entire profile again, and the runs nested inside the open
@@ -1882,28 +1836,6 @@ local function ApplySetupImportData(data, existingPanelIds)
         end
     end
 
-    -- A Resources section already carries its class's Custom Bars; a separate
-    -- bars section for that same class would double-import them. Export mode
-    -- never builds both, so only apply bars aimed at a different class.
-    if customBarsSection and barsClassKey ~= resourcesClassKey then
-        local barsPayload = {
-            type = "customBars",
-            version = customBarsSection.version or 1,
-            classID = customBarsSection.classID,
-            classFilename = customBarsSection.classFilename,
-            bars = customBarsSection.bars,
-            layouts = customBarsSection.layouts,
-            _cdcImportCheckpoint = data._cdcImportCheckpoint,
-        }
-        local ok = ApplyCustomBarsImportData(barsPayload, {
-            targetClassKey = barsClassKey,
-            deferMigrations = true,
-        }) == true
-        customBarsApplied = ok
-        applied = ok or applied
-        failed = failed or not ok
-    end
-
     ST._FinishGroupImportBatch(batchToken, containersApplied)
 
     -- The single migration run for every section this setup inserted, taken
@@ -1928,12 +1860,9 @@ local function ApplySetupImportData(data, existingPanelIds)
         CooldownCompanion:RefreshAllGroups()
     end
 
-    -- Rebuild bars after the migration for either section that can hold
-    -- them. A Custom Bars section builds its own bars on the way in, but it
-    -- deferred the migration to this function, so those bars came from
-    -- pre-migration entries and have to be rebuilt here just as a Resources
-    -- section does.
-    if resourcesSection or customBarsApplied then
+    -- Rebuild resource bars after the migration: the Resources section
+    -- deferred its migration to this function.
+    if resourcesSection then
         CooldownCompanion:ApplyResourceBars()
         CooldownCompanion:RefreshConfigPanel()
     end

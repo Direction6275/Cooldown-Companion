@@ -341,16 +341,6 @@ function CooldownCompanion:SetContainerAlphaVisibilityMultiplier(frame, multipli
     end
 end
 
-function CooldownCompanion:ApplyContainerAlphaToFrame(frame, alpha, visibilityMultiplier)
-    if not frame then
-        return
-    end
-    if visibilityMultiplier ~= nil then
-        self:SetContainerAlphaVisibilityMultiplier(frame, visibilityMultiplier)
-    end
-    frame:SetAlpha(GetFrameAlphaWithContainerMultiplier(frame, alpha))
-end
-
 function CooldownCompanion:ClearContainerAlphaRuntimeState(containerId)
     if self.alphaState then
         self.alphaState[GetContainerAlphaStateKey(containerId)] = nil
@@ -1224,7 +1214,7 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
         end
     end
 
-    -- Process registered module alpha targets (resource bars, custom aura bars, texture panels)
+    -- Process registered module alpha targets (resource bars)
     if self._moduleAlphaTargets then
         for moduleId, entry in pairs(self._moduleAlphaTargets) do
             if entry and HasLiveAlphaFrames(entry.frames)

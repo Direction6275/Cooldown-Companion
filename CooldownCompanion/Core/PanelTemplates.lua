@@ -119,7 +119,6 @@ local function GetPanelTemplateFields(group, mode)
     end
     return fields
 end
-ST._GetPanelTemplateFields = GetPanelTemplateFields
 
 
 -- Legacy snapshots cannot apply settings they never captured.
@@ -455,17 +454,6 @@ function CooldownCompanion:UpdatePanelTemplate(templateId, groupId)
     local template = BuildPanelTemplateSnapshot(self, group, mode)
     template.name = existing.name
     self:GetPanelTemplateStore().groups[templateId] = template
-    return true
-end
-
-function CooldownCompanion:RenamePanelTemplate(templateId, name)
-    templateId = tonumber(templateId)
-    local template = self:GetPanelTemplate(templateId)
-    if not template then
-        return false, "missing_template"
-    end
-    template.name = UniqueTemplateName(
-        self:GetPanelTemplateStore(), NormalizeTemplateName(name, templateId), templateId)
     return true
 end
 

@@ -42,12 +42,7 @@ local DEFAULT_WHITE = {1, 1, 1, 1}
 -- Owner-approved trade (PR #505 review).
 local TEXTURE_STALENESS_INTERVAL = 0.25
 
--- APIs for text-mode conditional tokens
-local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
-local IsUsableItem = C_Item.IsUsableItem
-local IsItemInRange = C_Item.IsItemInRange
 local InCombatLockdown = InCombatLockdown
-local UnitCanAttack = UnitCanAttack
 
 -- Imports from Tracking
 local UpdateChargeTracking = ST._UpdateChargeTracking
@@ -453,7 +448,7 @@ end
 
 -- Thin adapter: resolves the button-side inputs (readable-count gate, item
 -- max-charge substitution, stack-quantity items), then defers to the shared
--- classifier that custom bars also use.
+-- classifier.
 local function ResolveChargeState(button, buttonData, usesChargeBehavior)
     if not usesChargeBehavior then
         return nil
@@ -627,13 +622,12 @@ end
 --
 -- Combat ticker floor: the cooldown swipe/numbers and GCD swipe self-animate
 -- in icon/bar mode (Blizzard CooldownFrameTemplate / BarModeOnUpdate) -- they
--- do NOT need a walk to keep drawing. Those states stop forcing walks EXCEPT
--- in text mode (redrawn from GetTime() each walk). Everything else
--- (charge-color heuristic, ready-glow window) stays walk-forcing in
--- every mode.
+-- do NOT need a walk to keep drawing, so those states stop forcing walks.
+-- Everything else (charge-color heuristic, ready-glow window) stays
+-- walk-forcing in every mode.
 -- Discrete edges (cooldown start/end) stay event-covered; the skip only
 -- suppresses the redundant continuous middle.
-local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
+local function NoteButtonTimeState(button, now, floorFailOpen)
     local telemetryOn = RefreshTelemetry and RefreshTelemetry.enabled
     local charge = button._chargeRecharging and true or false   -- charge recharge (charge-color heuristic, walk-driven)
     local readyGlow, forced
@@ -646,7 +640,6 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
         forced = charge or HasPendingReadyGlowWindow(button, now)
     end
 
-    local text = false
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
     -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
     -- marks demoted), so it must force regardless of timeActive.
@@ -663,7 +656,6 @@ local function NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
         if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
-            if text then RefreshTelemetry:CountForce("text") end
             if floorForce then RefreshTelemetry:CountForce(floorFailOpen) end
         end
     end
@@ -691,7 +683,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- has no event): hidden buttons early-return before NoteButtonTimeState, so
     -- this is also applied in the visibility-hidden branch below. The string
     -- doubles as the term name for the dev-gated forcing attribution.
-    -- Texture/trigger panels do NOT force: every panel input is event-covered,
+    -- Indicators do NOT force: every panel input is event-covered,
     -- self-animating, or in the owner-approved <=1s walk-cadence class, so
     -- panels ride dirty ticks + the safety walk like icon visuals (disposition
     -- doc 2026-07-04-023; forcing-attribution captures showed the old blanket
@@ -902,7 +894,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local charges
     button._chargeRenderCount = nil
     if usesChargeBehavior and buttonData.hasCharges and buttonData.type == "spell" then
-        button._displayCountZeroUsabilityFallback = nil
         charges = UpdateChargeTracking(button, buttonData, cooldownSpellId)
         if charges then button._chargeRenderCount = charges.currentCharges end
         button._chargeCooldownVisualActive = EntryRuntime.DurationObjectShowsCooldown(button._chargeDurationObj)
@@ -924,7 +915,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeDurationObj = nil
         button._chargesSpent = nil
         button._chargeText = nil
-        button._displayCountZeroUsabilityFallback = nil
         if buttonData.type == "spell" then
             button.count:SetText("")
         end
@@ -1262,5 +1252,5 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if shouldCaptureVisualState then
         CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "post-dispatch")
     end
-    NoteButtonTimeState(button, isGCDOnly, now, floorFailOpen)
+    NoteButtonTimeState(button, now, floorFailOpen)
 end

@@ -26,7 +26,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 
 local math_min = math.min
 local math_floor = math.floor
@@ -35,9 +34,7 @@ local CreateFrame = CreateFrame
 local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local RESOURCE_OVERLAY_HOLDER_LEVEL = RB.RESOURCE_OVERLAY_HOLDER_LEVEL
-local PREVIEW_FILL = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL
 local PREVIEW_STACKS = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
-local PREVIEW_DURATION = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION
 -- How wounded the player is while a health-effect preview runs. The effect
 -- bars are sized as shares of the real maximum, so this leaves them room.
 local HEALTH_EFFECT_PREVIEW_FILL = 0.65
@@ -158,8 +155,7 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- The resource aura overlay stand-in. The live shapes are
         -- Blizzard-driven regions on an AuraContainer slot, and the canvas
         -- has no aura to bind one to, so it draws CC regions at the kit's
-        -- own geometry — the same arrangement the custom-bar stand-in uses
-        -- for the atlas fill it likewise cannot run.
+        -- own geometry.
         --
         -- At rest there is nothing to draw at all: an overlay's resting look
         -- is aura-ABSENT, which is the plain resource bar. The shape appears

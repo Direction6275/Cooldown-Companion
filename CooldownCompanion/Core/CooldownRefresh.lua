@@ -50,9 +50,9 @@
       self-animating display modes only, via two coupled rules:
         1. Mode-aware classifier (NoteButtonTimeState): an active cooldown or
            GCD swipe on an icon or bar button no longer forces a walk because
-           its swipe, numbers, and iconFill self-animate. Text mode, charge
-           recharge, ready-glow windows, and hide-unusable fail-open state
-           still force walks. Standalone Indicator manual item timers/drains
+           its swipe, numbers, and iconFill self-animate. Charge recharge,
+           ready-glow windows, and hide-unusable fail-open state still force
+           walks. Standalone Indicator manual item timers/drains
            register at their readout writer via PinCooldownTicker, since their
            hidden source buttons bypass the ordinary classifier.
         2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the

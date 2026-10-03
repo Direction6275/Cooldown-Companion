@@ -70,10 +70,6 @@ function Preview.Stop()
         totemResume = { profile = previous.profile, groupId = previous.groupId, group = previous.group,
             sample = { elapsed = (sample.elapsed + GetTime() - sample.startedAt) % sample.duration } }
         if ST._RefreshTotemPreviewPlayback then ST._RefreshTotemPreviewPlayback(previous.groupId) end
-    elseif visual.textureIndicator and ST._StopTextureIndicatorPreviewMirror then
-        ST._StopTextureIndicatorPreviewMirror(previous.groupId)
-    elseif visual.triggerEffects and ST._StopTriggerPanelEffectsPreviewMirror then
-        ST._StopTriggerPanelEffectsPreviewMirror(previous.groupId)
     end
 end
 
@@ -268,21 +264,6 @@ function ST._GetStoredConditionalPreviewState(groupId, buttonIndex)
     local value = Preview.Get()
     return value and value.command.preview.conditional and MatchesTarget(value, groupId, buttonIndex)
         and value.sample or nil
-end
-
-function Addon:IsConditionalVisualPreviewActive(groupId, buttonIndex, kind)
-    local sample = ST._GetStoredConditionalPreviewState(groupId, buttonIndex)
-    return sample ~= nil and sample.kind == kind
-end
-
-function Addon:IsGroupTextureIndicatorPreviewActive(groupId, key)
-    local value = Preview.Get()
-    return value ~= nil and value.groupId == groupId and value.command.preview.textureIndicator == key
-end
-
-function Addon:IsTriggerPanelEffectsPreviewActive(groupId)
-    local value = Preview.Get()
-    return value ~= nil and value.groupId == groupId and value.command.preview.triggerEffects == true
 end
 
 function Preview.GetHealthEffects()

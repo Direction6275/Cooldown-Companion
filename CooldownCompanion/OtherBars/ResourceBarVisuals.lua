@@ -372,12 +372,9 @@ local function CreateContinuousBar(parent)
     -- Pixel borders
     bar.borders = CreatePixelBorders(bar)
 
-    -- Text container above the fill. +2 is the CUSTOM BAR height and the
-    -- factory default: spell custom bars rely on their aura kit (holder at
-    -- bar+3) occluding CC's per-tick cooldown text while an aura shows, so
-    -- their text must stay beneath it. Resource bars restyle the layer up
-    -- to RESOURCE_TEXT_LAYER_LEVEL (StyleContinuousBar / HealthBar), where
-    -- text wins over every bar's fills and kit visuals.
+    -- Text container above the fill. +2 is the factory default; resource bars
+    -- restyle the layer up to RESOURCE_TEXT_LAYER_LEVEL (StyleContinuousBar /
+    -- HealthBar), where text wins over every bar's fills and kit visuals.
     bar.textLayer = CreateFrame("Frame", nil, bar)
     bar.textLayer:SetAllPoints(bar)
     bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + 2)
@@ -590,7 +587,7 @@ end
 
 ------------------------------------------------------------------------
 -- Frame creation: Overlay bar (base + overlay segments)
--- Used by custom aura bars in "overlay" display mode.
+-- Used by resource bars drawn with the "overlay" shape.
 -- halfSegments = number of segments per layer (e.g. 5 for 10-max).
 ------------------------------------------------------------------------
 

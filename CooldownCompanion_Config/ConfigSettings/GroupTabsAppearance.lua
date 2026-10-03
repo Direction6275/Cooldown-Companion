@@ -750,8 +750,6 @@ local function BuildAppearanceTab(container, settingsGroup)
 
 
 
-    -- Branch for text mode
-
     -- Branch for bar mode
     if group.displayMode == "bars" then
         BuildBarAppearanceTab(container, group, style)
@@ -789,10 +787,10 @@ local function BuildAppearanceTab(container, settingsGroup)
     --    beside an empty left one is never acceptable. A semantic split that
     --    survives the filter intact still wins (both halves populated), but
     --    the moment the filter leaves only one of them the survivors split
-    --    themselves across the columns left-first, ceil(n/2) left. The
-    --    custom-bar Sound Alerts tab is the worked example: it splits
-    --    cooldown-family left / aura-family right when a bar has both, and an
-    --    aura-only bar's three dropdowns 2/1 instead of 0/3.
+    --    themselves across the columns left-first, ceil(n/2) left. The entry
+    --    Sound Alerts section is the worked example: it splits cooldown-family
+    --    left / aura-family right when an entry has both, and an aura-only
+    --    entry's three dropdowns 2/1 instead of 0/3.
     --
     -- Section headers are left-aligned (ROW_SECTION) and own the vertical air
     -- BEFORE their section, so sections never butt together and nothing here
@@ -960,9 +958,8 @@ local function BuildAppearanceTab(container, settingsGroup)
     end
 
     -- Compact Mode used to close this column. It is packing, not look, so it
-    -- now lives on the Layout tab's Arrangement section beside the wrap count
-    -- (its copy membership is unchanged - still this tab's appearance scope in
-    -- ST.PANEL_COPY_SCOPES).
+    -- now lives on the Layout tab's Arrangement section beside the wrap count,
+    -- and Copy Panel Settings copies it with Arrangement.
     iconSec:FinishBracket(iconRightBracket)
     end -- not iconSettingsCollapsed
 

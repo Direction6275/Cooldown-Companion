@@ -2,24 +2,13 @@
     CooldownCompanion_Config - ConfigSettings/ButtonSettingsAura.lua
     Per-entry Aura Tracking section (12.1 rebuild, fresh design — no CDM
     concepts). It was its own entry tab until the entry cluster collapsed to
-    one Settings tab; it now renders into that pane directly below Show
-    Conditions, whose aura toggles depend on the setup made here.
+    one Settings tab; it now renders into that pane.
     Scope: enable toggle, tracked-aura list + add box, tracked-unit dropdown,
     standalone aura ID override, display toggles and style rows.
     The tracked unit is auto-derived from spell polarity by default, with a
     user override (owner ruling 2026-08-28) for auras whose spell data
     misclassifies. Blizzard's anti-cheat gate checks the live aura instance,
     so an override that lies about real polarity harmlessly matches nothing.
-
-    PARITY TWIN (owner directive 2026-08-28): the custom-bar Aura Tracking
-    section (ResourceBarPanelsCustomBars.lua, BuildCustomBarAuraTrackingSection)
-    mirrors this section. A feature added or changed here must be applied to
-    the twin in the same change, or the gap explicitly surfaced to the owner.
-    Custom bars behave exactly like bar panel entries outside their two
-    structural roles (panels anchor freely; custom bars ride the resource
-    stack). Both user overrides (auraUnitOverride, auraIDOverride) exist on
-    both surfaces; on custom bars the polarity override shares the single
-    Tracked on dropdown with the scope choices.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -35,7 +24,6 @@ local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 -- BuildAppearanceTab's icons path (GroupTabsAppearance.lua); this file conforms to them
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
-local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddLabelRow = ST._AddLabelRow
@@ -46,8 +34,7 @@ local AnchorRowBadge = ST._AnchorRowBadge
 local ROW_SECTION = { leftAligned = true }
 
 -- Shared tracked-aura list rules (SectionBuilders.lua): the CSV shape, the
--- polarity guard, and the row/status widgets are common to this tab and the
--- custom-bar Aura tab.
+-- polarity guard, and the row/status widgets live there.
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
 local GetAuraCandidateList = ST._GetAuraCandidateList
 local TryAddAuraCandidate = ST._TryAddAuraCandidate
@@ -66,12 +53,6 @@ local function RefreshAuraConfig()
     CooldownCompanion:RequestAuraRebind("config")
     CooldownCompanion:RefreshConfigPanel()
 end
-
--- Text panels track auras the same way icons and bars do (which aura, on
--- whom), but they have no shell, icon or stack text of their own: the
--- format's aura tokens are the only readout. So the section keeps its left
--- column there and builds none of the right-column visual rows, and the
--- finder must not advertise a row the pane never draws.
 
 local function ResolveConfiguredAuraSpellID(buttonData)
     return CooldownCompanion:ResolveAuraSpellID(buttonData)
@@ -214,20 +195,6 @@ local function CharacterCanCommandPets()
     end
     return false
 end
--- Shared with the custom-bar Aura Tracking section (read late-bound there:
--- this file loads after ResourceBarPanelsCustomBars in the TOC).
-ST._CharacterCanCommandPets = CharacterCanCommandPets
-
--- Shared with the Visibility tab's Show & Hide Rules row for ordinary spell
--- entries. Primary Aura entries are always enabled in Texture panels; layered
--- spell entries retain the explicit opt-in so legacy nil placements stay
--- dormant.
-local TEXTURE_INDICATOR_PREVIEW_KEYS = { "proc", "aura", "ready", "unusable" }
-local STANDARD_TEXTURE_INDICATOR_ADVANCED_KEYS = {
-    "textureIndicator_proc",
-    "textureIndicator_ready",
-    "textureIndicator_unusable",
-}
 
 
 -- Post-change hook for the shared list writers: keep the stored (derived)
@@ -333,8 +300,6 @@ local function GetAuraTrackingCatalogState(context)
         local override = rawget(buttonData.styleOverrides, "showAuraStackText")
         if override ~= nil then showAuraStackText = override end
     end
-    -- Text panels have no stack text of their own (the format's tokens are
-    -- the readout), so every stack-text row stays off the finder there.
     state.stackTextVisible = showAuraStackText ~= false
     state.showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     state.threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
@@ -531,7 +496,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- only auras applied by the player, including on the player themselves.
     local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
     -- A stored flag offers the choice regardless of the gate (same escape the
-    -- pet side and the custom bar twin have): the runtime binds group tokens
+    -- pet side has): the runtime binds group tokens
     -- off the flag alone, so the row has to state it and give it a way out.
     -- Show While Inactive has no group-tracked form yet (Aura
     -- Visibility), so the pair is never offered together.
@@ -558,8 +523,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     elseif classifiedUnit == "player" then
         automaticLabel = "Automatic (You)"
     end
-    -- One dropdown for the whole scope (custom bar parity: the Tracked on
-    -- row in ResourceBarPanelsCustomBars). Group and pet are exclusive with
+    -- One dropdown for the whole scope. Group and pet are exclusive with
     -- each other, so they are two more choices beside the unit rather than
     -- two checkboxes that cleared each other. The stored keys are unchanged.
     local scopeList = {
@@ -728,8 +692,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- data names a distinct applied identity (owner ruling 2026-08-16:
     -- report the player-meaningful auras, not the filter's insurance).
     -- Built positively: the resolved applied-aura identity plus the user's
-    -- explicit adds. Texture panels bind exactly one aura (the same read
-    -- ResolveTexturePanelAuraSpellID makes), so they show only that.
+    -- explicit adds.
     --
     -- Last row of this block on purpose: it is the RESULT of every control
     -- above it (the unit choice, the ID override, the added auras), so it
@@ -788,10 +751,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         controlText = #trackedAuraIDParts > 0
             and table.concat(trackedAuraIDParts, ", ") or "None",
     })
-    -- Text panels stop here. Every row below configures a shell, bar fill,
-    -- stack text or icon the entry does not have; what the aura shows is
-    -- decided by the format's tokens (the heading's "?" points there).
-
 
     -- Bar fill mode (tracker C2): bar hosts can fill the aura bar by stack
     -- count instead of draining with time. Max stacks is automatic (game
@@ -860,8 +819,8 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- bars gate. The shared builder emits nothing for auras the game reports
     -- as non-stacking unless a saved one-stack option needs to remain editable.
     -- The comparison against the live count is engine-side (formatter
-    -- breakpoints); nothing here ever reads the secret count. Rows shared
-    -- with the custom-bar Aura section (SectionBuilders.lua). Gated on the
+    -- breakpoints); nothing here ever reads the secret count. Rows built by
+    -- SectionBuilders.lua. Gated on the
     -- stack text actually showing, the same ~= false read the display
     -- gates the fontstring with.
     if effectiveStyle.showAuraStackText ~= false then

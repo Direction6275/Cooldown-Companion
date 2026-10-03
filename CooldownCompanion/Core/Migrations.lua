@@ -599,21 +599,6 @@ local function ClearInvalidStrataOrders(profile)
             end
         end
     end
-    -- Presets too, like every other normalizer in this file. They are a
-    -- persistent store the one-shot profile migrations never reached, which is
-    -- exactly why a1871266 had to add an inline expander on the apply path
-    -- after the 4->6 change. Cleaning them here is what lets that expander go.
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        clear(presetData.style)
-                    end
-                end
-            end
-        end
-    end
     return changed
 end
 
@@ -830,18 +815,6 @@ local function BackfillAuraDurationSwipeSettings(profile, savedProfileState)
         end
     end
 
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" and BackfillAuraDurationSwipeStyle(presetData.style, profile.globalStyle) then
-                        changed = true
-                    end
-                end
-            end
-        end
-    end
-
     return changed
 end
 
@@ -881,18 +854,6 @@ local function StripRetiredSwipeEdgeKeys(profile)
                         if type(buttonData) == "table" then
                             StripRetiredSwipeEdgeKeysFromStyle(buttonData.styleOverrides)
                         end
-                    end
-                end
-            end
-        end
-    end
-
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        StripRetiredSwipeEdgeKeysFromStyle(presetData.style)
                     end
                 end
             end
@@ -948,13 +909,6 @@ local function RetireSwipeFill(profile)
             RetireSwipeFillFromStyle(group.style)
         end
     end
-    for _, presetStore in pairs(type(profile.groupSettingPresets) == "table" and profile.groupSettingPresets or {}) do
-        if type(presetStore) == "table" then
-            for _, presetData in pairs(presetStore) do
-                if type(presetData) == "table" then RetireSwipeFillFromStyle(presetData.style) end
-            end
-        end
-    end
 end
 
 -- 12.1 icon-fill aura-color retirement: the aura leg of the icon fill was
@@ -989,18 +943,6 @@ local function StripRetiredIconFillAuraColor(profile)
             end
         end
     end
-
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        StripRetiredIconFillAuraColorFromStyle(presetData.style)
-                    end
-                end
-            end
-        end
-    end
 end
 
 -- 12.1 cast-bar styling retirement: the CC-owned cast bar is always
@@ -1029,10 +971,9 @@ local function StripRetiredCastBarStylingKey(profile)
     end
 end
 
--- 12.1 text-panel auto-sizing retirement: a text entry now measures a
--- worst-case render of its own format, font and padding, so the manual
--- textWidth / textHeight pair has nothing left to size and no runtime reader.
--- textPadding is the only manual size knob that survives. Deleting the keys
+-- Text panel size retirement (LEGACY: Text panels are now Indicators): Text
+-- panels gained auto-sizing in 12.1, so the manual textWidth / textHeight
+-- pair lost its runtime reader. Deleting the keys
 -- rather than remapping them keeps this pass a no-op on migrated data, so
 -- import-driven re-runs can never resurrect a size the layout no longer obeys.
 local RETIRED_TEXT_SIZE_KEYS = { "textWidth", "textHeight" }
@@ -1084,28 +1025,14 @@ local function StripRetiredTextSizeKeys(profile)
         end
     end
 
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table"
-                        and StripRetiredTextSizeKeysFromStyle(presetData.style) then
-                        hadCustomSize = true
-                    end
-                end
-            end
-        end
-    end
-
     return hadCustomSize
 end
 
 -- Totem-phase learned-flag retirement: an early build of the totem duration
 -- phase stamped buttonData._totemEntry so the config lane could widen its aura
--- gates. The phase is now opt-in through the entry's own auraTracking toggle
--- (ButtonFrame/CooldownUpdate.lua), so nothing reads or writes the flag any
--- more. Strip every stored copy so profiles and exports stop carrying a dead
--- key. Deleting keeps this pass a no-op on migrated data.
+-- gates. The totem phase was later removed entirely (#680), so nothing reads
+-- or writes the flag any more. Strip every stored copy so profiles and exports
+-- stop carrying a dead key. Deleting keeps this pass a no-op on migrated data.
 local function StripRetiredTotemEntryFlag(profile)
     if type(profile) ~= "table" then
         return
@@ -1125,7 +1052,10 @@ local function StripRetiredTotemEntryFlag(profile)
 end
 
 -- configPreviewSplit was the stacked config layout's preview/settings split.
-local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden", "configPreviewSplit" }
+-- groupSettingPresets was the panel settings preset store, retired by Copy
+-- Panel Settings and Panel Templates; nothing has read it since. Clearing it
+-- here, ahead of every style pass, is what lets those passes skip it.
+local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden", "configPreviewSplit", "groupSettingPresets" }
 
 local function ClearRetiredProfileFlags(profile)
     if type(profile) ~= "table" then
@@ -1490,8 +1420,8 @@ local function MigrateEntryAuraResidue(self, buttonData, counts)
                 counts.stackModes = counts.stackModes + 1
             end
         end
-        -- Panel-only: custom bars still use maxStacks, so it is not in the
-        -- shared inventory.
+        -- Panel-only: maxStacks is not in the shared inventory, so the legacy
+        -- Custom Bar pass leaves it alone.
         auraBar.maxStacks = nil
         for _, key in ipairs(RETIRED_STACK_SILENT_KEYS) do
             auraBar[key] = nil
@@ -2000,9 +1930,10 @@ local function MigrateAuraTrackingRebuild(self, profile)
         for _, group in pairs(groups) do
             local buttons = type(group) == "table" and group.buttons or nil
             if type(buttons) == "table" then
-                -- Icon/bar panels compose their existing aura display. Primary
-                -- Aura entries in Texture panels are always enabled; ordinary
-                -- spell entries require the explicit Texture opt-in. Retained
+                -- Icon/bar panels compose their existing aura display. In the
+                -- retired Texture panels (converted later in the chain),
+                -- primary Aura entries were always enabled and ordinary spell
+                -- entries required the explicit Texture opt-in. Retained
                 -- auraTracking flags and stored aura trigger clauses otherwise
                 -- stay dormant and are only counted, never moved.
                 local displayMode = group.displayMode or "icons"
@@ -2131,8 +2062,8 @@ end
 -- Retired pandemic keys with no 12.1 reader (the Phase 3 retirement): the
 -- nil-means-on enable, the unhonorable combat gate, and the unwired
 -- pandemicBarEffect/Pulse/ColorShift families. Stripped silently from
--- every style scope (globalStyle, group styles, per-entry overrides,
--- presets); the custom-bar ENTRY twins ride CUSTOM_BAR_RETIRED_SILENT_KEYS.
+-- every style scope (globalStyle, group styles, per-entry overrides); legacy
+-- custom-bar entries ride CUSTOM_BAR_RETIRED_SILENT_KEYS.
 -- Idempotent; re-runs on every import by design.
 local PANDEMIC_DEAD_STYLE_KEYS = {
     "showPandemicGlow", "pandemicGlowCombatOnly",
@@ -2394,18 +2325,6 @@ local function MigrateAuraGlowRebuild(self, profile)
         end
     end
 
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        MigrateAuraGlowStyleTable(presetData.style, counts)
-                    end
-                end
-            end
-        end
-    end
-
     profile[AURA_GLOW_SENTINEL.current] = true
     local dropped = {}
     if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
@@ -2475,18 +2394,6 @@ local function MigrateLcgGlowStyles(self, profile)
         end
     end
 
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        MigrateLcgStyleTable(presetData.style, counts)
-                    end
-                end
-            end
-        end
-    end
-
     profile._cdcLcgGlowMigrated = true
     local changed = {}
     if counts.buttonGlow > 0 then changed[#changed + 1] = ("Action Button Glow entries now use the standard Glow (x%d)"):format(counts.buttonGlow) end
@@ -2546,6 +2453,11 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
     end
 end
 
+-- LEGACY CONVERSION ONLY (through MigrateCustomBarEntries below): Custom Bars
+-- no longer exist. This pass cleans old saved custom-bar entries before
+-- RunUnifiedPanelMigration converts them into panel entries later in the
+-- same chain.
+--
 -- Custom-bar entries carry the same effect keys directly on the entry
 -- table; canonicalize them so the stored values stay clean. Entries live
 -- either in a shared store ({entries = {id = entry}}) or as a plain
@@ -2594,17 +2506,17 @@ end
 
 -- Live let the user pin a custom bar's tracked unit; 12.1 derives it from
 -- spell polarity and removed the control, but GetResolvedCustomAuraBarAuraUnit
--- still honours a stored pin ahead of polarity. A stale pin therefore leaves
--- a permanently dark bar with no UI to correct it, so the pin is dropped for
--- EVERY entry — the hazard is not limited to aura-typed ones, and the pin is
--- read for both types.
+-- honours a stored pin ahead of polarity, and the converter carries the
+-- resolved unit into the new panel entry. A stale pin would therefore leave a
+-- permanently dark entry, so the pin is dropped for EVERY entry — the hazard
+-- is not limited to aura-typed ones, and the pin is read for both types.
 --
--- The unit itself is deliberately NOT written here. RunResourceBarClassScopeMigration
--- runs later in this same chain and recomputes it through the runtime
--- resolver (EnsureCustomAuraBarAuraUnit), which is also what the live bind
--- path and the native aura sound registration read. Writing a second,
--- differently-derived value here would be overwritten moments later while
--- still being reported to the user as a correction.
+-- The unit itself is deliberately NOT written here.
+-- RunResourceBarClassScopeMigration runs later in this same chain and
+-- recomputes it through the runtime resolver (EnsureCustomAuraBarAuraUnit),
+-- which is what the converter reads. Writing a second, differently-derived
+-- value here would be overwritten moments later while still being reported to
+-- the user as a correction.
 local function MigrateCustomBarAuraIdentity(entry, counts)
     local tracksAura = entry.auraTracking == true
         or entry.entryType == nil
@@ -2785,18 +2697,6 @@ local function MigrateBarAuraEffectStyles(self, profile)
                         if type(buttonData) == "table" then
                             MigrateBarAuraEffectTable(buttonData.styleOverrides, counts)
                         end
-                    end
-                end
-            end
-        end
-    end
-
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        MigrateBarAuraEffectTable(presetData.style, counts)
                     end
                 end
             end
@@ -3031,9 +2931,9 @@ local function MigratePandemicOverrideOwnership(self, profile)
         end
     end
 
-    -- Custom aura bars are a different store: they hold the marker keys flat
-    -- on the entry with no override sections at all, so they need nothing
-    -- here. The names must also stay OUT of CUSTOM_BAR_RETIRED_SILENT_KEYS,
+    -- Legacy Custom Bar stores hold the marker keys flat on the entry with no
+    -- override sections at all, so they need nothing here. The names must
+    -- also stay OUT of CUSTOM_BAR_RETIRED_SILENT_KEYS,
     -- which strips the retired barPandemic* families whose names look alike.
     profile[PANDEMIC_OVERRIDE_SENTINEL.current] = true
 end
@@ -3186,9 +3086,8 @@ local function MigrateWhileAuraActiveOwnership(self, profile)
         end
     end
 
-    -- Custom aura bars are a different store with no override sections, and
-    -- neither key ever reached it: that kit has no icon cover to skip and no
-    -- cooldown text to lift. Nothing to do there.
+    -- Legacy Custom Bar stores have no override sections, and neither key
+    -- ever reached them. Nothing to do there.
     profile[WHILE_AURA_ACTIVE_SENTINEL.current] = true
 end
 
@@ -3258,8 +3157,8 @@ local function MigrateWhileAuraActiveIconOwnership(self, profile)
         end
     end
 
-    -- Custom aura bars are a different store with no override sections, and
-    -- neither field ever reached it.
+    -- Legacy Custom Bar stores have no override sections, and neither field
+    -- ever reached them.
     profile[WHILE_AURA_ACTIVE_ICON_SENTINEL.current] = true
 end
 
@@ -3469,26 +3368,12 @@ local function MigratePandemicSwitchOwnership(self, profile)
         end
     end
 
-    if type(profile.groupSettingPresets) == "table" then
-        for _, presetStore in pairs(profile.groupSettingPresets) do
-            if type(presetStore) == "table" then
-                for _, presetData in pairs(presetStore) do
-                    if type(presetData) == "table" then
-                        MigratePandemicMarkerModeStyle(presetData.style)
-                    end
-                end
-            end
-        end
-    end
-
-    -- Custom aura bars are a different store with no override sections and no
-    -- style tables: they keep their own flat pandemicMarker/pandemicEffect keys,
-    -- which the style adapter translates into this vocabulary at bind time.
+    -- Legacy Custom Bar stores have no override sections and no style tables;
+    -- their flat pandemicMarker/pandemicEffect keys are translated by the
+    -- Custom Bar converter (UnifiedPanelMigration).
     profile[PANDEMIC_SWITCH_SENTINEL.current] = true
 end
 
--- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
--- that are allowed to continue. Add new post-1.15 migrations here in order.
 -- See DURATION_LOW_TIME_AURAS_SENTINEL. Only stores with an ACTIVE
 -- durationLowTime section are touched: an inactive section's stale keys are
 -- ignored by GetEffectiveStyle, and future promotions get the explicit
@@ -3585,19 +3470,19 @@ end
 -- without members. Never infer those new scopes for an unversioned template;
 -- only saving/updating from an actual panel upgrades its snapshot.
 --
--- The shape is the whole point. groupSettingPresets was a second style store
--- with its own layout, so every pass that rewrote style vocabulary had to
--- grow a two-level presets loop by hand (nine of them in this file), and it
--- was a store the one-shot passes never reached at all until each grew that
--- loop, which is exactly why a1871266 had to add an inline expander on the
--- apply path. A template IS a group inside a profile-shaped table, so the
--- passes' existing profile.groups walks already reach it: this runs the style
--- passes over the store as their `profile` argument, in the order
--- RunAllMigrations runs them on the real profile. Each one-shot pass stamps
--- its sentinel on the STORE ROOT (they all write profile[sentinel.current]),
--- so the store re-runs a pass only on a generation bump, exactly like a
--- profile does. ClearMigrationSentinels is profile-only: a door that ever
--- installs templates wholesale has to bring them through here itself.
+-- The shape is the whole point. The retired groupSettingPresets store had its
+-- own layout, so every pass that rewrote style vocabulary had to grow a
+-- two-level presets loop by hand, and it was a store the one-shot passes never
+-- reached at all until each grew that loop, which is exactly why a1871266 had
+-- to add an inline expander on the apply path. A template IS a group inside a
+-- profile-shaped table, so the passes' existing profile.groups walks already
+-- reach it: this runs the style passes over the store as their `profile`
+-- argument, in the order RunAllMigrations runs them on the real profile. Each
+-- one-shot pass stamps its sentinel on the STORE ROOT (they all write
+-- profile[sentinel.current]), so the store re-runs a pass only on a generation
+-- bump, exactly like a profile does. ClearMigrationSentinels is profile-only:
+-- a door that ever installs templates wholesale has to bring them through here
+-- itself.
 --
 -- Only passes that read or write groups[*].style belong here. Entry, folder,
 -- flag, cast-bar, totem and resource passes would find nothing (empty
@@ -3680,6 +3565,8 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     if ST.MigrateSharedBarStyleTemplates then ST.MigrateSharedBarStyleTemplates(originalStore) end
 end
 
+-- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
+-- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
     -- Retired summon tracking learned spell associations from cast timing.
     -- Discard those unverified links for every character.

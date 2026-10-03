@@ -6,8 +6,6 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddTextPositionControls = ST._AddTextPositionControls
-local AddFontControls = ST._AddFontControls
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 local ColorHeading = ST._ColorHeading
 local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
@@ -21,8 +19,8 @@ local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 -- lands" rows there and its "what it is drawn with" rows into `container`.
 -- Builders that ignore it simply fill the left column, which is what the
 -- fill-LEFT-first rule asks for. The styling tabs pass it wherever a section
--- opens its own two-column grid (Text mode's Font and Colors sections, the
--- bar aura indicator's effects grid).
+-- opens its own two-column grid (for example the bar aura indicator's
+-- effects grid).
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
@@ -43,11 +41,10 @@ local tabInfoButtons = CS.tabInfoButtons
 ------------------------------------------------------------------------
 -- TRACKED-AURA CANDIDATE LISTS
 ------------------------------------------------------------------------
--- Both aura surfaces (panel entries and custom bars) store the same shape:
--- a CSV of spell IDs on `auraSpellID`, with the Blizzard polarity rule that
--- one entry may never mix buffs and debuffs. The rules and their messages
--- live here once so the two surfaces cannot answer the same action
--- differently. Callers supply their own derived unit and a post-change hook
+-- Aura entries store a CSV of spell IDs on `auraSpellID`, with the Blizzard
+-- polarity rule that one entry may never mix buffs and debuffs. The rules and
+-- their messages live here once so every caller answers the same action the
+-- same way. Callers supply their own derived unit and a post-change hook
 -- (each surface normalizes its own entry shape afterwards).
 
 -- Delegates to the Core classifier (Core/Aura.lua) — the one owner of the
@@ -202,10 +199,8 @@ end
 -- Block-style bars only: the gap is baked into the bundled fill atlas
 -- (the Blizzard-driven fill reveals whole blocks by cropping that
 -- artwork), so the choice is a preset picking which atlas set the bind
--- uses — never the free pixel slider painted-divider bars get. Shared by
--- the panel entry section and the custom-bar Aura section; the store is
--- whatever the Core/Aura.lua accessors read (entry buttonData or
--- cabConfig).
+-- uses — never the free pixel slider painted-divider bars get. The store is
+-- whatever the Core/Aura.lua accessors read (entry buttonData).
 local STACK_THRESHOLD_TOOLTIP = {
     "Stack Text Threshold Color",
     {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
@@ -216,8 +211,8 @@ local SHOW_COUNT_AT_ONE_TOOLTIP = {
     {"Shows a count of 1 on the first aura application. When disabled, the count starts at 2.", 1, 1, 1, true},
 }
 
--- Stack text formatter rows, shared between the panel entry Aura Tracking
--- section and the custom-bar Aura Tracking section. The options require a
+-- Stack text formatter rows for the panel entry Aura Tracking section. The
+-- options require a
 -- REAL resolved stack maximum (owner rule:
 -- the threshold row may only exist where the max row can) — but only OUT
 -- of combat is a nil max proof the aura doesn't stack. In combat the max
@@ -226,8 +221,7 @@ local SHOW_COUNT_AT_ONE_TOOLTIP = {
 -- the max rows still need the resolved value, matching their shipped
 -- behavior.
 -- The store is anything the Core/Aura.lua accessors read: a panel entry's
--- buttonData or a custom bar's cabConfig; both keep the keys in an auraBar
--- subtable, which is what lets the runtime adapters share the engine.
+-- buttonData, which keeps the keys in an auraBar subtable.
 -- opts:
 --   infoButtons     badge registry for the "?" button
 --   refresh         structural refresh (rebuilds the settings column)
@@ -375,13 +369,6 @@ end
 -- Each builder takes (container, styleTable, refreshCallback) and adds
 -- AceGUI widgets to the container, reading/writing values from styleTable.
 
-local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
-local KEYBIND_CUSTOM_TOOLTIP = {
-    "Show Keybind/Custom Text",
-    {"Shows detected keybind text on icon buttons by default.", 1, 1, 1, true},
-    " ",
-    {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
-}
 local function IsAdvancedSettingsPanelContainer(container)
     return container and container._isAdvancedSettingsPanel == true
 end
@@ -402,7 +389,7 @@ local function RefreshStructuralControls(container, refreshCallback, refreshCool
     end
 end
 
--- Shared Duration Format row used by panel and custom-bar duration sections.
+-- Shared Duration Format row used by the panel and entry duration sections.
 local function AddDurationFormatDropdown(container, settings, refreshCallback, opts)
     if not (container and settings and CooldownCompanion.GetDurationFormatOptions) then
         return nil
@@ -583,11 +570,11 @@ end
 -- Low Time Threshold rows (2026-08-15 program, aura extension ruled
 -- 2026-08-25): one shared duration-text policy for cooldown and aura phases.
 -- Panel tabs resolve these rows through their dedicated durationLowTime
--- override section; custom bars own the same keys directly. Each surface draws
+-- override section. Each surface draws
 -- the family once beside its applicable Duration Format row.
 -- Decimals/color keys survive a disable so re-enabling restores the old
--- look; only the threshold key is the on/off switch (nil at panel/custom-bar
--- scope, explicit 0 in an entry override). Dependent rows exist ONLY while
+-- look; only the threshold key is the on/off switch (nil at panel scope,
+-- explicit 0 in an entry override). Dependent rows exist ONLY while
 -- the toggle is on (owner ruling: hide, don't disable), so structural toggles
 -- go through opts.rebuild. Returns the rows it added so a section host can
 -- attach scope chrome to the master row.
@@ -643,8 +630,8 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     if not (container and settings) then return nil end
     opts = opts or {}
     -- A customized entry's settings table inherits from the panel style. Its
-    -- off state therefore has to be stored explicitly; panel/custom-bar stores
-    -- keep the existing nil cleanup. Callers opt in only for that scope.
+    -- off state therefore has to be stored explicitly; panel stores keep the
+    -- existing nil cleanup. Callers opt in only for that scope.
     local explicitOff = opts.explicitOff == true
     local disabledThresholdValue = explicitOff and 0 or nil
 
@@ -958,10 +945,6 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 -- Labels deliberately say "Marker": these rows share a section with the
 -- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
 -- column would be unreadable.
---
--- Custom aura bars call the childrenOnly shape with their own cab table, which
--- speaks the flat cab keys and never carries a mode: their on/off switch is the
--- entry's own row, and the mode read below simply falls through to "auto".
 local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
     opts = opts or {}
     local enableRow
@@ -1416,16 +1399,6 @@ local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback,
             refreshCallback()
         end,
     })
-end
-
-local function IsIconFillTimerEnabled(styleTable, opts)
-    if opts and opts.masqueEnabled == true then
-        return false
-    end
-    if styleTable and styleTable.iconFillEnabled ~= nil then
-        return styleTable.iconFillEnabled == true
-    end
-    return opts and opts.fallbackStyle and opts.fallbackStyle.iconFillEnabled == true
 end
 
 local BuildIconFillTimerAdvancedControls
@@ -2494,18 +2467,6 @@ local function BuildKeyPressHighlightControls(container, styleTable, refreshCall
 end
 
 ------------------------------------------------------------------------
--- Text Mode — Text Colors
-------------------------------------------------------------------------
--- Row grammar only (RowWidgets.lua): the backdrop and the border that frames
--- it, reading top to bottom - four rows at most, so they stay in one column
--- (the <4-rows rule). opts.indent makes them child rows. The pre-redesign
--- full-width stock shape had no call sites left after the conversion packets.
-
--- Row grammar only: LEFT what the text is drawn with, RIGHT how the line is
--- laid out.
-
-
-------------------------------------------------------------------------
 -- EXPORTS
 ------------------------------------------------------------------------
 ST._AddDurationFormatDropdown = AddDurationFormatDropdown
@@ -2543,8 +2504,7 @@ ST._BuildBarActiveAuraControls = BuildBarActiveAuraControls
 ST._BuildReadyGlowControls = BuildReadyGlowControls
 ST._BuildKeyPressHighlightControls = BuildKeyPressHighlightControls
 
--- Tracked-aura candidate lists (shared by the panel Aura tab and the
--- custom-bar Aura tab).
+-- Tracked-aura candidate lists (used by the entry Aura Tracking section).
 ST._ClassifyAuraSpellUnit = ClassifyAuraSpellUnit
 ST._GetAuraCandidateList = GetAuraCandidateList
 ST._TryAddAuraCandidate = TryAddAuraCandidate

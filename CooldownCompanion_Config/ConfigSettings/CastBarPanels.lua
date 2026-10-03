@@ -17,7 +17,6 @@ local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 -- rather than restating them.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
-local AddDropdownRow = ST._AddDropdownRow
 local AddColorRow = ST._AddColorRow
 local BeginRowGrid = ST._BeginRowGrid
 
@@ -31,7 +30,6 @@ local ROW_SECTION = { leftAligned = true }
 -- allocates none of them; the channel-tick spec stays inline at its site
 -- because its checkbox sequence also repaints the canvas, so it rides `run`.
 local TURNON_SHOW_ICON = { label = "Enable Spell Icon", key = "showIcon" }
-local TURNON_SHOW_NAME_TEXT = { label = "Enable Spell Name", key = "showNameText" }
 local TURNON_SHOW_CAST_TIME = { label = "Enable Cast Time", key = "showCastTimeText" }
 
 ------------------------------------------------------------------------
@@ -260,10 +258,6 @@ if ST._DefineSettingRoute then
         yOffset = { label = "Y Offset" },
     })
 end
-
--- LibSharedMedia texture names (and the longer anchoring-mode label) run past
--- the 140px control column, and a dropdown sizes its menu from the control.
-local WIDE_PULLOUT_WIDTH = 300
 
 -- The workspace Live Preview draws the attached cast bar's own facsimile from
 -- these settings and does NOT rebuild with the settings column, so every row
@@ -982,7 +976,7 @@ local function BuildCastBarStylingPanel(container)
     })
 end
 
--- Expose for ButtonSettings.lua and Config.lua
+-- Exports
 ST._BuildCastBarAnchoringPanel = BuildCastBarAnchoringPanel
 ST._BuildCastBarPositioningPanel = BuildCastBarPositioningPanel
 ST._BuildCastBarStylingPanel = BuildCastBarStylingPanel

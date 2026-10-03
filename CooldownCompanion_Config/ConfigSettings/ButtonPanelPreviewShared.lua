@@ -514,7 +514,7 @@ local function EnsurePreviewState(host)
 end
 
 -- Temporary authoring labels, independent of the bar's saved name-text style.
--- Hovering one bar identifies the whole set, as the former Custom Bars preview did.
+-- Hovering one bar identifies the whole set.
 local function SetBarIdentityLabelsShown(preview, shown)
     if preview.ghostActive then return end
     for index = 1, (preview.used.barSlots or 0) do
@@ -1554,12 +1554,11 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
             rows = math_min(count, perRow)
             cols = math_ceil(count / perRow)
         end
-        local headerHeight = 0
         -- Content-sized overview cards need the complete footprint, matching
         -- the read-only renderer's section layout rather than the base grid.
         local sections = includeSections and ST.GetSectionsForLayout(group)
         local width = (cols - 1) * (geo.entryWidth + geo.spacing) + geo.entryWidth
-        local height = (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight + headerHeight
+        local height = (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight
         if hasAttachedBars and count == 0 then width, height = 1, 1 end
         local base
         if sections then
@@ -1569,7 +1568,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
             end
             local lists = ST.PartitionPanelSectionMembers(group, entries)
             local layout = ST.BuildPanelSectionLayout(group, sections, lists,
-                geo.entryWidth, geo.entryHeight, geo.spacing, headerHeight)
+                geo.entryWidth, geo.entryHeight, geo.spacing)
             width, height = math_max(1, layout.totalWidth), math_max(1, layout.totalHeight)
             base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
                 width = layout.baseWidth, height = layout.baseHeight }

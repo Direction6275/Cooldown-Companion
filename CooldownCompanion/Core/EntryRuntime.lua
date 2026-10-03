@@ -1,7 +1,7 @@
 --[[
     CooldownCompanion - Core/EntryRuntime
     Shared cooldown runtime helpers for display entries.
-    12.1 demolition: aura runtime evaluation removed pending the AuraContainer rebuild.
+    Cooldown only: aura display runs through Core/AuraDisplay.lua (12.1 AuraContainer).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -242,7 +242,7 @@ end
 EntryRuntime.ResolveSlotProbeShown = ResolveSlotProbeShown
 
 -- Returns a module-local scratch table. Read it only synchronously within the
--- current button/custom-bar update; never retain it across ticks/events.
+-- current button update; never retain it across ticks/events.
 local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
     local result = spellCooldownLaneResultScratch
     wipe(result)

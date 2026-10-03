@@ -135,16 +135,10 @@ local DEFAULT_TEXTURE_PULSE_ALPHA = 0.45
 local DEFAULT_TEXTURE_SHRINK_SCALE = 0.82
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = 18
 
--- No pandemic entry: Texture panels can use Blizzard-driven active-only
--- visibility, but the addon still cannot read aura timing or pandemic state.
+-- LEGACY CONVERSION ONLY: defaults for the retired Texture panel's single
+-- aura effect (group.style.textureIndicators.aura). I.ReadEffects reads it
+-- only for an old aura Indicator that has not yet stored effectVersion 1.
 local TEXTURE_INDICATOR_DEFAULTS = {
-    proc = {
-        enabled = false,
-        effectType = TEXTURE_INDICATOR_EFFECT_PULSE,
-        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
-        color = { 1, 1, 1, 1 },
-        combatOnly = false,
-    },
     aura = {
         enabled = false,
         effectType = TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT,
@@ -152,20 +146,6 @@ local TEXTURE_INDICATOR_DEFAULTS = {
         color = { 1, 0.84, 0, 1 },
         combatOnly = false,
         invert = false,
-    },
-    ready = {
-        enabled = false,
-        effectType = TEXTURE_INDICATOR_EFFECT_BOUNCE,
-        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
-        color = { 0.2, 1, 0.2, 1 },
-        combatOnly = false,
-    },
-    unusable = {
-        enabled = false,
-        effectType = TEXTURE_INDICATOR_EFFECT_PULSE,
-        speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
-        color = { 1, 0.35, 0.35, 1 },
-        combatOnly = false,
     },
 }
 
@@ -656,9 +636,9 @@ function CooldownCompanion:IsTexturePanelGroup(group)
     return ST.Indicator.IsAura(group)
 end
 
--- Primary Aura entries in Texture panels are intrinsically aura-controlled.
--- Ordinary spell entries retain the explicit Texture-only opt-in so legacy
--- auraTracking residue cannot silently reactivate them. Only the main source
+-- An aura Indicator's primary Aura entry is intrinsically aura-controlled.
+-- Ordinary spell entries retain the explicit opt-in so legacy auraTracking
+-- residue cannot silently reactivate them. Only the main source
 -- is the aura: an aura Indicator's extra spell sources are rule sources and
 -- never own an aura slot. A While Missing aura or an aura list owns no slot
 -- either: CC draws it behind a presence tracker (AuraDisplay "presence").
@@ -690,9 +670,9 @@ function CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
     return orderedCandidateIDs and orderedCandidateIDs[1] or nil
 end
 
--- Mutation helper for user actions that place a primary Aura entry into a
--- Texture panel (new add, move, or panel conversion). Primary Aura entries do
--- not have an opt-out in Texture panels; ordinary spell entries still do.
+-- Mutation helper for user actions that place a primary Aura entry into an
+-- aura Indicator (new add, move, or panel conversion). Primary Aura entries
+-- have no opt-out there; ordinary spell entries still do.
 function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
     if not (self:IsTexturePanelGroup(group)
         and type(buttonData) == "table"

@@ -424,6 +424,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     })
 end
 
--- Expose for Config.lua
+-- Exports
 ST._BuildContainerGeneralTab = BuildContainerGeneralTab
 ST._BuildContainerLoadConditionsTab = BuildContainerLoadConditionsTab

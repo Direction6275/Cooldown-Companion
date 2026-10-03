@@ -32,10 +32,10 @@ local function CanAllPanelsMoveToContainer(panelIds, containerId)
 end
 
 
--- Row-grammar action strips: compact buttons on grammar-height lines (the
--- preset-trio shape in Helpers.lua). Flow insets its single row by 3px top
--- and bottom, so 3 + 24 + 3 centres inside the 30px band, and noAutoHeight
--- keeps Flow's own 27px report from shrinking it back.
+-- Row-grammar action strips: compact buttons on grammar-height lines. Flow
+-- insets its single row by 3px top and bottom, so 3 + 24 + 3 centres inside
+-- the 30px band, and noAutoHeight keeps Flow's own 27px report from
+-- shrinking it back.
 local ACTION_STRIP_HEIGHT = (ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT) or 30
 local ACTION_STRIP_BUTTON_HEIGHT = 24
 local ACTION_STRIP_GUTTER = 4
@@ -50,7 +50,7 @@ local ACTION_STRIP_TEXT_PAD = 30
 -- lines that look like accidental wrapping. Flow anchors its children from the
 -- left, so the block reads as a group instead of a stack of page-wide
 -- banners. Flow packs siblings at 0px, so the gutter between buttons is a
--- fixed-size spacer group - the same idiom the preset trio uses. It matches
+-- fixed-size spacer group. It matches
 -- the buttons' height on purpose: Flow offsets each child by (its height / 2)
 -- relative to the previous one, so a shorter spacer would make the line step.
 local function AddActionStrips(scroll, rows)

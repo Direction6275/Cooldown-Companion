@@ -27,8 +27,6 @@ local IsAuraDurationTextKind = PP.IsAuraDurationTextKind
 local FormatAuraDurationPreviewText = PP.FormatAuraDurationPreviewText
 local StyleSlotCooldownText = PP.StyleSlotCooldownText
 
--- ButtonPanelPreviewText.lua
-
 ------------------------------------------------------------------------
 -- Effect previews on the mirror: while a preview toggle is active for an
 -- entry (or its whole panel), render the configured glow through the shared

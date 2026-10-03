@@ -303,22 +303,6 @@ function ST.DetachEntryFromPanelSection(group, buttonData)
     return true
 end
 
---- Dissolve every section this panel has been left with nothing in.
---- A batch mutation -- a multi-delete, a multi-entry move, a wholesale
---- repopulate -- can empty several anchors at once, so it sweeps once at the
---- end instead of tracking each vacated anchor on the way through.
---- Returns true when anything was removed.
-function ST.SweepEmptyPanelSections(group)
-    if type(group) ~= "table" or type(group.sections) ~= "table" then return false end
-    local changed = false
-    for _, anchor in ipairs(ST.PANEL_SECTION_ANCHORS) do
-        if ST.DissolveEmptyPanelSection(group, anchor) then
-            changed = true
-        end
-    end
-    return changed
-end
-
 --- Return every section member to the base grid and drop the sections.
 --- Entries keep their place in the master list, which is exactly where the base
 --- grid reads its order from, so flattening only ever subtracts. Leaving icon
@@ -379,7 +363,7 @@ end
 --- Every gate that has to treat a mixed panel the way it treats an Aura Panel --
 --- the rebind request, the rebuild signature, the populate skip -- reads this
 --- one predicate, so they cannot drift apart. False for every panel the section
---- model does not cover, so a stray flag on a bar or text panel stays inert.
+--- model does not cover, so a stray flag on any other panel stays inert.
 function ST.PanelHasAuraSection(group)
     if not ST.PanelSupportsSections(group) then return false end
     if type(group.sections) ~= "table" then return false end
@@ -549,7 +533,7 @@ end
 --- An AURA section additionally carries auraOnly = true. Blizzard's container
 --- lays its cells out inside the block rectangle following axis/side/from, so
 --- the per-member positions serve only the unlock placeholder tiles there.
-function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHeight, panelSpacing, headerHeight, layout)
+function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHeight, panelSpacing, layout)
     local style = group.style or {}
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = math_max(1, style.buttonsPerRow or 12)
@@ -574,7 +558,7 @@ function ST.BuildPanelSectionLayout(group, sections, lists, panelWidth, panelHei
             cols = math_ceil(baseCount / buttonsPerRow)
         end
         baseWidth = cols * panelWidth + (cols - 1) * panelSpacing
-        baseHeight = rows * panelHeight + (rows - 1) * panelSpacing + (headerHeight or 0)
+        baseHeight = rows * panelHeight + (rows - 1) * panelSpacing
     end
 
     local minX, maxX, minY, maxY = 0, baseWidth, -baseHeight, 0
@@ -1027,7 +1011,7 @@ end
 --- Otherwise it measures the footprint, sizes and places every section member,
 --- parks the base anchor frame, and hands back the base member list plus the
 --- frame the caller must lay that list out against.
-function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panelHeight, panelSpacing, headerHeight, usability)
+function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panelHeight, panelSpacing, usability)
     local sections = ST.GetSectionsForLayout(group)
     if not sections then
         ST.ClearPanelSectionLayout(frame, group, panelWidth, panelHeight)
@@ -1043,7 +1027,7 @@ function ST.PrepareSectionedPanelLayout(frame, group, buttons, panelWidth, panel
     lists.auraCounts = ST.CollectAuraSectionCounts(group, usability, lists.auraCounts)
 
     local layout = ST.BuildPanelSectionLayout(
-        group, sections, lists, panelWidth, panelHeight, panelSpacing, headerHeight, frame._sectionLayout)
+        group, sections, lists, panelWidth, panelHeight, panelSpacing, frame._sectionLayout)
     frame._sectionLayout = layout
 
     local baseAnchor = AcquireBaseAnchorFrame(frame, layout)

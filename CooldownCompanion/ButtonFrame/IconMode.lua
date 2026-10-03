@@ -7,7 +7,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local IconVisuals = ST._IconVisuals
 local CooldownLogic = ST.CooldownLogic
-local EntryRuntime = ST.EntryRuntime
 -- F2 canary sink (loaded before this file; dev-gated, observe-only).
 local RefreshTelemetry = ST.RefreshTelemetry
 local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
@@ -63,7 +62,7 @@ local function IsCursorAnchoredButton(button)
         or false
 end
 
--- Texture/Trigger panels drive alpha-0 icon buttons through this file; those
+-- Indicators drive alpha-0 source buttons through this file; those
 -- invisible frames must never become ping receivers (their config tabs do not
 -- expose the toggle, and a converted panel keeps its old style keys).
 local function IsStandaloneTexturePanelButton(button)

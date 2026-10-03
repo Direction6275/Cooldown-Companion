@@ -77,7 +77,7 @@ function ST.GetConfiguredPanelIconGeometry(group)
     local height = style.maintainAspectRatio and size or style.iconHeight or size
     local lists = ST.PartitionPanelSectionMembers(group, entries)
     return ST.BuildPanelSectionLayout(group, ST.GetSectionsForLayout(group) or {}, lists,
-        width, height, style.buttonSpacing or ST.BUTTON_SPACING, 0)
+        width, height, style.buttonSpacing or ST.BUTTON_SPACING)
 end
 
 -- Within an area fixed bars precede native aura buckets. Each unit's auras

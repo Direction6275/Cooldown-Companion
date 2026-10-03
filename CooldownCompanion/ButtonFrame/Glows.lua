@@ -78,10 +78,9 @@ local function NormalizeGlowStyle(style)
 end
 
 -- CC-side preview normalizer for the bar aura effect (SetBarAuraEffect only
--- serves the config preview and the dormant custom-bar path; the live bar
--- render is the kit). Maps stored values to the CC renderer equivalents of
--- what the kit draws, mirroring NormalizeKitBarEffectStyle below (border
--- styles only on bars).
+-- serves the config preview; the live bar render is the kit). Maps stored
+-- values to the CC renderer equivalents of what the kit draws, mirroring
+-- NormalizeKitBarEffectStyle below (border styles only on bars).
 local function NormalizeBarAuraEffectStyle(style)
     if style == "color" or style == "none" then
         return "none"

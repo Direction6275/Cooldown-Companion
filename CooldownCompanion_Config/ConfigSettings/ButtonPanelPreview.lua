@@ -66,8 +66,6 @@ local ApplySlotEffectPreviews = PP.ApplySlotEffectPreviews
 local ClearSlotEffectPreviews = PP.ClearSlotEffectPreviews
 local EnsureConditionalTicker = PP.EnsureConditionalTicker
 
--- ButtonPanelPreviewText.lua
-
 -- ButtonPanelPreviewBars.lua
 local StyleBarEntry = PP.StyleBarEntry
 local ResetBarSlotConditionalVisuals = PP.ResetBarSlotConditionalVisuals
@@ -323,10 +321,6 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         growthAnchor = centeredEdge
     end
 
-    -- Text-mode group header claims a row of space above (or below, for
-    -- bottom growth) the entries, exactly like the live layout.
-    local headerHeight = 0
-
     -- Panel Sections. Every number a section contributes below -- footprint,
     -- position, icon size -- is read straight off the engine's own layout
     -- table, the same one Core/GroupFrameLayout.lua lays the live panel out from.
@@ -382,7 +376,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     if sections then
         local lists = sectionLists
         sectionLayout = ST.BuildPanelSectionLayout(group, sections, lists,
-            w, h, spacing, headerHeight)
+            w, h, spacing)
 
         cellCount = #lists.base
         cellIndex, cellOfIndex = {}, {}
@@ -430,7 +424,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
             cols = math_ceil(cellCount / perRow)
         end
         contentWidth = (cols - 1) * (w + spacing) + w
-        contentHeight = (rows - 1) * (h + spacing) + h + headerHeight
+        contentHeight = (rows - 1) * (h + spacing) + h
         if hasAttachedBars and cellCount == 0 then contentWidth, contentHeight = 1, 1 end
     end
 
@@ -538,11 +532,11 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
             if geo.orientation == "horizontal" then
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
                 return baseDX + (indexInLine - (itemsInLine - 1) / 2) * (w + spacing),
-                    baseDY + edgeYMul * (line * (h + spacing) + headerHeight)
+                    baseDY + edgeYMul * line * (h + spacing)
             end
             local edgeXMul = centeredEdge == "LEFT" and 1 or -1
             return baseDX + edgeXMul * line * (w + spacing),
-                baseDY + ((itemsInLine - 1) / 2 - indexInLine) * (h + spacing) - headerHeight / 2
+                baseDY + ((itemsInLine - 1) / 2 - indexInLine) * (h + spacing)
         end
     else
         layoutDrag.cellXY = function(d)
@@ -555,7 +549,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
                 row = (d - 1) % perRow
             end
             return baseDX + xMul * col * (w + spacing),
-                baseDY + yMul * (row * (h + spacing) + headerHeight)
+                baseDY + yMul * row * (h + spacing)
         end
     end
     -- The pitch between two cells on the same line, which cellXY can only be
@@ -579,7 +573,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         and (count >= 2 or wantSectionDrag)) and layoutDrag or nil
     if dragModel and wantSectionDrag then
         layoutDrag.sectionDrag = SectionDrag.Build(group, sections, sectionLists,
-            sectionLayout, w, h, spacing, headerHeight, contentWidth, contentHeight)
+            sectionLayout, w, h, spacing, contentWidth, contentHeight)
         SectionDrag.FloorEmptyBase(layoutDrag.sectionDrag, layoutDrag,
             contentWidth, contentHeight)
         if wantCursorModel then
@@ -594,7 +588,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         -- and most such builds never meet a cursor payload, so the inputs are
         -- stashed and CursorPadModel builds on first use.
         preview.cursorPadInputs = { group, sections, sectionLists, sectionLayout,
-            w, h, spacing, headerHeight, contentWidth, contentHeight, layoutDrag }
+            w, h, spacing, contentWidth, contentHeight, layoutDrag }
     end
 
     local attachmentDrag = not readOnly and ST._CreatePanelAttachmentDrag
@@ -610,7 +604,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         scale = scale, dropGhostIndex = dropGhostIndex,
         dragModel = dragModel, layoutDrag = layoutDrag, sections = sections,
         visibleIndices = visibleIndices, attachmentDrag = attachmentDrag,
-        headerHeight = headerHeight, options = options, modules = modules,
+        options = options, modules = modules,
         hostWidth = host:GetWidth(), hostHeight = host:GetHeight(),
         bottomReserve = host._cdcPreviewReserveBottom,
     }
@@ -712,10 +706,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         CS.panelPreviewVisualsNeedReconcile = nil
     end
     ResetPreviewLayout(preview)
-    if preview.textHeader then
-        preview.textHeader:Hide()
-    end
-    -- Hide the texture mirror up front so switching from a texture panel to any
+    -- Hide the texture mirror up front so switching from an Indicator to any
     -- other type never leaves a stale texture drawn over the new mirror; only
     -- BuildTextureMirror re-shows it.
     if preview.textureMirror then
@@ -1013,7 +1004,6 @@ function ST._ReleaseReadOnlyPanelPreview(host)
         preview.textureMirror.root:EnableMouse(false)
         preview.textureMirror.root:Hide()
     end
-    if preview.textHeader then preview.textHeader:Hide() end
     preview.content:Hide()
     preview.root:Hide()
 end

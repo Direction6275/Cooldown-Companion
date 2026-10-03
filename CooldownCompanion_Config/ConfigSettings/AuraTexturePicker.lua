@@ -4,12 +4,12 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Inline texture browser. The catalog used to live in a floating AceGUI Window
--- ("Browse Texture Panel Visuals"); it now renders as a takeover of the wide
+-- (once titled for Texture panels); it now renders as a takeover of the wide
 -- column's settings area (ButtonsWideColumn owns the host + the takeover
 -- branch; this file renders the grid + chrome into it via
 -- ST._RenderInlineTextureBrowser). Hover = live preview, click = commit
 -- immediately (no Apply button), Remove Texture empties the panel, Back returns to
--- the settings. Serves both texture panels and trigger panels.
+-- the settings. Serves Texture Indicators.
 
 local BASE_THUMB_SIZE = 64
 local THUMB_GAP = 8
@@ -170,8 +170,8 @@ local function ClearStagedPreview()
     end
 end
 
--- Stage a hovered entry. Texture and trigger panels use the pinned mirror as
--- their only continuous preview.
+-- Stage a hovered entry. Indicators use the pinned mirror as their only
+-- continuous preview.
 local function StageEntryPreview(entry)
     if not currentGroupId then
         return

@@ -172,6 +172,9 @@ local function ClearSpecKeyedValue(source, specID)
     source[tostring(specID)] = nil
 end
 
+-- LEGACY CONVERSION ONLY: retired Custom Bar stores. Custom Bars no longer exist;
+-- these read old customBars/customAuraBars stores so they can be normalized
+-- before UnifiedPanelMigration converts them into panel entries.
 local function IsSharedCustomBarsStore(customBars)
     return type(customBars) == "table"
         and (type(customBars.entries) == "table" or type(customBars.order) == "table")
@@ -788,6 +791,8 @@ local function NormalizeResourceSpecOverridesForClass(settings, classKey)
     end
 end
 
+-- LEGACY CONVERSION ONLY: retired Custom Bar stores. Normalizes old stores ahead of
+-- conversion; a no-op on converted profiles.
 local function ClearCustomBarLegacySpecFields(entry)
     if type(entry) ~= "table" then
         return
@@ -1308,6 +1313,9 @@ local function BuildResourceBarMigrationBuckets(addon, profile, state)
     return buckets
 end
 
+-- LEGACY CONVERSION ONLY: retired Custom Bar stores. When an unresolved legacy
+-- Resources conflict is settled, every candidate's old bars are merged here
+-- so the next migration run converts them instead of dropping them.
 local function AddMergedCustomBarOrder(store, customBarId)
     if type(store) ~= "table" or type(customBarId) ~= "string" or customBarId == "" then
         return
@@ -1987,34 +1995,6 @@ function CooldownCompanion:IsResourceBarClassConfigured(classKey)
         return false
     end
     return not IsDefaultResourceBarClassSettings(settings, classKey)
-end
-
--- Resolves (creating from defaults when missing) the Resources bucket for any
--- class. Import paths only: reads that must not persist a bucket should go
--- through the raw class store instead. The current class delegates to
--- PrepareResourceBarSettings so conflict-fallback semantics stay in one place.
-function CooldownCompanion:EnsureResourceBarSettingsForClass(classKey)
-    local profile = self.db and self.db.profile
-    classKey = NormalizeClassKey(classKey)
-    if type(profile) ~= "table" or not classKey then
-        return nil
-    end
-
-    if classKey == GetCurrentResourceBarClassKey(self) then
-        return self:PrepareResourceBarSettings()
-    end
-
-    local classStore = EnsureResourceBarClassStore(profile)
-    local settings = classStore[classKey]
-    if type(settings) ~= "table" then
-        settings = CreateResourceBarSettings()
-        NormalizeResourceBarSettingsForClass(settings, classKey)
-        SanitizeResourceBarAnchors(settings, classKey)
-        classStore[classKey] = settings
-    else
-        NormalizeResourceBarSettingsForClass(settings, classKey)
-    end
-    return settings
 end
 
 -- Replaces the class's whole Resources bucket with imported settings. The

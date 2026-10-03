@@ -11,7 +11,7 @@
       * All slot work happens in the restriction-gated rebind pass
         (RequestAuraRebind).
       * Slot buttons live under an _ccNoTouch mount: button.auraLayer for
-        icon/bar hosts, or the Texture panel's UIParent-level runtime root.
+        icon/bar hosts, or an aura Indicator's UIParent-level runtime root.
         Frame sweeps never recurse into either flagged frame.
       * While auras are secret the only permitted aura-system calls are container-level
         (UpdateAllAuras, SetAuraSlotCandidateFilters).
@@ -249,10 +249,10 @@ local function CanRunRebindNow()
 end
 
 -- Exported for display code that must decide what to draw while no slot is
--- bound yet. A Texture panel's production artwork lives entirely inside the
--- slot kit, so "not bound" means "nothing to show" — and the caller needs to
+-- bound yet. An aura Indicator's production display lives entirely inside
+-- the slot kit, so "not bound" means "nothing to show" — and the caller needs to
 -- know whether that is a frame-long wait for the queued pass or a wait for the
--- current aura-restriction window, which is far too long to leave the panel dark.
+-- current aura-restriction window, which is far too long to leave it dark.
 function CooldownCompanion:CanRunAuraRebindNow()
     return CanRunRebindNow()
 end
@@ -839,7 +839,7 @@ local function BuildSlotKit(slotButton, pandemicGated)
     return kit
 end
 
--- Texture panels keep a permanent copy of their selected artwork beneath
+-- Aura Indicators keep a permanent copy of their saved display beneath
 -- AuraButton. Nothing is registered as the aura icon, so Blizzard controls
 -- presence visibility without replacing the chosen asset. Every effect is a
 -- native AnimationGroup created in this sanctioned setup window: addon code
@@ -911,7 +911,7 @@ local function BuildTexturePanelSlotKit(slotButton, pandemicGated)
     ST.Indicator.CreateVisual(host, slotButton)
     -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
     -- descendant and moved by the effects): same creation-only registration as
-    -- the icon kit's rig, so every texture-panel slot carries it and "off" is
+    -- the icon kit's rig, so every aura Indicator slot carries it and "off" is
     -- a style-time "none" (Indicator.StylePandemicGlow). Blizzard alone flips
     -- its secret Shown state; CC styles it at OOC bind and never reads it.
     if slotButton.AddPandemicRegion then
@@ -1820,7 +1820,7 @@ function ShellChrome.Hide(chrome)
 end
 
 function ShellChrome.Style(chrome, button, style, isBar, barIconShown, barBackgroundAlpha,
-        isCustomBarHost, widgetShell)
+        widgetShell)
     if not isBar then
         chrome.bg:ClearAllPoints()
         chrome.bg:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
@@ -1847,14 +1847,12 @@ function ShellChrome.Style(chrome, button, style, isBar, barIconShown, barBackgr
     local barBounds = button._barBounds or button
     -- CC parity: with the icon square shown the background covers only
     -- the bar area (the square has its own), otherwise the whole button.
-    -- Custom-bar hosts always use the bar bounds: the holder (button)
-    -- is the border-inset mount, and the shell bg must fill the bar's
-    -- real footprint. Widget-stack shells skip the slab AND the
+    -- Widget-stack shells skip the slab AND the
     -- whole-bar border ring: the capacity blocks laid out above ARE
     -- the background, each with its own border ring (owner ruling:
     -- every stack its own widget; a slab would fill the gaps and one
     -- ring would wrap all stacks).
-    local bgAnchor = (barIconShown or isCustomBarHost) and barBounds or button
+    local bgAnchor = barIconShown and barBounds or button
     if widgetShell then
         chrome.bg:SetAlpha(0)
     else
@@ -1931,12 +1929,6 @@ local function StyleSlotKit(slot, button, buttonData, style)
 
     local slotButton = slot.slotButton
     local isBar = button._isBar == true
-    -- Custom-bar hosts (ResourceBarAuraHost holders): same kit, three host
-    -- differences — text placement follows the custom-bar convention, and
-    -- non-shell aura bars keep the CC layer visible (no occlusion backdrop,
-    -- no kit bg blocks: the bar's own configured background/borders/blocks
-    -- ARE the absent-state layer and must show through).
-    local isCustomBarHost = button._ccAuraHostKind == "customBar"
     -- Resource-bar hosts (Phase 2 overlay holders): the kit renders one
     -- overlay shape over the live resource bar — no icon, no text, no
     -- occlusion, no shell, no glow; the bar itself is the absent state.
@@ -2090,15 +2082,6 @@ local function StyleSlotKit(slot, button, buttonData, style)
         kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
         kit.durationText:SetAlpha(0)
         kit.stackText:SetAlpha(0)
-    elseif isBar and isCustomBarHost then
-        local showDur = style.showAuraText ~= false
-        local showStack = style.showAuraStackText ~= false
-        ST.BarTextLayout.Apply(kit.durationText, innerHost,
-            ST.BarTextLayout.ResolveCustom(style, "durationText", button._isVertical, showStack))
-        ST.BarTextLayout.Apply(kit.stackText, innerHost,
-            ST.BarTextLayout.ResolveCustom(style, "stackText", button._isVertical, showDur))
-        kit.durationText:SetAlpha(showDur and 1 or 0)
-        kit.stackText:SetAlpha(showStack and 1 or 0)
     elseif isBar then
         -- Bar texts replicate the CC bar's own placement conventions (the
         -- backdrop occludes the originals): duration text at the bar
@@ -2131,12 +2114,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local pandemicBaseDuration
     if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
         pandemicBaseDuration = GetPandemicBaseDuration(
-            buttonData, not isCustomBarHost and not isResourceHost)
+            buttonData, not isResourceHost)
     end
     -- Aura text is opt-in for the low-time policy (durationLowTimeAuras).
     -- Aura Panel hosts apply unconditionally: their aura text is the
-    -- threshold's only consumer. Custom-bar hosts resolve their own gate
-    -- into the adapter style (BuildStyleAdapter), which this read honors.
+    -- threshold's only consumer.
     local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(style, isAuraPanelHost)
     local durationOptions = BuildAuraDurationOptions(pandemicBaseDuration, style, allowLowTime)
     slotButton:SetDurationText(kit.durationText, durationOptions)
@@ -2145,8 +2127,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- SetSpellName region wins on plain bar-panel binds (Blizzard writes the
     -- matched aura's real name into it); the static CC-authored region keeps
     -- custom names and every host the live region must not touch (resource
-    -- and custom-bar hosts gate explicitly — their adapters also pass
-    -- showBarNameText=false, but the live region must not hang on that).
+    -- hosts gate explicitly; their adapters also pass showBarNameText=false,
+    -- but the live region must not hang on that).
     -- BOTH alphas are written on every bind: the registration is permanent,
     -- so a pooled slot rebound to an icon host would otherwise keep showing
     -- the live name over the icon.
@@ -2157,7 +2139,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     local nameEnabled = not keepBarName and style.showBarNameText ~= false
     local useLiveName = isBar and nameEnabled and kit.liveBarNameText ~= nil
         and not buttonData.customName
-        and not isResourceHost and not isCustomBarHost
+        and not isResourceHost
     local useStaticName = isBar and not keepBarName and not useLiveName
         and (nameEnabled or buttonData.customName ~= nil)
     local nameText = useLiveName and kit.liveBarNameText
@@ -2220,14 +2202,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Pandemic display enable (PTR 8): the style's explicit-true enable, which
     -- an entry that customized the Pandemic section carries in its own
     -- styleOverrides since the entry checkbox dissolved into that section
-    -- (owner ruling 2026-08-16). Custom-bar hosts read the same style key,
-    -- synthesized by BuildStyleAdapter from the entry's own fresh
-    -- pandemicEffect key (the entry has no panel level to follow). Resource
-    -- overlays carry no pandemic story at all. Blizzard flips the rig's secret
+    -- (owner ruling 2026-08-16). Resource overlays carry no pandemic story
+    -- at all. Blizzard flips the rig's secret
     -- Shown state regardless; this gate only decides whether the rig has
     -- anything visible to show.
     local pandemicOn = false
-    if isCustomBarHost or not isResourceHost then
+    if not isResourceHost then
         pandemicOn = style.pandemicEffectEnabled == true
     end
 
@@ -2473,7 +2453,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- replicas anchored to the host frames (pixel-identical to the CC shell).
     if shellEntry then
         ShellChrome.Style(kit, button, style, isBar, barIconShown, barBackgroundAlpha,
-            isCustomBarHost, isBar and IsWidgetStackBind(slot, buttonData))
+            isBar and IsWidgetStackBind(slot, buttonData))
     else
         ShellChrome.Hide(kit)
     end
@@ -2620,9 +2600,9 @@ local function EnsureAuraLayer(button)
     return layer
 end
 
--- Texture panels' driver buttons are intentionally alpha-zero 1x1 identity
+-- Aura Indicators' source buttons are intentionally alpha-zero 1x1 identity
 -- shells, so their production AuraContainer mounts under the existing movable
--- UIParent-level texture host instead. The host and root are permanent once a
+-- UIParent-level Indicator host instead. The host and root are permanent once a
 -- slot exists; only the safe root's alpha is used to suppress it for previews.
 local function EnsureTexturePanelAuraLayer(button)
     local host = CooldownCompanion:EnsureAuraTextureHost(button)
@@ -2683,7 +2663,7 @@ local PRESENCE_TEMPLATE = "DisableUntrustedLayoutScriptsTemplate"
 local PRESENCE_KINDS = { presence = true, missingPicture = true }
 
 -- Record kinds with a native slot kit, by kit: "button" (the icon/bar kit on
--- a CC button) or "texture" (an Indicator's texture-panel kit). Each has an
+-- a CC button) or "texture" (an aura Indicator's kit). Each has an
 -- Also During Pandemic twin, the same kit gated to the refresh window
 -- (BuildSlotKit, BuildTexturePanelSlotKit).
 local SLOT_KIT_KINDS = { button = "button", pandemicButton = "button",
@@ -3084,7 +3064,7 @@ function Picture.Style(record, button, buttonData, style)
     local barIconShown = isBar and style.showBarIcon ~= false and button.icon ~= nil
     local bgColor = style.barBgColor
     ShellChrome.Style(picture, button, style, isBar, barIconShown,
-        bgColor and (bgColor[4] or 1) or 0.8, false, false)
+        bgColor and (bgColor[4] or 1) or 0.8, false)
     ShellChrome.Keybind(picture.keybind, button, buttonData, style, not isBar)
 
     -- The entry's icon, cropped and tinted like the CC icon underneath.
@@ -3595,8 +3575,8 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     end
     -- CC-side capacity blocks sync here too: rebinds are OOC by design, so
     -- this repairs bars whose style pass ran in combat (where the block
-    -- helper defers). Panel buttons only — custom-bar hosts sync their
-    -- absent-state blocks in the collector.
+    -- helper defers). Panel buttons only; other host kinds have no CC-side
+    -- capacity blocks.
     if button._isBar and not button._ccAuraHostKind and ST._UpdateBarStackBlocks then
         ST._UpdateBarStackBlocks(button, style)
     end
@@ -3679,11 +3659,12 @@ local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
 end
 
 ------------------------------------------------------------------------
--- AURA BLOCKS — custom-bar aura entries that hide when inactive.
+-- AURA BLOCKS — attached bar aura entries that hide when inactive.
 --
--- Such an entry cannot hold a fixed slot in the CC-laid-out resource stack:
--- aura presence is secret, so CC can never pack the stack around it. Each
--- side of the stack instead gets ONE AuraContainer running in GROUP mode.
+-- Such an entry cannot hold a fixed slot in its owner panel's CC-laid-out
+-- attached stack: aura presence is secret, so CC can never pack the stack
+-- around it. Each side of the stack instead gets ONE AuraContainer running in
+-- GROUP mode.
 -- Blizzard assigns a pooled AuraButton per ACTIVE aura and packs the
 -- survivors with its own flow layout, in the layoutIndex order written here;
 -- CC never learns which groups are up.
@@ -3696,7 +3677,7 @@ end
 -- its first AddAuraGroup and Blizzard resizes it with secret values from then
 -- on. Nothing here reads the container's or a group frame's rect: every
 -- geometry number arrives from the CC-side block contract
--- (OtherBars/ResourceBarAuraHost.lua).
+-- (ST.CollectAttachedBarAuraBlocks in Core/AttachedBarLayout.lua).
 --
 -- One container per (side, UNIT). A container tracks exactly one unit and
 -- SetUnit is called once, at creation — the same immutability the slot
@@ -3902,89 +3883,10 @@ end
 -- the frame's own size is what Blizzard's flow layout reserves space for
 -- (GetElementSize prefers the group's elementWidth/Height but never resizes
 -- the frame), so the two must be written from the same source every bind.
--- Attached entries use the same complete cell geometry as panel aura hosts.
--- The implementations below are shared without changing legacy Custom Bars.
+-- Attached entries use the same complete cell geometry as panel aura hosts:
+-- every block group has an owner panel, so its hosts are built and sized by
+-- the Aura Panel host functions (defined with the Aura Panel section below).
 local ApplyPanelHostGeometry, ApplyPanelHostIcon, BuildPanelGroupHost
-
-local function ApplyBlockHostGeometry(group, host)
-    if group.record.owner then
-        return ApplyPanelHostGeometry(group, host)
-    end
-    host.frame:SetSize(group.frameWidth, group.frameHeight)
-    -- The holder split, mirrored: the proxy (statusBar mount) sits INSIDE the
-    -- border ring so the kit fill never paints over it, while the bounds
-    -- child spans the full rect for the shell bg/border replicas. Single
-    -- points + explicit sizes; the group frame's size is CC's, its position
-    -- is Blizzard's.
-    local inset = group.inset or 0
-    local innerW = group.frameWidth - inset * 2
-    local innerH = group.frameHeight - inset * 2
-    if innerW < 1 then innerW = 1 end
-    if innerH < 1 then innerH = 1 end
-    local proxy = host.proxy
-    proxy:ClearAllPoints()
-    proxy:SetPoint("TOPLEFT", host.frame, "TOPLEFT", inset, -inset)
-    proxy:SetSize(innerW, innerH)
-    proxy._isVertical = group.isVertical
-    proxy._ccKitRectW = innerW
-    proxy._ccKitRectH = innerH
-    local bounds = proxy._ccBounds
-    bounds:ClearAllPoints()
-    bounds:SetPoint("TOPLEFT", proxy, "TOPLEFT", -inset, inset)
-    bounds:SetSize(group.frameWidth, group.frameHeight)
-    bounds._ccKitRectW, bounds._ccKitRectH = group.frameWidth, group.frameHeight
-end
-
--- One host per pooled group frame. Blizzard pre-creates a batch of frames at
--- AddAuraGroup and runs this for each, so every frame the group can ever
--- assign leaves here with a finished kit — nothing is built later, in combat,
--- or on a frame CC has not seen. maxFrameCount 1 keeps the group inside that
--- batch forever (see EnsureBlockGroup).
---
--- The proxy is the bar-host descriptor the kit vocabulary needs
--- (statusBar/_barBounds/orientation/explicit rect dims). It lives UNDER the
--- group frame on purpose: the frame's position is Blizzard-owned and secret,
--- so a descriptor anchored anywhere else would drag every host-anchored kit
--- region off the bar. It is CC-created and never registered, so it carries no
--- secrets of its own.
-local function BuildBlockGroupHost(group, frame)
-    if group.record.owner then
-        return BuildPanelGroupHost(group, frame)
-    end
-    local proxy = CreateFrame("Frame", nil, frame)
-    proxy:EnableMouse(false)
-    proxy._ccAuraHostKind = "customBar"
-    proxy._isBar = true
-    proxy.statusBar = proxy
-    proxy._cdcClickThroughMotion = true
-    -- Full-footprint bounds for the shell replicas, like the holders'
-    -- _ccBounds; the proxy itself mounts inside the border ring
-    -- (ApplyBlockHostGeometry owns both rects).
-    proxy._ccBounds = CreateFrame("Frame", nil, proxy)
-    proxy._ccBounds:EnableMouse(false)
-    proxy._barBounds = proxy._ccBounds
-    local host = { frame = frame, proxy = proxy, kit = BuildSlotKit(frame) }
-    -- On the slot path the whole kit anchors to the BUTTON, and the button
-    -- itself is mounted on the inset holder — the border inset arrives
-    -- through button geometry. Block buttons are full-rect and
-    -- Blizzard-positioned, so everything button-anchored must move to the
-    -- inset proxy instead, or fills paint over the border ring. Creation
-    -- window only — never re-anchored after registration.
-    local kit = host.kit
-    local inner = {
-        kit.iconCover, kit.auraIcon, kit.swipe, kit.barBackdrop,
-        kit.barFill, kit.stackFill, kit.textOverlay,
-    }
-    for i = 1, #inner do
-        local region = inner[i]
-        if region then
-            region:ClearAllPoints()
-            region:SetAllPoints(proxy)
-        end
-    end
-    ApplyBlockHostGeometry(group, host)
-    group.hosts[#group.hosts + 1] = host
-end
 
 -- SetAuraGroupLayout REPLACES the whole options table, so every field the
 -- group needs is written every time. elementSpacing must stay 0: the flow
@@ -4003,7 +3905,6 @@ local function BlockGroupLayout(entry, layoutIndex)
 end
 
 local function SetAttachedBlockGeometry(group, entry)
-    if not group.record.owner then return end
     group.isBar = true
     -- Match the shell ring's scale source without measuring the native subtree.
     group.inset = ST.GetEffectiveBorderLayoutSize(UIParent,
@@ -4044,7 +3945,7 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
         maxFrameCount = 1,
         layout = BlockGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
-            BuildBlockGroupHost(group, frame)
+            BuildPanelGroupHost(group, frame)
         end,
     })
     record.groups[entry.id] = group
@@ -4081,11 +3982,9 @@ local function BindBlockGroup(group, entry)
     -- ran once per pooled frame at group creation, and which frame the group
     -- hands out next is Blizzard's business.
     for _, host in ipairs(group.hosts) do
-        ApplyBlockHostGeometry(group, host)
-        if group.record.owner then
-            host.proxy._ccWholeAuraPanel = false
-            ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
-        end
+        ApplyPanelHostGeometry(group, host)
+        host.proxy._ccWholeAuraPanel = false
+        ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
         ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
         ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
         StyleSlotKit({
@@ -4094,13 +3993,12 @@ local function BindBlockGroup(group, entry)
             unit = group.unit,
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
-        -- Attached entries honor panel tooltip settings. Legacy resource
-        -- holders remain click-through. Converge reused frames every bind.
-        local attached = group.record.owner ~= nil
-        host.frame:SetMouseMotionEnabled(attached and entry.style.showTooltips == true)
-        host.frame:SetTooltipAnchorPoint(attached
-            and AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
-        host.frame:SetHideTooltipInCombat(not attached or entry.style.tooltipHideInCombat == true)
+        -- Attached entries honor panel tooltip settings. Converge reused
+        -- frames every bind.
+        host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
+        host.frame:SetTooltipAnchorPoint(
+            AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
+        host.frame:SetHideTooltipInCombat(entry.style.tooltipHideInCombat == true)
     end
     RegisterSlotAuraSounds(group, entry.buttonData, entry.spellSet)
     group.parked = nil
@@ -5339,7 +5237,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
     lastRebindPassAt = GetTime()
 
     -- Opens the pass-scoped candidate memo (Core/Aura.lua) for everything this
-    -- pass resolves: the slot walk below, the custom-bar collectors it calls,
+    -- pass resolves: the slot walk below, the resource collectors it calls,
     -- the block and panel passes, and every per-record styler under them. The
     -- pass runs to the End call at the bottom of this function; both early
     -- returns above resolve nothing, so they need no clear.
@@ -5486,16 +5384,16 @@ function RunAuraRebind(configEdit, panelIds, resources)
         end
     end
 
-    -- Custom-bar hosts (OtherBars/ResourceBarAuraHost.lua): appends want
-    -- records in the same shape, hosted on stable holder frames. Looked up
-    -- at run time (the module loads after this file).
+    -- Resource aura overlay hosts (OtherBars/ResourceBarAuraHost.lua): append
+    -- want records in the same shape, hosted on stable holder frames. Looked
+    -- up at run time (the module loads after this file).
     local collectCustomWants = ST._CollectResourceBarAuraWants
     if collectCustomWants and (not panelIds or resources) then
         collectCustomWants(wanted)
     end
 
     -- Shared unit resolution: every want derives its token set the same way
-    -- (custom-bar wants arrive with unit unset). One want fans out to one
+    -- (resource wants arrive with unit unset). One want fans out to one
     -- record per token.
     for _, want in ipairs(wanted) do
         want.units = want.unit and { want.unit }
@@ -5557,7 +5455,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
         end
     end
 
-    -- Aura blocks (custom-bar aura entries that hide when inactive): their own
+    -- Aura blocks (attached bar aura entries that hide when inactive): their own
     -- park-then-bind pass over the group containers. Disjoint from the slot
     -- records above — no host button, no pool lock — so ordering is free.
     RebindCustomBarAuraBlocks(self, owners, panelIds)
@@ -5585,7 +5483,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- re-evaluation, so the combat-deferred rebind cannot leave the cast bar
     -- pointing at last pull's tail. CAST BAR LEG ONLY — never the full
     -- stacking evaluation: its resource leg re-applies the bars, whose apply
-    -- ends in RequestAuraRebind("custom-bars"), which re-ran this pass every
+    -- then requested another aura rebind, which re-ran this pass every
     -- frame forever (2026-08-10 feedback-loop diagnosis). The stack-end pin
     -- rule means resource bars never move in response to a tail change, so
     -- the cast bar is the only trailing frame with anything to re-anchor.

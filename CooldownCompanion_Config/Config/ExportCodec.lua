@@ -353,7 +353,6 @@ local PROFILE_DEFAULT_KEYS = {
     profileWideFontOutline = "profileWideFontOutline",
     profileWideBarTextureEnabled = "profileWideBarTextureEnabled",
     profileWideBarTextureName = "profileWideBarTextureName",
-    groupSettingPresets = "groupSettingPresets",
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",
     locked = "locked",
@@ -367,6 +366,8 @@ local RETIRED_PROFILE_KEYS = {
     autoAddPrefs = true,
     hideInfoButtons = true,
     cdmHidden = true,
+    -- Panel setting presets, retired by Copy Panel Settings and Templates.
+    groupSettingPresets = true,
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
@@ -1015,9 +1016,8 @@ local function NormalizeTextureLibraryStore(store)
         return CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
     end
 
-    if type(store.customTextures) ~= "table" then
-        store.customTextures = {}
-    end
+    -- Retired store (see NormalizeAuraTextureLibraryStore).
+    store.customTextures = nil
     if type(store.textureFavorites) ~= "table" then
         store.textureFavorites = {}
     end

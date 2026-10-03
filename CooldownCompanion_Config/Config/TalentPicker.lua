@@ -1003,7 +1003,6 @@ local function ShowTalentPicker(configFrame, initialConditions, group)
     -- Hide col3 normal content (all possible states)
     if col3.bsTabGroup then col3.bsTabGroup.frame:Hide() end
     if col3.bsPlaceholder then col3.bsPlaceholder:Hide() end
-    if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
     if col3._multiSelectActionsScroll then col3._multiSelectActionsScroll.frame:Hide() end
     if col3.groupSettingsHost then col3.groupSettingsHost:Hide() end
     if ST._HideButtonsPanelPreviewSurfaces then ST._HideButtonsPanelPreviewSurfaces(col3) end

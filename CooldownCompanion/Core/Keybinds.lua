@@ -486,9 +486,9 @@ function CooldownCompanion:GetKeybindText(buttonData, itemIDOverride, displayBut
     return nil
 end
 
--- Return the icon-only display text for keybind overlays.
--- This intentionally leaves GetKeybindText unchanged so text-mode {keybind}
--- tokens continue reflecting the detected action bar bind only.
+-- Return the display text for keybind overlays: the entry's custom keybind
+-- text when set, else the detected action bar bind (GetKeybindText).
+-- Rotation Assistant virtual entries always show the detected bind.
 function CooldownCompanion:GetDisplayedKeybindText(buttonData, itemIDOverride, displayButton)
     if not buttonData then return nil end
 

@@ -205,11 +205,9 @@ local function BuildConfigDiagnosticSummary(profile, groupFrameStates, container
         castFramesSelectedItem = CS and CS.castFramesSelectedItem or nil,
         resourcesSettingsTab = CS and CS.resourcesSettingsTab or nil,
         castBarHomeTab = CS and CS.castBarHomeTab or nil,
-        selectedCustomBarId = CS and CS.selectedCustomBarId or nil,
         selectedButtons = CS and SortedSelectionString(CS.selectedButtons) or "",
         selectedPanels = CS and SortedSelectionString(CS.selectedPanels) or "",
         selectedGroups = CS and SortedSelectionString(CS.selectedGroups) or "",
-        selectedCustomBars = CS and SortedSelectionString(CS.selectedCustomBars) or "",
         selectedContainerSummary = SummarizeContainer(selectedContainerId, containers and selectedContainerId and containers[selectedContainerId] or nil),
         selectedPanelSummary = SummarizePanel(selectedPanelId, selectedPanel),
         selectedButtonSummary = SummarizeButton(selectedButton),
@@ -387,6 +385,9 @@ local function BuildDiagnosticSnapshot(fullProfile)
             return
         end
         for _, resourceSettings in pairs(resourceStores) do
+            -- LEGACY: retired Custom Bar stores. Only an unconverted or parked
+            -- legacy store still carries them; their specs are named so a
+            -- diagnostic of such a profile stays readable.
             local customBars = type(resourceSettings) == "table"
                 and (type(resourceSettings.customBars) == "table" and resourceSettings.customBars or resourceSettings.customAuraBars)
             if type(customBars) == "table" then
@@ -727,9 +728,8 @@ local function AddAgentDebugSignals(add, diag)
 
     if not c.selectedContainer
         and not c.selectedGroup
-        and not c.selectedButton
-        and not c.selectedCustomBarId then
-        add("Selection Signal: no active config selection captured; select the broken group, panel, entry, or Custom Bar first if possible.")
+        and not c.selectedButton then
+        add("Selection Signal: no active config selection captured; select the broken group, panel, or entry first if possible.")
     else
         add("Selection Signal: active selection captured.")
     end
@@ -759,7 +759,7 @@ local function AddAgentDebugSignals(add, diag)
         add(("Profile Attachment: %s setup, all specs; %s groups, %s panels, %s entries included."):format(
             tostring(scope.className or "character"), tostring(scope.includedContainers or 0),
             tostring(scope.includedPanels or 0), tostring(scope.includedButtons or 0)))
-        add(("Scope: omitted %s other-class groups, %s panels, %s class bar stores, and the preset library. Other known characters' local bar settings are omitted."):format(
+        add(("Scope: omitted %s other-class groups, %s panels, %s class bar stores. Other known characters' local bar settings are omitted."):format(
             tostring(#(scope.omittedContainerIds or {})), tostring(#(scope.omittedPanelIds or {})),
             tostring(#(scope.omittedClassStores or {}))))
         add(("Retained: shared/hidden/disabled content, selections, runtime references, and dependencies (%s extra panels); unknown ownership retained (%s groups/panels)."):format(
@@ -804,11 +804,10 @@ local function FormatDiagnosticBugReportAsText(diag, includeDetails)
 
     add("")
     add("--- Current Config Context ---")
-    add(("Selection: group=%s panel=%s button=%s customBar=%s"):format(
+    add(("Selection: group=%s panel=%s button=%s"):format(
         tostring(c.selectedContainer or "nil"),
         tostring(c.selectedGroup or "nil"),
-        tostring(c.selectedButton or "nil"),
-        tostring(c.selectedCustomBarId or "nil")))
+        tostring(c.selectedButton or "nil")))
     if includeDetails then
         add(("Tabs: scope=%s selected=%s container=%s panel=%s button=%s resources=%s castBar=%s"):format(
             tostring(c.unifiedRowScope or "nil"),
@@ -820,12 +819,11 @@ local function FormatDiagnosticBugReportAsText(diag, includeDetails)
             tostring(c.castBarHomeTab or "nil")))
     end
     if (c.selectedButtons and c.selectedButtons ~= "") or (c.selectedPanels and c.selectedPanels ~= "")
-        or (c.selectedGroups and c.selectedGroups ~= "") or (c.selectedCustomBars and c.selectedCustomBars ~= "") then
-        add(("Multi-select: buttons=%s panels=%s groups=%s customBars=%s"):format(
+        or (c.selectedGroups and c.selectedGroups ~= "") then
+        add(("Multi-select: buttons=%s panels=%s groups=%s"):format(
             c.selectedButtons ~= "" and c.selectedButtons or "none",
             c.selectedPanels ~= "" and c.selectedPanels or "none",
-            c.selectedGroups ~= "" and c.selectedGroups or "none",
-            c.selectedCustomBars ~= "" and c.selectedCustomBars or "none"))
+            c.selectedGroups ~= "" and c.selectedGroups or "none"))
     end
     if c.selectedContainerSummary then
         local container = c.selectedContainerSummary
@@ -920,21 +918,6 @@ local function FormatDiagnosticBugReportAsText(diag, includeDetails)
                 parts[#parts + 1] = "hideWhenInactive=true"
             end
             add("  " .. table.concat(parts, " "))
-        end
-    end
-    if r.resourceBarRuntime and r.resourceBarRuntime.auraBlock then
-        add("Aura Blocks:")
-        -- Fixed side order so two snapshots stay diffable.
-        for _, side in ipairs({ "above", "below", "left", "right" }) do
-            local block = r.resourceBarRuntime.auraBlock[side]
-            if block then
-                add(("  [%s] offset=%s unlockAssist=%s units=%s targetFirst=%s bars=%s"):format(
-                    tostring(side), tostring(block.offset or 0),
-                    tostring(block.unlockAssist or false),
-                    tostring(block.units or "none"),
-                    tostring(block.targetFirst or false),
-                    table.concat(block.customBarIds or {}, ", ")))
-            end
         end
     end
 

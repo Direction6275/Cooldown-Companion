@@ -804,13 +804,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         end
     end
 
-    local buttonUsabilityOptions = opts.buttonUsabilityOptions
-
     if opts.requireButtons and not self:GroupHasUsableButtons(group, {
         checkLoadConditions = opts.checkLoadConditions,
-        ignoreSpellAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreSpellAvailability,
-        ignoreItemAvailability = buttonUsabilityOptions and buttonUsabilityOptions.ignoreItemAvailability,
-        ignoreTalentConditions = buttonUsabilityOptions and buttonUsabilityOptions.ignoreTalentConditions,
     }) then
         return false
     end
@@ -1455,8 +1450,7 @@ local function SpellIDsMatchCanonicalForm(storedSpellID, resolvedSpellID)
         and storedBaseSpellID == resolvedBaseSpellID
 end
 
--- Texture panels have one driver and use the panel's enabled state. Ignore
--- legacy entry flags here, including entries imported or moved from other modes.
+-- An entry is enabled unless it is explicitly disabled.
 function CooldownCompanion:IsButtonEnabled(buttonData, group)
     return buttonData.enabled ~= false
 end
@@ -1468,20 +1462,9 @@ function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
     if opts.checkLoadConditions ~= false and not self:IsButtonLoadConditionMet(buttonData, group) then return false end
 
     -- Per-button talent condition: gate visibility on a specific talent node.
-    if not opts.ignoreTalentConditions and not self:IsTalentConditionMet(buttonData) then return false end
+    if not self:IsTalentConditionMet(buttonData) then return false end
 
     if buttonData.rotationAssistant == true then return true end
-
-    if opts.ignoreSpellAvailability and buttonData.type == "spell" then
-        return true
-    end
-    if opts.ignoreItemAvailability
-        and (
-            buttonData.type == "item"
-            or (CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData))
-        ) then
-        return true
-    end
 
     -- Passive/proc spells are tracked via aura, not spellbook presence.
     -- Multi-CDM-child buttons: verify their specific slot still exists in the CDM

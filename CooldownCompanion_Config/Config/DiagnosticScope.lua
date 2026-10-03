@@ -133,9 +133,8 @@ local function BuildScopedDiagnosticProfile(profile, meta, config, runtime, char
         end
         table.sort(scope.omittedClassStores)
     end
-    -- Presets are copied into settings when applied; no runtime reader uses
-    -- them as inherited defaults. Full reports retain the preset library.
-    scope.omittedPresetStores = Count(scoped.groupSettingPresets)
+    -- Retired panel preset store. Migrations clear it, but a profile stopped
+    -- at the legacy cutoff never reaches that pass, so drop it here too.
     scoped.groupSettingPresets = nil
 
     local function References(value)

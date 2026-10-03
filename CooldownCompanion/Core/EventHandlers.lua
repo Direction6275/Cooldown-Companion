@@ -585,10 +585,10 @@ function CooldownCompanion:OnZoneChanged()
 end
 
 -- PLAYER_UPDATE_RESTING also fires on login and loading screens without the
--- resting state actually flipping, so only do work on a real change. Bars
--- are evaluated explicitly: a custom bar's rested load condition can flip
--- with no panel loading or unloading, which is the case the visibility
--- pass's hooks skip.
+-- resting state actually flipping, so only do work on a real change.
+-- Modules are evaluated explicitly: an attached bar entry's own rested load
+-- condition can flip with no panel loading or unloading, which changes the
+-- attached stack in the case the visibility pass's hooks skip.
 function CooldownCompanion:OnRestingChanged()
     local isResting = IsResting()
     if isResting == self._isResting then return end
@@ -710,8 +710,8 @@ end
 -- block chain TAIL the cast bar hangs from, and the cast bar is pinned to the
 -- stack end, so resource bars never move in response to a tail change. The
 -- pass must NOT run the full stacking evaluation: EvaluateResourceBars
--- re-applies unconditionally and ApplyResourceBars ends in
--- RequestAuraRebind("custom-bars"), so pass -> stacking -> apply -> request
+-- re-applies unconditionally and ApplyResourceBars ends in an aura rebind
+-- request, so pass -> stacking -> apply -> request
 -- cycled a full park-and-rebind pass at frame rate for as long as the bars
 -- were enabled (diagnosed 2026-08-10; the churn also raced Blizzard's
 -- deferred container rebuilds, which is what left displays dark).

@@ -40,7 +40,6 @@ local function CollapseStore(id, scope)
     return IsTextSection(id) and keys.textStore or nil
 end
 ST._SharedBarStyleCollapseKey = CollapseKey
-ST._SharedBarStyleCollapseStore = CollapseStore
 local function ScopeOf(group)
     local context = group._settingsContext
     if context and context.resourceWide then return "resourceWide" end

@@ -84,10 +84,6 @@ local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
-local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
-local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
-local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
-local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 local DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED = RB.DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED
 local DEFAULT_RESOURCE_TEXT_ANCHOR = RB.DEFAULT_RESOURCE_TEXT_ANCHOR
 local DEFAULT_RESOURCE_TEXT_X_OFFSET = RB.DEFAULT_RESOURCE_TEXT_X_OFFSET
@@ -1784,7 +1780,6 @@ end
 
 -- No caret: this sub-section has no collapse state, and the left-aligned shape
 -- indents the label as if it had one so it lines up with the rows beneath it.
--- Same call the preset section makes (Helpers.lua).
 local function AddThresholdTickSubHeading(container, text)
     local heading = AceGUI:Create("Heading")
     heading:SetText(text)
