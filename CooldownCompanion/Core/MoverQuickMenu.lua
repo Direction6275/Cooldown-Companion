@@ -489,12 +489,13 @@ end
 function CooldownCompanion:SetArrangeTreePanelHover(containerId, groupId, hovered)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then return end
+    local previousHoveredGroupId = frame._containerHoveredGroupId
     if hovered then
         frame._containerHoveredGroupId = groupId
     else
         frame._containerHoveredGroupId = frame._containerSelectedGroupId
     end
-    self:RefreshContainerWrapper(containerId)
+    self:RefreshContainerWrapperHover(containerId, previousHoveredGroupId)
 end
 
 local IsTreeEntrySelected
@@ -633,7 +634,7 @@ local function EnsureArrangeTreeRow(pill, index)
             CooldownCompanion:SetArrangeTreePanelHover(entry.containerId,
                 entry.groupId or entry.id, true)
         end
-        CooldownCompanion:RefreshArrangePillList()
+        CooldownCompanion:RefreshArrangeTreeHover()
     end)
     row:SetScript("OnLeave", function(self)
         self._hovered = nil
@@ -643,7 +644,7 @@ local function EnsureArrangeTreeRow(pill, index)
             CooldownCompanion:SetArrangeTreePanelHover(entry.containerId,
                 entry.groupId or entry.id, false)
         end
-        CooldownCompanion:RefreshArrangePillList()
+        CooldownCompanion:RefreshArrangeTreeHover()
     end)
 
     pill._treeRows[index] = row
@@ -723,6 +724,30 @@ RootHasSelectedChild = function(addon, root)
     return false
 end
 
+local function UpdateArrangeTreeRowHighlight(addon, row, entry)
+    local isRoot = entry.kind == "root"
+    local inactive = entry.manuallyHidden or (isRoot and not entry.wrapperAvailable)
+    local selected = IsTreeEntrySelected(addon, entry)
+    local childSelected = isRoot and RootHasSelectedChild(addon, entry)
+    local canvasHovered = false
+    if entry.kind == "panel" and not entry.cursor then
+        local frame = addon.containerFrames and addon.containerFrames[entry.containerId]
+        canvasHovered = frame and frame._containerHoveredGroupId == entry.id or false
+    end
+    if selected then
+        row.bg:SetColorTexture(1, 0.82, 0, 0.20)
+        row.bg:Show()
+    elseif childSelected then
+        row.bg:SetColorTexture(1, 0.82, 0, 0.08)
+        row.bg:Show()
+    elseif (row._hovered or canvasHovered) and not inactive then
+        row.bg:SetColorTexture(1, 1, 1, 0.08)
+        row.bg:Show()
+    else
+        row.bg:Hide()
+    end
+end
+
 local function UpdateArrangeTreeRow(addon, row, entry)
     row.entry = entry
     local rootId = entry.containerId or entry.id
@@ -765,25 +790,18 @@ local function UpdateArrangeTreeRow(addon, row, entry)
     local dimmed = inactive or entry.soloHidden
     row.name:SetTextColor(dimmed and 0.5 or 1, dimmed and 0.5 or 1, dimmed and 0.5 or 1, 1)
     row:SetAlpha(inactive and 0.72 or 1)
+    UpdateArrangeTreeRowHighlight(addon, row, entry)
+end
 
-    local selected = IsTreeEntrySelected(addon, entry)
-    local childSelected = isRoot and RootHasSelectedChild(addon, entry)
-    local canvasHovered = false
-    if entry.kind == "panel" and not entry.cursor then
-        local frame = addon.containerFrames and addon.containerFrames[entry.containerId]
-        canvasHovered = frame and frame._containerHoveredGroupId == entry.id or false
-    end
-    if selected then
-        row.bg:SetColorTexture(1, 0.82, 0, 0.20)
-        row.bg:Show()
-    elseif childSelected then
-        row.bg:SetColorTexture(1, 0.82, 0, 0.08)
-        row.bg:Show()
-    elseif (row._hovered or canvasHovered) and not inactive then
-        row.bg:SetColorTexture(1, 1, 1, 0.08)
-        row.bg:Show()
-    else
-        row.bg:Hide()
+-- Hover moves only the highlight: the roster, order and sizes are unchanged,
+-- so repaint the rows already on screen instead of rebuilding the tree.
+function CooldownCompanion:RefreshArrangeTreeHover()
+    local pill = self._arrangeModePill
+    if not (pill and pill:IsShown()) then return end
+    for _, row in ipairs(pill._treeRows or {}) do
+        if row.entry then
+            UpdateArrangeTreeRowHighlight(self, row, row.entry)
+        end
     end
 end
 
