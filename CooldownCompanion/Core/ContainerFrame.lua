@@ -120,6 +120,9 @@ local function EnsureContainerPanelLabel(frame, index)
     labelFrame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     labelFrame:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
     labelFrame:EnableMouse(false)
+    -- Hover can build a label between full refreshes, so it takes its
+    -- UpdateContainerWrapperLevels slot at birth.
+    labelFrame:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 3)
     CreatePixelBorders(labelFrame, 0, 0, 0, 1)
 
     labelFrame.text = labelFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -159,11 +162,12 @@ local function EnsureContainerMemberOverlay(frame, index)
             return
         end
         CooldownCompanion:BeginContainerChromeHoverWatch(self.containerId)
-        if containerFrame._containerHoveredGroupId ~= self.groupId then
+        local previousHoveredGroupId = containerFrame._containerHoveredGroupId
+        if previousHoveredGroupId ~= self.groupId then
             containerFrame._containerHoveredGroupId = self.groupId
-            CooldownCompanion:RefreshContainerWrapper(self.containerId)
-            if CooldownCompanion.RefreshArrangePillList then
-                CooldownCompanion:RefreshArrangePillList()
+            CooldownCompanion:RefreshContainerWrapperHover(self.containerId, previousHoveredGroupId)
+            if CooldownCompanion.RefreshArrangeTreeHover then
+                CooldownCompanion:RefreshArrangeTreeHover()
             end
         end
     end)
@@ -178,9 +182,9 @@ local function EnsureContainerMemberOverlay(frame, index)
         end
         if containerFrame._containerHoveredGroupId == self.groupId then
             containerFrame._containerHoveredGroupId = nil
-            CooldownCompanion:RefreshContainerWrapper(self.containerId)
-            if CooldownCompanion.RefreshArrangePillList then
-                CooldownCompanion:RefreshArrangePillList()
+            CooldownCompanion:RefreshContainerWrapperHover(self.containerId, self.groupId)
+            if CooldownCompanion.RefreshArrangeTreeHover then
+                CooldownCompanion:RefreshArrangeTreeHover()
             end
         end
     end)
@@ -344,6 +348,8 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     local hoveredGroupId = frame._containerHoveredGroupId
     frame._containerSelectedGroupId = nil
     frame._containerHoveredGroupId = nil
+    -- The hover repaint reads these as "the wrapper is painted".
+    frame._containerWrapperPreviewRects = nil
     if selectedGroupId and self._arrangeSelectedPanelId == selectedGroupId then
         self._arrangeSelectedPanelId = nil
     end
@@ -553,7 +559,7 @@ function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
     frame._arrangeChromeHover = true
     frame._arrangeHoverGen = (frame._arrangeHoverGen or 0) + 1
     local generation = frame._arrangeHoverGen
-    self:RefreshContainerWrapper(containerId)
+    self:RefreshContainerWrapperHover(containerId)
     local function Watch()
         if frame._arrangeHoverGen ~= generation or frame._arrangeChromeHover ~= true then
             return
@@ -563,7 +569,7 @@ function CooldownCompanion:BeginContainerChromeHoverWatch(containerId)
             return
         end
         frame._arrangeChromeHover = nil
-        CooldownCompanion:RefreshContainerWrapper(containerId)
+        CooldownCompanion:RefreshContainerWrapperHover(containerId)
     end
     C_Timer.After(0.2, Watch)
 end
@@ -1040,6 +1046,36 @@ end
 
 local EnsureContainerMoverChrome
 
+-- The hover-dependent half of one member's paint: its tint and name label.
+local function PaintContainerMemberHover(frame, overlay, labelIndex, rect, hovered, minLeft, minBottom, padding)
+    local fillAlpha = 0
+    if hovered and not ST.IsIndicatorGroup(rect.group) then
+        fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
+    end
+    overlay:SetBackdropColor(
+        CONTAINER_MOVER_COLORS.memberR,
+        CONTAINER_MOVER_COLORS.memberG,
+        CONTAINER_MOVER_COLORS.memberB,
+        fillAlpha
+    )
+    if not hovered then
+        return
+    end
+
+    local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
+    labelFrame.text:SetText(rect.label)
+    labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
+    labelFrame:ClearAllPoints()
+    labelFrame:SetPoint(
+        "BOTTOM",
+        frame.dragHandle,
+        "BOTTOMLEFT",
+        RoundPreviewOffset(rect.centerX - minLeft + padding),
+        RoundPreviewOffset(rect.top - minBottom + padding + CONTAINER_WRAPPER_LABEL_OFFSET)
+    )
+    labelFrame:Show()
+end
+
 function CooldownCompanion:RefreshContainerWrapper(containerId)
     if self:DeferPanelRefreshCompletion("wrappers", containerId) then return end
     local frame = self.containerFrames and self.containerFrames[containerId]
@@ -1144,9 +1180,6 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     local usedOverlayIndices = {}
     for labelIndex, rect in ipairs(previewRects) do
         if not rect.panelSuppressed then
-            local isHovered = hoveredGroupId == rect.groupId
-            local isIndicator = ST.IsIndicatorGroup(rect.group)
-
             local overlay = EnsureContainerMemberOverlay(frame, labelIndex)
             usedOverlayIndices[labelIndex] = true
             overlay.containerId = containerId
@@ -1155,37 +1188,12 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
             overlay:SetPoint("BOTTOMLEFT", rect.displayFrame, "BOTTOMLEFT", 0, 0)
             overlay:SetPoint("TOPRIGHT", rect.displayFrame, "TOPRIGHT", 0, 0)
             overlay:SetShown(true)
-
-            local fillAlpha = 0
-            if selectedGroupId == nil and not isIndicator then
-                if isHovered then
-                    fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
-                end
-            end
-            overlay:SetBackdropColor(
-                CONTAINER_MOVER_COLORS.memberR,
-                CONTAINER_MOVER_COLORS.memberG,
-                CONTAINER_MOVER_COLORS.memberB,
-                fillAlpha
-            )
             HideContainerWrapperBorder(overlay)
-
-            local showLabel = selectedGroupId == nil and hoveredGroupId ~= nil and isHovered
-
-            if showLabel then
-                local labelFrame = EnsureContainerPanelLabel(frame, labelIndex)
-                labelFrame.text:SetText(rect.label)
-                labelFrame:SetWidth(math_max(CONTAINER_PANEL_LABEL_MIN_WIDTH, math_floor((labelFrame.text:GetStringWidth() or 0) + 16.5)))
-                labelFrame:ClearAllPoints()
-                labelFrame:SetPoint(
-                    "BOTTOM",
-                    wrapper,
-                    "BOTTOMLEFT",
-                    RoundPreviewOffset(rect.centerX - minLeft + padding),
-                    RoundPreviewOffset(rect.top - minBottom + padding + CONTAINER_WRAPPER_LABEL_OFFSET)
-                )
-                labelFrame:Show()
-            end
+            PaintContainerMemberHover(
+                frame, overlay, labelIndex, rect,
+                selectedGroupId == nil and hoveredGroupId == rect.groupId,
+                minLeft, minBottom, padding
+            )
         end
     end
 
@@ -1225,6 +1233,62 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
     end
 
     frame._isRefreshingContainerWrapper = nil
+end
+
+-- Hover moves only paint: which member is tinted and labeled, and whether the
+-- container's own tools are revealed. Membership and panel controls stay as
+-- the last full refresh left them, so repaint from its cached rects instead of
+-- rebuilding the wrapper on every pointer crossing.
+function CooldownCompanion:RefreshContainerWrapperHover(containerId, previousHoveredGroupId)
+    local frame = self.containerFrames and self.containerFrames[containerId]
+    local previewRects = frame and frame.dragHandle and frame._containerWrapperPreviewRects
+    if not previewRects or self._combatForcedLock or InCombatLockdown() then
+        return self:RefreshContainerWrapper(containerId)
+    end
+    local visibleRectCount, minLeft, minBottom, padding = self:UpdateContainerWrapperUnion(containerId)
+    if visibleRectCount == 0 then
+        return self:RefreshContainerWrapper(containerId)
+    end
+
+    local selectedGroupId = GetContainerPanelSoloSelection(self, containerId, frame)
+    local hoveredGroupId = frame._containerHoveredGroupId
+    local revealChrome = selectedGroupId == nil and self:IsContainerArrangeChromeRevealed(containerId, frame)
+    if frame.coordLabel then
+        frame.coordLabel:SetShown(revealChrome)
+    end
+    if frame.nudger then
+        frame.nudger:SetShown(revealChrome)
+    end
+
+    HideContainerPanelLabels(frame)
+    local overlays = frame._containerMemberOverlays
+    local hoveredPreviewed = false
+    for labelIndex, rect in ipairs(previewRects) do
+        local overlay = not rect.panelSuppressed and overlays and overlays[labelIndex]
+        if overlay then
+            local isHovered = hoveredGroupId == rect.groupId
+            hoveredPreviewed = hoveredPreviewed or isHovered
+            PaintContainerMemberHover(
+                frame, overlay, labelIndex, rect,
+                selectedGroupId == nil and isHovered,
+                minLeft, minBottom, padding
+            )
+        end
+    end
+    if not hoveredPreviewed then
+        frame._containerHoveredGroupId = nil
+        hoveredGroupId = nil
+    end
+
+    -- A hovered Indicator shows its outline on its own display host.
+    if self.UpdateGroupedIndicatorPreviewSelection then
+        if previousHoveredGroupId and previousHoveredGroupId ~= hoveredGroupId then
+            self:UpdateGroupedIndicatorPreviewSelection(previousHoveredGroupId)
+        end
+        if hoveredGroupId then
+            self:UpdateGroupedIndicatorPreviewSelection(hoveredGroupId)
+        end
+    end
 end
 
 function CooldownCompanion:RefreshAllContainerWrappers()
