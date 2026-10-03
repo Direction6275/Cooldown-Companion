@@ -61,10 +61,6 @@ local defaults = {
         -- Stable external anchor: [specId] = groupId, one marked panel per
         -- spec (Core/ExternalAnchorFrame.lua).
         externalAnchorPanels = {},
-        groupSettingPresets = {
-            icons = {},
-            bars = {},
-        },
         auraTextureLibrary = {
             textureFavorites = {},
         },
@@ -154,7 +150,6 @@ local defaults = {
                         pandemicMarkerText = "!!",
                         pandemicMarkerColorMode = "marker", -- "off" / "marker" / "whole"
                         pandemicMarkerColor = {1, 0.5, 0, 1},
-                        iconWidthRatio = 1.0, -- 1.0 = square, <1 = taller, >1 = wider
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         iconZoom = 0, -- % the artwork is cropped toward center (WeakAuras-style zoom)
                         showTooltips = false,
@@ -200,7 +195,6 @@ local defaults = {
                         iconFillTimerBehavior = "drain",
                         iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
                         showLossOfControl = true,
-                        procGlowOverhang = 32,
                         procGlowColor = {1, 1, 1, 1},
                         procGlowStyle = "glow",
                         procGlowSize = 30,
@@ -338,7 +332,6 @@ local defaults = {
             pandemicMarkerText = "!!",
             pandemicMarkerColorMode = "marker",
             pandemicMarkerColor = {1, 0.5, 0, 1},
-            iconWidthRatio = 1.0,
             maintainAspectRatio = true,
             showTooltips = false,
             tooltipAnchor = "default",
@@ -382,7 +375,6 @@ local defaults = {
             iconFillTimerBehavior = "drain",
             iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
             showLossOfControl = true,
-            procGlowOverhang = 32,
             procGlowColor = {1, 1, 1, 1},
             procGlowStyle = "glow",
             procGlowSize = 30,
@@ -437,12 +429,6 @@ local defaults = {
             barAuraColorShiftEnabled = false,
             barAuraColorShiftSpeed = 0.5,
             barAuraColorShiftColor = {1, 1, 1, 1},
-            textureIndicators = {
-                proc = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 1, 1, 1}, combatOnly = false },
-                aura = { enabled = false, effectType = "colorShift", speed = 0.5, color = {1, 0.84, 0, 1}, combatOnly = false, invert = false },
-                ready = { enabled = false, effectType = "bounce", speed = 0.5, color = {0.2, 1.0, 0.2, 1}, combatOnly = false },
-                unusable = { enabled = false, effectType = "pulse", speed = 0.5, color = {1, 0.35, 0.35, 1}, combatOnly = false },
-            },
             assistedHighlightProcColor = {1, 1, 1, 1},
             strataOrder = nil,
             showKeybindText = false,
@@ -815,10 +801,10 @@ end
 --     Masque row entirely, so a stranded true disables the icon shape, zoom and
 --     border rows with no visible toggle left to clear it.
 -- Neither is reachable through the panel's own options; both arrive from paths
--- that judge eligibility on the base displayMode alone (Copy Style From Panel,
--- setting presets) or from raw imported payloads. Idempotent and pure data.
+-- that judge eligibility on the base displayMode alone (panel copy paths) or
+-- from raw imported payloads. Idempotent and pure data.
 --
--- Deliberately NOT covered here: displayMode (the copy and preset paths are
+-- Deliberately NOT covered here: displayMode (the copy paths are
 -- mode-matched, and the import normalizer clamps it where it can actually be
 -- wrong), compactGrowthDirection (a real Aura Panel setting — it picks the
 -- packed block's anchor), maxVisibleButtons (inert: its only reader counts
@@ -956,7 +942,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
         end
     end
     -- Primary aura entries (addedAs == "aura") only display through the aura
-    -- system, which binds to icon, bar, text and Texture panels; refuse moving
+    -- system, which binds to icon, bar and Indicator panels; refuse moving
     -- them anywhere else. Ordinary spell entries that
     -- merely have aura tracking enabled keep a valid cooldown display and
     -- stay movable. entryData is a single

@@ -27,8 +27,7 @@ local function StyleIconEntry(slot, buttonData, group)
     -- Keybind label: live icon buttons pin this above every layer so it stays
     -- readable whatever is drawn over the icon (IconMode.lua). Same font keys,
     -- anchor contract, and resolver as live icons - GetDisplayedKeybindText,
-    -- which honors customKeybindText (the text mirror stays on GetKeybindText
-    -- by design; see Keybinds.lua). Static lookups only, never live frame
+    -- which honors customKeybindText. Static lookups only, never live frame
     -- state.
     --
     -- A member of an Aura Only Section is drawn by Blizzard's packed container

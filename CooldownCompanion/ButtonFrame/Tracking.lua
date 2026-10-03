@@ -6,7 +6,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CooldownLogic = ST.CooldownLogic
-local EntryRuntime = ST.EntryRuntime
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
@@ -121,7 +120,6 @@ local function UpdateDisplayCountTracking(button, buttonData, spellID)
 
     button._currentReadableCharges = cur
     button._chargeCountReadable = (cur ~= nil)
-    button._displayCountZeroUsabilityFallback = nil
 
     if cur and cur > (buttonData.maxCharges or 0) then
         buttonData.maxCharges = cur

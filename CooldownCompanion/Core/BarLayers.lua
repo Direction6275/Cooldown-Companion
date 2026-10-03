@@ -4,15 +4,15 @@ local Addon = ST.Addon
 local Layers = {}
 ST.BarLayers = Layers
 
-function Layers.HasPersistentAuraName(entry, customBar)
-    return entry and entry.addedAs == "aura" and (customBar or entry.isPassive == true)
+function Layers.HasPersistentAuraName(entry)
+    return entry and entry.addedAs == "aura" and entry.isPassive == true
         and not Addon:IsAuraShellEntry(entry)
 end
 
 function Layers.IsUncoveredAura(button, entry)
     return button._isBar == true
         and button._ccAuraHostKind ~= "auraPanel"
-        and Layers.HasPersistentAuraName(entry, button._ccAuraHostKind == "customBar")
+        and Layers.HasPersistentAuraName(entry)
 end
 
 -- Final background opacity and the aura layer's contribution. The base and
@@ -26,7 +26,7 @@ function Layers.GetAuraBackgroundAlpha(entry, style, hostKind)
     local configuredAlpha = bg and (bg[4] or 1) or 0.8
     local native = hostKind == "auraPanel"
     local auraOnly = native or (entry and entry.addedAs == "aura"
-        and (hostKind == "customBar" or entry.isPassive == true))
+        and entry.isPassive == true)
     local baseVisualAlpha = native and 0 or (Addon:IsAuraShellEntry(entry)
         and Addon:GetAuraShellRestingAlpha(entry) or 1)
     if not auraOnly and baseVisualAlpha > 0 then

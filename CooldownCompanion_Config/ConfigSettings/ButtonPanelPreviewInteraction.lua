@@ -50,8 +50,6 @@ local ApplyBarSlotConditionalPreview = PP.ApplyBarSlotConditionalPreview
 -- ButtonPanelPreviewEffects.lua
 local ClearSlotEffectPreviews = PP.ClearSlotEffectPreviews
 
--- ButtonPanelPreviewText.lua
-
 -- ButtonPanelPreviewIcons.lua
 local StyleIconEntry = PP.StyleIconEntry
 local ResetSlotConditionalVisuals = PP.ResetSlotConditionalVisuals
@@ -1441,25 +1439,14 @@ function DropGhost.PlaceEmpty(preview, host, group, mode, cell, stub)
     local style = group.style or {}
     local geo = GetPanelGeometry(group, isBarMode)
     local w, h = geo.entryWidth, geo.entryHeight
-    local headerHeight = 0
-    local contentWidth, contentHeight = w, h + headerHeight
-    -- Cell 1 of the populated path's grid, for the one line it needs.
-    local _, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
+    -- Cell 1 of the populated path's grid sits at the growth anchor itself.
     local centeredEdge = not CooldownCompanion:IsAuraPanel(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, geo.orientation) or nil
-    local x, y = 0, yMul * headerHeight
-    if centeredEdge then
-        growthAnchor = centeredEdge
-        if geo.orientation == "horizontal" then
-            y = (centeredEdge == "TOP" and -1 or 1) * headerHeight
-        else
-            y = -headerHeight / 2
-        end
-    end
+    local growthAnchor = centeredEdge or select(3, GetGrowthMultipliers(style.growthOrigin))
 
     local content = preview.content
-    content:SetSize(contentWidth, contentHeight)
-    content:SetScale(GetHostFitScale(host, contentWidth, contentHeight, false))
+    content:SetSize(w, h)
+    content:SetScale(GetHostFitScale(host, w, h, false))
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
     content:Show()
@@ -1473,7 +1460,7 @@ function DropGhost.PlaceEmpty(preview, host, group, mode, cell, stub)
         HidePreviewMessage(preview)
     end
     cell:SetSize(w, h)
-    ApplyPreviewSlotGeometry(preview, cell, growthAnchor, x, y)
+    ApplyPreviewSlotGeometry(preview, cell, growthAnchor, 0, 0)
 end
 
 --- The empty panel's message comes back exactly as the build left it, and
@@ -1483,7 +1470,6 @@ function DropGhost.RestoreEmptyMessage(preview)
     if not hid then return end
     preview.dropGhostHidMessage = nil
     preview.content:Hide()
-    if preview.textHeader then preview.textHeader:Hide() end
     if hid.title and preview.messageTitle then preview.messageTitle:Show() end
     if hid.label and preview.messageLabel then preview.messageLabel:Show() end
     if hid.note and preview.messageNote then preview.messageNote:Show() end

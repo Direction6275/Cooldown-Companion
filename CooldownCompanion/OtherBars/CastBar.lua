@@ -311,12 +311,6 @@ local function EnsureCastBarMoverChrome(frame)
             CooldownCompanion:RefreshIndependentCastBarMoverChrome()
         end)
     end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "LeftButton" then
-            frame._focusClickSuppressed = nil
-        end
-    end)
-
     -- Nudger (4-direction pixel nudge, matches icon panel pattern)
     local nudger = ST.MoverChrome.CreateNudger(dragHandle, CAST_NUDGE_BTN_SIZE, function(dx, dy)
         CancelCoordinateEdit(frame._coordLabel)
@@ -411,7 +405,6 @@ local function EnsureCastBarMoverChrome(frame)
         if InCombatLockdown() then return end
         -- Dragging solos this mover, mirroring container header drags.
         if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
-            frame._focusClickSuppressed = true
             CooldownCompanion:SetArrangeSoloContainer("cast")
         end
         frame._dragCancelPending = nil
@@ -424,9 +417,6 @@ local function EnsureCastBarMoverChrome(frame)
         StartIndependentCastBarCoordUpdates(frame, settings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
-        -- The release that ends this drag also fires OnMouseUp; it must not
-        -- read as a focus-toggling click.
-        frame._focusClickSuppressed = true
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
@@ -1793,12 +1783,6 @@ function CooldownCompanion:StopCastBarUnlockAssist()
     if not cast.state and not cast.fadeMode then
         HideCastBar()
     end
-end
-
--- The command-center cast preview: state only. The cast it stands for is
--- animated on the config canvas's cast facsimile, never on the real bar.
-function CooldownCompanion:IsCastBarPreviewActive()
-    return ST._ConfigPreview.GetSample("cast") ~= nil
 end
 
 ------------------------------------------------------------------------

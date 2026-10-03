@@ -237,7 +237,7 @@ end
 
 -- Resolve which lens the styling tabs are looking through:
 --   "panel" - no entry selected (or the panel has no per-entry overrides at
---             all, as with texture panels): tabs edit the panel style.
+--             all, as with Indicators): tabs edit the panel style.
 --   "entry" - exactly one entry selected: tabs read that entry's effective
 --             style; per-section scope decides where (or whether) they write.
 --   "multi" - two or more entries selected: no single entry to show, so the
@@ -633,7 +633,7 @@ local ADVANCED_UNLOCK_REFRESH = {
     resourceBars = function(target)
         ST._CompleteConfigEdit(target, "style-settings")
     end,
-    -- Trigger-panel effects: restyle the texture visuals, then rebuild.
+    -- Indicator effects: restyle the Indicator visuals, then rebuild.
     auraTextures = function()
         CooldownCompanion:RefreshAllAuraTextureVisuals()
         CooldownCompanion:RefreshConfigPanel()

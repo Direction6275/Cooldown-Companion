@@ -3,7 +3,8 @@
     OnTargetChanged), config-time aura resolution, CDM
     viewer system (BuildViewerAuraMap, FindViewerChildForSpell,
     FindCooldownViewerChild, OnViewerSpellOverrideUpdated).
-    12.1 demolition: runtime aura reading removed pending the AuraContainer rebuild.
+    No runtime aura reading here: aura display runs through Core/AuraDisplay.lua
+    (12.1 AuraContainer).
 ]]
 
 local ADDON_NAME, ST = ...
@@ -272,7 +273,7 @@ local function AppendOrderedAuraCandidateIDsFromString(candidateSet, orderedSet,
 end
 
 -- The ONE tracked-aura unit classifier; every surface (runtime binds, config,
--- migrations, panels, custom bars) must route through it or their answers
+-- migrations, panels, resource overlays) must route through it or their answers
 -- drift. C_Spell.IsSpellHarmful answers "can this spell target hostiles",
 -- NOT buff-vs-debuff: a self-buff whose record carries an enemy-facing rider
 -- effect reads harmful even on its applied-aura ID, and no static API
@@ -901,8 +902,8 @@ end
 -- Full ordered candidate set as a lookup table, for AuraDisplay's
 -- includeSpellIDs filters (config-time resolution; not combat-blocked).
 -- Aura-capable panel entries pass constrainImplicitFallbacks=true so an
--- explicit Aura list owns the slot polarity; Custom Bars omit it and retain
--- their existing candidate behavior.
+-- explicit Aura list owns the slot polarity; resource aura overlays omit it
+-- and keep the unconstrained candidate set.
 -- The set is built fresh on every call even when the ordered list came from
 -- the pass memo: it is handed to Blizzard as an includeSpellIDs filter and
 -- retained per slot, so no two binds may share one table.

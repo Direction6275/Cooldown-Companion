@@ -459,9 +459,9 @@ end
 local tabInfoButtons = CS.tabInfoButtons
 local appearanceTabElements = CS.appearanceTabElements
 
--- Early returns in here (missing group, and the standalone texture/trigger
--- settings guard) land on the dispatch-level gear build pass's sweep
--- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
+-- Early returns in here (missing group, and the Indicator settings guard) land
+-- on the dispatch-level gear build pass's sweep (RunAdvancedGearBuildPass,
+-- AdvancedSettingsPanel.lua).
 local function BuildGridArrangement(container, group, layoutCount)
     local tabInfoButtons = CS.tabInfoButtons
     local state = ResolveLayoutArrangementState(group, layoutCount)
@@ -482,10 +482,10 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- an ordinary icon panel's does.
     local auraBarPanel = state.auraBarPanel
 
-    -- Orientation is remembered per display mode (bar and text panels own
-    -- their keys, unset = vertical), so a mode swap keeps every mode's
-    -- layout. Same helper GetCompactGrowthDirectionLabels uses, because the
-    -- Growth Direction labels below have to agree with it.
+    -- Orientation is remembered per display mode (bars own their key, unset =
+    -- vertical), so a mode swap keeps every mode's layout. Same helper
+    -- GetCompactGrowthDirectionLabels uses, because the Growth Direction
+    -- labels below have to agree with it.
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
 
     -- A centered growth edge lives on one axis, so every orientation control
@@ -522,9 +522,9 @@ local function BuildGridArrangement(container, group, layoutCount)
             label = "Orientation",
             setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.orientation,
             -- Owner ruling 2026-08-08 (supersedes 2026-07-28): the display
-            -- reads the same per-mode helper the core lays out with, and
-            -- text panels now default vertical like bars. Each mode writes
-            -- its own key so swapping modes keeps every mode's layout.
+            -- reads the same per-mode helper the core lays out with. Each
+            -- mode writes its own key so swapping modes keeps every mode's
+            -- layout.
             list = { horizontal = "Horizontal", vertical = "Vertical" },
             value = orientation,
             onChange = function(val)
@@ -620,8 +620,7 @@ local function BuildGridArrangement(container, group, layoutCount)
         }, tabInfoButtons))
     end
 
-    -- Text mode calls its entries entries, and offers the wrap count only
-    -- once there is something to wrap.
+    -- The wrap count is offered only once there is something to wrap.
     if state.buttonsPerLine then
         local numButtons = math.max(state.showAll and 100 or 1, layoutCount)
         local wrapKey = WrapCountKey(group)
@@ -767,7 +766,7 @@ local function BuildLayoutTab(container)
         -- BuildAppearanceTab's icons path (GroupTabsAppearance.lua) and this
         -- half conforms to them.
         --
-        -- A texture/trigger panel anchors ONE texture rather than a panel of
+        -- An Indicator anchors ONE display rather than a panel of
         -- entries, so it has no Arrangement and no per-icon strata; the three
         -- sections it does share (Anchor, Position, Alpha) reuse the same
         -- collapse keys, because they are the same sections on the same tab.
@@ -1060,7 +1059,7 @@ local function BuildLayoutTab(container)
     -- Layout is the one panel tab the entry lens never touches: every edit
     -- here lands on the whole panel while any selected entry stays selected
     -- above, and this line is the only thing on the surface that says so.
-    -- Below the texture/trigger return on purpose: those panels' sibling
+    -- Below the Indicator return on purpose: an Indicator's sibling
     -- tabs never lens either, so there the strip is uniform and the note
     -- would be the odd one out instead of Layout.
     AddLensPanelScopeNote(container, ResolveStyleLens(group), true)
@@ -1088,9 +1087,9 @@ local function BuildLayoutTab(container)
     -- facts. (Alpha is a panel fact too, but it reads as visibility
     -- behavior, so it lives on the Visibility tab.)
     -- Only the Arrangement section and the icons-only strata block
-    -- below vary, and each of those names its own mode gate. (Texture and
-    -- trigger panels returned far above - they anchor a single texture rather
-    -- than a panel of entries.)
+    -- below vary, and each of those names its own mode gate. (Indicators
+    -- returned far above - they anchor a single display rather than a panel
+    -- of entries.)
     -- ================================================================
     local iconAnchorTargetList = isPanel
         and {
@@ -1119,8 +1118,8 @@ local function BuildLayoutTab(container)
     -- anchor THEMSELVES to this panel - the one remaining setting that belongs
     -- to anchoring rather than to the entries inside. (Where the panel's alpha
     -- comes from used to share this column; it now leads the Visibility tab's
-    -- Alpha section, beside the rows it gates, so on bars and text panels this
-    -- column runs empty.)
+    -- Alpha section, beside the rows it gates, so on bar panels this column
+    -- runs empty.)
     local anchorLeft, anchorRight = BeginRowGrid(container)
 
     AddDropdownRow(anchorLeft, {

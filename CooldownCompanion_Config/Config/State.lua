@@ -303,7 +303,7 @@ ST._configState = {
     addingToPanelId = nil,
     _panelDropTargets = {},
 
-    -- Talent picker mode (2-column layout)
+    -- Talent picker mode
     talentPickerMode = false,
 
     -- Autocomplete state
@@ -327,10 +327,10 @@ ST._configState = {
     barWorkspaceKind = nil,
     -- Which cast/frames object that workspace is editing
     -- ("castbar" | "player" | "target"); nil is the Resources home, where a
-    -- resource or a custom bar can be selected instead
+    -- resource can be selected instead
     castFramesSelectedItem = nil,
     -- Buttons view, unified anchor preview: which attached bar's settings
-    -- own the settings area ("resource" | "custom" | "cast", nil = none).
+    -- own the settings area ("resource" | "cast", nil = none).
     -- Resource selection lives in selectedResourcePowerType.
     unifiedBarKind = nil,
     resourcesSettingsTab = "general",
@@ -1639,7 +1639,7 @@ local function OpenButtonIconPicker(groupId, buttonIndex)
 end
 
 ------------------------------------------------------------------------
--- Trigger panel icon picker (panel-level manual icon for trigger display)
+-- Indicator icon picker (panel-level manual icon for an Icon Indicator)
 ------------------------------------------------------------------------
 local function OpenTriggerPanelIconPicker(groupId)
     return OpenConfigIconPicker(TRIGGER_PANEL_ICON_PICKER_SPEC, {
@@ -2078,11 +2078,6 @@ local function CleanRecycledEntry(entry)
     end
     if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
     if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
-    if entry.frame._cdcCustomBarTypeBadge then entry.frame._cdcCustomBarTypeBadge:Hide() end
-    if entry.frame._cdcCustomBarDisabledBadge then entry.frame._cdcCustomBarDisabledBadge:Hide() end
-    if entry.frame._cdcCustomBarSpecBadges then
-        for _, badge in ipairs(entry.frame._cdcCustomBarSpecBadges) do badge:Hide() end
-    end
     if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
     if entry.frame._cdcPriorityUpBtn then entry.frame._cdcPriorityUpBtn:Hide() end
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
@@ -2673,19 +2668,8 @@ end
 
 
 
-local function SelectConfigButtonPanel(panelId, opts)
-    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    -- The panel becomes the sole selected editing target.
-    CS.unifiedBarKind = nil
-    SelectConfigPanel(panelId)
-    if opts and opts.clearPanelMulti then
-        wipe(CS.selectedPanels)
-    end
-end
-
--- The unified bars workspace edits one object at a time: a resource, a
--- custom bar, or a cast/frames item. Clearing all three is "back to the
--- Resources home".
+-- The unified bars workspace edits one object at a time: a resource or a
+-- cast/frames item. Clearing both is "back to the Resources home".
 local function ClearConfigBarsHomeSelection()
     ClearConfigResourceSelection()
     CS.castFramesSelectedItem = nil
@@ -2825,7 +2809,7 @@ local function SelectConfigBarsEntry(opts)
 end
 
 -- A cast/frames item belongs to the same mutually exclusive family as the
--- resources and custom bars beside it, so selecting one drops any bar.
+-- resources beside it, so selecting one drops any bar.
 local function SelectConfigCastFramesItem(item, opts)
     if item ~= "castbar" and item ~= "player" and item ~= "target" then
         return false
@@ -3243,7 +3227,6 @@ ST._SelectConfigPanel = SelectConfigPanel
 ST._NormalizeIndicatorConfigSelection = NormalizeIndicatorConfigSelection
 ST._ToggleConfigPanelMultiSelect = ToggleConfigPanelMultiSelect
 ST._SelectConfigButton = SelectConfigButton
-ST._SelectConfigButtonPanel = SelectConfigButtonPanel
 ST._ClearConfigBarsHomeSelection = ClearConfigBarsHomeSelection
 ST._SelectConfigResource = SelectConfigResource
 ST._SelectUnifiedAnchorBar = SelectUnifiedAnchorBar

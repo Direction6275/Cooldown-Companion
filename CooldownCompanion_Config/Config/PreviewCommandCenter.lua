@@ -873,8 +873,8 @@ end
 --
 -- Grouped by the bar they play on rather than by what they draw, because
 -- that is how the owner picks them ("show me what the health bar does"),
--- and because it is the shape the future per-custom-bar aura previews
--- slot into: one more group per bar, no widget or menu changes.
+-- and because new per-bar previews slot into it as one more group per bar,
+-- with no widget or menu changes.
 --
 -- Availability reads the same effective config the runtime does, so an
 -- entry appears exactly when picking it would show something. All of
@@ -1712,7 +1712,7 @@ local function PanelMenuControlComesBefore(a, b)
         return aGroup < bGroup
     end
 
-    -- Dynamic custom-bar/resource groups share the fallback rank. Keep each
+    -- Dynamic resource groups share the fallback rank. Keep each
     -- object's controls together before ordering its individual previews.
     if a.group ~= b.group then
         return (a.group or "") < (b.group or "")
@@ -1753,7 +1753,7 @@ local function OpenPreviewMenu(bar)
     UIDropDownMenu_Initialize(menu, function(_, level)
         local applicable = BuildMenuControls(bar._applicable or {}, surface)
         -- Headers only earn their space once the menu actually spans more
-        -- than one group (texture and trigger panels often offer only one).
+        -- than one group (Indicators often offer only one).
         local showHeaders = false
         local firstGroup = applicable[1] and applicable[1].group
         for _, control in ipairs(applicable) do

@@ -295,9 +295,11 @@ function CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
         return nil
     end
 
-    if type(store.customTextures) ~= "table" then
-        store.customTextures = {}
-    end
+    -- Retired: the old typed-in custom texture paths. SharedMedia favorites
+    -- replaced the UI that added them (129471ac) without migrating them, and
+    -- #433 removed their last reader, so the saved paths are deleted here
+    -- rather than carried forever.
+    store.customTextures = nil
 
     if type(store.textureFavorites) ~= "table" then
         store.textureFavorites = {}
@@ -492,7 +494,6 @@ function CooldownCompanion:EnsureAuraTextureLibraryStore()
     end
     if type(profile.auraTextureLibrary) ~= "table" then
         profile.auraTextureLibrary = {
-            customTextures = {},
             textureFavorites = {},
         }
     end

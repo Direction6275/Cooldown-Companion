@@ -3,16 +3,11 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 local math_abs = math.abs
-local math_max = math.max
-local math_min = math.min
 local tonumber = tonumber
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
-local CreateInfoButton = ST._CreateInfoButton
-local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local AddAdvancedToggle = ST._AddAdvancedToggle
-local AddFontControls = ST._AddFontControls
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 -- Imports from RowWidgets.lua (the row grammar)
@@ -55,9 +50,6 @@ local TEXTURE_BLEND_ORDER = {
     "ADD",
 }
 
-local TEXTURE_PREVIEW_WIDTH = 240
-local TEXTURE_PREVIEW_HEIGHT = 170
-local DEFAULT_TEXTURE_PREVIEW_SIZE = 128
 local MIN_TEXTURE_PAIR_SPACING = -5
 local MAX_TEXTURE_PAIR_SPACING = 5
 local MIN_TEXTURE_ROTATION = -180
@@ -104,14 +96,6 @@ end
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
 local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
-
-
-
-
--- Exported so the pinned Live Preview mirror (ButtonPanelPreview.lua) can draw
--- a texture panel's real texture with the same fit-to-box renderer the in-tab
--- canvas uses. Called at runtime only (ButtonPanelPreview loads before this
--- file, so it must not be captured as an upvalue there).
 
 -- Texture-slider wiring keeps the config preview smooth without continuously
 -- redrawing the runtime panel. The value is staged and previewed during drag;
@@ -366,7 +350,7 @@ local function OpenOrRebindStandaloneTexturePicker(group, settings, forceOpen)
     end
 end
 
--- Open the inline texture browser for a standalone texture/trigger panel by id.
+-- Open the inline texture browser for an Indicator by id.
 -- Used by the big-preview click-to-browse affordance, which only has the
 -- panel id at click time. Resolves the group + its texture settings and forces
 -- the browser open.
@@ -378,18 +362,6 @@ function ST._OpenStandaloneTexturePicker(groupId)
     local settings = GetStandaloneTextureSettings(group, true)
     OpenOrRebindStandaloneTexturePicker(group, settings, true)
 end
-
-local TRIGGER_DISPLAY_TYPE_OPTIONS = {
-    texture = "Texture",
-    icon = "Icon",
-    text = "Text",
-}
-
-local TRIGGER_DISPLAY_TYPE_ORDER = {
-    "texture",
-    "icon",
-    "text",
-}
 
 local function RefreshStandaloneTriggerDisplay(groupId)
     local group = CooldownCompanion.db.profile.groups[groupId]
@@ -805,16 +777,14 @@ local function BuildTriggerEffectsTab(container, group)
 end
 
 -- Row grammar (RowWidgets.lua): shape and color sections of display rows. The
--- texture itself is shown and picked in the Live Preview above for both panel
--- kinds, so the tab holds no preview canvas or picker buttons.
---
--- Reached from BOTH paths that used to fall into the inline branch: a texture
--- panel, and a trigger panel whose display type is "texture".
+-- texture itself is shown and picked in the Live Preview above, so the tab
+-- holds no preview canvas or picker buttons. Reached for Indicators whose
+-- display type is "texture" (aura or conditions tracking).
 --
 -- The staging machinery below - the config-only settings copy, the
 -- stage/refresh/cancel closures and AttachTextureValueSlider - moved verbatim.
 -- It is owner-validated behaviour: runtime refreshes read the SAVED table, so a
--- texture panel edits a copy until the interaction is confirmed, and the row
+-- Texture Indicator edits a copy until the interaction is confirmed, and the row
 -- conversion only changes which widget holds the control.
 local function BuildTexturePanelAppearanceTab(container, group)
     local isTriggerPanel = CooldownCompanion:IsTriggerPanelGroup(group)
@@ -827,7 +797,6 @@ local function BuildTexturePanelAppearanceTab(container, group)
     if CS.textureConfigPreviewStage and CS.textureConfigPreviewStage.groupId == groupId then
         CS.textureConfigPreviewStage = nil
     end
-    local buttonData = group.buttons and group.buttons[1] or nil
 
     -- Runtime refreshes read the saved settings table directly, so texture
     -- panels need a separate config-only copy while an interaction is in
@@ -882,9 +851,9 @@ local function BuildTexturePanelAppearanceTab(container, group)
 
     local function RefreshTextureVisual(requestAuraRestyle)
         ClearTextureConfigPreviewStage()
-        -- Both panel kinds repaint the pinned mirror after the saved value has
-        -- been committed. Trigger panels can reuse their display-only repaint;
-        -- texture panels rebuild the mirror outright.
+        -- Both tracking kinds repaint the pinned mirror after the saved value
+        -- has been committed. Conditions Indicators can reuse their
+        -- display-only repaint; aura Indicators rebuild the mirror outright.
         if isTriggerPanel then
             RefreshTriggerPreviewMirror(groupId)
         elseif ST._RefreshButtonsPreviewMirror then
@@ -922,19 +891,6 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end, textureValueChanged, confirmValue, cancelValue)
     end
 
-    if not buttonData and not isTriggerPanel then
-        local emptyLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(emptyLabel)
-        emptyLabel:SetFullWidth(true)
-        emptyLabel:SetText("|cff888888Add one entry to control when this texture appears. Use the add field or drag an entry into Live Preview.|r")
-        container:AddChild(emptyLabel)
-
-        if CS.pendingTexturePickerOpen == CS.selectedGroup then
-            CS.pendingTexturePickerOpen = nil
-        end
-        return
-    end
-
     local selectionLabel = GetStandaloneTextureSelectionLabel(group, settings)
 
     if not selectionLabel then
@@ -946,15 +902,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
             container:AddChild(emptyStateLabel)
         end
 
-        local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
-        if shouldOpenPicker then
-            CS.pendingTexturePickerOpen = nil
-            C_Timer.After(0, function()
-                if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
-                    OpenOrRebindStandaloneTexturePicker(group, settings, true)
-                end
-            end)
-        elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+        if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
             OpenOrRebindStandaloneTexturePicker(group, settings, false)
         end
 
@@ -1116,15 +1064,7 @@ local function BuildTexturePanelAppearanceTab(container, group)
         end
     end -- not colorCollapsed
 
-    local shouldOpenPicker = CS.pendingTexturePickerOpen == CS.selectedGroup
-    if shouldOpenPicker then
-        CS.pendingTexturePickerOpen = nil
-        C_Timer.After(0, function()
-            if CS.selectedGroup == groupId and CS.panelSettingsTab == "appearance" then
-                OpenOrRebindStandaloneTexturePicker(group, settings, true)
-            end
-        end)
-    elseif CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+    if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
         OpenOrRebindStandaloneTexturePicker(group, settings, false)
     end
 

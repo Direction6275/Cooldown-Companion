@@ -38,6 +38,7 @@ local DRUID_BALANCE_SPEC_ID = 102
 local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = 3
 
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
+local NormalizeClassKey = ST._NormalizeResourceBarClassKey
 
 local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "barTexture",
@@ -295,14 +296,6 @@ function RB.GetBarAnchorGeometry(frame, group)
         tostring(RB.HasBarSectionOnSide(group, "below")) }, ":")
 end
 
-function RB.GetAuraBlockFlagKey(lane, group)
-    local side = RB.GetBarLaneSide(lane)
-    if side ~= lane and not RB.HasBarSectionOnSide(group or RB.GetBarAnchorGroup(), side) then
-        return side
-    end
-    return lane
-end
-
 -- The addon already keeps this id and refreshes it on the exact spec-change
 -- events (CacheCurrentSpec, Core/EventHandlers.lua), and it is written during
 -- OnEnable before any bar exists — so the resource poll reads the cache
@@ -332,6 +325,38 @@ local function GetPlayerClassID()
     return cachedPlayerClassID
 end
 
+-- The "Resources" piece of a setup export: the whole class bucket, tagged with
+-- the class it belongs to. Replaces the target class's bucket on import.
+local function BuildResourcesSetupSection(settings, classKey)
+    if type(settings) ~= "table" then
+        return nil
+    end
+    classKey = NormalizeClassKey(classKey)
+    if not classKey then
+        local _, playerClassFilename = UnitClass("player")
+        classKey = NormalizeClassKey(playerClassFilename)
+    end
+    if not classKey then
+        return nil
+    end
+    local classID = ST._GetClassIDFromResourceBarClassKey
+        and ST._GetClassIDFromResourceBarClassKey(classKey)
+        or nil
+    return {
+        classID = classID,
+        classFilename = classKey,
+        settings = CopyTable(settings),
+    }
+end
+
+------------------------------------------------------------------------
+-- LEGACY CONVERSION ONLY: retired Custom Bar records.
+-- Custom Bars no longer exist as a feature. The helpers below read old
+-- saved/imported custom-bar tables (`cab`) so ScopedSettings can normalize
+-- them and UnifiedPanelMigration can convert them into panel entries, and so
+-- profile import can list parked legacy stores. Nothing at runtime renders
+-- them. Remove together with the converter when the data checkpoint moves.
+------------------------------------------------------------------------
 local customBarContentFields = {
     "spellID",
     "trackingMode",
@@ -481,37 +506,6 @@ local function IsSpellCustomBarConfig(cab)
     return GetCustomBarEntryType(cab) == "spell"
 end
 
-local function NormalizePayloadClassKey(value)
-    if type(value) ~= "string" or value == "" then
-        return nil
-    end
-    return string.upper(value)
-end
-
--- The "Resources" piece of a setup export: the whole class bucket, tagged with
--- the class it belongs to. Replaces the target class's bucket on import.
-local function BuildResourcesSetupSection(settings, classKey)
-    if type(settings) ~= "table" then
-        return nil
-    end
-    classKey = NormalizePayloadClassKey(classKey)
-    if not classKey then
-        local _, playerClassFilename = UnitClass("player")
-        classKey = NormalizePayloadClassKey(playerClassFilename)
-    end
-    if not classKey then
-        return nil
-    end
-    local classID = ST._GetClassIDFromResourceBarClassKey
-        and ST._GetClassIDFromResourceBarClassKey(classKey)
-        or nil
-    return {
-        classID = classID,
-        classFilename = classKey,
-        settings = CopyTable(settings),
-    }
-end
-
 local function IsValidCustomAuraUnit(unit)
     return unit == "player" or unit == "target"
 end
@@ -594,6 +588,7 @@ local function EnsureCustomAuraBarAuraUnit(cabConfig, spellID, unit)
 
     return GetDefaultSpellCustomBarAuraUnit(cabConfig, resolvedSpellID)
 end
+-- End of legacy Custom Bar conversion helpers.
 
 local function CopyIndependentAnchor(anchor)
     if type(anchor) ~= "table" then
@@ -1577,9 +1572,6 @@ RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.BuildResourcesSetupSection = BuildResourcesSetupSection
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
-RB.GetCustomBarEntryType = GetCustomBarEntryType
-RB.IsSpellCustomBarConfig = IsSpellCustomBarConfig
-RB.GetResolvedCustomAuraBarAuraUnit = GetResolvedCustomAuraBarAuraUnit
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile

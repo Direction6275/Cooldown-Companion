@@ -1,3 +1,6 @@
+-- LEGACY CONVERSION ONLY. Converts retired Texture, Text and Trigger panels
+-- (displayMode "textures", "text", "trigger") into Indicators, one way, for
+-- saved profiles, templates and old import strings.
 -- One-way retirement: old records are data for conversion, never runtime modes.
 local _, ST = ...
 local I, Addon = ST.Indicator, ST.Addon

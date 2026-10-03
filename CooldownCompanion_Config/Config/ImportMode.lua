@@ -228,8 +228,7 @@ local function GetEffectiveImportData(mode, review)
             copy.resources = nil
         end
         local hasContainers = type(copy.containers) == "table" and #copy.containers > 0
-        if not hasContainers and type(copy.resources) ~= "table"
-            and type(copy.customBars) ~= "table" then
+        if not hasContainers and type(copy.resources) ~= "table" then
             return nil
         end
         return copy
@@ -386,8 +385,8 @@ end
 ------------------------------------------------------------------------
 -- The review renderers. Setup and group strings get the export summary's
 -- mirror: one section per incoming group with a tile band of real panel
--- previews (rendered from the payload's own data), then Resources and
--- Custom Bars sections in the section class's own color. Every other
+-- previews (rendered from the payload's own data), then a Resources section
+-- in the section class's own color. Every other
 -- string type renders its classified summary under one section heading.
 ------------------------------------------------------------------------
 
@@ -529,7 +528,9 @@ end
 
 local function RenderSetupReview(scroll, mode, review)
     local data = review.data
-    local hasContainers, customBars, resources = ST._GetSetupImportSections(data)
+    -- Reviewed setups are converted data: legacy Custom Bars sections have
+    -- already become panel entries, so only containers and resources remain.
+    local hasContainers, _, resources = ST._GetSetupImportSections(data)
 
     AddHeading(scroll, "This string contains")
     AddSpacer(scroll, 6)
@@ -579,26 +580,6 @@ local function RenderSetupReview(scroll, mode, review)
             if hasContainers then
                 AddLine(scroll, "The anchor to a group in this string does not carry across classes; re-pick it on that character.", 0.7, 0.7, 0.7)
             end
-        end
-    end
-
-    if customBars then
-        local classKey = ST._GetSetupImportSectionClassKey(customBars)
-        local keyText = classKey and tostring(classKey) or nil
-        local countText = tostring(#customBars.bars) .. (keyText and (", " .. keyText) or "")
-        AddSectionHeading(scroll, "Custom Bars  |cff777777(" .. countText .. ")|r", classKey)
-        AddSpacer(scroll, 10)
-        for index, bar in ipairs(customBars.bars) do
-            local label = type(bar) == "table" and bar.label or nil
-            if not label and type(bar) == "table" and bar.spellID then
-                label = C_Spell.GetSpellName(bar.spellID)
-            end
-            AddLine(scroll, "    " .. tostring(label or ("Custom Bar " .. index)))
-        end
-        AddSpacer(scroll, 6)
-        AddLine(scroll, "Custom Bars add alongside your own bars.", 0.7, 0.7, 0.7)
-        if classKey and playerClassKey and classKey ~= playerClassKey then
-            AddLine(scroll, "They import for " .. keyText .. " and are waiting the next time you play a " .. keyText .. " character.", 0.7, 0.7, 0.7)
         end
     end
 

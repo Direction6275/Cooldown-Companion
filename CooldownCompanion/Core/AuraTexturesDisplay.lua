@@ -12,10 +12,7 @@ local InCombatLockdown = InCombatLockdown
 local UIParent = UIParent
 local ipairs = ipairs
 local math_floor = math.floor
-local math_max = math.max
 local pairs = pairs
-local string_find = string.find
-local string_trim = strtrim
 local tostring = tostring
 local tonumber = tonumber
 local type = type
@@ -25,10 +22,7 @@ local UI_PARENT_NAME = AT.UI_PARENT_NAME
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
 local NormalizeAnchorPoint = AT.NormalizeAnchorPoint
-local NormalizeAuraTextureSettings = AT.NormalizeAuraTextureSettings
 local ResolveGroup = AT.ResolveGroup
-local LayoutTexturePieces = AT.LayoutTexturePieces
-local SetTextureIndicatorBaseVisuals = AT.SetTextureIndicatorBaseVisuals
 local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
 local DoesTriggerPanelMatch = AT.DoesTriggerPanelMatch
 
@@ -1263,7 +1257,7 @@ function CooldownCompanion:RenderStandaloneDisplay(host, driverButton, group, se
         displayType == "icon" and settings or nil)
 end
 
--- Locked Aura-controlled Texture panels keep the ordinary host for anchoring,
+-- Locked aura Indicators keep the ordinary host for anchoring,
 -- load visibility, and alpha, but render their production pixels only beneath
 -- Blizzard's AuraButton. This prepares the safe outer shell without touching
 -- any AuraContainer descendant; AuraDisplay styles that subtree OOC.

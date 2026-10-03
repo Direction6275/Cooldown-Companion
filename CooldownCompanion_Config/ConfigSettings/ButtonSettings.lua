@@ -17,7 +17,7 @@ local NormalizeItemFallbacks = CooldownCompanion.NormalizeItemFallbacks
 local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 
 -- Imports from RowWidgets.lua (the row grammar). Sound Alerts, Item Settings,
--- Custom Name, Custom Keybind Text and the trigger-panel surfaces are
+-- Custom Name, Custom Keybind Text and the Indicator sound surface are
 -- converted; the fallback item rows still draw stock widgets.
 -- ST._BeginRowGrid stays a function-local at each builder, the convention
 -- every converted surface follows.
@@ -26,7 +26,6 @@ local AddDropdownRow = ST._AddDropdownRow
 local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
-local AddLabelRow = ST._AddLabelRow
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
@@ -38,20 +37,15 @@ local ROW_SECTION = { leftAligned = true }
 -- run past it too.
 local SOUND_PULLOUT_WIDTH = 300
 local FONT_PULLOUT_WIDTH = 300
-local CONDITION_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 
 
 
--- 12.1 aura tracking is offered on spell entries in icon, bar and text
--- groups, and as a Texture-only active/inactive display. Icons and bars
--- compose a full aura shell; text panels show aura state only through the
--- format's aura tokens ({aura}, {aurastacks}, {?aura}...{/aura}), rendered
--- by Blizzard's aura button inside each entry, so the setup made here is
--- what gives those tokens an aura to read. Trigger panels retain their
--- separate condition system.
+-- 12.1 aura tracking is offered on spell entries in icon and bar panels,
+-- which compose a full aura shell. Indicators configure their auras through
+-- their own sources and rules (IndicatorTabs.lua).
 --
 -- This used to gate a second entry TAB; it now gates the Aura Tracking SECTION
 -- of the one entry Settings pane (owner ruling: Visibility' aura toggles
@@ -73,10 +67,10 @@ ST._EntryOffersAuraTab = EntryOffersAuraTab
 
 local function BuildButtonSettingsTabs(group, buttonData)
     -- Sound Alerts, Item Fallbacks and Aura Tracking are not tabs: they live
-    -- as sections of this entry's Settings ("Condition" on trigger panels)
-    -- tab. Entry Visibility is not a tab either - the one Visibility tab on
-    -- the left reads whichever entry is selected. So the entry cluster is
-    -- exactly one tab, whatever the entry and panel type.
+    -- as sections of this entry's Settings tab. Entry Visibility is not a tab
+    -- either - the one Visibility tab on the left reads whichever entry is
+    -- selected. So the entry cluster is exactly one tab, whatever the entry
+    -- and panel type.
 
     return {
         { value = "settings", text = "Settings" },
@@ -119,10 +113,6 @@ local function DecorateEntryTabs(tabs, icon)
     end
     return tabs
 end
-
--- The custom bar entry cluster (ResourcesWideColumn.lua) wears the same
--- one-Settings-tab stamp, so the decoration is shared rather than replicated.
-ST._DecorateEntryTabs = DecorateEntryTabs
 
 -- Multi-select is one appended tab: a stacked marker built from the first
 -- two selected entries' icons, plus the count.
@@ -392,7 +382,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
     -- the aura-side ones (the native C_UnitAuras triggers) - only runs when
     -- BOTH families survive. When one family is all that is left it splits
     -- itself across the columns left-first, so the left column is never the
-    -- empty one. Same shape as the custom-bar Sound Alerts tab.
+    -- empty one.
     local cooldownEvents, auraEvents = {}, {}
     for _, eventKey in ipairs(eventOrder) do
         if validEvents[eventKey] then
@@ -495,10 +485,12 @@ local function BuildTriggerPanelSoundAlertsSection(scroll, group, buttonData, in
     })
 end
 
--- Sound alerts sit at the foot of the entry's Settings tab ("Condition" on
--- trigger panels) on every panel type. Entries that never had a sound surface
--- (equipment slots, and anything that is not a spell outside trigger panels)
--- add nothing rather than a section that only says "not available".
+-- Sound alerts sit at the foot of the entry's Settings tab on every panel
+-- type; a conditions Indicator that does not use its source's sounds gets its
+-- panel-level sound section instead. Entries that never had a sound surface
+-- (equipment slots, and anything that is not a spell outside conditions
+-- Indicators) add nothing rather than a section that only says "not
+-- available".
 local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     if buttonData.rotationAssistant then return end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
@@ -526,11 +518,6 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
 
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
-
-    -- Text panels render an item's count inline through the {stacks} token,
-    -- using the panel's text font and color. The per-entry itemCount* keys
-    -- below style only the separate count overlay owned by Icon/Bar mode, so
-    -- this otherwise-empty section has nothing relevant to edit in Text mode.
 
     -- Charge text settings now live in group Appearance tab (with per-button overrides)
     if UsesChargeBehavior(buttonData) then return end
@@ -1268,7 +1255,7 @@ local function BuildCustomKeybindSection(scroll, buttonData)
     )
 end
 
--- Expose for Config.lua
+-- Exports
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildItemFallbacksSection = BuildItemFallbacksSection
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn

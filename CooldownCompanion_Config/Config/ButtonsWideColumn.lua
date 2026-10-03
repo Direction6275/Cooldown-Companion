@@ -268,7 +268,7 @@ local function HideSettingsFinderResults()
 end
 
 -- Resolve at use time rather than storing an anchor on pooled Add widgets.
--- The active input may be either the persistent panel box or a rebuilt Custom Bar box.
+-- The active input may be the persistent panel box or a rebuilt Add box.
 ST._GetEditingAddResultsAnchor = function(input)
     local col3 = CS.configFrame and CS.configFrame.col3
     local row = col3 and col3._cdcEditingActionRow
@@ -293,7 +293,7 @@ end
 
 -- Spell/item autocomplete calls this before showing its own popup. Keeping
 -- that mutual exclusion at the popup boundary also covers alternate Add
--- widgets (for example, the Custom Bar workspace box).
+-- widgets.
 CS.HideSettingsFinderResults = function()
     ApplyEditingActionPopupHandoff("add")
 end
@@ -1185,7 +1185,7 @@ end
 
 local function BreadcrumbToResourcesHome()
     if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
-    -- Drops the resource, custom bar, or cast/frames item being edited, so
+    -- Drops the resource or cast/frames item being edited, so
     -- the workspace falls back to its Resources home.
     if ST._ClearConfigBarsHomeSelection then
         ST._ClearConfigBarsHomeSelection()
@@ -2285,9 +2285,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
     if not col3 then return end
 
     -- Hide surfaces owned by the resources/cast homes that share col3
-    if col3._customAuraTabGroup then col3._customAuraTabGroup.frame:Hide() end
-    col3._customAuraSubScroll = nil
-    if col3._customAuraScroll then col3._customAuraScroll.frame:Hide() end
     if ST._HideResourcesWideSurfaces then ST._HideResourcesWideSurfaces(col3, true) end
     if col3._inlineTextureBrowserHost then col3._inlineTextureBrowserHost:Hide() end
 
@@ -2337,7 +2334,7 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
             ST._RenderInlineTextureBrowser(host)
             return
         end
-        -- Selected panel is no longer a standalone texture/trigger panel; drop
+        -- Selected panel is no longer an Indicator; drop
         -- the flag and fall through to the normal branches.
         CloseInlineTextureBrowser(col3)
     end
@@ -2420,13 +2417,6 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
     ST._UnifiedRowApply()
 end
 
--- The mirror owns a panel's config previews only while the wide buttons view
--- is showing that panel's pinned preview.
-local function IsPanelMirrorPreviewActive(groupId)
-    if not (ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive()) then return false end
-    return groupId ~= nil and groupId == CS.selectedGroup
-end
-
 -- Rebuild just the pinned mirror (e.g. after a preview toggle flips, or
 -- from UpdateGroupStyle so style edits reflect immediately) without a full
 -- config refresh. An optional groupId scopes the rebuild: updates to a
@@ -2478,7 +2468,6 @@ ST._SetActiveWidePreview = SetActiveWidePreview
 ST._ClearActiveWidePreview = ClearActiveWidePreview
 ST._ComputeWidePreviewHostHeight = ComputePreviewHostHeight
 ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
-ST._IsPanelMirrorPreviewActive = IsPanelMirrorPreviewActive
 ST._RefitWidePreviewHost = RefitWidePreviewHost
 ST._StampWidePreviewLayout = StampWidePreviewLayout
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd

@@ -756,7 +756,7 @@ end
 --
 -- includeInheritedNote: scopes that can inherit rules from a wider scope. The
 -- locked rows say who locked them, so all that is left to say is what a lock
--- costs you. Custom bars inherit from nothing and leave it out.
+-- costs you. Scopes that inherit from nothing leave it out.
 local function BuildWhereToHideTooltip(subjectLabel, includePreCheckedNote, includeInheritedNote)
     local lines = {
         "Where To Hide It",
@@ -2106,7 +2106,7 @@ end
 -- choice, and most offer Dim, so what those two do is stated once here and
 -- appended to each row's own tooltip rather than repeated inside the builder.
 -- `lines` is the row's own body; `offersDim` drops the Dim sentence on rows
--- whose list has no Dim item (Texture panels).
+-- whose list has no Dim item.
 local VISIBILITY_DIM_TOOLTIP_LINE = {"Dim shows the button dimmed and keeps its layout position.", 1, 1, 1, true}
 local VISIBILITY_HIDE_TOOLTIP_LINE = {"Hide removes the button entirely.", 1, 1, 1, true}
 local VISIBILITY_TOOLTIP_SPACER = { " ", 1, 1, 1, true }
@@ -2126,9 +2126,9 @@ local function BuildVisibilityModeTooltip(title, lines, offersDim)
     return tooltip
 end
 
--- The Cooldown Visibility labels and tooltip are shared with the custom bar
--- twin and the preview's reason text (Helpers.lua owns them), so a rename
--- lands on every surface at once.
+-- The Cooldown Visibility labels and tooltip are shared with the preview's
+-- reason text (Helpers.lua owns them), so a rename lands on every surface at
+-- once.
 local COOLDOWN_VISIBILITY = ST._COOLDOWN_VISIBILITY
 -- Every value a state row can read, for the one case a row has to show a
 -- stored value its own list does not offer (see AddVisibilityDropdown).
@@ -2321,11 +2321,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- families below as well as the whole section.
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
 
-    -- A primary Aura entry in a Texture panel has exactly one visibility rule:
-    -- Blizzard shows its texture while the aura is active. That rule is always
-    -- on, so this entry has no configurable Show & Hide Rules section.
-    --
-    -- An Aura Panel entry ends up in the same place by a different route: the
+    -- An Aura Panel entry has no configurable Show & Hide Rules section: the
     -- show-while-active pair is inherent to the panel, and every remaining
     -- family here is keyed to a cooldown, a castability state, charges, item
     -- stacks or equipped state that a pure aura entry never has. The section
@@ -2341,13 +2337,12 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- under it. Collection creates no widgets - every family defers its rows to
     -- a build closure - so nothing reaches `scroll` until the count is known.
     --
-    -- Two row shapes for the whole section. The plain toggles (a texture's
-    -- aura presence, hiding the cooldown behind remaining charges) are
-    -- CDC-CheckBoxRows reading and writing through the same batch-aware
-    -- helpers the stock checkboxes used, so the store side is untouched.
-    -- opts.filter scopes the batch read to the write filter, opts.indent
-    -- marks a child row, and opts.tooltip chains a "?" badge off the end of
-    -- the label.
+    -- Two row shapes for the whole section. The plain toggles (hiding the
+    -- cooldown behind remaining charges) are CDC-CheckBoxRows reading and
+    -- writing through the same batch-aware helpers the stock checkboxes used,
+    -- so the store side is untouched. opts.filter scopes the batch read to the
+    -- write filter, opts.indent marks a child row, and opts.tooltip chains a
+    -- "?" badge off the end of the label.
     local function AddVisibilityRow(column, label, field, opts)
         local row = AddCheckboxRow(column, {
             label = label,
@@ -2436,10 +2431,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     end
 
     -- The value list, reader and writer the hide/dim families share, so the
-    -- value-to-keys mapping lives in one place. Texture panels never offered
-    -- Dim or Desaturate (the old rows never drew those children there), and
-    -- that stays; a stored one still shows through AddVisibilityDropdown's
-    -- escape above. opts.desaturateKey is nil for the families without one.
+    -- value-to-keys mapping lives in one place. A stored value a list does not
+    -- offer still shows through AddVisibilityDropdown's escape above.
+    -- opts.desaturateKey is nil for the families without one.
     local function BuildStateList(withDesaturate)
         local list, order = { show = "Show" }, { "show" }
         if withDesaturate then
@@ -2538,9 +2532,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local anyAuraEntry
     if isBatch then anyAuraEntry = AnySelectedMatch(FilterAuraEntry)
     else anyAuraEntry = FilterAuraEntry(buttonData) end
-    -- Icon and bar groups (both compose a full shell). Text panels show aura
-    -- state through their format's aura tokens instead of a shell, so there
-    -- is nothing for an inactive state to hide or dim.
+    -- Icon and bar groups only (both compose a full shell); no other mode has
+    -- a shell for an inactive state to hide or dim.
     --
     -- An Aura Panel is already this pair, panel-wide and unconditionally: every
     -- cell shows only while its aura is up, and Blizzard's container gives the
@@ -2782,7 +2775,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     end -- not allPassive (unusable + no proc)
 
     -- Desaturate is an icon treatment, so its sentence only belongs on rows
-    -- whose list offers it (never on a Texture panel).
+    -- whose list offers it.
     local DESATURATE_TOOLTIP_LINE = {"Desaturate grays the icon in place.", 1, 1, 1, true}
     local function ZeroStateTooltipLines(firstLine)
         local lines = { {firstLine, 1, 1, 1, true} }
@@ -2882,8 +2875,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         })
     end
 
-    -- An entry type can filter every family away (a passive with no cooldown
-    -- in a texture panel, a member of an Aura Only Section), and both the
+    -- An entry type can filter every family away (a member of an Aura Only
+    -- Section, for example), and both the
     -- heading and an empty grid are still widgets - so the section only builds
     -- when there is something to pour into it.
     if totalRows > 0 then
@@ -2983,8 +2976,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
 
     if not talentCollapsed then
 
-    -- One-column row grid, the same shape this section already has on the
-    -- custom-bar tab. Conditions are ITEM rows: a CDC-LabelRow with the
+    -- One-column row grid. Conditions are ITEM rows: a CDC-LabelRow with the
     -- talent icon inlined into the label text and the taken/not-taken state
     -- as the row's right-aligned status word.
     local talentLeft = BeginRowGrid(scroll)
@@ -3363,7 +3355,7 @@ local function BuildLoadConditionsTab(container)
                 onChange = function(val)
                     group.inheritPanelAlpha = val ~= "custom"
                     if ST.IsIndicatorGroup(group) then
-                        -- A texture panel's alpha rides its texture visuals,
+                        -- An Indicator's alpha rides its display visuals,
                         -- not a group frame shell.
                         CooldownCompanion:RefreshAllAuraTextureVisuals()
                     else
@@ -3530,4 +3522,3 @@ ST._BuildWhereToHideTooltip = BuildWhereToHideTooltip
 ST._AddCharacterEligibilityControls = AddCharacterEligibilityControls
 ST._AddClassSpecEligibilityControls = AddClassSpecEligibilityControls
 ST._GetConditionDisplayName = GetConditionDisplayName
-ST._GetConditionListContextSuffix = GetConditionListContextSuffix

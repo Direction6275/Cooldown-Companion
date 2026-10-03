@@ -134,7 +134,6 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     if not button then return end
     button._chargesSpent = nil
     button._zeroChargesConfirmed = nil
-    button._nilConfirmPending = nil
     button._chargeState = nil
     button._chargeRecharging = nil
     button._chargeCooldownVisualActive = nil

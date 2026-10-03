@@ -72,8 +72,8 @@ end
 -- command center opened for the tab you are NOT on has no gear on screen to
 -- rebind its descriptor (RebindAdvancedSettingsPanel only fires from
 -- AddAdvancedToggle, i.e. from a gear that actually builds), so a wholesale
--- style replacement that keeps the same context - Copy Style From Panel
--- assigns a fresh group.style outright - would leave a captured table
+-- style replacement that keeps the same context (anything that assigns a
+-- fresh group.style outright) would leave a captured table
 -- orphaned and every control in the panel writing into nothing. The tab
 -- callers are unaffected either way: they rebuild and rebind every refresh.
 --

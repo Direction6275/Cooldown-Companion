@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config/ResourcesWideColumn
-    Shared resource, custom-bar, cast-bar and frame settings surfaces.
+    Shared resource, cast-bar and frame settings surfaces.
     Attached objects reuse these builders in the panel workspace. Independent,
     disabled or unplaced objects use their own inventory destination and pinned
     preview, sharing the panel workspace's editing chrome.
@@ -51,9 +51,8 @@ local function EnableResourceBarsModule()
     settings.enabled = true
     ST._PrepareBarWorkspaceEnable("resources")
     -- Nothing to select: the Resources home tabs are the surface. Clearing
-    -- all three selection families is what lands there, and a stale one can
-    -- be standing (a Custom Bar selection survives the module being turned
-    -- off, since the bar itself still exists).
+    -- the selection families is what lands there, and a stale one can be
+    -- standing.
     if ST._ClearConfigBarsHomeSelection then
         ST._ClearConfigBarsHomeSelection()
     else
@@ -460,7 +459,7 @@ end
 --
 -- `mirrorReuse` is the canvas-value edit ticket (see RefreshResourcesLayoutPreview):
 -- a dragged bar slider repaints this canvas on every OnValueChanged tick, and
--- nothing a resource, custom bar or cast bar setting can change reaches the
+-- nothing a resource or cast bar setting can change reaches the
 -- ICON panel - so rebuilding the mirror per tick is pure cost, doubled in the
 -- vertical layout, which draws a second copy for its cast section. It is an
 -- explicit ticket rather than a staleness guess: only the mirror-first slider
@@ -791,7 +790,7 @@ local function ShowResourcesTabPage(col3, stripOnly)
 end
 
 -- Settings surfaces for the Resources home: the module tab page, plus the
--- selected resource's or custom bar's own tabs beside it.
+-- selected resource's own tabs beside it.
 local function ShowResourcesHomeSurfaces(col3)
     local wantsBarDetail = CS.selectedResourcePowerType ~= nil
 
@@ -1007,7 +1006,6 @@ ST._CollectBarsEnableItems = CollectBarsEnableItems
 ST._RefreshResourcesLayoutPreview = RefreshResourcesLayoutPreview
 -- The unified anchor preview (buttons view) re-hosts these settings
 -- surfaces in the Settings column when an attached bar is selected there.
-ST._ShowResourceSettingsSurface = ShowResourceSettingsPanel
 ST._ShowCastBarSettingsSurface = ShowCastBarSettings
 
 ST._ShowResourceWorkspaceSurfaces = ShowResourcesHomeSurfaces

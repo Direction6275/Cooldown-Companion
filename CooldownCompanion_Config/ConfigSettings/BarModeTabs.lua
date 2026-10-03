@@ -56,7 +56,6 @@ local AddFamilyColumnCaptions = ST._AddFamilyColumnCaptions
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
-local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AnchorRowBadge = ST._AnchorRowBadge
@@ -1327,8 +1326,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Compact Mode used to close this grid's right column. It is packing, not
     -- look, so it now lives on the Layout tab's Arrangement section beside the
-    -- wrap count (its copy membership is unchanged - still this tab's
-    -- appearance scope in ST.PANEL_COPY_SCOPES).
+    -- wrap count, and Copy Panel Settings copies it with Arrangement.
     end -- not textIconCollapsed
 
     -- ================================================================

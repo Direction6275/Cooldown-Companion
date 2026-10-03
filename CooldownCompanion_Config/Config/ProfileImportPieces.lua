@@ -12,6 +12,10 @@ local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 local BlockCustomBarsImportForResourceBarConflict = ST._BlockCustomBarsImportForResourceBarConflict
 
 local EMPTY_TABLE = {}
+-- Custom Bars are retired. Converted profiles never carry them; the customBar
+-- rows below exist only for parked legacy character stores whose class the
+-- converter could not resolve, so those old bars stay visible (and, when the
+-- class is known here, importable through the legacy converter).
 local CUSTOM_BAR_CONTENT_FIELDS = {
     "name",
     "spellID",

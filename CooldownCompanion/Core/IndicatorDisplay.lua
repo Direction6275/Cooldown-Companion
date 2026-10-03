@@ -117,7 +117,7 @@ function I.CreatePandemicTint(host, nativeSlot)
 end
 
 -- The Pandemic effect rig: the panel pandemic glow kit, drawn above the
--- artwork and below the readouts. Native texture-panel kits build it at slot
+-- artwork and below the readouts. Native aura Indicator kits build it at slot
 -- creation and register it with the slot (Blizzard then owns its Shown state);
 -- the config preview builds its own and shows it itself. It is a child of
 -- visualRoot so Pulse, Shrink / Expand and Bounce carry it with the artwork.

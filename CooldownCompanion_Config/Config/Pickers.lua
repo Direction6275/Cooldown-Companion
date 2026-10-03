@@ -154,7 +154,7 @@ local function IsAddonFrame(name)
     return false
 end
 
--- Standalone Texture and Trigger panels render through an unnamed host under
+-- Indicators render through an unnamed host under
 -- UIParent. Walk back to that host and return the owning logical panel name so
 -- panel-only picking can use the same saved anchor identity as ordinary panels
 -- while highlighting the body the player actually clicked.

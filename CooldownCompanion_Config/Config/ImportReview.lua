@@ -11,7 +11,6 @@ local CooldownCompanion = ST.Addon
 local PrepareSharedImportText = ST._PrepareSharedImportText
 local DecodeSharedPayload = ST._DecodeSharedPayload
 local ApplyGroupImportData = ST._ApplyGroupImportData
-local ApplyCustomBarsImportData = ST._ApplyCustomBarsImportData
 local ApplySetupImportData = ST._ApplySetupImportData
 local ApplyFullProfileImport = ST._ApplyFullProfileImport
 local BuildProfileImportPiecesReview = ST._BuildProfileImportPiecesReview
@@ -146,8 +145,8 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
     local characterScoped = {}
     local legacyScoped = {}
     if type(profile) == "table" then
-        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resource/Custom Bars" end
-        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "legacy Resource/Custom Bars" end
+        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resources" end
+        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "Resources" end
         if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
         if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end
     end
@@ -277,9 +276,8 @@ local function DefaultProfileImportMode(pieces)
     return "restore"
 end
 
--- Class identity of any class-tagged payload or setup section. Shared by
--- the standalone Custom Bars payload (which is tagged the same way) and by
--- the setup sections.
+-- Class identity of any class-tagged payload or setup section (setup
+-- sections, and legacy standalone Custom Bars payloads, tagged the same way).
 local function GetSetupSectionClassKey(section)
     if type(section) ~= "table" then
         return nil
@@ -323,6 +321,8 @@ local function AddForeignClassNotice(lines, foreignClassKey, playerClassKey, wha
         .. " and is waiting the next time you play a " .. tostring(foreignClassKey) .. " character.")
 end
 
+-- LEGACY: summarizes an unconverted Custom Bars payload, shown only when its
+-- conversion is refused (BuildBlockedImportSummary).
 local function BuildCustomBarsSummaryLines(data)
     local lines = {
         "Custom Bars export",
@@ -513,15 +513,9 @@ local function ClassifyDiagnosticPayload(data)
     })
 end
 
+-- Receives converted data only: legacy Custom Bars payloads have already
+-- become containers/setup payloads (see _ConvertUnifiedPanelImport).
 local function ClassifyEntityPayload(data)
-    if data.type == "customBars" then
-        if type(data.bars) ~= "table" or #data.bars == 0 then
-            return BuildError("empty_custom_bars", "Import failed: no Custom Bars were found.")
-        end
-        return BuildReview("customBars", data, "Custom Bars Import",
-            "Import Custom Bars", BuildCustomBarsSummaryLines(data))
-    end
-
     if data.type == "setup" then
         local hasContainers, customBars, resources = GetSetupSections(data)
         if not hasContainers and not customBars and not resources then
@@ -539,7 +533,7 @@ local function ClassifyEntityPayload(data)
     end
 
     -- A group payload carrying no groups is reported as the empty string it
-    -- is, the same way setup and Custom Bars payloads are. Accepting it
+    -- is, the same way setup payloads are. Accepting it
     -- would render a review whose Import button can never enable.
     if data.type == "containers" and type(data.containers) == "table" then
         if #data.containers == 0 then
@@ -682,18 +676,6 @@ function CooldownCompanion:ApplyReviewedImport(review)
             self:Print(successMessage)
         end
         return imported == true
-    end
-
-    if review.kind == "customBars" then
-        if not ApplyCustomBarsImportData then
-            return false
-        end
-        -- Cross-class bars land in the payload class's bucket instead of
-        -- being rejected, the same contract a setup export's bars get.
-        local foreignClassKey = GetForeignImportClassKey(review.data)
-        return ApplyCustomBarsImportData(review.data, foreignClassKey and {
-            targetClassKey = foreignClassKey,
-        } or nil) == true
     end
 
     if review.kind == "setup" then

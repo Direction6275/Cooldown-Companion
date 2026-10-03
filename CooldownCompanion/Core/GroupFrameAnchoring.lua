@@ -368,8 +368,8 @@ function CooldownCompanion:ReanchorPanelSectionDependents(groupId)
         end
     end
 
-    -- Texture and Trigger panels place a HOST frame, not the panel frame, and
-    -- keep their anchor in their own display settings rather than group.anchor,
+    -- Indicators place a HOST frame, not the panel frame, and keep their
+    -- anchor in their own display settings rather than group.anchor,
     -- so neither pass above sees them. Their one re-anchor path is the display
     -- refresh.
     if self.ReanchorStandaloneDisplayDependents then

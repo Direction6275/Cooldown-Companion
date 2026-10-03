@@ -75,7 +75,6 @@ local SOUND_ALERT_EVENT_LABELS = {
     onAuraStackGained = "Aura Stack Gained",
     onAuraRemoved = "Aura Removed",
 }
-local CHARGE_AVAILABLE_MERGED_LABEL = "Available / Charge Gained"
 local TRIGGER_PANEL_SOUND_EVENT_LABELS = {
     onShow = "Triggered",
 }
@@ -385,10 +384,6 @@ function CooldownCompanion:SetTriggerPanelSoundAlertEvent(groupOrId, eventKey, s
     end
 end
 
-function CooldownCompanion:GetTriggerPanelSoundAlertEventLabel(eventKey)
-    return TRIGGER_PANEL_SOUND_EVENT_LABELS[eventKey] or eventKey
-end
-
 function CooldownCompanion:GetButtonSoundAlertSelection(buttonData, eventKey)
     local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
     local events = cfg and cfg.events
@@ -519,19 +514,8 @@ function CooldownCompanion:GetSoundAlertEventOrder()
     return CONFIG_SOUND_ALERT_EVENT_ORDER
 end
 
-function CooldownCompanion:GetSoundAlertEventLabel(eventKey)
-    return SOUND_ALERT_EVENT_LABELS[eventKey] or eventKey
-end
-
 function CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
     return AURA_SOUND_ALERT_EVENTS[eventKey] == true
-end
-
-function CooldownCompanion:GetSoundAlertEventLabelForButton(buttonData, eventKey)
-    if UsesChargeBehavior(buttonData) and eventKey == "available" then
-        return CHARGE_AVAILABLE_MERGED_LABEL
-    end
-    return self:GetSoundAlertEventLabel(eventKey)
 end
 
 local function ParseBlizzardSoundSelection(soundName)

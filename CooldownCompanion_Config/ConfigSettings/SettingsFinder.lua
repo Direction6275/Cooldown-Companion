@@ -393,8 +393,8 @@ local function GetSettingsFinderContext()
             context.scope = "castBar"
         elseif context.buttonData then
             -- Finder scope follows the object being edited, not the style
-            -- lens that owns its visual overrides. Texture panels keep their
-            -- style panel-owned, but their selected spell still renders
+            -- lens that owns its visual overrides. Indicators keep their
+            -- style panel-owned, but their selected source still renders
             -- entry-specific Settings and Visibility rows.
             context.scope = "entry"
         else

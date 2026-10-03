@@ -318,7 +318,7 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
 end
 
 
-local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
     local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
@@ -336,7 +336,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     -- nil here and lays out through the exact code it always did.
     local iconButtons = ST.GetPanelIconButtons(frame, group, frame.buttons)
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
-        frame, group, iconButtons, buttonWidth, buttonHeight, spacing, headerHeight,
+        frame, group, iconButtons, buttonWidth, buttonHeight, spacing,
         buttonSizingOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or iconButtons
@@ -361,12 +361,12 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
                 button:SetPoint(centeredEdge, layoutRef, centeredEdge,
                     (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing),
-                    edgeYMul * (line * (buttonHeight + spacing) + headerHeight))
+                    edgeYMul * line * (buttonHeight + spacing))
             else
                 local edgeXMul = centeredEdge == "LEFT" and 1 or -1
                 button:SetPoint(centeredEdge, layoutRef, centeredEdge,
                     edgeXMul * line * (buttonWidth + spacing),
-                    ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing) - headerHeight / 2)
+                    ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing))
             end
         else
             local row, col
@@ -377,7 +377,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
                 col = math_floor((visibleIndex - 1) / buttonsPerRow)
                 row = (visibleIndex - 1) % buttonsPerRow
             end
-            button:SetPoint(growthAnchor, layoutRef, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * (row * (buttonHeight + spacing) + headerHeight))
+            button:SetPoint(growthAnchor, layoutRef, growthAnchor, xMul * col * (buttonWidth + spacing), yMul * row * (buttonHeight + spacing))
         end
     end
 
@@ -540,8 +540,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     end
     wipe(frame.buttons)
 
-    local headerHeight = 0
-
     if ST.IsTotemPanelGroup(group) then
         self:ReleaseGroupButtonPools(frame)
         self:PopulateTotemPanel(groupId)
@@ -634,7 +632,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             frame._auraSectionRebindOwed = true
         end
 
-        ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+        ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
     end
 
     FinishGroupButtonRefresh(self, groupId, frame, group)
@@ -720,10 +718,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
         local width = cols * buttonWidth + (cols - 1) * spacing
         local height = rows * buttonHeight + (rows - 1) * spacing
 
-        -- Add text group header height if active
-        local headerH = frame._textHeaderHeight or 0
-        height = height + headerH
-
         targetWidth = math_max(width, buttonWidth)
         targetHeight = math_max(height, buttonHeight)
     end
@@ -736,15 +730,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     end
 
     frame:SetSize(targetWidth, targetHeight)
-
-    -- ApplyTextGroupHeader runs before the layout pass in both
-    -- PopulateGroupButtons and UpdateGroupStyle, so its frame:GetWidth() read
-    -- is the pre-resize width. That was survivable while text width came from
-    -- a slider; auto-sized entries change the width on any format/font/name
-    -- change, so re-fit the header here, where the final width is known.
-    if frame._textHeaderShown and frame.textHeader then
-        frame.textHeader:SetWidth(math_max(1, targetWidth - 4))
-    end
 
     local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
     local fixedPoint
@@ -852,13 +837,12 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     end
 
     local visibleCount = #visibleButtons
-    local headerH = frame._textHeaderHeight or 0
     -- Sections split the pass: the base grid packs only its own visible members,
     -- and each section independently collapses its own line toward its anchor.
     -- Hidden members drop out of a section's line exactly the way they drop out
     -- of a base row here.
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
-        frame, group, visibleButtons, buttonWidth, buttonHeight, spacing, headerH,
+        frame, group, visibleButtons, buttonWidth, buttonHeight, spacing,
         buttonSizingOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or visibleButtons
@@ -878,11 +862,11 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
             if orientation == "horizontal" then
                 local edgeYMul = centeredEdge == "TOP" and -1 or 1
                 x = (indexInLine - (itemsInLine - 1) / 2) * (buttonWidth + spacing)
-                y = edgeYMul * (line * (buttonHeight + spacing) + headerH)
+                y = edgeYMul * line * (buttonHeight + spacing)
             else
                 local edgeXMul = centeredEdge == "LEFT" and 1 or -1
                 x = edgeXMul * line * (buttonWidth + spacing)
-                y = ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing) - headerH / 2
+                y = ((itemsInLine - 1) / 2 - indexInLine) * (buttonHeight + spacing)
             end
         else
             local row, col = GetCompactSlotForIndex(
@@ -893,7 +877,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
                 compactGrowthDirection
             )
             x = xMul * col * (buttonWidth + spacing)
-            y = yMul * (row * (buttonHeight + spacing) + headerH)
+            y = yMul * row * (buttonHeight + spacing)
         end
         local anchor = centeredEdge or growthAnchor
         if button._compactSlotAnchor ~= anchor
@@ -977,9 +961,8 @@ local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, button
         end
     elseif effect == "layout" then
         local style = group.style or {}
-        local headerHeight = 0
         local sizing = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-        ApplyActiveButtonLayout(self, groupId, frame, group, sizing, headerHeight)
+        ApplyActiveButtonLayout(self, groupId, frame, group, sizing)
         local compact = self:IsGroupCompactLayoutActive(groupId, group)
         frame._deferPanelBaseAnchor = compact or nil
         self:ResizeGroupFrame(groupId, compact)
@@ -1054,7 +1037,6 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     end
 
     local style = group.style or {}
-    local headerHeight = 0
 
     for visibleIndex = 1, entries.count do
         local entry = entries[visibleIndex]
@@ -1070,7 +1052,7 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
     end
 
     local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions, headerHeight)
+    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
     FinishGroupButtonRefresh(self, groupId, frame, group)
 
     -- The frame has its final size now, so the container unlock preview's

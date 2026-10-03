@@ -3,7 +3,7 @@
     The buttons view's unified anchor-panel preview: when the selected
     panel is the panel attached bars anchor to, the pinned preview renders
     the real button-panel mirror with the Layout & Order bar lanes wrapped
-    around it (resource bars, Custom Bars, cast bar). Clicking a bar opens
+    around it (resource bars, cast bar). Clicking a bar opens
     its settings in the Settings column; dragging re-arranges it, exactly like
     the Resources home preview. Every other panel keeps the plain mirror.
 ]]

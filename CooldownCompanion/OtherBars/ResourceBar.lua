@@ -1,12 +1,12 @@
 --[[
     CooldownCompanion - ResourceBar
     Displays player class resources (Rage, Energy, Combo Points, Runes, etc.)
-    anchored to icon groups.
+    anchored to icon panels.
 
-    Unlike CastBar (which manipulates Blizzard's secure frame), resource bars are
-    fully addon-owned frames with no taint concerns.
+    Resource bars are fully addon-owned frames with no taint concerns.
 
-    SECRET VALUES (12.0.x):
+    SECRET VALUES (recorded on 12.0.x; verify against current generated API
+    records before relying on them):
       - UnitPower/UnitPowerMax secrecy is evaluated at runtime through C_Secrets predicates.
       - Continuous resources are generally contextually secret; segmented resources are
         currently non-secret in observed builds.
@@ -26,8 +26,6 @@ local UnbindDurationText = CooldownCompanion.UnbindDurationText
 local math_floor = math.floor
 local math_min = math.min
 local math_max = math.max
-local math_sin = math.sin
-local math_pi = math.pi
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
@@ -66,7 +64,6 @@ local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
 local GetResourceLayoutOrientation = RB.GetResourceLayoutOrientation
 local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourcePrimaryLength = RB.GetResourcePrimaryLength
-local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
 local GetResourceAnchorGap = RB.GetResourceAnchorGap
 local GetVerticalSideFallback = RB.GetVerticalSideFallback
 local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
@@ -163,8 +160,6 @@ local LayoutOverlaySegments = RB.LayoutOverlaySegments
 -- Shared helper from ButtonFrame/Helpers.lua
 local FormatTime = CooldownCompanion.FormatTime
 -- Other ST imports
-local CreateGlowContainer = ST._CreateGlowContainer
-local SetBarAuraEffect = ST._SetBarAuraEffect
 
 ------------------------------------------------------------------------
 -- State
@@ -390,13 +385,7 @@ local function EnsureIndependentStackMoverChrome(frame)
             CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
         end)
     end)
-    dragHandle:SetScript("OnMouseUp", function(_, button)
-        if button == "LeftButton" then
-            frame._focusClickSuppressed = nil
-        end
-    end)
-
-    -- Nudger (4-direction pixel nudge, same pattern as custom aura bars)
+    -- Nudger (4-direction pixel nudge)
     local nudger = ST.MoverChrome.CreateNudger(dragHandle, INDEPENDENT_NUDGE_BTN_SIZE, function(dx, dy)
         CancelCoordinateEdit(frame._coordLabel)
         CancelCoordinateEdit(frame._sizeLabel)
@@ -519,7 +508,6 @@ local function EnsureIndependentStackMoverChrome(frame)
         if InCombatLockdown() then return end
         -- Dragging solos this mover, mirroring container header drags.
         if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
-            frame._focusClickSuppressed = true
             CooldownCompanion:SetArrangeSoloContainer("resource")
         end
         frame._dragCancelPending = nil
@@ -532,9 +520,6 @@ local function EnsureIndependentStackMoverChrome(frame)
         StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
-        -- The release that ends this drag also fires OnMouseUp; it must not
-        -- read as a focus-toggling click.
-        frame._focusClickSuppressed = true
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
         frame._dragCancelPending = nil
         frame._dragInProgress = nil
@@ -1973,11 +1958,11 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, a
         HidePixelBorders(bar.borders)
     end
 
-    -- Text setup. The factory parks the text layer at the custom-bar height
-    -- (bar+2, under the aura kit); resource bars hoist it into the stack's
-    -- text band here so resource text renders above every bar's fills and
-    -- kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the band map). The tick
-    -- layer re-stamps into its own band just below, same reasoning.
+    -- Text setup. The factory parks the text layer at bar+2; resource bars
+    -- hoist it into the stack's text band here so resource text renders above
+    -- every bar's fills and kit visuals (RESOURCE_TEXT_LAYER_LEVEL has the
+    -- band map). The tick layer re-stamps into its own band just below, same
+    -- reasoning.
     bar.textLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
     if bar.tickLayer then
         bar.tickLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
@@ -2691,7 +2676,7 @@ function CooldownCompanion:RevertResourceBars()
 
     -- Aura host root goes dark with the bars (safe in combat: plain CC
     -- frame; a hidden container is inert and self-refreshes on show). The
-    -- rebind request parks the custom-bar displays once OOC.
+    -- rebind request parks the resource aura displays once OOC.
     self:SetResourceAuraHostApplied(false)
     self:GetResourceAuraHostRoot():SetAlpha(1)
     self:RequestAuraRebind("resources", RB._attachedPanelId)
@@ -2767,10 +2752,6 @@ function HealthBar.HasActiveEffectPreview()
     return next(ST._ConfigPreview.GetHealthEffects()) ~= nil
 end
 
-function CooldownCompanion:IsHealthEffectPreviewActive(effectKey)
-    return ST._ConfigPreview.GetHealthEffects()[effectKey] == true
-end
-
 function CooldownCompanion:ClearAllHealthEffectPreviews()
     ST._ConfigPreview.StopOwner("health")
 end
@@ -2839,7 +2820,7 @@ function CooldownCompanion:EvaluateResourceBars(opts)
     self:RefreshUnlockToolbar()
 end
 
--- Returns the last visible resource/custom aura bar on `side` with order < upToOrder.
+-- Returns the last visible resource bar on `side` with order < upToOrder.
 -- Used by CastBar to anchor as the next stacked element.
 function CooldownCompanion:GetResourceBarPredecessor(side, upToOrder)
     if not isApplied then return nil end

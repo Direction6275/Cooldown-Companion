@@ -6,7 +6,6 @@
 local ADDON_NAME, ST = ...
 
 local InCombatLockdown = InCombatLockdown
-local string_format = string.format
 local ipairs = ipairs
 local wipe = wipe
 local pairs = pairs
@@ -752,7 +751,7 @@ end
 --------------------------------------------------------------------------------
 
 -- Small lock badge shared by every mover header (panel, container, cast bar,
--- resource bars, texture panel). The character-customize dropdown lock is the
+-- resource bars, Indicator). The character-customize dropdown lock is the
 -- client's only flat lock silhouette drawn for tiny sizes (Blizzard renders
 -- it at 8x12), so it stays crisp where shaded padlock art turns to mush.
 -- The hit box is a full square; the icon keeps the art's 30x43 aspect.
@@ -793,16 +792,6 @@ function ST.CreateMoverLockBadge(parent, size, onLock)
     end)
 
     return button
-end
-
---------------------------------------------------------------------------------
--- Color Utilities
---------------------------------------------------------------------------------
-
--- Format a color table {r, g, b, a} into a cache key string.
--- Replaces repeated string.format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4]) calls.
-function ST.FormatColorKey(c)
-    return string_format("%.2f%.2f%.2f%.2f", c[1], c[2], c[3], c[4] or 1)
 end
 
 --------------------------------------------------------------------------------

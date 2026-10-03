@@ -2,7 +2,7 @@
     CooldownCompanion - Core/SpellActivationOverlayData.lua
     Generated from Wago DB2 SpellActivationOverlay data.
     Source build: 12.0.1.66709
-    Regenerate with: python tools/generate_spell_activation_overlay_library.py
+    The generator script is not kept in this repository.
 ]]
 
 local ADDON_NAME, ST = ...

@@ -7,8 +7,6 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
-local RB = ST._RB
-local RESOURCE_HEALTH = RB and RB.RESOURCE_HEALTH or -1
 
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
@@ -868,23 +866,6 @@ local function AddEntrySelectionMoveMenuItem(level, snapshot, label)
     UIDropDownMenu_AddButton(info, level)
 end
 
-local function ShowEntrySelectionMoveMenu(snapshot)
-    if not ValidateEntryActionSelection(snapshot) then return end
-    local frame = _G["CDCMoveMenu"]
-    if not frame then
-        frame = CreateFrame("Frame", "CDCMoveMenu", UIParent, "UIDropDownMenuTemplate")
-    end
-    UIDropDownMenu_Initialize(frame, function(_, level, menuList)
-        if #BuildSelectionMoveDestinations(snapshot) == 0 then
-            AddEntrySelectionMoveMenuItem(level or 1, snapshot, "Move Selected to...")
-        else
-            AddEntryMoveDestinationButtons(level or 1, snapshot, menuList)
-        end
-    end, "MENU")
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    ToggleDropDownMenu(1, nil, frame, "cursor", 0, 0)
-end
-
 local function AddEntrySelectionMenuButtons(level, snapshot)
     local title = UIDropDownMenu_CreateInfo()
     title.text = #snapshot.entries .. " Entries Selected"
@@ -1050,7 +1031,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                 UIDropDownMenu_AddButton(dupInfo, level)
             end
 
-            -- No source-side display-mode gate: even a texture panel's entry
+            -- No source-side display-mode gate: even an Indicator's entry
             -- can carry stranded customizations worth copying out, and the
             -- copy mode's target eligibility does all the real gating.
             if hasCustomizations then
@@ -1117,12 +1098,6 @@ ST._ShowEntryContextMenu = ShowEntryContextMenu
 ST._CaptureEntryActionSelection = CaptureEntryActionSelection
 ST._DuplicateEntrySelection = DuplicateEntrySelection
 ST._DeleteEntrySelection = DeleteEntrySelection
-ST._ConfirmDeleteEntrySelection = ConfirmDeleteEntrySelection
-ST._ShowEntrySelectionMoveMenu = ShowEntrySelectionMoveMenu
--- Single- and multi-entry move menus share one Group -> Panel hierarchy. The
--- optional predicate lets batch moves retain their stricter whole-selection
--- capacity checks without duplicating destination names or ordering.
-ST._BuildEntryMoveDestinationSections = BuildEntryMoveDestinationSections
 ST._AddPanelTypeMenuTooltip = AddPanelTypeMenuTooltip
 ST._AddCDMStarterMenuTooltip = AddCDMStarterMenuTooltip
 -- Ordered creatable panel types, shared by every panel-create surface.
@@ -1138,7 +1113,6 @@ ST._CreatePanelFromTemplateInContainer = CreatePanelFromTemplateInContainer
 ST._GetPanelModeLabel = GetPanelModeLabel
 ST._GetPanelTypeLabel = GetPanelTypeLabel
 ST._GetPanelTemplateModeLabel = GetPanelTypeLabel
-ST._GetPanelTemplateTooltipText = GetPanelTemplateTooltipText
 ST._AddPanelTemplateMenuTooltip = AddPanelTemplateMenuTooltip
 -- Shared with the panel preview mirror: entry tooltips resolve the
 -- currently-active override spell, not the stored base ID.

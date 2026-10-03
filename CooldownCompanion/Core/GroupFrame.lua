@@ -354,8 +354,8 @@ function CooldownCompanion:CreateGroupFrame(groupId)
         isLocked = true
     end
 
-    -- Make it movable when unlocked. Texture panels use direct texture dragging
-    -- instead of the standard panel drag handle.
+    -- Make it movable when unlocked. Indicators drag their display host
+    -- directly instead of using the standard panel drag handle.
     local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
     frame:SetMovable(true)
     frame:EnableMouse((not isLocked) and (not isTextureMode))
@@ -754,9 +754,9 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     end
 
     -- When locked: group container is always fully non-interactive
-    -- Texture panels also keep the backing group frame non-interactive while
+    -- Indicators also keep the backing group frame non-interactive while
     -- unlocked, because dragging and hovering are handled by the separate
-    -- visible texture host instead of the hidden 1x1 anchor frame.
+    -- visible display host instead of the hidden 1x1 anchor frame.
     if isLocked or isTextureMode or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then

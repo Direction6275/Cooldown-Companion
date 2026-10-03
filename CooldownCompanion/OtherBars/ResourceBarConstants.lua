@@ -20,14 +20,10 @@ PERCENT_SCALE_CURVE:SetType(Enum.LuaCurveType.Linear)
 PERCENT_SCALE_CURVE:AddPoint(0.0, 0)
 PERCENT_SCALE_CURVE:AddPoint(1.0, 100)
 
-local CUSTOM_AURA_BAR_BASE = 201  -- 201-205 for slots 1-5
 local RAGING_MAELSTROM_SPELL_ID = 384143
--- The Active Aura stand-in: what a custom bar shows while its preview runs.
--- Deliberately invented values (no aura is running), shared so the config
--- canvas and the runtime tell the same story.
-local CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = 0.65
+-- The Active Aura stand-in: the stack count a resource aura overlay shows
+-- while its preview runs. Deliberately invented (no aura is running).
 local CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = 3
-local CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = 12.3
 local RESOURCE_HEALTH = -1
 local RESOURCE_MAELSTROM_WEAPON = 100
 -- Stagger power type ID: 101 (used inline to stay under Lua 200-local limit)
@@ -320,10 +316,7 @@ ST._RB = {
     -- Timing & limits
     UPDATE_INTERVAL = UPDATE_INTERVAL,
     PERCENT_SCALE_CURVE = PERCENT_SCALE_CURVE,
-    CUSTOM_AURA_BAR_BASE = CUSTOM_AURA_BAR_BASE,
-    CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL = CUSTOM_AURA_BAR_EFFECT_PREVIEW_FILL,
     CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS = CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS,
-    CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION = CUSTOM_AURA_BAR_EFFECT_PREVIEW_DURATION,
     RAGING_MAELSTROM_SPELL_ID = RAGING_MAELSTROM_SPELL_ID,
     -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
     -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger
@@ -478,11 +471,7 @@ ST._RB = {
     -- per-shape bump. Derivation: the tallest kit is the aura overlay
     -- holder at bar+9 whose strata map reserves through holder+15
     -- (auraDisplay at +8, span 8 — Core/Init.lua), so ticks clear bar+24
-    -- and texts sit one above the ticks. Custom bar text layers
-    -- deliberately do NOT use this band: CC keeps writing spell-bar
-    -- cooldown text with no way to know an aura is showing, so their kit
-    -- must keep occluding their text (they stay at bar+2, under their
-    -- holder at bar+3).
+    -- and texts sit one above the ticks.
     RESOURCE_TICK_LAYER_LEVEL = 25,
     RESOURCE_TEXT_LAYER_LEVEL = 26,
     DEFAULT_SEG_THRESHOLD_COLOR = DEFAULT_SEG_THRESHOLD_COLOR,

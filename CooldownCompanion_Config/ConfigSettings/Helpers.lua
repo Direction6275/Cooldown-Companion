@@ -18,11 +18,11 @@ local SH = ST._SettingsHelpers
 local RegisterLensAnchorHeading = SH.RegisterLensAnchorHeading
 
 -- The Cooldown Visibility dropdown's user-facing strings, owned here because
--- three surfaces state them: the panel entry row (ButtonConditions), its
--- custom bar twin (ResourceBarPanelsCustomBars), and the preview's "hidden in
--- simulated state" reason text (ButtonPanelPreview), which promises to name
--- the row the way the entry's own tab does. One table keeps a rename on all
--- three at once. Bars offer no dim variants; they read the same labels.
+-- two surfaces state them: the panel entry row (ButtonConditions) and the
+-- preview's "hidden in simulated state" reason text (ButtonPanelPreview),
+-- which promises to name the row the way the entry's own tab does. One table
+-- keeps a rename on both at once. Bars offer no dim variants; they read the
+-- same labels.
 ST._COOLDOWN_VISIBILITY = {
     labels = {
         show = "Always Show",
@@ -70,7 +70,7 @@ local PREVIEW_SCALAR_OUTCOMES = {
     offsetX = "geometry", offsetY = "geometry", maxPerLine = "geometry",
     barLength = "geometry", barHeight = "geometry", barChargeSegmentGap = "geometry",
     barIconOffset = "geometry", barIconSize = "geometry", borderSize = "geometry",
-    textBorderSize = "geometry", textHeaderFontSize = "geometry", itemCountFontSize = "geometry",
+    itemCountFontSize = "geometry",
     iconZoom = "appearance", cooldownSwipeAlpha = "appearance", auraDurationSwipeAlpha = "appearance",
     barAuraPulseSpeed = "appearance", barAuraColorShiftSpeed = "appearance",
 }
@@ -468,11 +468,11 @@ end
 -- Entry identity heading
 ------------------------------------------------------------------------
 
--- One quiet line at the top of an entry pane (Settings, Aura, and the
--- trigger panels' Condition) naming what the tabs below are editing: the
--- entry's icon, its display name, and its tracking kind. Informational, not
--- a section, so it carries no caret and no collapse state - but it keeps the
--- row grammar's shape, so the sections that follow line up under it.
+-- One quiet line at the top of an entry pane naming what the tabs below are
+-- editing: the entry's icon, its display name, and its tracking kind.
+-- Informational, not a section, so it carries no caret and no collapse state -
+-- but it keeps the row grammar's shape, so the sections that follow line up
+-- under it.
 local IDENTITY_ICON_SIZE = 18
 -- Spell and item art ships with a baked border that reads as a pasted
 -- sticker at this size, so the outer 8% is trimmed off - the crop every
@@ -1017,8 +1017,8 @@ end
 -- ONE call site, for every mode that offers it: the Layout tab's Arrangement
 -- section (GroupTabsLayout.lua). It used to be built three times, once per
 -- mode's Appearance tab. Compact mode is packing, so it reads beside the wrap
--- count; its copy membership deliberately stayed on the appearance scope
--- (ST.PANEL_COPY_SCOPES, Defaults.lua).
+-- count, and Copy Panel Settings copies it with Arrangement
+-- (CopyCompactLayoutSettings, GroupManagement.lua).
 --
 -- Row grammar only (RowWidgets.lua) - the pre-redesign full-width/half-width
 -- checkbox shape had no call sites left once the bar and text tabs converted.
@@ -1993,7 +1993,7 @@ SH.ADVANCED_TOGGLE_ATLAS = ADVANCED_TOGGLE_ATLAS
 SH.ADVANCED_TOGGLE_IDLE_COLOR = ADVANCED_TOGGLE_IDLE_COLOR
 SH.ADVANCED_TOGGLE_OPEN_TOOLTIP = ADVANCED_TOGGLE_OPEN_TOOLTIP
 
--- Shared help for entry and custom-bar Tracked on menus.
+-- Shared help for the entry Tracked on menu.
 ST._AuraScopeTooltips = {
     automatic = { "Automatic", "Uses the detected aura type: buffs on you, debuffs on your target." },
     player = { "You", "Tracks the aura on you. Use this when detection incorrectly treats your buff as a debuff." },
