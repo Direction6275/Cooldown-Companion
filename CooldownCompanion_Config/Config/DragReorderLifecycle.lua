@@ -379,8 +379,8 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     end
     local maxTarget = #targetGroup.buttons + 1
     if targetIndex > maxTarget then targetIndex = maxTarget end
-    if CooldownCompanion.EnableTexturePanelAuraDisplayForEntry then
-        CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(targetGroup, buttonData)
+    if CooldownCompanion.EnableIndicatorAuraDisplayForEntry then
+        CooldownCompanion:EnableIndicatorAuraDisplayForEntry(targetGroup, buttonData)
     end
     local previousCount = #targetGroup.buttons
     if ST.IsIndicatorGroup(targetGroup) then targetIndex = previousCount + 1 end

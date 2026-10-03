@@ -12,8 +12,8 @@ local STYLE_SECTIONS = {"signal", "text", "readouts", "progress"}
 -- (ForbiddenAspectTemplates.xml), so each frame must carry it from creation.
 function I.CreateVisual(host, nativeSlot)
     if host.indicatorReadouts then return end
-    Addon.EnsureTriggerIconVisual(host)
-    Addon.EnsureTriggerTextVisual(host)
+    Addon.EnsureIndicatorIconVisual(host)
+    Addon.EnsureIndicatorTextVisual(host)
     local template = host._ccFrameTemplate
     local root = CreateFrame("Frame", nil, host.visualRoot, template)
     root:SetAllPoints(host.visualRoot)
@@ -134,7 +134,7 @@ end
 
 -- The host draws the aura's live display: a native aura Indicator, or the
 -- Also During Pandemic twin of a While Missing one (AuraDisplay
--- "pandemicTexture", the preview's Pandemic Window state).
+-- "pandemicIndicatorAura", the preview's Pandemic Window state).
 local function DrawsLiveAura(host, group)
     return I.IsNativeAura(group) or host._ccPandemicTwin == true and I.AlsoDuringPandemic(group)
 end
@@ -357,13 +357,13 @@ function I.StyleVisual(host, group, icon, font, outline)
     if settings.displayType == "icon" then icon = icon or I.IconSettings(group) end
     local visual = I.NativeSettings(group, icon)
     if not visual or visual.enabled == false then return false end
-    local geometry, alpha = Addon:GetTexturePanelRenderGeometry(visual)
+    local geometry, alpha = Addon:GetIndicatorTextureRenderGeometry(visual)
     if not geometry then return false end
     host.visualRoot:SetSize(geometry.boundsWidth, geometry.boundsHeight)
     -- CC-owned bounds for the pandemic glow; a native slot's rect is never read.
     host.visualRoot._ccKitRectW, host.visualRoot._ccKitRectH = geometry.boundsWidth, geometry.boundsHeight
     Addon:ResetTextureIndicatorRootState(host)
-    Addon.HideStandaloneDisplayVisuals(host)
+    Addon.HideIndicatorDisplayVisuals(host)
     host.indicatorProgress.clip:SetAlpha(0)
     host._indicatorDimAlpha = nil
     host._activeDisplayType = settings.displayType
@@ -372,7 +372,7 @@ function I.StyleVisual(host, group, icon, font, outline)
     local shown = true
     if settings.displayType == "icon" then
         if not icon.manualIcon then return false end
-        Addon.ApplyTriggerIconVisual(host, icon)
+        Addon.ApplyIndicatorIconVisual(host, icon)
     elseif settings.displayType == "texture" then
         local draining = settings.progress.enabled == true and not DrawsPresence(host, group)
         local dim = draining and (settings.progress.dimAlpha or 0.35) or 1
@@ -389,7 +389,7 @@ function I.StyleVisual(host, group, icon, font, outline)
         host._activeTextureSettings, host._activeTextureGeometry = visual, geometry
         host._indicatorTextureAlpha = alpha
     else
-        host._triggerTextBaseColor = CopyTable(settings.text.textFontColor or WHITE)
+        host._indicatorTextBaseColor = CopyTable(settings.text.textFontColor or WHITE)
         host.textFrame.bg:SetColorTexture(unpack(settings.text.textBgColor or {0, 0, 0, 0}))
         host.textFrame:SetSize(geometry.boundsWidth, geometry.boundsHeight)
         host.textFrame.text:SetFont(font, settings.text.textFontSize or 20, outline)
@@ -581,7 +581,7 @@ function I.Render(host, driver, group, preview, fraction, effectsActive, resolve
     end
     I.UpdateReadouts(host, driver, group, (preview or not ccDrawn) and (fraction or 0.5) or nil)
     if ccDrawn and not preview then
-        Addon:ApplyTriggerPanelEffects(host, driver, group, effectsActive == true)
+        Addon:ApplyIndicatorEffects(host, driver, group, effectsActive == true)
     end
     return true
 end
@@ -613,7 +613,7 @@ end
 -- from saved settings only. Bounce travel is already inside its padding.
 function I.PresenceCell(group)
     local visual = I.NativeSettings(group)
-    local geometry = visual and Addon:GetTexturePanelRenderGeometry(visual)
+    local geometry = visual and Addon:GetIndicatorTextureRenderGeometry(visual)
     if not geometry then return end
     return StackGateCell(group, geometry.boundsWidth, geometry.boundsHeight)
 end
@@ -630,7 +630,7 @@ end
 -- Anchored to the slot center and the creation-time fill texture; no rect or
 -- bar value is read. OOC bind only. `group` nil or no rule: unclipped.
 function I.StyleStackGate(slot, group, width, height)
-    local host = slot.kit and slot.kit.texturePanelHost
+    local host = slot.kit and slot.kit.indicatorHost
     local stack = host and host.stackGate
     if not stack then return end
     local slotButton, gate, bar, fill = slot.slotButton, stack.gate, stack.bar, stack.fill
@@ -682,7 +682,7 @@ end
 -- Low Time and the Pandemic marker, built from `readouts`); this model never
 -- reads aura data to build it.
 function I.StyleAura(slot, group, durationOptions)
-    local host = slot.kit.texturePanelHost
+    local host = slot.kit.indicatorHost
     slot.slotButton:ClearIcon()
     local shown, width, height = I.StyleVisual(host, group)
     local settings = I.Settings(group)

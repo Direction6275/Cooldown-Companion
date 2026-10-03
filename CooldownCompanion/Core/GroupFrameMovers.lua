@@ -1103,9 +1103,9 @@ function CooldownCompanion:RefreshIndependentPanelMoverChrome(groupId)
         and (self._arrangeSoloContainerId == nil
             or self._arrangeSelectedPanelId == groupId)
         or false
-    if self:IsStandaloneTexturePanelGroup(group) then
-        if self.SetIndependentStandalonePanelMoverShown then
-            self:SetIndependentStandalonePanelMoverShown(groupId, shown)
+    if ST.IsIndicatorGroup(group) then
+        if self.SetIndependentIndicatorMoverShown then
+            self:SetIndependentIndicatorMoverShown(groupId, shown)
         end
         return
     end

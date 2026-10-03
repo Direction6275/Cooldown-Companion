@@ -678,7 +678,7 @@ local function BuildSourceRules(container, group, entry, changed)
     end)
 end
 
--- The Live Preview's rules card (ButtonPanelPreviewTriggers.lua) only shows:
+-- The Live Preview's rules card (ButtonPanelPreviewIndicators.lua) only shows:
 -- every source and its rules, each rule opening its row here. Everything it
 -- would edit lives in When to Show; the preview only draws this model.
 function ST._GetIndicatorSourceControls(group)
@@ -961,7 +961,7 @@ local function BuildAppearance(container, group, changed)
                 changed(true)
             end})
         if settings.displayType == "icon" then
-            local actions = {{text="Choose...",onClick=function() ST._OpenTriggerPanelIconPicker(CS.selectedGroup) end}}
+            local actions = {{text="Choose...",onClick=function() ST._OpenIndicatorIconPicker(CS.selectedGroup) end}}
             -- Only a chosen icon has anything to reset.
             if settings.icon.manualIcon then
                 actions[2] = {text="Reset",tooltip={"Reset Icon","Use the source's icon again."},
@@ -970,7 +970,7 @@ local function BuildAppearance(container, group, changed)
             Label(column,{label="Icon",controlWidget=ActionStrip(actions)})
         elseif settings.displayType == "texture" then
             Label(column,{label="Texture",controlWidget=ActionStrip({{text="Choose...",
-                onClick=function() ST._OpenStandaloneTexturePicker(CS.selectedGroup) end}})})
+                onClick=function() ST._OpenIndicatorTexturePicker(CS.selectedGroup) end}})})
         else
             Slider(column,{setting=display.width,min=20,max=600,step=1,value=settings.text.width or 180,
                 onRelease=function(value) settings.text.width=value; changed() end})
@@ -980,9 +980,9 @@ local function BuildAppearance(container, group, changed)
         end
     end
     if settings.displayType == "icon" then
-        ST._BuildTriggerIconAppearanceTab(container,group)
+        ST._BuildIndicatorIconAppearance(container,group)
     elseif settings.displayType == "texture" then
-        ST._BuildTexturePanelAppearanceTab(container,group)
+        ST._BuildIndicatorTextureAppearance(container,group)
     end
     BuildText(container, group, changed)
     if settings.displayType == "texture" and LiveReadouts(group) then
@@ -1011,7 +1011,7 @@ function ST._BuildIndicatorTab(container, group, tab)
     elseif tab == "effects" then
         -- One effect grammar for every source; aura rows omit the controls
         -- that would start or stop effects on their own.
-        ST._BuildTriggerEffectsTab(container,group)
+        ST._BuildIndicatorEffectsTab(container,group)
         if I.ShowsLiveDisplay(group) then BuildPandemic(container,group,changed) end
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
             Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,

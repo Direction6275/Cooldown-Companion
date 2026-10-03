@@ -954,7 +954,7 @@ function CooldownCompanion:CreateContainer(name)
     return containerId
 end
 
-local ResetStandalonePanelAnchorsTargeting
+local ResetIndicatorAnchorsTargeting
 
 -- Cursor movers outlive config previews. Release their gesture and selection
 -- while the old panel and parent still exist, before deleting or moving them.
@@ -983,7 +983,7 @@ function CooldownCompanion:DeleteContainer(containerId)
             deletedGroupIds[groupId] = true
         end
     end
-    ResetStandalonePanelAnchorsTargeting(db.groups, deletedGroupIds, { [containerId] = true })
+    ResetIndicatorAnchorsTargeting(db.groups, deletedGroupIds, { [containerId] = true })
     for _, groupId in ipairs(panelIds) do
         ClearCursorPanelMoverBeforeMutation(self, groupId)
         self:UnloadGroup(groupId)
@@ -1011,14 +1011,7 @@ function CooldownCompanion:DeleteContainer(containerId)
     self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-container")
 end
 
-local function GetStandalonePanelAnchorSettings(panel)
-    if not CooldownCompanion.GetStandaloneTextureAnchorSettings then
-        return nil
-    end
-    return CooldownCompanion:GetStandaloneTextureAnchorSettings(panel)
-end
-
-local function ParseStandaloneAddonAnchorTarget(relativeTo)
+local function ParseIndicatorAddonAnchorTarget(relativeTo)
     if type(relativeTo) ~= "string" then
         return nil
     end
@@ -1033,21 +1026,21 @@ local function ParseStandaloneAddonAnchorTarget(relativeTo)
     return nil
 end
 
-local function GetStandaloneAddonAnchorTarget(panel)
-    local settings = GetStandalonePanelAnchorSettings(panel)
+local function GetIndicatorAddonAnchorTarget(panel)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
-    local kind, id = ParseStandaloneAddonAnchorTarget(relativeTo)
+    local kind, id = ParseIndicatorAddonAnchorTarget(relativeTo)
     return kind, id, relativeTo
 end
 
-local function GetStandalonePanelAnchorTarget(panel)
-    local settings = GetStandalonePanelAnchorSettings(panel)
+local function GetIndicatorPanelAnchorTarget(panel)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     return settings, type(relativeTo) == "string" and relativeTo or nil
 end
 
-local function ResetStandalonePanelAnchor(panel)
-    local settings = GetStandalonePanelAnchorSettings(panel)
+local function ResetIndicatorPanelAnchor(panel)
+    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     if type(settings) ~= "table" then
         return
     end
@@ -1058,7 +1051,7 @@ local function ResetStandalonePanelAnchor(panel)
     settings.y = 0
 end
 
-ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds, deletedContainerIds)
+ResetIndicatorAnchorsTargeting = function(groups, deletedGroupIds, deletedContainerIds)
     if type(groups) ~= "table" then
         return
     end
@@ -1067,10 +1060,10 @@ ResetStandalonePanelAnchorsTargeting = function(groups, deletedGroupIds, deleted
 
     for groupId, panel in pairs(groups) do
         if not deletedGroupIds[groupId] then
-            local targetKind, targetId = GetStandaloneAddonAnchorTarget(panel)
+            local targetKind, targetId = GetIndicatorAddonAnchorTarget(panel)
             if (targetKind == "group" and deletedGroupIds[targetId])
                 or (targetKind == "container" and deletedContainerIds[targetId]) then
-                ResetStandalonePanelAnchor(panel)
+                ResetIndicatorPanelAnchor(panel)
             end
         end
     end
@@ -1087,7 +1080,7 @@ local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allow
         return true
     end
 
-    local targetKind, targetId = ParseStandaloneAddonAnchorTarget(relativeTo)
+    local targetKind, targetId = ParseIndicatorAddonAnchorTarget(relativeTo)
     if targetKind == "group" then
         local newTargetId = targetId and groupIdMap[targetId] or nil
         if newTargetId then
@@ -1108,29 +1101,29 @@ local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allow
     return true
 end
 
-local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, sourceContainerId, targetContainerId)
-    local settings, relativeTo = GetStandalonePanelAnchorTarget(panel)
+local function ResetCopiedIndicatorAnchor(panel, groups, sourceGroupId, sourceContainerId, targetContainerId)
+    local settings, relativeTo = GetIndicatorPanelAnchorTarget(panel)
     if not settings or not relativeTo or relativeTo == "UIParent" then
         return
     end
 
-    local targetKind, targetId = ParseStandaloneAddonAnchorTarget(relativeTo)
+    local targetKind, targetId = ParseIndicatorAddonAnchorTarget(relativeTo)
     if not targetKind then
         if relativeTo:find("^CooldownCompanion") then
-            ResetStandalonePanelAnchor(panel)
+            ResetIndicatorPanelAnchor(panel)
         end
         return
     end
 
     if targetKind == "container" then
         if targetId ~= targetContainerId then
-            ResetStandalonePanelAnchor(panel)
+            ResetIndicatorPanelAnchor(panel)
         end
         return
     end
 
     if targetKind ~= "group" then
-        ResetStandalonePanelAnchor(panel)
+        ResetIndicatorPanelAnchor(panel)
         return
     end
 
@@ -1138,7 +1131,7 @@ local function ResetCopiedStandalonePanelAnchor(panel, groups, sourceGroupId, so
     if targetId == sourceGroupId
         or not targetGroup
         or targetGroup.parentContainerId ~= targetContainerId then
-        ResetStandalonePanelAnchor(panel)
+        ResetIndicatorPanelAnchor(panel)
     end
 end
 
@@ -1212,8 +1205,8 @@ local function DuplicateContainerSet(self, containerIds, skipFinalize)
                 x = anchor and anchor.x or 0, y = anchor and anchor.y or 0,
             }
         end
-        if not RemapDuplicatedAnchor(GetStandalonePanelAnchorSettings(panel), groupIdMap, containerIdMap) then
-            ResetStandalonePanelAnchor(panel)
+        if not RemapDuplicatedAnchor(CooldownCompanion:GetIndicatorAnchorSettings(panel), groupIdMap, containerIdMap) then
+            ResetIndicatorPanelAnchor(panel)
         end
     end
     for _, containerId in ipairs(newContainerIds) do
@@ -1388,7 +1381,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
 
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     ClearCursorPanelMoverBeforeMutation(self, groupId)
-    ResetStandalonePanelAnchorsTargeting(db.groups, { [groupId] = true })
+    ResetIndicatorAnchorsTargeting(db.groups, { [groupId] = true })
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
@@ -1420,7 +1413,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = self:GetPanelCount(containerId) + 1
     newPanel.cdmPanelSource = nil
-    ResetCopiedStandalonePanelAnchor(newPanel, db.groups, groupId, containerId, containerId)
+    ResetCopiedIndicatorAnchor(newPanel, db.groups, groupId, containerId, containerId)
     NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
@@ -1474,7 +1467,7 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     local sourceFrameName = "CooldownCompanionContainer" .. sourceContainerId
     local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
     RetargetMovedPanelAnchor(group.anchor, sourceFrameName, containerFrameName)
-    RetargetMovedPanelAnchor(GetStandalonePanelAnchorSettings(group), sourceFrameName, containerFrameName)
+    RetargetMovedPanelAnchor(CooldownCompanion:GetIndicatorAnchorSettings(group), sourceFrameName, containerFrameName)
 
     -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
     group.order = self:GetPanelCount(targetContainerId)
@@ -1649,7 +1642,7 @@ function CooldownCompanion:DeleteGroup(id)
     local parentId = group.parentContainerId
 
     ClearCursorPanelMoverBeforeMutation(self, id)
-    ResetStandalonePanelAnchorsTargeting(self.db.profile.groups, { [id] = true })
+    ResetIndicatorAnchorsTargeting(self.db.profile.groups, { [id] = true })
     self:UnloadGroup(id)
     self:DiscardDormantFrame(id)
     self.db.profile.groups[id] = nil
@@ -2006,8 +1999,8 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
         self:Print(ST.Indicator.EffectFailureText[detail])
         return nil
     end
-    if self.EnableTexturePanelAuraDisplayForEntry then
-        self:EnableTexturePanelAuraDisplayForEntry(group, newButton)
+    if self.EnableIndicatorAuraDisplayForEntry then
+        self:EnableIndicatorAuraDisplayForEntry(group, newButton)
     end
 
     if ST.Indicator.IsConditionSource(group, newButton) and self.NormalizeTriggerConditionRowData then

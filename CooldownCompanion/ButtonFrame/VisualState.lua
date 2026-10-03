@@ -471,7 +471,7 @@ local function RefreshButtonVisualState(button, context)
     visibility.rawMode = button._rawVisibilityReasonMode
         or ResolveVisibilityMode(button._rawVisibilityHidden, button._rawVisibilityAlphaOverride)
     visibility.overrideSource = button._visibilityOverrideSource
-    visibility.triggerSuppressed = IsTrue(button._visibilityTriggerSuppressed)
+    visibility.indicatorSourceSuppressed = IsTrue(button._visibilityIndicatorSourceSuppressed)
     visibility.hiddenPhase = context.phase == "hidden"
     CopyVisibilityReasonNames(visibility, button._rawVisibilityReasonBits or button._visibilityReasonBits)
 

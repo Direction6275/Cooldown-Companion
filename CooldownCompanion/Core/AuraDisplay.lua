@@ -844,7 +844,7 @@ end
 -- presence visibility without replacing the chosen asset. Every effect is a
 -- native AnimationGroup created in this sanctioned setup window: addon code
 -- never has to touch the forbidden subtree when the aura changes in combat.
-local function BuildTexturePanelSlotKit(slotButton, pandemicGated)
+local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
     -- The AuraButton lives under UIParent rather than the alpha-zero driver
     -- button, so make it permanently click-through at creation time. The
     -- dedicated Texture record never needs tooltip or cancel-aura input.
@@ -939,7 +939,7 @@ local function BuildTexturePanelSlotKit(slotButton, pandemicGated)
 
     host.primaryTexture:Hide()
     host.secondaryTexture:Hide()
-    return { texturePanelHost = host }
+    return { indicatorHost = host }
 end
 
 -- Position contract for the aura duration text: it shares the Cooldown Text
@@ -1665,7 +1665,7 @@ function CooldownCompanion:FormatAuraDurationPreviewText(seconds, style, pandemi
     return self:DecoratePandemicPreviewText(text, style, lowTimeColorHex)
 end
 
-local function StopTexturePanelSlotIndicator(host)
+local function StopAuraIndicatorSlotEffects(host)
     host.pulseAG:Stop()
     host.bounceAG:Stop()
     for _, colorShift in ipairs(host.colorShift) do
@@ -1716,7 +1716,7 @@ local function SetSlotShrink(layer, period, group)
     end
 end
 
-local function TexturePanelEffectSpeed(effect)
+local function IndicatorEffectSpeed(effect)
     return Clamp(tonumber(effect.speed) or DEFAULT_TEXTURE_INDICATOR_SPEED,
         MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
 end
@@ -1725,13 +1725,13 @@ end
 -- every entry plays, together. Each effect owns its own channel (Alpha, Scale
 -- and Translation groups on visualRoot, VertexColor groups on the artwork), so
 -- they compose; all are started here, once, and loop until the next bind.
-local function StyleTexturePanelSlotKit(slot, settings, effects, group)
-    local host = slot.kit and slot.kit.texturePanelHost
+local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
+    local host = slot.kit and slot.kit.indicatorHost
     if not host then return end
 
     -- BindDisplay is OOC. Stop/reset before writing the selected texture so a
     -- pooled slot cannot retain the previous entry's animation or end state.
-    StopTexturePanelSlotIndicator(host)
+    StopAuraIndicatorSlotEffects(host)
     SetSlotShrink(slot.layer, nil)
     host.visualRoot:SetAlpha(0)
     host.visualRoot:SetScale(1)
@@ -1741,7 +1741,7 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     ST.Indicator.StylePandemicTint(host, nil, false)
     ST.Indicator.StyleStackGate(slot, nil)
 
-    local geometry, alpha = CooldownCompanion:GetTexturePanelRenderGeometry(settings)
+    local geometry, alpha = CooldownCompanion:GetIndicatorTextureRenderGeometry(settings)
     if not geometry then
         host.primaryTexture:Hide()
         host.secondaryTexture:Hide()
@@ -1752,7 +1752,7 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
     if ST.IsIndicatorGroup(group) then
         shown = ST.Indicator.StyleAura(slot, group, BuildIndicatorAuraDurationOptions(slot, group))
     else
-        CooldownCompanion.HideStandaloneDisplayVisuals(host)
+        CooldownCompanion.HideIndicatorDisplayVisuals(host)
         slot.slotButton:ClearIcon()
         host.indicatorReadouts.root:Hide()
         host.indicatorProgress.clip:SetAlpha(0)
@@ -1765,24 +1765,24 @@ local function StyleTexturePanelSlotKit(slot, settings, effects, group)
 
     local pulse = effects[TEXTURE_INDICATOR_EFFECT_PULSE]
     if pulse then
-        host.pulseAnim:SetDuration(TexturePanelEffectSpeed(pulse))
+        host.pulseAnim:SetDuration(IndicatorEffectSpeed(pulse))
         host.pulseAG:Play()
     end
     local shrink = effects[TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND]
     if shrink then
-        SetSlotShrink(slot.layer, TexturePanelEffectSpeed(shrink), group)
+        SetSlotShrink(slot.layer, IndicatorEffectSpeed(shrink), group)
     end
     local bounce = effects[TEXTURE_INDICATOR_EFFECT_BOUNCE]
     if bounce then
         local amplitude = math.max(6, math.min(DEFAULT_TEXTURE_BOUNCE_PIXELS,
             (geometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
         host.bounceAnim:SetOffset(0, amplitude)
-        host.bounceAnim:SetDuration(TexturePanelEffectSpeed(bounce) / 2)
+        host.bounceAnim:SetDuration(IndicatorEffectSpeed(bounce) / 2)
         host.bounceAG:Play()
     end
     local colorShiftEffect = effects[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
     if colorShiftEffect then
-        local speed = TexturePanelEffectSpeed(colorShiftEffect)
+        local speed = IndicatorEffectSpeed(colorShiftEffect)
         local displayType = ST.IsIndicatorGroup(group) and group.indicatorSettings.displayType or "texture"
         local base = settings.color or { 1, 1, 1, 1 }
         if displayType == "icon" then base = group.indicatorSettings.icon.iconTintColor or base end
@@ -2604,7 +2604,7 @@ end
 -- shells, so their production AuraContainer mounts under the existing movable
 -- UIParent-level Indicator host instead. The host and root are permanent once a
 -- slot exists; only the safe root's alpha is used to suppress it for previews.
-local function EnsureTexturePanelAuraLayer(button)
+local function EnsureAuraIndicatorLayer(button)
     local host = CooldownCompanion:EnsureAuraTextureHost(button)
     return host.auraRuntimeRoot
 end
@@ -2665,9 +2665,9 @@ local PRESENCE_KINDS = { presence = true, missingPicture = true }
 -- Record kinds with a native slot kit, by kit: "button" (the icon/bar kit on
 -- a CC button) or "texture" (an aura Indicator's kit). Each has an
 -- Also During Pandemic twin, the same kit gated to the refresh window
--- (BuildSlotKit, BuildTexturePanelSlotKit).
+-- (BuildSlotKit, BuildAuraIndicatorSlotKit).
 local SLOT_KIT_KINDS = { button = "button", pandemicButton = "button",
-    texturePanel = "texture", pandemicTexture = "texture" }
+    indicatorAura = "texture", pandemicIndicatorAura = "texture" }
 
 -- Show While Inactive (panel icon and bar entries): a still picture of
 -- the entry, drawn only while the aura is missing. The CC button underneath is
@@ -2754,7 +2754,7 @@ function Presence.NewContainer(cell, unit, key, width, height)
             -- Invisible but cell-sized while the aura is up: AuraButtons take
             -- tooltips and clicks (incl. cancel-aura) by default, so make
             -- this one click-through in the sanctioned setup window, as the
-            -- texture kit does (BuildTexturePanelSlotKit).
+            -- texture kit does (BuildAuraIndicatorSlotKit).
             frame:SetMouseClickEnabled(false)
             frame:SetMouseMotionEnabled(false)
         end,
@@ -2980,7 +2980,7 @@ function CooldownCompanion:HasIndicatorPandemicTwin(button)
     local byUnit = button and displays[button]
     if not byUnit then return false end
     for _, record in pairs(byUnit) do
-        if record.hostKind == "pandemicTexture" and not record.parked
+        if record.hostKind == "pandemicIndicatorAura" and not record.parked
             and record.boundEntry ~= nil and record.boundEntry == button.buttonData then
             return true
         end
@@ -3179,7 +3179,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         displays[button] = byUnit
     end
     -- A picture mounts on the button's own aura layer, like a native slot.
-    local layer = SLOT_KIT_KINDS[hostKind] == "texture" and EnsureTexturePanelAuraLayer(button)
+    local layer = SLOT_KIT_KINDS[hostKind] == "texture" and EnsureAuraIndicatorLayer(button)
         or hostKind == "presence" and EnsurePresenceLayer(button)
         or EnsureAuraLayer(button)
     slotCounter = slotCounter + 1
@@ -3228,10 +3228,10 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
             if SLOT_KIT_KINDS[hostKind] == "button" then
                 frame:SetFrameLevel(layer:GetFrameLevel() + 1)
             end
-            if hostKind == "texturePanel" then
-                record.kit = BuildTexturePanelSlotKit(frame)
-            elseif hostKind == "pandemicTexture" then
-                record.kit = BuildTexturePanelSlotKit(frame, true)
+            if hostKind == "indicatorAura" then
+                record.kit = BuildAuraIndicatorSlotKit(frame)
+            elseif hostKind == "pandemicIndicatorAura" then
+                record.kit = BuildAuraIndicatorSlotKit(frame, true)
             elseif hostKind == "pandemicButton" then
                 -- Up for the whole aura but drawn only in the window, and
                 -- Blizzard's window state is secret: never take clicks
@@ -3568,7 +3568,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
     if textureKit then
-        StyleTexturePanelSlotKit(record, textureSettings, textureEffects,
+        StyleAuraIndicatorSlotKit(record, textureSettings, textureEffects,
             CooldownCompanion.db.profile.groups[button._groupId])
     else
         StyleSlotKit(record, button, buttonData, style)
@@ -4052,7 +4052,7 @@ end
 
 -- Park then bind within the selected owners (nil means all owners). Both
 -- callers guard combat and aura secrecy before any chain geometry is changed.
-local function RebindCustomBarAuraBlocks(self, owners, retireIds)
+local function RebindAttachedAuraBlocks(self, owners, retireIds)
     for _, record in ipairs(blockRecords) do
         local owner = record.owner
         if not owners or (owner and ((retireIds and retireIds[owner.groupId])
@@ -5175,7 +5175,7 @@ end
 -- Read only CC-owned metadata, including records on pooled or replaced hosts.
 function CooldownCompanion:PanelNeedsAuraRebind(groupId, group)
     if ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)
-        or self:IsStandaloneTexturePanelGroup(group) then return true end
+        or ST.IsIndicatorGroup(group) then return true end
     for _, entry in ipairs(group.buttons or {}) do
         if entry.auraTracking or entry.addedAs == "aura" then return true end
     end
@@ -5268,7 +5268,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
                 local textureAura = ST.Indicator.IsAura(group)
-                    and self:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+                    and self:IsIndicatorAuraDisplayEnabled(group, buttonData)
                 local standardAura = displayMode ~= "indicator"
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
@@ -5292,7 +5292,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     and not ST.IsCollapsingAttachedBar(group, buttonData) then
                     local style = self:GetEntryEffectiveStyle(group, buttonData)
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
-                    local textureSettings = textureAura and self:GetTexturePanelSettings(group) or nil
+                    local textureSettings = textureAura and self:GetIndicatorTextureSettings(group) or nil
                     -- Native kits only; a presence bind sizes its cell itself.
                     if textureAura and ST.Indicator.IsAura(group) then textureSettings = ST.Indicator.NativeSettings(group) end
                     local textureEffects = textureAura and ST.Indicator.NativeEffects(group) or nil
@@ -5332,7 +5332,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             spellSet = spellSet,
                             style = style,
                             stackBarMax = stackBarMax,
-                            hostKind = textureAura and "texturePanel" or presence and "presence"
+                            hostKind = textureAura and "indicatorAura" or presence and "presence"
                                 or missingPicture and "missingPicture" or "button",
                             missingIndicator = self:IsMissingAuraIndicatorEntry(buttonData, group, style),
                             presenceAuras = presenceAuras,
@@ -5352,7 +5352,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                                     buttonData = buttonData,
                                     spellSet = spellSet,
                                     style = style,
-                                    hostKind = "pandemicTexture",
+                                    hostKind = "pandemicIndicatorAura",
                                     missingIndicator = false,
                                     noSounds = true,
                                     textureSettings = nativeSettings,
@@ -5387,9 +5387,9 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- Resource aura overlay hosts (OtherBars/ResourceBarAuraHost.lua): append
     -- want records in the same shape, hosted on stable holder frames. Looked
     -- up at run time (the module loads after this file).
-    local collectCustomWants = ST._CollectResourceBarAuraWants
-    if collectCustomWants and (not panelIds or resources) then
-        collectCustomWants(wanted)
+    local collectResourceWants = ST._CollectResourceBarAuraWants
+    if collectResourceWants and (not panelIds or resources) then
+        collectResourceWants(wanted)
     end
 
     -- Shared unit resolution: every want derives its token set the same way
@@ -5458,7 +5458,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- Aura blocks (attached bar aura entries that hide when inactive): their own
     -- park-then-bind pass over the group containers. Disjoint from the slot
     -- records above — no host button, no pool lock — so ordering is free.
-    RebindCustomBarAuraBlocks(self, owners, panelIds)
+    RebindAttachedAuraBlocks(self, owners, panelIds)
     RefreshReboundBlockAttachments(self, owners)
 
     -- Aura Panels (whole panels drawn by their own aura container): likewise a
@@ -5517,7 +5517,7 @@ local function RunBlockRebind(owners)
     end
     blockRebindPassCount = blockRebindPassCount + 1
     ST.BeginAuraCandidatePass()
-    RebindCustomBarAuraBlocks(self, owners)
+    RebindAttachedAuraBlocks(self, owners)
     RefreshReboundBlockAttachments(self, owners)
     if self.UpdateCastBarStackAnchor then self:UpdateCastBarStackAnchor() end
     ST.EndAuraCandidatePass()
@@ -5631,7 +5631,7 @@ function CooldownCompanion:GetAuraDisplayStatus()
         if PRESENCE_KINDS[record.hostKind] then
             presence.trackers = presence.trackers + 1
             if record.boundEntry then presence.bound = presence.bound + 1 end
-        elseif record.hostKind == "pandemicButton" or record.hostKind == "pandemicTexture" then
+        elseif record.hostKind == "pandemicButton" or record.hostKind == "pandemicIndicatorAura" then
             pandemic.slots = pandemic.slots + 1
             if record.boundEntry then pandemic.bound = pandemic.bound + 1 end
         else

@@ -94,7 +94,7 @@ local function TextureIndicatorPreview(key)
         flag = "_texture" .. key:gsub("^%l", string.upper) .. "Preview" }
 end
 
-local TriggerEffectsPreview = { owner = "panel", groupScoped = true, triggerEffects = true }
+local IndicatorEffectsPreview = { owner = "panel", groupScoped = true, triggerEffects = true }
 local function HealthEffectPreview(key)
     return { owner = "health", groupScoped = true, healthEffect = key }
 end
@@ -312,12 +312,12 @@ end
 
 local function TextureAuraDisplayEnabled(group)
     local buttonData = group and group.buttons and group.buttons[1] or nil
-    return CooldownCompanion.IsTexturePanelAuraDisplayEnabled
-        and CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
+    return CooldownCompanion.IsIndicatorAuraDisplayEnabled
+        and CooldownCompanion:IsIndicatorAuraDisplayEnabled(group, buttonData)
         or false
 end
 
-local function AnyTriggerEffectEnabled(group)
+local function AnyIndicatorEffectEnabled(group)
     -- Everything CC draws, While Missing included; native auras use textureAura.
     -- Read-only like AuraIndicatorEffectEnabled: an availability check must
     -- never write effect tables into the profile.
@@ -565,12 +565,12 @@ local CONTROLS = {
         group = GROUP_FEEDBACK_STATES,
         menuOrder = 30,
         modes = { indicator = true },
-        requiresTriggerEffect = true,
+        requiresIndicatorEffect = true,
         -- No key: the preview plays every enabled trigger effect at once, and
         -- each has its own advanced panel. The tab draws them inside one
         -- collapsible section, so the gear opens that on the way past.
         settings = { tab = "effects", uncollapse = "effects_triggerEffects" },
-        preview = TriggerEffectsPreview,
+        preview = IndicatorEffectsPreview,
     },
 
     {
@@ -789,7 +789,7 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if control.requiresTextureAuraDisplay and not TextureAuraDisplayEnabled(group) then
         return false
     end
-    if control.requiresTriggerEffect and not AnyTriggerEffectEnabled(group) then
+    if control.requiresIndicatorEffect and not AnyIndicatorEffectEnabled(group) then
         return false
     end
     if control.requiresChargeEntry and not ChargeEntryApplies(group, displayMode, buttonIndex) then

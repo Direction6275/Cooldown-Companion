@@ -356,9 +356,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
 
     -- Make it movable when unlocked. Indicators drag their display host
     -- directly instead of using the standard panel drag handle.
-    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
     frame:SetMovable(true)
-    frame:EnableMouse((not isLocked) and (not isTextureMode))
+    frame:EnableMouse((not isLocked) and (not isIndicator))
     frame:RegisterForDrag("LeftButton")
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
@@ -368,7 +368,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local hasDragEntry = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
-    self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isTextureMode and not isCursorAnchored)
+    self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isIndicator and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self) BeginPanelDrag(self, true) end)
@@ -530,7 +530,7 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     local hasButtons = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
-    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
@@ -560,7 +560,7 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     self:SetGroupDragControlsShown(
         frame,
         hasButtons
-            and not isTextureMode
+            and not isIndicator
             and (
                 isCursorLayoutPreviewSelected
                 or (
@@ -594,7 +594,7 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     end
 
     if isActive
-        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+        and ST.IsIndicatorGroup(group)
         and self.UpdateAuraTextureVisual
         and frame
         and frame.buttons
@@ -643,7 +643,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     if not frame or not group then return end
 
     local isLocked = GetContainerState(groupId)
-    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     if self:IsArrangePanelSuppressed(groupId)
         or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
@@ -678,7 +678,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     SyncGroupControlLevels(
         frame,
-        (isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)) and not isTextureMode
+        (isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)) and not isIndicator
     )
     if resizeWheelEnabled then
         frame:EnableMouseWheel(true)
@@ -688,7 +688,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         frame:SetScript("OnMouseWheel", nil)
     end
 
-    if isCursorLayoutPreviewSelected and not isTextureMode then
+    if isCursorLayoutPreviewSelected and not isIndicator then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
@@ -710,7 +710,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- A parked-but-unselected cursor panel stays clickable in arrange so a
     -- click or drag can select it; its chrome stays down until then.
     if isCursorAnchored
-        and not isTextureMode
+        and not isIndicator
         and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
@@ -733,7 +733,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame, true, true)
         end
         if frame.dragHandle then
-            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
+            if isSelectedInContainer and not isIndicator and not isCursorAnchored then
                 SetFrameClickThrough(frame.dragHandle, false, false)
                 frame.dragHandle:EnableMouse(true)
                 frame.dragHandle:RegisterForDrag("LeftButton")
@@ -743,7 +743,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             end
         end
         if frame.nudger then
-            if isSelectedInContainer and not isTextureMode and not isCursorAnchored then
+            if isSelectedInContainer and not isIndicator and not isCursorAnchored then
                 SetFrameClickThrough(frame.nudger, false, false)
                 frame.nudger:EnableMouse(true)
             else
@@ -757,7 +757,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- Indicators also keep the backing group frame non-interactive while
     -- unlocked, because dragging and hovering are handled by the separate
     -- visible display host instead of the hidden 1x1 anchor frame.
-    if isLocked or isTextureMode or isCursorAnchored then
+    if isLocked or isIndicator or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
         if frame.dragHandle then
             SetFrameClickThrough(frame.dragHandle, true, true)

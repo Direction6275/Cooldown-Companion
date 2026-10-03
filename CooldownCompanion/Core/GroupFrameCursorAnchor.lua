@@ -113,8 +113,8 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY)
     return true
 end
 
-local function GetCursorAnchoredStandaloneHost(frame, group)
-    if not (frame and CooldownCompanion:IsStandaloneTexturePanelGroup(group)) then
+local function GetCursorAnchoredIndicatorHost(frame, group)
+    if not (frame and ST.IsIndicatorGroup(group)) then
         return nil
     end
 
@@ -196,7 +196,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     end
 
     local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
-    local isStandaloneDisplay = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
 
     if active then
         if not (InCombatLockdown() and frame:IsProtected()) then
@@ -224,11 +224,11 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
         self:UpdateGroupLayout(groupId)
     end
 
-    self:SetGroupDragControlsShown(frame, selected and not isStandaloneDisplay)
-    if isStandaloneDisplay then
-        -- Standalone displays edit through their HOST: it carries the mover
+    self:SetGroupDragControlsShown(frame, selected and not isIndicator)
+    if isIndicator then
+        -- Indicators edit through their HOST: it carries the mover
         -- chrome and the click/drag selection route while parked.
-        local host = GetCursorAnchoredStandaloneHost(frame, group)
+        local host = GetCursorAnchoredIndicatorHost(frame, group)
         if host and self.RefreshCursorAnchoredHostControls then
             self:RefreshCursorAnchoredHostControls(host, groupId, group, active == true, selected == true)
         end
@@ -351,9 +351,9 @@ end
 local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
     local frame = self.groupFrames and self.groupFrames[groupId] or nil
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    -- A standalone display's visible body is its host, so a host drag must be
+    -- An Indicator's visible body is its host, so a host drag must be
     -- measured against the host; the alpha-0 group frame never moved.
-    local host = GetCursorAnchoredStandaloneHost(frame, group)
+    local host = GetCursorAnchoredIndicatorHost(frame, group)
     local newX, newY, cursorX, cursorY, point = ComputeCursorAnchorLayoutPreviewPanelCoordinates(
         self,
         host or frame,
@@ -456,7 +456,7 @@ local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     if not (frame and group and IsCursorAnchor(group.anchor)) then
         return false
     end
-    if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+    if ST.IsIndicatorGroup(group) then
         return false
     end
     if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
@@ -504,8 +504,7 @@ local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cance
     return true
 end
 
--- Host-drag entry points for parked standalone displays (Texture and Trigger
--- panels). The drag mechanics live with the host in AuraTexturesDisplay;
+-- Host-drag entry points for parked Indicator displays. The drag mechanics live with the host in AuraTexturesDisplay;
 -- these own the preview bookkeeping and the cursor-anchor save, mirroring
 -- the ordinary panel drag pair above.
 function CooldownCompanion:BeginCursorAnchorLayoutPreviewHostDrag(host, groupId)
@@ -1030,7 +1029,7 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
                 local anchorY = previewY or cursorY
                 local anchor = GetCursorAnchorLayoutPreviewAnchor(self, groupId, group.anchor)
                 ApplyCursorAnchorPosition(self, frame, anchor, anchorX, anchorY)
-                local host = GetCursorAnchoredStandaloneHost(frame, group)
+                local host = GetCursorAnchoredIndicatorHost(frame, group)
                 if host and host:IsShown() then
                     ApplyCursorAnchorPosition(self, host, anchor, anchorX, anchorY)
                 end

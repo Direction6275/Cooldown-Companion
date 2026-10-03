@@ -77,8 +77,8 @@ end
 local function BuildPreviewSelection(groupId, buttonIndex, entry)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
-    local baseSettings = group and CooldownCompanion:GetTexturePanelSettings(group)
-    return CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
+    local baseSettings = group and CooldownCompanion:GetIndicatorTextureSettings(group)
+    return CooldownCompanion:CreateIndicatorTextureSelection(entry, baseSettings)
 end
 
 local function ApplyEntryTexture(texture, entry)

@@ -2318,7 +2318,7 @@ local function RefreshButtonsWideColumn(selectionOnly, edit)
 
     if CS.inlineTextureBrowserOpen and ST._RenderInlineTextureBrowser then
         local browserGroup = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if browserGroup and CooldownCompanion:IsStandaloneTexturePanelGroup(browserGroup) then
+        if browserGroup and ST.IsIndicatorGroup(browserGroup) then
             -- Same as the multi-select takeover above: the settings host goes
             -- away without its own tab seams running, so settle the format
             -- editor first. Release is idempotent.

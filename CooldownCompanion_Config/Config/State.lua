@@ -260,7 +260,7 @@ ST._configState = {
     profileWideFontWindow = nil,
     profileWideBarTextureWindow = nil,
     buttonIconPickerFrame = nil,
-    triggerPanelIconPickerFrame = nil,
+    indicatorIconPickerFrame = nil,
     containerIconPickerFrame = nil,
     panelContextMenu = nil,
     charCopyMenu = nil,
@@ -1201,7 +1201,7 @@ end
 local STANDALONE_ICON_BROWSER_ADDON = "IconBrowser"
 local CONFIG_ICON_PICKER_CACHE_KEYS = {
     "buttonIconPickerFrame",
-    "triggerPanelIconPickerFrame",
+    "indicatorIconPickerFrame",
     "containerIconPickerFrame",
 }
 
@@ -1570,9 +1570,9 @@ local BUTTON_ICON_PICKER_SPEC = {
     end,
 }
 
-local TRIGGER_PANEL_ICON_PICKER_SPEC = {
-    cacheKey = "triggerPanelIconPickerFrame",
-    frameName = "CDCTriggerPanelIconPickerFrame",
+local INDICATOR_ICON_PICKER_SPEC = {
+    cacheKey = "indicatorIconPickerFrame",
+    frameName = "CDCIndicatorIconPickerFrame",
     unavailableMessage = "Icon picker is unavailable on this client build.",
     configureFrame = ConfigureMovableIconPickerFrame,
     validateContext = function(context, db)
@@ -1581,14 +1581,14 @@ local TRIGGER_PANEL_ICON_PICKER_SPEC = {
         return group and ST.IsIndicatorGroup(group) and group or nil
     end,
     getCurrentIcon = function(group)
-        local settings = CooldownCompanion.GetTriggerPanelIconSettings
-            and CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+        local settings = CooldownCompanion.GetIndicatorIconSettings
+            and CooldownCompanion:GetIndicatorIconSettings(group, true)
             or nil
         return settings and settings.manualIcon or nil
     end,
     applySelection = function(iconTexture, group)
-        local settings = CooldownCompanion.GetTriggerPanelIconSettings
-            and CooldownCompanion:GetTriggerPanelIconSettings(group, true)
+        local settings = CooldownCompanion.GetIndicatorIconSettings
+            and CooldownCompanion:GetIndicatorIconSettings(group, true)
             or nil
         if not settings then
             return
@@ -1641,8 +1641,8 @@ end
 ------------------------------------------------------------------------
 -- Indicator icon picker (panel-level manual icon for an Icon Indicator)
 ------------------------------------------------------------------------
-local function OpenTriggerPanelIconPicker(groupId)
-    return OpenConfigIconPicker(TRIGGER_PANEL_ICON_PICKER_SPEC, {
+local function OpenIndicatorIconPicker(groupId)
+    return OpenConfigIconPicker(INDICATOR_ICON_PICKER_SPEC, {
         groupId = groupId,
     })
 end
@@ -3205,7 +3205,7 @@ ST._GetConfigAuraPanelBadgeTint = GetConfigAuraPanelBadgeTint
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning
 ST._OpenButtonIconPicker = OpenButtonIconPicker
-ST._OpenTriggerPanelIconPicker = OpenTriggerPanelIconPicker
+ST._OpenIndicatorIconPicker = OpenIndicatorIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker
 ST._CloseConfigIconPicker = CloseConfigIconPicker
 ST._IsValidIconTexture = IsValidIconTexture

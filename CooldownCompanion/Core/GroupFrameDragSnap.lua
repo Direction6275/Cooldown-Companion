@@ -254,7 +254,7 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
                 -- Indicators live on their display host, not the group
                 -- frame; both contribute so Indicator-only groups get a
                 -- center and mixed groups get the true midpoint.
-                if not self:IsStandaloneTexturePanelGroup(group)
+                if not ST.IsIndicatorGroup(group)
                     and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
                     AccumulateGroupUnion(cid, candidateFrame)
                 end
@@ -279,7 +279,7 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
         local group = self.db and self.db.profile and self.db.profile.groups
             and self.db.profile.groups[groupId]
             or nil
-        if not (group and self:IsStandaloneTexturePanelGroup(group))
+        if not (group and ST.IsIndicatorGroup(group))
             and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
             AddDragSnapCandidate(session, candidateFrame, groupId, excludeFn)
         end

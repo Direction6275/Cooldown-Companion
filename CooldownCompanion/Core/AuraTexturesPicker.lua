@@ -413,7 +413,7 @@ function CooldownCompanion:FindAuraTexturePickerEntry(entries, selection)
     return nil
 end
 
-function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
+function CooldownCompanion:ApplyIndicatorTextureEntry(settings, entry)
     if type(settings) ~= "table" or type(entry) ~= "table" then
         return
     end
@@ -450,7 +450,7 @@ function CooldownCompanion:ApplyTexturePanelEntry(settings, entry)
     settings.y = tonumber(settings.y) or 0
 end
 
-function CooldownCompanion:CreateTexturePanelSelection(entry, baseSettings)
+function CooldownCompanion:CreateIndicatorTextureSelection(entry, baseSettings)
     if type(entry) ~= "table" then
         return nil
     end

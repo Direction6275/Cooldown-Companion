@@ -50,9 +50,9 @@ local UpdateResizedPanelContainerWrapper = GF.UpdateResizedPanelContainerWrapper
 local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
-    local isTextureMode = CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
     local w, h
-    if isTextureMode then
+    if isIndicator then
         w, h = 1, 1
     elseif isBarMode then
         w, h = ST.GetBarGridCellDimensions(group)
@@ -326,7 +326,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local buttonsPerRow = style.buttonsPerRow or 12
     -- An Indicator's source buttons never show; they stack on one spot so
     -- extra sources (conditions, or an aura's extras) do not grow the frame.
-    local isTriggerMode = ST.IsIndicatorGroup(group)
+    local isIndicator = ST.IsIndicatorGroup(group)
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local centeredEdge = not ST.IsAuraPanelGroup(group)
         and ST.GetCenteredGrowthEdge(style.growthOrigin, orientation) or nil
@@ -348,7 +348,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
         visibleIndex = visibleIndex + 1
         ClearButtonCompactSlotCache(button)
         button:ClearAllPoints()
-        if isTriggerMode then
+        if isIndicator then
             button:SetPoint("CENTER", layoutRef, "CENTER", 0, 0)
         elseif centeredEdge then
             -- Each button pins its edge midpoint to the frame's, so full lines
@@ -386,7 +386,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
         -- placed by PrepareSectionedPanelLayout, not by the base loop above.
         visibleIndex = #iconButtons
     end
-    frame.visibleButtonCount = isTriggerMode and (visibleIndex > 0 and 1 or 0) or visibleIndex
+    frame.visibleButtonCount = isIndicator and (visibleIndex > 0 and 1 or 0) or visibleIndex
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and self.GetGroupLayoutButtonCount then
         frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
             buttonUsabilityOptions = buttonSizingOptions,
@@ -587,7 +587,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                             ST.IsAttachedBarEntry(group, buttonData))
                     else
                         button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
-                        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+                        if ST.IsIndicatorGroup(group) then
                             button:SetAlpha(0)
                             button._lastVisAlpha = 0
                         end
@@ -1045,7 +1045,7 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
             local effective = effect == "appearance" and PreserveFittedBarGeometry(group, button, entry.style) or entry.style
             button:UpdateStyle(effective)
         end
-        if CooldownCompanion:IsStandaloneTexturePanelGroup(group) then
+        if ST.IsIndicatorGroup(group) then
             button:SetAlpha(0)
             button._lastVisAlpha = 0
         end

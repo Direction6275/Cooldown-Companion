@@ -149,14 +149,7 @@ local TEXTURE_INDICATOR_DEFAULTS = {
     },
 }
 
-CooldownCompanion.TRIGGER_PANEL_EFFECT_ORDER = {
-    TEXTURE_INDICATOR_EFFECT_PULSE,
-    TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT,
-    TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND,
-    TEXTURE_INDICATOR_EFFECT_BOUNCE,
-}
-
-CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS = {
+CooldownCompanion.INDICATOR_EFFECT_DEFAULTS = {
     pulse = {
         enabled = false,
         speed = DEFAULT_TEXTURE_INDICATOR_SPEED,
@@ -299,8 +292,8 @@ end
 
 CooldownCompanion.NormalizeTextureIndicatorSection = NormalizeTextureIndicatorSection
 
-function CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, effectData)
-    local defaults = CooldownCompanion.TRIGGER_PANEL_EFFECT_DEFAULTS[effectKey]
+function CooldownCompanion.NormalizeIndicatorEffectSection(effectKey, effectData)
+    local defaults = CooldownCompanion.INDICATOR_EFFECT_DEFAULTS[effectKey]
     if not defaults then
         return nil
     end
@@ -322,7 +315,7 @@ function CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, effectD
     return effectData
 end
 
-function CooldownCompanion.NormalizeTriggerPanelEffectStore(triggerSettings)
+function CooldownCompanion.NormalizeIndicatorEffectStore(triggerSettings)
     if type(triggerSettings) ~= "table" then
         return nil
     end
@@ -332,8 +325,8 @@ function CooldownCompanion.NormalizeTriggerPanelEffectStore(triggerSettings)
     end
 
     local store = triggerSettings.effects
-    for _, effectKey in ipairs(CooldownCompanion.TRIGGER_PANEL_EFFECT_ORDER) do
-        store[effectKey] = CooldownCompanion.NormalizeTriggerPanelEffectSection(effectKey, store[effectKey])
+    for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
+        store[effectKey] = CooldownCompanion.NormalizeIndicatorEffectSection(effectKey, store[effectKey])
     end
 
     return store
@@ -428,7 +421,7 @@ local function NormalizeAnchorPoint(anchor)
     return anchor
 end
 
-local function NormalizeStandaloneAnchorRelativeTo(relativeTo)
+local function NormalizeIndicatorAnchorRelativeTo(relativeTo)
     if type(relativeTo) ~= "string" or relativeTo == "" then
         return UI_PARENT_NAME
     end
@@ -608,7 +601,7 @@ local function NormalizeAuraTextureSettings(settings)
     settings.stretchY = Clamp(tonumber(settings.stretchY) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.point = NormalizeAnchorPoint(settings.point or settings.anchor)
     settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint)
-    settings.relativeTo = NormalizeStandaloneAnchorRelativeTo(settings.relativeTo)
+    settings.relativeTo = NormalizeIndicatorAnchorRelativeTo(settings.relativeTo)
     settings.x = tonumber(settings.x or settings.xOffset) or 0
     settings.y = tonumber(settings.y or settings.yOffset) or 0
     settings.anchor = nil
@@ -632,18 +625,14 @@ local function NormalizeAuraTextureSettings(settings)
     return settings
 end
 
-function CooldownCompanion:IsTexturePanelGroup(group)
-    return ST.Indicator.IsAura(group)
-end
-
 -- An aura Indicator's primary Aura entry is intrinsically aura-controlled.
 -- Ordinary spell entries retain the explicit opt-in so legacy auraTracking
 -- residue cannot silently reactivate them. Only the main source
 -- is the aura: an aura Indicator's extra spell sources are rule sources and
 -- never own an aura slot. A While Missing aura or an aura list owns no slot
 -- either: CC draws it behind a presence tracker (AuraDisplay "presence").
-function CooldownCompanion:IsTexturePanelAuraDisplayEnabled(group, buttonData)
-    return self:IsTexturePanelGroup(group)
+function CooldownCompanion:IsIndicatorAuraDisplayEnabled(group, buttonData)
+    return ST.Indicator.IsAura(group)
         and not ST.Indicator.UsesPresence(group)
         and type(buttonData) == "table"
         and buttonData == ST.Indicator.Primary(group)
@@ -657,7 +646,7 @@ end
 -- flag: doing so would silently turn tracking back on if the entry were later
 -- converted to an icon or bar. Resolve the same ordered candidate identity
 -- directly while the Texture Aura display is active instead.
-function CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
+function CooldownCompanion:ResolveIndicatorAuraSpellID(buttonData)
     if not (type(buttonData) == "table"
         and buttonData.type == "spell"
         and (buttonData.addedAs == "aura"
@@ -673,8 +662,8 @@ end
 -- Mutation helper for user actions that place a primary Aura entry into an
 -- aura Indicator (new add, move, or panel conversion). Primary Aura entries
 -- have no opt-out there; ordinary spell entries still do.
-function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonData)
-    if not (self:IsTexturePanelGroup(group)
+function CooldownCompanion:EnableIndicatorAuraDisplayForEntry(group, buttonData)
+    if not (ST.Indicator.IsAura(group)
         and type(buttonData) == "table"
         and buttonData.type == "spell"
         and buttonData.addedAs == "aura") then
@@ -685,15 +674,11 @@ function CooldownCompanion:EnableTexturePanelAuraDisplayForEntry(group, buttonDa
     return true
 end
 
-function CooldownCompanion:IsTriggerPanelGroup(group)
+function CooldownCompanion:IsConditionsIndicatorGroup(group)
     return ST.IsIndicatorGroup(group) and not ST.Indicator.IsAura(group)
 end
 
-function CooldownCompanion:IsStandaloneTexturePanelGroup(group)
-    return ST.IsIndicatorGroup(group)
-end
-
-function CooldownCompanion:GetTexturePanelLocationOptions()
+function CooldownCompanion:GetIndicatorTextureLayoutOptions()
     local options = {}
     for _, locationType in ipairs(LOCATION_ORDER) do
         options[locationType] = TEXTURE_LAYOUT_LABELS[locationType]
@@ -701,7 +686,7 @@ function CooldownCompanion:GetTexturePanelLocationOptions()
     return options, LOCATION_ORDER
 end
 
-function CooldownCompanion:GetTexturePanelLayoutSelectionValue(locationType)
+function CooldownCompanion:GetIndicatorTextureLayoutValue(locationType)
     local normalizedLocationType = NormalizeTextureLayout(locationType)
     if normalizedLocationType == LOCATION_LEFTRIGHT or normalizedLocationType == LOCATION_TOPBOTTOM then
         return normalizedLocationType
@@ -720,17 +705,17 @@ end
 AT.NormalizeAuraTextureSettings = NormalizeAuraTextureSettings
 AT.ResolveGroup = ResolveGroup
 
-function CooldownCompanion:GetTexturePanelSettings(groupOrId)
+function CooldownCompanion:GetIndicatorTextureSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
     if ST.IsIndicatorGroup(group) then return NormalizeAuraTextureSettings(ST.Indicator.Initialize(group).signal) end
 end
 
-function CooldownCompanion:GetTriggerPanelEffectSettings(groupOrId)
+function CooldownCompanion:GetIndicatorEffectSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
     if not ST.IsIndicatorGroup(group) then return end
     ST.Indicator.Effects(group)
     return ST.Indicator.NormalizeEffectsForFamily(group,
-        CooldownCompanion.NormalizeTriggerPanelEffectStore(ST.Indicator.Settings(group)))
+        CooldownCompanion.NormalizeIndicatorEffectStore(ST.Indicator.Settings(group)))
 end
 
 function CooldownCompanion:GetTextureIndicatorTransformTarget(host)
@@ -760,19 +745,19 @@ function CooldownCompanion:ResetTextureIndicatorRootState(host)
     host.visualRoot:SetPoint("CENTER", host, "CENTER", 0, 0)
 end
 
-function CooldownCompanion.IsValidTriggerPanelIconTexture(iconTexture)
+function CooldownCompanion.IsValidIndicatorIconTexture(iconTexture)
     local iconType = type(iconTexture)
     if iconType ~= "number" and iconType ~= "string" then
         return false
     end
 
-    local probe = CooldownCompanion._triggerPanelIconValidationTexture
+    local probe = CooldownCompanion._indicatorIconValidationTexture
     if not probe then
         local holder = CreateFrame("Frame", nil, UIParent)
         holder:Hide()
         probe = holder:CreateTexture(nil, "ARTWORK")
         holder.texture = probe
-        CooldownCompanion._triggerPanelIconValidationTexture = probe
+        CooldownCompanion._indicatorIconValidationTexture = probe
     end
 
     probe:SetTexture(nil)
@@ -783,12 +768,12 @@ function CooldownCompanion.IsValidTriggerPanelIconTexture(iconTexture)
     return resolvedTexture ~= nil
 end
 
-function CooldownCompanion.NormalizeTriggerIconSettings(settings)
+function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     if type(settings) ~= "table" then
         return nil
     end
 
-    settings.manualIcon = CooldownCompanion.IsValidTriggerPanelIconTexture(settings.manualIcon)
+    settings.manualIcon = CooldownCompanion.IsValidIndicatorIconTexture(settings.manualIcon)
             and settings.manualIcon
         or nil
     settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
@@ -806,14 +791,14 @@ function CooldownCompanion.NormalizeTriggerIconSettings(settings)
 end
 
 
-function CooldownCompanion:GetTriggerPanelDisplayType(groupOrId)
+function CooldownCompanion:GetIndicatorDisplayType(groupOrId)
     local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
     return settings and settings.displayType or "icon"
 end
 
-function CooldownCompanion:GetTriggerPanelIconSettings(groupOrId)
+function CooldownCompanion:GetIndicatorIconSettings(groupOrId)
     local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeTriggerIconSettings(ST.Indicator.Initialize(group).icon) end
+    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeIndicatorIconSettings(ST.Indicator.Initialize(group).icon) end
 end
 
 

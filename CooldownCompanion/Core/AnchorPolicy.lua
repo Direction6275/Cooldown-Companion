@@ -155,7 +155,7 @@ local function ParseAddonAnchorFrameName(frameName)
     return nil
 end
 
-local function GetStandaloneTextureAnchorSettings(group)
+local function IndicatorAnchorOf(group)
     if type(group) ~= "table" then
         return nil
     end
@@ -169,9 +169,9 @@ local function GetActivePanelAnchorRelativeTo(group)
     local anchor = group and group.anchor
     local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
     if relativeTo == CURSOR_ANCHOR_TARGET then return relativeTo end
-    local standalone = GetStandaloneTextureAnchorSettings(group)
-    if type(standalone) == "table" and type(standalone.relativeTo) == "string" then
-        return standalone.relativeTo
+    local indicatorAnchor = IndicatorAnchorOf(group)
+    if type(indicatorAnchor) == "table" and type(indicatorAnchor.relativeTo) == "string" then
+        return indicatorAnchor.relativeTo
     end
 
     return relativeTo
@@ -236,8 +236,8 @@ local function GetPanelContainerAlphaSource(self, groupOrId)
         return containerId, container
     end
 
-    local standalone = GetStandaloneTextureAnchorSettings(group)
-    if type(standalone) == "table" and (relativeTo == "UIParent" or relativeTo == "") then
+    local indicatorAnchor = IndicatorAnchorOf(group)
+    if type(indicatorAnchor) == "table" and (relativeTo == "UIParent" or relativeTo == "") then
         kind, id = ParseAddonAnchorFrameName(GetPanelShellAnchorRelativeTo(group))
         if kind == "container" and id == containerId then
             return containerId, container
@@ -342,7 +342,7 @@ local function ResetExternalAnchor(anchor)
     anchor.y = 0
 end
 
-local function ResetStandaloneTextureAnchor(anchor)
+local function ResetIndicatorAnchor(anchor)
     anchor.point = "CENTER"
     anchor.relativeTo = "UIParent"
     anchor.relativePoint = "CENTER"
@@ -359,10 +359,10 @@ local function SanitizeExternalAnchor(anchor, targetIsCursorRoot)
     end
 end
 
-local function SanitizeStandaloneTextureAnchor(group, targetIsCursorRoot)
-    local anchor = GetStandaloneTextureAnchorSettings(group)
+local function SanitizeIndicatorAnchor(group, targetIsCursorRoot)
+    local anchor = IndicatorAnchorOf(group)
     if type(anchor) == "table" and targetIsCursorRoot(anchor.relativeTo) then
-        ResetStandaloneTextureAnchor(anchor)
+        ResetIndicatorAnchor(anchor)
     end
 end
 
@@ -484,8 +484,8 @@ local function AddFrameAnchoringDependents(dependents, settings, targetFrameName
     AddFrameNameDependent(dependents, settings.customTargetFrame, targetFrameName, name .. " Target")
 end
 
-local function AddStandaloneTextureDependents(dependents, group, targetFrameName, name)
-    local settings = GetStandaloneTextureAnchorSettings(group)
+local function AddIndicatorDependents(dependents, group, targetFrameName, name)
+    local settings = IndicatorAnchorOf(group)
     if type(settings) ~= "table" then
         return
     end
@@ -516,8 +516,8 @@ function CooldownCompanion:IsGroupCursorAnchored(groupOrId)
     return self:IsCursorAnchor(group and group.anchor)
 end
 
-function CooldownCompanion:GetStandaloneTextureAnchorSettings(groupOrId)
-    return GetStandaloneTextureAnchorSettings(GetGroup(self, groupOrId))
+function CooldownCompanion:GetIndicatorAnchorSettings(groupOrId)
+    return IndicatorAnchorOf(GetGroup(self, groupOrId))
 end
 
 function CooldownCompanion:GetActivePanelAnchorRelativeTo(groupOrId)
@@ -714,7 +714,7 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
         if type(group) == "table" then
             local name = group.name or ("Panel " .. tostring(id))
             if ST.IsIndicatorGroup(group) then
-                AddStandaloneTextureDependents(dependents, group, targetFrameName, name .. " Indicator")
+                AddIndicatorDependents(dependents, group, targetFrameName, name .. " Indicator")
             end
         end
     end
@@ -842,7 +842,7 @@ function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)
                     group.anchor = BuildRootAnchor("UIParent")
                 end
             end
-            SanitizeStandaloneTextureAnchor(group, targetIsCursorRoot)
+            SanitizeIndicatorAnchor(group, targetIsCursorRoot)
         end
     end
 

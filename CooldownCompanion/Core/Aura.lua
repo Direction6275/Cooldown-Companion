@@ -1175,10 +1175,10 @@ function CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)
 end
 
 -- Shared by native tracking and reminder settings; manual unit overrides win.
-function CooldownCompanion:IsAuraTrackedOnTarget(buttonData, texturePanel)
+function CooldownCompanion:IsAuraTrackedOnTarget(buttonData, isAuraIndicator)
     local unitOverride = GetEntryAuraUnitOverride(buttonData)
     if unitOverride then return unitOverride == "target" end
-    local first = texturePanel and self:ResolveTexturePanelAuraSpellID(buttonData)
+    local first = isAuraIndicator and self:ResolveIndicatorAuraSpellID(buttonData)
         or self:ResolveAuraSpellID(buttonData)
     local unit = ClassifyAuraSpellUnit(first)
     if unit then return unit == "target" end

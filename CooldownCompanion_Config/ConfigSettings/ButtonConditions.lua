@@ -1838,15 +1838,15 @@ local function GetEntryVisibilityFinderState(context)
     if not (group and buttonData) then return nil end
 
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
-    local hideShowConditions = isAuraPanel
+    local skipShowHideRules = isAuraPanel
     local state = {
         group = group,
         buttonData = buttonData,
         isAuraPanel = isAuraPanel,
-        visible = not hideShowConditions,
+        visible = not skipShowHideRules,
     }
     context._ccEntryVisibilityFinderState = state
-    if hideShowConditions then return state end
+    if skipShowHideRules then return state end
 
     local isItem = buttonData.type == "item"
     local passive = buttonData.isPassive == true
@@ -2326,9 +2326,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- family here is keyed to a cooldown, a castability state, charges, item
     -- stacks or equipped state that a pure aura entry never has. The section
     -- would build its header and then pour no rows, so it does not build at all.
-    local hideShowConditions = isAuraPanel
+    local skipShowHideRules = isAuraPanel
 
-    if not hideShowConditions then
+    if not skipShowHideRules then
     -- The families are collected BEFORE the heading is drawn. Which of them
     -- survive is an entry-type answer that can come out empty (a member of an
     -- Aura Only Section: its aura pair leaves with the section, and every other
@@ -2894,7 +2894,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    end -- not hideShowConditions
+    end -- not skipShowHideRules
 end
 
 ------------------------------------------------------------------------
@@ -3190,8 +3190,8 @@ ResolvePanelAlphaAnchorSourceMode = function(groupId, group)
     end
     if not group.parentContainerId then return nil end
 
-    local anchorSettings = CooldownCompanion.GetStandaloneTextureAnchorSettings
-        and CooldownCompanion:GetStandaloneTextureAnchorSettings(group)
+    local anchorSettings = CooldownCompanion.GetIndicatorAnchorSettings
+        and CooldownCompanion:GetIndicatorAnchorSettings(group)
     local relativeTo = anchorSettings and anchorSettings.relativeTo
     if not relativeTo then
         local anchor = group.anchor

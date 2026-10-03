@@ -65,12 +65,10 @@ end
 -- Indicators drive alpha-0 source buttons through this file; those
 -- invisible frames must never become ping receivers (their config tabs do not
 -- expose the toggle, and a converted panel keeps its old style keys).
-local function IsStandaloneTexturePanelButton(button)
+local function IsIndicatorSourceButton(button)
     local groups = CooldownCompanion.db and CooldownCompanion.db.profile.groups
     local group = groups and button._groupId and groups[button._groupId]
-    return group ~= nil
-        and CooldownCompanion.IsStandaloneTexturePanelGroup ~= nil
-        and CooldownCompanion:IsStandaloneTexturePanelGroup(group)
+    return ST.IsIndicatorGroup(group)
 end
 
 -- Shared helpers from ButtonFrame/Helpers.lua
@@ -1169,7 +1167,7 @@ function CooldownCompanion:UpdateButtonInteraction(button, style)
     local showTooltips = style.showTooltips == true and not cursorAnchored
     local allowPings = style.allowPings == true and not cursorAnchored
         and IsEntryPingEligible(button.buttonData)
-        and not IsStandaloneTexturePanelButton(button)
+        and not IsIndicatorSourceButton(button)
     local disableClicks = true
     local disableMotion = not (showTooltips or allowPings)
 

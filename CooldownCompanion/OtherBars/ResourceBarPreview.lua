@@ -34,7 +34,7 @@ local CreateFrame = CreateFrame
 local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local RESOURCE_OVERLAY_HOLDER_LEVEL = RB.RESOURCE_OVERLAY_HOLDER_LEVEL
-local PREVIEW_STACKS = RB.CUSTOM_AURA_BAR_EFFECT_PREVIEW_STACKS
+local PREVIEW_STACKS = RB.RESOURCE_AURA_PREVIEW_STACKS
 -- How wounded the player is while a health-effect preview runs. The effect
 -- bars are sized as shares of the real maximum, so this leaves them room.
 local HEALTH_EFFECT_PREVIEW_FILL = 0.65

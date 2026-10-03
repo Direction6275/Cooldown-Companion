@@ -56,7 +56,7 @@ end
 
 local function ResolveConfiguredAuraSpellID(buttonData)
     return CooldownCompanion:ResolveAuraSpellID(buttonData)
-        or CooldownCompanion:ResolveTexturePanelAuraSpellID(buttonData)
+        or CooldownCompanion:ResolveIndicatorAuraSpellID(buttonData)
 end
 
 -- The user's explicit unit override, when set. Absolute over every derived
