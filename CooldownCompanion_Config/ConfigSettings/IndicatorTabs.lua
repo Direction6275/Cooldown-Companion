@@ -1006,7 +1006,7 @@ function ST._BuildIndicatorTab(container, group, tab)
     local changed = MakeChanged(group)
     I.Initialize(group)
     if tab == "loadconditions" then BuildWhenToShow(container,group,changed)
-    elseif not I.Primary(group) then Hint(container,"Add spells, items, or one aura in the field at the top.")
+    elseif not I.Primary(group) then Hint(container,"Add spells, items, or auras in the field at the top.")
     elseif tab == "appearance" then BuildAppearance(container,group,changed)
     elseif tab == "effects" then
         -- One effect grammar for every source; aura rows omit the controls

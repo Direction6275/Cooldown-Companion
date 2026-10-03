@@ -814,10 +814,33 @@ local function SyncAuraTextureControlLevels(host, raiseAboveWrapper)
     end
 end
 
+-- The header sits on the host's top edge and the coordinates on its bottom.
+-- A Text Indicator with no background shows only its text, so both hug the
+-- text instead (Indicator.TextContentInsets); otherwise the box edges. Only
+-- the chrome moves: the outline, clicks, snapping and anchoring keep the box.
+-- Re-anchored only when the insets change.
+local function AnchorAuraTextureDragChrome(host)
+    local _, group = GetTextureHostPositionContext(host)
+    local topInset, bottomInset
+    if ST.IsIndicatorGroup(group) then topInset, bottomInset = ST.Indicator.TextContentInsets(group) end
+    topInset, bottomInset = topInset or 0, bottomInset or 0
+    if host._ccChromeTopInset == topInset and host._ccChromeBottomInset == bottomInset then return end
+    host._ccChromeTopInset, host._ccChromeBottomInset = topInset, bottomInset
+    host.dragHandle:ClearAllPoints()
+    host.dragHandle:SetPoint("BOTTOMLEFT", host, "TOPLEFT", 0, 2 - topInset)
+    host.dragHandle:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", 0, 2 - topInset)
+    host.coordLabel:ClearAllPoints()
+    host.coordLabel:SetPoint("TOPLEFT", host, "BOTTOMLEFT", 0, bottomInset - 2)
+    host.coordLabel:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", 0, bottomInset - 2)
+end
+
 local function SetAuraTextureDragControlsShown(host, shown, unlockGhost)
     if not host then return end
     shown = shown == true and not InCombatLockdown() and not CooldownCompanion._combatForcedLock
-    if shown then EnsureAuraTextureDragHandle(host) end
+    if shown then
+        EnsureAuraTextureDragHandle(host)
+        AnchorAuraTextureDragChrome(host)
+    end
     if host.dragHandle then
         host.dragHandle:SetIgnoreParentAlpha(shown and unlockGhost == true)
         host.dragHandle:SetShown(shown)

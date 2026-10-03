@@ -269,6 +269,50 @@ local function ReadoutAnchor(options, key)
     return options[key .. "Anchor"] or (key == "label" and "TOP" or key == "count" and "BOTTOM" or "CENTER")
 end
 
+-- The saved choice to show a readout; `missing` (a presence picture) has no
+-- timer or count.
+local function ReadoutShown(group, options, key, missing)
+    return key == "label" and options.label ~= "none"
+        or key == "timer" and options.timer == true and not missing
+        or key == "count" and not missing and (I.IsAura(group) and options.count == "stacks"
+            or not I.IsAura(group) and (options.count == "charges" or options.count == "item"))
+end
+
+-- A Text display with no visible background is just its text: how far that
+-- text sits inside the box's top and bottom edges, from saved settings alone
+-- (nothing is measured). Unlock mode hangs its header and coordinates on the
+-- text instead of the box. The label decides when it has text: a timer or
+-- count is usually blank while unlocked (and may be secret), so they count
+-- only without one. Nil when the box itself is what shows (other displays,
+-- a background).
+function I.TextContentInsets(group)
+    local settings = I.Settings(group)
+    if not (settings and settings.displayType == "text") then return end
+    local background = settings.text.textBgColor
+    if background and (background[4] or 1) > 0 then return end
+    local options, boxHeight = settings.readouts, settings.text.height or 48
+    local missing = I.UsesPresence(group)
+    local labeled = ReadoutShown(group, options, "label", missing) and (I.Label(group) or "") ~= ""
+    local top, bottom
+    for _, key in ipairs(READOUT_KEYS) do
+        if (key == "label") == labeled and ReadoutShown(group, options, key, missing) then
+            local _, size = I.ReadoutFont(settings, key)
+            -- A rendered line runs a little past its font size (outline,
+            -- descenders); pad so the chrome clears the glyphs.
+            local line = size * 1.1 + 2
+            local anchor = ReadoutAnchor(options, key)
+            -- Downward from the box's top edge.
+            local anchorY = (anchor:find("TOP") and 0 or anchor:find("BOTTOM") and boxHeight or boxHeight / 2)
+                - (options[key .. "Y"] or 0)
+            local lineTop = anchorY - (anchor:find("TOP") and 0 or anchor:find("BOTTOM") and line or line / 2)
+            top = math.min(top or lineTop, lineTop)
+            bottom = math.max(bottom or lineTop + line, lineTop + line)
+        end
+    end
+    if not top then return end
+    return math.max(0, top), math.max(0, boxHeight - bottom)
+end
+
 -- `font`/`outline` are the shared text font StyleVisual already resolved; only
 -- a readout with its own font or outline needs another lookup.
 local function StyleReadouts(host, group, font, outline)
@@ -294,13 +338,9 @@ local function StyleReadouts(host, group, font, outline)
         fs:SetPoint(anchor, host.visualRoot, anchor, options[key .. "X"] or 0, options[key .. "Y"] or 0)
         fs:SetJustifyH("CENTER")
         fs:SetWordWrap(false)
-        local enabled = key == "label" and options.label ~= "none"
-            or key == "timer" and options.timer == true and not missing
-            or key == "count" and not missing and (I.IsAura(group) and options.count == "stacks"
-                or not I.IsAura(group) and (options.count == "charges" or options.count == "item"))
         -- The native duration binding owns FontString alpha. A separate,
         -- unregistered wrapper owns the saved choice to show this readout.
-        readouts.frames[key]:SetAlpha(enabled and 1 or 0)
+        readouts.frames[key]:SetAlpha(ReadoutShown(group, options, key, missing) and 1 or 0)
     end
     readouts.label:SetText(I.Label(group))
     if missing then
