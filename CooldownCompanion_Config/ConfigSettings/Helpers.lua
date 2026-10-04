@@ -2000,7 +2000,7 @@ ST._AuraScopeTooltips = {
     target = { "Target", "Tracks your debuff on your current target. Use this when detection picks the wrong unit." },
     group = {
         "You and your group",
-        "Only follows auras sourced from you, on you and your party or raid members. Other players' casts are excluded.\n\nBest for one recipient at a time; multiple recipients can overlap. Aura sounds are disabled while grouped. Members joining during combat are included after combat.",
+        "Only follows auras sourced from you, on you and your party or raid members. Other players' casts are excluded.\n\nShowing the aura works best for one recipient at a time; several can overlap. Aura sounds are disabled while grouped. Members joining during combat are included after combat.",
     },
     pet = { "Your pet", "Tracks buffs on your summoned pet, including buffs you apply and buffs the pet gains on its own." },
 }

@@ -2832,7 +2832,12 @@ function Presence.ApplyIdentity(record)
     for _, copy in ipairs(shape.copies) do
         local open = true
         for _, tracker in ipairs(copy.trackers) do
-            if not CanApplySpellIdentityFilter(tracker.unit) then open = false; break end
+            -- A group member who left has no auras, so their tracker stays
+            -- empty and their window open: they simply don't have the buff.
+            if not (tracker.groupScoped and not UnitExists(tracker.unit))
+                and not CanApplySpellIdentityFilter(tracker.unit, tracker.groupScoped) then
+                open = false; break
+            end
         end
         -- A CC frame above only CC drawing: combat-safe to toggle.
         copy.windows[1]:SetShown(open)
@@ -2851,7 +2856,9 @@ function Presence.MatchesToken(record, isMatch)
     return false
 end
 
--- OOC only. `auras` = { {set, unit, active}, ... } in list order; `match`
+-- OOC only. `auras` = { {set, unit, active, groupScoped}, ... } in list
+-- order (a group-tracked aura arrives as one entry per member, all While
+-- Missing, so "all" shows only while nobody has it); `match`
 -- "all" or "any"; `key` names the whole binding (RunAuraRebind). Converges
 -- trackers (one per aura, reused by unit), sizes, the shape's windows and
 -- each tracker's sounds. An unchanged binding only refreshes the sounds.
@@ -2889,7 +2896,14 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
                 container:SetAuraGroupLayout(tracker.key, PresenceLayout(width, height))
                 tracker.width, tracker.height = width, height
             end
-            container:SetAuraGroupCandidateFilters(tracker.key, BuildCandidateFilters(tracker.unit, auras[index].set))
+            -- Trackers are reused by unit, so the scope's contract is set on
+            -- every bind (a no-op when unchanged): group scope counts only
+            -- your own buff, on you as on everyone else.
+            local groupScoped = auras[index].groupScoped == true
+            container:SetAuraGroupFilterString(tracker.key, SlotContract(tracker.unit, groupScoped).filter)
+            container:SetAuraGroupCandidateFilters(tracker.key,
+                BuildCandidateFilters(tracker.unit, auras[index].set, groupScoped))
+            tracker.groupScoped = groupScoped
             if not tracker.bound then container:Show() end
             tracker.bound = true
             -- The Indicator's sounds follow every aura in its list.
@@ -2935,6 +2949,63 @@ function Presence.ParkTracker(tracker)
     tracker.container:Hide()
 end
 
+-- OOC only. A group-tracked picture shows while NOBODY in the group has the
+-- aura: the record's own tracker covers `tokens[1]`, and every further member
+-- gets a tracker and a missing window nested inside the previous one, with the
+-- picture innermost (CC_GroupMissProbe, in combat, 2026-10-04). Links are kept
+-- and reused by unit; the windows are re-parented each bind so only bound
+-- links clip. `tokens` nil (no group) parks every link.
+function Picture.BindChain(record, spellSet, tokens)
+    local chain = record.chain or {}
+    local used, parent = {}, record.clip
+    for index = 2, tokens and #tokens or 0 do
+        local unit = tokens[index]
+        local link
+        for _, candidate in ipairs(chain) do
+            if not used[candidate] and candidate.unit == unit then link = candidate; break end
+        end
+        if not link then
+            local key = record.key .. ":" .. (#chain + 1)
+            link = { unit = unit, key = key, window = Presence.Window(record.cell),
+                container = Presence.NewContainer(record.cell, unit, key, Picture.SPAN, Picture.SPAN) }
+            chain[#chain + 1] = link
+            record.chain = chain
+            NoteRecordToken(unit)
+        end
+        used[link] = true
+        link.container:SetAuraGroupFilterString(link.key, SlotContract(unit, true).filter)
+        link.container:SetAuraGroupCandidateFilters(link.key, BuildCandidateFilters(unit, spellSet, true))
+        if not link.bound then link.container:Show() end
+        link.bound = true
+        link.window:SetParent(parent)
+        Presence.Anchor(link.window, record.cell, link, false)
+        link.window:Show()
+        parent = link.window
+    end
+    for _, link in ipairs(chain) do
+        if not used[link] then
+            Presence.ParkTracker(link)
+            link.window:Hide()
+        end
+    end
+    if record.picture.root:GetParent() ~= parent then record.picture.root:SetParent(parent) end
+end
+
+-- Whether a live picture binding already matches this bind (BindPresence).
+-- The member list rides in wantPresenceKey; the layout is converged apart.
+function Picture.BindingUnchanged(record, buttonData, spellSet, groupScoped)
+    if record.parked or record.boundEntry ~= buttonData or not record.boundSpellSet
+        or record.boundGroupScoped ~= (groupScoped == true)
+        or record.boundPresenceKey ~= record.wantPresenceKey then return false end
+    for spellID in pairs(spellSet) do
+        if not record.boundSpellSet[spellID] then return false end
+    end
+    for spellID in pairs(record.boundSpellSet) do
+        if not spellSet[spellID] then return false end
+    end
+    return true
+end
+
 local function BuildPresenceTracker(record, layer, unit)
     local picture = record.hostKind == "missingPicture"
     local cell = CreateFrame("Frame", nil, record.visibilityRoot, PRESENCE_TEMPLATE)
@@ -2956,6 +3027,7 @@ local function BuildPresenceTracker(record, layer, unit)
     clip:SetPoint("TOPLEFT", container, "TOPRIGHT", 0, 0)
     clip:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", 0, 0)
     record.container = container
+    record.clip = clip
     record.picture = Picture.Build(clip, record.button)
 end
 
@@ -3320,6 +3392,10 @@ local function ParkDisplay(record)
             record.boundPresenceKey = nil
             if record.picture then
                 record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
+                for _, link in ipairs(record.chain or {}) do
+                    Presence.ParkTracker(link)
+                    link.window:Hide()
+                end
                 if record.picture.reminder then record.picture.reminder.boundEntry = nil end
             else
                 if record.boundShape then Presence.ReleaseShape(record.boundShape) end
@@ -3462,9 +3538,10 @@ end
 
 -- OOC only, from the rebind pass. Converges the cell to the saved design
 -- (Indicator.PresenceCell, or Picture.SPAN for a picture) and the trackers to
--- the entry's aura list (a picture: its own spell set). Group (ally) scope
--- never reaches here: neither form has a multi-unit version yet.
-local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style)
+-- the entry's aura list (a picture: its own spell set). Group scope binds
+-- one display for the whole group: an Indicator gets one aura per member
+-- from the pass, a picture its member chain (Picture.BindChain).
+local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style, groupScoped)
     local button = record.button
     local width, height
     if record.picture then
@@ -3483,7 +3560,16 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
             record.container:SetAuraGroupLayout(record.key, PresenceLayout(width, height))
             record.cellWidth = width
         end
-        record.container:SetAuraGroupCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet))
+        -- Setting candidate filters always re-parses, so an unchanged binding
+        -- (same entry, scope, spells and members) keeps its trackers as they
+        -- are; in a raid that is one re-parse per member saved per pass.
+        if not Picture.BindingUnchanged(record, buttonData, spellSet, groupScoped) then
+            -- The record is reused across scopes (keyed by unit), so its
+            -- contract is set on every real bind.
+            record.container:SetAuraGroupFilterString(record.key, SlotContract(unit, groupScoped).filter)
+            record.container:SetAuraGroupCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet, groupScoped))
+            Picture.BindChain(record, spellSet, groupScoped and record.wantGroupTokens or nil)
+        end
         if soundsAllowed then
             RegisterSlotAuraSounds(record, buttonData, spellSet)
         else
@@ -3504,14 +3590,14 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
     record.boundPresenceKey = (record.picture or width) and record.wantPresenceKey or nil
     record.parked = nil
     record.boundEntry = buttonData
-    record.boundGroupScoped = false
+    record.boundGroupScoped = groupScoped == true
     record.boundSpellSet = {}
     for spellID in pairs(spellSet) do record.boundSpellSet[spellID] = true end
     -- A design with no drawable artwork has no cell: stay dark, never guess.
     -- Token refreshes honor the same gate (RefreshSlotIdentityVisibility).
     record.presenceReady = width ~= nil
     if record.picture then
-        record.identityApplicable = CanApplySpellIdentityFilter(unit)
+        record.identityApplicable = CanApplySpellIdentityFilter(unit, groupScoped)
     else
         record.identityApplicable = Presence.ApplyIdentity(record)
     end
@@ -3526,7 +3612,7 @@ end
 
 local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMax, soundsAllowed, groupScoped, textureSettings, textureEffects)
     if PRESENCE_KINDS[record.hostKind] then
-        return BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style)
+        return BindPresence(record, buttonData, spellSet, unit, soundsAllowed, style, groupScoped)
     end
     local button = record.button
     local wasParked = record.parked
@@ -3746,10 +3832,18 @@ function RefreshIdentityVisibilityForToken(isMatch, refreshAuras)
                     end
                 end
             end
-        elseif isMatch(record.unit) then
-            RefreshSlotIdentityVisibility(record)
-            if refreshAuras and not record.parked then
-                record.container:UpdateAllAuras()
+        else
+            if isMatch(record.unit) then
+                RefreshSlotIdentityVisibility(record)
+                if refreshAuras and not record.parked then
+                    record.container:UpdateAllAuras()
+                end
+            end
+            -- A group picture's other members (Picture.BindChain).
+            if refreshAuras and record.chain and not record.parked then
+                for _, link in ipairs(record.chain) do
+                    if link.bound and isMatch(link.unit) then link.container:UpdateAllAuras() end
+                end
             end
         end
     end
@@ -5273,16 +5367,14 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     and buttonData
                     and (buttonData.auraTracking or buttonData.addedAs == "aura")
                 -- While Missing or an aura list: the main aura source gets a
-                -- presence tracker. Group tracking has no presence form yet,
-                -- and a list must share one unit; otherwise it stays dark.
+                -- presence tracker. Group tracking works on a lone aura (one
+                -- tracker per member); a list refusing it stays dark.
                 local presence = ST.Indicator.UsesPresence(group)
                     and buttonData == ST.Indicator.Primary(group)
                     and buttonData.enabled ~= false
-                    and not buttonData.auraTrackGroup
                     and not ST.Indicator.AuraListProblem(group)
                 -- Show While Inactive: a presence tracker uncovers the
-                -- entry's still picture, and no native display is bound. A
-                -- group-tracked entry has no presence form yet and stays dark.
+                -- entry's still picture, and no native display is bound.
                 local missingPicture = standardAura and self:GetAuraVisibilityMode(buttonData) == "missing"
                 if missingPicture and not (self:IsMissingPictureEntry(buttonData)
                     and not ST.IsAuraSectionEntry(group, buttonData)) then
@@ -5306,13 +5398,22 @@ function RunAuraRebind(configEdit, panelIds, resources)
                         for index, aura in ipairs(ST.Indicator.AuraList(group)) do
                             local set = index == 1 and spellSet or self:GetAuraCandidateSpellIDSet(aura, true)
                             if not set then spellSet = nil; break end
-                            local auraUnit = ResolveEntryAuraUnits(self, aura, true)[1]
                             local active = ST.Indicator.IsMultiAura(group) and ST.Indicator.AuraWantsActive(aura)
-                            presenceAuras[index] = { set = set, unit = auraUnit, active = active }
                             local ids = {}
                             for spellID in pairs(set) do ids[#ids + 1] = spellID end
                             table.sort(ids)
-                            keyParts[#keyParts + 1] = auraUnit .. (active and "+" or "-") .. table.concat(ids, ",")
+                            -- Group tracking (a lone aura only, AuraListProblem):
+                            -- one While Missing aura per member under "all", so
+                            -- it shows while nobody has it.
+                            local auraUnits = ResolveEntryAuraUnits(self, aura, true)
+                            local groupScoped = self:GetAuraEntryUnitKind(aura, true) == "group"
+                            for unitIndex = 1, groupScoped and #auraUnits or 1 do
+                                local auraUnit = auraUnits[unitIndex]
+                                presenceAuras[#presenceAuras + 1] = { set = set, unit = auraUnit,
+                                    active = active, groupScoped = groupScoped }
+                                keyParts[#keyParts + 1] = auraUnit .. (groupScoped and "g" or "")
+                                    .. (active and "+" or "-") .. table.concat(ids, ",")
+                            end
                         end
                         presenceKey = table.concat(keyParts, "|")
                     end
@@ -5405,6 +5506,17 @@ function RunAuraRebind(configEdit, panelIds, resources)
         if want.groupScoped then
             EnsureGroupWatcher()
         end
+        -- A presence form draws ONE display for the whole group: one record
+        -- on the first member that binds the rest itself (an Indicator's
+        -- per-member auras, a picture's chain). The member list is in the
+        -- picture's key so a roster change rebinds it.
+        if want.groupScoped and PRESENCE_KINDS[want.hostKind] then
+            want.groupTokens = want.units
+            want.units = { want.units[1] }
+            if want.hostKind == "missingPicture" then
+                want.presenceKey = "group:" .. table.concat(want.groupTokens, ",")
+            end
+        end
         if want.buttonData.auraTrackPet == true
             and want.units[1] ~= "target" then
             EnsurePetWatcher()
@@ -5435,7 +5547,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
         -- register one per member and fire a removed+applied pair every time the
         -- aura moved between people — a false "it dropped" alert. Single-unit
         -- entries keep today's behavior exactly.
-        local soundsAllowed = #want.units == 1 and not want.noSounds
+        local soundsAllowed = #(want.groupTokens or want.units) == 1 and not want.noSounds
         for _, unit in ipairs(want.units) do
             local record = want.records[unit]
                 or EnsureDisplay(want.button, unit, want.groupScoped, want.hostKind)
@@ -5444,6 +5556,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
                 record.wantPresenceAuras = want.presenceAuras
                 record.wantPresenceMatch = want.presenceMatch
                 record.wantPresenceKey = want.presenceKey
+                record.wantGroupTokens = want.groupTokens
                 BindDisplay(record, want.buttonData, want.spellSet, unit,
                     want.style, want.stackBarMax, soundsAllowed, want.groupScoped,
                     want.textureSettings, want.textureEffects)
