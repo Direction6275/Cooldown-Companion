@@ -48,6 +48,17 @@ ST.EDGE_ANCHOR_SPEC = {
     {"TOPLEFT", "TOPRIGHT",    "BOTTOMRIGHT", "BOTTOMRIGHT", -1, -1,  0,  1}, -- Right  (inset to avoid corner overlap)
 }
 
+-- The entry's Override Icon, or nil. The one validity test shared by the CC
+-- icon writer (IconMode) and the aura display's cover (AuraDisplay), so the
+-- two can never disagree about which icon an entry shows.
+function ST.GetEntryManualIcon(buttonData)
+    local manualIcon = buttonData and buttonData.manualIcon
+    if type(manualIcon) == "number" or type(manualIcon) == "string" then
+        return manualIcon
+    end
+    return nil
+end
+
 --------------------------------------------------------------------------------
 -- StatusBar Motion Helpers
 --------------------------------------------------------------------------------

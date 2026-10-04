@@ -1014,13 +1014,41 @@ function CooldownCompanion:IsAuraIconForcedEntry(buttonData)
         and (buttonData.addedAs == "aura" or buttonData.isPassive == true)
 end
 
+local GetEntryManualIcon = ST.GetEntryManualIcon
+
+-- The entry's own picture where no CC icon exists to copy from: its Override
+-- Icon when set, else the spell texture.
+local function GetEntryIconTexture(buttonData)
+    local manualIcon = GetEntryManualIcon(buttonData)
+    if manualIcon then return manualIcon end
+    if buttonData.type == "spell" and buttonData.id then
+        return C_Spell.GetSpellTexture(buttonData.id)
+    end
+    return nil
+end
+
 -- Parity predicate (pre-12.1 ShouldUseActiveAuraIcon): standalone and passive
 -- entries always show the live aura icon (Blizzard writes the aura instance's
 -- icon, so snapshot-empowered DoT icons flip in combat); ordinary entries opt
 -- in via the auraShowAuraIcon style key (whileAuraActive section).
+--
+-- This answers "does the aura layer take over the icon square", which drives
+-- the occluding cover. WHICH picture shows there is ShouldShowLiveAuraIcon.
 local function ShouldShowAuraIcon(buttonData, style)
     return (style ~= nil and style.auraShowAuraIcon == true)
         or CooldownCompanion:IsAuraIconForcedEntry(buttonData)
+end
+
+-- Whether Blizzard's live aura texture is the visible picture during a
+-- takeover. An Override Icon outranks the FORCED live icon: those entries
+-- have no toggle, so the icon choice is the user's only say, and the cover
+-- (which carries that icon) shows through instead. An ordinary entry's
+-- explicit Show Aura Icon opt-in still wins over its Override Icon.
+local function ShouldShowLiveAuraIcon(buttonData, style)
+    if CooldownCompanion:IsAuraIconForcedEntry(buttonData) then
+        return GetEntryManualIcon(buttonData) == nil
+    end
+    return ShouldShowAuraIcon(buttonData, style)
 end
 
 ------------------------------------------------------------------------
@@ -1980,9 +2008,11 @@ local function StyleSlotKit(slot, button, buttonData, style)
     kit.missingCover:SetAlpha(slot.missingIndicator and (not isBar or barIconShown) and 1 or 0)
 
     -- Resource overlays never swap in an aura icon: live's overlay has no
-    -- icon of any kind.
+    -- icon of any kind. A takeover without the live picture (an Override
+    -- Icon on a forced entry) leaves the cover below to show that icon.
     local auraIconShown = not isResourceHost
         and showAuraIcon and (not isBar or barIconShown)
+        and ShouldShowLiveAuraIcon(buttonData, style)
     kit.auraIcon:SetAlpha(auraIconShown and 1 or 0)
     -- The cover occludes the CC icon underneath: always on icon hosts; on bar
     -- hosts only when the icon square participates (aura icon swap enabled,
@@ -2026,8 +2056,9 @@ local function StyleSlotKit(slot, button, buttonData, style)
             ApplyIconTexCoord(kit.iconCover, cropW, cropH, style.iconZoom)
             ApplyIconTexCoord(kit.auraIcon, cropW, cropH, style.iconZoom)
         end
-        if buttonData.type == "spell" and buttonData.id then
-            kit.iconCover:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
+        local entryIcon = GetEntryIconTexture(buttonData)
+        if entryIcon then
+            kit.iconCover:SetTexture(entryIcon)
             coverShown = coverWanted
         end
     end
@@ -4658,7 +4689,8 @@ end
 -- button.icon, and StyleSlotKit reads its texture and crop for the occluding
 -- cover while Blizzard writes the live aura texture into the registered
 -- kit.auraIcon anchored over it. An Aura Panel has no CC button, so the host's
--- own square carries the entry's spell texture with BarMode's square crop and
+-- own square carries the entry's icon (its Override Icon when set, else the
+-- spell texture) with BarMode's square crop and
 -- the styler consumes it unchanged.
 --
 -- Cleared on every other flavor: with no texture on it the styler takes its
@@ -4666,9 +4698,10 @@ end
 -- what icon cells (and squareless bars) have always run.
 ApplyPanelHostIcon = function(pgroup, host, buttonData, style)
     local icon = host.proxy.icon
-    if pgroup.isBar and pgroup.iconShown
-        and buttonData.type == "spell" and buttonData.id then
-        icon:SetTexture(C_Spell.GetSpellTexture(buttonData.id))
+    local entryIcon = pgroup.isBar and pgroup.iconShown
+        and GetEntryIconTexture(buttonData) or nil
+    if entryIcon then
+        icon:SetTexture(entryIcon)
         local ApplyIconTexCoord = ST._ApplyIconTexCoord
         if ApplyIconTexCoord then
             ApplyIconTexCoord(icon, pgroup.iconSize, pgroup.iconSize, style.iconZoom)
