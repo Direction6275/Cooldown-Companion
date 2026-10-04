@@ -1232,23 +1232,27 @@ function CooldownCompanion:GetAuraVisibilityMode(buttonData)
     return "show"
 end
 
--- Show While Inactive. Group tracking has no presence form yet, so a
--- group-tracked entry carrying the key stays a dark shell (fails closed) and
--- the config does not offer the pair together. The panel half of the gate
--- (icons/bars, not an Aura Panel or Aura Only Section) is the caller's: the
--- rebind pass only reaches entries those panels materialize.
+-- Show While Inactive. A group-tracked entry shows while nobody in the
+-- group has the aura (one tracker per member, AuraDisplay). The panel half of
+-- the gate (icons/bars, not an Aura Panel or Aura Only Section) is the
+-- caller's: the rebind pass only reaches entries those panels materialize.
 function CooldownCompanion:IsMissingPictureEntry(buttonData)
     return buttonData ~= nil and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
-        and self:GetAuraVisibilityMode(buttonData) == "missing"
-        and not buttonData.auraTrackGroup or false
+        and self:GetAuraVisibilityMode(buttonData) == "missing" or false
+end
+
+-- Whether a Show While Inactive entry can take Also During Pandemic: never
+-- with group tracking (owner ruling 2026-10-04: unprobed, and whose timer
+-- would it show?). Runtime, config and preview share it.
+function CooldownCompanion:CanUseMissingPicturePandemic(buttonData)
+    return self:IsMissingPictureEntry(buttonData) and not buttonData.auraTrackGroup
 end
 
 -- Also During Pandemic: a Show While Inactive entry that also shows its own
--- active display inside the aura's pandemic window. Only meaningful with a
--- presence form, so it shares that predicate (runtime, config and preview).
+-- active display inside the aura's pandemic window.
 function CooldownCompanion:IsMissingPicturePandemicEntry(buttonData)
-    return self:IsMissingPictureEntry(buttonData) and buttonData.showWhileAuraPandemic == true
+    return self:CanUseMissingPicturePandemic(buttonData) and buttonData.showWhileAuraPandemic == true
 end
 
 -- Resting alpha for a shell entry. Hide wins when both keys are somehow set,

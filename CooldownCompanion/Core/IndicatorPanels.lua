@@ -100,8 +100,8 @@ end
 
 -- While Missing: nothing is read. A hidden tracker sized by Blizzard opens a
 -- clip window over a CC-drawn display only while the aura is absent
--- (AuraDisplay "presence"). Group (ally) tracking is not supported yet and
--- fails closed.
+-- (AuraDisplay "presence"). With group tracking it shows while nobody in the
+-- group has the aura (one tracker per member).
 function I.ShowsWhileMissing(group)
     return I.IsAura(group) and not I.IsMultiAura(group)
         and AuraWhenOf(I.Primary(group)) == "missing" or false
@@ -130,7 +130,8 @@ end
 -- Also During Pandemic (a lone aura While Missing): the aura's own native
 -- display also shows inside its pandemic window, gated by Blizzard
 -- (AuraDisplay "pandemicIndicatorAura"). Saved on the aura entry, the same key a
--- panel entry uses (showWhileAuraPandemic). Group tracking has no form.
+-- panel entry uses (showWhileAuraPandemic). Never with group tracking (owner
+-- ruling 2026-10-04).
 function I.AlsoDuringPandemic(group)
     if not I.ShowsWhileMissing(group) then return false end
     local source = I.Primary(group)
@@ -150,8 +151,8 @@ function I.AuraUnit(entry)
     return Addon:GetAuraEntryUnitKind(entry)
 end
 
--- Each aura in a list has its own tracker on its own unit, but group
--- tracking (several units per aura) has no presence form. Why `auras` (two or
+-- Each aura in a list has its own tracker on its own unit; group tracking
+-- (one tracker per member) works on a lone aura only. Why `auras` (two or
 -- more) can't be tracked together, as an EffectFailureText key, or nil.
 local function AuraListRefusal(auras)
     if #auras < 2 then return end

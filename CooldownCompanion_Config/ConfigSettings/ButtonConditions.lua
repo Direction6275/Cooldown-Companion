@@ -1906,7 +1906,7 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
         -- The row's own eligibility (PandemicEligible): the runtime's
         -- presence predicate, inside the aura pair's panels.
         applies = EntryVisibilityApplies(function(state)
-            return state.auraPair and CooldownCompanion:IsMissingPictureEntry(state.buttonData)
+            return state.auraPair and CooldownCompanion:CanUseMissingPicturePandemic(state.buttonData)
         end),
     },
     cooldownVisibility = {
@@ -2544,27 +2544,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- pair as well as the row families below.
     if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
         and not isAuraPanel then
-        -- Show While Inactive has no group-tracked form yet (that needs a
-        -- tracker per group member), so it is offered only while no selected
-        -- entry tracks a group. A stored one always shows, so it can be left.
-        local function NotGroupTracked(bd) return bd.auraTrackGroup ~= true end
-        local function HasMissingMode(bd)
-            return FilterAuraEntry(bd) and CooldownCompanion:GetAuraVisibilityMode(bd) == "missing"
-        end
-        local offerMissing
-        if isBatch then
-            offerMissing = not AnySelectedMatch(function(bd) return FilterAuraEntry(bd) and not NotGroupTracked(bd) end)
-                or AnySelectedMatch(HasMissingMode)
-        else
-            offerMissing = NotGroupTracked(buttonData)
-                or CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing"
-        end
-        local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show While Active" }
-        local auraOrder = { "show", "dim", "hide" }
-        if offerMissing then
-            auraList.missing = "Show While Inactive"
-            auraOrder[#auraOrder + 1] = "missing"
-        end
+        local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show While Active",
+            missing = "Show While Inactive" }
+        local auraOrder = { "show", "dim", "hide", "missing" }
         -- Visibility is independent of missing-aura effects.
         AddFamily(1, function(column)
             AddVisibilityDropdown(column, {
@@ -2576,17 +2558,14 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 tooltip = BuildVisibilityModeTooltip("Aura Visibility", {
                     {"Normal keeps the entry's usual presentation. Dim While Inactive dims a missing aura; Show While Active hides it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
-                    {"Show While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target.", 1, 1, 1, true},
+                    {"Show While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target. Tracked on your group, it shows while nobody has it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
                     {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
                 }, true),
                 write = function(value)
-                    -- Group-tracked entries can't take Show While Inactive,
-                    -- so that pick leaves them exactly as they were.
-                    local eligible = value == "missing" and NotGroupTracked or nil
-                    ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil, eligible)
-                    ApplyToAuraEntries("auraShellDim", value == "dim" or nil, eligible)
-                    ApplyToAuraEntries("showWhileAuraMissing", value == "missing" or nil, eligible)
+                    ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
+                    ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
+                    ApplyToAuraEntries("showWhileAuraMissing", value == "missing" or nil)
                     -- Its pandemic option goes with it, so a later pick never
                     -- brings it back unseen.
                     if value ~= "missing" then ApplyToAuraEntries("showWhileAuraPandemic", nil) end
@@ -2596,9 +2575,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 end,
             })
             -- Also During Pandemic: only under Show While Inactive, never with
-            -- group tracking (no presence form for it).
+            -- group tracking.
             local function PandemicEligible(bd)
-                return FilterAuraEntry(bd) and CooldownCompanion:IsMissingPictureEntry(bd)
+                return FilterAuraEntry(bd) and CooldownCompanion:CanUseMissingPicturePandemic(bd)
             end
             local offerPandemic
             if isBatch then offerPandemic = AnySelectedMatch(PandemicEligible)
@@ -2631,13 +2610,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                         CooldownCompanion:RefreshConfigPanel()
                     end,
                 })
-            end
-            -- Stored together only by imported or copied data: say why the
-            -- entry never shows.
-            if not isBatch and buttonData.auraTrackGroup == true
-                and CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing" then
-                AddLabelRow(column, { label = "Show While Inactive", indent = true,
-                    controlText = "Not with group tracking" })
             end
         end)
     end

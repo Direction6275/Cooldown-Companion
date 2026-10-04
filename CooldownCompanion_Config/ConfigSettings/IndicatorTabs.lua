@@ -437,9 +437,9 @@ local function AddTrackedOn(column, group, source, changed)
     local automaticSource = CopyTable(source)
     automaticSource.auraUnitOverride = nil
     local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
-    -- Presence-drawn auras have no group form yet: Group is offered only if saved.
+    -- An aura list has no group form: Group is offered there only if saved.
     local order = {"automatic","player","target","group","pet"}
-    if I.UsesPresence(group) and not source.auraTrackGroup then table.remove(order, 4) end
+    if I.IsMultiAura(group) and not source.auraTrackGroup then table.remove(order, 4) end
     Dropdown(column, {setting=whenToShow.unit, indent=true,
         list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
             player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
@@ -520,14 +520,12 @@ local function AddAuraWhen(column, group, entry, changed)
     if not compare then max = I.StackMax(group) end
     local current = I.AuraWhen(group)
     local missing = current == "missing"
-    -- While Missing has no group form yet: not offered on Group tracking.
-    local order = {"active"}
-    if missing or not entry.auraTrackGroup then order[2] = "missing" end
+    local order = {"active", "missing"}
     for _, choice in ipairs(STACK_CHOICES) do
         if max or choice == current then order[#order + 1] = choice end
     end
     local tooltip = {"When", {"While Active shows whenever this aura is on.", 1, 1, 1, true},
-        " ", {"While Missing shows only while it is off, with no timer or count. A target aura needs a hostile target.", 1, 1, 1, true}}
+        " ", {"While Missing shows only while it is off, with no timer or count. A target aura needs a hostile target. Tracked on your group, it shows while nobody has it.", 1, 1, 1, true}}
     if max then
         tooltip[#tooltip + 1] = " "
         tooltip[#tooltip + 1] = {"A stack choice also needs the aura's stacks to pass. At Max Stacks follows the aura's maximum from the game.", 1, 1, 1, true}
@@ -542,9 +540,8 @@ local function AddAuraWhen(column, group, entry, changed)
             changed(true)
         end})
     if missing then
-        if entry.auraTrackGroup then
-            Hint(column, "While Missing doesn't work with Group tracking yet, so this stays hidden.")
-        else
+        -- Also During Pandemic has no group form (owner ruling 2026-10-04).
+        if not entry.auraTrackGroup then
             Check(column, {setting=whenToShow.auraPandemic, indent=true, value=entry.showWhileAuraPandemic == true,
                 tooltip={"Also During Pandemic",
                     {"Also shows the Indicator near the end of the aura, in the window where recasting keeps the leftover time.", 1, 1, 1, true},
@@ -716,7 +713,6 @@ function ST._GetIndicatorSourceControls(group)
             local compare, count, max = I.StackRule(group)
             item.auraRule = I.AuraWhenLabel(group)
             item.auraRuleNever = I.StackRuleOutcome(compare, count, max) == "never"
-                or I.UsesPresence(group) and entry.auraTrackGroup == true
                 or I.AuraListProblem(group) ~= nil
         elseif item.aura then
             -- Later auras read joined by the list's Match.
