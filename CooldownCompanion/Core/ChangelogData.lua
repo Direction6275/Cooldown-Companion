@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.9",
         "2.8",
         "2.7.2",
         "2.7.1",
@@ -46,6 +47,37 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.9"] = {
+            markdown = [[
+## New Features
+
+- **Missing-aura reminders:** Aura Indicators can show **While Missing**, and icon and bar panel entries can use **Show While Inactive**, so you get a reminder when a buff drops or your debuff isn't on the target. Works in combat; target auras need a hostile target. With group tracking, they show while nobody in your party or raid has your buff.
+- **Also During Pandemic:** Missing-aura Indicators and Show While Inactive entries can also return in the aura's refresh window with their normal timer and look. Recasting hides them again. Not available with group tracking.
+- **Smarter aura Indicators:** One Indicator can check several auras, each with its own When and unit, combined with **All** or **Any**. Spell and item rules can apply on top, and new stack rules (At Least, Fewer Than, Exactly, At Max Stacks) show it at a stack count.
+- **Indicator timers and pandemic visuals:** Indicators get Low Time timer colors, a Pandemic effect and marker, and several effects at once on aura Indicators. Texture and Text Indicators recolor during the pandemic window. The Live Preview's new Countdown option shows these kick in.
+
+## Polish | QoL
+
+- **One set of bar options:** Bar panels, the cast bar, resource bars, and Health share the same appearance, segment, and text settings. Attached bars follow their panel's look unless you Customize them, and settings search still finds moved or renamed rows.
+    - **Check your attached bars:** An attached cast bar or resource bar you styled on its own now takes its panel's look, such as texture and fill direction. The Blizzard cast bar border, cast icon size, class textures, and resource fonts carry over. Use Customize to restore a different look.
+- **Shared segment gaps:** One Segment Gap slider controls charges, aura stacks, and attached resources, with per-entry Customize. Standalone aura stacks get adjustable pixel gaps.
+- **Cooldown swipe:** The swipe toggles now draw the fill themselves, replacing Show Swipe Fill. Set Swipe Fill Opacity to 0 for an edge-only swipe.
+- **Indicator settings match panels:** Indicators use the same Layout, Appearance, Effects, and Visibility tabs. Rules live under Visibility, where single sources and rules can be removed, and label, timer, and count text each get their own font.
+- **Three-column config:** The config window always uses the three-column layout and opens wider. The stacked layout and its option are gone.
+- **Text Indicators in unlock mode:** Coordinates now sit right under the text instead of well below it.
+
+## Bug Fixes
+
+- **Aura bar backgrounds:** Aura-only bars keep their configured background color and transparency with Bar Shows Stacks on, and dimmed aura entries keep the intended opacity.
+- **Shrink / Expand:** Aura Indicators now match the Live Preview in game, growing from the center with the border following the icon.
+- **One-pixel borders:** Border Thickness Mode shows One-pixel when Profile One-pixel Borders is on, instead of a mode that isn't drawn.
+
+## Performance
+
+- **Smoother unlock mode:** Hovering panels, groups, and names no longer stutters, and entering or leaving unlock mode no longer stalls.
+- **Faster settings clicks:** Ticking checkboxes, switching between icons and bars, and picking groups or panels no longer briefly freeze the game.
+]],
+        },
         ["2.8"] = {
             markdown = [[
 ## New Features
