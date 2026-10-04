@@ -904,8 +904,8 @@ function CooldownCompanion:UpdateButtonIcon(button, totemTexture)
 
     -- Manual icon override: replaces base icon. (The 12.1 aura icon swap is
     -- Blizzard-driven on the aura display layer — see Core/AuraDisplay.lua.)
-    local manualIcon = buttonData.manualIcon
-    if type(manualIcon) == "number" or type(manualIcon) == "string" then
+    local manualIcon = ST.GetEntryManualIcon(buttonData)
+    if manualIcon then
         icon = manualIcon
         hasIcon = true
     end
