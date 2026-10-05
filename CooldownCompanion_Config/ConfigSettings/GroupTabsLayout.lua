@@ -245,6 +245,14 @@ local function GetLayoutFinderState(context)
     state.relativePoint = not isIndicator and targetMode ~= "cursor"
     state.xOffset = true
     state.yOffset = true
+    if isIndicator and ST.Indicator.IsNameplate(group) then
+        for _, key in ipairs({ "anchorPanel", "anchorFrame", "panelPoint", "anchorPoint",
+            "displayPoint", "targetPoint", "screenPoint", "relativePoint", "xOffset", "yOffset" }) do
+            state[key] = false
+        end
+        state.nameplate = true
+        state.nameplateRow = ST.Indicator.IsMultiAura(group)
+    end
 
     -- Structural, not compactLayout state: the gear now builds with Compact
     -- Mode off too, opening its panel read-only behind the Turn On footer, so
@@ -314,7 +322,7 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     LAYOUT_FINDER.anchor = anchor:Settings({
-        target = { label = "Anchor Target", aliases = { "anchor mode" }, applies = LayoutFinderFlag("anchorTarget") },
+        target = { label = "Anchor Target", aliases = { "anchor mode", "nameplates", "enemy nameplates" }, applies = LayoutFinderFlag("anchorTarget") },
         panel = { label = "Anchor to Panel", aliases = { "parent panel" }, applies = LayoutFinderFlag("anchorPanel") },
         frame = { label = "Anchor to Frame", aliases = { "relative frame" }, applies = LayoutFinderFlag("anchorFrame") },
         autoAnchor = { label = "Include in Auto-Anchoring", aliases = { "auto anchor" }, applies = LayoutFinderFlag("autoAnchor") },
@@ -353,6 +361,25 @@ if ST._DefineSettingRoute then
         relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
         xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("xOffset") },
         yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("yOffset") },
+    })
+
+    -- A Nameplate Reminder sits on the nameplate instead (same section).
+    local nameplate = ST._DefineSettingRoute({
+        idPrefix = "panel.layout.nameplate",
+        scope = PRIMARY_LAYOUT_SCOPE,
+        tab = "layout",
+        tabLabel = "Layout",
+        section = "nameplate",
+        sectionLabel = "Position",
+        collapseKeys = { "layout_anchor" },
+        rowScope = "primary",
+    })
+    LAYOUT_FINDER.nameplate = nameplate:Settings({
+        side = { label = "Position on Nameplate", aliases = { "nameplate", "above", "below", "anchor" },
+            applies = LayoutFinderFlag("nameplate") },
+        xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("nameplate") },
+        yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("nameplate") },
+        spacing = { label = "Spacing", aliases = { "gap", "dot spacing" }, applies = LayoutFinderFlag("nameplateRow") },
     })
 
     local arrangement = ST._DefineSettingRoute({
@@ -662,6 +689,55 @@ local function BuildGridArrangement(container, group, layoutCount)
     end
 end
 
+-- A Nameplate Reminder has no screen position or mover: it sits on a side
+-- of each enemy nameplate, plus an offset (owner ruling 2026-10-04). Its
+-- saved screen position stays for a move back.
+local function AddNameplatePlacementRows(column, group, groupId)
+    local I = ST.Indicator
+    local placement = I.NameplatePlacement(group)
+    local function Changed()
+        CooldownCompanion:RequestAuraRebind("style", groupId)
+        if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
+    end
+    AddDropdownRow(column, {
+        label = "Position on Nameplate",
+        setting = LAYOUT_FINDER.nameplate and LAYOUT_FINDER.nameplate.side,
+        list = I.NAMEPLATE_SIDE_LABELS,
+        order = I.NAMEPLATE_SIDE_ORDER,
+        value = placement.side,
+        tooltip = { "Position on Nameplate",
+            { "Which side of each enemy nameplate the reminder sits on. It scales and fades with the nameplate.", 1, 1, 1, true } },
+        onChange = function(value)
+            placement.side = value
+            Changed()
+        end,
+    })
+    AddOffsetSliders(column, placement, "x", "y", { x = 0, y = 0, range = 300, step = 1 }, Changed, {
+        row = true,
+        previewRefresh = function()
+            if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
+        end,
+        settings = LAYOUT_FINDER.nameplate and {
+            x = LAYOUT_FINDER.nameplate.xOffset,
+            y = LAYOUT_FINDER.nameplate.yOffset,
+        },
+    })
+    -- Several DoTs sit in a row, each in its own spot.
+    if I.IsMultiAura(group) then
+        AddSliderRow(column, {
+            label = "Spacing",
+            setting = LAYOUT_FINDER.nameplate and LAYOUT_FINDER.nameplate.spacing,
+            min = 0, max = 30, step = 1,
+            value = placement.spacing,
+            tooltip = { "Spacing", { "The gap between the DoT icons in the row.", 1, 1, 1, true } },
+            onRelease = function(value)
+                placement.spacing = value
+                Changed()
+            end,
+        })
+    end
+end
+
 local function BuildLayoutTab(container)
     for _, elem in ipairs(appearanceTabElements) do
         elem:ClearAllPoints()
@@ -787,6 +863,24 @@ local function BuildLayoutTab(container)
         if not canUseCursorAnchor then
             anchorTargetList.cursor = nil
         end
+        -- Enemy Nameplates is an Anchor Target (owner ruling 2026-10-04): an
+        -- aura Indicator's DoTs on every enemy nameplate. The saved screen
+        -- anchor underneath (targetMode) stays for a move back.
+        local I = ST.Indicator
+        local onPlates = I.IsNameplate(group)
+        -- Always listed, greyed with the reason when this Indicator can't go
+        -- there (owner ruling 2026-10-05), so it can be found.
+        local offerPlates = true
+        local platesRefusal = offerPlates and not onPlates and I.NameplateRefusal(group, textureGroupId)
+        local shownMode = onPlates and "nameplates" or targetMode
+        if offerPlates then
+            anchorTargetList.nameplates = "Enemy Nameplates"
+            anchorTargetOrder[#anchorTargetOrder + 1] = "nameplates"
+        end
+        local function PlatesChanged()
+            CooldownCompanion:RefreshGroupFrame(textureGroupId)
+            CooldownCompanion:RequestAuraRebind("style", textureGroupId)
+        end
 
         -- ============================================================
         -- Position (what this texture hangs off, and where it sits there)
@@ -803,14 +897,37 @@ local function BuildLayoutTab(container)
         -- empty, as it does elsewhere on this tab.
         local anchorLeft = BeginRowGrid(container)
 
-        AddDropdownRow(anchorLeft, {
+        local anchorTargetRow = AddDropdownRow(anchorLeft, {
             label = "Anchor Target",
             setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.target,
             list = anchorTargetList,
             order = anchorTargetOrder,
-            value = targetMode,
+            value = shownMode,
             onChange = function(val, widget)
-                if val == targetMode then return end
+                if val == shownMode then return end
+                if val == "nameplates" then
+                    if platesRefusal then
+                        CooldownCompanion:Print(platesRefusal)
+                        widget:SetValue(shownMode)
+                        return
+                    end
+                    local notice = I.MoveToNameplates(group)
+                    if notice then CooldownCompanion:Print(notice) end
+                    PlatesChanged()
+                    CooldownCompanion:RefreshConfigPanel()
+                    return
+                end
+                if onPlates then
+                    -- Off nameplates: the DoTs stay, as a Target list.
+                    local left = I.LeaveNameplates(group)
+                    if left then CooldownCompanion:Print(left) end
+                    PlatesChanged()
+                    -- Back to the saved anchor, its screen spot unchanged.
+                    if val == targetMode then
+                        CooldownCompanion:RefreshConfigPanel()
+                        return
+                    end
+                end
                 if val == "cursor" then
                     if not canUseCursorAnchor then
                         widget:SetValue("group")
@@ -848,7 +965,17 @@ local function BuildLayoutTab(container)
             end,
         })
 
-        if targetMode == "panel" then
+        if offerPlates then
+            if platesRefusal then anchorTargetRow:SetItemDisabled("nameplates", true) end
+            ST._AddDropdownItemTooltips(anchorTargetRow, {nameplates = {"Enemy Nameplates", platesRefusal
+                or "Shows each of this Indicator's debuffs on every enemy nameplate while it's missing from that mob. Only while you're in combat, on mobs in combat, and never on minor ones."}})
+        end
+
+        if onPlates then
+            AddNameplatePlacementRows(anchorLeft, group, textureGroupId)
+        end
+
+        if targetMode == "panel" and not onPlates then
             local panelAnchorRow = AddDropdownRow(anchorLeft, {
                 label = "Anchor to Panel",
                 setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
@@ -871,7 +998,7 @@ local function BuildLayoutTab(container)
             panelAnchorRow:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
         end
 
-        if targetMode == "frame" then
+        if targetMode == "frame" and not onPlates then
             -- A frame name needs the whole 140px control column to stay
             -- readable, so Pick does not share it: the editbox row takes a
             -- grid of its own and Pick sits at the head of that grid's right
@@ -935,6 +1062,8 @@ local function BuildLayoutTab(container)
             frameRight:AddChild(pickRow)
         end
         end -- not anchorCollapsed
+        -- On nameplates the placement rows above are the whole position.
+        if onPlates then return end
 
         -- Points and offsets, under the same heading as the target above.
         -- Cursor anchoring pins the relative point; it is a stored setting,

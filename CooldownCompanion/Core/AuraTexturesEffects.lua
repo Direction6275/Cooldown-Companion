@@ -445,9 +445,20 @@ local function EnsureTextureIndicatorAnimation(host, effectType)
         scaleAnim:SetOrigin("CENTER", 0, 0)
         animData.scale = scaleAnim
     elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
-        local translation = group:CreateAnimation("Translation")
-        translation:SetOffset(0, DEFAULT_TEXTURE_BOUNCE_PIXELS)
-        animData.translation = translation
+        -- Rise then fall in one repeating group, Blizzard's pattern for
+        -- back-and-forth moves (sequential Translations add up, so the loop
+        -- ends where it starts). A BOUNCE-looped single Translation hitched
+        -- where it turned at the top (owner report 2026-10-04).
+        group:SetLooping("REPEAT")
+        local rise = group:CreateAnimation("Translation")
+        rise:SetOrder(1)
+        rise:SetSmoothing("OUT")
+        rise:SetOffset(0, DEFAULT_TEXTURE_BOUNCE_PIXELS)
+        local fall = group:CreateAnimation("Translation")
+        fall:SetOrder(2)
+        fall:SetSmoothing("IN")
+        fall:SetOffset(0, -DEFAULT_TEXTURE_BOUNCE_PIXELS)
+        animData.translation, animData.fall = rise, fall
     end
 
     host._textureIndicatorAnimations[effectType] = animData
@@ -478,7 +489,8 @@ local function SetAnimatedBounce(host, active, speed, amplitude)
     animData.group:Stop()
     animData.translation:SetOffset(0, amplitude)
     animData.translation:SetDuration(speed / 2)
-    animData.translation:SetSmoothing("OUT")
+    animData.fall:SetOffset(0, -amplitude)
+    animData.fall:SetDuration(speed / 2)
     animData.group:Play()
     host._ccBounceKey = key
 end
@@ -946,6 +958,42 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
     else
         StopTextureColorShift(host)
     end
+end
+
+-- A nameplate reminder's missing look (AuraDisplay's plate watchers, the
+-- target-plate view): `effects` from Indicator.NameplateEffects, nil to stop.
+-- Only AnimationGroup effects (the host is a presence host, so Bounce and
+-- Color Shift take their animated paths), and the bounce is sized from the
+-- saved `height`: the host may hang off a nameplate, which can't be measured.
+function CooldownCompanion:ApplyNameplateEffects(host, effects, height)
+    if not host or not host.visualRoot then return end
+    effects = effects or {}
+    SetTextureIndicatorBaseVisuals(host)
+    local amplitude = math_max(6, math_min(DEFAULT_TEXTURE_BOUNCE_PIXELS,
+        (height and height > 0 and height or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
+    SetTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_PULSE, effects.pulse ~= nil,
+        effects.pulse and effects.pulse.speed or nil)
+    SetTextureIndicatorAnimation(host, TEXTURE_INDICATOR_EFFECT_BOUNCE, effects.bounce ~= nil,
+        effects.bounce and effects.bounce.speed or nil, amplitude)
+    -- Always from a clean start: the animated path skips an unchanged key,
+    -- and a parked watcher's groups were stopped under that same key.
+    StopTextureColorShift(host)
+    if effects.colorShift then
+        StartTextureColorShift(host, effects.colorShift.color, effects.colorShift.speed)
+    end
+end
+
+-- The AnimationGroups a nameplate host has playing, so its watcher can stop
+-- them while parked and play them again while on a mob.
+function CooldownCompanion:CollectPlayingEffectGroups(host, into)
+    into = into or {}
+    for _, animData in pairs(host and host._textureIndicatorAnimations or {}) do
+        if animData.group:IsPlaying() then into[#into + 1] = animData.group end
+    end
+    for _, entry in pairs(host and host._ccColorShiftGroups or {}) do
+        if entry.group:IsPlaying() then into[#into + 1] = entry.group end
+    end
+    return into
 end
 
 AT.LayoutTexturePieces = LayoutTexturePieces

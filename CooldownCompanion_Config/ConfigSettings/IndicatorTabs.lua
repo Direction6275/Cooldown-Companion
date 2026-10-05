@@ -95,16 +95,17 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
     -- and any extra spell/item sources with their rules.
     conditions={label="When to Show",aliases={"show when","conditions","rules","ready","on cooldown","always"},
         applies=Applies(function() return true end)},
-    unit={label="Tracked on",aliases={"aura unit","unit"},applies=Applies(function(g) return I.IsAura(g) end)},
+    unit={label="Tracked on",aliases={"aura unit","unit","nameplate","enemy nameplates"},applies=Applies(function(g) return I.IsAura(g) end)},
     auraWhen={label="When",aliases={"stacks","stack count","at least","fewer than","exactly","max stacks","while active",
         "while missing","missing","inactive"},
-        applies=Applies(function(g) return I.IsAura(g) and not I.IsMultiAura(g) end)},
+        applies=Applies(function(g) return I.IsAura(g) and not I.IsMultiAura(g) and not I.IsNameplate(g) end)},
     auraMatch={label="Match",aliases={"all","any","and","or","several auras","multiple auras"},
-        applies=Applies(function(g) return I.IsMultiAura(g) end)},
+        applies=Applies(function(g) return I.IsMultiAura(g) and not I.IsNameplate(g) end)},
     auraEntryWhen={label="When",aliases={"while active","while missing","missing","inactive"},
-        applies=Applies(function(g) return I.IsMultiAura(g) end)},
+        applies=Applies(function(g) return I.IsMultiAura(g) and not I.IsNameplate(g) end)},
     auraPandemic={label="Also During Pandemic",aliases={"pandemic window","refresh window","while missing or pandemic"},
-        applies=Applies(function(g) return I.ShowsWhileMissing(g) and I.Primary(g).auraTrackGroup ~= true end)},
+        applies=Applies(function(g) return I.IsNameplate(g)
+            or I.ShowsWhileMissing(g) and I.Primary(g).auraTrackGroup ~= true end)},
     stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
         local compare = I.StackCompare(g)
         return compare ~= nil and compare ~= "max"
@@ -114,7 +115,8 @@ local soundRoute = ST._DefineSettingRoute({
     idPrefix="panel.indicator.sounds",scope="panel",rowScope="primary",tab="effects",tabLabel="Effects",
     section="sounds",sectionLabel="Sound Alerts",
     collapseKeys=function(context) return {tostring(context.groupId).."_nil_soundalerts"} end,
-    applies=Applies(function(g) return not Addon.IsEquipmentSlotEntry(I.Primary(g)) end),
+    -- Nameplate reminders play no sounds (owner ruling 2026-10-04).
+    applies=Applies(function(g) return not Addon.IsEquipmentSlotEntry(I.Primary(g)) and not I.IsNameplate(g) end),
 })
 local soundDefinitions = {
     sourceSounds={label="Sound Events",applies=Applies(function(g) return not I.IsAura(g) and I.Primary(g).type == "spell" end)},
@@ -179,14 +181,22 @@ end
 -- glow on Icon artwork, a recolor on Texture and Text) and the marker (on
 -- the duration text) rows.
 local auraOnly = Applies(function(g) return I.ShowsLiveDisplay(g) end)
-local auraArtwork = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" end)
+local auraArtwork = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" and not I.IsNameplate(g) end)
 local auraTimer = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.readouts.timer == true end)
 local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", {applies=auraOnly}):Settings({
     effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic","pandemic recolor"},
-        applies=Applies(function(g) return I.ShowsLiveDisplay(g) and I.PandemicEffectApplies(g) end)},
-    -- Texture and Text recolor in the effect color (Icons glow).
+        applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and I.PandemicEffectApplies(g)
+            and not (I.IsNameplate(g) and s.displayType == "icon") end)},
+    -- Texture and Text recolor in the effect color (Icons glow; a nameplate
+    -- Icon is outlined in it instead, under its own row names).
     color={label="Pandemic Color",aliases={"pandemic recolor","pandemic tint"},
         applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType ~= "icon"
+            and I.PandemicEffectApplies(g) and I.PandemicEffectOn(g) end)},
+    border={label="Border",aliases={"pandemic border","pandemic outline","pandemic effect"},
+        applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and I.PandemicEffectApplies(g)
+            and I.IsNameplate(g) and s.displayType == "icon" end)},
+    borderColor={label="Border Color",aliases={"pandemic color","pandemic border color"},
+        applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and I.IsNameplate(g) and s.displayType == "icon"
             and I.PandemicEffectApplies(g) and I.PandemicEffectOn(g) end)},
     marker={label="Pandemic Marker",aliases={"pandemic"},applies=auraTimer},
 })
@@ -196,14 +206,15 @@ end
 local function GlowUses(...)
     local styles = {}
     for index = 1, select("#", ...) do styles[select(index, ...)] = true end
-    return Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" and styles[PandemicGlowStyle(s)] == true end)
+    return Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" and not I.IsNameplate(g)
+        and styles[PandemicGlowStyle(s)] == true end)
 end
 -- Same rows the panel's Pandemic Effect gear draws for these styles.
 local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicGlow", advancedKey="indicatorPandemicGlow", applies=auraArtwork}):Settings({
     style={label="Glow Style"},
     color={label="Effect Color",applies=Applies(function(g,s)
-        return I.ShowsLiveDisplay(g) and s.displayType == "icon" and PandemicGlowStyle(s) ~= "cdm" end)},
+        return I.ShowsLiveDisplay(g) and s.displayType == "icon" and not I.IsNameplate(g) and PandemicGlowStyle(s) ~= "cdm" end)},
     color2={label="Second Color",applies=GlowUses("colorShift")},
     borderSize={label="Border Size",applies=GlowUses("solid","pulse","colorShift")},
     pulseDuration={label="Pulse Duration",applies=GlowUses("pulse")},
@@ -363,6 +374,20 @@ local function ClaimRuleFocus(row, clause)
     if CS.pendingSettingHighlight then CS.pendingSettingHighlight.settingWidget = row end
 end
 
+-- An aura's rule clicked in the preview: the same trip, landing on that
+-- aura's own row (its When, or a nameplate DoT's name).
+local function OpenAuraRule(entry)
+    CS.indicatorRuleFocus = entry and {aura=entry} or nil
+    ST._NavigateToFinderSetting(whenToShow.conditions.id)
+end
+
+local function ClaimAuraFocus(row, entry)
+    local focus = CS.indicatorRuleFocus
+    if not (row and focus and focus.aura == entry) then return end
+    CS.indicatorRuleFocus = nil
+    if CS.pendingSettingHighlight then CS.pendingSettingHighlight.settingWidget = row end
+end
+
 local CHANGE_HOVER_COLOR = {1, 0.82, 0}
 
 -- A small flat icon action after a row's label (CDC-RowIconBadge): the
@@ -440,18 +465,25 @@ local function AddTrackedOn(column, group, source, changed)
     -- An aura list has no group form: Group is offered there only if saved.
     local order = {"automatic","player","target","group","pet"}
     if I.IsMultiAura(group) and not source.auraTrackGroup then table.remove(order, 4) end
+    -- Enemy Nameplates is chosen in Layout > Anchor Target (owner ruling
+    -- 2026-10-04). It is listed here only where a saved flag drifted out of a
+    -- nameplate Indicator, so it can be switched back.
+    local nameplateSaved = source.auraTrackNameplates == true
+    if nameplateSaved then table.insert(order, 4, "nameplates") end
     Dropdown(column, {setting=whenToShow.unit, indent=true,
         list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
-            player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
+            player="Player",target="Target",nameplates="Enemy Nameplates",group="Group (Your Buffs)",pet="Pet"},
         order=order,
-        value=source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
+        value=nameplateSaved and "nameplates" or source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
             or source.auraUnitOverride or "automatic",
         onChange=function(value)
             local function Apply(entry)
                 entry.auraUnitOverride=(value == "player" or value == "target") and value or nil
                 entry.auraTrackGroup = value == "group" or nil
                 entry.auraTrackPet = value == "pet" or nil
+                entry.auraTrackNameplates = value == "nameplates" or nil
                 if entry.auraTrackGroup or entry.auraTrackPet then entry.auraUnitOverride = "player" end
+                if entry.auraTrackNameplates then entry.auraUnitOverride = "target" end
                 entry.auraUnit=Addon:ResolveStandaloneAuraDefaultUnit(entry)
             end
             -- A list never checks the same aura twice on one unit.
@@ -496,7 +528,7 @@ local function AddListedAuraWhen(column, group, entry, changed)
     local current = I.AuraWantsActive(entry) and "active" or "missing"
     -- The Finder row lands on the main aura's When, at the top of the list;
     -- one descriptor can address one widget.
-    Dropdown(column, {setting=entry == I.Primary(group) and whenToShow.auraEntryWhen or nil,
+    local row = Dropdown(column, {setting=entry == I.Primary(group) and whenToShow.auraEntryWhen or nil,
         label="When", indent=true, list=AURA_ENTRY_WHEN_LIST,
         order={"active", "missing"}, value=current,
         tooltip={"When", {"While Active counts this aura while it is on; While Missing while it is off.", 1, 1, 1, true}},
@@ -505,6 +537,7 @@ local function AddListedAuraWhen(column, group, entry, changed)
             I.SetAuraEntryWhen(group, entry, value)
             changed(true)
         end})
+    ClaimAuraFocus(row, entry)
 end
 
 -- The aura's one rule: While Active, or a stack count it must reach, stay
@@ -530,7 +563,7 @@ local function AddAuraWhen(column, group, entry, changed)
         tooltip[#tooltip + 1] = " "
         tooltip[#tooltip + 1] = {"A stack choice also needs the aura's stacks to pass. At Max Stacks follows the aura's maximum from the game.", 1, 1, 1, true}
     end
-    Dropdown(column, {setting=whenToShow.auraWhen, indent=true, list=AURA_WHEN_LIST, order=order,
+    local whenRow = Dropdown(column, {setting=whenToShow.auraWhen, indent=true, list=AURA_WHEN_LIST, order=order,
         value=current, tooltip=tooltip,
         onChange=function(value)
             if value == current then return end
@@ -539,6 +572,7 @@ local function AddAuraWhen(column, group, entry, changed)
             if notice then Addon:Print(notice) end
             changed(true)
         end})
+    ClaimAuraFocus(whenRow, entry)
     if missing then
         -- Also During Pandemic has no group form (owner ruling 2026-10-04).
         if not entry.auraTrackGroup then
@@ -550,7 +584,9 @@ local function AddAuraWhen(column, group, entry, changed)
                     " ",
                     {"Effects set to Only In Combat play on the missing look only.", 1, 1, 1, true}},
                 onChange=function(value)
-                    entry.showWhileAuraPandemic = value or nil
+                    -- Off is saved as false, so a move onto nameplates
+                    -- (which turns unset DoTs on) keeps the choice.
+                    entry.showWhileAuraPandemic = value == true
                     changed(true)
                 end})
         end
@@ -584,10 +620,58 @@ end
 -- several, the main aura also holds Match, and every listed aura has its own
 -- When and Tracked On plus Promote and Remove. Spell/item sources of an aura
 -- Indicator are never made main (CanBeMainSource).
+-- One DoT's Also During Pandemic in a nameplate row (on by default).
+local NAMEPLATE_PANDEMIC_TOOLTIP = {"Also During Pandemic",
+    {"Also shows this DoT's icon near the end of the DoT, in the window where recasting keeps the leftover time.", 1, 1, 1, true},
+    " ",
+    {"Only auras with that window use it; leave it off for others.", 1, 1, 1, true}}
+local function AddNameplateDoTPandemic(column, group, entry, changed)
+    Check(column, {setting=entry == I.Primary(group) and whenToShow.auraPandemic or nil,
+        label="Also During Pandemic", indent=true, value=entry.showWhileAuraPandemic == true,
+        tooltip=NAMEPLATE_PANDEMIC_TOOLTIP,
+        onChange=function(value)
+            -- "Off" is kept, so a DoT moved to another row stays off.
+            entry.showWhileAuraPandemic = value == true
+            changed(true)
+        end})
+end
+
 local function BuildSourceRules(container, group, entry, changed)
     local primary = entry == I.Primary(group)
     local column = ST._BeginRowGrid(container)
     local name = SourceName(entry, ST._GetButtonIcon(entry))
+    -- A nameplate row: every aura is a DoT with its own icon, always While
+    -- Missing and on nameplates, so its rows are just the DoT and its
+    -- pandemic box. Tracked On is plain text: Layout > Anchor Target moves
+    -- the Indicator on and off nameplates (owner ruling 2026-10-04).
+    local nameplateRow = I.IsNameplate(group)
+    if nameplateRow and primary then
+        local row = Label(column, {label=name,
+            controlText=KIND_COLOR..(I.IsMultiAura(group) and "First in row" or "Shown on display").."|r"})
+        AddMainSourceBadges(row, group, entry, changed)
+        ClaimAuraFocus(row, entry)
+        Label(column, {label="Tracked on", indent=true, setting=whenToShow.unit, controlText="Enemy Nameplates",
+            tooltip={"Tracked on", {"Each enemy nameplate's mob. Change it in Layout, Anchor Target.", 1, 1, 1, true}}})
+        if ST._NameplateReminders and ST._NameplateReminders.IsOverCap(CS.selectedGroup) then
+            Hint(column, ("Only %d DoTs show on nameplates at once, so some here are off."):format(ST._NameplateReminders.MAX_DOTS))
+        end
+        AddNameplateDoTPandemic(column, group, entry, changed)
+        return
+    elseif nameplateRow and I.IsListedAura(group, entry) then
+        local row = Label(column, {label=name})
+        ClaimAuraFocus(row, entry)
+        RowBadge(row, {"Move to First", "Shows this DoT first in the row."},
+            function() if I.PromoteAura(group, entry) then changed(true) end end,
+            "uitools-icon-chevron-down", CHANGE_HOVER_COLOR, math.pi)
+        RowBadge(row, {"Remove DoT", "Removes this DoT from the row."}, function()
+            local removed, reason, notice = I.RemoveSource(group, entry)
+            if reason then Addon:Print(I.EffectFailureText[reason]) end
+            if notice then Addon:Print(notice) end
+            if removed then changed(true) end
+        end)
+        AddNameplateDoTPandemic(column, group, entry, changed)
+        return
+    end
     if primary then
         local row = Label(column, {label=name, controlText=KIND_COLOR.."Shown on display|r"})
         AddMainSourceBadges(row, group, entry, changed)
@@ -689,6 +773,7 @@ function ST._GetIndicatorSourceControls(group)
     local model = {
         replacing = replacing, disabled = group.enabled == false,
         openRule = OpenRule,
+        openAuraRule = OpenAuraRule,
         sources = {},
     }
     -- An Icon display showing this same icon as its artwork already names the
@@ -707,8 +792,13 @@ function ST._GetIndicatorSourceControls(group)
         -- auras in a list read joined by Match); spell/item sources carry
         -- their rules.
         local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
-            aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}}
-        if item.aura and primary then
+            aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}, entry=entry}
+        if item.aura and I.IsNameplate(group) then
+            -- A nameplate row: every DoT is its own reminder, no Match.
+            item.auraRule = "Missing, on nameplates"
+            item.auraRuleNever = I.AuraListProblem(group) ~= nil
+            item.enabled = true
+        elseif item.aura and primary then
             -- A rule the aura's max rules out reads as a warning.
             local compare, count, max = I.StackRule(group)
             item.auraRule = I.AuraWhenLabel(group)
@@ -773,6 +863,9 @@ local function BuildWhenToShow(container, group, changed)
     for _, entry in ipairs(group.buttons or {}) do
         if not I.IsListedAura(group, entry) then BuildSourceRules(container, group, entry, changed) end
     end
+    -- A preview click's row was built just now or isn't here at all: either
+    -- way the request ends, so a later visit highlights nothing stale.
+    CS.indicatorRuleFocus = nil
 end
 
 local function BuildReadoutGear(panel, group, key, changed)
@@ -835,37 +928,45 @@ local function BuildPandemic(container, group, changed)
     local r, p = settings.readouts, settings.pandemic
     -- Icons glow, Texture and Text recolor; Text needs a label or timer to.
     local showEffect, showMarker = I.PandemicEffectApplies(group), r.timer == true
-    local glow = settings.displayType == "icon"
+    local nameplate = I.IsNameplate(group)
+    local glow = settings.displayType == "icon" and not nameplate
+    -- A nameplate Icon is outlined (StylePandemicBorder), under its own names.
+    local border = nameplate and settings.displayType == "icon"
     if not showMarker and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicMarker"})
     end
     if not glow and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicGlow"})
     end
-    if not (showEffect or showMarker) then return end
-    local _, collapsed = Section(container,"Pandemic","indicator_pandemic")
+    -- A nameplate reminder's refresh window also holds its own effects.
+    if not (showEffect or showMarker or nameplate) then return end
+    local _, collapsed = Section(container,nameplate and "Pandemic Window" or "Pandemic","indicator_pandemic")
     if collapsed then return end
     local column = ST._BeginRowGrid(container)
     local groupId = CS.selectedGroup
     local function refresh() changed() end
     local enabled = I.PandemicEffectOn(group)
-    local row = showEffect and Check(column,{setting=pandemic.effect,value=enabled,onChange=function(value)
+    local row = showEffect and Check(column,{setting=border and pandemic.border or pandemic.effect,
+        label=border and "Border" or nil,value=enabled,onChange=function(value)
         p.pandemicEffectEnabled = value and true or false
         changed(true)
     end})
     -- No effect row on Text with neither label nor timer: nothing to recolor.
     if row and not glow then
         local texture = settings.displayType == "texture"
+        local icon = settings.displayType == "icon"
         ST._AnchorRowBadge(row, ST._CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
-            "Pandemic Effect",
-            {texture and "Recolors the texture while its aura is in the refresh window, where recasting adds bonus time."
+            border and "Border" or "Pandemic Effect",
+            {icon and "Outlines the icon while its aura is in the refresh window, where recasting adds bonus time."
+                or texture and "Recolors the texture while its aura is in the refresh window, where recasting adds bonus time."
                 or "Recolors the text while its aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {texture and "Auras that gain no time when refreshed never show it."
+            {(icon or texture) and "Auras that gain no time when refreshed never show it."
                 or "On auras that gain no time when refreshed, only the timer recolors, in its last 30%.", 1, 1, 1, true},
         }, CS.tabInfoButtons))
         if enabled then
-            ST._AddColorRow(column,{setting=pandemic.color,tbl=p,key="pandemicGlowColor",
+            ST._AddColorRow(column,{setting=border and pandemic.borderColor or pandemic.color,
+                label=border and "Border Color" or nil,tbl=p,key="pandemicGlowColor",
                 default=CopyTable(ST.DEFAULT_PANDEMIC_COLOR),indent=true,onConfirm=function() changed(true) end})
         end
     elseif row then
@@ -888,6 +989,9 @@ local function BuildPandemic(container, group, changed)
             {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         }, CS.tabInfoButtons))
     end
+    -- Then the window's own Pulse, Color Shift and Bounce (owner ruling
+    -- 2026-10-04: effects grouped by look, each look its own settings).
+    if nameplate then ST._BuildNameplatePandemicEffects(column, group) end
     if showMarker then
         local row = ST._AddPandemicMarkerControls(column, r, function() changed(true); return true end, refresh,
             {enableOnly=true, defaultMode="off", setting=pandemic.marker})
@@ -946,9 +1050,16 @@ local function BuildAppearance(container, group, changed)
     local _, displayCollapsed = Section(container,"Display","indicator_display")
     if not displayCollapsed then
         local column = ST._BeginRowGrid(container)
-        Dropdown(column,{setting=display.displayType,list={icon="Icon",texture="Texture",text="Text"},
+        -- A nameplate row of DoTs shows as icons only (owner ruling 2026-10-04).
+        local iconOnly = I.IsNameplate(group) and I.IsMultiAura(group)
+        local displayRow = Dropdown(column,{setting=display.displayType,list={icon="Icon",texture="Texture",text="Text"},
             order={"icon","texture","text"},value=settings.displayType,
             onChange=function(value)
+                if iconOnly and value ~= "icon" then
+                    Addon:Print("Several DoTs show as icons. Remove the other DoTs to use Texture or Text.")
+                    changed(true)
+                    return
+                end
                 I.SetDisplayType(group,value)
                 -- Text Only has no pandemic glow; don't leave its editor open.
                 if value == "text" and CS.CloseAdvancedSettingsPanel then
@@ -956,14 +1067,23 @@ local function BuildAppearance(container, group, changed)
                 end
                 changed(true)
             end})
+        if iconOnly then
+            local tooltip = {"Icon only", "Several DoTs show as icons, so each spot shows which DoT it is."}
+            displayRow:SetItemDisabled("texture", true)
+            displayRow:SetItemDisabled("text", true)
+            ST._AddDropdownItemTooltips(displayRow, {texture=tooltip, text=tooltip})
+        end
         if settings.displayType == "icon" then
-            local actions = {{text="Choose...",onClick=function() ST._OpenIndicatorIconPicker(CS.selectedGroup) end}}
-            -- Only a chosen icon has anything to reset.
-            if settings.icon.manualIcon then
-                actions[2] = {text="Reset",tooltip={"Reset Icon","Use the source's icon again."},
-                    onClick=function() settings.icon.manualIcon=nil; changed(true) end}
+            -- A row's spots each show their own DoT: no icon to choose.
+            if not iconOnly then
+                local actions = {{text="Choose...",onClick=function() ST._OpenIndicatorIconPicker(CS.selectedGroup) end}}
+                -- Only a chosen icon has anything to reset.
+                if settings.icon.manualIcon then
+                    actions[2] = {text="Reset",tooltip={"Reset Icon","Use the source's icon again."},
+                        onClick=function() settings.icon.manualIcon=nil; changed(true) end}
+                end
+                Label(column,{label="Icon",controlWidget=ActionStrip(actions)})
             end
-            Label(column,{label="Icon",controlWidget=ActionStrip(actions)})
         elseif settings.displayType == "texture" then
             Label(column,{label="Texture",controlWidget=ActionStrip({{text="Choose...",
                 onClick=function() ST._OpenIndicatorTexturePicker(CS.selectedGroup) end}})})
@@ -1007,8 +1127,15 @@ function ST._BuildIndicatorTab(container, group, tab)
     elseif tab == "effects" then
         -- One effect grammar for every source; aura rows omit the controls
         -- that would start or stop effects on their own.
+        -- Nameplate reminders animate (Pulse, Bounce, Color Shift) but play
+        -- no sounds (owner rulings 2026-10-04).
+        local nameplate = I.IsNameplate(group)
         ST._BuildIndicatorEffectsTab(container,group)
-        if I.ShowsLiveDisplay(group) then BuildPandemic(container,group,changed) end
+        if I.ShowsLiveDisplay(group) then BuildPandemic(container,group,changed)
+        elseif nameplate then
+            Hint(container,"Turn on Also During Pandemic in Visibility to style the refresh window.")
+        end
+        if nameplate then return end
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
             Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
                 list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},

@@ -717,6 +717,7 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         ST.Indicator.ReleaseVisual(preview.indicatorSurface)
         preview.indicatorSurface:Hide()
     end
+    if preview.indicatorPlate then preview.indicatorPlate:Hide() end
     if preview.indicatorCard then preview.indicatorCard.frame:Hide() end
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     -- Every Indicator footer row, so none lingers over another panel's preview.

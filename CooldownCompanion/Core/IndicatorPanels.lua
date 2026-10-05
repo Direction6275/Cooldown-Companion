@@ -133,10 +133,222 @@ end
 -- panel entry uses (showWhileAuraPandemic). Never with group tracking (owner
 -- ruling 2026-10-04).
 function I.AlsoDuringPandemic(group)
+    -- Nameplate Reminders keep it per DoT: on while any DoT has it.
+    if I.IsNameplate(group) then
+        for _, aura in ipairs(I.AuraList(group)) do
+            if aura.showWhileAuraPandemic == true then return true end
+        end
+        return false
+    end
     if not I.ShowsWhileMissing(group) then return false end
     local source = I.Primary(group)
     -- Same group rule as the presence tracker it rides (AuraDisplay rebind).
     return source.showWhileAuraPandemic == true and source.auraTrackGroup ~= true
+end
+
+-- Nameplate Reminders (Core/NameplateReminders.lua): While Missing DoTs drawn
+-- on every qualifying enemy nameplate instead of on screen, one icon per DoT
+-- in a row (owner rulings 2026-10-04). Saved on each aura as
+-- `auraTrackNameplates`, always beside auraUnitOverride "target", so every
+-- unit reader (identity gate, previews, an older build) still sees ordinary
+-- target auras and the routing is decided here alone. With several DoTs the
+-- aura list is the row, never an All / Any match.
+function I.IsNameplate(group)
+    if not I.IsAura(group) then return false end
+    local source = I.Primary(group)
+    return source ~= nil and source.auraTrackNameplates == true and AuraWhenOf(source) == "missing"
+        and I.AuraUnit(source) == "target"
+end
+
+local function FlagNameplateAura(entry)
+    entry.auraTrackNameplates = true
+    entry.auraUnitOverride = "target"
+    entry.auraTrackGroup, entry.auraTrackPet = nil, nil
+    entry.auraUnit = "target"
+end
+
+-- One of your debuffs, the only kind a nameplate row takes: a spell aura
+-- whose automatic unit (any Tracked On override aside) is Target.
+local function IsOwnDebuff(entry)
+    if entry.addedAs ~= "aura" or entry.type ~= "spell" then return false end
+    local automatic = {}
+    for key, value in pairs(entry) do automatic[key] = value end
+    automatic.auraUnitOverride = nil
+    return Addon:ResolveStandaloneAuraDefaultUnit(automatic) == "target"
+end
+
+-- The most DoTs that can run on nameplates at once, across every nameplate
+-- Indicator (owner ruling 2026-10-04): each costs its own watcher bank.
+I.MAX_NAMEPLATE_DOTS = 5
+
+-- Where a nameplate Indicator sits on the plate: a side of the plate's base
+-- frame plus an offset. Kept apart from `signal`, which keeps the on-screen
+-- position for a switch back. Created on first read.
+-- Corners (owner ruling 2026-10-04) sit above or below the plate, lined up
+-- with that edge, and grow inward along it.
+I.NAMEPLATE_SIDE_ORDER = {"above", "below", "left", "right",
+    "topleft", "topright", "bottomleft", "bottomright", "center"}
+I.NAMEPLATE_SIDE_LABELS = {above = "Above", below = "Below", left = "Left", right = "Right",
+    topleft = "Top Left", topright = "Top Right", bottomleft = "Bottom Left", bottomright = "Bottom Right",
+    center = "Center"}
+-- Which way a side's row grows from its first DoT: -1 leftward, 1
+-- rightward, nil centered on the anchor.
+local NAMEPLATE_GROWTH = {left = -1, topright = -1, bottomright = -1,
+    right = 1, topleft = 1, bottomleft = 1}
+I.NAMEPLATE_GROWTH = NAMEPLATE_GROWTH
+function I.NameplatePlacement(group)
+    local settings = I.Settings(group)
+    if not settings then return end
+    local placement = settings.nameplate
+    if type(placement) ~= "table" then
+        placement = {}
+        settings.nameplate = placement
+    end
+    if not I.NAMEPLATE_SIDE_LABELS[placement.side] then placement.side = "above" end
+    placement.x = tonumber(placement.x) or 0
+    placement.y = tonumber(placement.y) or 0
+    placement.spacing = tonumber(placement.spacing) or 2
+    return placement
+end
+
+-- Where DoT `index` of `count` sits along the row, from the row's anchor:
+-- centered rows above, below or on the plate; rows that grow outward from
+-- the plate's side. Fixed spots: a refreshed DoT leaves its gap (aura state
+-- is secret, so the row can't close up).
+function I.NameplateSpotOffset(group, index, count)
+    local placement = I.NameplatePlacement(group)
+    local step = I.DisplaySize(group) + placement.spacing
+    local growth = NAMEPLATE_GROWTH[placement.side]
+    if growth then return growth * (index - 1) * step end
+    return (index - (count + 1) / 2) * step
+end
+
+function I.NameplateRowWidth(group)
+    local width = I.DisplaySize(group)
+    local count = math.max(1, #I.AuraList(group))
+    return count * width + (count - 1) * I.NameplatePlacement(group).spacing
+end
+
+-- The display's drawn size from saved settings (nothing is measured).
+function I.DisplaySize(group)
+    local visual = I.NativeSettings(group)
+    local geometry = visual and visual.enabled ~= false and Addon:GetIndicatorTextureRenderGeometry(visual)
+    if not geometry then return 0, 0 end
+    return geometry.boundsWidth or 0, geometry.boundsHeight or 0
+end
+
+-- A new nameplate reminder starts beside the ones already on that side of
+-- the plate (owner ruling 2026-10-04), then keeps its spot: gaps stay.
+-- `others` are the profile's other nameplate Indicators.
+function I.PlaceBesideNameplates(group, others)
+    local placement = I.NameplatePlacement(group)
+    local side = placement.side
+    -- How far the other rows on this side reach along their growth: leftward
+    -- or rightward from the anchor, to the right for centered ones.
+    local growth = NAMEPLATE_GROWTH[side]
+    local reach
+    for _, other in ipairs(others) do
+        local theirs = I.NameplatePlacement(other)
+        if theirs.side == side then
+            local row = I.NameplateRowWidth(other)
+            local edge = growth == -1 and row - theirs.x
+                or growth == 1 and theirs.x + row
+                or theirs.x + row / 2
+            reach = math.max(reach or edge, edge)
+        end
+    end
+    if not reach then placement.x = 0; return end
+    if growth == -1 then placement.x = -math.floor(reach + 2 + 0.5)
+    elseif growth == 1 then placement.x = math.floor(reach + 2 + 0.5)
+    else placement.x = math.floor(reach + 2 + I.NameplateRowWidth(group) / 2 + 0.5) end
+end
+
+-- Starts a reminder that just moved onto nameplates beside the profile's
+-- other nameplate reminders on that side of the plate.
+function I.PlaceNewNameplateReminder(group)
+    local others = {}
+    for _, other in pairs(Addon.db.profile.groups) do
+        if other ~= group and I.IsNameplate(other) then others[#others + 1] = other end
+    end
+    I.PlaceBesideNameplates(group, others)
+end
+
+-- Enemy Nameplates is an Anchor Target (owner ruling 2026-10-04, Layout).
+-- Why this Indicator can't move there right now, or nil: every source is a
+-- debuff of yours (each becomes a DoT in the row), several show as Icons,
+-- and the DoT cap has room. `groupId` is left out of the running count.
+function I.NameplateRefusal(group, groupId)
+    local auras = I.AuraList(group)
+    local sources = #(group.buttons or {})
+    if sources == 0 then return "Add one of your debuffs first, such as a DoT." end
+    if #auras == 0 then return "Only your debuffs can show on nameplates. This Indicator tracks spells or items." end
+    if #auras ~= sources then
+        return "Only your debuffs can show on nameplates. Remove this Indicator's other sources first."
+    end
+    for _, aura in ipairs(auras) do
+        if not IsOwnDebuff(aura) then return I.EffectFailureText.indicator_nameplate_debuff end
+    end
+    if #auras > 1 and I.Settings(group).displayType ~= "icon" then
+        return I.EffectFailureText.indicator_nameplate_icon
+    end
+    local reminders = ST._NameplateReminders
+    local running = reminders and reminders.RunningDoTCount(groupId) or 0
+    if running + #auras > I.MAX_NAMEPLATE_DOTS then
+        return ("Up to %d DoTs can show on nameplates at once. Remove one from another nameplate Indicator first.")
+            :format(I.MAX_NAMEPLATE_DOTS)
+    end
+end
+
+-- Why no DoT can be added to a nameplate Indicator right now, or nil: the
+-- config greys its add box with this text (owner ruling 2026-10-05). Any add
+-- makes a row of several DoTs, which must be Icons, and the DoT cap needs
+-- room (its own DoTs counted from saved data, the others from the last
+-- rebind). Change... is never blocked: it keeps the count.
+function I.NameplateAddBlock(group, groupId)
+    if not I.IsNameplate(group) then return end
+    -- Short enough for the add box's single line.
+    if I.Settings(group).displayType ~= "icon" then return "Switch to Icon to add DoTs" end
+    local reminders = ST._NameplateReminders
+    local running = (reminders and reminders.RunningDoTCount(groupId) or 0) + #I.AuraList(group)
+    if running >= I.MAX_NAMEPLATE_DOTS then
+        return ("Max %d DoTs on nameplates"):format(I.MAX_NAMEPLATE_DOTS)
+    end
+end
+
+-- The Indicator moves onto Enemy Nameplates: every aura becomes a DoT in the
+-- row, on a target override, While Missing. Every move turns Also During
+-- Pandemic on where it is unset (a nameplate row saves off as false, so a
+-- choice made there survives); the first one also starts beside the other
+-- reminders. Returns the effects notice SetAuraWhen gives, if any.
+function I.MoveToNameplates(group)
+    local firstTime = type(I.Settings(group).nameplate) ~= "table"
+    local primary = I.Primary(group)
+    local notice
+    for _, aura in ipairs(I.AuraList(group)) do
+        FlagNameplateAura(aura)
+        if aura == primary then notice = I.SetAuraWhen(group, "missing") end
+        aura.indicatorStackRule = {compare = "missing"}
+        if aura.showWhileAuraPandemic == nil then aura.showWhileAuraPandemic = true end
+    end
+    if firstTime then I.PlaceNewNameplateReminder(group) end
+    -- SetAuraWhen adapts only when its own change moves the family.
+    local adapted = I.AdaptEffectsToFamily(group)
+    if notice and adapted then return notice .. " " .. adapted end
+    return notice or adapted
+end
+
+-- The Indicator leaves Enemy Nameplates (another Anchor Target): its DoTs
+-- stay, tracked on Target While Missing, and several become a list shown
+-- while any is missing. Pandemic choices stay for a move back.
+function I.LeaveNameplates(group)
+    local auras = I.AuraList(group)
+    for _, aura in ipairs(auras) do
+        aura.auraTrackNameplates = nil
+        aura.auraUnit = Addon:ResolveStandaloneAuraDefaultUnit(aura)
+    end
+    if #auras > 1 then I.Settings(group).auraMatch = "any" end
+    ST._NameplateTargetView.Refresh()
+    return I.AdaptEffectsToFamily(group)
 end
 
 -- The aura's live display can show (always, or in its pandemic window): the
@@ -154,10 +366,19 @@ end
 -- Each aura in a list has its own tracker on its own unit; group tracking
 -- (one tracker per member) works on a lone aura only. Why `auras` (two or
 -- more) can't be tracked together, as an EffectFailureText key, or nil.
-local function AuraListRefusal(auras)
+-- `arriving` (optional): auras joining a non-nameplate Indicator, which drop
+-- their nameplate flag on arrival (I.OnSourceAdded).
+local function AuraListRefusal(auras, arriving)
     if #auras < 2 then return end
     for _, aura in ipairs(auras) do
         if I.AuraUnit(aura) == "group" then return "indicator_aura_group" end
+    end
+    local function OnPlates(aura)
+        return aura.auraTrackNameplates == true and not (arriving and arriving[aura])
+    end
+    local onPlates = OnPlates(auras[1])
+    for _, aura in ipairs(auras) do
+        if OnPlates(aura) ~= onPlates then return "indicator_aura_nameplate" end
     end
 end
 
@@ -170,7 +391,11 @@ end
 -- Which effect rules apply: native auras run Always only; presence-drawn
 -- auras may add Only In Combat (CC draws them, but nothing they would animate
 -- on is the aura's own state); spell and item sources also get Animate When.
+-- Nameplate reminders are their own family: Pulse, Bounce and Color Shift
+-- as AnimationGroups, set per look (owner rulings 2026-10-04): the saved
+-- `effects` play While Missing, `pandemic.effects` in the refresh window.
 function I.EffectFamily(group)
+    if I.IsNameplate(group) then return "nameplate" end
     if I.IsNativeAura(group) then return "aura" end
     return I.UsesPresence(group) and "missing" or "conditions"
 end
@@ -296,7 +521,12 @@ I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
     indicator_effects_conditions = "Aura Indicators can't use Animate When or Only In Combat. Set each effect to Always with Only In Combat off first.",
     indicator_effects_missing = "Indicators that show While Missing or check several auras can't use Animate When. Set each effect to Always first.",
+    indicator_effects_nameplate = "Nameplate reminders can't use Shrink / Expand. Turn it off first.",
     indicator_aura_group = "Group tracking works with a single aura per Indicator.",
+    indicator_aura_nameplate = "A nameplate reminder's sources are all your DoTs on enemy nameplates.",
+    indicator_nameplate_debuff = "Nameplate reminders track your debuffs only: no buffs, spells or items.",
+    indicator_nameplate_icon = "Several DoTs show as icons. Set Display As to Icon first.",
+    indicator_nameplate_cap = ("Up to %d DoTs can show on nameplates at once."):format(I.MAX_NAMEPLATE_DOTS),
     indicator_aura_change = "This Indicator checks several auras, so it can only change to another aura. Remove the other auras first to use a spell or item.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
 }
@@ -350,23 +580,36 @@ function I.CheckEffects(effects, tracking, displayType)
     if not tracking then return true end
     for _, key in ipairs(I.EffectOrder) do
         if effects[key] and effects[key].enabled == true then
+            if tracking == "nameplate" and key == "shrinkExpand" then
+                return false, "indicator_effects_nameplate"
+            end
             local conditional = (effects[key].activation or "always") ~= "always"
             if tracking == "aura" and (conditional or effects[key].combatOnly) then
                 return false, "indicator_effects_conditions"
             end
-            if tracking == "missing" and conditional then
+            if (tracking == "missing" or tracking == "nameplate") and conditional then
                 return false, "indicator_effects_missing"
             end
         end
     end
-    local unavailable = tracking == "aura" and "colorShift" or "shrinkExpand"
+    local unavailable = (tracking == "aura" or tracking == "nameplate") and "colorShift" or "shrinkExpand"
     if displayType == "text" and effects[unavailable] and effects[unavailable].enabled == true then
         return false, "indicator_effects_text"
     end
     return true
 end
 
+-- A nameplate row of several DoTs stays Icon: a copied appearance must be one.
+local function NameplateIconRefusal(source, destination, appearance)
+    if appearance and I.IsNameplate(destination) and I.IsMultiAura(destination)
+        and (I.Settings(source) or {}).displayType ~= "icon" then
+        return "indicator_nameplate_icon"
+    end
+end
+
 function I.CanApplyEffects(source, destination, appearance)
+    local iconRefusal = NameplateIconRefusal(source, destination, appearance)
+    if iconRefusal then return false, iconRefusal end
     local effects, reason = I.ReadEffects(source)
     if not effects then return false, reason end
     local saved, target = I.Settings(source) or {}, I.Settings(destination) or {}
@@ -379,6 +622,9 @@ end
 -- Change... carries over from the aura it replaces).
 local function SourceEffectFamily(group, source)
     if source.addedAs ~= "aura" then return "conditions" end
+    -- Another debuff stays on nameplates (CommitSourceReplacement); a staged
+    -- replacement doesn't know it yet, so it carries the flag.
+    if I.IsNameplate(group) or group._stagedNameplate then return "nameplate" end
     if AuraWhenOf(source) == "missing" or group._stagedAuraWhen == "missing" then
         return "missing"
     end
@@ -422,6 +668,37 @@ end
 function I.PandemicTwinEffects(group)
     if not I.AlsoDuringPandemic(group) then return end
     return CollectNativeEffects(group, true)
+end
+
+-- A nameplate reminder's refresh-window effects: their own store inside
+-- `pandemic`, so they copy with Effects (ApplyPresentation copies `pandemic`
+-- whole) and stay dormant off nameplates. Same shape as `effects`.
+function I.PandemicLookEffectStore(group)
+    local settings = I.Settings(group)
+    if not settings then return end
+    settings.pandemic = settings.pandemic or {}
+    return Addon.NormalizeIndicatorEffectStore(settings.pandemic)
+end
+
+-- A nameplate reminder's effects for one look, "missing" (the saved
+-- `effects`) or "pandemic" (I.PandemicLookEffectStore): the enabled
+-- AnimationGroup effects. Never Shrink / Expand (a per-frame script), never
+-- Color Shift on Text Only (also a script there). Animate When and Only In
+-- Combat don't apply: each look is its own choice, and reminders show only in
+-- combat.
+function I.NameplateEffects(group, look)
+    I.Effects(group)
+    local settings = I.Settings(group)
+    local store = look == "pandemic" and I.PandemicLookEffectStore(group)
+        or Addon.NormalizeIndicatorEffectStore(settings)
+    local effects = {}
+    for _, key in ipairs(I.EffectOrder) do
+        local effect = store[key]
+        if effect.enabled and key ~= "shrinkExpand" and not (key == "colorShift" and settings.displayType == "text") then
+            effects[key] = {speed = effect.speed, color = effect.color and CopyTable(effect.color)}
+        end
+    end
+    return effects
 end
 
 -- Timer behavior that belongs to the Indicator rather than to one display
@@ -567,6 +844,9 @@ local FAMILY_LIMITS = {
     missing = {rules = "While Missing and several auras can't use Animate When",
         textOff = "shrinkExpand", textWhy = "Text Only can't use it here"},
     conditions = {textOff = "shrinkExpand", textWhy = "Text Only spell and item Indicators can't use it"},
+    nameplate = {rules = "nameplate reminders can't use Animate When",
+        never = "shrinkExpand", neverWhy = "nameplate reminders can't use it",
+        textOff = "colorShift", textWhy = "Text Only nameplate reminders can't use it"},
 }
 
 -- Adapts the enabled effects to `family` and adds each change's chat note to
@@ -576,11 +856,14 @@ local FAMILY_LIMITS = {
 local function AdaptEffects(settings, family, notes)
     local limits = FAMILY_LIMITS[family]
     local effects = settings.effects or {}
-    local converted, off = {}, {}
+    local converted, off, never = {}, {}, {}
     for _, key in ipairs(I.EffectOrder) do
         local effect = effects[key]
         if effect and effect.enabled == true then
-            if key == limits.textOff and settings.displayType == "text" then
+            if key == limits.never then
+                effect.enabled = false
+                never[#never + 1] = EFFECT_LABELS[key]
+            elseif key == limits.textOff and settings.displayType == "text" then
                 effect.enabled = false
                 off[#off + 1] = EFFECT_LABELS[key]
             elseif limits.rules and ((effect.activation or "always") ~= "always"
@@ -595,6 +878,7 @@ local function AdaptEffects(settings, family, notes)
         notes[#notes + 1] = ListNames(converted) .. (#converted > 1 and " now run" or " now runs")
             .. " while the Indicator is shown (" .. limits.rules .. ")."
     end
+    if #never > 0 then notes[#notes + 1] = ListNames(never) .. " is off (" .. limits.neverWhy .. ")." end
     if #off > 0 then notes[#notes + 1] = ListNames(off) .. " is off (" .. limits.textWhy .. ")." end
 end
 
@@ -612,6 +896,18 @@ end
 
 local function NoticeText(notes)
     return #notes > 0 and table.concat(notes, " ") or nil
+end
+
+-- Adapts the enabled effects to the family `group` has now; the notice, or
+-- nil. For moves on and off nameplates, which change the family through the
+-- aura flags rather than through When.
+function I.AdaptEffectsToFamily(group)
+    local settings = I.Settings(group)
+    if not settings or not I.Primary(group) then return end
+    I.Effects(group)
+    local notes = {}
+    AdaptEffects(settings, I.EffectFamily(group), notes)
+    return NoticeText(notes)
 end
 
 -- Keeps a list's rules valid for how many auras it has. Growing to two
@@ -643,6 +939,9 @@ local function ReshapeAuraList(group, notes, change)
     local before = indicator and I.Primary(group) and I.EffectFamily(group)
     change()
     if not indicator then return end
+    -- Emptied: forget the nameplate spot, so the next move onto Enemy
+    -- Nameplates is a first move again (I.MoveToNameplates).
+    if not I.Primary(group) then indicator.nameplate = nil end
     SyncAuraList(group, notes)
     local after = I.Primary(group) and I.EffectFamily(group)
     if before and after and after ~= before then AdaptEffects(I.Settings(group), after, notes) end
@@ -681,6 +980,14 @@ function I.OnSourceAdded(group, entry)
     -- or Change...) adapts the effects to what it can run instead of refusing.
     local auraArrives = indicator and entry.addedAs == "aura" and not I.IsAura(group)
     local firstSource = indicator and (not I.Primary(group) or I.Primary(group) == entry)
+    -- Only a nameplate Indicator keeps a DoT on nameplates: one moved or
+    -- dragged anywhere else stays a Target While Missing aura, as leaving by
+    -- Anchor Target does (I.LeaveNameplates). An Indicator it now heads was
+    -- not on nameplates before it arrived.
+    if entry.auraTrackNameplates == true and (firstSource or auraArrives or not I.IsNameplate(group)) then
+        entry.auraTrackNameplates = nil
+        entry.auraUnit = Addon:ResolveStandaloneAuraDefaultUnit(entry)
+    end
     if firstSource then
         local effects, reason = I.ReadEffects(group)
         if not effects then return false, reason end
@@ -689,6 +996,12 @@ function I.OnSourceAdded(group, entry)
     if not settings then return true end
     I.Effects(group) -- Capture the previous family before tracking changes.
     if entry.enabled == nil then entry.enabled = true end
+    -- A DoT joining a nameplate reminder joins the row: on nameplates, While
+    -- Missing (set below), Also During Pandemic on by default.
+    if indicator and not firstSource and entry.addedAs == "aura" and I.IsNameplate(group) then
+        FlagNameplateAura(entry)
+        if entry.showWhileAuraPandemic == nil then entry.showWhileAuraPandemic = true end
+    end
     local notes = {}
     -- An aura that shows While Missing (its own rule, or one a Change...
     -- carries over) adapts to the While Missing family instead.
@@ -752,6 +1065,15 @@ function I.IconSettings(group)
     local icon = Addon.NormalizeIndicatorIconSettings(CopyTable(settings.icon))
     local source = I.Primary(group)
     if not icon.manualIcon and source then icon.manualIcon = SourceIcon(source) end
+    return icon
+end
+
+-- A nameplate row's icon for one DoT: each spot shows its own spell (the
+-- aura's own Override Icon first), since one chosen icon would make every
+-- spot identical. A lone DoT keeps the Indicator's chosen icon.
+function I.NameplateIconSettings(group, aura)
+    local icon = I.IconSettings(group)
+    if icon and aura and I.IsMultiAura(group) then icon.manualIcon = SourceIcon(aura) end
     return icon
 end
 
@@ -866,17 +1188,40 @@ end
 function I.AddRestriction(group, entry)
     if not ST.IsIndicatorGroup(group) then return end
     local entries = entry and (entry[1] and entry or {entry}) or {}
+    -- A nameplate reminder's sources are DoTs, each its own icon in the row.
+    if #entries > 0 and I.IsNameplate(group) then
+        local list = I.AuraList(group)
+        for _, source in ipairs(entries) do
+            if not IsOwnDebuff(source) then return I.EffectFailureText.indicator_nameplate_debuff end
+            for _, aura in ipairs(list) do
+                if aura ~= source and I.SameAura(aura, source) then return I.SameAuraUnitText end
+            end
+        end
+        if I.Settings(group).displayType ~= "icon" then return I.EffectFailureText.indicator_nameplate_icon end
+        -- A DoT moving over from another nameplate Indicator is already counted.
+        local incoming = 0
+        for _, source in ipairs(entries) do
+            if source.auraTrackNameplates ~= true then incoming = incoming + 1 end
+        end
+        local reminders = ST._NameplateReminders
+        if reminders and reminders.RunningDoTCount() + incoming > I.MAX_NAMEPLATE_DOTS then
+            return I.EffectFailureText.indicator_nameplate_cap
+        end
+        return
+    end
     local auras, incoming = I.AuraList(group), false
+    local arriving = {}
     for _, source in ipairs(entries) do
         if source.addedAs == "aura" then
             for _, aura in ipairs(auras) do
                 if aura ~= source and I.SameAura(aura, source) then return I.SameAuraText end
             end
             auras[#auras + 1] = source
+            arriving[source] = true
             incoming = true
         end
     end
-    local refusal = incoming and AuraListRefusal(auras)
+    local refusal = incoming and AuraListRefusal(auras, arriving)
     if refusal then return I.EffectFailureText[refusal] end
     if I.Primary(group) then return end
     -- The first source adapts the effects to what it can run (OnSourceAdded),
@@ -967,6 +1312,8 @@ function I.ClearSource(group)
     settings.tracking = "conditions"
     -- A later list starts on All, not on this one's Match.
     settings.auraMatch = nil
+    -- Nor does a later move onto nameplates start from this one's spot.
+    settings.nameplate = nil
 end
 
 -- A condition source that could take over slot one. A migrated Trigger row
@@ -1134,17 +1481,25 @@ function I.StageSourceReplacement(group, expectedSource)
     -- (CommitSourceReplacement), so its arrival must not adapt the effects.
     -- A list stays presence-drawn too, so it adapts like While Missing.
     candidate._stagedAuraWhen = I.UsesPresence(group) and "missing" or nil
+    candidate._stagedNameplate = I.IsNameplate(group) or nil
     return candidate
 end
 
 -- Returns true plus an optional chat line, or false plus a failure reason.
 function I.CommitSourceReplacement(group, candidate)
-    local allowed, reason = I.CheckSourceEffects(candidate, I.Primary(candidate))
+    local newSource = I.Primary(candidate)
+    -- A nameplate Indicator changes only to another debuff of yours, which
+    -- stays on nameplates (before the list check, which keeps a row
+    -- all-nameplate). Leaving is Layout > Anchor Target's job.
+    if I.IsNameplate(group) then
+        if not IsOwnDebuff(newSource) then return false, "indicator_nameplate_debuff" end
+        FlagNameplateAura(newSource)
+    end
+    local allowed, reason = I.CheckSourceEffects(candidate, newSource)
     if not allowed then return false, reason end
     -- Only the main source changes. The other sources keep their rules, unless
     -- one is the new source (it starts fresh as the main source instead).
     -- Older aura-added rows are rule rows; listed auras stay in the list.
-    local newSource = I.Primary(candidate)
     -- A list's other auras need an aura on their unit to stay with.
     local others = I.AuraList(group)
     table.remove(others, 1)
@@ -1161,6 +1516,7 @@ function I.CommitSourceReplacement(group, candidate)
     if listed then
         -- Already in the list: the aura keeps its own When there.
         newSource.indicatorStackRule = listed.indicatorStackRule and CopyTable(listed.indicatorStackRule)
+        newSource.showWhileAuraPandemic = listed.showWhileAuraPandemic
     else
         -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
         local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule
@@ -1210,6 +1566,8 @@ function I.CapturePresentation(group)
 end
 
 function I.ApplyPresentation(source, destination, appearance, effects)
+    local iconRefusal = NameplateIconRefusal(source, destination, appearance)
+    if iconRefusal then return false, iconRefusal end
     if effects then
         local allowed, reason = I.CanApplyEffects(source, destination, appearance)
         if not allowed then return false, reason end

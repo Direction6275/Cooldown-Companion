@@ -74,12 +74,18 @@ end
 -- An Aura Panel takes aura entries only, and only for the one unit it derived
 -- from its first entry. Both answers come from Core so this surface cannot
 -- drift from the rule the move paths and AddButtonToGroup enforce.
+-- A Nameplate Reminder takes only your debuffs (Indicator.AddRestriction),
+-- so a typed spell adds as its aura there too, and only Target auras are
+-- suggested.
 local function TargetPanelIsAuraOnly(groupId)
-    return CooldownCompanion:IsAuraPanel(GetTargetGroup(groupId)) == true
+    local group = GetTargetGroup(groupId)
+    return CooldownCompanion:IsAuraPanel(group) == true or ST.Indicator.IsNameplate(group)
 end
 
 local function GetTargetAuraPanelUnit(groupId)
-    return CooldownCompanion:GetAuraPanelUnit(GetTargetGroup(groupId))
+    local group = GetTargetGroup(groupId)
+    if ST.Indicator.IsNameplate(group) then return "target" end
+    return CooldownCompanion:GetAuraPanelUnit(group)
 end
 
 -- Nothing an Aura Panel can hold, in the shape the central predicate reads.
@@ -181,6 +187,10 @@ local ADD_BOX_AURA_PANEL_TOOLTIP = {
     {"This panel takes aura entries only, for one unit.", 1, 0.82, 0.2, true},
     {" ", 1, 1, 1, true},
 }
+local ADD_BOX_NAMEPLATE_TOOLTIP = {
+    {"This Indicator takes your debuffs only.", 1, 0.82, 0.2, true},
+    {" ", 1, 1, 1, true},
+}
 
 local AUTOCOMPLETE_TYPE_DISPLAY = {
     spell = { label = "Spell", atlas = "ui_adv_atk" },
@@ -219,8 +229,9 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
             -- The workspace add box always targets the SELECTED panel (its
             -- submit path clears any stale inline-add target), so the panel
             -- rule is asked of that panel and no other.
-            local auraLines = TargetPanelIsAuraOnly(CS.selectedGroup)
-                and ADD_BOX_AURA_PANEL_TOOLTIP or nil
+            local auraLines = ST.Indicator.IsNameplate(GetTargetGroup(CS.selectedGroup))
+                and ADD_BOX_NAMEPLATE_TOOLTIP
+                or TargetPanelIsAuraOnly(CS.selectedGroup) and ADD_BOX_AURA_PANEL_TOOLTIP or nil
             for _, line in ipairs(auraLines or {}) do
                 GameTooltip:AddLine(line[1], line[2], line[3], line[4], line[5])
             end
@@ -387,8 +398,14 @@ local function ResolveSpellAddRoute(spellId, spellName, forceAura, groupId)
             addedAs = "aura",
         }
         probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
-        local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(
-            GetTargetGroup(groupId), probe)
+        -- Change... is judged against the Indicator as it will be, its main
+        -- source swapped (as TryAddItem does); the commit holds the debuff rule.
+        local target = GetTargetGroup(groupId)
+        local replacement = CS.GetIndicatorSourceReplacement(groupId)
+        if replacement then
+            target = ST.Indicator.StageSourceReplacement(target, replacement.source) or target
+        end
+        local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(target, probe)
         if rejectMessage then
             return nil, "aura-panel", rejectMessage
         end
@@ -420,7 +437,8 @@ function CS.ResolveProspectiveAdd(stub, groupId)
     stub.displayAs = ST.PanelSupportsAttachedBars(group) and CS.panelAddModePanelId == groupId
         and CS.panelAddPresentation == "bars" and "bars" or nil
     if stub.type == "item" then
-        if CooldownCompanion:IsAuraPanel(group)
+        -- Aura Panels and Nameplate Reminders refuse items (TryAddItem).
+        if TargetPanelIsAuraOnly(groupId)
             and CooldownCompanion:GetPanelManualEntryRejectMessage(group, AURA_PANEL_ITEM_PROBE) then
             return false
         end

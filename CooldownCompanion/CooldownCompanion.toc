@@ -70,6 +70,8 @@ Core\CooldownRefresh.lua
 Core\Lifecycle.lua
 Core\Aura.lua
 Core\AuraDisplay.lua
+Core\NameplateReminders.lua
+Core\NameplateTargetView.lua
 Core\EventHandlers.lua
 Core\Masque.lua
 Core\GroupManagement.lua

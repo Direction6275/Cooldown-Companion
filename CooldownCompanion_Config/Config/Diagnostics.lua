@@ -59,6 +59,7 @@ local function SummarizeButton(button)
         auraUnit = button.auraUnit,
         auraTrackGroup = button.auraTrackGroup == true,
         auraTrackPet = button.auraTrackPet == true,
+        auraTrackNameplates = button.auraTrackNameplates == true,
         hideWhenInactive = button.hideWhenInactive == true,
         auraVisibility = CooldownCompanion:GetAuraVisibilityMode(button),
         loadConditionCount = CountTableEntries(button.loadConditions),

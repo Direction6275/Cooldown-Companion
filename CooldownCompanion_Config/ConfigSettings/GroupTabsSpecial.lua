@@ -37,6 +37,7 @@ local ROW_SECTION = { leftAligned = true }
 local SPECIAL_FINDER = {
     trigger = {},
     triggerEffects = {},
+    pandemicEffects = {},
     texture = {},
 }
 
@@ -83,7 +84,8 @@ end
 -- renderer tints artwork only), Shrink / Expand for everything CC draws
 -- (spell, item and While Missing).
 local function TextOnlyUnavailableEffect(group)
-    return ST.Indicator.IsNativeAura(group) and "colorShift" or "shrinkExpand"
+    local I = ST.Indicator
+    return (I.IsNativeAura(group) or I.IsNameplate(group)) and "colorShift" or "shrinkExpand"
 end
 
 
@@ -600,14 +602,19 @@ end
 -- reach the native kit only through an aura restyle. While Missing keeps Only
 -- In Combat (CC draws it) but never Animate When, which the store drops on
 -- read (Indicator.NormalizeEffectsForFamily).
-local function BuildIndicatorEffectSection(container, group, effects, effectKey)
+-- `opts` (nameplate refresh-window rows): `finder`, the rows' finder table,
+-- and `advPrefix`, their own gear keys.
+local function BuildIndicatorEffectSection(container, group, effects, effectKey, opts)
     local config = effects and effects[effectKey]
     local def = INDICATOR_EFFECT_DEFS[effectKey]
-    local finder = SPECIAL_FINDER.triggerEffects[effectKey]
+    local finder = opts and opts.finder or SPECIAL_FINDER.triggerEffects[effectKey]
     if not config or not def then
         return
     end
     local auraSource = ST.Indicator.IsNativeAura(group)
+    -- Nameplate reminders: each look has its own effects, with no Animate
+    -- When or Only In Combat; their watchers restyle at the aura rebind.
+    local nameplate = ST.Indicator.IsNameplate(group)
     -- While Missing and aura lists are drawn by CC: they keep Only In Combat, but Animate When
     -- would follow the aura entry's own spell state, so the row is hidden.
     local missingSource = ST.Indicator.UsesPresence(group)
@@ -621,7 +628,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
         end
     end
     local function RefreshRuntime()
-        if auraSource then
+        if auraSource or nameplate then
             RefreshTextureIndicatorRuntime(group, true)
         else
             CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -642,7 +649,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll.
     local function BuildIndicatorEffectAdvanced(panel)
-        if not auraSource then
+        if not auraSource and not nameplate then
         if not missingSource then
         AddDropdownRow(panel, {
             label = "Animate When",
@@ -685,14 +692,14 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
 
     end
 
-    local advKey = "triggerEffect_" .. effectKey
+    local advKey = (opts and opts.advPrefix or "triggerEffect_") .. effectKey
     AddAdvancedToggle(enableCb, advKey, tabInfoButtons, true, {
         title = def.label .. " Advanced",
         build = BuildIndicatorEffectAdvanced,
         -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
         -- the trigger effects' restyle-then-rebuild refresh sequence. Aura
         -- sources also restyle the native kit, so they run the row's own path.
-        unlock = not config.enabled and (auraSource and {
+        unlock = not config.enabled and ((auraSource or nameplate) and {
             enable = { label = "Enable " .. def.label, run = function()
                 SetEnabled(true)
                 RefreshRuntime()
@@ -708,14 +715,16 @@ end
 
 local function GetIndicatorEffectOrderForDisplayType(group)
     local displayType = CooldownCompanion:GetIndicatorDisplayType(group, true)
-    if displayType ~= "text" then
+    -- Nameplate reminders never offer Shrink / Expand (a per-frame script).
+    local nameplate = ST.Indicator.IsNameplate(group)
+    if displayType ~= "text" and not nameplate then
         return ST.Indicator.EffectOrder
     end
 
-    local unavailable = TextOnlyUnavailableEffect(group)
+    local unavailable = displayType == "text" and TextOnlyUnavailableEffect(group) or nil
     local order = {}
     for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
-        if effectKey ~= unavailable then
+        if effectKey ~= unavailable and not (nameplate and effectKey == "shrinkExpand") then
             order[#order + 1] = effectKey
         end
     end
@@ -744,7 +753,10 @@ local function BuildIndicatorEffectsTab(container, group)
     -- keys but always force this section open first (collapseKeys names
     -- "effects_triggerEffects"), so the gear builds and consumes the queue.
     -- Any future entrance that queues one of these keys must do the same.
-    local _, effectsCollapsed = BuildCollapsibleSection(container, "Visual Effects",
+    -- A nameplate reminder's effects here are its missing look's; the
+    -- refresh window's sit in the Pandemic Window section below.
+    local _, effectsCollapsed = BuildCollapsibleSection(container,
+        ST.Indicator.IsNameplate(group) and "While Missing" or "Visual Effects",
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
     if not effectsCollapsed then
@@ -1132,16 +1144,26 @@ end
 
 local function SpecialFinderIndicatorEffectOffered(context, effectKey)
     if not SpecialFinderIndicator(context) then return false end
+    -- Nameplate reminders: Pulse, Bounce and Color Shift (owner ruling 2026-10-04).
+    if ST.Indicator.IsNameplate(context.group) and effectKey == "shrinkExpand" then return false end
     return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderIndicatorDisplayType(context) ~= "text"
 end
 
 -- Only In Combat: everything CC draws (not native auras). Animate When also
 -- leaves While Missing, which has no spell state of its own to follow.
 local function SpecialFinderConditionEffect(context)
-    return not ST.Indicator.IsNativeAura(context.group)
+    return not ST.Indicator.IsNativeAura(context.group) and not ST.Indicator.IsNameplate(context.group)
 end
 local function SpecialFinderActivationEffect(context)
     return ST.Indicator.EffectFamily(context.group) == "conditions"
+end
+-- A nameplate reminder's refresh-window effect rows (Pandemic Window).
+local function SpecialFinderPandemicLookEffect(context, effectKey)
+    local group = context.group
+    return ST.IsIndicatorGroup(group) and ST.Indicator.Primary(group) ~= nil
+        and ST.Indicator.IsNameplate(group) and ST.Indicator.ShowsLiveDisplay(group)
+        and effectKey ~= "shrinkExpand"
+        and not (effectKey == "colorShift" and SpecialFinderIndicatorDisplayType(context) == "text")
 end
 
 if ST._DefineSettingRoute then
@@ -1216,6 +1238,42 @@ if ST._DefineSettingRoute then
             finder.shiftColor = advanced:Setting({ key = "color", label = "Shift Color" })
         end
         SPECIAL_FINDER.triggerEffects[key] = finder
+
+        -- The same effect in a nameplate reminder's Pandemic Window section.
+        if key ~= "shrinkExpand" then
+            local applies = function(context) return SpecialFinderPandemicLookEffect(context, key) end
+            local pandemicTop = ST._DefineSettingRoute({
+                idPrefix = "panel.indicator.pandemicEffects." .. key,
+                scope = SPECIAL_FINDER_SCOPE,
+                tab = "effects",
+                tabLabel = "Effects",
+                section = "pandemic",
+                sectionLabel = "Pandemic Window",
+                collapseKeys = { "indicator_pandemic" },
+                rowScope = "primary",
+                applies = applies,
+            })
+            local pandemicFinder = {
+                enabled = pandemicTop:Setting({ key = "enabled", label = def.label }),
+            }
+            local pandemicAdvanced = ST._DefineSettingRoute({
+                idPrefix = "panel.indicator.pandemicEffects." .. key .. ".advanced",
+                scope = SPECIAL_FINDER_SCOPE,
+                tab = "effects",
+                tabLabel = "Effects",
+                section = "pandemic",
+                sectionLabel = def.label .. " Effect (Pandemic Window)",
+                collapseKeys = { "indicator_pandemic" },
+                rowScope = "primary",
+                advancedKey = "pandemicEffect_" .. key,
+                applies = applies,
+            })
+            pandemicFinder.duration = pandemicAdvanced:Setting({ key = "duration", label = def.speedLabel })
+            if key == "colorShift" then
+                pandemicFinder.shiftColor = pandemicAdvanced:Setting({ key = "color", label = "Shift Color" })
+            end
+            SPECIAL_FINDER.pandemicEffects[key] = pandemicFinder
+        end
     end
 
     -- Stable IDs keep saved finder destinations valid; each control now reveals
@@ -1261,5 +1319,21 @@ end
 
 ST._BuildIndicatorIconAppearance = BuildIndicatorIconAppearance
 ST._BuildIndicatorEffectsTab = BuildIndicatorEffectsTab
+
+-- A nameplate reminder's refresh-window effects (IndicatorTabs' Pandemic
+-- Window section): the same rows, on their own store and gear keys.
+function ST._BuildNameplatePandemicEffects(column, group)
+    local effects = ST.Indicator.PandemicLookEffectStore(group)
+    if not effects then return end
+    local text = CooldownCompanion:GetIndicatorDisplayType(group, true) == "text"
+    for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
+        if effectKey ~= "shrinkExpand" and not (text and effectKey == "colorShift") then
+            BuildIndicatorEffectSection(column, group, effects, effectKey, {
+                finder = SPECIAL_FINDER.pandemicEffects[effectKey],
+                advPrefix = "pandemicEffect_",
+            })
+        end
+    end
+end
 ST._BuildIndicatorTextureAppearance = BuildIndicatorTextureAppearance
 ST._OpenOrRebindIndicatorTexturePicker = OpenOrRebindIndicatorTexturePicker

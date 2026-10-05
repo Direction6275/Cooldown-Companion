@@ -1985,7 +1985,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- An aura joining spell or item sources becomes the display
     -- (OnSourceAdded moves it to slot one); one joining an aura Indicator
     -- joins its list, never twice and never group-tracked.
-    if ST.Indicator.Primary(group) ~= newButton and ST.Indicator.IsAura(group) and newButton.addedAs == "aura" then
+    -- A Nameplate Reminder takes only DoTs (AddRestriction), whatever kind of
+    -- entry arrives.
+    if ST.Indicator.Primary(group) ~= newButton and ST.Indicator.IsAura(group)
+        and (newButton.addedAs == "aura" or ST.Indicator.IsNameplate(group)) then
         local reason = ST.Indicator.AddRestriction(group, newButton)
         if reason then
             table.remove(group.buttons, buttonIndex)
@@ -2040,6 +2043,10 @@ function CooldownCompanion:AddEquipmentSlotToGroup(groupId, itemSlot, itemSlotKi
     local rejectMessage = self:GetPanelManualEntryRejectMessage(group)
     if rejectMessage then
         self:Print(rejectMessage)
+        return nil
+    end
+    if ST.Indicator.IsNameplate(group) then
+        self:Print(ST.Indicator.EffectFailureText.indicator_nameplate_debuff)
         return nil
     end
 

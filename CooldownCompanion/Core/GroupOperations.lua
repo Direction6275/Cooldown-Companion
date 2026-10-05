@@ -434,8 +434,10 @@ function CooldownCompanion:PopulatePanelAnchorTargetDropdown(dropdown, sourceGro
 
     for groupId, group in pairs(db.groups) do
         local targetFrameName = "CooldownCompanionGroup" .. groupId
+        -- A Nameplate Reminder has no screen display to hang anything off.
         if groupId ~= sourceGroupId
             and _G[targetFrameName]
+            and not ST.Indicator.IsNameplate(group)
             and not self:WouldCreateCircularAnchor(sourceGroupId, groupId)
             and self:IsGroupAvailableForPanelAnchorTarget(groupId) then
             eligibleCount = eligibleCount + 1
@@ -1032,6 +1034,9 @@ function CooldownCompanion:UnloadGroup(groupId)
     if not frame then return end
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     UnregisterKeyPressHighlightFrame(frame)
+    -- Nameplate reminders on mobs are CC frames on the plates: give them back
+    -- now, even mid-fight, rather than at the deferred aura rebind.
+    if ST._NameplateReminders then ST._NameplateReminders.ReleaseGroup(groupId) end
 
     -- Save and clear button OnUpdate scripts.
     -- Buttons stay attached to the frame for potential reuse.

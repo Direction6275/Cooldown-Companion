@@ -844,7 +844,7 @@ end
 -- presence visibility without replacing the chosen asset. Every effect is a
 -- native AnimationGroup created in this sanctioned setup window: addon code
 -- never has to touch the forbidden subtree when the aura changes in combat.
-local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
+local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated, nameplate)
     -- The AuraButton lives under UIParent rather than the alpha-zero driver
     -- button, so make it permanently click-through at creation time. The
     -- dedicated Texture record never needs tooltip or cancel-aura input.
@@ -895,18 +895,55 @@ local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
     host.primaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
     host.secondaryTexture = visualRoot:CreateTexture(nil, "ARTWORK", nil, 1)
 
-    host.pulseAG = visualRoot:CreateAnimationGroup()
-    host.pulseAG:SetLooping("BOUNCE")
-    host.pulseAnim = host.pulseAG:CreateAnimation("Alpha")
-    host.pulseAnim:SetFromAlpha(1)
-    host.pulseAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
-
-    -- Shrink / Expand has no AnimationGroup here: see SetSlotShrink.
-
-    host.bounceAG = visualRoot:CreateAnimationGroup()
-    host.bounceAG:SetLooping("BOUNCE")
-    host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
-    host.bounceAnim:SetSmoothing("OUT")
+    host.colorShift = {}
+    -- Pulse, Bounce and Color Shift groups (a nameplate kit builds them only
+    -- once one of its effects is on).
+    local function BuildEffectGroups()
+        host._ccBuildEffectGroups = nil
+        host.pulseAG = visualRoot:CreateAnimationGroup()
+        host.pulseAG:SetLooping("BOUNCE")
+        host.pulseAnim = host.pulseAG:CreateAnimation("Alpha")
+        host.pulseAnim:SetFromAlpha(1)
+        host.pulseAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
+        -- Rise then fall, repeating (AuraTexturesEffects' bounce: a BOUNCE
+        -- loop hitched at the top).
+        host.bounceAG = visualRoot:CreateAnimationGroup()
+        host.bounceAG:SetLooping("REPEAT")
+        host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
+        host.bounceAnim:SetOrder(1)
+        host.bounceAnim:SetSmoothing("OUT")
+        host.bounceFall = host.bounceAG:CreateAnimation("Translation")
+        host.bounceFall:SetOrder(2)
+        host.bounceFall:SetSmoothing("IN")
+        local colorRegions = {
+            {host.primaryTexture, "texture", true}, {host.secondaryTexture, "texture", true},
+            {host.indicatorProgress.foreground.primaryTexture, "texture"},
+            {host.indicatorProgress.foreground.secondaryTexture, "texture"},
+            {host.iconFrame.icon, "icon"},
+        }
+        for index, entry in ipairs(colorRegions) do
+            local group = entry[1]:CreateAnimationGroup()
+            group:SetLooping("BOUNCE")
+            host.colorShift[index] = {
+                group = group,
+                animation = group:CreateAnimation("VertexColor"),
+                displayType = entry[2],
+                dim = entry[3],
+            }
+            host.colorShift[index].animation:SetSmoothing("IN_OUT")
+        end
+    end
+    if nameplate then
+        -- Nameplate reminders show refresh soon as a border, never the glow
+        -- rig, and build effect groups lazily: one of these kits exists per
+        -- watcher, up to twenty per DoT.
+        ST.Indicator.CreateVisual(host, slotButton)
+        ST.Indicator.CreatePandemicBorder(host)
+        host._ccBuildEffectGroups = BuildEffectGroups
+        host.primaryTexture:Hide()
+        host.secondaryTexture:Hide()
+        return { indicatorHost = host }
+    end
 
     ST.Indicator.CreateVisual(host, slotButton)
     -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
@@ -917,25 +954,8 @@ local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
     if slotButton.AddPandemicRegion then
         slotButton:AddPandemicRegion(ST.Indicator.CreatePandemicGlow(host, true).host)
     end
-    host.colorShift = {}
-    local colorRegions = {
-        {host.primaryTexture, "texture", true}, {host.secondaryTexture, "texture", true},
-        {host.indicatorProgress.foreground.primaryTexture, "texture"},
-        {host.indicatorProgress.foreground.secondaryTexture, "texture"},
-        {host.iconFrame.icon, "icon"},
-    }
-    for index, entry in ipairs(colorRegions) do
-        local texture = entry[1]
-        local group = texture:CreateAnimationGroup()
-        group:SetLooping("BOUNCE")
-        host.colorShift[index] = {
-            group = group,
-            animation = group:CreateAnimation("VertexColor"),
-            displayType = entry[2],
-            dim = entry[3],
-        }
-        host.colorShift[index].animation:SetSmoothing("IN_OUT")
-    end
+    -- Shrink / Expand has no AnimationGroup here: see SetSlotShrink.
+    BuildEffectGroups()
 
     host.primaryTexture:Hide()
     host.secondaryTexture:Hide()
@@ -1602,7 +1622,8 @@ end
 local function BuildIndicatorAuraDurationOptions(slot, group)
     local I = ST.Indicator
     local readouts = I.Settings(group).readouts
-    local source = I.Primary(group)
+    -- A nameplate watcher's twin times its own DoT.
+    local source = slot.nameplateAura or I.Primary(group)
     local markerWanted = source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit)
     -- A Text display's Pandemic effect recolors the whole timer too.
     local recolor = I.PandemicTimerStyle(group, markerWanted)
@@ -1694,6 +1715,9 @@ function CooldownCompanion:FormatAuraDurationPreviewText(seconds, style, pandemi
 end
 
 local function StopAuraIndicatorSlotEffects(host)
+    -- A nameplate watcher's kit builds its effect groups only once one of its
+    -- effects is on (BuildAuraIndicatorSlotKit).
+    if not host.pulseAG then return end
     host.pulseAG:Stop()
     host.bounceAG:Stop()
     for _, colorShift in ipairs(host.colorShift) do
@@ -1766,6 +1790,7 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
     host._indicatorDimAlpha = nil
     -- A pooled slot must not keep the previous entry's pandemic look or clip.
     ST.Indicator.StylePandemicGlow(host, nil, false)
+    ST.Indicator.StylePandemicBorder(host, nil, false)
     ST.Indicator.StylePandemicTint(host, nil, false)
     ST.Indicator.StyleStackGate(slot, nil)
 
@@ -1790,6 +1815,7 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
     if not shown or type(effects) ~= "table" then
         return
     end
+    if host._ccBuildEffectGroups and next(effects) then host._ccBuildEffectGroups() end
 
     local pulse = effects[TEXTURE_INDICATOR_EFFECT_PULSE]
     if pulse then
@@ -1806,6 +1832,8 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
             (geometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
         host.bounceAnim:SetOffset(0, amplitude)
         host.bounceAnim:SetDuration(IndicatorEffectSpeed(bounce) / 2)
+        host.bounceFall:SetOffset(0, -amplitude)
+        host.bounceFall:SetDuration(IndicatorEffectSpeed(bounce) / 2)
         host.bounceAG:Play()
     end
     local colorShiftEffect = effects[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
@@ -2979,6 +3007,164 @@ function Presence.ParkTracker(tracker)
     tracker.container:SetAuraGroupCandidateFilters(tracker.key, BuildParkFilters(tracker.unit))
     tracker.container:Hide()
 end
+
+------------------------------------------------------------------------
+-- NAMEPLATE WATCHERS (Nameplate Reminders). Core/NameplateReminders.lua owns
+-- the pool, the hand-out to mobs and the placement on the plate; only this
+-- file builds or binds the slot subtree (the single-writer rule).
+--
+-- One watcher is one CC cell holding ONE visible container: the While
+-- Missing presence group plus the Also During Pandemic twin slot, merged
+-- (CC_PlateMissProbe v2-v4, 2026-10-04: the group's buttons draw nothing, so
+-- no alpha-0 hider is needed, and one container halves the aura work). The
+-- container is born on a nameplate token and is only ever re-pointed by
+-- SetUnit to another nameplate token (container-level, combat-safe; probe
+-- v4), so its HARMFUL contract never changes: every plate token is a
+-- non-friendly unit to the player, exactly the target contract.
+--
+-- Hiding the cell is the park: the container then drops out of the aura
+-- event path (it is no longer visible) and draws nothing, whatever its
+-- filters say. Watchers are permanent and reused across Indicators, specs
+-- and profiles: groups, slots and containers can never be removed.
+------------------------------------------------------------------------
+Presence.PLATE_CONTRACT = "target"
+
+-- OOC only (AuraButton setup). `holder` is the hidden CC frame a released
+-- cell returns to.
+function Presence.NewPlateWatcher(holder)
+    local contract = Presence.PLATE_CONTRACT
+    slotCounter = slotCounter + 1
+    local key = "ccplate" .. slotCounter
+    local cell = CreateFrame("Frame", nil, holder, PRESENCE_TEMPLATE)
+    cell:SetSize(1, 1)
+    cell:EnableMouse(false)
+    cell:Hide()
+    local container = CreateFrame("AuraContainer", nil, cell,
+        "CustomAuraContainerTemplate, " .. PRESENCE_TEMPLATE)
+    container._ccNoTouch = true
+    container:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
+    container:SetSize(1, 1)
+    container:SetUnit("nameplate1")
+    container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis.Horizontal)
+    container:SetFlowLayoutAnchorPoint("TOPLEFT")
+    container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Down)
+    container:SetFlowLayoutPadding(0, 0, 0, 0)
+    local watcher = { cell = cell, container = container, key = key, slotKey = key .. ":p",
+        unit = contract, width = 1, height = 1 }
+    container:AddAuraGroup(key, SlotContract(contract).filter, {
+        candidateFilters = BuildParkFilters(contract),
+        maxFrameCount = 1,
+        layout = PresenceLayout(1, 1),
+        initializeFrame = function(frame)
+            frame:SetMouseClickEnabled(false)
+            frame:SetMouseMotionEnabled(false)
+        end,
+    })
+    watcher.slotButton = container:AddAuraSlot(watcher.slotKey, SlotContract(contract).filter, {
+        candidateFilters = BuildParkFilters(contract),
+        initializeFrame = function(frame)
+            -- The container is the cell while the aura is up; the twin fills
+            -- it and is shown only inside the refresh window.
+            frame:SetAllPoints(container)
+            frame:SetMouseClickEnabled(false)
+            frame:SetMouseMotionEnabled(false)
+            watcher.kit = BuildAuraIndicatorSlotKit(frame, true, true)
+        end,
+    })
+    watcher.window = Presence.Window(cell)
+    Presence.Anchor(watcher.window, cell, watcher, false)
+    watcher.copy = CooldownCompanion.CreateIndicatorPresenceHost(watcher.window, PRESENCE_TEMPLATE)
+    watcher.copy:SetPoint("CENTER", cell, "CENTER", 0, 0)
+    -- The missing look's effects animate only while the cell is on a mob
+    -- (CC_PlateAnimProbe: a masked icon costs about what a visible one does,
+    -- so a parked one should cost nothing). Only CC's own copy is listed:
+    -- Play/Stop there is combat-safe, never on the kit (BindPlateWatcher).
+    watcher.effectGroups = {}
+    cell:SetScript("OnShow", function()
+        for _, group in ipairs(watcher.effectGroups) do group:Play() end
+    end)
+    cell:SetScript("OnHide", function()
+        for _, group in ipairs(watcher.effectGroups) do group:Stop() end
+    end)
+    return watcher
+end
+
+-- OOC only, on a released (hidden) watcher. Points both halves at one DoT
+-- (`aura`, its `spellSet`) and paints the Indicator's look with that DoT's
+-- icon: the missing copy once, with the While Missing effects (nothing
+-- redraws per update), and the twin's live display, with the Pandemic Window
+-- effects, which follows the DoT's own Also During Pandemic. Returns whether
+-- there is anything to draw.
+function Presence.BindPlateWatcher(watcher, group, spellSet, aura)
+    local I = ST.Indicator
+    local contract = Presence.PLATE_CONTRACT
+    local width, height = I.PresenceCell(group)
+    local container = watcher.container
+    if not width then
+        Presence.ParkPlateWatcher(watcher)
+        watcher.copy:Hide()
+        return false
+    end
+    watcher.cell:SetSize(width, height)
+    if watcher.width ~= width or watcher.height ~= height then
+        container:SetAuraGroupLayout(watcher.key, PresenceLayout(width, height))
+        watcher.width, watcher.height = width, height
+    end
+    container:SetAuraGroupCandidateFilters(watcher.key, BuildCandidateFilters(contract, spellSet))
+    watcher.nameplateAura = aura
+    local pandemic = aura.showWhileAuraPandemic == true
+    container:SetAuraSlotCandidateFilters(watcher.slotKey,
+        pandemic and BuildCandidateFilters(contract, spellSet) or BuildParkFilters(contract))
+    -- A row's name label reads each DoT's own name, not the first one's.
+    local rowName = I.IsMultiAura(group) and I.Settings(group).readouts.label == "name" and (aura.name or "")
+    local groups = watcher.effectGroups
+    for index = #groups, 1, -1 do groups[index] = nil end
+    if watcher.kit then
+        -- The refresh window's look plays its Always and In Pandemic Window effects.
+        StyleAuraIndicatorSlotKit(watcher, I.NativeSettings(group),
+            pandemic and I.NameplateEffects(group, "pandemic") or nil, group)
+        -- Started here and never touched again: the kit lives under
+        -- Blizzard's AuraButton, which is forbidden to addon code once it
+        -- shows a plate's auras in combat ("calling 'Stop' on bad self",
+        -- 2026-10-04). It is drawn only inside the refresh window anyway.
+        local kitHost = watcher.kit.indicatorHost
+        if rowName then kitHost.indicatorReadouts.label:SetText(rowName) end
+        if not pandemic then kitHost.visualRoot:SetAlpha(0) end
+    end
+    local copy = watcher.copy
+    I.CreateVisual(copy)
+    local shown, copyWidth, copyHeight = I.StyleVisual(copy, group, I.NameplateIconSettings(group, aura))
+    if shown then copy:SetSize(copyWidth, copyHeight) end
+    if rowName then copy.indicatorReadouts.label:SetText(rowName) end
+    copy:SetShown(shown == true)
+    -- The missing look plays its Always and While Missing effects.
+    CooldownCompanion:ApplyNameplateEffects(copy, shown and I.NameplateEffects(group, "missing") or nil, copyHeight)
+    CooldownCompanion:CollectPlayingEffectGroups(copy, groups)
+    -- Bound while parked: hold them until the cell goes onto a mob.
+    if not watcher.cell:IsShown() then
+        for _, animGroup in ipairs(groups) do animGroup:Stop() end
+    end
+    watcher.boundGroup = group
+    return shown == true
+end
+
+function Presence.ParkPlateWatcher(watcher)
+    local contract = Presence.PLATE_CONTRACT
+    watcher.cell:Hide()
+    -- The park filters leave the missing window open: draw nothing in it.
+    watcher.copy:Hide()
+    CooldownCompanion:ApplyNameplateEffects(watcher.copy, nil)
+    for index = #watcher.effectGroups, 1, -1 do watcher.effectGroups[index] = nil end
+    watcher.container:SetAuraGroupCandidateFilters(watcher.key, BuildParkFilters(contract))
+    watcher.container:SetAuraSlotCandidateFilters(watcher.slotKey, BuildParkFilters(contract))
+    watcher.boundGroup, watcher.nameplateAura = nil, nil
+end
+
+ST._PlateWatcher = {
+    New = Presence.NewPlateWatcher,
+    Bind = Presence.BindPlateWatcher,
+    Park = Presence.ParkPlateWatcher,
+}
 
 -- OOC only. A group-tracked picture shows while NOBODY in the group has the
 -- aura: the record's own tracker covers `tokens[1]`, and every further member
@@ -5385,12 +5571,44 @@ function RunAuraRebind(configEdit, panelIds, resources)
 
     -- Icon/bar entries use their existing aura flags. Aura Indicators use
     -- the native host kit and the selected player, target, group, or pet scope.
+    -- Nameplate Reminders draw nothing on their own host: their aura goes to
+    -- the nameplate watchers (Core/NameplateReminders.lua), which need every
+    -- active one at once to hand out their banks, so this walk ignores the
+    -- pass's scope. The module re-binds only what this pass touched.
+    -- One want per DoT: each is its own spot in the Indicator's row and owns
+    -- its own watcher bank. The presence path's source rule, not
+    -- IsIndicatorAuraDisplayEnabled (native slots only).
+    local plateWants = {}
+    for groupId, frame in pairs(self.groupFrames) do
+        local group = self.db.profile.groups[groupId]
+        if ST.Indicator.IsNameplate(group) and frame.buttons and not ST.Indicator.AuraListProblem(group) then
+            -- frame.buttons holds only entries usable here (spellbook,
+            -- talents, entry load rules); the others keep their spot empty.
+            local usable = {}
+            for _, button in ipairs(frame.buttons) do
+                if button.buttonData then usable[button.buttonData] = true end
+            end
+            local auras = ST.Indicator.AuraList(group)
+            for index, aura in ipairs(auras) do
+                if usable[aura] and aura.enabled ~= false and aura.type == "spell" and aura.addedAs == "aura"
+                    and aura.auraTrackNameplates == true then
+                    local spellSet = self:GetAuraCandidateSpellIDSet(aura, true)
+                    if spellSet then
+                        plateWants[#plateWants + 1] = { groupId = groupId, group = group, aura = aura,
+                            spellSet = spellSet, index = index, count = #auras }
+                    end
+                end
+            end
+        end
+    end
+
     local wanted = {}
     for groupId, frame in pairs(owners or self.groupFrames) do
         local group = self.db.profile.groups[groupId]
         local displayMode = group and (group.displayMode or "icons")
         if (displayMode == "icons" or displayMode == "bars"
             or ST.Indicator.IsAura(group))
+            and not ST.Indicator.IsNameplate(group)
             and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local buttonData = button.buttonData
@@ -5613,6 +5831,12 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- and no record here shares a host with anything.
     RebindAuraPanels(self, panelIds)
 
+    -- Nameplate watcher banks: re-pointed and restyled on released watchers
+    -- only; building new ones is the module's batched job, never this pass's.
+    if ST._NameplateReminders then
+        ST._NameplateReminders.Bind(plateWants, panelIds)
+    end
+
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
     -- do this per record — several records share one button, and clearing the
@@ -5754,6 +5978,9 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     if reason == "config" or (reason == "style" and HasBoundSlots(groupId)) then
         pendingConfigEdit = true
     end
+    -- Nameplate watchers restyle on a full pass only when a request could
+    -- change their look.
+    if ST._NameplateReminders then ST._NameplateReminders.NoteRebindRequest(reason) end
     ScheduleAuraRebind()
 end
 
@@ -5793,6 +6020,8 @@ function CooldownCompanion:GetAuraDisplayStatus()
     end
     status.presence = presence
     status.pandemic = pandemic
+    -- Nameplate Reminders: banks, watchers built, hand-outs (CC-side counts).
+    if self.GetNameplateReminderStatus then status.nameplates = self:GetNameplateReminderStatus() end
     -- Aura blocks: containers created (permanent once created), groups by
     -- bind state, how many sides run a two-bucket chain, and any entries the
     -- chain safety dropped (see BindBlockBucket — clears on /reload).

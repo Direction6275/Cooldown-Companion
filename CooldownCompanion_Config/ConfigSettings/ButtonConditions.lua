@@ -141,6 +141,8 @@ local panelAlphaSettings = ST._DefineSettingRoute({
     section = "alpha",
     sectionLabel = "Alpha",
     collapseKeys = { "loadconditions_alpha" },
+    -- Nameplate reminders fade with their nameplates only (owner ruling).
+    applies = function(context) return not ST.Indicator.IsNameplate(context.group) end,
 }):Settings({
     source = {
         label = "Panel Alpha",
@@ -3270,6 +3272,11 @@ local function BuildLoadConditionsTab(container)
         infoButtons = tabInfoButtons,
         onChanged = RefreshPanelLoadConditions,
     })
+
+    -- A Nameplate Reminder keeps its load rules but has no fade rules: it
+    -- shows only in combat and fades with its nameplate (owner ruling
+    -- 2026-10-04).
+    if ST.Indicator.IsNameplate(group) then return end
 
     -- ============================================================
     -- Alpha (moved here from the Layout tab: transparency behavior

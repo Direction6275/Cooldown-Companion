@@ -698,9 +698,10 @@ local function EnsureAuraTextureNudger(host)
     host.nudger = nudger
 end
 
-local function LockAuraIndicatorFromMover(host)
-    local owner = host._ownerButton
-    local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
+-- The mover padlock, shared with the nameplate unlock view
+-- (Core/NameplateTargetView.lua).
+local function LockIndicatorPanel(groupId)
+    local group = groupId and ResolveGroup(groupId) or nil
     if not group then
         return
     end
@@ -708,14 +709,20 @@ local function LockAuraIndicatorFromMover(host)
     if CooldownCompanion.ClearArrangeMoverSelection then
         CooldownCompanion:ClearArrangeMoverSelection()
     end
-    CooldownCompanion:SetPanelLocked(owner._groupId, true)
-    CooldownCompanion:CaptureArrangePanelRecord(owner._groupId)
+    CooldownCompanion:SetPanelLocked(groupId, true)
+    CooldownCompanion:CaptureArrangePanelRecord(groupId)
     CooldownCompanion:RefreshAllAuraTextureVisuals()
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end
     CooldownCompanion:Print((group.name or "Indicator") .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
+end
+ST._LockIndicatorPanel = LockIndicatorPanel
+
+local function LockAuraIndicatorFromMover(host)
+    local owner = host._ownerButton
+    LockIndicatorPanel(owner and owner._groupId)
 end
 
 local function EnsureAuraTextureDragHandle(host)
@@ -1222,6 +1229,15 @@ function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driv
         showDisplay = false,
     }
 
+    -- A Nameplate Reminder has no screen display and no mover: it draws only
+    -- on the nameplates (Core/NameplateReminders.lua). Unlocked, it shows on
+    -- the target's nameplate instead (Core/NameplateTargetView.lua).
+    if settings and ST.Indicator.IsNameplate(group) then
+        ST._NameplateTargetView.NoteUnlocked(driverButton and driverButton._groupId, state.isUnlocked == true)
+        state.isUnlocked = false
+        state.bypassModuleAlpha = false
+        return state
+    end
     if settings then
         if state.isCursorLayoutPreview then
             state.showDisplay = true

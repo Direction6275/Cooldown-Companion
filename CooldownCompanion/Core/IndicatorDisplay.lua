@@ -132,6 +132,29 @@ function I.CreatePandemicGlow(host, auraOwned)
     return glow
 end
 
+-- Nameplate reminders show refresh soon on an Icon as a plain border in the
+-- Pandemic Color instead of the glow rig (owner ruling 2026-10-04): a kit
+-- exists per watcher, up to twenty per DoT. Built inside the pandemic twin's
+-- gated base, so Blizzard already reveals it only in the window; styled from
+-- saved settings, sized from the bounds StyleVisual stamps.
+local PANDEMIC_BORDER_SIZE = 2
+function I.CreatePandemicBorder(host)
+    local frame = CreateFrame("Frame", nil, host.visualRoot, host._ccFrameTemplate)
+    frame:SetAllPoints(host.visualRoot)
+    frame:EnableMouse(false)
+    frame:SetFrameLevel(host.indicatorReadouts.root:GetFrameLevel())
+    host.indicatorReadouts.root:SetFrameLevel(frame:GetFrameLevel() + 1)
+    local edges = {}
+    for index = 1, 4 do edges[index] = frame:CreateTexture(nil, "OVERLAY") end
+    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT")
+    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT")
+    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT")
+    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT")
+    frame:Hide()
+    host.indicatorPandemicBorder = {frame = frame, edges = edges}
+    return host.indicatorPandemicBorder
+end
+
 -- The host draws the aura's live display: a native aura Indicator, or the
 -- Also During Pandemic twin of a While Missing one (AuraDisplay
 -- "pandemicIndicatorAura", the preview's Pandemic Window state).
@@ -157,6 +180,26 @@ function I.StylePandemicGlow(host, group, shown)
     local enabled = shown and DrawsLiveAura(host, group) and settings.displayType == "icon"
         and I.PandemicEffectOn(group) or false
     ST._StyleKitPandemicGlowRegions(glow, settings and settings.pandemic, host.visualRoot, enabled)
+end
+
+-- The nameplate border: an Icon display with the Pandemic effect on.
+function I.StylePandemicBorder(host, group, shown)
+    local border = host.indicatorPandemicBorder
+    if not border then return end
+    local settings = I.Settings(group)
+    local on = shown and settings and DrawsLiveAura(host, group) and settings.displayType == "icon"
+        and I.PandemicEffectOn(group) or false
+    if not on then border.frame:Hide(); return end
+    local color = settings.pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
+    local edges = border.edges
+    edges[1]:SetHeight(PANDEMIC_BORDER_SIZE)
+    edges[2]:SetHeight(PANDEMIC_BORDER_SIZE)
+    edges[3]:SetWidth(PANDEMIC_BORDER_SIZE)
+    edges[4]:SetWidth(PANDEMIC_BORDER_SIZE)
+    for _, edge in ipairs(edges) do
+        edge:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    end
+    border.frame:Show()
 end
 
 -- The Pandemic effect on Texture and Text displays: the artwork (and its
@@ -684,15 +727,19 @@ end
 function I.StyleAura(slot, group, durationOptions)
     local host = slot.kit.indicatorHost
     slot.slotButton:ClearIcon()
-    local shown, width, height = I.StyleVisual(host, group)
+    -- A nameplate watcher draws one DoT of the row, with that DoT's icon.
+    local dot = slot.nameplateAura
+    local shown, width, height = I.StyleVisual(host, group, dot and I.NameplateIconSettings(group, dot) or nil)
     local settings = I.Settings(group)
-    local source = I.Primary(group)
-    if settings.displayType == "icon" and not settings.icon.manualIcon and not (source and source.manualIcon) then
+    local source = dot or I.Primary(group)
+    local chosen = settings.icon.manualIcon and not (dot and I.IsMultiAura(group))
+    if settings.displayType == "icon" and not chosen and not (source and source.manualIcon) then
         slot.slotButton:SetIcon(host.iconFrame.icon)
     end
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
     I.StylePandemicGlow(host, group, shown)
+    I.StylePandemicBorder(host, group, shown)
     I.StylePandemicTint(host, group, shown)
     I.StyleStackGate(slot, shown and group or nil, width, height)
     host.visualRoot:SetAlpha(shown and 1 or 0)

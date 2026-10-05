@@ -77,7 +77,11 @@ local function AddSourceRows(card, source, model, parts)
     if source.aura then
         -- A rule that can never pass reads in the warning color; the reason
         -- sits under the rule in Visibility.
-        entry.name:SetControlText(source.auraRuleNever and "|cffffb840" .. source.auraRule .. "|r" or source.auraRule)
+        -- Clickable like a spell's rule: it opens the aura's row in Visibility.
+        entry.rules[1] = RuleValue(source.auraRule, source.auraRuleNever and WARNING or nil,
+            {source.auraRule, "Click to open this aura in Visibility."},
+            function() model.openAuraRule(source.entry) end)
+        entry.name:SetControlWidget(entry.rules[1])
     elseif #source.rules == 0 then
         entry.rules[1] = RuleValue("Always", nil,
             {"No rules", "Shows whenever it can be tracked. Click to add rules in Visibility."},
@@ -237,7 +241,84 @@ local function OnPreviewCountdownUpdate(ticker, elapsed)
     ShowPreviewCountdown(surface)
 end
 
+-- While a Nameplate Reminder's preview is up, the same saved design is also
+-- drawn on the current hostile target's real nameplate (owner ruling
+-- 2026-10-04), by the shared target-plate view (Core/NameplateTargetView.lua,
+-- which unlock mode uses too).
+local function SetTargetPreview(group, groupId, onPlaced)
+    ST._NameplateTargetView.SetPreview(group, groupId, onPlaced)
+end
+
+-- A Nameplate Reminder's stand-in enemy nameplate: the game's artwork the
+-- reminder sits on, not config chrome. Its frame is the nameplate's base
+-- frame the runtime anchors to (health bar with the name above it).
+local PLATE_WIDTH, PLATE_HEIGHT = 120, 30
+local function EnsurePreviewPlate(preview)
+    local plate = preview.indicatorPlate
+    if plate then return plate end
+    plate = CreateFrame("Frame", nil, preview.root)
+    plate:SetSize(PLATE_WIDTH, PLATE_HEIGHT)
+    plate:EnableMouse(false)
+    -- The target-plate copy follows this stand-in's visibility, which covers
+    -- every way the preview goes away (another selection, config closed).
+    -- Shown while no hostile target carries that copy: unscaled, at the top
+    -- of the preview.
+    local hint = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOP", preview.root, "TOP", 0, -6)
+    hint:SetText("Target an enemy to see it on a real nameplate")
+    hint:Hide()
+    plate.hint = hint
+    plate:SetScript("OnHide", function()
+        hint:Hide()
+        SetTargetPreview(nil)
+    end)
+    local bar = plate:CreateTexture(nil, "BACKGROUND")
+    bar:SetPoint("BOTTOMLEFT", plate, "BOTTOMLEFT", 4, 4)
+    bar:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT", -4, 4)
+    bar:SetHeight(10)
+    bar:SetColorTexture(0, 0, 0, 0.8)
+    local fill = plate:CreateTexture(nil, "ARTWORK")
+    fill:SetPoint("TOPLEFT", bar, "TOPLEFT", 1, -1)
+    fill:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -1, 1)
+    fill:SetColorTexture(0.78, 0.12, 0.1, 1)
+    local name = plate:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    name:SetPoint("BOTTOM", bar, "TOP", 0, 2)
+    name:SetText("Enemy")
+    preview.indicatorPlate = plate
+    return plate
+end
+
+-- The row's further DoTs in the preview: surfaces like the main one,
+-- parented to the stand-in plate so they share its scale and visibility.
+local function EnsurePlateCopy(preview, index)
+    preview.indicatorPlateCopies = preview.indicatorPlateCopies or {}
+    local copy = preview.indicatorPlateCopies[index]
+    if copy then return copy end
+    copy = CreateFrame("Frame", nil, preview.indicatorPlate)
+    copy:EnableMouse(false)
+    -- Effects run as AnimationGroups, as on the real plates.
+    copy._ccAnimatedEffects = true
+    copy.visualRoot = CreateFrame("Frame", nil, copy)
+    copy.visualRoot:SetPoint("CENTER")
+    copy.primaryTexture = copy.visualRoot:CreateTexture(nil, "ARTWORK")
+    copy.secondaryTexture = copy.visualRoot:CreateTexture(nil, "ARTWORK")
+    preview.indicatorPlateCopies[index] = copy
+    return copy
+end
+
+-- Where the first DoT sits relative to the plate's center: the runtime's own
+-- placement (Core/NameplateReminders.lua PlacementFor), its anchor point
+-- turned into an offset on the stand-in plate.
+local POINT_SIDES = {TOP = {0, 1}, BOTTOM = {0, -1}, LEFT = {-1, 0}, RIGHT = {1, 0},
+    TOPLEFT = {-1, 1}, TOPRIGHT = {1, 1}, BOTTOMLEFT = {-1, -1}, BOTTOMRIGHT = {1, -1}, CENTER = {0, 0}}
+local function PlateDisplayOffset(group)
+    local point, x, y = ST._NameplateReminders.PlacementFor(group, 1, 1)
+    local sides = POINT_SIDES[point]
+    return sides[1] * PLATE_WIDTH / 2 + x, sides[2] * PLATE_HEIGHT / 2 + y
+end
+
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
+    if preview.indicatorPlate then preview.indicatorPlate:Hide() end
     if preview.indicatorDuration then preview.indicatorDuration.frame:Hide() end
     if preview.indicatorStacks then preview.indicatorStacks.frame:Hide() end
     if preview.indicatorAura then preview.indicatorAura.frame:Hide() end
@@ -308,7 +389,8 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     -- While Missing starts on Missing so the display is visible; Active hides
     -- it as the real tracker does. A list tries its auras' Whens met or not,
     -- starting met.
-    local list = I.IsMultiAura(candidate)
+    local nameplate = I.IsNameplate(candidate)
+    local list = I.IsMultiAura(candidate) and not nameplate
     local auraStates, auraOrder, auraPass
     if list then
         auraStates, auraOrder, auraPass = {met="Met", unmet="Not Met"}, {"met", "unmet"}, "met"
@@ -330,8 +412,11 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     surface._ccPandemicTwin = inWindow or nil
     if inWindow then fraction = I.PREVIEW_PANDEMIC_FRACTION end
     if missing then passes = auraState == auraPass or inWindow end
+    -- On nameplates the window shows only DoTs with Also During Pandemic.
+    if nameplate and inWindow then passes = I.Primary(candidate).showWhileAuraPandemic == true end
     surface:SetAlpha(passes and 1 or 0)
-    if not I.Render(surface,nil,candidate,true,fraction) then
+    if not I.Render(surface,nil,candidate,true,fraction,nil,
+        nameplate and I.NameplateIconSettings(candidate, I.Primary(candidate)) or nil) then
         ShowPandemicStandIns(surface, false)
         ReleaseSourceControls(preview)
         PP.SetPreviewMessage(preview,"Choose artwork in Appearance to preview this Indicator.")
@@ -340,8 +425,11 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     end
     if state == "timeless" and not inWindow then surface.indicatorReadouts.timer:SetText("") end
     -- The Pandemic effect stand-ins: the live rigs' stylers on CC-side kits.
+    -- A nameplate Icon is outlined instead of glowing (StylePandemicBorder).
     if not surface.indicatorPandemicGlow then I.CreatePandemicGlow(surface, false) end
-    I.StylePandemicGlow(surface, candidate, true)
+    if not surface.indicatorPandemicBorder then I.CreatePandemicBorder(surface) end
+    I.StylePandemicGlow(surface, not nameplate and candidate or nil, true)
+    I.StylePandemicBorder(surface, nameplate and candidate or nil, true)
     I.StylePandemicTint(surface, candidate, true)
     ShowPandemicStandIns(surface, I.IsPreviewPandemicWindow(fraction * I.PREVIEW_SECONDS))
     if countdown then
@@ -354,8 +442,23 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         -- A native display plays only what its slot can (no Color Shift on
         -- Text; the window's twin also no Only In Combat): the runtime's own
         -- lists decide, so the sample matches the game.
-        local plays = inWindow and I.PandemicTwinEffects(candidate) or I.NativeEffects(candidate)
-        if plays then
+        -- A nameplate reminder plays each look's own effects (Always plus
+        -- While Missing, or In Pandemic Window).
+        local plays = nameplate and I.NameplateEffects(candidate, inWindow and "pandemic" or "missing")
+            or inWindow and I.PandemicTwinEffects(candidate) or I.NativeEffects(candidate)
+        if nameplate then
+            -- The look's own store (speed, color too): the candidate is a copy.
+            for key, effect in pairs(I.Effects(candidate)) do
+                if type(effect) == "table" then
+                    local look = plays[key]
+                    effect.enabled = look ~= nil
+                    if look then
+                        effect.speed, effect.color = look.speed, look.color
+                        effect.activation, effect.combatOnly = nil, nil
+                    end
+                end
+            end
+        elseif plays then
             for key, effect in pairs(I.Effects(candidate)) do
                 if type(effect) == "table" and effect.enabled and not plays[key] then effect.enabled=false end
             end
@@ -431,6 +534,83 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     -- Caption and controls stay readable at the host scale. Reserve their
     -- measured height before fitting the artwork, which centers in the space
     -- left above the footer.
+    if nameplate then
+        -- The row on its stand-in plate, fitted and centered together.
+        local auras = I.AuraList(candidate)
+        local count = #auras
+        local dx, dy = PlateDisplayOffset(candidate)
+        local left, right = -PLATE_WIDTH / 2, PLATE_WIDTH / 2
+        local bottom = math_min(-PLATE_HEIGHT / 2, dy - height / 2)
+        local top = math_max(PLATE_HEIGHT / 2, dy + height / 2)
+        local spots = {}
+        for index = 1, count do
+            spots[index] = dx + I.NameplateSpotOffset(candidate, index, count)
+            left = math_min(left, spots[index] - width / 2)
+            right = math_max(right, spots[index] + width / 2)
+        end
+        local boxWidth, boxHeight = right - left, top - bottom
+        local scale = PP.GetHostFitScale(host,boxWidth,boxHeight+(readOnly and 28 or 0),readOnly,footerHeight)
+        local cx, cy = (left + right) / 2, (bottom + top) / 2
+        local lift = readOnly and 10 or footerHeight / (2 * scale)
+        local plate = EnsurePreviewPlate(preview)
+        plate:SetScale(scale)
+        plate:ClearAllPoints()
+        plate:SetPoint("CENTER", preview.root, "CENTER", -cx, -cy + lift)
+        plate:Show()
+        -- Only while the preview can be seen: a rebuild with the config closed
+        -- (the plate shown under a hidden parent fires no OnHide) must not put
+        -- the row back on the target.
+        if not readOnly and plate:IsVisible() then
+            SetTargetPreview(candidate, panelId, function(hasPlate)
+                plate.hint:SetShown(not hasPlate and plate:IsVisible())
+            end)
+        elseif not readOnly then
+            -- (A read-only card never owns the target copy.)
+            SetTargetPreview(nil)
+        end
+        surface:SetScale(scale)
+        surface:ClearAllPoints()
+        surface:SetPoint("CENTER", preview.root, "CENTER", spots[1] - cx, dy - cy + lift)
+        surface:SetFrameLevel(plate:GetFrameLevel() + 2)
+        surface:Show()
+        -- Each further DoT: its own icon at its own spot, in the same state,
+        -- with the same look's effects (the runtime's non-measuring path).
+        local copyEffects = I.NameplateEffects(candidate, inWindow and "pandemic" or "missing")
+        local _, copyHeight = I.DisplaySize(candidate)
+        -- Copies start at index 2, so # can't count them: hide by key.
+        for index, copy in pairs(preview.indicatorPlateCopies or {}) do
+            if index > count then
+                CooldownCompanion:ApplyNameplateEffects(copy, nil)
+                copy:Hide()
+            end
+        end
+        for index = 2, count do
+            local aura = auras[index]
+            local copy = EnsurePlateCopy(preview, index)
+            local drawn = auraState == "missing" or inWindow and aura.showWhileAuraPandemic == true
+            if drawn then
+                copy._ccPandemicTwin = inWindow or nil
+                drawn = I.Render(copy, nil, candidate, true, fraction, nil, I.NameplateIconSettings(candidate, aura))
+            end
+            if drawn then
+                if state == "timeless" and not inWindow then copy.indicatorReadouts.timer:SetText("") end
+                if not copy.indicatorPandemicBorder then I.CreatePandemicBorder(copy) end
+                I.StylePandemicBorder(copy, candidate, true)
+                copy:ClearAllPoints()
+                copy:SetPoint("CENTER", plate, "CENTER", spots[index], dy)
+                copy:SetFrameLevel(plate:GetFrameLevel() + 2)
+                copy:Show()
+                -- Read-only previews stay still, like the main surface.
+                CooldownCompanion:ApplyNameplateEffects(copy, not readOnly and copyEffects or nil, copyHeight)
+            else
+                CooldownCompanion:ApplyNameplateEffects(copy, nil)
+                copy:Hide()
+            end
+        end
+        preview.barBaseRect = {x=0,y=0,width=width,height=height}
+        PP.FinalizePreviewState(preview)
+        return
+    end
     local scale = PP.GetHostFitScale(host,width,height+(readOnly and 28 or 0),readOnly,footerHeight)
     surface:SetScale(scale)
     surface:ClearAllPoints()

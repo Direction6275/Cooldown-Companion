@@ -1796,6 +1796,10 @@ local function HidePanelPreview(col3)
         end
         ReleaseButtonsPreviewRenderer(host)
     end
+    -- The copy on the target's real nameplate goes with the preview. Said
+    -- outright: hiding an already-invisible host fires no OnHide (owner
+    -- report 2026-10-05: it stayed after the config closed).
+    if ST._NameplateTargetView then ST._NameplateTargetView.SetPreview(nil) end
     if col3.buttonsAddBox then
         col3.buttonsAddBox.frame:Hide()
     end
@@ -1944,6 +1948,8 @@ local function EnsureAddBox(col3)
     instructions:SetPoint("LEFT", editFrame, "LEFT", 6, 0)
     instructions:SetPoint("RIGHT", editFrame, "RIGHT", -6, 0)
     instructions:SetJustifyH("LEFT")
+    -- One line: a long hint ends in "..." rather than wrapping out of the box.
+    instructions:SetWordWrap(false)
     instructions:SetTextColor(0.5, 0.5, 0.5)
     instructions:SetText("Add...")
     addBox._cdcInstructions = instructions
@@ -2032,19 +2038,30 @@ local function UpdateAddBox(col3)
         CS.panelAddPresentation = "icons"
     end
     local addBox = EnsureAddBox(col3)
+    -- A nameplate Indicator that can't take another DoT (not Icon, or the
+    -- DoT cap is full) greys the box and says why; Change... still works.
+    local blocked = not replacement and indicator and ST.Indicator.NameplateAddBlock(group, CS.selectedGroup)
+    addBox:SetDisabled(blocked and true or false)
+    if blocked then
+        CS.panelAddModeQuery = nil
+        CS.pendingWideAddFocus = false
+        addBox:SetText("")
+        CS.HideAutocomplete()
+    end
     if CS.panelAddModeQuery ~= nil then addBox:SetText(CS.panelAddModeQuery) end
     CS.panelAddModeQuery = nil
-    addBox._cdcInstructions:SetText(replacement and "Choose a replacement source..."
+    addBox._cdcInstructions:SetText(blocked or replacement and "Choose a replacement source..."
         or indicator and (ST.Indicator.Primary(group) and "Add a condition source..." or "Choose a source...")
         or "Add...")
+    addBox._cdcInstructions:SetShown((addBox:GetText() or "") == "")
     addBox.frame:SetHeight(ADD_BOX_HEIGHT)
     addBox.frame:Show()
     UpdateEditingActionRow(col3)
 
     -- Also consume the shared autocomplete focus flag when an inline
     -- inline add isn't open (its box consumes it when addingToPanelId is set).
-    local wantFocus = CS.pendingWideAddFocus
-    if not wantFocus and CS.pendingEditBoxFocus and not CS.addingToPanelId then
+    local wantFocus = CS.pendingWideAddFocus and not blocked
+    if not wantFocus and not blocked and CS.pendingEditBoxFocus and not CS.addingToPanelId then
         CS.pendingEditBoxFocus = false
         wantFocus = true
     end
