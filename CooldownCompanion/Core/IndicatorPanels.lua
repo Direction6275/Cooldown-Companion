@@ -186,16 +186,25 @@ I.MAX_NAMEPLATE_DOTS = 5
 -- position for a switch back. Created on first read.
 -- Corners (owner ruling 2026-10-04) sit above or below the plate, lined up
 -- with that edge, and grow inward along it.
+-- Each side: the plate point it anchors to, where that point sits on the
+-- plate (px, py: -1 to 1 of its half size), and `step`: which way the display
+-- steps off the point sideways and a row grows from its first DoT (0:
+-- centered on it). Up or down, the display steps the way of py.
 I.NAMEPLATE_SIDE_ORDER = {"above", "below", "left", "right",
     "topleft", "topright", "bottomleft", "bottomright", "center"}
-I.NAMEPLATE_SIDE_LABELS = {above = "Above", below = "Below", left = "Left", right = "Right",
-    topleft = "Top Left", topright = "Top Right", bottomleft = "Bottom Left", bottomright = "Bottom Right",
-    center = "Center"}
--- Which way a side's row grows from its first DoT: -1 leftward, 1
--- rightward, nil centered on the anchor.
-local NAMEPLATE_GROWTH = {left = -1, topright = -1, bottomright = -1,
-    right = 1, topleft = 1, bottomleft = 1}
-I.NAMEPLATE_GROWTH = NAMEPLATE_GROWTH
+I.NAMEPLATE_SIDES = {
+    above = {label = "Above", point = "TOP", px = 0, py = 1, step = 0},
+    below = {label = "Below", point = "BOTTOM", px = 0, py = -1, step = 0},
+    left = {label = "Left", point = "LEFT", px = -1, py = 0, step = -1},
+    right = {label = "Right", point = "RIGHT", px = 1, py = 0, step = 1},
+    topleft = {label = "Top Left", point = "TOPLEFT", px = -1, py = 1, step = 1},
+    topright = {label = "Top Right", point = "TOPRIGHT", px = 1, py = 1, step = -1},
+    bottomleft = {label = "Bottom Left", point = "BOTTOMLEFT", px = -1, py = -1, step = 1},
+    bottomright = {label = "Bottom Right", point = "BOTTOMRIGHT", px = 1, py = -1, step = -1},
+    center = {label = "Center", point = "CENTER", px = 0, py = 0, step = 0},
+}
+I.NAMEPLATE_SIDE_LABELS = {}
+for key, side in pairs(I.NAMEPLATE_SIDES) do I.NAMEPLATE_SIDE_LABELS[key] = side.label end
 function I.NameplatePlacement(group)
     local settings = I.Settings(group)
     if not settings then return end
@@ -204,7 +213,7 @@ function I.NameplatePlacement(group)
         placement = {}
         settings.nameplate = placement
     end
-    if not I.NAMEPLATE_SIDE_LABELS[placement.side] then placement.side = "above" end
+    if not I.NAMEPLATE_SIDES[placement.side] then placement.side = "above" end
     placement.x = tonumber(placement.x) or 0
     placement.y = tonumber(placement.y) or 0
     placement.spacing = tonumber(placement.spacing) or 2
@@ -218,8 +227,8 @@ end
 function I.NameplateSpotOffset(group, index, count)
     local placement = I.NameplatePlacement(group)
     local step = I.DisplaySize(group) + placement.spacing
-    local growth = NAMEPLATE_GROWTH[placement.side]
-    if growth then return growth * (index - 1) * step end
+    local growth = I.NAMEPLATE_SIDES[placement.side].step
+    if growth ~= 0 then return growth * (index - 1) * step end
     return (index - (count + 1) / 2) * step
 end
 
@@ -245,7 +254,7 @@ function I.PlaceBesideNameplates(group, others)
     local side = placement.side
     -- How far the other rows on this side reach along their growth: leftward
     -- or rightward from the anchor, to the right for centered ones.
-    local growth = NAMEPLATE_GROWTH[side]
+    local growth = I.NAMEPLATE_SIDES[side].step
     local reach
     for _, other in ipairs(others) do
         local theirs = I.NameplatePlacement(other)

@@ -144,14 +144,8 @@ function I.CreatePandemicBorder(host)
     frame:EnableMouse(false)
     frame:SetFrameLevel(host.indicatorReadouts.root:GetFrameLevel())
     host.indicatorReadouts.root:SetFrameLevel(frame:GetFrameLevel() + 1)
-    local edges = {}
-    for index = 1, 4 do edges[index] = frame:CreateTexture(nil, "OVERLAY") end
-    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT")
-    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT")
-    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT")
-    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT")
     frame:Hide()
-    host.indicatorPandemicBorder = {frame = frame, edges = edges}
+    host.indicatorPandemicBorder = {frame = frame, edges = ST.CreateBorderTextureSet(frame)}
     return host.indicatorPandemicBorder
 end
 
@@ -190,15 +184,9 @@ function I.StylePandemicBorder(host, group, shown)
     local on = shown and settings and DrawsLiveAura(host, group) and settings.displayType == "icon"
         and I.PandemicEffectOn(group) or false
     if not on then border.frame:Hide(); return end
-    local color = settings.pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
-    local edges = border.edges
-    edges[1]:SetHeight(PANDEMIC_BORDER_SIZE)
-    edges[2]:SetHeight(PANDEMIC_BORDER_SIZE)
-    edges[3]:SetWidth(PANDEMIC_BORDER_SIZE)
-    edges[4]:SetWidth(PANDEMIC_BORDER_SIZE)
-    for _, edge in ipairs(edges) do
-        edge:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
-    end
+    -- A fixed thickness in the kit's own units: nothing is measured.
+    ST.ApplyBorderTextures(border.edges, border.frame,
+        settings.pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR, PANDEMIC_BORDER_SIZE)
     border.frame:Show()
 end
 

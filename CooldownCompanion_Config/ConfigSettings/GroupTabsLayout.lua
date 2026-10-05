@@ -968,7 +968,8 @@ local function BuildLayoutTab(container)
         if offerPlates then
             if platesRefusal then anchorTargetRow:SetItemDisabled("nameplates", true) end
             ST._AddDropdownItemTooltips(anchorTargetRow, {nameplates = {"Enemy Nameplates", platesRefusal
-                or "Shows each of this Indicator's debuffs on every enemy nameplate while it's missing from that mob. Only while you're in combat, on mobs in combat, and never on minor ones."}})
+                or ("Shows each of this Indicator's debuffs on every enemy nameplate while it's missing from that mob. Only while you're in combat, on mobs in combat, and never on minor ones.\n\nEach DoT covers up to %d mobs at once, or %d until you enter a dungeon or raid.")
+                    :format(ST._NameplateReminders.INSTANCE_BANK, ST._NameplateReminders.OPEN_WORLD_BANK)}})
         end
 
         if onPlates then

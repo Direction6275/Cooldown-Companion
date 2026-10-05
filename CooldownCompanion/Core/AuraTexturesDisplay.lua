@@ -720,16 +720,11 @@ local function LockIndicatorPanel(groupId)
 end
 ST._LockIndicatorPanel = LockIndicatorPanel
 
-local function LockAuraIndicatorFromMover(host)
-    local owner = host._ownerButton
-    LockIndicatorPanel(owner and owner._groupId)
-end
-
 local function EnsureAuraTextureDragHandle(host)
     if host.dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
 
     local dragHandle = ST.MoverChrome.CreateHeader(host, "", function()
-        LockAuraIndicatorFromMover(host)
+        LockIndicatorPanel(host._ownerButton and host._ownerButton._groupId)
     end, function()
         local groupId = host._ownerButton and host._ownerButton._groupId
         local group = groupId and CooldownCompanion.db.profile.groups[groupId]

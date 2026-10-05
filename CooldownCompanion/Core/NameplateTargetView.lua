@@ -33,13 +33,17 @@ local rows = {}       -- "preview" or groupId -> row
 local events = CreateFrame("Frame")
 local eventsOn, pending, inCombat = false, false, false
 local drawnPlate   -- the plate the rows hang off, or nil
-local unlockHint   -- screen label while unlocked with no hostile target
+local unlockHint   -- screen label while unlocked with no plate to draw on
 local toolbarHooked = false
 
+-- The hostile target's plate, or nil and why there is none: "combat" (the
+-- view is off in fights), "target" (no hostile target) or "plate" (its
+-- nameplate isn't showing: nameplates off, or too far away).
 local function TargetPlate()
-    if inCombat or InCombatLockdown() then return nil end
-    if not UnitExists("target") or not UnitCanAttack("player", "target") then return nil end
-    return C_NamePlate.GetNamePlateForUnit("target")
+    if inCombat or InCombatLockdown() then return nil, "combat" end
+    if not UnitExists("target") or not UnitCanAttack("player", "target") then return nil, "target" end
+    local plate = C_NamePlate.GetNamePlateForUnit("target")
+    return plate, not plate and "plate" or nil
 end
 
 local function SavedGroup(groupId)
@@ -58,21 +62,6 @@ local function UpdateCoordText(row)
     end
 end
 
-local function Commit(row)
-    local groupId = row.groupId
-    if not SavedGroup(groupId) then return end
-    CooldownCompanion:RequestAuraRebind("style", groupId)
-    if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(groupId) end
-end
-
--- Re-anchor the row box from the saved offset (during a drag: no redraw).
-local function AnchorHolder(row, group)
-    local plate = row.holder:GetParent()
-    local point, x, y = ST._NameplateReminders.RowBox(group, #ST.Indicator.AuraList(group))
-    row.holder:ClearAllPoints()
-    row.holder:SetPoint("CENTER", plate, point, x, y)
-end
-
 -- New plate offset, rounded like every coordinate label.
 local function SetOffset(row, x, y)
     local group = SavedGroup(row.groupId)
@@ -86,7 +75,11 @@ local function SetOffset(row, x, y)
         staged.x, staged.y = placement.x, placement.y
     end
     UpdateCoordText(row)
-    AnchorHolder(row, preview.groupId == row.groupId and preview.group or group)
+    -- Re-anchor the row box from the new offset (during a drag: no redraw).
+    local drawn = preview.groupId == row.groupId and preview.group or group
+    local point, boxX, boxY = ST._NameplateReminders.RowBox(drawn, #ST.Indicator.AuraList(drawn))
+    row.holder:ClearAllPoints()
+    row.holder:SetPoint("CENTER", row.holder:GetParent(), point, boxX, boxY)
 end
 
 local function DragUpdate(row)
@@ -111,7 +104,9 @@ local function EndDrag(row)
     DragUpdate(row)
     row.drag = nil
     row.holder:SetScript("OnUpdate", nil)
-    Commit(row)
+    if not SavedGroup(row.groupId) then return end
+    CooldownCompanion:RequestAuraRebind("style", row.groupId)
+    if ST._RefreshButtonsPreviewMirror then ST._RefreshButtonsPreviewMirror(row.groupId) end
 end
 
 local function OpenSettings(row)
@@ -180,11 +175,11 @@ local function SetChrome(row, groupId)
     end
 end
 
--- Unlocked with nowhere to draw (no hostile target): say what's needed
--- rather than show nothing, which reads as broken. A plain screen label,
--- never on a plate.
+-- Unlocked with nowhere to draw: say what's needed (`missing`, TargetPlate's
+-- reason) rather than show nothing, which reads as broken. A plain screen
+-- label, never on a plate.
 local ShowUnlockHint
-function ShowUnlockHint(shown)
+function ShowUnlockHint(shown, missing)
     if not shown then
         if unlockHint then unlockHint:Hide() end
         return
@@ -193,7 +188,10 @@ function ShowUnlockHint(shown)
         unlockHint = ST.MoverChrome.CreateLabel(UIParent)
         unlockHint:SetWidth(260)
         unlockHint:SetFrameStrata("FULLSCREEN_DIALOG")
-        unlockHint.text:SetText("Target an enemy to place nameplate reminders")
+    end
+    if missing then
+        unlockHint.text:SetText(missing == "plate" and "Your target's nameplate isn't showing"
+            or "Target an enemy to place nameplate reminders")
     end
     -- Re-placed whenever the unlock toolbar refreshes too: the bar can show
     -- after this label does.
@@ -219,13 +217,6 @@ end
 ------------------------------------------------------------------------
 -- Rows
 ------------------------------------------------------------------------
-
-local function NewRow()
-    local row = { copies = {} }
-    row.holder = CreateFrame("Frame", nil, UIParent)
-    row.holder:Hide()
-    return row
-end
 
 local function HideRow(row)
     if row.drag then EndDrag(row) end
@@ -272,7 +263,7 @@ end
 
 local function Place()
     pending = false
-    local plate = TargetPlate()
+    local plate, missing = TargetPlate()
     drawnPlate = plate
     local wanted = {}
     -- An entry that stopped being a nameplate Indicator drops out here.
@@ -296,13 +287,14 @@ local function Place()
     for key, want in pairs(wanted) do
         local row = rows[key]
         if not row then
-            row = NewRow()
+            row = { copies = {}, holder = CreateFrame("Frame", nil, UIParent) }
+            row.holder:Hide()
             rows[key] = row
         end
         DrawRow(row, want.group, plate, want.chromeId)
     end
-    ShowUnlockHint(next(unlocked) ~= nil and not plate and not inCombat and not InCombatLockdown())
-    if preview.onPlaced then preview.onPlaced(plate ~= nil) end
+    ShowUnlockHint(next(unlocked) ~= nil and not plate and missing ~= "combat", missing)
+    if preview.onPlaced then preview.onPlaced(plate ~= nil, missing) end
 end
 
 ------------------------------------------------------------------------
@@ -367,8 +359,9 @@ function V.Forget(groupId)
 end
 
 -- The config's Live Preview: its staged copy of the Indicator, or nil when
--- the preview goes away. `onPlaced(hasPlate)` hears whether the copy found a
--- hostile target's plate, after each placement.
+-- the preview goes away. `onPlaced(hasPlate, missing)` hears whether the copy
+-- found a hostile target's plate, and why not (TargetPlate), after each
+-- placement.
 function V.SetPreview(group, groupId, onPlaced)
     preview.group, preview.groupId = group, group and groupId or nil
     preview.onPlaced = group and onPlaced or nil

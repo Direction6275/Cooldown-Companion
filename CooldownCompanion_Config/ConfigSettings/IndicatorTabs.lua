@@ -653,7 +653,7 @@ local function BuildSourceRules(container, group, entry, changed)
         Label(column, {label="Tracked on", indent=true, setting=whenToShow.unit, controlText="Enemy Nameplates",
             tooltip={"Tracked on", {"Each enemy nameplate's mob. Change it in Layout, Anchor Target.", 1, 1, 1, true}}})
         if ST._NameplateReminders and ST._NameplateReminders.IsOverCap(CS.selectedGroup) then
-            Hint(column, ("Only %d DoTs show on nameplates at once, so some here are off."):format(ST._NameplateReminders.MAX_DOTS))
+            Hint(column, ("Only %d DoTs show on nameplates at once, so some here are off."):format(I.MAX_NAMEPLATE_DOTS))
         end
         AddNameplateDoTPandemic(column, group, entry, changed)
         return

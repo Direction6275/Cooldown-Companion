@@ -92,7 +92,7 @@ local status = {
 
 local eventFrame = CreateFrame("Frame")
 local builderFrame = CreateFrame("Frame")
-local baseEventsOn, combatEventsOn = false, false
+local baseEventsOn = false
 
 ------------------------------------------------------------------------
 -- Rules
@@ -149,17 +149,9 @@ local function PlacementAt(group, along)
     local I = ST.Indicator
     local placement = I.NameplatePlacement(group)
     local width, height = I.DisplaySize(group)
-    local x, y, side = placement.x + along, placement.y, placement.side
-    if side == "above" then return "TOP", x, y + height / 2 end
-    if side == "below" then return "BOTTOM", x, y - height / 2 end
-    if side == "left" then return "LEFT", x - width / 2, y end
-    if side == "right" then return "RIGHT", x + width / 2, y end
-    -- Corners: outside the top or bottom edge, inside the side edge.
-    if side == "topleft" then return "TOPLEFT", x + width / 2, y + height / 2 end
-    if side == "topright" then return "TOPRIGHT", x - width / 2, y + height / 2 end
-    if side == "bottomleft" then return "BOTTOMLEFT", x + width / 2, y - height / 2 end
-    if side == "bottomright" then return "BOTTOMRIGHT", x - width / 2, y - height / 2 end
-    return "CENTER", x, y
+    -- Corners sit outside the top or bottom edge, inside the side edge.
+    local side = I.NAMEPLATE_SIDES[placement.side]
+    return side.point, placement.x + along + side.step * width / 2, placement.y + side.py * height / 2
 end
 
 local function PlacementFor(group, index, count)
@@ -304,33 +296,22 @@ local BASE_EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
 local COMBAT_EVENTS = { "UNIT_FLAGS", "UNIT_THREAT_LIST_UPDATE", "UNIT_COMBAT",
     "UNIT_CLASSIFICATION_CHANGED" }
 
-local function SetCombatEvents(on)
-    if combatEventsOn == on then return end
-    combatEventsOn = on
-    for _, event in ipairs(COMBAT_EVENTS) do
+local function SetEvents(events, on)
+    for _, event in ipairs(events) do
         if on then eventFrame:RegisterEvent(event) else eventFrame:UnregisterEvent(event) end
     end
-end
-
-local function SetBaseEvents(on)
-    if baseEventsOn == on then return end
-    baseEventsOn = on
-    for _, event in ipairs(BASE_EVENTS) do
-        if on then eventFrame:RegisterEvent(event) else eventFrame:UnregisterEvent(event) end
-    end
-    if not on then SetCombatEvents(false) end
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "PLAYER_REGEN_DISABLED" then
         playerInCombat = true
-        SetCombatEvents(true)
+        SetEvents(COMBAT_EVENTS, true)
         EvaluateAllPlates()
         return
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Reminders show only while you fight: out of combat none is out.
         playerInCombat = false
-        SetCombatEvents(false)
+        SetEvents(COMBAT_EVENTS, false)
         ReleaseAll()
         return
     end
@@ -360,13 +341,8 @@ local function NextBankToBuild()
     end
 end
 
-local function BindWatcherOnly(bank, watcher)
-    ST._PlateWatcher.Bind(watcher, bank.group, bank.spellSet, bank.aura)
-end
-
 local function BindWatcher(bank, watcher)
-    BindWatcherOnly(bank, watcher)
-    bank.free[#bank.free + 1] = watcher
+    ST._PlateWatcher.Bind(watcher, bank.group, bank.spellSet, bank.aura)
 end
 
 local function StopBuilder()
@@ -392,6 +368,7 @@ local function BuildStep()
         local watcher = ST._PlateWatcher.New(holder)
         bank.watchers[#bank.watchers + 1] = watcher
         BindWatcher(bank, watcher)
+        bank.free[#bank.free + 1] = watcher
         status.watchersBuilt = status.watchersBuilt + 1
         status.buildMs = status.buildMs + (debugprofilestop() - started)
     end
@@ -445,10 +422,6 @@ local function SpellKey(spellSet)
     return table.concat(ids, ",")
 end
 
-local function NewBank()
-    return { watchers = {}, free = {}, byToken = {}, waiting = {} }
-end
-
 -- `wants` = every running nameplate DoT ({groupId, group, aura, spellSet,
 -- index, count}); `panelIds` = the pass's scope (nil for a full pass).
 -- Called only by the rebind pass, so never in combat: no watcher is out,
@@ -473,7 +446,7 @@ function N.Bind(wants, panelIds)
         local bank = banks[index]
         if want then
             if not bank then
-                bank = NewBank()
+                bank = { watchers = {}, free = {}, byToken = {}, waiting = {} }
                 banks[index] = bank
             end
             local spellKey = SpellKey(want.spellSet)
@@ -485,7 +458,7 @@ function N.Bind(wants, panelIds)
             bank.suspended = nil
             bank.point, bank.x, bank.y = PlacementFor(want.group, want.index, want.count)
             if changed then
-                for _, watcher in ipairs(bank.watchers) do BindWatcherOnly(bank, watcher) end
+                for _, watcher in ipairs(bank.watchers) do BindWatcher(bank, watcher) end
             end
         elseif bank and bank.groupId then
             for _, watcher in ipairs(bank.watchers) do ST._PlateWatcher.Park(watcher) end
@@ -497,7 +470,11 @@ function N.Bind(wants, panelIds)
     -- can still read false inside PLAYER_REGEN_DISABLED); only a fresh start
     -- reads it.
     local wasListening = baseEventsOn
-    SetBaseEvents(running)
+    if running ~= wasListening then
+        baseEventsOn = running
+        SetEvents(BASE_EVENTS, running)
+        if not running then SetEvents(COMBAT_EVENTS, false) end
+    end
     if running and not wasListening then playerInCombat = InCombatLockdown() end
     if running then StartBuilder() else StopBuilder() end
 end
@@ -529,8 +506,8 @@ function N.IsOverCap(groupId)
     return overCap[groupId] == true
 end
 
-N.MAX_DOTS = MAX_BANKS
 N.BankSize = BankSize
+N.OPEN_WORLD_BANK, N.INSTANCE_BANK = OPEN_WORLD_BANK, INSTANCE_BANK
 
 function CooldownCompanion:GetNameplateReminderStatus()
     local built = 0

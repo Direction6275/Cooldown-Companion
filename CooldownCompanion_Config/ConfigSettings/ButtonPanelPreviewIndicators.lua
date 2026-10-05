@@ -241,14 +241,6 @@ local function OnPreviewCountdownUpdate(ticker, elapsed)
     ShowPreviewCountdown(surface)
 end
 
--- While a Nameplate Reminder's preview is up, the same saved design is also
--- drawn on the current hostile target's real nameplate (owner ruling
--- 2026-10-04), by the shared target-plate view (Core/NameplateTargetView.lua,
--- which unlock mode uses too).
-local function SetTargetPreview(group, groupId, onPlaced)
-    ST._NameplateTargetView.SetPreview(group, groupId, onPlaced)
-end
-
 -- A Nameplate Reminder's stand-in enemy nameplate: the game's artwork the
 -- reminder sits on, not config chrome. Its frame is the nameplate's base
 -- frame the runtime anchors to (health bar with the name above it).
@@ -261,16 +253,15 @@ local function EnsurePreviewPlate(preview)
     plate:EnableMouse(false)
     -- The target-plate copy follows this stand-in's visibility, which covers
     -- every way the preview goes away (another selection, config closed).
-    -- Shown while no hostile target carries that copy: unscaled, at the top
-    -- of the preview.
+    -- Shown while no hostile target carries that copy (never in combat,
+    -- where the copy is off by design): unscaled, at the top of the preview.
     local hint = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("TOP", preview.root, "TOP", 0, -6)
-    hint:SetText("Target an enemy to see it on a real nameplate")
     hint:Hide()
     plate.hint = hint
     plate:SetScript("OnHide", function()
         hint:Hide()
-        SetTargetPreview(nil)
+        ST._NameplateTargetView.SetPreview(nil)
     end)
     local bar = plate:CreateTexture(nil, "BACKGROUND")
     bar:SetPoint("BOTTOMLEFT", plate, "BOTTOMLEFT", 4, 4)
@@ -294,14 +285,8 @@ local function EnsurePlateCopy(preview, index)
     preview.indicatorPlateCopies = preview.indicatorPlateCopies or {}
     local copy = preview.indicatorPlateCopies[index]
     if copy then return copy end
-    copy = CreateFrame("Frame", nil, preview.indicatorPlate)
-    copy:EnableMouse(false)
-    -- Effects run as AnimationGroups, as on the real plates.
-    copy._ccAnimatedEffects = true
-    copy.visualRoot = CreateFrame("Frame", nil, copy)
-    copy.visualRoot:SetPoint("CENTER")
-    copy.primaryTexture = copy.visualRoot:CreateTexture(nil, "ARTWORK")
-    copy.secondaryTexture = copy.visualRoot:CreateTexture(nil, "ARTWORK")
+    -- The real plates' own host: effects run as AnimationGroups.
+    copy = CooldownCompanion.CreateIndicatorPresenceHost(preview.indicatorPlate)
     preview.indicatorPlateCopies[index] = copy
     return copy
 end
@@ -309,12 +294,10 @@ end
 -- Where the first DoT sits relative to the plate's center: the runtime's own
 -- placement (Core/NameplateReminders.lua PlacementFor), its anchor point
 -- turned into an offset on the stand-in plate.
-local POINT_SIDES = {TOP = {0, 1}, BOTTOM = {0, -1}, LEFT = {-1, 0}, RIGHT = {1, 0},
-    TOPLEFT = {-1, 1}, TOPRIGHT = {1, 1}, BOTTOMLEFT = {-1, -1}, BOTTOMRIGHT = {1, -1}, CENTER = {0, 0}}
 local function PlateDisplayOffset(group)
-    local point, x, y = ST._NameplateReminders.PlacementFor(group, 1, 1)
-    local sides = POINT_SIDES[point]
-    return sides[1] * PLATE_WIDTH / 2 + x, sides[2] * PLATE_HEIGHT / 2 + y
+    local _, x, y = ST._NameplateReminders.PlacementFor(group, 1, 1)
+    local side = ST.Indicator.NAMEPLATE_SIDES[ST.Indicator.NameplatePlacement(group).side]
+    return side.px * PLATE_WIDTH / 2 + x, side.py * PLATE_HEIGHT / 2 + y
 end
 
 function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
@@ -557,16 +540,20 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
         plate:ClearAllPoints()
         plate:SetPoint("CENTER", preview.root, "CENTER", -cx, -cy + lift)
         plate:Show()
-        -- Only while the preview can be seen: a rebuild with the config closed
-        -- (the plate shown under a hidden parent fires no OnHide) must not put
-        -- the row back on the target.
+        -- The same design also goes on the hostile target's real nameplate
+        -- (Core/NameplateTargetView.lua, which unlock mode uses too), only
+        -- while the preview can be seen: a rebuild with the config closed (the
+        -- plate shown under a hidden parent fires no OnHide) must not put the
+        -- row back on the target.
         if not readOnly and plate:IsVisible() then
-            SetTargetPreview(candidate, panelId, function(hasPlate)
-                plate.hint:SetShown(not hasPlate and plate:IsVisible())
+            ST._NameplateTargetView.SetPreview(candidate, panelId, function(hasPlate, missing)
+                plate.hint:SetText(missing == "plate" and "Your target's nameplate isn't showing"
+                    or "Target an enemy to see it on a real nameplate")
+                plate.hint:SetShown(not hasPlate and missing ~= "combat" and plate:IsVisible())
             end)
         elseif not readOnly then
             -- (A read-only card never owns the target copy.)
-            SetTargetPreview(nil)
+            ST._NameplateTargetView.SetPreview(nil)
         end
         surface:SetScale(scale)
         surface:ClearAllPoints()
