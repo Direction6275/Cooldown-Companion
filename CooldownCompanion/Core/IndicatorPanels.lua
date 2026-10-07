@@ -1161,6 +1161,7 @@ function I.CommitSourceReplacement(group, candidate)
     if listed then
         -- Already in the list: the aura keeps its own When there.
         newSource.indicatorStackRule = listed.indicatorStackRule and CopyTable(listed.indicatorStackRule)
+        newSource.showWhileAuraPandemic = listed.showWhileAuraPandemic
     else
         -- Change... swaps the aura, not the rule: a stack rule moves to the new aura.
         local oldRule = I.IsAura(group) and I.Primary(group).indicatorStackRule

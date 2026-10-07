@@ -363,6 +363,20 @@ local function ClaimRuleFocus(row, clause)
     if CS.pendingSettingHighlight then CS.pendingSettingHighlight.settingWidget = row end
 end
 
+-- An aura's rule clicked in the preview: the same trip, landing on that
+-- aura's own When row.
+local function OpenAuraRule(entry)
+    CS.indicatorRuleFocus = entry and {aura=entry} or nil
+    ST._NavigateToFinderSetting(whenToShow.conditions.id)
+end
+
+local function ClaimAuraFocus(row, entry)
+    local focus = CS.indicatorRuleFocus
+    if not (row and focus and focus.aura == entry) then return end
+    CS.indicatorRuleFocus = nil
+    if CS.pendingSettingHighlight then CS.pendingSettingHighlight.settingWidget = row end
+end
+
 local CHANGE_HOVER_COLOR = {1, 0.82, 0}
 
 -- A small flat icon action after a row's label (CDC-RowIconBadge): the
@@ -496,7 +510,7 @@ local function AddListedAuraWhen(column, group, entry, changed)
     local current = I.AuraWantsActive(entry) and "active" or "missing"
     -- The Finder row lands on the main aura's When, at the top of the list;
     -- one descriptor can address one widget.
-    Dropdown(column, {setting=entry == I.Primary(group) and whenToShow.auraEntryWhen or nil,
+    local row = Dropdown(column, {setting=entry == I.Primary(group) and whenToShow.auraEntryWhen or nil,
         label="When", indent=true, list=AURA_ENTRY_WHEN_LIST,
         order={"active", "missing"}, value=current,
         tooltip={"When", {"While Active counts this aura while it is on; While Missing while it is off.", 1, 1, 1, true}},
@@ -505,6 +519,7 @@ local function AddListedAuraWhen(column, group, entry, changed)
             I.SetAuraEntryWhen(group, entry, value)
             changed(true)
         end})
+    ClaimAuraFocus(row, entry)
 end
 
 -- The aura's one rule: While Active, or a stack count it must reach, stay
@@ -530,7 +545,7 @@ local function AddAuraWhen(column, group, entry, changed)
         tooltip[#tooltip + 1] = " "
         tooltip[#tooltip + 1] = {"A stack choice also needs the aura's stacks to pass. At Max Stacks follows the aura's maximum from the game.", 1, 1, 1, true}
     end
-    Dropdown(column, {setting=whenToShow.auraWhen, indent=true, list=AURA_WHEN_LIST, order=order,
+    local whenRow = Dropdown(column, {setting=whenToShow.auraWhen, indent=true, list=AURA_WHEN_LIST, order=order,
         value=current, tooltip=tooltip,
         onChange=function(value)
             if value == current then return end
@@ -539,6 +554,7 @@ local function AddAuraWhen(column, group, entry, changed)
             if notice then Addon:Print(notice) end
             changed(true)
         end})
+    ClaimAuraFocus(whenRow, entry)
     if missing then
         -- Also During Pandemic has no group form (owner ruling 2026-10-04).
         if not entry.auraTrackGroup then
@@ -689,6 +705,7 @@ function ST._GetIndicatorSourceControls(group)
     local model = {
         replacing = replacing, disabled = group.enabled == false,
         openRule = OpenRule,
+        openAuraRule = OpenAuraRule,
         sources = {},
     }
     -- An Icon display showing this same icon as its artwork already names the
@@ -707,7 +724,7 @@ function ST._GetIndicatorSourceControls(group)
         -- auras in a list read joined by Match); spell/item sources carry
         -- their rules.
         local item = {name=entry.name or tostring(entry.id), icon=icon, primary=primary,
-            aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}}
+            aura=I.IsListedAura(group, entry), enabled=entry.enabled ~= false, rules={}, entry=entry}
         if item.aura and primary then
             -- A rule the aura's max rules out reads as a warning.
             local compare, count, max = I.StackRule(group)
@@ -773,6 +790,9 @@ local function BuildWhenToShow(container, group, changed)
     for _, entry in ipairs(group.buttons or {}) do
         if not I.IsListedAura(group, entry) then BuildSourceRules(container, group, entry, changed) end
     end
+    -- A preview click's row was built just now or isn't here at all: either
+    -- way the request ends, so a later visit highlights nothing stale.
+    CS.indicatorRuleFocus = nil
 end
 
 local function BuildReadoutGear(panel, group, key, changed)

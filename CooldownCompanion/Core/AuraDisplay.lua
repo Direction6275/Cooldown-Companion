@@ -904,9 +904,15 @@ local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
     -- Shrink / Expand has no AnimationGroup here: see SetSlotShrink.
 
     host.bounceAG = visualRoot:CreateAnimationGroup()
-    host.bounceAG:SetLooping("BOUNCE")
+    -- Rise then fall, repeating (AuraTexturesEffects' bounce: a BOUNCE loop
+    -- hitched at the top).
+    host.bounceAG:SetLooping("REPEAT")
     host.bounceAnim = host.bounceAG:CreateAnimation("Translation")
+    host.bounceAnim:SetOrder(1)
     host.bounceAnim:SetSmoothing("OUT")
+    host.bounceFall = host.bounceAG:CreateAnimation("Translation")
+    host.bounceFall:SetOrder(2)
+    host.bounceFall:SetSmoothing("IN")
 
     ST.Indicator.CreateVisual(host, slotButton)
     -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
@@ -1806,6 +1812,8 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
             (geometry.boundsHeight or DEFAULT_TEXTURE_BOUNCE_PIXELS) * 0.12))
         host.bounceAnim:SetOffset(0, amplitude)
         host.bounceAnim:SetDuration(IndicatorEffectSpeed(bounce) / 2)
+        host.bounceFall:SetOffset(0, -amplitude)
+        host.bounceFall:SetDuration(IndicatorEffectSpeed(bounce) / 2)
         host.bounceAG:Play()
     end
     local colorShiftEffect = effects[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]

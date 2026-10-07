@@ -445,9 +445,20 @@ local function EnsureTextureIndicatorAnimation(host, effectType)
         scaleAnim:SetOrigin("CENTER", 0, 0)
         animData.scale = scaleAnim
     elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
-        local translation = group:CreateAnimation("Translation")
-        translation:SetOffset(0, DEFAULT_TEXTURE_BOUNCE_PIXELS)
-        animData.translation = translation
+        -- Rise then fall in one repeating group, Blizzard's pattern for
+        -- back-and-forth moves (sequential Translations add up, so the loop
+        -- ends where it starts). A BOUNCE-looped single Translation hitched
+        -- where it turned at the top (owner report 2026-10-04).
+        group:SetLooping("REPEAT")
+        local rise = group:CreateAnimation("Translation")
+        rise:SetOrder(1)
+        rise:SetSmoothing("OUT")
+        rise:SetOffset(0, DEFAULT_TEXTURE_BOUNCE_PIXELS)
+        local fall = group:CreateAnimation("Translation")
+        fall:SetOrder(2)
+        fall:SetSmoothing("IN")
+        fall:SetOffset(0, -DEFAULT_TEXTURE_BOUNCE_PIXELS)
+        animData.translation, animData.fall = rise, fall
     end
 
     host._textureIndicatorAnimations[effectType] = animData
@@ -478,7 +489,8 @@ local function SetAnimatedBounce(host, active, speed, amplitude)
     animData.group:Stop()
     animData.translation:SetOffset(0, amplitude)
     animData.translation:SetDuration(speed / 2)
-    animData.translation:SetSmoothing("OUT")
+    animData.fall:SetOffset(0, -amplitude)
+    animData.fall:SetDuration(speed / 2)
     animData.group:Play()
     host._ccBounceKey = key
 end
