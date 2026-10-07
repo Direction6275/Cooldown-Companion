@@ -1182,17 +1182,51 @@ local function GetConfigPanelEntryCount(panel)
     return panel and panel.buttons and #panel.buttons or 0
 end
 
-local function IsConfigPanelEntryUsable(panel, buttonData)
-    return CooldownCompanion:IsButtonUsable(buttonData, panel)
+-- The warning mark means the entry names a spell or item the game no longer
+-- has. Talent, spec, load-condition, and bag unavailability is expected
+-- (players swap loadouts constantly), so it reads as inactive instead.
+-- Whether an ID exists is fixed game data, so each answer is kept for the
+-- session: preview builds ask on every drag tick.
+local missingEntryCache = { spell = {}, item = {} }
+
+local function IsConfigEntryMissing(buttonData)
+    local id = buttonData and buttonData.id
+    local cache = buttonData and missingEntryCache[buttonData.type]
+    if type(id) ~= "number" or not cache
+        or CooldownCompanion:IsRotationAssistantButtonData(buttonData) then
+        return false
+    end
+    local missing = cache[id]
+    if missing == nil then
+        if buttonData.type == "spell" then
+            missing = not C_Spell.DoesSpellExist(id)
+        else
+            missing = C_Item.GetItemInfoInstant(id) == nil
+        end
+        cache[id] = missing
+    end
+    return missing
 end
 
 local function ConfigPanelHasWarning(panel)
     for _, buttonData in ipairs(panel and panel.buttons or {}) do
-        if CooldownCompanion:IsButtonEnabled(buttonData, panel) and not IsConfigPanelEntryUsable(panel, buttonData) then
+        if CooldownCompanion:IsButtonEnabled(buttonData, panel) and IsConfigEntryMissing(buttonData) then
             return true
         end
     end
     return false
+end
+
+-- Enabled entries, and how many of them the current loadout can show.
+local function GetConfigPanelActiveEntryCounts(panel)
+    local enabled, active = 0, 0
+    for _, buttonData in ipairs(panel and panel.buttons or {}) do
+        if CooldownCompanion:IsButtonEnabled(buttonData, panel) then
+            enabled = enabled + 1
+            if CooldownCompanion:IsButtonUsable(buttonData, panel) then active = active + 1 end
+        end
+    end
+    return enabled, active
 end
 
 ------------------------------------------------------------------------
@@ -3204,6 +3238,8 @@ ST._GetConfigPanelTypeBadgeAtlas = GetConfigPanelTypeBadgeAtlas
 ST._GetConfigAuraPanelBadgeTint = GetConfigAuraPanelBadgeTint
 ST._GetConfigPanelEntryCount = GetConfigPanelEntryCount
 ST._ConfigPanelHasWarning = ConfigPanelHasWarning
+ST._IsConfigEntryMissing = IsConfigEntryMissing
+ST._GetConfigPanelActiveEntryCounts = GetConfigPanelActiveEntryCounts
 ST._OpenButtonIconPicker = OpenButtonIconPicker
 ST._OpenIndicatorIconPicker = OpenIndicatorIconPicker
 ST._OpenContainerIconPicker = OpenContainerIconPicker

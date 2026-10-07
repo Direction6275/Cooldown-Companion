@@ -44,6 +44,14 @@ local PANEL_PREVIEW_GHOST_ALPHA = 0.35
 local PANEL_PREVIEW_GHOST_HOVER_ALPHA = 0.65
 local PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
 local PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS = "QuestRepeatableTurnin"
+-- Customized entries wear a thin gold bracket hugging the slot's top-right
+-- edges: it sits in the inset keybind text leaves, so the two share the
+-- corner. The tooltip and editing header show the same bracket as a glyph
+-- (Media/override-bracket.tga, corner-bracket.tga turned to top-right).
+local OVERRIDE_MARK_COLOR = { 1, 0.82, 0, 1 }
+local OVERRIDE_MARK_SCREEN_THICKNESS = 2
+local OVERRIDE_MARK_SCREEN_LENGTH = 12
+local OVERRIDE_MARK_TEXTURE = "Interface\\AddOns\\CooldownCompanion\\Media\\override-bracket.tga"
 local BAR_PREVIEW_EFFECT_FLAGS = {
     "_procGlowPreview",
     "_auraGlowPreview",
@@ -676,8 +684,7 @@ local function DisableReadOnlySlotInteraction(slot)
     if slot.copyTargetHighlight then slot.copyTargetHighlight:Hide() end
     if slot.problemBadge then slot.problemBadge:Hide() end
     if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
-    if slot.overrideBadge then slot.overrideBadge:Hide() end
-    if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
+    if slot.overrideMarkHost then slot.overrideMarkHost:Hide() end
     if slot.visibilityBadge then slot.visibilityBadge:Hide() end
 end
 
@@ -836,8 +843,7 @@ ResetBarSlotWorkspaceState = function(frame)
     if frame.visibilityBadge then frame.visibilityBadge:Hide() end
     if frame.problemBadge then frame.problemBadge:Hide() end
     if frame.problemBadgeBack then frame.problemBadgeBack:Hide() end
-    if frame.overrideBadge then frame.overrideBadge:Hide() end
-    if frame.overrideBadgeBack then frame.overrideBadgeBack:Hide() end
+    if frame.overrideMarkHost then frame.overrideMarkHost:Hide() end
     frame._cdcVisibilityBadgeShown = nil
 end
 
@@ -1023,14 +1029,29 @@ local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
             or CooldownCompanion:GetAuraVisibilityMode(buttonData) == "missing")
 end
 
+-- Why an existing, enabled entry cannot show on this loadout. The slot only
+-- greys out for these; the hover tooltip names the reason, worked out only
+-- when it opens (the talent walk is not paid on every preview refresh).
+local function ResolveInactiveReason(buttonData, loadBlocked)
+    if loadBlocked then return "Hidden by visibility rules" end
+    if not CooldownCompanion:IsTalentConditionMet(buttonData) then return "Talent conditions not met" end
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
+        return "Nothing trackable equipped"
+    end
+    if buttonData.type == "item" then return "You don't have this item" end
+    return "Not on your current talents or spec"
+end
+
 -- Entry status signals shared with the workspace entry-row presentation.
+-- Only a spell or item the game no longer has earns the warning mark.
 local function CollectEntryStatus(buttonData, group)
     local status = CollectEntryMetadata(buttonData, group)
     local usable = CooldownCompanion:IsButtonUsable(buttonData, group)
     local loadAllowed = CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
     status.usable = usable
     status.disabled = not CooldownCompanion:IsButtonEnabled(buttonData, group)
-    status.warn = (not usable) and not status.disabled
+    status.warn = ST._IsConfigEntryMissing(buttonData) and not status.disabled
+    status.inactive = not usable and not status.disabled and not status.warn
     status.loadBlocked = not loadAllowed
     status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status
@@ -1038,49 +1059,159 @@ end
 
 -- Bar mirrors are saved-config projections. Live usability and load-condition
 -- results may still inform other preview modes, but they must not leak into a
--- Bar slot's tint, problem badge, or hidden-state explanation.
+-- Bar slot's tint, problem badge, or hidden-state explanation. A spell or item
+-- missing from the game is saved data, not live state, so it still warns.
 local function CollectBarEntryStatus(buttonData, group)
     local status = CollectEntryMetadata(buttonData, group)
     status.usable = true
+    status.warn = ST._IsConfigEntryMissing(buttonData)
+        and CooldownCompanion:IsButtonEnabled(buttonData, group)
     status.auraHideReservesSpace = DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     return status
 end
 
--- Ordered badge descriptors, same atlases and meaning as the retired
+-- Ordered badge descriptors, same art and meaning as the retired
 -- workspace entry rows; the identity strip renders the
--- full set. The "warn" label is replaced with the load-conditions wording
--- when status.loadBlocked is set.
+-- full set. A descriptor names an atlas, or a texture with its tint.
 local ENTRY_STATUS_BADGES = {
     { key = "disabled", atlas = "GM-icon-visibleDis-pressed", label = "Disabled" },
-    { key = "warn", atlas = "Ping_Marker_Icon_Warning", label = "Spell/item unavailable" },
-    { key = "override", atlas = "Crosshair_VehichleCursor_32", label = "Has customized sections" },
+    { key = "warn", atlas = "Ping_Marker_Icon_Warning", label = "Spell/item no longer exists" },
+    { key = "override", texture = OVERRIDE_MARK_TEXTURE, color = OVERRIDE_MARK_COLOR,
+        label = "Has customized sections" },
     { key = "fallback", atlas = "banker", label = "Uses item fallbacks" },
     { key = "sound", atlas = "common-icon-sound", label = "Sound alerts enabled" },
     { key = "talent", atlas = "UI-HUD-MicroMenu-SpecTalents-Mouseover", label = "Has talent conditions" },
 }
 
--- key → atlas, for the hover tooltip's inline badge marks: each tooltip
--- section opens with the same badge the slot corner and identity strip
--- wear, so the two surfaces cannot drift apart.
-local ENTRY_STATUS_BADGE_ATLAS = {}
-for _, desc in ipairs(ENTRY_STATUS_BADGES) do
-    ENTRY_STATUS_BADGE_ATLAS[desc.key] = desc.atlas
+-- Draw a descriptor's art on a texture (the identity strip's badges).
+local function ApplyEntryStatusBadgeArt(texture, desc)
+    if desc.texture then
+        local color = desc.color or { 1, 1, 1 }
+        texture:SetTexture(desc.texture)
+        texture:SetTexCoord(0, 1, 0, 1)
+        texture:SetVertexColor(color[1], color[2], color[3], color[4] or 1)
+    else
+        texture:SetAtlas(desc.atlas, false)
+        texture:SetVertexColor(1, 1, 1, 1)
+    end
 end
 
--- Status indicators in the slot's top-right corner. Disabled and
--- unusable/blocked entries use the existing dark-backed problem marks; an
--- aura whose hidden slot cannot collapse uses the established information
--- badge instead. Entries with appearance overrides carry their own badge
--- (the identity strip's override crosshair) riding left of any problem
--- mark, so overrides read at a glance across the whole preview. Other
--- informational badges (talent, sound, fallback) live in the identity
--- strip and the hover tooltip.
+-- key → inline markup, for the hover tooltip's badge marks: each tooltip
+-- section opens with the same mark the slot and identity strip wear, so
+-- the surfaces cannot drift apart.
+local ENTRY_STATUS_BADGE_MARKUP = {}
+for _, desc in ipairs(ENTRY_STATUS_BADGES) do
+    if desc.texture then
+        local color = desc.color or { 1, 1, 1 }
+        ENTRY_STATUS_BADGE_MARKUP[desc.key] = ("|T%s:14:14:0:0:32:32:0:32:0:32:%d:%d:%d|t"):format(
+            desc.texture, math_floor(color[1] * 255 + 0.5), math_floor(color[2] * 255 + 0.5),
+            math_floor(color[3] * 255 + 0.5))
+    else
+        ENTRY_STATUS_BADGE_MARKUP[desc.key] = ("|A:%s:14:14|a"):format(desc.atlas)
+    end
+end
+
+-- A running preview shows the panel as the game draws it, so every
+-- config-only mark steps aside while one plays (bars already did for their
+-- own exact preview). Selection, greyed and dimmed entries are state, not
+-- marks, and stay.
+local function IsAnyPreviewRunning()
+    local preview = ST._ConfigPreview
+    return preview ~= nil and preview.Get() ~= nil
+end
+
+-- The customized-entry bracket. Its own frame keeps it above the selection
+-- ring and bar text, so the entry being edited still shows it. A dark rim
+-- one pixel wider keeps the gold readable on bright icon art. On a bar it
+-- marks the bar's own corner (_barBounds), never its icon. Returns the inset
+-- other corner marks keep to sit inside it, then the x and y offsets that
+-- step a mark clear of it along the slot's long side: past the top leg on a
+-- horizontal bar, below the side leg on a vertical one (all 0 when hidden).
+local function ApplyOverrideMark(slot, show, scale)
+    local host = slot.overrideMarkHost
+    if not show then
+        if host then host:Hide() end
+        return 0, 0, 0
+    end
+    if not host then
+        host = CreateFrame("Frame", nil, slot)
+        host:EnableMouse(false)
+        host.topRim = host:CreateTexture(nil, "OVERLAY", nil, 6)
+        host.sideRim = host:CreateTexture(nil, "OVERLAY", nil, 6)
+        host.top = host:CreateTexture(nil, "OVERLAY", nil, 7)
+        host.side = host:CreateTexture(nil, "OVERLAY", nil, 7)
+        for _, tex in ipairs({ host.topRim, host.sideRim }) do
+            tex:SetColorTexture(0, 0, 0, 0.85)
+        end
+        for _, tex in ipairs({ host.top, host.side }) do
+            tex:SetColorTexture(OVERRIDE_MARK_COLOR[1], OVERRIDE_MARK_COLOR[2],
+                OVERRIDE_MARK_COLOR[3], OVERRIDE_MARK_COLOR[4])
+        end
+        for _, tex in ipairs({ host.topRim, host.sideRim, host.top, host.side }) do
+            tex:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
+        end
+        slot.overrideMarkHost = host
+    end
+    -- Whole physical pixels at the final effective scale (the crisp-border
+    -- approach, Utils.lua): fractional sizes round differently wherever a
+    -- slot lands on the pixel grid, so the bracket drifted by a pixel.
+    local anchor = slot._barBounds or slot
+    host:ClearAllPoints()
+    host:SetAllPoints(anchor)
+    local layoutScale = slot:GetEffectiveScale()
+    local unit = 1 / math_max(scale or 1, 0.01)
+    -- The bar layout records the bar area's size (BarVisuals); its anchors
+    -- may not have resolved yet.
+    local width, height = anchor._ccKitRectW, anchor._ccKitRectH
+    if not (width and height) then width, height = anchor:GetSize() end
+    -- Proportioned to the slot's short side, so it stays a corner mark on a
+    -- thin bar instead of capping the bar's whole end: legs reach at most
+    -- half of it, thickness a sixth. Icon-sized slots are not capped.
+    local shortSide = math_min(width, height)
+    local thickness = PixelUtil.GetNearestPixelSize(
+        math_min(OVERRIDE_MARK_SCREEN_THICKNESS * unit, shortSide / 6), layoutScale, 1)
+    local length = PixelUtil.GetNearestPixelSize(
+        math_min(OVERRIDE_MARK_SCREEN_LENGTH * unit, shortSide / 2), layoutScale, 1)
+    local pixel = PixelUtil.GetNearestPixelSize(0, layoutScale, 1)
+    -- Every leg also stays inside the slot's bounds.
+    local topLength, sideLength = math_min(length, width), math_min(length, height)
+    host.top:SetSize(topLength, math_min(thickness, height))
+    host.side:SetSize(math_min(thickness, width), sideLength)
+    host.topRim:SetSize(math_min(topLength + pixel, width), math_min(thickness + pixel, height))
+    host.sideRim:SetSize(math_min(thickness + pixel, width), math_min(sideLength + pixel, height))
+    host:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET + 1)
+    host:Show()
+    if height > width then
+        return thickness + pixel * 2, 0, -(sideLength + pixel * 2)
+    end
+    return thickness + pixel * 2, -(topLength + pixel * 2), 0
+end
+
+-- Status indicators in the slot's top-right corner. Disabled and missing
+-- entries use the dark-backed problem marks; an aura whose hidden slot
+-- cannot collapse uses the established information badge instead.
+-- Customized entries wear the gold edge bracket, and any problem mark sits
+-- just inside it. Other informational badges (talent, sound, fallback)
+-- live in the identity strip and the hover tooltip.
 local function ApplySlotBadges(slot, status, scale, suppress)
+    suppress = suppress or IsAnyPreviewRunning()
     local size = math_min(24,
         math_max(12, PANEL_PREVIEW_BADGE_SCREEN_SIZE / math_max(scale, 0.01)))
     local hasVisibilityBadge = slot._cdcVisibilityBadgeShown == true
-    local badgeAnchor = hasVisibilityBadge and slot._barBounds or slot
-    local cornerOffset = hasVisibilityBadge and -(size + 2) or 0
+    local markInset, clearX, clearY = ApplyOverrideMark(slot, not suppress and status.override, scale)
+    if hasVisibilityBadge and markInset > 0 then
+        slot.visibilityBadge:ClearAllPoints()
+        slot.visibilityBadge:SetPoint("RIGHT", slot._barBounds, "RIGHT", -markInset, 0)
+    end
+    -- Icons tuck the problem mark inside the bracket. A bar is too thin for
+    -- that (the mark already overhangs it), so it steps clear of the bracket
+    -- along the bar's length, from the bar's own corner.
+    local badgeAnchor, cornerOffset, topOffset = slot, -markInset, -markInset
+    if hasVisibilityBadge then
+        badgeAnchor, cornerOffset, topOffset = slot._barBounds, -(size + 2) - markInset, 0
+    elseif slot._barBounds and markInset > 0 then
+        badgeAnchor, cornerOffset, topOffset = slot._barBounds, clearX, clearY
+    end
 
     local atlas
     local isReservedSpaceBadge = false
@@ -1105,7 +1236,7 @@ local function ApplySlotBadges(slot, status, scale, suppress)
         tex:SetAtlas(atlas, false)
         tex:SetSize(size, size)
         tex:ClearAllPoints()
-        tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", cornerOffset, 0)
+        tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", cornerOffset, topOffset)
         back:ClearAllPoints()
         back:SetPoint("CENTER", tex, "CENTER", 0, 0)
         back:SetSize(size + 2, size + 2)
@@ -1118,34 +1249,6 @@ local function ApplySlotBadges(slot, status, scale, suppress)
     else
         if slot.problemBadge then slot.problemBadge:Hide() end
         if slot.problemBadgeBack then slot.problemBadgeBack:Hide() end
-    end
-
-    if not suppress and status.override then
-        local tex = slot.overrideBadge
-        local back = slot.overrideBadgeBack
-        if not tex then
-            back = slot:CreateTexture(nil, "OVERLAY", nil, 6)
-            back:SetColorTexture(0, 0, 0, 0.7)
-            slot.overrideBadgeBack = back
-            tex = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-            slot.overrideBadge = tex
-        end
-        tex:SetAtlas("Crosshair_VehichleCursor_32", false)
-        tex:SetSize(size, size)
-        tex:ClearAllPoints()
-        if atlas then
-            tex:SetPoint("TOPRIGHT", slot.problemBadge, "TOPLEFT", -4, 0)
-        else
-            tex:SetPoint("TOPRIGHT", badgeAnchor, "TOPRIGHT", cornerOffset, 0)
-        end
-        back:ClearAllPoints()
-        back:SetPoint("CENTER", tex, "CENTER", 0, 0)
-        back:SetSize(size + 2, size + 2)
-        tex:Show()
-        back:Show()
-    else
-        if slot.overrideBadge then slot.overrideBadge:Hide() end
-        if slot.overrideBadgeBack then slot.overrideBadgeBack:Hide() end
     end
 end
 
@@ -1192,7 +1295,7 @@ local function ApplyBarSlotPreviewVisibility(slot, visibility, scale, isSelected
         end
     end
     ApplyBarSlotVisualAlpha(slot, alpha)
-    ApplyBarVisibilityBadge(slot, hidden and not exactPreview, scale)
+    ApplyBarVisibilityBadge(slot, hidden and not exactPreview and not IsAnyPreviewRunning(), scale)
 
     if hovered and not exactPreview then
         slot.hoverHighlight:SetFrameLevel(slot:GetFrameLevel() + PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET)
@@ -1614,7 +1717,9 @@ PP.ClearPreviewGhost = ClearPreviewGhost
 PP.ConfigureBarIdentityLabel = ConfigureBarIdentityLabel
 PP.SetBarIdentityLabelsShown = SetBarIdentityLabelsShown
 PP.RefreshBarIdentityLabels = RefreshBarIdentityLabels
-PP.ENTRY_STATUS_BADGE_ATLAS = ENTRY_STATUS_BADGE_ATLAS
+PP.ENTRY_STATUS_BADGE_MARKUP = ENTRY_STATUS_BADGE_MARKUP
+PP.ResolveInactiveReason = ResolveInactiveReason
+ST._ApplyEntryStatusBadgeArt = ApplyEntryStatusBadgeArt
 PP.PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS = PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS
 PP.PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS
 PP.RefreshBarSlotWorkspacePresentation = RefreshBarSlotWorkspacePresentation

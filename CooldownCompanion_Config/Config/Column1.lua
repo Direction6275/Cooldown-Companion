@@ -273,7 +273,26 @@ local function OffsetGroupStatusBadges(entry, rightOffset)
     end
 end
 
-local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarning)
+-- Entry count hover: how much of the panel the current loadout can show.
+-- Lives here rather than as a row mark, so talent swaps never add noise.
+local function ShowTreePanelCountTooltip(self)
+    local panel = self._cdcPanel
+    if not panel then return end
+    local total = #(panel.buttons or {})
+    local enabled, active = ST._GetConfigPanelActiveEntryCounts(panel)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(total == 1 and "1 entry" or (total .. " entries"), 1, 1, 1)
+    if enabled > 0 then
+        GameTooltip:AddLine(active == enabled and "All active on your current loadout"
+            or (active .. " active on your current loadout"), 0.7, 0.7, 0.7)
+    end
+    if enabled < total then
+        GameTooltip:AddLine((total - enabled) .. " disabled", 0.5, 0.5, 0.5)
+    end
+    GameTooltip:Show()
+end
+
+local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarning, panel)
     local meta = entry.frame._cdcTreePanelMeta
     if not meta then
         meta = CreateFrame("Frame", nil, entry.frame)
@@ -289,6 +308,12 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
         meta.count:SetWidth(18)
         meta.count:SetPoint("RIGHT", meta, "RIGHT", 0, 0)
         meta.count:SetJustifyH("RIGHT")
+        meta.countHover = CreateFrame("Button", nil, meta)
+        meta.countHover:SetAllPoints(meta.count)
+        -- Motion passes through, so the row keeps its hover look under it.
+        meta.countHover:SetPropagateMouseMotion(true)
+        meta.countHover:SetScript("OnEnter", ShowTreePanelCountTooltip)
+        meta.countHover:SetScript("OnLeave", function() GameTooltip:Hide() end)
         entry.frame._cdcTreePanelMeta = meta
     end
 
@@ -298,9 +323,15 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
     if not InCombatLockdown() and meta.status.SetPropagateMouseClicks then
         meta.status:EnableMouse(true)
         meta.status:SetPropagateMouseClicks(true)
+        meta.countHover:EnableMouse(true)
+        meta.countHover:SetPropagateMouseClicks(true)
     else
         meta.status:EnableMouse(false)
+        meta.countHover:EnableMouse(false)
     end
+    -- Totem panels count slots, not entries; their count has no loadout story.
+    meta.countHover._cdcPanel = (panel and not ST.IsTotemPanelGroup(panel)) and panel or nil
+    meta.countHover:SetShown(meta.countHover._cdcPanel ~= nil)
     meta.count:SetWidth(18)
     meta.count:SetText(tostring(entryCount or 0))
     meta.count:SetTextColor(0.52, 0.49, 0.43, 1)
@@ -320,7 +351,7 @@ local function ConfigureTreePanelMeta(entry, entryCount, panelDisabled, hasWarni
         meta.status.icon:SetVertexColor(1, 1, 1, 1)
         meta.status:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("One or more entries are unavailable", 1, 0.3, 0.3)
+            GameTooltip:AddLine("One or more entries name a spell or item that no longer exists", 1, 0.3, 0.3)
             GameTooltip:Show()
         end)
         meta.status:Show()
@@ -1982,7 +2013,8 @@ local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
         panelEntry,
         GetConfigPanelEntryCount(panel),
         panel.enabled == false,
-        panel.enabled ~= false and ConfigPanelHasWarning(panel)
+        panel.enabled ~= false and ConfigPanelHasWarning(panel),
+        panel
     )
     local resourceReserve = SetupPanelResourceIndicator(
         panelEntry, panelId, metaReserve + 2

@@ -1208,9 +1208,8 @@ local function UpdateEditingHeader(col3)
             if badgeStatus[desc.key] then
                 shown = shown + 1
                 local badge = AcquireEditingHeaderBadge(headerLine, shown)
-                badge.icon:SetAtlas(desc.atlas, false)
-                badge._cdcLabel = (desc.key == "warn" and badgeStatus.loadBlocked)
-                    and "Hidden by visibility rules" or desc.label
+                ST._ApplyEntryStatusBadgeArt(badge.icon, desc)
+                badge._cdcLabel = desc.label
                 badge:ClearAllPoints()
                 if rightAnchor then
                     badge:SetPoint("RIGHT", rightAnchor, "LEFT", -EDIT_CONTEXT_BADGE_GAP, 0)
