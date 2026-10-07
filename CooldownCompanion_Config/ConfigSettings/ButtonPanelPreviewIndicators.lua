@@ -77,7 +77,11 @@ local function AddSourceRows(card, source, model, parts)
     if source.aura then
         -- A rule that can never pass reads in the warning color; the reason
         -- sits under the rule in Visibility.
-        entry.name:SetControlText(source.auraRuleNever and "|cffffb840" .. source.auraRule .. "|r" or source.auraRule)
+        -- Clickable like a spell's rule: it opens the aura's row in Visibility.
+        entry.rules[1] = RuleValue(source.auraRule, source.auraRuleNever and WARNING or nil,
+            {source.auraRule, "Click to open this aura in Visibility."},
+            function() model.openAuraRule(source.entry) end)
+        entry.name:SetControlWidget(entry.rules[1])
     elseif #source.rules == 0 then
         entry.rules[1] = RuleValue("Always", nil,
             {"No rules", "Shows whenever it can be tracked. Click to add rules in Visibility."},
