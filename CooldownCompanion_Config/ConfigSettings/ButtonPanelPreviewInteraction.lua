@@ -26,7 +26,7 @@ local ShowPreviewGap = PP.ShowPreviewGap
 local ConfigurePreviewGhost = PP.ConfigurePreviewGhost
 local StartPreviewTicker = PP.StartPreviewTicker
 local ClearPreviewGhost = PP.ClearPreviewGhost
-local ENTRY_STATUS_BADGE_ATLAS = PP.ENTRY_STATUS_BADGE_ATLAS
+local ENTRY_STATUS_BADGE_MARKUP = PP.ENTRY_STATUS_BADGE_MARKUP
 local PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS = PP.PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS
 local PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS = PP.PANEL_PREVIEW_VISIBILITY_BADGE_ATLAS
 local RefreshBarSlotWorkspacePresentation = PP.RefreshBarSlotWorkspacePresentation
@@ -931,15 +931,14 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     local name = GetConfigEntryDisplayName(buttonData, { includeDecorations = true })
     GameTooltip:SetText(name or "Entry", 1, 1, 1)
     if status.disabled then
-        GameTooltip:AddLine(
-            ("|A:%s:14:14|a Disabled"):format(ENTRY_STATUS_BADGE_ATLAS.disabled),
-            0.6, 0.6, 0.6)
+        GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.disabled .. " Disabled", 0.6, 0.6, 0.6)
     end
     if status.warn then
-        GameTooltip:AddLine(
-            ("|A:%s:14:14|a %s"):format(ENTRY_STATUS_BADGE_ATLAS.warn,
-                status.loadBlocked and "Hidden by visibility rules" or "Spell/item unavailable"),
-            1, 0.3, 0.3)
+        GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.warn .. " Spell/item no longer exists", 1, 0.3, 0.3)
+    elseif status.inactive then
+        -- Expected on another loadout: the slot is only greyed, so the
+        -- reason lives here, unmarked.
+        GameTooltip:AddLine(PP.ResolveInactiveReason(buttonData, status.loadBlocked), 0.6, 0.6, 0.6)
     end
     if status.override then
         local group = panelId and CooldownCompanion.db
@@ -964,9 +963,7 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         end
         GameTooltip:AddLine(" ")
         if #lines > 0 then
-            GameTooltip:AddLine(
-                ("|A:%s:14:14|a Customized:"):format(ENTRY_STATUS_BADGE_ATLAS.override),
-                1, 1, 1)
+            GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.override .. " Customized:", 1, 1, 1)
             for _, line in ipairs(lines) do
                 if line.active then
                     GameTooltip:AddLine("    " .. line.label, 0.7, 0.7, 0.7)
@@ -975,16 +972,12 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
                 end
             end
         else
-            GameTooltip:AddLine(
-                ("|A:%s:14:14|a Has customized sections"):format(ENTRY_STATUS_BADGE_ATLAS.override),
-                1, 1, 1)
+            GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.override .. " Has customized sections", 1, 1, 1)
         end
     end
     if status.talent then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(
-            ("|A:%s:14:14|a Talent conditions:"):format(ENTRY_STATUS_BADGE_ATLAS.talent),
-            1, 1, 1)
+        GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.talent .. " Talent conditions:", 1, 1, 1)
         local getName = ST._GetConditionDisplayName
         for _, cond in ipairs(buttonData.talentConditions or {}) do
             local nameText = getName and getName(cond) or (cond.name or "Unknown Talent")
@@ -996,14 +989,10 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
     if status.fallback or status.sound then
         GameTooltip:AddLine(" ")
         if status.fallback then
-            GameTooltip:AddLine(
-                ("|A:%s:14:14|a Uses item fallbacks"):format(ENTRY_STATUS_BADGE_ATLAS.fallback),
-                1, 1, 1)
+            GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.fallback .. " Uses item fallbacks", 1, 1, 1)
         end
         if status.sound then
-            GameTooltip:AddLine(
-                ("|A:%s:14:14|a Sound alerts enabled"):format(ENTRY_STATUS_BADGE_ATLAS.sound),
-                1, 1, 1)
+            GameTooltip:AddLine(ENTRY_STATUS_BADGE_MARKUP.sound .. " Sound alerts enabled", 1, 1, 1)
         end
     end
     if status.auraHideReservesSpace then

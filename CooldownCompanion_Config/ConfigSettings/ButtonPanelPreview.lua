@@ -932,8 +932,16 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
             if slot.icon then
                 slot.icon:SetDesaturated(not status.usable)
             end
+            -- A preview starting or stopping shows or hides the corner marks.
+            -- Bar slots repaint theirs below, from their own status.
+            if not slot._cdcBarPreviewVisibility then
+                ApplySlotBadges(slot, status, preview.layoutDrag.scale)
+            end
             ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
             ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
+        elseif reconcileVisuals and buttonData and not slot._cdcBarPreviewVisibility then
+            -- Selection strips carry no state previews, only the corner marks.
+            ApplySlotBadges(slot, CollectEntryStatus(buttonData, group), preview.layoutDrag.scale)
         end
         anyAnimated = anyAnimated or slot._cdcCondAnim ~= nil
         if slot._cdcBarPreviewVisibility then

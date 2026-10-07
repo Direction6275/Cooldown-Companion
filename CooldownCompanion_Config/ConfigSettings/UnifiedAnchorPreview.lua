@@ -22,6 +22,8 @@ local UNIFIED_MEASURE_SIZE = 4000
 -- anchor panel's tile, worn here as a quick toggle in the preview's
 -- top-right corner (the inside corner opposite the command center).
 local BADGE_ATLAS = "Waypoint-MapPin-Tracked"
+-- Its untracked twin (same atlas page and size) while the lanes are hidden.
+local BADGE_HIDDEN_ATLAS = "Waypoint-MapPin-Untracked"
 -- The pin atlas carries transparent margins of its own, so the frame hugs
 -- the corner tighter than the spellbook badge's numbers to LOOK the same
 -- distance in.
@@ -73,13 +75,22 @@ end
 
 -- Shared badge chrome. Each toggle supplies its own state, text, refresh
 -- behavior and positioning; this owns only the identical frame interaction.
+-- A toggle with a hidden-state atlas swaps its art with its state.
+local function ApplyPreviewBadgeArt(badge)
+    if badge._cdcHiddenAtlas then
+        badge.icon:SetAtlas(badge._cdcIsHidden() and badge._cdcHiddenAtlas or badge._cdcAtlas, false)
+    end
+end
+
 local function ApplyPreviewBadgeHover(badge)
+    ApplyPreviewBadgeArt(badge)
     badge.icon:SetDesaturated(false)
     badge.icon:SetVertexColor(1, 1, 1, 1)
 end
 
 local function ApplyPreviewBadgeTint(badge)
     if badge._cdcIsHidden() then
+        ApplyPreviewBadgeArt(badge)
         badge.icon:SetDesaturated(true)
         badge.icon:SetVertexColor(0.72, 0.72, 0.72, 0.85)
     else
@@ -97,12 +108,20 @@ local function ShowPreviewBadgeTooltip(badge)
     GameTooltip:Show()
 end
 
-local function CreatePreviewToggleBadge(host, atlas, isHidden, showText, hideText, onClick)
+local function CreatePreviewToggleBadge(host, atlas, isHidden, showText, hideText, onClick, hiddenAtlas, artSize)
     local badge = CreateFrame("Button", nil, host)
     badge:SetSize(BADGE_SIZE, BADGE_SIZE)
     badge.icon = badge:CreateTexture(nil, "ARTWORK")
-    badge.icon:SetAllPoints()
+    -- Heavily padded art draws larger around the same hit frame and slot.
+    if artSize then
+        badge.icon:SetSize(artSize, artSize)
+        badge.icon:SetPoint("CENTER")
+    else
+        badge.icon:SetAllPoints()
+    end
     badge.icon:SetAtlas(atlas, false)
+    badge._cdcAtlas = atlas
+    badge._cdcHiddenAtlas = hiddenAtlas
     badge._cdcIsHidden = isHidden
     badge._cdcShowText = showText
     badge._cdcHideText = hideText
@@ -154,7 +173,8 @@ local function UpdateAttachedBarsBadge(host, eligible)
             AreAttachedBarsHidden,
             "Show attached bars",
             "Hide attached bars",
-            ToggleAttachedBars
+            ToggleAttachedBars,
+            BADGE_HIDDEN_ATLAS
         )
         badge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -BADGE_INSET, -BADGE_INSET)
         host._cdcAttachedBarsBadge = badge
@@ -171,10 +191,18 @@ end
 -- focused mirror
 ------------------------------------------------------------------------
 
--- Keeps the mirror's "Spell/item unavailable" warn mark as the umbrella for
--- entries this toggle can hide. Sits one badge width inside the attached-bars
--- pin when the pin is up, and takes the pin's corner spot when it is not.
-local UNAVAILABLE_BADGE_ATLAS = "Ping_Marker_Icon_Warning"
+-- An eye that shows the state: open while every entry that cannot show
+-- (greyed, disabled, or naming a spell or item that no longer exists) is
+-- visible, crossed (the preview's "not shown right now" art, as on the
+-- Disabled badge and a bar's hidden mark) while they are hidden. Not the red
+-- warning triangle: that marks only the missing ones. Sits one badge width
+-- inside the attached-bars pin when the pin is up, and takes the pin's
+-- corner spot when it is not.
+local UNAVAILABLE_BADGE_ATLAS = "GM-icon-visible-pressed"
+local UNAVAILABLE_HIDDEN_BADGE_ATLAS = "GM-icon-visibleDis-pressed"
+-- The eye atlases pad their glyph heavily; drawn at the badge frame's size
+-- the eye reads smaller than the pin beside it.
+local UNAVAILABLE_BADGE_ART_SIZE = 26
 local BADGE_GAP = 2
 
 local function AreUnavailableEntriesHidden()
@@ -215,7 +243,9 @@ local function UpdateUnavailableEntriesBadge(host, groupId, pinShown)
             AreUnavailableEntriesHidden,
             "Show unavailable and disabled entries",
             "Hide unavailable and disabled entries",
-            ToggleUnavailableEntries
+            ToggleUnavailableEntries,
+            UNAVAILABLE_HIDDEN_BADGE_ATLAS,
+            UNAVAILABLE_BADGE_ART_SIZE
         )
         host._cdcUnavailableEntriesBadge = badge
     end

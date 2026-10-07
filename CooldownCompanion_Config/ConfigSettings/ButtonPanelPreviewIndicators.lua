@@ -505,6 +505,7 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
 
     local content = preview.content
     content:SetSize(contentWidth, contentHeight)
+    content:SetScale(scale) -- slot badges below measure the final effective scale
     content:Show()
 
     local layoutDrag = readOnly and { slots = {} } or CreatePreviewLayoutDrag(preview, panelId)
@@ -564,7 +565,6 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
         EnsureConditionalTicker(preview)
     end
 
-    content:SetScale(scale)
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
 
