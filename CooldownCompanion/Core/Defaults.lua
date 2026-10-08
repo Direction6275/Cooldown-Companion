@@ -146,10 +146,8 @@ local defaults = {
                         auraTextFontSize = 12,
                         auraTextFontOutline = "OUTLINE",
                         auraTextFontColor = {0, 0.925, 1, 1},
-                        pandemicMarkerMode = "auto", -- "auto" (target debuffs only) / "on" / "off"
-                        pandemicMarkerText = "!!",
-                        pandemicMarkerColorMode = "marker", -- "off" / "marker" / "whole"
-                        pandemicMarkerColor = {1, 0.5, 0, 1},
+                        pandemicMarkerMode = "auto", -- Pandemic Timer Color: "auto" (target debuffs only) / "on" / "off"
+                        pandemicMarkerColor = {1, 0.5, 0, 1}, -- Pandemic Timer Color
                         maintainAspectRatio = true, -- Prevent icon image stretching
                         iconZoom = 0, -- % the artwork is cropped toward center (WeakAuras-style zoom)
                         showTooltips = false,
@@ -328,9 +326,9 @@ local defaults = {
             auraTextAnchor = "TOPLEFT",
             auraTextXOffset = 2,
             auraTextYOffset = -2,
+            -- Pandemic Timer Color (marker-era key names; 12.1.5 retired the
+            -- "!!" text and its coloring mode).
             pandemicMarkerMode = "auto",
-            pandemicMarkerText = "!!",
-            pandemicMarkerColorMode = "marker",
             pandemicMarkerColor = {1, 0.5, 0, 1},
             maintainAspectRatio = true,
             showTooltips = false,
@@ -1172,13 +1170,14 @@ ST.OVERRIDE_SECTIONS = {
     -- boolean kill switch: the entry checkbox defaulted per tracked UNIT (on for
     -- target debuffs, off for player buffs), and only "auto" can carry that
     -- meaning into a style key. "off" is the old kill switch, "on" forces the
-    -- marker even on player buffs.
+    -- marker even on player buffs. 12.1.5 retired the marker text and its
+    -- coloring mode: the mode and color now drive Pandemic Timer Color.
     pandemic = {
         label = "Pandemic",
         keys = {"pandemicEffectEnabled",
             "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines",
             "barPandemicColor",
-            "pandemicMarkerMode", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"},
+            "pandemicMarkerMode", "pandemicMarkerColor"},
         modes = {icons = true, bars = true},
     },
     missingAuraIndicator = {

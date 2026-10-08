@@ -84,9 +84,9 @@ local TURNON_PANDEMIC_EFFECT = {
     label = "Enable Pandemic Effect",
     apply = function(write) write.pandemicEffectEnabled = true end,
 }
--- The marker's enable is a mode, not a boolean.
+-- Pandemic Timer Color's enable is a mode, not a boolean.
 local TURNON_PANDEMIC_MARKER = {
-    label = "Enable Pandemic Marker",
+    label = "Enable Pandemic Timer Color",
     apply = function(write) write.pandemicMarkerMode = "auto" end,
 }
 local TURNON_READY_GLOW = {
@@ -382,9 +382,9 @@ local function BuildPandemicGlowSection(container, group, style, lens)
     pandemicSec:Finish()
 end
 
--- Pandemic marker: the text half of the same window.
+-- Pandemic Timer Color: the text half of the same window.
 --
--- The marker rides the aura duration text, which lives on the Appearance tab.
+-- It colors the aura duration text, which lives on the Appearance tab.
 -- Hide this half while that effective text surface is off; the glow half above
 -- remains live because it does not depend on duration text.
 local function BuildPandemicMarkerSection(container, group, style, lens)
@@ -413,10 +413,10 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
         setting = EFFECTS_FINDER.icons.aura.pandemicMarker,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): the three styling rows fill the
-    -- panel, so they carry no indent - childrenOnly drops it. The panel
-    -- captures the section's resolved table (sec.tbl), read-only behind the
-    -- unlock strip while the section is inherited or the marker is off.
+    -- Single rail (AdvancedSettingsPanel.lua): the color row fills the panel,
+    -- so it carries no indent - childrenOnly drops it. The panel captures the
+    -- section's resolved table (sec.tbl), read-only behind the unlock strip
+    -- while the section is inherited or the timer color is off.
     local function BuildPandemicMarkerAdvanced(panel)
         AddPandemicMarkerControls(panel, markerSec.tbl, applyStyle, RefreshActiveAdvancedSettingsPanel,
             {
@@ -427,7 +427,7 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
 
     if markerSec.scope ~= "denied" then
         AddAdvancedToggle(markerRow, "pandemicMarker", tabInfoButtons, true, {
-            title = "Pandemic Marker Advanced",
+            title = "Pandemic Timer Color Advanced",
             build = BuildPandemicMarkerAdvanced,
             unlock = { sec = markerSec,
                 enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_PANDEMIC_MARKER or nil },
@@ -1623,7 +1623,7 @@ local EFFECTS_FINDER_ADVANCED_SECTION_LABELS = {
     cooldownSwipe = "Cooldown Swipe",
     auraDurationSwipe = "Aura Duration Swipe",
     unusableVisual = "Unusable Visual",
-    pandemicMarker = "Pandemic Marker",
+    pandemicMarker = "Pandemic Timer Color",
     tooltipBehavior = "Tooltips",
 }
 
@@ -1677,7 +1677,7 @@ if ST._DefineSettingRoute then
         missing = { label = "Desaturate While Aura Missing", applies = EffectsFinderIconsRow("auraMissingDesaturation", true) },
         pandemicEffect = { label = "Show Pandemic Effect" },
         pandemicMarker = {
-            label = "Pandemic Marker",
+            label = "Pandemic Timer Color",
             applies = function(context)
                 local style = EffectsFinderEffectiveStyle(context)
                 return style and style.showAuraText ~= false
@@ -1909,8 +1909,8 @@ if ST._DefineSettingRoute then
         desaturate = { label = "Desaturate Icon" },
     })
 
-    -- The marker rides the aura duration text: with that surface off its row
-    -- is not drawn at all, so the aura-text term stays structural.
+    -- The timer color rides the aura duration text: with that surface off its
+    -- row is not drawn at all, so the aura-text term stays structural.
     local markerStructural = EffectsFinderIconsAdvanced("pandemic", true)
     local markerRoute = EffectsFinderRoute(
         "panel.icons.effects.pandemicMarker", EFFECTS_AURA_SECTION,
@@ -1921,15 +1921,7 @@ if ST._DefineSettingRoute then
             return style and style.showAuraText ~= false
         end, "pandemicMarker", "pandemic")
     EFFECTS_FINDER.advanced.pandemicMarker = markerRoute:Settings({
-        text = { label = "Marker Text" },
-        coloring = { label = "Marker Coloring" },
-        color = {
-            label = "Marker Color",
-            applies = function(context)
-                local _, read = EffectsFinderSectionState(context, "pandemic")
-                return read and (read.pandemicMarkerColorMode or "marker") ~= "off"
-            end,
-        },
+        color = { label = "Timer Color" },
     })
 
     local tooltipRoute = EffectsFinderRoute(

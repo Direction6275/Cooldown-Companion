@@ -760,6 +760,7 @@ local function BuildSlotKit(slotButton, pandemicGated)
     kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 1)
     slotButton:SetDurationText(kit.durationText)
+    kit.pandemicTimerTint = ST.Indicator.CreatePandemicTimerTint(slotButton, kit.durationText)
 
     kit.stackText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
     kit.stackText:SetPoint("TOPRIGHT", slotButton, "TOPRIGHT", -1, -1)
@@ -1379,20 +1380,17 @@ local function IsWidgetStackBind(slot, buttonData)
 end
 
 ------------------------------------------------------------------------
--- Aura duration composition: per-spell SetDurationText options on the kit's
--- duration text. Duration Format and Low Time Threshold provide the base
--- brackets; the Pandemic marker and whole-text color decorate the portion
--- below its spell-relative edge. Every bind RE-CALLS SetDurationText on the
--- creation-captured fontstring — legal again on PTR 7 (V23) and structurally
--- OOC in the rebind pass. Blizzard evaluates everything against the secret
--- remaining time; CC only bakes static per-spell data.
--- Threshold: fixed 30% of base duration via the V22 static lookup.
--- Fragile surface — froze displays on PTR 5; retest each build (tracker
--- B1/B2), kill switch = style.pandemicMarkerMode "off".
+-- Aura duration text: every bind re-calls SetDurationText with the shared
+-- Duration Format / Low Time formatter on the creation-captured fontstring
+-- (legal again on PTR 7, V23; structurally OOC in the rebind pass).
+-- Pandemic Timer Color is not part of the text: since 12.1.5 Blizzard tints
+-- the timer inside the aura's real Pandemic window through the kit's timer
+-- tint (ST.Indicator.CreatePandemicTimerTint). It replaced the "!!" marker
+-- and its fixed 30%-of-base-duration threshold; the saved keys keep their
+-- marker-era names (pandemicMarkerMode, pandemicMarkerColor).
 ------------------------------------------------------------------------
 
-local PANDEMIC_FRACTION = 0.3
-local PANDEMIC_MARKER_MAX_LEN = 8
+local DEFAULT_PANDEMIC_TIMER_COLOR = {1, 0.5, 0, 1}
 
 -- Effective enable, style-only since the entry's own checkbox dissolved into
 -- the panel's Pandemic override section (owner ruling 2026-08-16): the same
@@ -1409,69 +1407,6 @@ local function IsPandemicMarkerWanted(buttonData, style, unit)
     return unit == "target"
 end
 
--- The marker is user text embedded in a format string: pipes would corrupt
--- the baked color escapes and '%' would read as a format specifier, so both
--- are stripped rather than escaped.
-local function SanitizePandemicMarkerText(text)
-    text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", "")
-    return text:sub(1, PANDEMIC_MARKER_MAX_LEN)
-end
-
--- V22: GetAuraBaseDuration requires a live aura instance as an anchor, but
--- the spellID override drives the answer — ANY readable player aura serves.
--- OOC-only by the rebind pass's structural guarantee. Nil when no anchor
--- aura exists this pass; the threshold stays uncomputed until a later
--- rebind (marker silently absent, default formatting).
-local function FindPlayerAuraAnchorInstanceID()
-    for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-        if not aura then return nil end
-        if not issecretvalue(aura) and aura.auraInstanceID then
-            return aura.auraInstanceID
-        end
-    end
-    return nil
-end
-
--- First candidate aura ID that reports a real duration wins: cast-spell IDs
--- whose aura lives on a linked spell return 0 (V22: Rake), and permanent
--- auras have no duration — both mean "no pandemic window on this ID".
-local function GetPandemicBaseDuration(buttonData, constrainImplicitFallbacks)
-    local anchorID = FindPlayerAuraAnchorInstanceID()
-    if not anchorID then
-        -- No anchor this pass (no readable buff on the player): rebind once
-        -- one appears, so the marker and the Text recolor don't wait for an
-        -- unrelated rebind. One shot, event-driven, never polled. Combat end
-        -- re-checks too: a buff gained mid-fight may be unreadable then and
-        -- bring no further aura change afterward.
-        local watcher = CooldownCompanion._pandemicAnchorWatcher
-        if not watcher then
-            watcher = CreateFrame("Frame")
-            watcher:SetScript("OnEvent", function(frame)
-                if FindPlayerAuraAnchorInstanceID() then
-                    frame:UnregisterAllEvents()
-                    CooldownCompanion:RequestAuraRebind("pandemic-anchor")
-                end
-            end)
-            CooldownCompanion._pandemicAnchorWatcher = watcher
-        end
-        watcher:RegisterUnitEvent("UNIT_AURA", "player")
-        watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
-        return nil
-    end
-    local candidates = CooldownCompanion:GetOrderedAuraCandidateSpellIDs(
-        buttonData, constrainImplicitFallbacks)
-    for _, spellID in ipairs(candidates) do
-        if C_Spell.DoesSpellExist(spellID) then
-            local duration = C_UnitAuras.GetAuraBaseDuration("player", anchorID, spellID)
-            if duration and not issecretvalue(duration) and duration > 0 then
-                return duration
-            end
-        end
-    end
-    return nil
-end
-
 local function PandemicColorEscape(color)
     local r = math.floor((color and color[1] or 1) * 255 + 0.5)
     local g = math.floor((color and color[2] or 0.5) * 255 + 0.5)
@@ -1479,119 +1414,34 @@ local function PandemicColorEscape(color)
     return ("|cff%02x%02x%02x"):format(r, g, b)
 end
 
--- One breakpoint cloned from a shared Duration Format bracket, optionally
--- with a suffix baked onto its format string and a new threshold. Clones
--- because the source brackets are a shared cache and must never be mutated;
--- the components table is composition-only and safe to share.
-local function CloneBracket(bracket, threshold, suffix)
-    return {
-        threshold = threshold or bracket.threshold,
-        step = bracket.step,
-        rounding = bracket.rounding,
-        components = bracket.components,
-        format = suffix and (bracket.format .. suffix) or bracket.format,
-    }
-end
-
--- Compose Pandemic onto the duration policy's brackets instead of maintaining
--- a second formatter pipeline. The input may already carry a low-time color
--- escape. In whole-text Pandemic mode that existing escape is lifted around
--- the marker too, so the explicit precedence is:
---   second low window > first low window > Pandemic whole-text > aura color.
--- This also avoids combining inline low-time colors with a binding color curve
--- whose interaction has not been proven on SetDurationText.
-local function BuildComposedAuraDurationFormatter(threshold, style, allowLowTime)
-    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
-    local mode = style.pandemicMarkerColorMode or "marker"
-    if marker == "" and mode ~= "whole" then
-        return nil
-    end
-
-    local function DecorateFormat(format)
-        -- The shared formatter's visibility window uses an empty tail above
-        -- its threshold. Never decorate that tail: the Pandemic marker rides
-        -- the duration text and must disappear with it.
-        if format == "" then
-            return ""
-        end
-        local suffix = marker ~= "" and (" " .. marker) or ""
-        if mode == "marker" then
-            return format .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
-        elseif mode == "whole" then
-            -- BuildLowTimeBrackets wraps the complete format in exactly one
-            -- color escape. Reuse that escape around the marker as well; when
-            -- absent, Pandemic supplies the whole-text color.
-            local lowEscape, body = format:match("^(|cff%x%x%x%x%x%x)(.*)|r$")
-            local colorEscape = lowEscape or PandemicColorEscape(style.pandemicMarkerColor)
-            return colorEscape .. (body or format) .. suffix .. "|r"
-        end
-        return format .. suffix
-    end
-
-    local brackets = CooldownCompanion.GetDurationTextBrackets(style, allowLowTime, "aura")
-    local list = {}
-    local containing, atThreshold
-    for _, bracket in ipairs(brackets) do
-        if bracket.threshold < threshold then
-            containing = bracket
-            local decorated = CloneBracket(bracket)
-            decorated.format = DecorateFormat(decorated.format)
-            list[#list + 1] = decorated
-        elseif bracket.threshold == threshold then
-            atThreshold = true
-        end
-    end
-    -- Re-enter the containing bracket's plain format exactly at the
-    -- threshold (the first bracket sits at 0 and the threshold is always
-    -- positive, so one always contains it), then keep every higher bracket
-    -- as-is. The list stays ascending for any threshold; a bracket sitting
-    -- exactly at the threshold already is the re-entry.
-    if containing and not atThreshold then
-        list[#list + 1] = CloneBracket(containing, threshold)
-    end
-    for _, bracket in ipairs(brackets) do
-        if bracket.threshold >= threshold then
-            list[#list + 1] = CloneBracket(bracket)
-        end
-    end
-
-    local formatter = C_StringUtil.CreateNumericRuleFormatter()
-    formatter:SetBreakpoints(list)
-    return formatter
-end
-
--- One options builder for every aura bind. Without an active Pandemic marker
--- it reuses the shared duration formatter (including low time). With one, it
--- creates the per-spell composed formatter above because the Pandemic edge is
--- relative to that spell's base duration.
-local function BuildAuraDurationOptions(baseDuration, style, allowLowTime)
-    local formatter
-    if baseDuration then
-        formatter = BuildComposedAuraDurationFormatter(baseDuration * PANDEMIC_FRACTION, style, allowLowTime)
-    end
-    if not formatter and CooldownCompanion.GetDurationTextFormatter then
-        formatter = CooldownCompanion.GetDurationTextFormatter(style, allowLowTime, "aura")
-    end
+-- One options builder for every aura bind: the shared duration formatter,
+-- low time included when the surface allows it.
+local function BuildAuraDurationOptions(style, allowLowTime)
+    local formatter = CooldownCompanion.GetDurationTextFormatter
+        and CooldownCompanion.GetDurationTextFormatter(style, allowLowTime, "aura")
     return formatter and { textFormatter = formatter } or nil
 end
 
 -- Aura Indicators compose their timer from `readouts`, which holds that
--- Indicator's Duration Format, Low Time and Pandemic marker keys under the
--- panel names. Low Time always applies (the timer is aura text only). The
--- marker's base-duration lookup stays here with the other bind-time reads,
--- so the Indicator model never reads aura data.
+-- Indicator's Duration Format, Low Time and Pandemic Timer Color keys under
+-- the panel names. Low Time always applies (the timer is aura text only).
+-- Returns the duration options and the timer tint color (nil = off): a Text
+-- display's Pandemic effect colors its timer in the effect color, otherwise
+-- the Indicator's own Pandemic Timer Color decides.
 local function BuildIndicatorAuraDurationOptions(slot, group)
     local I = ST.Indicator
-    local readouts = I.Settings(group).readouts
-    local source = I.Primary(group)
-    local markerWanted = source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit)
-    -- A Text display's Pandemic effect recolors the whole timer too.
-    local recolor = I.PandemicTimerStyle(group, markerWanted)
-    local pandemicBaseDuration
-    if source and (recolor or markerWanted) then
-        pandemicBaseDuration = GetPandemicBaseDuration(source, true)
+    local settings = I.Settings(group)
+    local readouts = settings.readouts
+    local timerColor
+    if I.PandemicRecolorsText(group) then
+        timerColor = settings.pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
+    else
+        local source = I.Primary(group)
+        if source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit) then
+            timerColor = readouts.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR
+        end
     end
-    return BuildAuraDurationOptions(pandemicBaseDuration, recolor or readouts, true)
+    return BuildAuraDurationOptions(readouts, true), timerColor
 end
 
 ------------------------------------------------------------------------
@@ -1616,34 +1466,23 @@ function CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style)
     return IsPandemicMarkerWanted(buttonData, style, buttonData.auraUnit or "player")
 end
 
--- Mirrors the composed live formatter's three Pandemic modes on an already-
--- formatted countdown. lowTimeColorHex is present only while the preview is
--- inside an active colored low-time window; whole-text mode then lifts that
--- winning color around the marker too.
+-- Mirrors the live Pandemic Timer Color on an already-formatted countdown. In
+-- game the tint multiplies the text's own color, so an active colored low-time
+-- window (lowTimeColorHex) blends with it here too.
 function CooldownCompanion:DecoratePandemicPreviewText(text, style, lowTimeColorHex)
     text = tostring(text or "")
     if type(style) ~= "table" then
         return text
     end
-    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
-    local mode = style.pandemicMarkerColorMode or "marker"
-    if mode == "whole" then
-        local body = marker ~= "" and (text .. " " .. marker) or text
-        local colorEscape = PandemicColorEscape(style.pandemicMarkerColor)
-        if lowTimeColorHex then
-            local unwrapped = text:match("^|cff%x%x%x%x%x%x(.*)|r$")
-            body = marker ~= "" and ((unwrapped or text) .. " " .. marker) or (unwrapped or text)
-            colorEscape = "|cff" .. lowTimeColorHex
-        end
-        return colorEscape .. body .. "|r"
+    local color = style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR
+    local r, g, b = color[1] or 1, color[2] or 0.5, color[3] or 0
+    if lowTimeColorHex then
+        text = text:match("^|cff%x%x%x%x%x%x(.*)|r$") or text
+        r = r * tonumber(lowTimeColorHex:sub(1, 2), 16) / 255
+        g = g * tonumber(lowTimeColorHex:sub(3, 4), 16) / 255
+        b = b * tonumber(lowTimeColorHex:sub(5, 6), 16) / 255
     end
-    if marker == "" then
-        return text
-    end
-    if mode == "marker" then
-        return text .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
-    end
-    return text .. " " .. marker
+    return PandemicColorEscape({r, g, b}) .. text .. "|r"
 end
 
 -- Full manual twin for aura preview stand-ins. Live aura remaining time stays
@@ -2120,22 +1959,18 @@ local function StyleSlotKit(slot, button, buttonData, style)
     end
 
     -- Aura duration policy: per-bind SetDurationText re-call on the creation-
-    -- captured fontstring (V23 PTR 7 — re-calls are legal; this pass is
-    -- structurally OOC). The options builder composes Duration Format, the
-    -- shared low-time windows, and the per-spell Pandemic marker/color into a
-    -- single formatter. Blizzard's setter resets the binding before applying
+    -- captured fontstring (V23 PTR 7 - re-calls are legal; this pass is
+    -- structurally OOC). Blizzard's setter resets the binding before applying
     -- whatever a bind passes, so slots reused across entries always converge.
-    local pandemicBaseDuration
-    if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
-        pandemicBaseDuration = GetPandemicBaseDuration(
-            buttonData, not isResourceHost)
-    end
     -- Aura text is opt-in for the low-time policy (durationLowTimeAuras).
     -- Aura Panel hosts apply unconditionally: their aura text is the
     -- threshold's only consumer.
     local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(style, isAuraPanelHost)
-    local durationOptions = BuildAuraDurationOptions(pandemicBaseDuration, style, allowLowTime)
-    slotButton:SetDurationText(kit.durationText, durationOptions)
+    slotButton:SetDurationText(kit.durationText, BuildAuraDurationOptions(style, allowLowTime))
+    -- Pandemic Timer Color: Blizzard tints the text in the real window.
+    local timerColorWanted = style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit)
+    ST.Indicator.StylePandemicTimerTint(kit.pandemicTimerTint,
+        timerColorWanted and (style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR) or nil)
 
     -- Bar name: pick ONE of the two replica regions per bind. The live
     -- SetSpellName region wins on plain bar-panel binds (Blizzard writes the

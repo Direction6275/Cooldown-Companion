@@ -657,12 +657,12 @@ local CONTROLS = {
     },
     {
         id = "pandemicMarker",
-        label = "Preview Pandemic Marker",
+        label = "Preview Pandemic Timer Color",
         group = GROUP_AURAS,
         menuOrder = 60,
         modes = { icons = true, bars = true },
-        -- Sits with the readouts, not the effects: the marker IS the duration
-        -- text, dressed. Its settings live under the Indicators tab's Pandemic
+        -- Sits with the readouts, not the effects: the timer color IS the
+        -- duration text, dressed. Its settings live under the Indicators tab's Pandemic
         -- subheading, inside Aura Indicators, so this is a two-mode effects
         -- route rather than TextRoute's Appearance one; both gear keys are in
         -- the gear-to-section map, which is what uncollapses that header.

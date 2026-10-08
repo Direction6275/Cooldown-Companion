@@ -427,11 +427,11 @@ end
 -- Timer behavior that belongs to the Indicator rather than to one display
 -- type. It lives in `readouts` because the shared duration formatter reads it
 -- there, so display switches carry it over. Low Time is Appearance (the
--- Duration Text gear); the marker sits in the Effects tab's Pandemic section
--- and copies with Effects, beside the pandemic glow.
+-- Duration Text gear); Pandemic Timer Color sits in the Effects tab's Pandemic
+-- section and copies with Effects, beside the pandemic glow.
 I.LowTimeKeys = {"durationLowTimeThreshold", "durationLowTimeDecimals", "durationLowTimeColor",
     "durationLowTimeThreshold2", "durationLowTimeColor2"}
-I.PandemicMarkerKeys = {"pandemicMarkerMode", "pandemicMarkerText", "pandemicMarkerColorMode", "pandemicMarkerColor"}
+I.PandemicMarkerKeys = {"pandemicMarkerMode", "pandemicMarkerColor"}
 
 local function CopyTimerPolicy(from, to, keys)
     for _, key in ipairs(keys) do
@@ -497,8 +497,8 @@ function I.PandemicEffectOn(group)
     return pandemic ~= nil and pandemic.pandemicEffectEnabled == true
 end
 
--- A Text display's Pandemic effect recolors its whole text, the timer and
--- its marker included (I.PandemicTimerStyle).
+-- A Text display's Pandemic effect recolors its whole text, the timer
+-- included (I.PandemicTimerStyle).
 function I.PandemicRecolorsText(group)
     local settings = I.Settings(group)
     return settings ~= nil and settings.displayType == "text" and I.PandemicEffectOn(group)
@@ -512,10 +512,9 @@ function I.PandemicEffectApplies(group)
     return settings.displayType ~= "text" or settings.readouts.label ~= "none" or settings.readouts.timer == true
 end
 
--- The Pandemic marker keys live in `readouts` beside the timer's Duration
--- Format and Low Time keys, so the shared aura formatter composes all three
--- from one table. Unlike a panel, a missing mode means off here: Indicators
--- predate the marker and must not gain one unasked. Aura state never enters.
+-- The Pandemic Timer Color keys live in `readouts` beside the timer's Duration
+-- Format and Low Time keys. Unlike a panel, a missing mode means off here:
+-- Indicators predate it and must not gain it unasked. Aura state never enters.
 function I.PandemicMarkerOn(group)
     local settings = I.Settings(group)
     local readouts = settings and settings.readouts

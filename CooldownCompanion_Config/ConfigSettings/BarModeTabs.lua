@@ -75,9 +75,9 @@ local TURNON_BAR_AURA_TEXT = { label = "Enable Aura Duration Text", key = "showA
 local TURNON_BAR_AURA_STACK_TEXT = { label = "Enable Aura Stack Text", key = "showAuraStackText" }
 local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnusable" }
 local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
--- The marker's enable is a mode, not a boolean.
+-- Pandemic Timer Color's enable is a mode, not a boolean.
 local TURNON_BAR_PANDEMIC_MARKER = {
-    label = "Enable Pandemic Marker",
+    label = "Enable Pandemic Timer Color",
     apply = function(write) write.pandemicMarkerMode = "auto" end,
 }
 
@@ -1560,10 +1560,8 @@ local function BuildBarPandemicSection(container, group, style, lens)
     pandemicSec:Finish()
 end
 
--- The text half of the same window, new to bar mode: the marker has always
--- rendered on bar panels (it rides the aura duration text, which the kit
--- draws in both modes) but had no group-level control anywhere - the only way
--- to reach it was a per-entry override of Aura Duration Text.
+-- The text half of the same window: Pandemic Timer Color colors the aura
+-- duration text, which the kit draws in both modes.
 local function BuildBarPandemicMarkerSection(container, group, style, lens)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
@@ -1590,10 +1588,10 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
         enableOnly = true,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): the styling rows fill the panel,
-    -- so childrenOnly drops the indent they carry when inline. The panel
+    -- Single rail (AdvancedSettingsPanel.lua): the color row fills the panel,
+    -- so childrenOnly drops the indent it carries when inline. The panel
     -- captures the section's resolved table (sec.tbl), read-only behind the
-    -- unlock strip while the section is inherited or the marker is off.
+    -- unlock strip while the section is inherited or the timer color is off.
     local function BuildBarPandemicMarkerAdvanced(panel)
         AddPandemicMarkerControls(panel, markerSec.tbl, applyStyle, function()
             if CS.RefreshAdvancedSettingsPanel then
@@ -1611,7 +1609,7 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     -- builder. The gear-to-section maps name both.
     if markerSec.scope ~= "denied" then
         AddAdvancedToggle(markerRow, "barPandemicMarker", tabInfoButtons, true, {
-            title = "Pandemic Marker Advanced",
+            title = "Pandemic Timer Color Advanced",
             build = BuildBarPandemicMarkerAdvanced,
             unlock = { sec = markerSec,
                 enable = markerSec.read.pandemicMarkerMode == "off" and TURNON_BAR_PANDEMIC_MARKER or nil },
@@ -2445,7 +2443,7 @@ if ST._DefineSettingRoute then
             end,
         },
         pandemicMarker = {
-            label = "Pandemic Marker", sectionId = "pandemic",
+            label = "Pandemic Timer Color", sectionId = "pandemic",
             applies = BarFinderAuraTextVisible,
         },
     })
@@ -2581,15 +2579,7 @@ if ST._DefineSettingRoute then
         "panel.bars.effects.pandemicMarker", EFFECTS_AURA_SECTION,
         "Aura Indicators", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible),
         "barPandemicMarker", "pandemic"):Settings({
-        text = { label = "Marker Text" },
-        coloring = { label = "Marker Coloring" },
-        color = {
-            label = "Marker Color",
-            applies = function(context)
-                local read = BarFinderSectionState(context, "pandemic")
-                return read and (read.pandemicMarkerColorMode or "marker") ~= "off"
-            end,
-        },
+        color = { label = "Timer Color" },
     })
 
     BAR_FINDER.advanced.unusable = BarFinderEffectRoute(

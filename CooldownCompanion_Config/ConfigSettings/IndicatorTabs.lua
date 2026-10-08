@@ -176,11 +176,13 @@ for _,key in ipairs({"label","timer","count"}) do
 end
 
 -- Pandemic, for aura Indicators whose live display shows: the effect (a
--- glow on Icon artwork, a recolor on Texture and Text) and the marker (on
--- the duration text) rows.
+-- glow on Icon artwork, a recolor on Texture and Text) and the Pandemic Timer
+-- Color (on the duration text) rows.
 local auraOnly = Applies(function(g) return I.ShowsLiveDisplay(g) end)
 local auraArtwork = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" end)
-local auraTimer = Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.readouts.timer == true end)
+-- A Text display whose Pandemic effect is on already colors its timer.
+local auraTimer = Applies(function(g,s)
+    return I.ShowsLiveDisplay(g) and s.readouts.timer == true and not I.PandemicRecolorsText(g) end)
 local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", {applies=auraOnly}):Settings({
     effect={label="Show Pandemic Effect",aliases={"pandemic glow","pandemic","pandemic recolor"},
         applies=Applies(function(g) return I.ShowsLiveDisplay(g) and I.PandemicEffectApplies(g) end)},
@@ -188,7 +190,7 @@ local pandemic = Route("effects", "pandemic", "Pandemic", "indicator_pandemic", 
     color={label="Pandemic Color",aliases={"pandemic recolor","pandemic tint"},
         applies=Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType ~= "icon"
             and I.PandemicEffectApplies(g) and I.PandemicEffectOn(g) end)},
-    marker={label="Pandemic Marker",aliases={"pandemic"},applies=auraTimer},
+    marker={label="Pandemic Timer Color",aliases={"pandemic","pandemic marker"},applies=auraTimer},
 })
 local function PandemicGlowStyle(settings)
     return ST._NormalizeGlowStyleForDisplay(settings.pandemic and settings.pandemic.pandemicGlowStyle, "solid")
@@ -216,16 +218,11 @@ local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_
     particleScale={label="Particle Scale",applies=GlowUses("autocast")},
     frequency={label="Frequency",applies=GlowUses("autocast")},
 })
--- A Text display's Pandemic effect colors the whole timer, marker included
--- (I.PandemicRecolorsText), so the marker's own coloring rows step aside.
-local pandemicMarker = Route("effects", "pandemic", "Pandemic Marker", "indicator_pandemic",
+-- Pandemic Timer Color's gear: the color only. The ids keep their marker-era
+-- spelling.
+local pandemicMarker = Route("effects", "pandemic", "Pandemic Timer Color", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicMarker", advancedKey="indicatorPandemicMarker", applies=auraTimer}):Settings({
-    text={label="Marker Text"},
-    coloring={label="Marker Coloring",applies=Applies(function(g,s)
-        return I.ShowsLiveDisplay(g) and s.readouts.timer == true and not I.PandemicRecolorsText(g) end)},
-    color={label="Marker Color",applies=Applies(function(g,s)
-        return I.ShowsLiveDisplay(g) and s.readouts.timer == true and not I.PandemicRecolorsText(g)
-            and (s.readouts.pandemicMarkerColorMode or "marker") ~= "off" end)},
+    color={label="Timer Color"},
 })
 
 -- Buttons sharing one row's control column (ST._CreateRowActionStrip), from
@@ -846,15 +843,17 @@ local function BuildReadoutGear(panel, group, key, changed)
 end
 
 -- Effects tab, aura Indicators whose live display shows: the Pandemic rows.
--- The effect glows an Icon and recolors Texture and Text; the marker rides
--- the duration text.
+-- The effect glows an Icon and recolors Texture and Text; Pandemic Timer Color
+-- colors the duration text.
 local TURNON_PANDEMIC_EFFECT = "Enable Pandemic Effect"
-local TURNON_PANDEMIC_MARKER = "Enable Pandemic Marker"
+local TURNON_PANDEMIC_MARKER = "Enable Pandemic Timer Color"
 local function BuildPandemic(container, group, changed)
     local settings = I.Settings(group)
     local r, p = settings.readouts, settings.pandemic
     -- Icons glow, Texture and Text recolor; Text needs a label or timer to.
-    local showEffect, showMarker = I.PandemicEffectApplies(group), r.timer == true
+    -- A Text display whose effect is on already colors its timer.
+    local showEffect = I.PandemicEffectApplies(group)
+    local showMarker = r.timer == true and not I.PandemicRecolorsText(group)
     local glow = settings.displayType == "icon"
     if not showMarker and CS.CloseAdvancedSettingsPanel then
         CS.CloseAdvancedSettingsPanel({settingKey="indicatorPandemicMarker"})
@@ -881,8 +880,7 @@ local function BuildPandemic(container, group, changed)
             {texture and "Recolors the texture while its aura is in the refresh window, where recasting adds bonus time."
                 or "Recolors the text while its aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
             {" ", 1, 1, 1, true},
-            {texture and "Auras that gain no time when refreshed never show it."
-                or "On auras that gain no time when refreshed, only the timer recolors, in its last 30%.", 1, 1, 1, true},
+            {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         }, CS.tabInfoButtons))
         if enabled then
             ST._AddColorRow(column,{setting=pandemic.color,tbl=p,key="pandemicGlowColor",
@@ -912,13 +910,13 @@ local function BuildPandemic(container, group, changed)
         local row = ST._AddPandemicMarkerControls(column, r, function() changed(true); return true end, refresh,
             {enableOnly=true, defaultMode="off", setting=pandemic.marker})
         ST._AddAdvancedToggle(row,"indicatorPandemicMarker",CS.tabInfoButtons,true,{
-            title="Pandemic Marker Advanced",
+            title="Pandemic Timer Color Advanced",
             build=function(panel)
                 ST._AddPandemicMarkerControls(panel, r, refresh, function() ST._RefreshActiveAdvancedSettingsPanel() end,
-                    {childrenOnly=true, settings=pandemicMarker, noColoring=I.PandemicRecolorsText(group)})
+                    {childrenOnly=true, settings=pandemicMarker})
             end,
             unlock=(r.pandemicMarkerMode or "off") == "off" and {enable={label=TURNON_PANDEMIC_MARKER,run=function()
-                -- On, not Auto: Auto marks target auras only, so it would do
+                -- On, not Auto: Auto colors target auras only, so it would do
                 -- nothing on an Indicator tracking a buff on the player.
                 r.pandemicMarkerMode="on"; changed(true)
             end}} or nil,
