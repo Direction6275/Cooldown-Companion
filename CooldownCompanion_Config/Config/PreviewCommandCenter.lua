@@ -258,6 +258,15 @@ local function PandemicEffectEnabled(group, buttonIndex)
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
 end
 
+-- A Pandemic Start or Refresh effect is picked: Preview Pandemic Effect then
+-- runs the Aura Active cycle, so the effects play (Preview.Start cycleWhen).
+local function PandemicEffectsPicked(group, buttonIndex)
+    if not group then return false end
+    local style = ResolveTargetStyle(group, buttonIndex)
+    return (style.pandemicStartEffect or "none") ~= "none"
+        or (style.pandemicRefreshEffect or "vanish") ~= "vanish"
+end
+
 local function MissingAuraPreviewEnabled(group, buttonIndex)
     local buttons = group.buttons or {}
     local predicate = CooldownCompanion.IsMissingAuraIndicatorEntry
@@ -494,7 +503,8 @@ local CONTROLS = {
         section = "pandemic",
         requiresPandemicEffect = true,
         settings = { tab = "effects", key = "pandemicGlow" },
-        preview = FlagPreview("_pandemicPreview"),
+        preview = { owner = "panel", flag = "_pandemicPreview",
+            cycleKind = "aura_active", cycleWhen = PandemicEffectsPicked },
     },
     {
         id = "readyGlow",

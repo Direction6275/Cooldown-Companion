@@ -376,7 +376,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
         {" ", 1, 1, 1, true},
         {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
-        {"Draws over the Aura Glow when both are on.", 1, 1, 1, true},
+        {"Replaces the Aura Glow while it shows.", 1, 1, 1, true},
     }, tabInfoButtons))
 
     pandemicSec:Finish()
@@ -1771,7 +1771,7 @@ if ST._DefineSettingRoute then
         })
     EFFECTS_FINDER.advanced.auraGlow = auraGlow
 
-    local pandemicGlow = DefineGlowAdvanced(
+    local pandemicGlow, pandemicRoute = DefineGlowAdvanced(
         "panel.icons.effects.pandemicGlow", "pandemic", "pandemicGlow", true, {
             styleKey = "pandemicGlowStyle", fallback = "solid", colorLabel = "Effect Color",
             color2 = true, noColorStyle = "cdm",
@@ -1780,6 +1780,25 @@ if ST._DefineSettingRoute then
                 ants = true, proc = true, overlay = true, cdm = true,
             },
         })
+    -- Pandemic Start / Refresh rows (SectionBuilders BuildPandemicGlowControls).
+    local function PandemicEffectIs(key, off, wanted)
+        return function(context)
+            local _, read = EffectsFinderSectionState(context, "pandemic")
+            local effect = read and read[key] or off
+            if wanted then return effect == wanted end
+            return effect ~= off
+        end
+    end
+    pandemicGlow.start = pandemicRoute:Setting({ key = "startEffect", label = "Pandemic Start" })
+    pandemicGlow.startColor = pandemicRoute:Setting({ key = "startColor", label = "Start Color",
+        applies = PandemicEffectIs("pandemicStartEffect", "none", "flash") })
+    pandemicGlow.startLength = pandemicRoute:Setting({ key = "startLength", label = "Start Length",
+        applies = PandemicEffectIs("pandemicStartEffect", "none") })
+    pandemicGlow.refresh = pandemicRoute:Setting({ key = "refreshEffect", label = "Pandemic Refresh" })
+    pandemicGlow.refreshColor = pandemicRoute:Setting({ key = "refreshColor", label = "Refresh Color",
+        applies = PandemicEffectIs("pandemicRefreshEffect", "vanish", "flash") })
+    pandemicGlow.refreshLength = pandemicRoute:Setting({ key = "refreshLength", label = "Refresh Length",
+        applies = PandemicEffectIs("pandemicRefreshEffect", "vanish") })
     EFFECTS_FINDER.advanced.pandemicGlow = pandemicGlow
 
     local assistedRoute = EffectsFinderRoute(

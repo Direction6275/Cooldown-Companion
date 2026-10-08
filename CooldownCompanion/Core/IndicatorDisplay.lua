@@ -118,16 +118,24 @@ function I.CreatePandemicTint(host, nativeSlot)
 end
 
 -- The Pandemic effect rig: the panel pandemic glow kit, drawn above the
--- artwork and below the readouts. Native aura Indicator kits build it at slot
--- creation and register it with the slot (Blizzard then owns its Shown state);
--- the config preview builds its own and shows it itself. It is a child of
+-- artwork and below the readouts. Native aura Indicator kits pass their slot
+-- and get the window rig, which Blizzard then drives; the config preview
+-- builds a plain one and shows it itself. It is a child of
 -- visualRoot so Pulse, Shrink / Expand and Bounce carry it with the artwork.
-function I.CreatePandemicGlow(host, auraOwned)
-    local glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
+function I.CreatePandemicGlow(host, auraOwned, nativeSlot)
     local root = host.indicatorReadouts.root
     local level = root:GetFrameLevel()
-    glow.host:SetFrameLevel(level)
-    glow.cdm.frame:SetFrameLevel(level)
+    local glow
+    if nativeSlot then
+        -- A native slot's glow rides the 12.1.5 window rig (Glows.lua).
+        host.indicatorPandemicWindow = ST._BuildPandemicWindowRig(host.visualRoot, host.visualRoot,
+            nativeSlot, level)
+        glow = host.indicatorPandemicWindow.glow
+    else
+        glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
+        glow.host:SetFrameLevel(level)
+        glow.cdm.frame:SetFrameLevel(level)
+    end
     root:SetFrameLevel(level + 1)
     host.indicatorPandemicGlow = glow
     return glow
@@ -158,6 +166,7 @@ function I.StylePandemicGlow(host, group, shown)
     local enabled = shown and DrawsLiveAura(host, group) and settings.displayType == "icon"
         and I.PandemicEffectOn(group) or false
     ST._StyleKitPandemicGlowRegions(glow, settings and settings.pandemic, host.visualRoot, enabled)
+    ST._StylePandemicWindowRig(host.indicatorPandemicWindow, settings and settings.pandemic, enabled)
 end
 
 -- The Pandemic effect on Texture and Text displays: the artwork (and its

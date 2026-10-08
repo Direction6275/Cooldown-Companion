@@ -2217,6 +2217,64 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
         end,
     }, opts)
 
+    -- 12.1.5: how the glow arrives and leaves (owner ruling 2026-10-07; live
+    -- side Glows.lua BuildPandemicWindowRig). All off by default.
+    local settings = opts.settings
+    -- `moment` ("Start"/"Refresh") names the child rows: the settings
+    -- finder needs every label in the panel to be distinct.
+    local function AddEffectRows(label, moment, setting, effectKey, list, order, off, colorKey, defaultColor, lengthKey)
+        local effect = styleTable[effectKey] or off
+        AddDropdownRow(container, {
+            label = label,
+            setting = settings and settings[setting],
+            list = list,
+            order = order,
+            value = effect,
+            onChange = function(val)
+                styleTable[effectKey] = val
+                -- A playing Preview Pandemic Effect starts or stops cycling.
+                if ST._ConfigPreview then ST._ConfigPreview.SyncCycle() end
+                RefreshStructuralControls(container, refreshCallback)
+            end,
+        })
+        if effect == "flash" then
+            AddColorRow(container, {
+                label = moment .. " Color",
+                setting = settings and settings[setting .. "Color"],
+                indent = true,
+                tbl = styleTable,
+                key = colorKey,
+                default = defaultColor,
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onPreview = opts.previewRefresh,
+            })
+        end
+        if effect ~= off then
+            AddSliderRow(container, {
+                label = moment .. " Length",
+                setting = settings and settings[setting .. "Length"],
+                indent = true,
+                min = 0.1, max = 1, step = 0.05,
+                value = styleTable[lengthKey] or 0.3,
+                onChange = function(val)
+                    ST._PreviewScalarSetting(styleTable, lengthKey, val,
+                        opts.previewRefresh or ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(val)
+                    styleTable[lengthKey] = val
+                    refreshCallback()
+                end,
+            })
+        end
+    end
+    AddEffectRows("Pandemic Start", "Start", "start", "pandemicStartEffect",
+        { none = "None", flash = "Flash", swell = "Swell" }, {"none", "flash", "swell"}, "none",
+        "pandemicStartColor", {1, 0.5, 0, 1}, "pandemicStartLength")
+    AddEffectRows("Pandemic Refresh", "Refresh", "refresh", "pandemicRefreshEffect",
+        { vanish = "Vanish", fade = "Fade", flash = "Flash" }, {"vanish", "fade", "flash"}, "vanish",
+        "pandemicRefreshColor", {1, 1, 1, 1}, "pandemicRefreshLength")
+
     -- The marker shares this section's keys but NOT the effect's enable: it
     -- works with the effect off, so the tabs draw it themselves (with its own
     -- gear) rather than through this builder.

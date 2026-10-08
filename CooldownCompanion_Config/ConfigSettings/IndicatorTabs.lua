@@ -200,6 +200,15 @@ local function GlowUses(...)
     for index = 1, select("#", ...) do styles[select(index, ...)] = true end
     return Applies(function(g,s) return I.ShowsLiveDisplay(g) and s.displayType == "icon" and styles[PandemicGlowStyle(s)] == true end)
 end
+-- Pandemic Start / Refresh rows: `off` is the effect's off value; with
+-- `wanted`, that one effect.
+local function PandemicEffectIs(key, off, wanted)
+    return Applies(function(g,s)
+        local effect = s.pandemic and s.pandemic[key] or off
+        return I.ShowsLiveDisplay(g) and s.displayType == "icon"
+            and (wanted and effect == wanted or not wanted and effect ~= off)
+    end)
+end
 -- Same rows the panel's Pandemic Effect gear draws for these styles.
 local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_pandemic",
     {idPrefix="panel.indicator.pandemicGlow", advancedKey="indicatorPandemicGlow", applies=auraArtwork}):Settings({
@@ -217,6 +226,12 @@ local pandemicGlow = Route("effects", "pandemic", "Pandemic Effect", "indicator_
     lapDuration={label="Lap Duration",applies=GlowUses("dashes")},
     particleScale={label="Particle Scale",applies=GlowUses("autocast")},
     frequency={label="Frequency",applies=GlowUses("autocast")},
+    start={label="Pandemic Start"},
+    startColor={label="Start Color",applies=PandemicEffectIs("pandemicStartEffect","none","flash")},
+    startLength={label="Start Length",applies=PandemicEffectIs("pandemicStartEffect","none")},
+    refresh={label="Pandemic Refresh"},
+    refreshColor={label="Refresh Color",applies=PandemicEffectIs("pandemicRefreshEffect","vanish","flash")},
+    refreshLength={label="Refresh Length",applies=PandemicEffectIs("pandemicRefreshEffect","vanish")},
 })
 -- Pandemic Timer Color's gear: the color only. The ids keep their marker-era
 -- spelling.

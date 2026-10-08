@@ -726,26 +726,25 @@ local function BuildSlotKit(slotButton, pandemicGated)
     -- Aura active glow: shares the slot's Blizzard-driven visibility, so it
     -- glows exactly while the aura runs. Animated styles are AnimationGroup-
     -- driven (P3: they keep playing on the forbidden subtree in combat).
-    -- Above the swipe, below the texts.
-    kit.glow = ST._BuildKitGlowRegions(parent, false, true)
+    -- Above the swipe, below the texts. It hangs under the replace gate,
+    -- which hides it while the pandemic glow is showing (Glows.lua
+    -- BuildAuraGlowReplace).
+    kit.auraGlowGate, kit.auraGlowReplace = ST._BuildAuraGlowReplace(parent, slotButton)
+    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true)
     kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
 
-    -- Pandemic glow (PTR 8, Phase 0-validated): a second glow kit registered
-    -- as a pandemic region — Blizzard alone flips its secret Shown state
-    -- while the aura sits inside its refresh window; CC styles it at OOC
-    -- bind time and never reads it back. Registration is creation-only (no
-    -- re-call evidence exists for AddPandemicRegion), so every slot carries
-    -- the rig and per-entry enable is style-time "none" (P6). Same level as
-    -- the aura glow, created after it, so the pandemic effect draws above.
+    -- Pandemic glow: a second glow kit that Blizzard shows only while the
+    -- aura sits inside its refresh window, through the 12.1.5 window rig
+    -- (Glows.lua BuildPandemicWindowRig) and its open/close effects. CC
+    -- styles it at OOC bind time and never reads it back. Registration is
+    -- creation-only, so every slot carries the rig and per-entry enable is
+    -- style-time "none" (P6). Same level as the aura glow, created after it,
+    -- so the pandemic effect draws above. The rig pins its CDM frame there
+    -- too: left at its default level it would TIE kit.textOverlay at swipe+2.
     if slotButton.AddPandemicRegion then
-        -- withCdm: only pandemic rigs carry the CDM-parity region set.
-        kit.pandemicGlow = ST._BuildKitGlowRegions(parent, true, true)
-        kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
-        -- The CDM rig is a child FRAME of the host; left at its default
-        -- level it would TIE kit.textOverlay at swipe+2. Pin it to swipe+1
-        -- with every other pandemic style so the texts stay strictly above.
-        kit.pandemicGlow.cdm.frame:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
-        slotButton:AddPandemicRegion(kit.pandemicGlow.host)
+        kit.pandemicWindow = ST._BuildPandemicWindowRig(parent, slotButton, slotButton,
+            kit.swipe:GetFrameLevel() + 1)
+        kit.pandemicGlow = kit.pandemicWindow.glow
     end
 
     kit.textOverlay = CreateFrame("Frame", nil, parent)
@@ -892,12 +891,12 @@ local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
 
     ST.Indicator.CreateVisual(host, slotButton)
     -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
-    -- descendant and moved by the effects): same creation-only registration as
-    -- the icon kit's rig, so every aura Indicator slot carries it and "off" is
-    -- a style-time "none" (Indicator.StylePandemicGlow). Blizzard alone flips
-    -- its secret Shown state; CC styles it at OOC bind and never reads it.
+    -- descendant and moved by the effects): the icon kit's window rig, so
+    -- every aura Indicator slot carries it and "off" is a style-time "none"
+    -- (Indicator.StylePandemicGlow). Blizzard alone drives the window; CC
+    -- styles it at OOC bind and never reads it.
     if slotButton.AddPandemicRegion then
-        slotButton:AddPandemicRegion(ST.Indicator.CreatePandemicGlow(host, true).host)
+        ST.Indicator.CreatePandemicGlow(host, true, slotButton)
     end
     host.colorShift = {}
     local colorRegions = {
@@ -2279,23 +2278,18 @@ local function StyleSlotKit(slot, button, buttonData, style)
         ST._StyleKitGlowRegions(kit.glow, style, button, true)
     end
 
-    -- Icon entries with both enabled show the aura glow AND the pandemic
-    -- glow together during the window (owner ruling 2026-08-05, accepting
-    -- the fallback): the replace-while-shown ideal has no supported path —
-    -- a window mask over the aura glow textures (a black MaskTexture
-    -- registered as a pandemic region) was built and probed in game, and a
-    -- shown SetColorTexture mask observably does not blank its targets on
-    -- build 69111. Bars achieve true replacement structurally (the opaque
-    -- clone overlays the fill), so no such compromise exists there.
-
     -- Pandemic glow: icon hosts only — the bar pandemic presentation is the
     -- fill recolor above, not a border effect (owner ruling). Anchors to the
     -- host button exactly like the aura glow; a disabled entry styles to
     -- "none", which fully resets and hides the rig even though Blizzard
-    -- still flips its secret Shown state.
+    -- still plays its window animations. While it shows, it replaces the
+    -- aura glow (12.1.5; until then both drew together, the 2026-08-05
+    -- fallback). Bars replace structurally: the opaque clone covers the fill.
     if kit.pandemicGlow then
-        ST._StyleKitPandemicGlowRegions(kit.pandemicGlow, style, button,
-            pandemicOn and not isBar)
+        local pandemicGlowOn = pandemicOn and not isBar
+        ST._StyleKitPandemicGlowRegions(kit.pandemicGlow, style, button, pandemicGlowOn)
+        ST._StylePandemicWindowRig(kit.pandemicWindow, style, pandemicGlowOn)
+        ST._StyleAuraGlowReplace(kit.auraGlowReplace, pandemicGlowOn)
     end
 
     -- Full-button composition for show-only-while-active entries: bg + border

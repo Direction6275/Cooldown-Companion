@@ -208,6 +208,12 @@ local defaults = {
                         pandemicGlowThickness = 3,   -- dash thickness px
                         pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
                         pandemicGlowLines = 5,       -- dash count
+                        pandemicStartEffect = "none",    -- 12.1.5 window rig: none/flash/swell
+                        pandemicStartColor = {1, 0.5, 0, 1}, -- Flash color
+                        pandemicStartLength = 0.3,      -- seconds
+                        pandemicRefreshEffect = "vanish", -- vanish/fade/flash
+                        pandemicRefreshColor = {1, 1, 1, 1}, -- Flash color
+                        pandemicRefreshLength = 0.3,     -- seconds
                         barPandemicColor = {1, 0.5, 0, 1},
                         auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/colorShift/dashes/autocast/ants/proc/overlay
                         auraGlowColor = {1, 0.84, 0, 0.9},
@@ -388,6 +394,12 @@ local defaults = {
             pandemicGlowThickness = 3,   -- dash thickness px
             pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
             pandemicGlowLines = 5,       -- dash count
+            pandemicStartEffect = "none",    -- 12.1.5 window rig: none/flash/swell
+            pandemicStartColor = {1, 0.5, 0, 1}, -- Flash color
+            pandemicStartLength = 0.3,      -- seconds
+            pandemicRefreshEffect = "vanish", -- vanish/fade/flash
+            pandemicRefreshColor = {1, 1, 1, 1}, -- Flash color
+            pandemicRefreshLength = 0.3,     -- seconds
             barPandemicColor = {1, 0.5, 0, 1},
             auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/colorShift/dashes/autocast/ants/proc/overlay
             auraGlowColor = {1, 0.84, 0, 0.9},
@@ -1176,6 +1188,8 @@ ST.OVERRIDE_SECTIONS = {
         label = "Pandemic",
         keys = {"pandemicEffectEnabled",
             "pandemicGlowStyle", "pandemicGlowColor", "pandemicGlowColor2", "pandemicGlowSize", "pandemicGlowThickness", "pandemicGlowSpeed", "pandemicGlowLines",
+            "pandemicStartEffect", "pandemicStartColor", "pandemicStartLength",
+            "pandemicRefreshEffect", "pandemicRefreshColor", "pandemicRefreshLength",
             "barPandemicColor",
             "pandemicMarkerMode", "pandemicMarkerColor"},
         modes = {icons = true, bars = true},
