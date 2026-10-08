@@ -451,7 +451,7 @@ local function SectionHeaderColor(section)
     if section.dimHeader then
         return DIM_HEADER_TEXT[1], DIM_HEADER_TEXT[2], DIM_HEADER_TEXT[3]
     end
-    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local classColor = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
     if classColor then
         return classColor.r, classColor.g, classColor.b
     end

@@ -3318,7 +3318,7 @@ end
 ------------------------------------------------------------------------
 local function GetClassColoredText(text)
     local safeText = tostring(text or "")
-    local classColor = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local classColor = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
     if classColor then
         if classColor.WrapTextInColorCode then
             return classColor:WrapTextInColorCode(safeText)
