@@ -25,12 +25,9 @@
     CreateFrame and never changed — only the BUTTONS carry the forbidden
     aspects), with the slot button anchored once inside
     initializeFrame and never moved, re-leveled, or reparented afterwards.
-    Bind is a container-mutator filter swap. Park is a polarity-crossed
-    sentinel filter PLUS container:Hide() — the sentinel is applied inside
-    Blizzard's identity gate and stops being applied at all when that gate
-    declines the unit relationship, so hiding the container is what actually
-    guarantees a parked display renders nothing (and drops it out of the aura
-    event path).
+    Bind is a container-mutator filter swap. Park switches the slot off
+    (12.1.5 SetAuraSlotEnabled) PLUS container:Hide(), which also drops it
+    out of the aura event path.
     Host Show/Hide, alpha fades, and strata changes reach the slot through
     plain parentage again, and a re-shown container re-registers its events
     and refreshes itself (AuraContainerPrivateMixin:OnShow_Intrinsic).
@@ -64,30 +61,15 @@ local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
 
--- Parking (P1b/P1c + V25 Q4): slots can never be removed, so an unbound slot is
--- given a sentinel candidate filter that cannot match, and Blizzard hides an
--- unmatched slot button. Empty includeSpellIDs is BANNED — it wedges the slot
--- permanently.
---
--- Sentinels are POLARITY-CROSSED so they are structurally never-match: a
--- HELPFUL slot parked on a debuff spellID (debuffs can never appear in HELPFUL
--- results) and a HARMFUL slot parked on a buff spellID. Hence the keying by
--- POLARITY rather than by unit — polarity stops being derivable from the unit
--- once ally units are tracked, since buffs on you and buffs on a party member
--- are both HELPFUL. Get this wrong and a HELPFUL slot parked on a buff sentinel
--- MATCHES and shows the wrong aura.
---
--- The sentinel is NOT sufficient on its own; see ParkDisplay for why the
--- container is also hidden.
-local PARK_SENTINEL = {
-    HELPFUL = 155722, -- Rake (a bleed debuff; never matches a HELPFUL filter)
-    HARMFUL = 5217,   -- Tiger's Fury (a self buff; never matches a HARMFUL filter)
-}
+-- Parking: slots and groups can never be removed (append-only containers), so
+-- an unbound one is switched off with SetAuraSlotEnabled / SetAuraGroupEnabled
+-- (12.1.5). Blizzard then clears its button, drops it from the flow layout and
+-- stops parsing auras for it; the bind switches it back on before writing its
+-- filters. Empty includeSpellIDs is still BANNED: it wedges a slot permanently.
 
--- The per-unit slot contract: aura polarity (which picks the park sentinel),
--- the filter string handed to Blizzard, and whether the slot is restricted to
--- auras the player cast. One table so the sentinel, the filter string, and the
--- caster filter can never disagree.
+-- The per-unit slot contract: aura polarity, the filter string handed to Blizzard, and whether the slot is restricted to
+-- auras the player cast. One table so the filter string and the caster filter
+-- can never disagree.
 --
 -- A plain self-buff entry keeps a bare HELPFUL filter on `player` — it tracks
 -- buffs from ANY caster (Power Word: Fortitude, Blessing of the Bronze), which
@@ -112,7 +94,7 @@ local SLOT_CONTRACT = {
 -- sizes agree.
 --
 -- The unknown-token fallback is deliberate: a token must never yield a nil
--- sentinel, because an empty includeSpellIDs set wedges a slot permanently.
+-- contract.
 local function SlotContract(unit, groupScoped)
     if groupScoped and unit ~= "target" then
         return ALLY_CONTRACT
@@ -2589,14 +2571,6 @@ local function BuildCandidateFilters(unit, spellSet, groupScoped)
     return filters
 end
 
--- The never-match filter set for a parked slot. Scope is deliberately omitted:
--- the sentinel is chosen by POLARITY, which scope never changes, and a park set
--- can never match either way — so parking does not need to know which entry (if
--- any) last owned the record.
-local function BuildParkFilters(unit)
-    return BuildCandidateFilters(unit, { [PARK_SENTINEL[SlotContract(unit).polarity]] = true })
-end
-
 -- The auraLayer is the CC-owned mount point for the display subtree. It (and
 -- everything under it) is excluded from every recursive frame sweep via the
 -- _ccNoTouch flag; the layer itself is safe to touch, its children are not.
@@ -2779,7 +2753,6 @@ function Presence.NewContainer(cell, unit, key, width, height)
     container:SetFlowLayoutPadding(0, 0, 0, 0)
     -- maxFrameCount 1 is structural: one aura, and no frame creation in combat.
     container:AddAuraGroup(key, SlotContract(unit).filter, {
-        candidateFilters = BuildParkFilters(unit),
         maxFrameCount = 1,
         layout = PresenceLayout(width, height),
         initializeFrame = function(frame)
@@ -2791,6 +2764,8 @@ function Presence.NewContainer(cell, unit, key, width, height)
             frame:SetMouseMotionEnabled(false)
         end,
     })
+    -- Born switched off; the bind switches it on with the real contract.
+    container:SetAuraGroupEnabled(key, false)
     return container
 end
 
@@ -2932,6 +2907,7 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
             -- every bind (a no-op when unchanged): group scope counts only
             -- your own buff, on you as on everyone else.
             local groupScoped = auras[index].groupScoped == true
+            container:SetAuraGroupEnabled(tracker.key, true)
             container:SetAuraGroupFilterString(tracker.key, SlotContract(tracker.unit, groupScoped).filter)
             container:SetAuraGroupCandidateFilters(tracker.key,
                 BuildCandidateFilters(tracker.unit, auras[index].set, groupScoped))
@@ -2977,7 +2953,7 @@ function Presence.ParkTracker(tracker)
     if tracker.bound == false then return end
     tracker.bound = false
     ReleaseSlotAuraSounds(tracker)
-    tracker.container:SetAuraGroupCandidateFilters(tracker.key, BuildParkFilters(tracker.unit))
+    tracker.container:SetAuraGroupEnabled(tracker.key, false)
     tracker.container:Hide()
 end
 
@@ -3005,6 +2981,7 @@ function Picture.BindChain(record, spellSet, tokens)
             NoteRecordToken(unit)
         end
         used[link] = true
+        link.container:SetAuraGroupEnabled(link.key, true)
         link.container:SetAuraGroupFilterString(link.key, SlotContract(unit, true).filter)
         link.container:SetAuraGroupCandidateFilters(link.key, BuildCandidateFilters(unit, spellSet, true))
         if not link.bound then link.container:Show() end
@@ -3325,7 +3302,6 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     container:SetFrameLevel(layer:GetFrameLevel())
     container:SetUnit(unit)
     local slotButton = container:AddAuraSlot(record.key, SlotContract(unit, groupScoped).filter, {
-        candidateFilters = BuildParkFilters(unit),
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
@@ -3353,6 +3329,8 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         CooldownCompanion:Print("Aura slot creation failed.")
         return nil
     end
+    -- Born switched off; the bind switches it on with the real contract.
+    container:SetAuraSlotEnabled(record.key, false)
     record.slotButton = slotButton
     record.container = container
     if SLOT_KIT_KINDS[hostKind] == "texture" and button.auraTextureHost then
@@ -3371,18 +3349,12 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     return record
 end
 
--- Park = sentinel filter swap PLUS hiding the container.
+-- Park = switch the slot off PLUS hide the container.
 --
--- The sentinel alone is not a park. It works by handing Blizzard a spell ID
--- that can never match, but that filter is applied INSIDE the identity gate
--- (Blizzard_AuraContainerUtil.lua:53-65, build 69497), and the gate declines
--- spell-ID filters entirely for a helpful aura on a unit the relationship
--- checks reject (:41-43). The 69465 hotfix narrowed those decline windows
--- (group members stay filterable through charm), but they still exist — a unit
--- whose token no longer resolves to a group member can make a sentinel-parked
--- slot match the next aura the player has on it — wrong icon, wrong timer, on
--- a display the user has switched off. Slots can never be removed, so that
--- state would persist until /reload.
+-- Switching off (12.1.5 SetAuraSlotEnabled / SetAuraGroupEnabled) clears the
+-- button and stops Blizzard parsing auras for it. It replaced a never-match
+-- sentinel filter, which Blizzard's identity gate could stop applying on a
+-- declined unit relationship and so light a parked slot with an unrelated aura.
 --
 -- Hiding the container is unconditional: the slot's AuraButton is a direct
 -- child of the container (Blizzard_CustomAuraContainer.lua:656 ->
@@ -3392,18 +3364,13 @@ end
 -- (ShouldRegisterForDynamicEvents requires IsVisible(), Blizzard_AuraContainer
 -- .lua:158) — which is what makes a parked container cost nothing.
 --
--- Validated in game 2026-07-29: SetEnabled(false) is NOT sufficient (it stops
--- updates but leaves a stale icon with a frozen timer, because ParseAllAuras
--- never consults IsEnabled()); Hide()/Show() clears and restores cleanly.
+-- Container-level SetEnabled(false) is a different switch: on 12.1.0 it left a
+-- stale icon with a frozen timer (validated in game 2026-07-29).
 --
--- Do NOT split this into "sentinel now, Hide() later". An earlier attempt did, so
--- that a record could be half-neutralised while its unit was in combat, and it was
--- wrong in both directions: it leaves a VISIBLE container carrying a sentinel
--- filter, and the sentinel is exactly what the identity gate stops applying on
--- a declined unit — such a slot would light with an unrelated aura of yours. And clearing `boundEntry` while the container is still
--- shown makes the pass's token reconciliation treat the host as slot-free,
--- releasing the pool lock on a live visible slot. The two halves must stay
--- together; there is no longer any caller that needs them apart.
+-- Do NOT split this into "switch off now, Hide() later": clearing `boundEntry`
+-- while the container is still shown makes the pass's token reconciliation
+-- treat the host as slot-free, releasing the pool lock on a live visible slot.
+-- The two halves must stay together.
 --
 -- `_auraSlotHostToken` is deliberately NOT cleared here. A host can carry
 -- several records, and clearing the shared token while a sibling keeps a live
@@ -3423,7 +3390,7 @@ local function ParkDisplay(record)
         if PRESENCE_KINDS[record.hostKind] then
             record.boundPresenceKey = nil
             if record.picture then
-                record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
+                record.container:SetAuraGroupEnabled(record.key, false)
                 for _, link in ipairs(record.chain or {}) do
                     Presence.ParkTracker(link)
                     link.window:Hide()
@@ -3435,7 +3402,7 @@ local function ParkDisplay(record)
                 for _, tracker in ipairs(record.trackers) do Presence.ParkTracker(tracker) end
             end
         else
-            record.container:SetAuraSlotCandidateFilters(record.key, BuildParkFilters(record.unit))
+            record.container:SetAuraSlotEnabled(record.key, false)
         end
         if record.container then record.container:Hide() end
         -- An Indicator's Shrink / Expand runs on the shared texture layer;
@@ -3598,6 +3565,7 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
         if not Picture.BindingUnchanged(record, buttonData, spellSet, groupScoped) then
             -- The record is reused across scopes (keyed by unit), so its
             -- contract is set on every real bind.
+            record.container:SetAuraGroupEnabled(record.key, true)
             record.container:SetAuraGroupFilterString(record.key, SlotContract(unit, groupScoped).filter)
             record.container:SetAuraGroupCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet, groupScoped))
             Picture.BindChain(record, spellSet, groupScoped and record.wantGroupTokens or nil)
@@ -3669,9 +3637,9 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- EnsureDisplay. A host that needs a different unit gets its own record.
     --
     -- Converge the whole contract every bind rather than only on a unit change.
+    record.container:SetAuraSlotEnabled(record.key, true)
     -- The filter string is baked at AddAuraSlot, so writing it from the same
-    -- source as the sentinel and the caster filter here is what keeps the three
-    -- from drifting apart — it removes the fragile invariant that the string is
+    -- source as the caster filter here is what keeps the two from drifting apart — it removes the fragile invariant that the string is
     -- only ever rewritten when the unit changes. Blizzard's setter early-outs
     -- when unchanged (Blizzard_CustomAuraContainer.lua:427), so it costs nothing
     -- in the common case; SetAuraSlotFilterString self-refreshes otherwise
@@ -4065,24 +4033,24 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
     -- maxFrameCount 1 is structural, not a display choice: a group that could
     -- outgrow its pre-created batch would run AcquireFrame -> CreateFrameBatch
     -- -> initializeFrame IN COMBAT, from tainted code, on a forbidden subtree.
-    -- Born parked like a slot; the bind below writes the real contract.
+    -- Born switched off like a slot; the bind below writes the real contract.
     record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
-        candidateFilters = BuildParkFilters(record.unit),
         maxFrameCount = 1,
         layout = BlockGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
             BuildPanelGroupHost(group, frame)
         end,
     })
+    record.container:SetAuraGroupEnabled(entry.id, false)
     record.groups[entry.id] = group
     record.groupList[#record.groupList + 1] = group
     return group
 end
 
--- Park = zero frames PLUS the polarity-crossed sentinel, the group analog of
--- ParkDisplay. The container is hidden by the pass when a side keeps nothing;
--- a side that still renders something cannot hide its container, so the
--- sentinel is what keeps a retired entry dark inside a live one.
+-- Park = switch the group off, the group analog of ParkDisplay. The container
+-- is hidden by the pass when a side keeps nothing; a side that still renders
+-- something cannot hide its container, so switching the group off is what
+-- keeps a retired entry dark inside a live one.
 local function ParkBlockGroup(group)
     if group.parked then return end
     group.parked = true
@@ -4090,16 +4058,15 @@ local function ParkBlockGroup(group)
     group.boundStackMax = nil
     ReleaseSlotAuraSounds(group)
     local container = group.record.container
-    container:SetAuraGroupMaxFrameCount(group.key, 0)
-    container:SetAuraGroupCandidateFilters(group.key, BuildParkFilters(group.unit))
+    container:SetAuraGroupEnabled(group.key, false)
 end
 
 local function BindBlockGroup(group, entry)
     local container = group.record.container
-    container:SetAuraGroupMaxFrameCount(group.key, 1)
+    container:SetAuraGroupEnabled(group.key, true)
     -- Converge the whole contract every bind, exactly like the slot path: the
-    -- filter string, the candidate set and the park sentinel all come from
-    -- one source, so they can never drift apart.
+    -- filter string and the candidate set come from one source, so they can
+    -- never drift apart.
     container:SetAuraGroupFilterString(group.key, SlotContract(group.unit).filter)
     container:SetAuraGroupCandidateFilters(group.key,
         BuildCandidateFilters(group.unit, entry.spellSet))
@@ -4246,8 +4213,7 @@ end
 --
 -- Everything the blocks section establishes applies here unchanged:
 --   * Containers and groups are APPEND-ONLY. There is no removal API, so a
---     retired entry's group is PARKED (maxFrameCount 0 + the polarity-crossed
---     sentinel), never deleted, and a record whose panel frame was replaced is
+--     retired entry's group is PARKED (switched off), never deleted, and a record whose panel frame was replaced is
 --     ABANDONED rather than reparented (see EnsurePanelContainer).
 --   * maxFrameCount 1 per group is structural: a group that could outgrow its
 --     pre-created frame batch would run initializeFrame from tainted code, in
@@ -4834,23 +4800,22 @@ local function EnsurePanelGroup(record, entry, layoutIndex)
     -- maxFrameCount 1 is structural, not a display choice: one entry is one
     -- aura, and a group that could outgrow its pre-created batch would run
     -- AcquireFrame -> CreateFrameBatch -> initializeFrame IN COMBAT, from
-    -- tainted code, on a forbidden subtree. Born parked like a slot; the bind
-    -- below writes the real contract.
+    -- tainted code, on a forbidden subtree. Born switched off like a slot; the
+    -- bind below writes the real contract.
     record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
-        candidateFilters = BuildParkFilters(record.unit),
         maxFrameCount = 1,
         layout = PanelGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
             BuildPanelGroupHost(pgroup, frame)
         end,
     })
+    record.container:SetAuraGroupEnabled(entry.id, false)
     record.groups[entry.id] = pgroup
     record.groupList[#record.groupList + 1] = pgroup
     return pgroup
 end
 
--- Park = zero frames PLUS the polarity-crossed sentinel. A parked group
--- contributes no elements to the flow layout, so it also stops consuming
+-- Park = switch the group off. A switched-off group leaves the flow layout, so it also stops consuming
 -- spacing: the entries around it close up exactly as if it were gone. That is
 -- what makes "retire an entry" and "the aura is not up" render identically,
 -- which they must, because CC can never tell the two apart.
@@ -4861,16 +4826,15 @@ local function ParkPanelGroup(pgroup)
     pgroup.boundStackMax = nil
     ReleaseSlotAuraSounds(pgroup)
     local container = pgroup.record.container
-    container:SetAuraGroupMaxFrameCount(pgroup.key, 0)
-    container:SetAuraGroupCandidateFilters(pgroup.key, BuildParkFilters(pgroup.unit))
+    container:SetAuraGroupEnabled(pgroup.key, false)
 end
 
 local function BindPanelGroup(pgroup, entry)
     local container = pgroup.record.container
-    container:SetAuraGroupMaxFrameCount(pgroup.key, 1)
+    container:SetAuraGroupEnabled(pgroup.key, true)
     -- Converge the whole contract every bind, exactly like the slot and block
-    -- paths: the filter string, the candidate set and the park sentinel all
-    -- come from one source, so they can never drift apart.
+    -- paths: the filter string and the candidate set come from one source, so
+    -- they can never drift apart.
     container:SetAuraGroupFilterString(pgroup.key, SlotContract(pgroup.unit).filter)
     container:SetAuraGroupCandidateFilters(pgroup.key,
         BuildCandidateFilters(pgroup.unit, entry.spellSet))
