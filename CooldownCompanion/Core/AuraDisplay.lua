@@ -2345,12 +2345,14 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
     local previous = {}
     for _, key in ipairs(slot.auraSoundKeys or {}) do previous[key] = true end
     local keys
+    local gap = CooldownCompanion:GetAuraSoundGapForButton(buttonData)
     for _, eventInfo in ipairs(AURA_SOUND_EVENT_TRIGGERS) do
         local soundFile, channel = CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventInfo.eventKey)
         if soundFile then
             local trigger = Enum.UnitAuraSoundTrigger[eventInfo.triggerName]
             for spellID in pairs(spellSet) do
                 local key = slot.unit .. ":" .. spellID .. ":" .. trigger .. ":" .. soundFile .. ":" .. (channel or "")
+                    .. ":" .. (gap or 0)
                 local entry = auraSounds[key]
                 if previous[key] then
                     previous[key] = nil
@@ -2362,6 +2364,7 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
                         spellID = spellID,
                         soundFileName = soundFile,
                         outputChannel = channel,
+                        throttleSeconds = gap,
                     })
                     if id then
                         entry = { id = id, count = 1 }

@@ -132,6 +132,12 @@ for key, label in pairs({available="Available",availableWithCharges="Available /
             and (eventKey ~= "available" or (Addon.UsesChargeBehavior(source) == true) == charged)
     end)}
 end
+soundDefinitions.auraSoundGap={label="Minimum Gap",aliases={"sound throttle","sound spam","repeat"},
+    applies=Applies(function(g)
+        if not I.UsesSourceSounds(g) then return false end
+        local events=Addon:GetScopedValidSoundAlertEventsForButton(I.Primary(g),nil,nil,g)
+        return events and (events.onAuraApplied or events.onAuraStackGained or events.onAuraRemoved) == true
+    end)}
 ST._IndicatorSoundSettings = soundRoute:Settings(soundDefinitions)
 
 -- One gear per readout, holding its font and position like a panel's text
