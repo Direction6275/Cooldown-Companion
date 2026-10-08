@@ -122,27 +122,20 @@ end
 
 -- Blizzard applies includeSpellIDs only when its identity gate
 -- (AuraContainerUtil.CanApplyIdentityCandidateFilters) agrees the aura's
--- polarity fits the unit's relationship to the player. When it declines, a
--- bound slot would accept every aura of its base polarity. Fail closed until
--- the gate would agree again; the visibility switch is on a CC-owned parent,
--- never on the restricted AuraButton subtree.
+-- polarity fits the unit's relationship to the player. Since 12.1.5 a declined
+-- gate REJECTS the aura when includeSpellIDs is set (DoesAuraPassCandidateFilters,
+-- build 70077), so ordinary displays can no longer show junk auras and need only
+-- UnitExists (which still clears a dismissed pet's frozen display, see
+-- EnsurePetWatcher). Probe-validated on the 12.1.5 PTR, 2026-10-07.
 --
--- This MUST mirror the gate exactly as hotfixed in build 69465
--- (Blizzard_AuraContainerUtil.lua:11-46, build 69497): helpful filters always
--- apply for the player, group members, and their pets
--- (UnitIsPlayerControlledOrGroupMember), and the remaining checks use the
--- lenient UnitCanAssist("player", unit, true, true), which ignores
--- immune/uninteractable states (vehicles, teleports, cutscenes). A stricter
--- mirror hides displays Blizzard renders correctly; a looser one leaves a
--- slot visible where the gate declines its filter (junk auras).
---
--- Two deliberate deviations (owner rulings 2026-08-28):
---   * UnitExists guard — a missing unit has no auras to misfilter, and
---     failing closed on it is what clears a dismissed pet's frozen display
---     (see EnsurePetWatcher).
---   * Blizzard's never-secret spell exemption is NOT mirrored: a never-secret
---     aura tracked against a disagreeing relationship stays hidden, as it did
---     pre-hotfix.
+-- Presence displays (missing-aura reminders, Show While Inactive pictures)
+-- still need this mirror: a declined gate now reads as "aura absent", which
+-- would open the reminder on a unit it makes no sense for. It MUST match the
+-- gate as hotfixed in build 69465: helpful filters always apply for the player,
+-- group members, and their pets (UnitIsPlayerControlledOrGroupMember), and the
+-- remaining checks use the lenient UnitCanAssist("player", unit, true, true),
+-- which ignores immune/uninteractable states (vehicles, teleports, cutscenes).
+-- Blizzard's never-secret spell exemption is not mirrored here.
 local function CanApplySpellIdentityFilter(unit, groupScoped)
     if not UnitExists(unit) then
         return false
@@ -3734,7 +3727,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.boundGroupScoped = groupScoped
     record.boundSpellSet = {}
     for spellID in pairs(spellSet) do record.boundSpellSet[spellID] = true end
-    record.identityApplicable = CanApplySpellIdentityFilter(unit, groupScoped)
+    record.identityApplicable = UnitExists(unit)
     SetIdentityVisibility(record, record.identityApplicable)
     -- Combat pool lock: while this button is pooled in combat it may only be
     -- re-acquired for the same entry (GroupFrame.AcquireButtonFromPool).
@@ -3838,7 +3831,7 @@ function RefreshSlotIdentityVisibility(record)
     if record.trackers then
         applicable = Presence.ApplyIdentity(record)
     else
-        applicable = CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped)
+        applicable = UnitExists(record.unit)
     end
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
@@ -3849,7 +3842,7 @@ function RefreshSlotIdentityVisibility(record)
 end
 
 local function RefreshBlockIdentityVisibility(record)
-    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local applicable = UnitExists(record.unit)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
     SetIdentityVisibility(record, record.shown == true and applicable)
@@ -4142,15 +4135,14 @@ end
 -- stack-end mount; non-nil means it chains off that bucket's trailing edge.
 -- Returns the bound record, or nil when nothing could be mounted.
 local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
-    -- Mounting an incompatible unit would let Blizzard ignore includeSpellIDs
-    -- for every non-exempt aura candidate. Leave the whole unit bucket parked;
-    -- the reaction watcher requests another topology pass if it becomes safe.
+    -- A unit that doesn't exist (no target, no pet) leaves the whole bucket
+    -- parked; the token watchers request another topology pass when it appears.
     local record = EnsureBlockContainer(side, unit, owner)
     if not record then return nil end
-    -- Membership survives relationship suppression, but not removal from the
+    -- Membership survives a missing unit, but not removal from the
     -- owning layout. Retired append-only records must never request work.
     record.configured = true
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
     if not record.identityApplicable then return nil end
     local mounted
     if anchorRecord then
@@ -4391,7 +4383,7 @@ function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
 end
 
 local function RefreshPanelIdentityVisibility(record)
-    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local applicable = UnitExists(record.unit)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
     return SetPanelIdentityVisibility(record, record.shown == true and applicable) or changed
@@ -4937,10 +4929,10 @@ local function BindAuraPanel(self, groupId, group, frame)
     -- so a pass that was deferred across a lock change converges on the frame's
     -- current answer instead of whatever the record last heard.
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
-    -- Configure while unrestricted even without a compatible target. The plain
-    -- visibility root suppresses incompatible units, just as ordinary slots do;
+    -- Configure while unrestricted even without a target. The plain
+    -- visibility root hides a missing unit, just as ordinary slots do;
     -- acquiring a target in combat must not require creating or rebinding groups.
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
 
     -- The SAME metrics the frame was sized from and the placeholders were laid
     -- out from, so the container's cells land exactly on the CC-side grid.
@@ -5126,7 +5118,7 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
 
     local record = EnsurePanelContainer(groupId, unit, host, anchor, frame)
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
 
     local flow, axis, direction = SectionFlowSpec(info)
     ApplyPanelMount(record, flow, axis, direction)
