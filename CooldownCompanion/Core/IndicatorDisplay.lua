@@ -234,8 +234,7 @@ end
 -- does not restore the old color when it stops (probe 2026-10-08), so a white
 -- set is played explicitly when the window closes, the aura appears and a new
 -- aura lands. Write-once in the slot's setup window: binds only recolor it
--- (I.StylePandemicTimerTint), white meaning off. Returns the tint animation,
--- or nil on a client without the trigger APIs.
+-- (I.StylePandemicTimerTint), white meaning off. Returns the tint animation.
 local TIMER_TINT_OFF = CreateColor(1, 1, 1, 1)
 
 local function TimerColorSet(text, color)
@@ -248,7 +247,6 @@ local function TimerColorSet(text, color)
 end
 
 function I.CreatePandemicTimerTint(nativeSlot, text)
-    if not nativeSlot.AddPandemicActiveAnimation then return nil end
     local tint = text:CreateAnimationGroup()
     tint:SetLooping("REPEAT")
     local anim = tint:CreateAnimation("VertexColor")

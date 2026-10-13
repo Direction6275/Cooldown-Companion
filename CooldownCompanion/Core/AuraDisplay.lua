@@ -2574,6 +2574,7 @@ function Presence.NewContainer(cell, unit, key, width, height)
     hider:SetAlpha(0)
     local container = CreateFrame("AuraContainer", nil, hider,
         "CustomAuraContainerTemplate, " .. PRESENCE_TEMPLATE)
+    container:SetEditModePreviewEnabled(false)
     container._ccNoTouch = true
     container:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
     -- Seed only; Blizzard resizes it and that size is never CC's to read.
@@ -3130,6 +3131,11 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     -- AuraContainer API always exists — a failure here is a real setup error
     -- that must surface, not read as "feature unavailable".
     local container = CreateFrame("AuraContainer", nil, visibilityRoot, "CustomAuraContainerTemplate")
+    -- Blizzard's Edit Mode swaps every aura container to placeholder auras
+    -- while it is open, whatever frame the player is moving. CC is not part
+    -- of Edit Mode, so its containers keep showing real auras (12.1.5 opt-out;
+    -- every CC container creation site makes the same call).
+    container:SetEditModePreviewEnabled(false)
     container:SetAllPoints(visibilityRoot)
     container:SetFrameLevel(layer:GetFrameLevel())
     container:SetUnit(unit)
@@ -3772,6 +3778,7 @@ local function EnsureBlockContainer(side, unit, owner)
     local container = CreateFrame("AuraContainer", nil,
         visibilityRoot,
         "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    container:SetEditModePreviewEnabled(false)
     -- Seed only; Blizzard resizes from its own layout pass once a group
     -- exists, and that size is never CC's to read.
     container:SetSize(1, 1)
@@ -4341,6 +4348,7 @@ local function EnsurePanelContainer(groupId, unit, hostFrame, surfaceKey, chrome
     local container = CreateFrame("AuraContainer", nil,
         visibilityRoot,
         "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    container:SetEditModePreviewEnabled(false)
     container._ccNoTouch = true
     -- Seed only; Blizzard resizes from its own layout pass once a group
     -- exists, and that size is never CC's to read.

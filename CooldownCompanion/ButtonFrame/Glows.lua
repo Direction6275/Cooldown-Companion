@@ -1954,12 +1954,6 @@ local function BuildPandemicWindowRig(parent, anchor, slotButton, level, ccOwned
     glow.host:SetFrameLevel(level)
     glow.cdm.frame:SetFrameLevel(level)
     local rig = { window = window, glow = glow }
-    if not slotButton.AddPandemicActiveAnimation then
-        -- 12.1.0: no triggers, so the window is a plain pandemic region.
-        slotButton:AddPandemicRegion(window)
-        return rig
-    end
-
     window:SetAlpha(0)
     local active, hold = AlphaGroup(window, true)
     hold:SetFromAlpha(1)
@@ -2008,7 +2002,7 @@ end
 -- enable arrives resolved, like StyleKitPandemicGlowRegions'; off makes
 -- every effect a no-op. OOC bind only.
 local function StylePandemicWindowRig(rig, styleTable, enabled)
-    if not (rig and rig.fade) then return end
+    if not rig then return end
     local start = enabled and styleTable and styleTable.pandemicStartEffect or "none"
     local refresh = enabled and styleTable and styleTable.pandemicRefreshEffect or "vanish"
     local startLength = PandemicEffectLength(styleTable and styleTable.pandemicStartLength)
@@ -2026,12 +2020,8 @@ end
 
 -- The aura glow's half of the swap: a frame the aura glow kit hangs under,
 -- held at alpha 0 by the same Active trigger while the window is open.
--- Returns the frame (the slot parent itself without triggers) and the
--- animation StyleAuraGlowReplace retunes.
+-- Returns the frame and the animation StyleAuraGlowReplace retunes.
 local function BuildAuraGlowReplace(parent, slotButton)
-    if not slotButton.AddPandemicActiveAnimation then
-        return parent
-    end
     local gate = CreateFrame("Frame", nil, parent)
     gate:SetAllPoints(parent)
     gate:EnableMouse(false)
@@ -2046,7 +2036,6 @@ end
 -- `replace`: the pandemic glow is on, so the aura glow steps aside in the
 -- window. Otherwise the animation holds alpha 1, a no-op.
 local function StyleAuraGlowReplace(hide, replace)
-    if not hide then return end
     local alpha = replace and 0 or 1
     hide:SetFromAlpha(alpha)
     hide:SetToAlpha(alpha)
