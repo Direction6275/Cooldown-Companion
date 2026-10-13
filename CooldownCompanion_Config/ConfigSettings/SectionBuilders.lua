@@ -970,10 +970,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         return enableRow
     end
 
-    -- opts.noColoring: the caller colors the timer itself (an Indicator's
-    -- Text recolor), so the color row would do nothing.
-    if opts.noColoring then return enableRow end
-
     AddColorRow(container, {
         label = "Timer Color",
         setting = opts.settings and opts.settings.color,

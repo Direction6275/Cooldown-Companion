@@ -11,6 +11,13 @@ local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 local AceGUI = LibStub("AceGUI-3.0")
 local LSM = LibStub("LibSharedMedia-3.0")
 
+-- The player's class color (a ColorMixin), shared by every config surface
+-- that tints with it. The extra parentheses keep UnitClass to one value:
+-- 12.1.5 gave GetClassColor an optional second argument (a tint).
+function ST._GetPlayerClassColor()
+    return C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+end
+
 if AceGUI and not ST._aceguiCheckboxCreatePatched then
     ST._aceguiCheckboxCreatePatched = true
     local aceguiCreate = AceGUI.Create
@@ -3318,7 +3325,7 @@ end
 ------------------------------------------------------------------------
 local function GetClassColoredText(text)
     local safeText = tostring(text or "")
-    local classColor = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+    local classColor = ST._GetPlayerClassColor()
     if classColor then
         if classColor.WrapTextInColorCode then
             return classColor:WrapTextInColorCode(safeText)

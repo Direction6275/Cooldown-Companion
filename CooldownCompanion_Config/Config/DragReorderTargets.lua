@@ -852,7 +852,7 @@ local function GetCol1SectionColor(section)
     if section ~= "char" then
         return nil
     end
-    local cc = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+    local cc = ST._GetPlayerClassColor()
     if cc then
         return cc.r, cc.g, cc.b
     end

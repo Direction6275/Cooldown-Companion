@@ -148,7 +148,7 @@ end
 -- Heading pool is shared with every other addon. Re-asserting the stock
 -- state here is a no-op for every centered heading.
 local function ColorHeading(heading)
-    local cc = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+    local cc = ST._GetPlayerClassColor()
     if cc then
         heading.label:SetTextColor(cc.r, cc.g, cc.b)
     end
@@ -301,7 +301,7 @@ local function ApplyLeftAlignedHeading(heading, btn, flush)
     end
 
     local r, g, b = 0.8, 0.8, 0.8
-    local cc = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+    local cc = ST._GetPlayerClassColor()
     if cc then
         r, g, b = cc.r, cc.g, cc.b
     end

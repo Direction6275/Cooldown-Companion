@@ -2272,7 +2272,7 @@ local function RefreshColumn1(preserveDrag)
             local color = C_ClassColor.GetClassColor(scope.ownerClassKey)
             if color then return color end
         end
-        return C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+        return ST._GetPlayerClassColor()
     end
 
     -- Helper: render a framed Group unit and its visible Panel rows.
@@ -3397,7 +3397,7 @@ local function RefreshColumn1(preserveDrag)
             local currentClassName = GetClassDisplayName(playerClassKey)
             local hasCharContent = #charIds > 0
             if hasCharContent or CS.showPhantomSections then
-                local cc = C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
+                local cc = ST._GetPlayerClassColor()
                 RenderSection(
                     "char",
                     charIds,
