@@ -756,7 +756,15 @@ local function BuildSlotKit(slotButton, pandemicGated)
     -- options at bind time (StyleSlotKit; V23 PTR 7 — re-calls outside
     -- initializeFrame are legal again), so nothing CC-owned is registered
     -- here.
-    kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    -- The duration text shows and hides through its own holder frame, never
+    -- its own alpha: the Pandemic Timer Color animations write the text's
+    -- color AND alpha outright (Indicator.CreatePandemicTimerTint), so an
+    -- alpha set on the text itself would not stay put. Same level as the
+    -- overlay, so it layers with the stack text as before.
+    kit.durationTextHolder = CreateFrame("Frame", nil, kit.textOverlay)
+    kit.durationTextHolder:SetAllPoints(kit.textOverlay)
+    kit.durationTextHolder:SetFrameLevel(kit.textOverlay:GetFrameLevel())
+    kit.durationText = kit.durationTextHolder:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 1)
     slotButton:SetDurationText(kit.durationText)
     kit.pandemicTimerTint = ST.Indicator.CreatePandemicTimerTint(slotButton, kit.durationText)
@@ -1916,10 +1924,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Position contract (pre-12.1 parity, promised by the config tooltips):
     -- the duration text shares the Cooldown Text position unless the user
     -- enables separateTextPositions, which switches it to the aura keys.
+    -- auraTextColor also feeds the Pandemic Timer Color rig below, which
+    -- puts this color back after its own animations.
+    local auraTextColor = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
     if ApplyFontStyle then
-        ApplyFontStyle(kit.durationText, style, "auraText", nil,
-            CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
+        ApplyFontStyle(kit.durationText, style, "auraText", nil, auraTextColor)
         ApplyFontStyle(kit.stackText, style, "auraStack")
     end
     kit.durationText:ClearAllPoints()
@@ -1932,7 +1942,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- alpha 0, and slots are reused across entries and hosts.
         kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
         kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-        kit.durationText:SetAlpha(0)
+        kit.durationTextHolder:SetAlpha(0)
         kit.stackText:SetAlpha(0)
     elseif isBar then
         -- Bar texts replicate the CC bar's own placement conventions (the
@@ -1941,7 +1951,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- aura stack count.
         ST.BarTextLayout.ApplyAuraTimer(kit.durationText, innerHost, style, button._isVertical,
             occlusionFree and button.nameText and buttonData)
-        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        kit.durationTextHolder:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local stackAnchorTo = barIconShown and button.icon or innerHost
         ST.TextAnchorLayout.Apply(kit.stackText, stackAnchorTo, asAnchor,
@@ -1951,7 +1961,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
         ST.TextAnchorLayout.Apply(kit.durationText, button, durAnchor, durX, durY)
         kit.durationText:SetJustifyH("CENTER")
-        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        kit.durationTextHolder:SetAlpha(style.showAuraText ~= false and 1 or 0)
         ST.TextAnchorLayout.Apply(kit.stackText, button, style.auraStackAnchor or "BOTTOMLEFT",
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
@@ -1966,10 +1976,13 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- threshold's only consumer.
     local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(style, isAuraPanelHost)
     slotButton:SetDurationText(kit.durationText, BuildAuraDurationOptions(style, allowLowTime))
-    -- Pandemic Timer Color: Blizzard tints the text in the real window.
+    -- Pandemic Timer Color: Blizzard colors the text in the real window, and
+    -- puts back the text color ApplyFontStyle gave it above (visibility stays
+    -- with the holder frame, out of the animations' reach).
     local timerColorWanted = style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit)
     ST.Indicator.StylePandemicTimerTint(kit.pandemicTimerTint,
-        timerColorWanted and (style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR) or nil)
+        timerColorWanted and (style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR) or nil,
+        auraTextColor)
 
     -- Bar name: pick ONE of the two replica regions per bind. The live
     -- SetSpellName region wins on plain bar-panel binds (Blizzard writes the

@@ -230,42 +230,52 @@ end
 
 -- Pandemic Timer Color (12.1.5): Blizzard plays these on a native slot's
 -- duration text inside the aura's real Pandemic window. A looping VertexColor
--- animation tints the text while the window is open; a VertexColor animation
--- does not restore the old color when it stops (probe 2026-10-08), so a white
--- set is played explicitly when the window closes, the aura appears and a new
--- aura lands. Write-once in the slot's setup window: binds only recolor it
--- (I.StylePandemicTimerTint), white meaning off. Returns the tint animation.
-local TIMER_TINT_OFF = CreateColor(1, 1, 1, 1)
-
-local function TimerColorSet(text, color)
+-- animation colors the text while the window is open. On a FontString that
+-- animation REPLACES the text color rather than tinting it, and keeps it after
+-- stopping (probe 2026-10-08; live 12.1.5 showed every timer white), so a set
+-- back to the timer's own color plays when the window closes, the aura
+-- appears and a new aura lands. Write-once in the slot's setup window: binds
+-- only retune the colors (I.StylePandemicTimerTint). Returns the rig.
+local function TimerColorSet(text)
     local group = text:CreateAnimationGroup()
     local set = group:CreateAnimation("VertexColor")
-    set:SetStartColor(color)
-    set:SetEndColor(color)
     set:SetDuration(0.01)
-    return group
+    return group, set
 end
 
 function I.CreatePandemicTimerTint(nativeSlot, text)
     local tint = text:CreateAnimationGroup()
     tint:SetLooping("REPEAT")
-    local anim = tint:CreateAnimation("VertexColor")
-    anim:SetStartColor(TIMER_TINT_OFF)
-    anim:SetEndColor(TIMER_TINT_OFF)
-    anim:SetDuration(1)
+    local rig = { tint = tint:CreateAnimation("VertexColor") }
+    rig.tint:SetDuration(1)
     nativeSlot:AddPandemicActiveAnimation(tint)
-    nativeSlot:AddPandemicLeaveAnimation(TimerColorSet(text, TIMER_TINT_OFF))
-    nativeSlot:AddAuraShownAnimation(TimerColorSet(text, TIMER_TINT_OFF))
-    nativeSlot:AddAuraAssignedAnimation(TimerColorSet(text, TIMER_TINT_OFF))
-    return anim
+    local group
+    group, rig[1] = TimerColorSet(text)
+    nativeSlot:AddPandemicLeaveAnimation(group)
+    group, rig[2] = TimerColorSet(text)
+    nativeSlot:AddAuraShownAnimation(group)
+    group, rig[3] = TimerColorSet(text)
+    nativeSlot:AddAuraAssignedAnimation(group)
+    return rig
 end
 
--- `color` is a {r, g, b[, a]} table, or nil for off. OOC bind only.
-function I.StylePandemicTimerTint(anim, color)
-    if not anim then return end
-    local tint = color and CreateColor(color[1] or 1, color[2] or 0.5, color[3] or 0, 1) or TIMER_TINT_OFF
-    anim:SetStartColor(tint)
-    anim:SetEndColor(tint)
+-- `color` is the Pandemic Timer Color, nil when off; `textColor` is the
+-- timer's own styled color, which the window holds while off and the resets
+-- restore. Both {r, g, b[, a]}. The color's alpha replaces the text's own
+-- alpha too, so callers show and hide the timer through a parent frame
+-- (Indicator readouts.frames, the aura kit's durationTextHolder). OOC bind
+-- only.
+function I.StylePandemicTimerTint(rig, color, textColor)
+    if not rig then return end
+    local alpha = textColor[4] or 1
+    local base = CreateColor(textColor[1] or 1, textColor[2] or 1, textColor[3] or 1, alpha)
+    local tint = color and CreateColor(color[1] or 1, color[2] or 0.5, color[3] or 0, alpha) or base
+    rig.tint:SetStartColor(tint)
+    rig.tint:SetEndColor(tint)
+    for i = 1, 3 do
+        rig[i]:SetStartColor(base)
+        rig[i]:SetEndColor(base)
+    end
 end
 
 -- A Text display recolors its whole text in the window: the label through
@@ -738,7 +748,8 @@ function I.StyleAura(slot, group, durationOptions, timerColor)
         slot.slotButton:SetIcon(host.iconFrame.icon)
     end
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
-    I.StylePandemicTimerTint(host.pandemicTimerTint, timerColor)
+    I.StylePandemicTimerTint(host.pandemicTimerTint, timerColor,
+        host._indicatorReadoutColors and host._indicatorReadoutColors.timer or WHITE)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
     I.StylePandemicGlow(host, group, shown)
     I.StylePandemicTint(host, group, shown)
