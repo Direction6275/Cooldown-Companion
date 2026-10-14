@@ -171,6 +171,9 @@ local fullRebindRequested = false
 local panelRebindIds = {} -- IDs also select retired/replaced hosts for cleanup
 local resourceRebindRequested = false
 local blockRebindOwners = {} -- groupId -> live owner frame; detached before each pass
+-- groupId -> true: Aura Panel binds a full pass handed off, run one panel per
+-- frame (FlushAuraRebind) so the login pass fits the script time limit.
+local auraPanelQueue = {}
 local pendingConfigEdit = false
 
 -- Idle-health counters (2026-08-10 feedback-loop lesson): rebind work runs at
@@ -5427,8 +5430,21 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- Aura Panels (whole panels drawn by their own aura container): likewise a
     -- self-contained park-then-bind pass. Disjoint from both passes above — an
     -- Aura Panel materializes no CC buttons, so the `wanted` walk never saw one
-    -- and no record here shares a host with anything.
-    RebindAuraPanels(self, panelIds)
+    -- and no record here shares a host with anything. A full pass queues them
+    -- one panel per frame instead (FlushAuraRebind): binding every slot kit
+    -- and every panel in one go overran the script time limit at login
+    -- (2026-10-05, 2026-10-13). Scoped passes stay inline.
+    if panelIds then
+        RebindAuraPanels(self, panelIds)
+    else
+        for _, record in ipairs(panelRecords) do auraPanelQueue[record.groupId] = true end
+        for groupId in pairs(self.groupFrames) do
+            local group = self.db.profile.groups[groupId]
+            if group and (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)) then
+                auraPanelQueue[groupId] = true
+            end
+        end
+    end
 
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
@@ -5486,9 +5502,22 @@ local function RunBlockRebind(owners)
     ST.EndAuraCandidatePass()
 end
 
+-- One queued Aura Panel per call, in its own candidate pass.
+local function RunQueuedAuraPanelRebind()
+    local groupId = next(auraPanelQueue)
+    if not groupId then return end
+    auraPanelQueue[groupId] = nil
+    local self = CooldownCompanion
+    if not (self.db and self.groupFrames) then return end
+    ST.BeginAuraCandidatePass()
+    RebindAuraPanels(self, { [groupId] = true })
+    ST.EndAuraCandidatePass()
+end
+
 local function FlushAuraRebind()
     if not fullRebindRequested and not resourceRebindRequested
-        and not next(panelRebindIds) and not next(blockRebindOwners) then return end
+        and not next(panelRebindIds) and not next(blockRebindOwners)
+        and not next(auraPanelQueue) then return end
     if not CanRunRebindNow() then
         if pendingConfigEdit then NoteDeferredConfigEdit("config") end
         ArmRebindRetry()
@@ -5503,16 +5532,21 @@ local function FlushAuraRebind()
     fullRebindRequested, blockRebindOwners, pendingConfigEdit = false, {}, false
     panelRebindIds, resourceRebindRequested = {}, false
     if full then
+        -- Queues the Aura Panels; they start next frame.
         RunAuraRebind(configEdit)
     else
         if resources or next(panelIds) then
             RunAuraRebind(configEdit, panelIds, resources)
-            for groupId in pairs(panelIds) do owners[groupId] = nil end
+            for groupId in pairs(panelIds) do
+                owners[groupId] = nil
+                auraPanelQueue[groupId] = nil
+            end
         end
         RunBlockRebind(owners)
+        RunQueuedAuraPanelRebind()
     end
     if fullRebindRequested or resourceRebindRequested or next(panelRebindIds)
-        or next(blockRebindOwners) then ScheduleAuraRebind() end
+        or next(blockRebindOwners) or next(auraPanelQueue) then ScheduleAuraRebind() end
 end
 
 function ScheduleAuraRebind()
