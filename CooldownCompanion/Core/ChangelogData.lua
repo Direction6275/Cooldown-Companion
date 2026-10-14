@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.10",
         "2.9",
         "2.8",
         "2.7.2",
@@ -47,6 +48,32 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.10"] = {
+            markdown = [[
+## New Features
+
+- **Pandemic Start and Refresh:** The Pandemic Effect can play a Flash or Swell as the refresh window opens, and a Fade or Flash when you refresh in time. Both are off by default, and Preview Pandemic Effect loops so you can see them.
+- **Pandemic Timer Color:** Replaces the "!!" Pandemic Marker. The aura timer changes color during the aura's real refresh window, and your marker setting carries over. Aura Indicators with a timer get the option too, off by default.
+- **Aura sound Minimum Gap:** A new slider under aura sound alerts stops the same sound from repeating sooner than the gap you set, up to 5 seconds.
+
+## Polish | QoL
+
+- **Pandemic glow replaces the Aura Glow:** With both on, only the Pandemic glow shows during the refresh window instead of both drawing at once.
+- **Override Icon on aura entries:** Aura and passive entries keep their Override Icon while the aura is active. Reset Icon brings back the live aura icon.
+- **Quieter status marks:** The red warning now only marks spells or items that no longer exist. Entries off your current talents or loadout simply grey out and say why on hover, and customized entries show a small gold corner bracket.
+- **Live Preview polish:** Config-only marks step aside while a preview plays, the hide toggles show their state, and hovering a panel's entry count shows how many entries are active.
+- **Indicator polish:** Aura rules in an Indicator's preview are clickable and jump to that aura's setting, and Bounce now moves in one smooth loop.
+- **Aura sound previews:** Previewing an aura sound stops after 5 seconds, matching how long the game plays it.
+
+## Bug Fixes
+
+- **Login error:** Fixed a "script ran too long" error at login that could leave Aura Panels empty until a reload.
+
+- **Creating groups on 12.1.5:** Creating a group no longer shows an error.
+- **Blizzard Edit Mode:** Opening Edit Mode no longer swaps CC's aura entries to placeholder auras.
+- **Change... on Indicators:** Making a listed aura the main one keeps its Also During Pandemic setting.
+]],
+        },
         ["2.9"] = {
             markdown = [[
 ## New Features
