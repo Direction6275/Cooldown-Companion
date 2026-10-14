@@ -1895,6 +1895,152 @@ local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, ena
         styleTable and styleTable.pandemicGlowThickness)
 end
 
+------------------------------------------------------------------------
+-- Pandemic window rig (12.1.5). The pandemic glow kit hangs under a window
+-- frame that Blizzard's Pandemic animations drive, not a pandemic region, so
+-- the glow can arrive and leave with an effect (owner ruling 2026-10-07). A
+-- looping Active animation holds the window at alpha 1 while the aura sits
+-- in its refresh window; an Alpha animation undoes itself when stopped
+-- (probe 2026-10-08), so outside the window it rests at 0. Pandemic Start
+-- plays Flash (an overlay over the anchor) or Swell (the glow shrinks into
+-- place) as the window opens. Pandemic Refresh plays Fade or Flash as it
+-- closes, which Blizzard does only while the aura still exists: a refresh in
+-- time. On expiry the slot just hides with its aura.
+-- Every animation is registered once, at creation: binds retune them, and an
+-- effect that is off retunes to a no-op. The same Active trigger hides the
+-- aura glow for the window (BuildAuraGlowReplace), so the pandemic glow
+-- replaces it rather than drawing on top.
+------------------------------------------------------------------------
+local PANDEMIC_SWELL_SCALE = 1.45
+local PANDEMIC_FLASH_ALPHA = 0.75
+local PANDEMIC_EFFECT_LENGTH = 0.3
+local PANDEMIC_START_FLASH_COLOR = DEFAULT_PANDEMIC_COLOR
+
+local function AlphaGroup(target, looping)
+    local group = target:CreateAnimationGroup()
+    if looping then
+        group:SetLooping("REPEAT")
+    end
+    return group, group:CreateAnimation("Alpha")
+end
+
+-- A flash animates its own frame's alpha, so the texture color stays an
+-- ordinary bind-time write.
+local function BuildPandemicFlash(parent, anchor, level, register)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetAllPoints(anchor)
+    frame:EnableMouse(false)
+    frame:SetFrameLevel(level)
+    frame:SetAlpha(0)
+    local texture = frame:CreateTexture(nil, "OVERLAY")
+    texture:SetAllPoints(frame)
+    local group, anim = AlphaGroup(frame)
+    anim:SetFromAlpha(0)
+    anim:SetToAlpha(0)
+    register(group)
+    return { texture = texture, anim = anim }
+end
+
+-- `anchor` is the rect the rig covers; every frame sits at `level`. Returns
+-- { window, glow (the kit glow), and the retunable parts }. The config
+-- preview passes `ccOwned` and a stand-in `slotButton` that records the
+-- animations, which it then plays itself (ButtonPanelPreviewEffects.lua).
+local function BuildPandemicWindowRig(parent, anchor, slotButton, level, ccOwned)
+    local window = CreateFrame("Frame", nil, parent)
+    window:SetAllPoints(anchor)
+    window:EnableMouse(false)
+    window:SetFrameLevel(level)
+    local glow = BuildKitGlowRegions(window, true, not ccOwned)
+    glow.host:SetFrameLevel(level)
+    glow.cdm.frame:SetFrameLevel(level)
+    local rig = { window = window, glow = glow }
+    window:SetAlpha(0)
+    local active, hold = AlphaGroup(window, true)
+    hold:SetFromAlpha(1)
+    hold:SetToAlpha(1)
+    hold:SetDuration(1)
+    slotButton:AddPandemicActiveAnimation(active)
+
+    local swell = window:CreateAnimationGroup()
+    rig.swell = swell:CreateAnimation("Scale")
+    rig.swell:SetScaleFrom(1, 1)
+    rig.swell:SetScaleTo(1, 1)
+    slotButton:AddPandemicEnterAnimation(swell)
+
+    local fade
+    fade, rig.fade = AlphaGroup(window)
+    rig.fade:SetFromAlpha(0)
+    rig.fade:SetToAlpha(0)
+    slotButton:AddPandemicLeaveAnimation(fade)
+
+    rig.startFlash = BuildPandemicFlash(parent, anchor, level, function(group)
+        slotButton:AddPandemicEnterAnimation(group)
+    end)
+    rig.refreshFlash = BuildPandemicFlash(parent, anchor, level, function(group)
+        slotButton:AddPandemicLeaveAnimation(group)
+    end)
+    return rig
+end
+
+local function PandemicEffectLength(value)
+    value = tonumber(value)
+    if not value or value <= 0 then
+        return PANDEMIC_EFFECT_LENGTH
+    end
+    return value
+end
+
+local function StylePandemicFlash(flash, on, color, length)
+    flash.anim:SetFromAlpha(on and PANDEMIC_FLASH_ALPHA or 0)
+    flash.anim:SetDuration(length)
+    if on then
+        flash.texture:SetColorTexture(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+    end
+end
+
+-- Retune the rig's effects from the pandemicStart*/pandemicRefresh* keys. The
+-- enable arrives resolved, like StyleKitPandemicGlowRegions'; off makes
+-- every effect a no-op. OOC bind only.
+local function StylePandemicWindowRig(rig, styleTable, enabled)
+    if not rig then return end
+    local start = enabled and styleTable and styleTable.pandemicStartEffect or "none"
+    local refresh = enabled and styleTable and styleTable.pandemicRefreshEffect or "vanish"
+    local startLength = PandemicEffectLength(styleTable and styleTable.pandemicStartLength)
+    local refreshLength = PandemicEffectLength(styleTable and styleTable.pandemicRefreshLength)
+    local scale = start == "swell" and PANDEMIC_SWELL_SCALE or 1
+    rig.swell:SetScaleFrom(scale, scale)
+    rig.swell:SetDuration(startLength)
+    rig.fade:SetFromAlpha(refresh == "fade" and 1 or 0)
+    rig.fade:SetDuration(refreshLength)
+    StylePandemicFlash(rig.startFlash, start == "flash",
+        styleTable and styleTable.pandemicStartColor or PANDEMIC_START_FLASH_COLOR, startLength)
+    StylePandemicFlash(rig.refreshFlash, refresh == "flash",
+        styleTable and styleTable.pandemicRefreshColor or DEFAULT_WHITE, refreshLength)
+end
+
+-- The aura glow's half of the swap: a frame the aura glow kit hangs under,
+-- held at alpha 0 by the same Active trigger while the window is open.
+-- Returns the frame and the animation StyleAuraGlowReplace retunes.
+local function BuildAuraGlowReplace(parent, slotButton)
+    local gate = CreateFrame("Frame", nil, parent)
+    gate:SetAllPoints(parent)
+    gate:EnableMouse(false)
+    local group, hide = AlphaGroup(gate, true)
+    hide:SetFromAlpha(1)
+    hide:SetToAlpha(1)
+    hide:SetDuration(1)
+    slotButton:AddPandemicActiveAnimation(group)
+    return gate, hide
+end
+
+-- `replace`: the pandemic glow is on, so the aura glow steps aside in the
+-- window. Otherwise the animation holds alpha 1, a no-op.
+local function StyleAuraGlowReplace(hide, replace)
+    local alpha = replace and 0 or 1
+    hide:SetFromAlpha(alpha)
+    hide:SetToAlpha(alpha)
+end
+
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
     -- No pandemic branch: the bar-side pandemic display is the fill-clone
@@ -1945,6 +2091,10 @@ ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
+ST._BuildPandemicWindowRig = BuildPandemicWindowRig
+ST._StylePandemicWindowRig = StylePandemicWindowRig
+ST._BuildAuraGlowReplace = BuildAuraGlowReplace
+ST._StyleAuraGlowReplace = StyleAuraGlowReplace
 ST._SetReadyGlow = SetReadyGlow
 ST._SetKeyPressHighlight = SetKeyPressHighlight
 ST._PlayCooldownPressFlash = PlayCooldownPressFlash

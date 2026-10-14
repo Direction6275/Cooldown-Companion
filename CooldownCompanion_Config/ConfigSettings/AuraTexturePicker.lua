@@ -46,7 +46,7 @@ local suppressSearchChanged = false
 -- Selection wash/accent uses the player's class color, matching the quiet row
 -- and the navigator (standing ruling: class wash + solid accent, no gold/glow).
 local function GetSelectionColor()
-    local classColor = C_ClassColor and C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local classColor = ST._GetPlayerClassColor()
     if classColor then
         return classColor.r, classColor.g, classColor.b
     end

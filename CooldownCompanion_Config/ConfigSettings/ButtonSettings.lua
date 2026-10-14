@@ -248,6 +248,15 @@ local function SoundSettingApplies(eventKey, requiresCharges)
         return eventKey ~= "available" or hasCharges == requiresCharges
     end
 end
+soundSettings.auraSoundGap = soundRoute:Setting({
+    key = "auraSoundGap",
+    label = "Minimum Gap",
+    aliases = { "sound throttle", "sound spam", "repeat" },
+    applies = function(context)
+        return SoundEventApplies(context, "onAuraApplied") or SoundEventApplies(context, "onAuraStackGained")
+            or SoundEventApplies(context, "onAuraRemoved")
+    end,
+})
 for key, spec in pairs(SOUND_EVENT_SPECS) do
     local eventKey = key == "availableWithCharges" and "available" or key
     local requiresCharges = key == "availableWithCharges"
@@ -347,6 +356,8 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Aura-event alerts use Blizzard's aura-sound API, which supports file-backed sounds only. Cooldown Manager sound-kit choices and Text to Speech are therefore unavailable in these aura-event menus.", 1, 1, 1, true},
+        {" ", 1, 1, 1, false},
+        {"Aura sounds stop after 5 seconds. Minimum Gap keeps one from playing again sooner.", 1, 1, 1, true},
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(soundHeading, soundInfoBtn)
 
@@ -417,7 +428,11 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
                 end
             end,
             onPreview = function(value)
-                CooldownCompanion:PreviewSoundAlertSelection(buttonData, value)
+                if isAuraEvent then
+                    CooldownCompanion:PreviewAuraSoundAlertSelection(buttonData, value)
+                else
+                    CooldownCompanion:PreviewSoundAlertSelection(buttonData, value)
+                end
             end,
         })
     end
@@ -436,6 +451,22 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
         for index, eventKey in ipairs(survivors) do
             AddSoundEventRow(index <= splitAt and soundLeft or soundRight, eventKey)
         end
+    end
+
+    -- Minimum Gap for the aura events. The right column is always the shorter
+    -- (or the aura family's own), so it goes there.
+    if #auraEvents > 0 then
+        local cfg = CooldownCompanion:GetButtonSoundAlertConfig(buttonData, false)
+        AddSliderRow(soundRight, {
+            label = "Minimum Gap",
+            setting = (finderSettings or soundSettings).auraSoundGap,
+            min = 0, max = 5, step = 0.5,
+            value = cfg and tonumber(cfg.auraSoundGap) or 0,
+            onRelease = function(val)
+                CooldownCompanion:GetButtonSoundAlertConfig(buttonData, true).auraSoundGap = val > 0 and val or nil
+                CooldownCompanion:RequestAuraRebind("config")
+            end,
+        })
     end
 end
 

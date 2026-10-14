@@ -650,7 +650,7 @@ local function LayoutPickerHeader(header, width, button, isBack)
     end
     y = math_max(y, copyTop + LIBRARY_BUTTON_HEIGHT) + EMPTY_STATE_DIVIDER_GAP
     -- GetClassColor may return nothing; keep the established blue fallback.
-    local color = C_ClassColor.GetClassColor(select(2, UnitClass("player")))
+    local color = ST._GetPlayerClassColor()
     header.divider:ClearAllPoints()
     header.divider:SetPoint("TOP", header, "TOP", 0, -y)
     header.divider:SetSize(math_min(width, EMPTY_STATE_MAX_TEXT_WIDTH), EMPTY_STATE_DIVIDER_HEIGHT)

@@ -427,7 +427,7 @@ function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundN
 
     if not next(events) then
         cfg.events = nil
-        if (cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL) then
+        if (cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL) and cfg.auraSoundGap == nil then
             buttonData.soundAlerts = nil
         end
     end
@@ -598,6 +598,29 @@ end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
     return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+end
+
+-- 12.1.5: Blizzard stops an aura sound after five seconds of playback, so
+-- the preview of an aura-event pick stops there too.
+local AURA_SOUND_MAX_SECONDS = 5
+
+function CooldownCompanion:PreviewAuraSoundAlertSelection(buttonData, soundName)
+    local soundSource = soundName and soundName ~= SOUND_NONE_KEY and LSM:Fetch("sound", soundName, true)
+    if type(soundSource) ~= "string" or soundSource == "" then return false end
+    local willPlay, handle = PlaySoundFile(soundSource, self:GetButtonSoundAlertChannel(buttonData))
+    if handle then
+        C_Timer.After(AURA_SOUND_MAX_SECONDS, function() StopSound(handle) end)
+    end
+    return willPlay and true or false
+end
+
+-- Minimum Gap: the shortest time between two plays of one of the entry's
+-- aura sounds (AddAuraSound's throttleSeconds, 0-5). Nil when off.
+function CooldownCompanion:GetAuraSoundGapForButton(buttonData)
+    local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
+    local gap = tonumber(cfg and cfg.auraSoundGap)
+    if not gap or gap <= 0 then return nil end
+    return math.min(gap, AURA_SOUND_MAX_SECONDS)
 end
 
 -- Options list for the native aura sound events. C_UnitAuras.AddAuraSound

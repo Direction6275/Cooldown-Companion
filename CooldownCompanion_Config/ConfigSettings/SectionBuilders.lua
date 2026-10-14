@@ -600,7 +600,7 @@ local LOW_TIME_DEFAULT_COLOR2 = { 1, 0.2, 0.2, 1 }
 local LOW_TIME_TOOLTIP = {
     "Change Text Near Expiry",
     {"Changes duration text during the selected final seconds.", 1, 1, 1, true},
-    {"With Pandemic: Low Time wins over whole-text color; marker-only color still colors the marker.", 1, 1, 1, true},
+    {"With Pandemic Timer Color on, the two colors blend in the final seconds.", 1, 1, 1, true},
 }
 local LOW_TIME_SECOND_TOOLTIP = {
     "Add Critical Styling",
@@ -896,24 +896,18 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     return rows
 end
 
--- Pandemic marker controls (tracker C9), shared between the group-tab
--- advanced panel and the per-button override builder. The marker rides the
--- aura duration text, so it lives with these options. rebuildCallback
--- re-renders the surrounding panel when a structural choice changes.
-local PANDEMIC_COLOR_MODES = {
-    off = "No Color",
-    marker = "Color the Marker",
-    whole = "Color the Whole Text",
-}
-local PANDEMIC_COLOR_MODE_ORDER = { "off", "marker", "whole" }
-
+-- Pandemic Timer Color controls, shared between the group-tab advanced panel
+-- and the per-button override builder. 12.1.5 retired the "!!" marker: Blizzard
+-- now colors the duration text during its real Pandemic window (a Pandemic
+-- animation on the text), so only an enable mode and a color remain. The
+-- saved keys and internal names keep their marker-era spelling.
 local PANDEMIC_MARKER_TOOLTIP_LINES = {
-    "Pandemic Marker",
-    {"Marks the duration text for the last 30% of an aura, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
+    "Pandemic Timer Color",
+    {"Colors the aura's duration text during its Pandemic window, where recasting adds to the remaining time instead of wasting it.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"It rides that text. With Aura Duration Text off, nothing shows.", 1, 1, 1, true},
+    {"With Aura Duration Text off, nothing shows.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
-    {"Auto marks debuffs you place on your target and leaves your own buffs plain.", 1, 1, 1, true},
+    {"Auto colors debuffs you place on your target and leaves your own buffs plain.", 1, 1, 1, true},
 }
 
 -- Anchor args are a placeholder - AnchorRowBadge re-points the button onto
@@ -925,7 +919,7 @@ end
 
 -- Three states, not two (owner ruling 2026-08-16): the per-entry checkbox this
 -- setting absorbed defaulted per tracked UNIT, so "Auto" is what carries that
--- default now, and "On" is what forces the marker onto a player buff.
+-- default now, and "On" is what forces the color onto a player buff.
 local PANDEMIC_MARKER_MODES = {
     auto = "Auto (Debuffs Only)",
     on = "On",
@@ -940,10 +934,10 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 --                       Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a control that is elsewhere.
---   neither           - both, with the three styling rows as children of the
---                       mode row. No caller asks for this shape today.
--- Labels deliberately say "Marker": these rows share a section with the
--- pandemic EFFECT's own color, and three rows reading "Pandemic Color" in one
+--   neither           - both, with the color row as a child of the mode row.
+--                       No caller asks for this shape today.
+-- The color row says "Timer Color": these rows share a section with the
+-- pandemic EFFECT's own color, and two rows reading "Pandemic Color" in one
 -- column would be unreadable.
 local function AddPandemicMarkerControls(container, styleTable, refreshCallback, rebuildCallback, opts)
     opts = opts or {}
@@ -953,7 +947,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     local mode = styleTable.pandemicMarkerMode or opts.defaultMode or "auto"
     if not opts.childrenOnly then
         enableRow = AddDropdownRow(container, {
-            label = "Pandemic Marker",
+            label = "Pandemic Timer Color",
             setting = opts.setting,
             indent = opts.indent,
             list = PANDEMIC_MARKER_MODES,
@@ -969,59 +963,22 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         if not opts.enableOnly then ST._AddPandemicMarkerInfo(enableRow) end
     end
 
-    -- childrenOnly is the advanced panel's shape, and that panel now opens
-    -- read-only while the marker is off (the unlock strip fronts it), so its
-    -- three styling rows still draw there. Inline children keep hiding under
-    -- an off mode as before.
+    -- childrenOnly is the advanced panel's shape, and that panel opens
+    -- read-only while the mode is off (the unlock strip fronts it), so its
+    -- color row still draws there. Inline children hide under an off mode.
     if opts.enableOnly or (mode == "off" and not opts.childrenOnly) then
         return enableRow
     end
 
-    local childIndent = not opts.childrenOnly
-
-    AddEditBoxRow(container, {
-        label = "Marker Text",
-        setting = opts.settings and opts.settings.text,
-        indent = childIndent,
-        value = styleTable.pandemicMarkerText or "!!",
-        onEnterPressed = function(text, widget)
-            text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 8)
-            styleTable.pandemicMarkerText = text
-            widget:SetText(text)
-            refreshCallback()
-        end,
+    AddColorRow(container, {
+        label = "Timer Color",
+        setting = opts.settings and opts.settings.color,
+        indent = not opts.childrenOnly,
+        tbl = styleTable,
+        key = "pandemicMarkerColor",
+        default = {1, 0.5, 0, 1},
+        onConfirm = refreshCallback,
     })
-
-    -- opts.noColoring: the caller colors the marker itself (an Indicator's
-    -- Text recolor), so these rows would do nothing.
-    if opts.noColoring then return enableRow end
-
-    AddDropdownRow(container, {
-        label = "Marker Coloring",
-        setting = opts.settings and opts.settings.coloring,
-        indent = childIndent,
-        pulloutWidth = WIDE_PULLOUT_WIDTH,
-        list = PANDEMIC_COLOR_MODES,
-        order = PANDEMIC_COLOR_MODE_ORDER,
-        value = styleTable.pandemicMarkerColorMode or "marker",
-        onChange = function(val)
-            styleTable.pandemicMarkerColorMode = val
-            local operation = IsAdvancedSettingsPanelContainer(container) and "style-advanced" or "style-settings"
-            if refreshCallback(operation) == nil then rebuildCallback() end
-        end,
-    })
-
-    if (styleTable.pandemicMarkerColorMode or "marker") ~= "off" then
-        AddColorRow(container, {
-            label = "Marker Color",
-            setting = opts.settings and opts.settings.color,
-            indent = childIndent,
-            tbl = styleTable,
-            key = "pandemicMarkerColor",
-            default = {1, 0.5, 0, 1},
-            onConfirm = refreshCallback,
-        })
-    end
 
     return enableRow
 end
@@ -2255,6 +2212,64 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
             targetStyle.pandemicGlowThickness = 3
         end,
     }, opts)
+
+    -- 12.1.5: how the glow arrives and leaves (owner ruling 2026-10-07; live
+    -- side Glows.lua BuildPandemicWindowRig). All off by default.
+    local settings = opts.settings
+    -- `moment` ("Start"/"Refresh") names the child rows: the settings
+    -- finder needs every label in the panel to be distinct.
+    local function AddEffectRows(label, moment, setting, effectKey, list, order, off, colorKey, defaultColor, lengthKey)
+        local effect = styleTable[effectKey] or off
+        AddDropdownRow(container, {
+            label = label,
+            setting = settings and settings[setting],
+            list = list,
+            order = order,
+            value = effect,
+            onChange = function(val)
+                styleTable[effectKey] = val
+                -- A playing Preview Pandemic Effect starts or stops cycling.
+                if ST._ConfigPreview then ST._ConfigPreview.SyncCycle() end
+                RefreshStructuralControls(container, refreshCallback)
+            end,
+        })
+        if effect == "flash" then
+            AddColorRow(container, {
+                label = moment .. " Color",
+                setting = settings and settings[setting .. "Color"],
+                indent = true,
+                tbl = styleTable,
+                key = colorKey,
+                default = defaultColor,
+                hasAlpha = true,
+                onConfirm = refreshCallback,
+                onPreview = opts.previewRefresh,
+            })
+        end
+        if effect ~= off then
+            AddSliderRow(container, {
+                label = moment .. " Length",
+                setting = settings and settings[setting .. "Length"],
+                indent = true,
+                min = 0.1, max = 1, step = 0.05,
+                value = styleTable[lengthKey] or 0.3,
+                onChange = function(val)
+                    ST._PreviewScalarSetting(styleTable, lengthKey, val,
+                        opts.previewRefresh or ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(val)
+                    styleTable[lengthKey] = val
+                    refreshCallback()
+                end,
+            })
+        end
+    end
+    AddEffectRows("Pandemic Start", "Start", "start", "pandemicStartEffect",
+        { none = "None", flash = "Flash", swell = "Swell" }, {"none", "flash", "swell"}, "none",
+        "pandemicStartColor", {1, 0.5, 0, 1}, "pandemicStartLength")
+    AddEffectRows("Pandemic Refresh", "Refresh", "refresh", "pandemicRefreshEffect",
+        { vanish = "Vanish", fade = "Fade", flash = "Flash" }, {"vanish", "fade", "flash"}, "vanish",
+        "pandemicRefreshColor", {1, 1, 1, 1}, "pandemicRefreshLength")
 
     -- The marker shares this section's keys but NOT the effect's enable: it
     -- works with the effect off, so the tabs draw it themselves (with its own

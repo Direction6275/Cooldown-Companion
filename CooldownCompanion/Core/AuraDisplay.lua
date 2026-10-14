@@ -25,12 +25,9 @@
     CreateFrame and never changed — only the BUTTONS carry the forbidden
     aspects), with the slot button anchored once inside
     initializeFrame and never moved, re-leveled, or reparented afterwards.
-    Bind is a container-mutator filter swap. Park is a polarity-crossed
-    sentinel filter PLUS container:Hide() — the sentinel is applied inside
-    Blizzard's identity gate and stops being applied at all when that gate
-    declines the unit relationship, so hiding the container is what actually
-    guarantees a parked display renders nothing (and drops it out of the aura
-    event path).
+    Bind is a container-mutator filter swap. Park switches the slot off
+    (12.1.5 SetAuraSlotEnabled) PLUS container:Hide(), which also drops it
+    out of the aura event path.
     Host Show/Hide, alpha fades, and strata changes reach the slot through
     plain parentage again, and a re-shown container re-registers its events
     and refreshes itself (AuraContainerPrivateMixin:OnShow_Intrinsic).
@@ -64,30 +61,15 @@ local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
 
--- Parking (P1b/P1c + V25 Q4): slots can never be removed, so an unbound slot is
--- given a sentinel candidate filter that cannot match, and Blizzard hides an
--- unmatched slot button. Empty includeSpellIDs is BANNED — it wedges the slot
--- permanently.
---
--- Sentinels are POLARITY-CROSSED so they are structurally never-match: a
--- HELPFUL slot parked on a debuff spellID (debuffs can never appear in HELPFUL
--- results) and a HARMFUL slot parked on a buff spellID. Hence the keying by
--- POLARITY rather than by unit — polarity stops being derivable from the unit
--- once ally units are tracked, since buffs on you and buffs on a party member
--- are both HELPFUL. Get this wrong and a HELPFUL slot parked on a buff sentinel
--- MATCHES and shows the wrong aura.
---
--- The sentinel is NOT sufficient on its own; see ParkDisplay for why the
--- container is also hidden.
-local PARK_SENTINEL = {
-    HELPFUL = 155722, -- Rake (a bleed debuff; never matches a HELPFUL filter)
-    HARMFUL = 5217,   -- Tiger's Fury (a self buff; never matches a HARMFUL filter)
-}
+-- Parking: slots and groups can never be removed (append-only containers), so
+-- an unbound one is switched off with SetAuraSlotEnabled / SetAuraGroupEnabled
+-- (12.1.5). Blizzard then clears its button, drops it from the flow layout and
+-- stops parsing auras for it; the bind switches it back on before writing its
+-- filters. Empty includeSpellIDs is still BANNED: it wedges a slot permanently.
 
--- The per-unit slot contract: aura polarity (which picks the park sentinel),
--- the filter string handed to Blizzard, and whether the slot is restricted to
--- auras the player cast. One table so the sentinel, the filter string, and the
--- caster filter can never disagree.
+-- The per-unit slot contract: aura polarity, the filter string handed to Blizzard, and whether the slot is restricted to
+-- auras the player cast. One table so the filter string and the caster filter
+-- can never disagree.
 --
 -- A plain self-buff entry keeps a bare HELPFUL filter on `player` — it tracks
 -- buffs from ANY caster (Power Word: Fortitude, Blessing of the Bronze), which
@@ -112,7 +94,7 @@ local SLOT_CONTRACT = {
 -- sizes agree.
 --
 -- The unknown-token fallback is deliberate: a token must never yield a nil
--- sentinel, because an empty includeSpellIDs set wedges a slot permanently.
+-- contract.
 local function SlotContract(unit, groupScoped)
     if groupScoped and unit ~= "target" then
         return ALLY_CONTRACT
@@ -122,27 +104,20 @@ end
 
 -- Blizzard applies includeSpellIDs only when its identity gate
 -- (AuraContainerUtil.CanApplyIdentityCandidateFilters) agrees the aura's
--- polarity fits the unit's relationship to the player. When it declines, a
--- bound slot would accept every aura of its base polarity. Fail closed until
--- the gate would agree again; the visibility switch is on a CC-owned parent,
--- never on the restricted AuraButton subtree.
+-- polarity fits the unit's relationship to the player. Since 12.1.5 a declined
+-- gate REJECTS the aura when includeSpellIDs is set (DoesAuraPassCandidateFilters,
+-- build 70077), so ordinary displays can no longer show junk auras and need only
+-- UnitExists (which still clears a dismissed pet's frozen display, see
+-- EnsurePetWatcher). Probe-validated on the 12.1.5 PTR, 2026-10-07.
 --
--- This MUST mirror the gate exactly as hotfixed in build 69465
--- (Blizzard_AuraContainerUtil.lua:11-46, build 69497): helpful filters always
--- apply for the player, group members, and their pets
--- (UnitIsPlayerControlledOrGroupMember), and the remaining checks use the
--- lenient UnitCanAssist("player", unit, true, true), which ignores
--- immune/uninteractable states (vehicles, teleports, cutscenes). A stricter
--- mirror hides displays Blizzard renders correctly; a looser one leaves a
--- slot visible where the gate declines its filter (junk auras).
---
--- Two deliberate deviations (owner rulings 2026-08-28):
---   * UnitExists guard — a missing unit has no auras to misfilter, and
---     failing closed on it is what clears a dismissed pet's frozen display
---     (see EnsurePetWatcher).
---   * Blizzard's never-secret spell exemption is NOT mirrored: a never-secret
---     aura tracked against a disagreeing relationship stays hidden, as it did
---     pre-hotfix.
+-- Presence displays (missing-aura reminders, Show While Inactive pictures)
+-- still need this mirror: a declined gate now reads as "aura absent", which
+-- would open the reminder on a unit it makes no sense for. It MUST match the
+-- gate as hotfixed in build 69465: helpful filters always apply for the player,
+-- group members, and their pets (UnitIsPlayerControlledOrGroupMember), and the
+-- remaining checks use the lenient UnitCanAssist("player", unit, true, true),
+-- which ignores immune/uninteractable states (vehicles, teleports, cutscenes).
+-- Blizzard's never-secret spell exemption is not mirrored here.
 local function CanApplySpellIdentityFilter(unit, groupScoped)
     if not UnitExists(unit) then
         return false
@@ -196,6 +171,9 @@ local fullRebindRequested = false
 local panelRebindIds = {} -- IDs also select retired/replaced hosts for cleanup
 local resourceRebindRequested = false
 local blockRebindOwners = {} -- groupId -> live owner frame; detached before each pass
+-- groupId -> true: Aura Panel binds a full pass handed off, run one panel per
+-- frame (FlushAuraRebind) so the login pass fits the script time limit.
+local auraPanelQueue = {}
 local pendingConfigEdit = false
 
 -- Idle-health counters (2026-08-10 feedback-loop lesson): rebind work runs at
@@ -751,26 +729,25 @@ local function BuildSlotKit(slotButton, pandemicGated)
     -- Aura active glow: shares the slot's Blizzard-driven visibility, so it
     -- glows exactly while the aura runs. Animated styles are AnimationGroup-
     -- driven (P3: they keep playing on the forbidden subtree in combat).
-    -- Above the swipe, below the texts.
-    kit.glow = ST._BuildKitGlowRegions(parent, false, true)
+    -- Above the swipe, below the texts. It hangs under the replace gate,
+    -- which hides it while the pandemic glow is showing (Glows.lua
+    -- BuildAuraGlowReplace).
+    kit.auraGlowGate, kit.auraGlowReplace = ST._BuildAuraGlowReplace(parent, slotButton)
+    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true)
     kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
 
-    -- Pandemic glow (PTR 8, Phase 0-validated): a second glow kit registered
-    -- as a pandemic region — Blizzard alone flips its secret Shown state
-    -- while the aura sits inside its refresh window; CC styles it at OOC
-    -- bind time and never reads it back. Registration is creation-only (no
-    -- re-call evidence exists for AddPandemicRegion), so every slot carries
-    -- the rig and per-entry enable is style-time "none" (P6). Same level as
-    -- the aura glow, created after it, so the pandemic effect draws above.
+    -- Pandemic glow: a second glow kit that Blizzard shows only while the
+    -- aura sits inside its refresh window, through the 12.1.5 window rig
+    -- (Glows.lua BuildPandemicWindowRig) and its open/close effects. CC
+    -- styles it at OOC bind time and never reads it back. Registration is
+    -- creation-only, so every slot carries the rig and per-entry enable is
+    -- style-time "none" (P6). Same level as the aura glow, created after it,
+    -- so the pandemic effect draws above. The rig pins its CDM frame there
+    -- too: left at its default level it would TIE kit.textOverlay at swipe+2.
     if slotButton.AddPandemicRegion then
-        -- withCdm: only pandemic rigs carry the CDM-parity region set.
-        kit.pandemicGlow = ST._BuildKitGlowRegions(parent, true, true)
-        kit.pandemicGlow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
-        -- The CDM rig is a child FRAME of the host; left at its default
-        -- level it would TIE kit.textOverlay at swipe+2. Pin it to swipe+1
-        -- with every other pandemic style so the texts stay strictly above.
-        kit.pandemicGlow.cdm.frame:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
-        slotButton:AddPandemicRegion(kit.pandemicGlow.host)
+        kit.pandemicWindow = ST._BuildPandemicWindowRig(parent, slotButton, slotButton,
+            kit.swipe:GetFrameLevel() + 1)
+        kit.pandemicGlow = kit.pandemicWindow.glow
     end
 
     kit.textOverlay = CreateFrame("Frame", nil, parent)
@@ -782,9 +759,18 @@ local function BuildSlotKit(slotButton, pandemicGated)
     -- options at bind time (StyleSlotKit; V23 PTR 7 — re-calls outside
     -- initializeFrame are legal again), so nothing CC-owned is registered
     -- here.
-    kit.durationText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
+    -- The duration text shows and hides through its own holder frame, never
+    -- its own alpha: the Pandemic Timer Color animations write the text's
+    -- color AND alpha outright (Indicator.CreatePandemicTimerTint), so an
+    -- alpha set on the text itself would not stay put. Same level as the
+    -- overlay, so it layers with the stack text as before.
+    kit.durationTextHolder = CreateFrame("Frame", nil, kit.textOverlay)
+    kit.durationTextHolder:SetAllPoints(kit.textOverlay)
+    kit.durationTextHolder:SetFrameLevel(kit.textOverlay:GetFrameLevel())
+    kit.durationText = kit.durationTextHolder:CreateFontString(nil, "OVERLAY", "GameFontHighlightOutline")
     kit.durationText:SetPoint("BOTTOM", slotButton, "BOTTOM", 0, 1)
     slotButton:SetDurationText(kit.durationText)
+    kit.pandemicTimerTint = ST.Indicator.CreatePandemicTimerTint(slotButton, kit.durationText)
 
     kit.stackText = kit.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmallOutline")
     kit.stackText:SetPoint("TOPRIGHT", slotButton, "TOPRIGHT", -1, -1)
@@ -916,12 +902,12 @@ local function BuildAuraIndicatorSlotKit(slotButton, pandemicGated)
 
     ST.Indicator.CreateVisual(host, slotButton)
     -- Pandemic glow for aura Indicators (under visualRoot, so still a slot
-    -- descendant and moved by the effects): same creation-only registration as
-    -- the icon kit's rig, so every aura Indicator slot carries it and "off" is
-    -- a style-time "none" (Indicator.StylePandemicGlow). Blizzard alone flips
-    -- its secret Shown state; CC styles it at OOC bind and never reads it.
+    -- descendant and moved by the effects): the icon kit's window rig, so
+    -- every aura Indicator slot carries it and "off" is a style-time "none"
+    -- (Indicator.StylePandemicGlow). Blizzard alone drives the window; CC
+    -- styles it at OOC bind and never reads it.
     if slotButton.AddPandemicRegion then
-        slotButton:AddPandemicRegion(ST.Indicator.CreatePandemicGlow(host, true).host)
+        ST.Indicator.CreatePandemicGlow(host, true, slotButton)
     end
     host.colorShift = {}
     local colorRegions = {
@@ -1404,20 +1390,17 @@ local function IsWidgetStackBind(slot, buttonData)
 end
 
 ------------------------------------------------------------------------
--- Aura duration composition: per-spell SetDurationText options on the kit's
--- duration text. Duration Format and Low Time Threshold provide the base
--- brackets; the Pandemic marker and whole-text color decorate the portion
--- below its spell-relative edge. Every bind RE-CALLS SetDurationText on the
--- creation-captured fontstring — legal again on PTR 7 (V23) and structurally
--- OOC in the rebind pass. Blizzard evaluates everything against the secret
--- remaining time; CC only bakes static per-spell data.
--- Threshold: fixed 30% of base duration via the V22 static lookup.
--- Fragile surface — froze displays on PTR 5; retest each build (tracker
--- B1/B2), kill switch = style.pandemicMarkerMode "off".
+-- Aura duration text: every bind re-calls SetDurationText with the shared
+-- Duration Format / Low Time formatter on the creation-captured fontstring
+-- (legal again on PTR 7, V23; structurally OOC in the rebind pass).
+-- Pandemic Timer Color is not part of the text: since 12.1.5 Blizzard tints
+-- the timer inside the aura's real Pandemic window through the kit's timer
+-- tint (ST.Indicator.CreatePandemicTimerTint). It replaced the "!!" marker
+-- and its fixed 30%-of-base-duration threshold; the saved keys keep their
+-- marker-era names (pandemicMarkerMode, pandemicMarkerColor).
 ------------------------------------------------------------------------
 
-local PANDEMIC_FRACTION = 0.3
-local PANDEMIC_MARKER_MAX_LEN = 8
+local DEFAULT_PANDEMIC_TIMER_COLOR = {1, 0.5, 0, 1}
 
 -- Effective enable, style-only since the entry's own checkbox dissolved into
 -- the panel's Pandemic override section (owner ruling 2026-08-16): the same
@@ -1434,69 +1417,6 @@ local function IsPandemicMarkerWanted(buttonData, style, unit)
     return unit == "target"
 end
 
--- The marker is user text embedded in a format string: pipes would corrupt
--- the baked color escapes and '%' would read as a format specifier, so both
--- are stripped rather than escaped.
-local function SanitizePandemicMarkerText(text)
-    text = tostring(text or ""):gsub("[|%%]", ""):gsub("^%s+", ""):gsub("%s+$", "")
-    return text:sub(1, PANDEMIC_MARKER_MAX_LEN)
-end
-
--- V22: GetAuraBaseDuration requires a live aura instance as an anchor, but
--- the spellID override drives the answer — ANY readable player aura serves.
--- OOC-only by the rebind pass's structural guarantee. Nil when no anchor
--- aura exists this pass; the threshold stays uncomputed until a later
--- rebind (marker silently absent, default formatting).
-local function FindPlayerAuraAnchorInstanceID()
-    for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-        if not aura then return nil end
-        if not issecretvalue(aura) and aura.auraInstanceID then
-            return aura.auraInstanceID
-        end
-    end
-    return nil
-end
-
--- First candidate aura ID that reports a real duration wins: cast-spell IDs
--- whose aura lives on a linked spell return 0 (V22: Rake), and permanent
--- auras have no duration — both mean "no pandemic window on this ID".
-local function GetPandemicBaseDuration(buttonData, constrainImplicitFallbacks)
-    local anchorID = FindPlayerAuraAnchorInstanceID()
-    if not anchorID then
-        -- No anchor this pass (no readable buff on the player): rebind once
-        -- one appears, so the marker and the Text recolor don't wait for an
-        -- unrelated rebind. One shot, event-driven, never polled. Combat end
-        -- re-checks too: a buff gained mid-fight may be unreadable then and
-        -- bring no further aura change afterward.
-        local watcher = CooldownCompanion._pandemicAnchorWatcher
-        if not watcher then
-            watcher = CreateFrame("Frame")
-            watcher:SetScript("OnEvent", function(frame)
-                if FindPlayerAuraAnchorInstanceID() then
-                    frame:UnregisterAllEvents()
-                    CooldownCompanion:RequestAuraRebind("pandemic-anchor")
-                end
-            end)
-            CooldownCompanion._pandemicAnchorWatcher = watcher
-        end
-        watcher:RegisterUnitEvent("UNIT_AURA", "player")
-        watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
-        return nil
-    end
-    local candidates = CooldownCompanion:GetOrderedAuraCandidateSpellIDs(
-        buttonData, constrainImplicitFallbacks)
-    for _, spellID in ipairs(candidates) do
-        if C_Spell.DoesSpellExist(spellID) then
-            local duration = C_UnitAuras.GetAuraBaseDuration("player", anchorID, spellID)
-            if duration and not issecretvalue(duration) and duration > 0 then
-                return duration
-            end
-        end
-    end
-    return nil
-end
-
 local function PandemicColorEscape(color)
     local r = math.floor((color and color[1] or 1) * 255 + 0.5)
     local g = math.floor((color and color[2] or 0.5) * 255 + 0.5)
@@ -1504,119 +1424,34 @@ local function PandemicColorEscape(color)
     return ("|cff%02x%02x%02x"):format(r, g, b)
 end
 
--- One breakpoint cloned from a shared Duration Format bracket, optionally
--- with a suffix baked onto its format string and a new threshold. Clones
--- because the source brackets are a shared cache and must never be mutated;
--- the components table is composition-only and safe to share.
-local function CloneBracket(bracket, threshold, suffix)
-    return {
-        threshold = threshold or bracket.threshold,
-        step = bracket.step,
-        rounding = bracket.rounding,
-        components = bracket.components,
-        format = suffix and (bracket.format .. suffix) or bracket.format,
-    }
-end
-
--- Compose Pandemic onto the duration policy's brackets instead of maintaining
--- a second formatter pipeline. The input may already carry a low-time color
--- escape. In whole-text Pandemic mode that existing escape is lifted around
--- the marker too, so the explicit precedence is:
---   second low window > first low window > Pandemic whole-text > aura color.
--- This also avoids combining inline low-time colors with a binding color curve
--- whose interaction has not been proven on SetDurationText.
-local function BuildComposedAuraDurationFormatter(threshold, style, allowLowTime)
-    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
-    local mode = style.pandemicMarkerColorMode or "marker"
-    if marker == "" and mode ~= "whole" then
-        return nil
-    end
-
-    local function DecorateFormat(format)
-        -- The shared formatter's visibility window uses an empty tail above
-        -- its threshold. Never decorate that tail: the Pandemic marker rides
-        -- the duration text and must disappear with it.
-        if format == "" then
-            return ""
-        end
-        local suffix = marker ~= "" and (" " .. marker) or ""
-        if mode == "marker" then
-            return format .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
-        elseif mode == "whole" then
-            -- BuildLowTimeBrackets wraps the complete format in exactly one
-            -- color escape. Reuse that escape around the marker as well; when
-            -- absent, Pandemic supplies the whole-text color.
-            local lowEscape, body = format:match("^(|cff%x%x%x%x%x%x)(.*)|r$")
-            local colorEscape = lowEscape or PandemicColorEscape(style.pandemicMarkerColor)
-            return colorEscape .. (body or format) .. suffix .. "|r"
-        end
-        return format .. suffix
-    end
-
-    local brackets = CooldownCompanion.GetDurationTextBrackets(style, allowLowTime, "aura")
-    local list = {}
-    local containing, atThreshold
-    for _, bracket in ipairs(brackets) do
-        if bracket.threshold < threshold then
-            containing = bracket
-            local decorated = CloneBracket(bracket)
-            decorated.format = DecorateFormat(decorated.format)
-            list[#list + 1] = decorated
-        elseif bracket.threshold == threshold then
-            atThreshold = true
-        end
-    end
-    -- Re-enter the containing bracket's plain format exactly at the
-    -- threshold (the first bracket sits at 0 and the threshold is always
-    -- positive, so one always contains it), then keep every higher bracket
-    -- as-is. The list stays ascending for any threshold; a bracket sitting
-    -- exactly at the threshold already is the re-entry.
-    if containing and not atThreshold then
-        list[#list + 1] = CloneBracket(containing, threshold)
-    end
-    for _, bracket in ipairs(brackets) do
-        if bracket.threshold >= threshold then
-            list[#list + 1] = CloneBracket(bracket)
-        end
-    end
-
-    local formatter = C_StringUtil.CreateNumericRuleFormatter()
-    formatter:SetBreakpoints(list)
-    return formatter
-end
-
--- One options builder for every aura bind. Without an active Pandemic marker
--- it reuses the shared duration formatter (including low time). With one, it
--- creates the per-spell composed formatter above because the Pandemic edge is
--- relative to that spell's base duration.
-local function BuildAuraDurationOptions(baseDuration, style, allowLowTime)
-    local formatter
-    if baseDuration then
-        formatter = BuildComposedAuraDurationFormatter(baseDuration * PANDEMIC_FRACTION, style, allowLowTime)
-    end
-    if not formatter and CooldownCompanion.GetDurationTextFormatter then
-        formatter = CooldownCompanion.GetDurationTextFormatter(style, allowLowTime, "aura")
-    end
+-- One options builder for every aura bind: the shared duration formatter,
+-- low time included when the surface allows it.
+local function BuildAuraDurationOptions(style, allowLowTime)
+    local formatter = CooldownCompanion.GetDurationTextFormatter
+        and CooldownCompanion.GetDurationTextFormatter(style, allowLowTime, "aura")
     return formatter and { textFormatter = formatter } or nil
 end
 
 -- Aura Indicators compose their timer from `readouts`, which holds that
--- Indicator's Duration Format, Low Time and Pandemic marker keys under the
--- panel names. Low Time always applies (the timer is aura text only). The
--- marker's base-duration lookup stays here with the other bind-time reads,
--- so the Indicator model never reads aura data.
+-- Indicator's Duration Format, Low Time and Pandemic Timer Color keys under
+-- the panel names. Low Time always applies (the timer is aura text only).
+-- Returns the duration options and the timer tint color (nil = off): a Text
+-- display's Pandemic effect colors its timer in the effect color, otherwise
+-- the Indicator's own Pandemic Timer Color decides.
 local function BuildIndicatorAuraDurationOptions(slot, group)
     local I = ST.Indicator
-    local readouts = I.Settings(group).readouts
-    local source = I.Primary(group)
-    local markerWanted = source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit)
-    -- A Text display's Pandemic effect recolors the whole timer too.
-    local recolor = I.PandemicTimerStyle(group, markerWanted)
-    local pandemicBaseDuration
-    if source and (recolor or markerWanted) then
-        pandemicBaseDuration = GetPandemicBaseDuration(source, true)
+    local settings = I.Settings(group)
+    local readouts = settings.readouts
+    local timerColor
+    if I.PandemicRecolorsText(group) then
+        timerColor = settings.pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
+    else
+        local source = I.Primary(group)
+        if source and I.PandemicMarkerOn(group) and IsPandemicMarkerWanted(source, readouts, slot.unit) then
+            timerColor = readouts.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR
+        end
     end
-    return BuildAuraDurationOptions(pandemicBaseDuration, recolor or readouts, true)
+    return BuildAuraDurationOptions(readouts, true), timerColor
 end
 
 ------------------------------------------------------------------------
@@ -1641,34 +1476,23 @@ function CooldownCompanion:IsPandemicMarkerPreviewWanted(buttonData, style)
     return IsPandemicMarkerWanted(buttonData, style, buttonData.auraUnit or "player")
 end
 
--- Mirrors the composed live formatter's three Pandemic modes on an already-
--- formatted countdown. lowTimeColorHex is present only while the preview is
--- inside an active colored low-time window; whole-text mode then lifts that
--- winning color around the marker too.
+-- Mirrors the live Pandemic Timer Color on an already-formatted countdown. In
+-- game the tint multiplies the text's own color, so an active colored low-time
+-- window (lowTimeColorHex) blends with it here too.
 function CooldownCompanion:DecoratePandemicPreviewText(text, style, lowTimeColorHex)
     text = tostring(text or "")
     if type(style) ~= "table" then
         return text
     end
-    local marker = SanitizePandemicMarkerText(style.pandemicMarkerText or "!!")
-    local mode = style.pandemicMarkerColorMode or "marker"
-    if mode == "whole" then
-        local body = marker ~= "" and (text .. " " .. marker) or text
-        local colorEscape = PandemicColorEscape(style.pandemicMarkerColor)
-        if lowTimeColorHex then
-            local unwrapped = text:match("^|cff%x%x%x%x%x%x(.*)|r$")
-            body = marker ~= "" and ((unwrapped or text) .. " " .. marker) or (unwrapped or text)
-            colorEscape = "|cff" .. lowTimeColorHex
-        end
-        return colorEscape .. body .. "|r"
+    local color = style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR
+    local r, g, b = color[1] or 1, color[2] or 0.5, color[3] or 0
+    if lowTimeColorHex then
+        text = text:match("^|cff%x%x%x%x%x%x(.*)|r$") or text
+        r = r * tonumber(lowTimeColorHex:sub(1, 2), 16) / 255
+        g = g * tonumber(lowTimeColorHex:sub(3, 4), 16) / 255
+        b = b * tonumber(lowTimeColorHex:sub(5, 6), 16) / 255
     end
-    if marker == "" then
-        return text
-    end
-    if mode == "marker" then
-        return text .. " " .. PandemicColorEscape(style.pandemicMarkerColor) .. marker .. "|r"
-    end
-    return text .. " " .. marker
+    return PandemicColorEscape({r, g, b}) .. text .. "|r"
 end
 
 -- Full manual twin for aura preview stand-ins. Live aura remaining time stays
@@ -2103,10 +1927,12 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- Position contract (pre-12.1 parity, promised by the config tooltips):
     -- the duration text shares the Cooldown Text position unless the user
     -- enables separateTextPositions, which switches it to the aura keys.
+    -- auraTextColor also feeds the Pandemic Timer Color rig below, which
+    -- puts this color back after its own animations.
+    local auraTextColor = style.auraTextFontColor or CooldownCompanion.DEFAULT_AURA_TEXT_COLOR
     local ApplyFontStyle = CooldownCompanion.ApplyFontStyle
     if ApplyFontStyle then
-        ApplyFontStyle(kit.durationText, style, "auraText", nil,
-            CooldownCompanion.DEFAULT_AURA_TEXT_COLOR)
+        ApplyFontStyle(kit.durationText, style, "auraText", nil, auraTextColor)
         ApplyFontStyle(kit.stackText, style, "auraStack")
     end
     kit.durationText:ClearAllPoints()
@@ -2119,7 +1945,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- alpha 0, and slots are reused across entries and hosts.
         kit.durationText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
         kit.stackText:SetPoint("CENTER", slotButton, "CENTER", 0, 0)
-        kit.durationText:SetAlpha(0)
+        kit.durationTextHolder:SetAlpha(0)
         kit.stackText:SetAlpha(0)
     elseif isBar then
         -- Bar texts replicate the CC bar's own placement conventions (the
@@ -2128,7 +1954,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- aura stack count.
         ST.BarTextLayout.ApplyAuraTimer(kit.durationText, innerHost, style, button._isVertical,
             occlusionFree and button.nameText and buttonData)
-        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        kit.durationTextHolder:SetAlpha(style.showAuraText ~= false and 1 or 0)
         local asAnchor = style.auraStackAnchor or "BOTTOMLEFT"
         local stackAnchorTo = barIconShown and button.icon or innerHost
         ST.TextAnchorLayout.Apply(kit.stackText, stackAnchorTo, asAnchor,
@@ -2138,29 +1964,28 @@ local function StyleSlotKit(slot, button, buttonData, style)
         local durAnchor, durX, durY = CooldownCompanion:GetAuraDurationTextPlacement(style, buttonData)
         ST.TextAnchorLayout.Apply(kit.durationText, button, durAnchor, durX, durY)
         kit.durationText:SetJustifyH("CENTER")
-        kit.durationText:SetAlpha(style.showAuraText ~= false and 1 or 0)
+        kit.durationTextHolder:SetAlpha(style.showAuraText ~= false and 1 or 0)
         ST.TextAnchorLayout.Apply(kit.stackText, button, style.auraStackAnchor or "BOTTOMLEFT",
             style.auraStackXOffset or 2, style.auraStackYOffset or 2)
         kit.stackText:SetAlpha(style.showAuraStackText ~= false and 1 or 0)
     end
 
     -- Aura duration policy: per-bind SetDurationText re-call on the creation-
-    -- captured fontstring (V23 PTR 7 — re-calls are legal; this pass is
-    -- structurally OOC). The options builder composes Duration Format, the
-    -- shared low-time windows, and the per-spell Pandemic marker/color into a
-    -- single formatter. Blizzard's setter resets the binding before applying
+    -- captured fontstring (V23 PTR 7 - re-calls are legal; this pass is
+    -- structurally OOC). Blizzard's setter resets the binding before applying
     -- whatever a bind passes, so slots reused across entries always converge.
-    local pandemicBaseDuration
-    if style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit) then
-        pandemicBaseDuration = GetPandemicBaseDuration(
-            buttonData, not isResourceHost)
-    end
     -- Aura text is opt-in for the low-time policy (durationLowTimeAuras).
     -- Aura Panel hosts apply unconditionally: their aura text is the
     -- threshold's only consumer.
     local allowLowTime = CooldownCompanion.AllowAuraDurationLowTime(style, isAuraPanelHost)
-    local durationOptions = BuildAuraDurationOptions(pandemicBaseDuration, style, allowLowTime)
-    slotButton:SetDurationText(kit.durationText, durationOptions)
+    slotButton:SetDurationText(kit.durationText, BuildAuraDurationOptions(style, allowLowTime))
+    -- Pandemic Timer Color: Blizzard colors the text in the real window, and
+    -- puts back the text color ApplyFontStyle gave it above (visibility stays
+    -- with the holder frame, out of the animations' reach).
+    local timerColorWanted = style.showAuraText ~= false and IsPandemicMarkerWanted(buttonData, style, slot.unit)
+    ST.Indicator.StylePandemicTimerTint(kit.pandemicTimerTint,
+        timerColorWanted and (style.pandemicMarkerColor or DEFAULT_PANDEMIC_TIMER_COLOR) or nil,
+        auraTextColor)
 
     -- Bar name: pick ONE of the two replica regions per bind. The live
     -- SetSpellName region wins on plain bar-panel binds (Blizzard writes the
@@ -2469,23 +2294,18 @@ local function StyleSlotKit(slot, button, buttonData, style)
         ST._StyleKitGlowRegions(kit.glow, style, button, true)
     end
 
-    -- Icon entries with both enabled show the aura glow AND the pandemic
-    -- glow together during the window (owner ruling 2026-08-05, accepting
-    -- the fallback): the replace-while-shown ideal has no supported path —
-    -- a window mask over the aura glow textures (a black MaskTexture
-    -- registered as a pandemic region) was built and probed in game, and a
-    -- shown SetColorTexture mask observably does not blank its targets on
-    -- build 69111. Bars achieve true replacement structurally (the opaque
-    -- clone overlays the fill), so no such compromise exists there.
-
     -- Pandemic glow: icon hosts only — the bar pandemic presentation is the
     -- fill recolor above, not a border effect (owner ruling). Anchors to the
     -- host button exactly like the aura glow; a disabled entry styles to
     -- "none", which fully resets and hides the rig even though Blizzard
-    -- still flips its secret Shown state.
+    -- still plays its window animations. While it shows, it replaces the
+    -- aura glow (12.1.5; until then both drew together, the 2026-08-05
+    -- fallback). Bars replace structurally: the opaque clone covers the fill.
     if kit.pandemicGlow then
-        ST._StyleKitPandemicGlowRegions(kit.pandemicGlow, style, button,
-            pandemicOn and not isBar)
+        local pandemicGlowOn = pandemicOn and not isBar
+        ST._StyleKitPandemicGlowRegions(kit.pandemicGlow, style, button, pandemicGlowOn)
+        ST._StylePandemicWindowRig(kit.pandemicWindow, style, pandemicGlowOn)
+        ST._StyleAuraGlowReplace(kit.auraGlowReplace, pandemicGlowOn)
     end
 
     -- Full-button composition for show-only-while-active entries: bg + border
@@ -2541,12 +2361,14 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
     local previous = {}
     for _, key in ipairs(slot.auraSoundKeys or {}) do previous[key] = true end
     local keys
+    local gap = CooldownCompanion:GetAuraSoundGapForButton(buttonData)
     for _, eventInfo in ipairs(AURA_SOUND_EVENT_TRIGGERS) do
         local soundFile, channel = CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventInfo.eventKey)
         if soundFile then
             local trigger = Enum.UnitAuraSoundTrigger[eventInfo.triggerName]
             for spellID in pairs(spellSet) do
                 local key = slot.unit .. ":" .. spellID .. ":" .. trigger .. ":" .. soundFile .. ":" .. (channel or "")
+                    .. ":" .. (gap or 0)
                 local entry = auraSounds[key]
                 if previous[key] then
                     previous[key] = nil
@@ -2558,6 +2380,7 @@ local function RegisterSlotAuraSounds(slot, buttonData, spellSet)
                         spellID = spellID,
                         soundFileName = soundFile,
                         outputChannel = channel,
+                        throttleSeconds = gap,
                     })
                     if id then
                         entry = { id = id, count = 1 }
@@ -2594,14 +2417,6 @@ local function BuildCandidateFilters(unit, spellSet, groupScoped)
         filters.isFromPlayerOrPlayerPet = true
     end
     return filters
-end
-
--- The never-match filter set for a parked slot. Scope is deliberately omitted:
--- the sentinel is chosen by POLARITY, which scope never changes, and a park set
--- can never match either way — so parking does not need to know which entry (if
--- any) last owned the record.
-local function BuildParkFilters(unit)
-    return BuildCandidateFilters(unit, { [PARK_SENTINEL[SlotContract(unit).polarity]] = true })
 end
 
 -- The auraLayer is the CC-owned mount point for the display subtree. It (and
@@ -2775,6 +2590,7 @@ function Presence.NewContainer(cell, unit, key, width, height)
     hider:SetAlpha(0)
     local container = CreateFrame("AuraContainer", nil, hider,
         "CustomAuraContainerTemplate, " .. PRESENCE_TEMPLATE)
+    container:SetEditModePreviewEnabled(false)
     container._ccNoTouch = true
     container:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, 0)
     -- Seed only; Blizzard resizes it and that size is never CC's to read.
@@ -2786,7 +2602,6 @@ function Presence.NewContainer(cell, unit, key, width, height)
     container:SetFlowLayoutPadding(0, 0, 0, 0)
     -- maxFrameCount 1 is structural: one aura, and no frame creation in combat.
     container:AddAuraGroup(key, SlotContract(unit).filter, {
-        candidateFilters = BuildParkFilters(unit),
         maxFrameCount = 1,
         layout = PresenceLayout(width, height),
         initializeFrame = function(frame)
@@ -2798,6 +2613,8 @@ function Presence.NewContainer(cell, unit, key, width, height)
             frame:SetMouseMotionEnabled(false)
         end,
     })
+    -- Born switched off; the bind switches it on with the real contract.
+    container:SetAuraGroupEnabled(key, false)
     return container
 end
 
@@ -2939,6 +2756,7 @@ function Presence.Bind(record, buttonData, auras, match, width, height, soundsAl
             -- every bind (a no-op when unchanged): group scope counts only
             -- your own buff, on you as on everyone else.
             local groupScoped = auras[index].groupScoped == true
+            container:SetAuraGroupEnabled(tracker.key, true)
             container:SetAuraGroupFilterString(tracker.key, SlotContract(tracker.unit, groupScoped).filter)
             container:SetAuraGroupCandidateFilters(tracker.key,
                 BuildCandidateFilters(tracker.unit, auras[index].set, groupScoped))
@@ -2984,7 +2802,7 @@ function Presence.ParkTracker(tracker)
     if tracker.bound == false then return end
     tracker.bound = false
     ReleaseSlotAuraSounds(tracker)
-    tracker.container:SetAuraGroupCandidateFilters(tracker.key, BuildParkFilters(tracker.unit))
+    tracker.container:SetAuraGroupEnabled(tracker.key, false)
     tracker.container:Hide()
 end
 
@@ -3012,6 +2830,7 @@ function Picture.BindChain(record, spellSet, tokens)
             NoteRecordToken(unit)
         end
         used[link] = true
+        link.container:SetAuraGroupEnabled(link.key, true)
         link.container:SetAuraGroupFilterString(link.key, SlotContract(unit, true).filter)
         link.container:SetAuraGroupCandidateFilters(link.key, BuildCandidateFilters(unit, spellSet, true))
         if not link.bound then link.container:Show() end
@@ -3328,11 +3147,15 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     -- AuraContainer API always exists — a failure here is a real setup error
     -- that must surface, not read as "feature unavailable".
     local container = CreateFrame("AuraContainer", nil, visibilityRoot, "CustomAuraContainerTemplate")
+    -- Blizzard's Edit Mode swaps every aura container to placeholder auras
+    -- while it is open, whatever frame the player is moving. CC is not part
+    -- of Edit Mode, so its containers keep showing real auras (12.1.5 opt-out;
+    -- every CC container creation site makes the same call).
+    container:SetEditModePreviewEnabled(false)
     container:SetAllPoints(visibilityRoot)
     container:SetFrameLevel(layer:GetFrameLevel())
     container:SetUnit(unit)
     local slotButton = container:AddAuraSlot(record.key, SlotContract(unit, groupScoped).filter, {
-        candidateFilters = BuildParkFilters(unit),
         initializeFrame = function(frame)
             -- The ONLY place the slot button is ever positioned.
             frame:SetAllPoints(container)
@@ -3360,6 +3183,8 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
         CooldownCompanion:Print("Aura slot creation failed.")
         return nil
     end
+    -- Born switched off; the bind switches it on with the real contract.
+    container:SetAuraSlotEnabled(record.key, false)
     record.slotButton = slotButton
     record.container = container
     if SLOT_KIT_KINDS[hostKind] == "texture" and button.auraTextureHost then
@@ -3378,18 +3203,12 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
     return record
 end
 
--- Park = sentinel filter swap PLUS hiding the container.
+-- Park = switch the slot off PLUS hide the container.
 --
--- The sentinel alone is not a park. It works by handing Blizzard a spell ID
--- that can never match, but that filter is applied INSIDE the identity gate
--- (Blizzard_AuraContainerUtil.lua:53-65, build 69497), and the gate declines
--- spell-ID filters entirely for a helpful aura on a unit the relationship
--- checks reject (:41-43). The 69465 hotfix narrowed those decline windows
--- (group members stay filterable through charm), but they still exist — a unit
--- whose token no longer resolves to a group member can make a sentinel-parked
--- slot match the next aura the player has on it — wrong icon, wrong timer, on
--- a display the user has switched off. Slots can never be removed, so that
--- state would persist until /reload.
+-- Switching off (12.1.5 SetAuraSlotEnabled / SetAuraGroupEnabled) clears the
+-- button and stops Blizzard parsing auras for it. It replaced a never-match
+-- sentinel filter, which Blizzard's identity gate could stop applying on a
+-- declined unit relationship and so light a parked slot with an unrelated aura.
 --
 -- Hiding the container is unconditional: the slot's AuraButton is a direct
 -- child of the container (Blizzard_CustomAuraContainer.lua:656 ->
@@ -3399,18 +3218,13 @@ end
 -- (ShouldRegisterForDynamicEvents requires IsVisible(), Blizzard_AuraContainer
 -- .lua:158) — which is what makes a parked container cost nothing.
 --
--- Validated in game 2026-07-29: SetEnabled(false) is NOT sufficient (it stops
--- updates but leaves a stale icon with a frozen timer, because ParseAllAuras
--- never consults IsEnabled()); Hide()/Show() clears and restores cleanly.
+-- Container-level SetEnabled(false) is a different switch: on 12.1.0 it left a
+-- stale icon with a frozen timer (validated in game 2026-07-29).
 --
--- Do NOT split this into "sentinel now, Hide() later". An earlier attempt did, so
--- that a record could be half-neutralised while its unit was in combat, and it was
--- wrong in both directions: it leaves a VISIBLE container carrying a sentinel
--- filter, and the sentinel is exactly what the identity gate stops applying on
--- a declined unit — such a slot would light with an unrelated aura of yours. And clearing `boundEntry` while the container is still
--- shown makes the pass's token reconciliation treat the host as slot-free,
--- releasing the pool lock on a live visible slot. The two halves must stay
--- together; there is no longer any caller that needs them apart.
+-- Do NOT split this into "switch off now, Hide() later": clearing `boundEntry`
+-- while the container is still shown makes the pass's token reconciliation
+-- treat the host as slot-free, releasing the pool lock on a live visible slot.
+-- The two halves must stay together.
 --
 -- `_auraSlotHostToken` is deliberately NOT cleared here. A host can carry
 -- several records, and clearing the shared token while a sibling keeps a live
@@ -3430,7 +3244,7 @@ local function ParkDisplay(record)
         if PRESENCE_KINDS[record.hostKind] then
             record.boundPresenceKey = nil
             if record.picture then
-                record.container:SetAuraGroupCandidateFilters(record.key, BuildParkFilters(record.unit))
+                record.container:SetAuraGroupEnabled(record.key, false)
                 for _, link in ipairs(record.chain or {}) do
                     Presence.ParkTracker(link)
                     link.window:Hide()
@@ -3442,7 +3256,7 @@ local function ParkDisplay(record)
                 for _, tracker in ipairs(record.trackers) do Presence.ParkTracker(tracker) end
             end
         else
-            record.container:SetAuraSlotCandidateFilters(record.key, BuildParkFilters(record.unit))
+            record.container:SetAuraSlotEnabled(record.key, false)
         end
         if record.container then record.container:Hide() end
         -- An Indicator's Shrink / Expand runs on the shared texture layer;
@@ -3605,6 +3419,7 @@ local function BindPresence(record, buttonData, spellSet, unit, soundsAllowed, s
         if not Picture.BindingUnchanged(record, buttonData, spellSet, groupScoped) then
             -- The record is reused across scopes (keyed by unit), so its
             -- contract is set on every real bind.
+            record.container:SetAuraGroupEnabled(record.key, true)
             record.container:SetAuraGroupFilterString(record.key, SlotContract(unit, groupScoped).filter)
             record.container:SetAuraGroupCandidateFilters(record.key, BuildCandidateFilters(unit, spellSet, groupScoped))
             Picture.BindChain(record, spellSet, groupScoped and record.wantGroupTokens or nil)
@@ -3676,9 +3491,9 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     -- EnsureDisplay. A host that needs a different unit gets its own record.
     --
     -- Converge the whole contract every bind rather than only on a unit change.
+    record.container:SetAuraSlotEnabled(record.key, true)
     -- The filter string is baked at AddAuraSlot, so writing it from the same
-    -- source as the sentinel and the caster filter here is what keeps the three
-    -- from drifting apart — it removes the fragile invariant that the string is
+    -- source as the caster filter here is what keeps the two from drifting apart — it removes the fragile invariant that the string is
     -- only ever rewritten when the unit changes. Blizzard's setter early-outs
     -- when unchanged (Blizzard_CustomAuraContainer.lua:427), so it costs nothing
     -- in the common case; SetAuraSlotFilterString self-refreshes otherwise
@@ -3734,7 +3549,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
     record.boundGroupScoped = groupScoped
     record.boundSpellSet = {}
     for spellID in pairs(spellSet) do record.boundSpellSet[spellID] = true end
-    record.identityApplicable = CanApplySpellIdentityFilter(unit, groupScoped)
+    record.identityApplicable = UnitExists(unit)
     SetIdentityVisibility(record, record.identityApplicable)
     -- Combat pool lock: while this button is pooled in combat it may only be
     -- re-acquired for the same entry (GroupFrame.AcquireButtonFromPool).
@@ -3838,7 +3653,7 @@ function RefreshSlotIdentityVisibility(record)
     if record.trackers then
         applicable = Presence.ApplyIdentity(record)
     else
-        applicable = CanApplySpellIdentityFilter(record.unit, record.boundGroupScoped)
+        applicable = UnitExists(record.unit)
     end
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
@@ -3849,7 +3664,7 @@ function RefreshSlotIdentityVisibility(record)
 end
 
 local function RefreshBlockIdentityVisibility(record)
-    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local applicable = UnitExists(record.unit)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
     SetIdentityVisibility(record, record.shown == true and applicable)
@@ -3979,6 +3794,7 @@ local function EnsureBlockContainer(side, unit, owner)
     local container = CreateFrame("AuraContainer", nil,
         visibilityRoot,
         "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    container:SetEditModePreviewEnabled(false)
     -- Seed only; Blizzard resizes from its own layout pass once a group
     -- exists, and that size is never CC's to read.
     container:SetSize(1, 1)
@@ -4072,24 +3888,24 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
     -- maxFrameCount 1 is structural, not a display choice: a group that could
     -- outgrow its pre-created batch would run AcquireFrame -> CreateFrameBatch
     -- -> initializeFrame IN COMBAT, from tainted code, on a forbidden subtree.
-    -- Born parked like a slot; the bind below writes the real contract.
+    -- Born switched off like a slot; the bind below writes the real contract.
     record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
-        candidateFilters = BuildParkFilters(record.unit),
         maxFrameCount = 1,
         layout = BlockGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
             BuildPanelGroupHost(group, frame)
         end,
     })
+    record.container:SetAuraGroupEnabled(entry.id, false)
     record.groups[entry.id] = group
     record.groupList[#record.groupList + 1] = group
     return group
 end
 
--- Park = zero frames PLUS the polarity-crossed sentinel, the group analog of
--- ParkDisplay. The container is hidden by the pass when a side keeps nothing;
--- a side that still renders something cannot hide its container, so the
--- sentinel is what keeps a retired entry dark inside a live one.
+-- Park = switch the group off, the group analog of ParkDisplay. The container
+-- is hidden by the pass when a side keeps nothing; a side that still renders
+-- something cannot hide its container, so switching the group off is what
+-- keeps a retired entry dark inside a live one.
 local function ParkBlockGroup(group)
     if group.parked then return end
     group.parked = true
@@ -4097,16 +3913,15 @@ local function ParkBlockGroup(group)
     group.boundStackMax = nil
     ReleaseSlotAuraSounds(group)
     local container = group.record.container
-    container:SetAuraGroupMaxFrameCount(group.key, 0)
-    container:SetAuraGroupCandidateFilters(group.key, BuildParkFilters(group.unit))
+    container:SetAuraGroupEnabled(group.key, false)
 end
 
 local function BindBlockGroup(group, entry)
     local container = group.record.container
-    container:SetAuraGroupMaxFrameCount(group.key, 1)
+    container:SetAuraGroupEnabled(group.key, true)
     -- Converge the whole contract every bind, exactly like the slot path: the
-    -- filter string, the candidate set and the park sentinel all come from
-    -- one source, so they can never drift apart.
+    -- filter string and the candidate set come from one source, so they can
+    -- never drift apart.
     container:SetAuraGroupFilterString(group.key, SlotContract(group.unit).filter)
     container:SetAuraGroupCandidateFilters(group.key,
         BuildCandidateFilters(group.unit, entry.spellSet))
@@ -4142,15 +3957,14 @@ end
 -- stack-end mount; non-nil means it chains off that bucket's trailing edge.
 -- Returns the bound record, or nil when nothing could be mounted.
 local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
-    -- Mounting an incompatible unit would let Blizzard ignore includeSpellIDs
-    -- for every non-exempt aura candidate. Leave the whole unit bucket parked;
-    -- the reaction watcher requests another topology pass if it becomes safe.
+    -- A unit that doesn't exist (no target, no pet) leaves the whole bucket
+    -- parked; the token watchers request another topology pass when it appears.
     local record = EnsureBlockContainer(side, unit, owner)
     if not record then return nil end
-    -- Membership survives relationship suppression, but not removal from the
+    -- Membership survives a missing unit, but not removal from the
     -- owning layout. Retired append-only records must never request work.
     record.configured = true
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
     if not record.identityApplicable then return nil end
     local mounted
     if anchorRecord then
@@ -4254,8 +4068,7 @@ end
 --
 -- Everything the blocks section establishes applies here unchanged:
 --   * Containers and groups are APPEND-ONLY. There is no removal API, so a
---     retired entry's group is PARKED (maxFrameCount 0 + the polarity-crossed
---     sentinel), never deleted, and a record whose panel frame was replaced is
+--     retired entry's group is PARKED (switched off), never deleted, and a record whose panel frame was replaced is
 --     ABANDONED rather than reparented (see EnsurePanelContainer).
 --   * maxFrameCount 1 per group is structural: a group that could outgrow its
 --     pre-created frame batch would run initializeFrame from tainted code, in
@@ -4391,7 +4204,7 @@ function CooldownCompanion:SetAuraPanelChromeSuppressed(frame, suppressed)
 end
 
 local function RefreshPanelIdentityVisibility(record)
-    local applicable = CanApplySpellIdentityFilter(record.unit)
+    local applicable = UnitExists(record.unit)
     local changed = record.identityApplicable ~= applicable
     record.identityApplicable = applicable
     return SetPanelIdentityVisibility(record, record.shown == true and applicable) or changed
@@ -4551,6 +4364,7 @@ local function EnsurePanelContainer(groupId, unit, hostFrame, surfaceKey, chrome
     local container = CreateFrame("AuraContainer", nil,
         visibilityRoot,
         "CustomAuraContainerTemplate, DisableUntrustedLayoutScriptsTemplate")
+    container:SetEditModePreviewEnabled(false)
     container._ccNoTouch = true
     -- Seed only; Blizzard resizes from its own layout pass once a group
     -- exists, and that size is never CC's to read.
@@ -4842,23 +4656,22 @@ local function EnsurePanelGroup(record, entry, layoutIndex)
     -- maxFrameCount 1 is structural, not a display choice: one entry is one
     -- aura, and a group that could outgrow its pre-created batch would run
     -- AcquireFrame -> CreateFrameBatch -> initializeFrame IN COMBAT, from
-    -- tainted code, on a forbidden subtree. Born parked like a slot; the bind
-    -- below writes the real contract.
+    -- tainted code, on a forbidden subtree. Born switched off like a slot; the
+    -- bind below writes the real contract.
     record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
-        candidateFilters = BuildParkFilters(record.unit),
         maxFrameCount = 1,
         layout = PanelGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
             BuildPanelGroupHost(pgroup, frame)
         end,
     })
+    record.container:SetAuraGroupEnabled(entry.id, false)
     record.groups[entry.id] = pgroup
     record.groupList[#record.groupList + 1] = pgroup
     return pgroup
 end
 
--- Park = zero frames PLUS the polarity-crossed sentinel. A parked group
--- contributes no elements to the flow layout, so it also stops consuming
+-- Park = switch the group off. A switched-off group leaves the flow layout, so it also stops consuming
 -- spacing: the entries around it close up exactly as if it were gone. That is
 -- what makes "retire an entry" and "the aura is not up" render identically,
 -- which they must, because CC can never tell the two apart.
@@ -4869,16 +4682,15 @@ local function ParkPanelGroup(pgroup)
     pgroup.boundStackMax = nil
     ReleaseSlotAuraSounds(pgroup)
     local container = pgroup.record.container
-    container:SetAuraGroupMaxFrameCount(pgroup.key, 0)
-    container:SetAuraGroupCandidateFilters(pgroup.key, BuildParkFilters(pgroup.unit))
+    container:SetAuraGroupEnabled(pgroup.key, false)
 end
 
 local function BindPanelGroup(pgroup, entry)
     local container = pgroup.record.container
-    container:SetAuraGroupMaxFrameCount(pgroup.key, 1)
+    container:SetAuraGroupEnabled(pgroup.key, true)
     -- Converge the whole contract every bind, exactly like the slot and block
-    -- paths: the filter string, the candidate set and the park sentinel all
-    -- come from one source, so they can never drift apart.
+    -- paths: the filter string and the candidate set come from one source, so
+    -- they can never drift apart.
     container:SetAuraGroupFilterString(pgroup.key, SlotContract(pgroup.unit).filter)
     container:SetAuraGroupCandidateFilters(pgroup.key,
         BuildCandidateFilters(pgroup.unit, entry.spellSet))
@@ -4937,10 +4749,10 @@ local function BindAuraPanel(self, groupId, group, frame)
     -- so a pass that was deferred across a lock change converges on the frame's
     -- current answer instead of whatever the record last heard.
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
-    -- Configure while unrestricted even without a compatible target. The plain
-    -- visibility root suppresses incompatible units, just as ordinary slots do;
+    -- Configure while unrestricted even without a target. The plain
+    -- visibility root hides a missing unit, just as ordinary slots do;
     -- acquiring a target in combat must not require creating or rebinding groups.
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
 
     -- The SAME metrics the frame was sized from and the placeholders were laid
     -- out from, so the container's cells land exactly on the CC-side grid.
@@ -5126,7 +4938,7 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
 
     local record = EnsurePanelContainer(groupId, unit, host, anchor, frame)
     record.chromeSuppressed = frame._auraPanelChromeSuppressed == true
-    record.identityApplicable = CanApplySpellIdentityFilter(unit)
+    record.identityApplicable = UnitExists(unit)
 
     local flow, axis, direction = SectionFlowSpec(info)
     ApplyPanelMount(record, flow, axis, direction)
@@ -5618,8 +5430,21 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- Aura Panels (whole panels drawn by their own aura container): likewise a
     -- self-contained park-then-bind pass. Disjoint from both passes above — an
     -- Aura Panel materializes no CC buttons, so the `wanted` walk never saw one
-    -- and no record here shares a host with anything.
-    RebindAuraPanels(self, panelIds)
+    -- and no record here shares a host with anything. A full pass queues them
+    -- one panel per frame instead (FlushAuraRebind): binding every slot kit
+    -- and every panel in one go overran the script time limit at login
+    -- (2026-10-05, 2026-10-13). Scoped passes stay inline.
+    if panelIds then
+        RebindAuraPanels(self, panelIds)
+    else
+        for _, record in ipairs(panelRecords) do auraPanelQueue[record.groupId] = true end
+        for groupId in pairs(self.groupFrames) do
+            local group = self.db.profile.groups[groupId]
+            if group and (ST.IsAuraPanelGroup(group) or ST.PanelHasAuraSection(group)) then
+                auraPanelQueue[groupId] = true
+            end
+        end
+    end
 
     -- Reconcile the shared pool lock once, after binding: a host is only
     -- slot-free when NONE of its records holds a binding. ParkDisplay must not
@@ -5677,9 +5502,22 @@ local function RunBlockRebind(owners)
     ST.EndAuraCandidatePass()
 end
 
+-- One queued Aura Panel per call, in its own candidate pass.
+local function RunQueuedAuraPanelRebind()
+    local groupId = next(auraPanelQueue)
+    if not groupId then return end
+    auraPanelQueue[groupId] = nil
+    local self = CooldownCompanion
+    if not (self.db and self.groupFrames) then return end
+    ST.BeginAuraCandidatePass()
+    RebindAuraPanels(self, { [groupId] = true })
+    ST.EndAuraCandidatePass()
+end
+
 local function FlushAuraRebind()
     if not fullRebindRequested and not resourceRebindRequested
-        and not next(panelRebindIds) and not next(blockRebindOwners) then return end
+        and not next(panelRebindIds) and not next(blockRebindOwners)
+        and not next(auraPanelQueue) then return end
     if not CanRunRebindNow() then
         if pendingConfigEdit then NoteDeferredConfigEdit("config") end
         ArmRebindRetry()
@@ -5694,16 +5532,21 @@ local function FlushAuraRebind()
     fullRebindRequested, blockRebindOwners, pendingConfigEdit = false, {}, false
     panelRebindIds, resourceRebindRequested = {}, false
     if full then
+        -- Queues the Aura Panels; they start next frame.
         RunAuraRebind(configEdit)
     else
         if resources or next(panelIds) then
             RunAuraRebind(configEdit, panelIds, resources)
-            for groupId in pairs(panelIds) do owners[groupId] = nil end
+            for groupId in pairs(panelIds) do
+                owners[groupId] = nil
+                auraPanelQueue[groupId] = nil
+            end
         end
         RunBlockRebind(owners)
+        RunQueuedAuraPanelRebind()
     end
     if fullRebindRequested or resourceRebindRequested or next(panelRebindIds)
-        or next(blockRebindOwners) then ScheduleAuraRebind() end
+        or next(blockRebindOwners) or next(auraPanelQueue) then ScheduleAuraRebind() end
 end
 
 function ScheduleAuraRebind()

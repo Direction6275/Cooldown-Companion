@@ -108,7 +108,7 @@ end
 -- lane using only saved settings and a private, unanchored measuring region.
 local auraTimerMeasure
 local AURA_TIMER_SAMPLES = { 359999, 59.9, 9.9 }
-local function MeasureAuraTimerLane(style, entry)
+local function MeasureAuraTimerLane(style)
     if not auraTimerMeasure then
         local host = CreateFrame("Frame", nil, UIParent)
         host:Hide()
@@ -117,14 +117,10 @@ local function MeasureAuraTimerLane(style, entry)
     local addon = ST.Addon
     addon.ApplyFontStyle(auraTimerMeasure, style, "auraText")
     local width = 0
-    local markerWanted = addon:IsPandemicMarkerPreviewWanted(entry, style)
     -- Capacity for two hour digits, minutes, and decimal seconds. Longer
     -- timers still stay inside the lane; the font renderer truncates them.
     for _, seconds in ipairs(AURA_TIMER_SAMPLES) do
         local text = addon.FormatTime(seconds, style)
-        if markerWanted then
-            text = addon:DecoratePandemicPreviewText(text, style)
-        end
         width = math.max(width, auraTimerMeasure:GetUnboundedStringWidthForText(text))
     end
     return math.ceil(width) + 2
@@ -141,7 +137,7 @@ local function ResolveAuraTimerLane(style, vertical, entry)
     -- With duration text off, the name keeps the full row's outer boundary.
     if style.showAuraText == false then return point, x, y, 0 end
 
-    local width = MeasureAuraTimerLane(style, entry)
+    local width = MeasureAuraTimerLane(style)
     local icon = 0
     if style.showBarIcon ~= false then
         icon = (style.barIconSizeOverride and style.barIconSize or style.barHeight or 20)

@@ -54,6 +54,56 @@ local EFFECT_PREVIEWS = {
         setter = ST._SetKeyPressHighlight, withOverlay = true },
 }
 
+-- Pandemic Start / Refresh (12.1.5): inside the looping Aura Active cycle,
+-- an entry that picked either effect draws its pandemic look with the live
+-- window rig (Glows.lua BuildPandemicWindowRig) instead of the shared glow
+-- container, and the preview plays the rig's animations at the cycle's
+-- window flips the way Blizzard plays them in game. The cycle's wrap is the
+-- refresh in time.
+local function PicksPandemicEffect(style)
+    return style ~= nil and ((style.pandemicStartEffect or "none") ~= "none"
+        or (style.pandemicRefreshEffect or "vanish") ~= "vanish")
+end
+
+local function PlayGroups(groups, method)
+    for _, group in ipairs(groups) do
+        group[method](group)
+    end
+end
+
+local function GetPandemicPreviewRig(slot)
+    if slot._ccPandemicRig then return slot._ccPandemicRig end
+    local triggers = { enter = {}, active = {}, leave = {} }
+    local recorder = {
+        AddPandemicEnterAnimation = function(_, group) triggers.enter[#triggers.enter + 1] = group end,
+        AddPandemicActiveAnimation = function(_, group) triggers.active[#triggers.active + 1] = group end,
+        AddPandemicLeaveAnimation = function(_, group) triggers.leave[#triggers.leave + 1] = group end,
+    }
+    local rig = ST._BuildPandemicWindowRig(slot, slot, recorder,
+        (slot.auraSwipe or slot):GetFrameLevel() + 1, true)
+    rig.triggers = triggers
+    slot._ccPandemicRig = rig
+    return rig
+end
+
+-- `on`: the rig draws this slot's pandemic look. `flip`: the window just
+-- opened or closed, so the effects play; a rebuild only restores the steady
+-- state.
+local function StylePandemicPreviewRig(slot, style, on, inWindow, flip)
+    local rig = slot._ccPandemicRig or on and GetPandemicPreviewRig(slot)
+    if not rig then return end
+    ST._StyleKitPandemicGlowRegions(rig.glow, style, slot, on)
+    ST._StylePandemicWindowRig(rig, style, on)
+    local triggers = rig.triggers
+    if on and inWindow then
+        if flip then PlayGroups(triggers.enter, "Play") end
+        PlayGroups(triggers.active, "Play")
+    else
+        PlayGroups(triggers.active, "Stop")
+        if on and flip then PlayGroups(triggers.leave, "Play") end
+    end
+end
+
 local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
         effectiveStyle, barPreviewState)
     local style = effectiveStyle or group.style or {}
@@ -68,21 +118,30 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
         -- Live parity (AuraDisplay bind gate): the pandemic rig renders
         -- nothing while the effect is disabled for this entry. Live shows
         -- the aura glow OUTSIDE the window and the pandemic style inside
-        -- it (the window mask swaps them). Individual commands isolate each
+        -- it (12.1.5: the window rig swaps them). Individual commands isolate each
         -- look; Aura Active transitions between them. Resolved once here
         -- because both auraGlow-container defs consult it.
         local pandemicWillRender = canQuery
             and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_pandemicPreview")
             and IsPandemicPreviewEnabled(style, buttonData) or false
         slot._cdcAuraPandemicActive = pandemicWillRender
+        local conditional = ST._GetStoredConditionalPreviewState
+            and ST._GetStoredConditionalPreviewState(panelId, index)
+        local useRig = conditional ~= nil and conditional.kind == "aura_active"
+            and IsPandemicPreviewEnabled(style, buttonData) and PicksPandemicEffect(style)
         for _, def in ipairs(EFFECT_PREVIEWS) do
             if def.setter then
                 local active
                 if def.pandemicOverride then
-                    active = pandemicWillRender
+                    active = pandemicWillRender and not useRig
                 else
                     active = canQuery
                         and CooldownCompanion:IsPreviewFlagActive(panelId, index, def.flag) or false
+                    -- With the rig drawing the window, the aura glow steps
+                    -- aside in it, as in game.
+                    if def.yieldsToPandemic and useRig and pandemicWillRender then
+                        active = false
+                    end
                 end
                 if active and not slot[def.containerKey] and CreateGlowContainer then
                     slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay)
@@ -97,7 +156,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                         if active then
                             def.setter(slot, true, true)
                         end
-                    elseif def.yieldsToPandemic and pandemicWillRender then
+                    elseif def.yieldsToPandemic and pandemicWillRender and not useRig then
                         -- Pandemic owns the container this pass. A normal
                         -- glow or off-call here would
                         -- cold-reset its cache and restart its animations
@@ -109,6 +168,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                 end
             end
         end
+        StylePandemicPreviewRig(slot, style, useRig, pandemicWillRender, false)
         return
     end
 
@@ -135,6 +195,7 @@ end
 -- must not survive into a picker strip.
 local function ClearSlotEffectPreviews(slot)
     slot._cdcAuraPandemicActive = nil
+    StylePandemicPreviewRig(slot, nil, false)
     for _, def in ipairs(EFFECT_PREVIEWS) do
         if slot[def.containerKey] and def.setter then
             def.setter(slot, false)
@@ -151,10 +212,16 @@ local function UpdateCombinedIconAuraEffects(slot, state, now)
         and IsPandemicPreviewEnabled(slot.style, slot.buttonData) or false
     if slot._cdcAuraPandemicActive == pandemicActive then return end
     slot._cdcAuraPandemicActive = pandemicActive
+    local useRig = IsPandemicPreviewEnabled(slot.style, slot.buttonData) and PicksPandemicEffect(slot.style)
     if slot.auraGlow and ST._SetAuraGlow then
-        ST._SetAuraGlow(slot, true, pandemicActive)
+        if useRig then
+            ST._SetAuraGlow(slot, not pandemicActive, false)
+        else
+            ST._SetAuraGlow(slot, true, pandemicActive)
+        end
         ST.RefreshBorderTextureScale(slot.auraGlow.solidTextures)
     end
+    StylePandemicPreviewRig(slot, slot.style, useRig, pandemicActive, true)
 end
 
 local function StopConditionalTicker(preview)

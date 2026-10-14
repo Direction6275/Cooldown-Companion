@@ -2784,11 +2784,13 @@ end
 -- below renames them, so a pre-rename profile still carries the boolean, while
 -- a re-import of already-renamed data must find the enum here or the ownership
 -- test would skip the one key the entry most likely customized.
+-- pandemicMarkerText and pandemicMarkerColorMode are gone from both lists: 12.1.5
+-- retired the "!!" text and its coloring mode (the mode and color now drive
+-- Pandemic Timer Color), so a stored difference in them must not claim the
+-- section. Left in styleOverrides, they are inert.
 local PANDEMIC_MARKER_OVERRIDE_KEYS = {
     "pandemicMarkerEnabled",
     "pandemicMarkerMode",
-    "pandemicMarkerText",
-    "pandemicMarkerColorMode",
     "pandemicMarkerColor",
 }
 
@@ -2798,8 +2800,6 @@ local PANDEMIC_MARKER_OVERRIDE_KEYS = {
 local PANDEMIC_MARKER_BASELINE = {
     pandemicMarkerEnabled = true,
     pandemicMarkerMode = "auto",
-    pandemicMarkerText = "!!",
-    pandemicMarkerColorMode = "marker",
     pandemicMarkerColor = { 1, 0.5, 0, 1 },
 }
 

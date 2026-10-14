@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: Cooldown Companion Config
 ## Notes: Load-on-demand configuration UI for Cooldown Companion
 ## Author: You

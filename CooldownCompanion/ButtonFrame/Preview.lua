@@ -225,7 +225,12 @@ function Preview.Start(command, panelId, buttonIndex, targets)
     if not profile or (not command.object and not group) or (targets and not next(targets)) then return false end
     Addon:ClearAllConfigPreviews()
     local visual = command.preview
-    local sample = visual.conditional and BuildConditionalVisualPreviewState(visual.conditional)
+    -- A flag preview may run a looping sample when its targets want one:
+    -- Preview Pandemic Effect plays the Aura Active cycle once a Pandemic
+    -- Start or Refresh effect is picked, so the effects can be seen.
+    local conditional = visual.conditional
+        or visual.cycleWhen and visual.cycleWhen(group, buttonIndex) and visual.cycleKind
+    local sample = conditional and BuildConditionalVisualPreviewState(conditional)
         or { startedAt = GetTime() }
     if visual.owner == "totem" then
         local resume = Preview.GetTotemSample(groupId)
@@ -241,10 +246,27 @@ function Preview.Start(command, panelId, buttonIndex, targets)
     return true
 end
 
+-- A running flag preview with a cycle switches between its static look and
+-- the cycle when the settings it watches change (Pandemic Start / Refresh
+-- picked or cleared while Preview Pandemic Effect plays).
+function Preview.SyncCycle()
+    local value = Preview.Get()
+    local visual = value and value.command.preview
+    if not (visual and visual.cycleWhen) then return end
+    local wanted = visual.cycleWhen(value.group, value.buttonIndex) and visual.cycleKind or nil
+    if wanted == value.sample.kind then return end
+    value.sample = wanted and BuildConditionalVisualPreviewState(wanted) or { startedAt = GetTime() }
+    MarkVisualsChanged()
+end
+
 local function IsStoredPreviewFlagActive(groupId, buttonIndex, flag)
     local value = Preview.Get()
     if not value or not flag or not MatchesTarget(value, groupId, buttonIndex) then return false end
-    if value.command.preview.flag == flag then return true end
+    -- The cycle's own window decides, even for the Pandemic command itself.
+    if value.command.preview.flag == flag
+        and not (flag == "_pandemicPreview" and value.sample.kind == "aura_active") then
+        return true
+    end
     if value.sample.kind == "aura_active" then
         if flag == "_auraGlowPreview" or flag == "_barAuraEffectPreview" then return true end
         if flag == "_pandemicPreview" then
@@ -262,7 +284,7 @@ end
 
 function ST._GetStoredConditionalPreviewState(groupId, buttonIndex)
     local value = Preview.Get()
-    return value and value.command.preview.conditional and MatchesTarget(value, groupId, buttonIndex)
+    return value and value.sample.kind ~= nil and MatchesTarget(value, groupId, buttonIndex)
         and value.sample or nil
 end
 

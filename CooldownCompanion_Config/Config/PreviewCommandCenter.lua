@@ -258,6 +258,15 @@ local function PandemicEffectEnabled(group, buttonIndex)
     return StyleFlagEnabled(group, buttonIndex, "pandemicEffectEnabled")
 end
 
+-- A Pandemic Start or Refresh effect is picked: Preview Pandemic Effect then
+-- runs the Aura Active cycle, so the effects play (Preview.Start cycleWhen).
+local function PandemicEffectsPicked(group, buttonIndex)
+    if not group then return false end
+    local style = ResolveTargetStyle(group, buttonIndex)
+    return (style.pandemicStartEffect or "none") ~= "none"
+        or (style.pandemicRefreshEffect or "vanish") ~= "vanish"
+end
+
 local function MissingAuraPreviewEnabled(group, buttonIndex)
     local buttons = group.buttons or {}
     local predicate = CooldownCompanion.IsMissingAuraIndicatorEntry
@@ -494,7 +503,8 @@ local CONTROLS = {
         section = "pandemic",
         requiresPandemicEffect = true,
         settings = { tab = "effects", key = "pandemicGlow" },
-        preview = FlagPreview("_pandemicPreview"),
+        preview = { owner = "panel", flag = "_pandemicPreview",
+            cycleKind = "aura_active", cycleWhen = PandemicEffectsPicked },
     },
     {
         id = "readyGlow",
@@ -657,12 +667,12 @@ local CONTROLS = {
     },
     {
         id = "pandemicMarker",
-        label = "Preview Pandemic Marker",
+        label = "Preview Pandemic Timer Color",
         group = GROUP_AURAS,
         menuOrder = 60,
         modes = { icons = true, bars = true },
-        -- Sits with the readouts, not the effects: the marker IS the duration
-        -- text, dressed. Its settings live under the Indicators tab's Pandemic
+        -- Sits with the readouts, not the effects: the timer color IS the
+        -- duration text, dressed. Its settings live under the Indicators tab's Pandemic
         -- subheading, inside Aura Indicators, so this is a two-mode effects
         -- route rather than TextRoute's Appearance one; both gear keys are in
         -- the gear-to-section map, which is what uncollapses that header.

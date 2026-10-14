@@ -59,6 +59,7 @@ function I.CreateVisual(host, nativeSlot)
         -- when first styled on (StylePandemicTint).
         I.CreatePandemicTint(host, nativeSlot)
         nativeSlot:SetDurationText(readouts.timer)
+        host.pandemicTimerTint = I.CreatePandemicTimerTint(nativeSlot, readouts.timer)
         nativeSlot:SetApplicationCount(readouts.count)
         nativeSlot:SetDurationBar(bar, {interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH,
             direction = ST.STATUS_BAR_TIMER_DIRECTION_REMAINING})
@@ -117,16 +118,24 @@ function I.CreatePandemicTint(host, nativeSlot)
 end
 
 -- The Pandemic effect rig: the panel pandemic glow kit, drawn above the
--- artwork and below the readouts. Native aura Indicator kits build it at slot
--- creation and register it with the slot (Blizzard then owns its Shown state);
--- the config preview builds its own and shows it itself. It is a child of
+-- artwork and below the readouts. Native aura Indicator kits pass their slot
+-- and get the window rig, which Blizzard then drives; the config preview
+-- builds a plain one and shows it itself. It is a child of
 -- visualRoot so Pulse, Shrink / Expand and Bounce carry it with the artwork.
-function I.CreatePandemicGlow(host, auraOwned)
-    local glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
+function I.CreatePandemicGlow(host, auraOwned, nativeSlot)
     local root = host.indicatorReadouts.root
     local level = root:GetFrameLevel()
-    glow.host:SetFrameLevel(level)
-    glow.cdm.frame:SetFrameLevel(level)
+    local glow
+    if nativeSlot then
+        -- A native slot's glow rides the 12.1.5 window rig (Glows.lua).
+        host.indicatorPandemicWindow = ST._BuildPandemicWindowRig(host.visualRoot, host.visualRoot,
+            nativeSlot, level)
+        glow = host.indicatorPandemicWindow.glow
+    else
+        glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
+        glow.host:SetFrameLevel(level)
+        glow.cdm.frame:SetFrameLevel(level)
+    end
     root:SetFrameLevel(level + 1)
     host.indicatorPandemicGlow = glow
     return glow
@@ -157,6 +166,7 @@ function I.StylePandemicGlow(host, group, shown)
     local enabled = shown and DrawsLiveAura(host, group) and settings.displayType == "icon"
         and I.PandemicEffectOn(group) or false
     ST._StyleKitPandemicGlowRegions(glow, settings and settings.pandemic, host.visualRoot, enabled)
+    ST._StylePandemicWindowRig(host.indicatorPandemicWindow, settings and settings.pandemic, enabled)
 end
 
 -- The Pandemic effect on Texture and Text displays: the artwork (and its
@@ -218,29 +228,76 @@ function I.StylePandemicTint(host, group, shown)
     end
 end
 
+-- Pandemic Timer Color (12.1.5): Blizzard plays these on a native slot's
+-- duration text inside the aura's real Pandemic window. A looping VertexColor
+-- animation colors the text while the window is open. On a FontString that
+-- animation REPLACES the text color rather than tinting it, and keeps it after
+-- stopping (probe 2026-10-08; live 12.1.5 showed every timer white), so a set
+-- back to the timer's own color plays when the window closes, the aura
+-- appears and a new aura lands. Write-once in the slot's setup window: binds
+-- only retune the colors (I.StylePandemicTimerTint). Returns the rig.
+local function TimerColorSet(text)
+    local group = text:CreateAnimationGroup()
+    local set = group:CreateAnimation("VertexColor")
+    set:SetDuration(0.01)
+    return group, set
+end
+
+function I.CreatePandemicTimerTint(nativeSlot, text)
+    local tint = text:CreateAnimationGroup()
+    tint:SetLooping("REPEAT")
+    local rig = { tint = tint:CreateAnimation("VertexColor") }
+    rig.tint:SetDuration(1)
+    nativeSlot:AddPandemicActiveAnimation(tint)
+    local group
+    group, rig[1] = TimerColorSet(text)
+    nativeSlot:AddPandemicLeaveAnimation(group)
+    group, rig[2] = TimerColorSet(text)
+    nativeSlot:AddAuraShownAnimation(group)
+    group, rig[3] = TimerColorSet(text)
+    nativeSlot:AddAuraAssignedAnimation(group)
+    return rig
+end
+
+-- `color` is the Pandemic Timer Color, nil when off; `textColor` is the
+-- timer's own styled color, which the window holds while off and the resets
+-- restore. Both {r, g, b[, a]}. The color's alpha replaces the text's own
+-- alpha too, so callers show and hide the timer through a parent frame
+-- (Indicator readouts.frames, the aura kit's durationTextHolder). OOC bind
+-- only.
+function I.StylePandemicTimerTint(rig, color, textColor)
+    if not rig then return end
+    local alpha = textColor[4] or 1
+    local base = CreateColor(textColor[1] or 1, textColor[2] or 1, textColor[3] or 1, alpha)
+    local tint = color and CreateColor(color[1] or 1, color[2] or 0.5, color[3] or 0, alpha) or base
+    rig.tint:SetStartColor(tint)
+    rig.tint:SetEndColor(tint)
+    for i = 1, 3 do
+        rig[i]:SetStartColor(base)
+        rig[i]:SetEndColor(base)
+    end
+end
+
 -- A Text display recolors its whole text in the window: the label through
--- StylePandemicTint, the timer through the duration formatter's whole-text
--- Pandemic coloring. The marker keeps its text only when `markerWanted`
--- (the caller's own marker decision, Auto's unit rule included). The
--- readouts as the formatter should read them, or nil when this doesn't
--- apply. `into` (optional) is reused, so a per-frame caller allocates nothing.
-function I.PandemicTimerStyle(group, markerWanted, into)
+-- StylePandemicTint, the timer through Pandemic Timer Color in the effect's
+-- color. For the preview, the readouts with that color in place, or nil when
+-- this doesn't apply. `into` (optional) is reused, so a per-frame caller
+-- allocates nothing.
+function I.PandemicTimerStyle(group, into)
     if not I.PandemicRecolorsText(group) then return end
     local settings = I.Settings(group)
     local pandemic = settings.pandemic
     local style = into or {}
     if into then wipe(into) end
     for key, value in pairs(settings.readouts) do style[key] = value end
-    style.pandemicMarkerColorMode = "whole"
     style.pandemicMarkerColor = pandemic.pandemicGlowColor or ST.DEFAULT_PANDEMIC_COLOR
-    if not markerWanted then style.pandemicMarkerText = "" end
     return style
 end
 local previewTimerStyle = {}
 
 -- Preview stand-ins: CC-owned sample seconds on the same scale the drain uses.
 -- The timer text runs through the live features' manual twins, so Low Time
--- and the Pandemic marker read exactly as they will in game.
+-- and Pandemic Timer Color read as they will in game.
 I.PREVIEW_SECONDS = 20
 function I.IsPreviewPandemicWindow(seconds)
     return seconds > 0 and seconds < I.PREVIEW_SECONDS * 0.3
@@ -254,13 +311,13 @@ function I.PreviewTimerText(group, seconds)
     if not (options and options.timer and seconds > 0) then return "" end
     if I.IsAura(group) then
         local window = I.IsPreviewPandemicWindow(seconds)
-        local markerWanted = I.PandemicMarkerOn(group)
-            and Addon:IsPandemicMarkerPreviewWanted(I.Primary(group), options)
-        local recolor = I.PandemicTimerStyle(group, markerWanted, previewTimerStyle)
+        local recolor = I.PandemicTimerStyle(group, previewTimerStyle)
         if recolor then
             return Addon:FormatAuraDurationPreviewText(seconds, recolor, window, true)
         end
-        return Addon:FormatAuraDurationPreviewText(seconds, options, window and markerWanted, true)
+        local colorWanted = I.PandemicMarkerOn(group)
+            and Addon:IsPandemicMarkerPreviewWanted(I.Primary(group), options)
+        return Addon:FormatAuraDurationPreviewText(seconds, options, window and colorWanted, true)
     end
     return Addon.FormatDurationText(seconds, options, true, "cooldown")
 end
@@ -681,7 +738,7 @@ end
 -- `durationOptions` is the owner's composed timer formatter (Duration Format,
 -- Low Time and the Pandemic marker, built from `readouts`); this model never
 -- reads aura data to build it.
-function I.StyleAura(slot, group, durationOptions)
+function I.StyleAura(slot, group, durationOptions, timerColor)
     local host = slot.kit.indicatorHost
     slot.slotButton:ClearIcon()
     local shown, width, height = I.StyleVisual(host, group)
@@ -691,6 +748,8 @@ function I.StyleAura(slot, group, durationOptions)
         slot.slotButton:SetIcon(host.iconFrame.icon)
     end
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)
+    I.StylePandemicTimerTint(host.pandemicTimerTint, timerColor,
+        host._indicatorReadoutColors and host._indicatorReadoutColors.timer or WHITE)
     slot.slotButton:SetApplicationCount(host.indicatorReadouts.count)
     I.StylePandemicGlow(host, group, shown)
     I.StylePandemicTint(host, group, shown)
