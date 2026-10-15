@@ -1428,6 +1428,14 @@ local function RefitWidePreviewHost()
     if heightChanged then
         host:SetHeight(newHeight)
     end
+    -- The panel preview is too heavy to rebuild every frame of a window
+    -- resize drag; the grip's release refits it once, and the stale layout
+    -- stamp then still reads as a size change. Lighter previews stay live.
+    -- A released button means the grip missed its mouse-up; stop deferring.
+    if CS.configWindowSizing and not IsMouseButtonDown("LeftButton") then
+        CS.configWindowSizing = nil
+    end
+    if CS.configWindowSizing and host._cdcButtonsPreviewMode == "panel" then return end
     ScheduleFinalWidePreviewLayout(col3, host, heightChanged or widthChanged)
 end
 

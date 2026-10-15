@@ -579,6 +579,22 @@ end
 -- refresh finishes, then apply the final offsets before returning to rendering.
 local pendingScrollFixes = {}
 
+-- A refresh is synchronous, so a flag still set on the next frame means an
+-- error stopped it before FinishConfigRefresh. Clear it, or every later
+-- refresh returns early until /reload (the attachment refresh guard's rule).
+local refreshGuard = CreateFrame("Frame")
+refreshGuard:Hide()
+refreshGuard:SetScript("OnUpdate", function(self)
+    self:Hide()
+    CS.configRefreshInProgress = false
+    wipe(pendingScrollFixes)
+end)
+
+local function BeginConfigRefresh()
+    CS.configRefreshInProgress = true
+    refreshGuard:Show()
+end
+
 local function FixConfigScroll(widget)
     if CS.configRefreshInProgress then
         pendingScrollFixes[widget] = true
@@ -598,6 +614,7 @@ local function FinishConfigRefresh()
         ST._UnifiedRowRefresh()
     end
     CS.configRefreshInProgress = false
+    refreshGuard:Hide()
     if CS.RefreshAdvancedSettingsPanel then
         CS.RefreshAdvancedSettingsPanel()
     end
@@ -1128,8 +1145,10 @@ local function CreateConfigPanel()
     resizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     resizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
 
+    -- The preview rebuilds once at release rather than every frame of the drag.
     resizeGrip:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
+            CS.configWindowSizing = true
             content:StartSizing("BOTTOMRIGHT")
         end
     end)
@@ -1138,6 +1157,12 @@ local function CreateConfigPanel()
         fullWidth = content:GetWidth()
         fullHeight = content:GetHeight()
         SaveConfigWindowGeometry(content)
+        if CS.configWindowSizing then
+            CS.configWindowSizing = nil
+            if ST._RefitWidePreviewHost then
+                ST._RefitWidePreviewHost()
+            end
+        end
     end)
     -- Double-click the grip: return to the default size (clamped to the
     -- current screen), keeping the top-left corner planted since the grip
@@ -1181,6 +1206,7 @@ local function CreateConfigPanel()
     local isCollapsing = false
     content:HookScript("OnHide", function()
         SetMainConfigDragAlpha(false)
+        CS.configWindowSizing = nil
         if CancelFirstIconPanelTutorial then
             CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
         end
@@ -2550,7 +2576,7 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
         and not ST._RefreshConfigEditNavigator(edit.panelId) then
         return CooldownCompanion:_configRefreshPanelImpl(edit)
     end
-    CS.configRefreshInProgress = true
+    BeginConfigRefresh()
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     ST._NormalizeIndicatorConfigSelection()
     if ST._BeginNavSettingHighlightRefresh then
@@ -2600,7 +2626,7 @@ function CooldownCompanion:_configRefreshPanelImpl(edit)
     if not CS.configFrame.frame:IsShown() then return end
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
-    CS.configRefreshInProgress = true
+    BeginConfigRefresh()
     if self._unifiedPanelConversionError and ST._ShowResourceBarConflictChooser then
         ST._ShowResourceBarConflictChooser()
     end
