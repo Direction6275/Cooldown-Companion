@@ -275,6 +275,21 @@ local function GetUnlockedPanelAlpha(frame)
     return frame and frame._unlockGhost and 0.4 or 1
 end
 
+-- A panel outside container alpha reads unlocked through its container's
+-- unlock or its own, as ContainerAlphaEntryIsUnlocked does for members; the
+-- combat forced lock overrides both. Cursor anchoring is applied later by
+-- UpdateGroupAlpha.
+local function PanelAlphaIsLocked(self, group, containers)
+    if self._combatForcedLock then
+        return true
+    end
+    local container = group.parentContainerId and containers and containers[group.parentContainerId]
+    if container and container.locked == false then
+        return false
+    end
+    return group.locked ~= false
+end
+
 local function ContainerAlphaIsUnlocked(self, container)
     return container and container.locked == false and not self._combatForcedLock
 end
@@ -508,16 +523,7 @@ local function RestoreReleasedContainerAlphaGroups(self, previousSet, currentSet
                         self.alphaState[groupId] = nil
                     end
                 else
-                    local locked = true
-                    if group.parentContainerId then
-                        local container = containers and containers[group.parentContainerId]
-                        if container then
-                            locked = container.locked ~= false
-                        end
-                    else
-                        locked = group.locked
-                    end
-                    self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                    self:UpdateGroupAlpha(groupId, group, PanelAlphaIsLocked(self, group, containers), frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 end
                 restored = true
             end
@@ -1199,14 +1205,7 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
                     and AlphaStateNeedsCleanup(self, groupId) then
                     needsPostPassRefresh = true
                 end
-                local locked = true
-                if group.parentContainerId then
-                    local c = containers[group.parentContainerId]
-                    if c then locked = c.locked ~= false end
-                else
-                    locked = group.locked
-                end
-                self:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                self:UpdateGroupAlpha(groupId, group, PanelAlphaIsLocked(self, group, containers), frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 if passMaySettle and not AlphaWorkMaySettle(self, group, groupId, now) then
                     passMaySettle = false
                 end
