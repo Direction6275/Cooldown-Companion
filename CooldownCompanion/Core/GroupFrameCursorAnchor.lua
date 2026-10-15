@@ -388,7 +388,7 @@ local function UpdateGroupDragCoordinate(frame)
         return
     end
 
-    local x, y, anchorState
+    local x, y, anchorState, _
     if IsCursorAnchor(group.anchor) then
         x, y = ComputeCursorAnchorLayoutPreviewPanelCoordinates(CooldownCompanion, frame, groupId, group)
     else
