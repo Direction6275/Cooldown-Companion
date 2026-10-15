@@ -4811,8 +4811,7 @@ local function BindAuraPanel(self, groupId, group, frame)
                     -- entry with no resolvable candidates stays parked.
                     panelNoCandidates = panelNoCandidates + 1
                 else
-                    local style = ST.IsAttachedBarEntry(group, buttonData) and button.style
-                        or self:GetEntryEffectiveStyle(group, buttonData)
+                    local style = self:GetEntryEffectiveStyle(group, buttonData)
                     -- The icon square rides the entry's effective style, so
                     -- Show Bar Icon (and the size/offset/side keys beside it)
                     -- work on an Aura Panel exactly as on a bar panel. Cell

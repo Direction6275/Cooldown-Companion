@@ -663,25 +663,6 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_RESET_PROFILE"] = {
-    text = "Reset profile '%s' to default settings?",
-    button1 = "Reset",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.profileName then
-            local db = CooldownCompanion.db
-            db:ResetProfile()
-            ResetConfigSelection(true)
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_NEW_PROFILE"] = {
     text = "Enter new profile name:",
     button1 = "Create",

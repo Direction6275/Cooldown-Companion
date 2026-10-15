@@ -52,6 +52,8 @@ local function FormatConfigLoadFailure(entryPoint, reason)
         .. ": " .. detail .. ". Make sure " .. CONFIG_ADDON_NAME .. " is installed and enabled."
 end
 
+-- The only definition: the config profile bar shows it too. The
+-- OnProfileReset callback resets loaded config and refreshes.
 StaticPopupDialogs["CDC_RESET_PROFILE"] = {
     text = "Reset profile '%s' to default settings?",
     button1 = "Reset",
