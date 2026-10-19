@@ -406,7 +406,10 @@ local function RestoreArrangeSnapshot(addon, snapshot)
                 RestoreArrangeFields(signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
                 local drift = record.signalDrift
                 if drift and type(signal.x) == "number" and type(signal.y) == "number" then
-                    signal.x, signal.y = signal.x - drift.x, signal.y - drift.y
+                    -- Saved Indicator coordinates are tenths; keep float
+                    -- residue out of the restored values.
+                    signal.x = math.floor((signal.x - drift.x) * 10 + 0.5) / 10
+                    signal.y = math.floor((signal.y - drift.y) * 10 + 0.5) / 10
                 end
             end
             group.locked = record.locked

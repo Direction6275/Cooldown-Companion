@@ -683,7 +683,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
         -- Bar placement and aura keys belong to the panel being left.
         ST.DetachEntryBarPlacement(entry)
         CooldownCompanion:AdoptAuraEntryKey(targetGroup, entry)
-        ST.Indicator.CarryWhileMissing(targetGroup, entry)
+        ST.Indicator.CarryWhileMissing(snapshot.group, targetGroup, entry)
         table.insert(targetGroup.buttons, entry)
         -- An aura joining an Indicator notes what its effects became.
         local _, notice = ST.Indicator.OnSourceAdded(targetGroup, entry)

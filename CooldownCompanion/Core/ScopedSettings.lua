@@ -446,20 +446,12 @@ local function EnsureScopedBarSystemStore(profile, storeKey)
     return store
 end
 
--- AceDB rawsets an empty table for every table-typed default, so a brand-new
--- profile carries the retired resourceBars/castBar/frameAnchoring tables with
--- nothing saved in them (defaults answer through metatables). Legacy data
--- means at least one saved value somewhere inside.
-local function HasSavedValue(value)
-    if type(value) ~= "table" then
-        return value ~= nil
-    end
-    for _, child in pairs(value) do
-        if HasSavedValue(child) then
-            return true
-        end
-    end
-    return false
+-- AceDB copies every default (scalars included) into a brand-new profile, so
+-- the retired resourceBars/castBar/frameAnchoring tables exist there filled
+-- with defaults. Legacy data means a table that differs from its defaults:
+-- the same test the unified panel migration uses (HasLegacySeed).
+local function HasLegacyValues(profile, legacyKey)
+    return ST.UnifiedPanelMigration.HasLegacySeed(profile, legacyKey, legacyKey)
 end
 
 local function CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
@@ -469,7 +461,7 @@ local function CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
     end
 
     local legacy = rawget(profile, systemSpec.legacyKey)
-    if type(legacy) ~= "table" or not HasSavedValue(legacy) then
+    if type(legacy) ~= "table" or not HasLegacyValues(profile, systemSpec.legacyKey) then
         return nil
     end
 
@@ -484,13 +476,13 @@ local function ProfileHasLegacyScopedBarData(profile)
     end
 
     if type(rawget(profile, RESOURCE_BAR_SYSTEM_SPEC.seedKey)) == "table"
-        or HasSavedValue(rawget(profile, RESOURCE_BAR_SYSTEM_SPEC.legacyKey)) then
+        or HasLegacyValues(profile, RESOURCE_BAR_SYSTEM_SPEC.legacyKey) then
         return true
     end
 
     for _, systemSpec in pairs(SCOPED_BAR_SYSTEMS) do
         if type(rawget(profile, systemSpec.seedKey)) == "table"
-            or HasSavedValue(rawget(profile, systemSpec.legacyKey)) then
+            or HasLegacyValues(profile, systemSpec.legacyKey) then
             return true
         end
     end

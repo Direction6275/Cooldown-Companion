@@ -389,7 +389,7 @@ local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, 
     -- wore where it came from: an Aura Panel mints it one, and anywhere else the
     -- stale key comes off rather than waiting to collide inside an aura section.
     CooldownCompanion:AdoptAuraEntryKey(targetGroup, buttonData)
-    ST.Indicator.CarryWhileMissing(targetGroup, buttonData)
+    ST.Indicator.CarryWhileMissing(sourceGroup, targetGroup, buttonData)
     table.insert(targetGroup.buttons, targetIndex, buttonData)
     -- An aura joining an Indicator notes what its effects became.
     local _, notice = ST.Indicator.OnSourceAdded(targetGroup, buttonData)

@@ -676,19 +676,21 @@ local function JoinAura(group, entry)
     I.Settings(group).sourceVisibility = nil
 end
 
--- Returns true plus an optional chat line for the caller to print, or false
--- plus a failure reason.
 -- Panels save While Missing as showWhileAuraMissing; aura Indicators save it
 -- as the aura's indicatorStackRule. An aura entry MOVED between the two is
 -- translated before it lands, so it keeps meaning the same thing (Also During
 -- Pandemic already shares showWhileAuraPandemic). Only moves call this:
--- Change... carries the rule itself, and a stack rule has no panel form.
-function I.CarryWhileMissing(targetGroup, entry)
+-- Change... carries the rule itself, and a stack rule has no panel form. A
+-- move that stays the same kind keeps its own key: the other one can be left
+-- over from an earlier crossing and is not what the user set here.
+function I.CarryWhileMissing(sourceGroup, targetGroup, entry)
     if type(entry) ~= "table" or not (entry.auraTracking or entry.addedAs == "aura") then return end
+    local toIndicator = ST.IsIndicatorGroup(targetGroup)
+    if ST.IsIndicatorGroup(sourceGroup) == toIndicator then return end
     local ruleMissing = AuraWhenOf(entry) == "missing"
     local panelMissing = Addon:GetAuraVisibilityMode(entry) == "missing"
     if ruleMissing == panelMissing then return end
-    if ST.IsIndicatorGroup(targetGroup) then
+    if toIndicator then
         if entry.addedAs ~= "aura" then return end
         entry.indicatorStackRule = panelMissing and {compare = "missing"} or nil
     else
@@ -699,6 +701,8 @@ function I.CarryWhileMissing(targetGroup, entry)
     end
 end
 
+-- Returns true plus an optional chat line for the caller to print, or false
+-- plus a failure reason.
 function I.OnSourceAdded(group, entry)
     local indicator = ST.IsIndicatorGroup(group)
     -- A source that becomes the display (an aura arriving into an Indicator

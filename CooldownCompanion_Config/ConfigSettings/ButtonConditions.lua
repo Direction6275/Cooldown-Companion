@@ -1690,16 +1690,30 @@ local function GetBatchFieldValue(group, field)
     return anyTrue  -- true if all true, false if all false
 end
 
+local function SameCondition(x, y)
+    for k, v in pairs(x) do
+        if y[k] ~= v then return false end
+    end
+    for k in pairs(y) do
+        if x[k] == nil then return false end
+    end
+    return true
+end
+
+-- Order does not matter: the talent picker saves its picks in hash order.
 local function SameConditionList(a, b)
     if #a ~= #b then return false end
+    local matched = {}
     for i = 1, #a do
-        local x, y = a[i], b[i]
-        for k, v in pairs(x) do
-            if y[k] ~= v then return false end
+        local found
+        for j = 1, #b do
+            if not matched[j] and SameCondition(a[i], b[j]) then
+                found = j
+                break
+            end
         end
-        for k in pairs(y) do
-            if x[k] == nil then return false end
-        end
+        if not found then return false end
+        matched[found] = true
     end
     return true
 end

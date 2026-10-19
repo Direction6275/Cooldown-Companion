@@ -65,6 +65,7 @@ local function HasLegacySeed(profile, key, defaultsKey)
     return type(settings) == "table" and next(settings) ~= nil
         and Fingerprint(settings) ~= Fingerprint(ST._defaults.profile[defaultsKey])
 end
+Migration.HasLegacySeed = HasLegacySeed
 
 local function ReportParkedResources(profile, context, report)
     for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do

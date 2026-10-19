@@ -4097,9 +4097,11 @@ if ST._DefineSettingRoute then
                 y = { label = "Text Y Offset" },
                 hideAtZero = {
                     label = "Hide at 0",
-                    applies = function()
+                    -- The spec the resource page builds for, not the player's.
+                    applies = function(context)
+                        local specID = context and tonumber(context.resourceSpecID) or GetCurrentConfigSpecID()
                         return HIDE_AT_ZERO_ELIGIBLE[capturedPowerType] == true
-                            and not IsMWContinuous(capturedPowerType)
+                            and not IsMWContinuous(capturedPowerType, nil, specID)
                     end,
                 },
             })
