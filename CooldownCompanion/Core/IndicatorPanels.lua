@@ -680,24 +680,29 @@ end
 -- as the aura's indicatorStackRule. An aura entry MOVED between the two is
 -- translated before it lands, so it keeps meaning the same thing (Also During
 -- Pandemic already shares showWhileAuraPandemic). Only moves call this:
--- Change... carries the rule itself, and a stack rule has no panel form. A
--- move that stays the same kind keeps its own key: the other one can be left
--- over from an earlier crossing and is not what the user set here.
+-- Change... carries the rule itself, and a stack rule has no panel form. The
+-- key of the kind being left comes off, so an entry holds one live While
+-- Missing; a move that stays the same kind keeps its own key untouched.
 function I.CarryWhileMissing(sourceGroup, targetGroup, entry)
     if type(entry) ~= "table" or not (entry.auraTracking or entry.addedAs == "aura") then return end
     local toIndicator = ST.IsIndicatorGroup(targetGroup)
     if ST.IsIndicatorGroup(sourceGroup) == toIndicator then return end
     local ruleMissing = AuraWhenOf(entry) == "missing"
     local panelMissing = Addon:GetAuraVisibilityMode(entry) == "missing"
-    if ruleMissing == panelMissing then return end
     if toIndicator then
         if entry.addedAs ~= "aura" then return end
-        entry.indicatorStackRule = panelMissing and {compare = "missing"} or nil
-    else
-        entry.showWhileAuraMissing = ruleMissing or nil
-        if ruleMissing then
-            entry.hideWhileAuraNotActive, entry.auraShellDim = nil, nil
+        if ruleMissing ~= panelMissing then
+            entry.indicatorStackRule = panelMissing and {compare = "missing"} or nil
         end
+        entry.showWhileAuraMissing = nil
+    else
+        if ruleMissing ~= panelMissing then
+            entry.showWhileAuraMissing = ruleMissing or nil
+            if ruleMissing then
+                entry.hideWhileAuraNotActive, entry.auraShellDim = nil, nil
+            end
+        end
+        if ruleMissing then entry.indicatorStackRule = nil end
     end
 end
 

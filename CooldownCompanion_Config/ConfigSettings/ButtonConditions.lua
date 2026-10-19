@@ -1690,32 +1690,19 @@ local function GetBatchFieldValue(group, field)
     return anyTrue  -- true if all true, false if all false
 end
 
-local function SameCondition(x, y)
-    for k, v in pairs(x) do
-        if y[k] ~= v then return false end
+-- A condition list's canonical form. Order does not matter: the talent
+-- picker saves its picks in hash order.
+local function ConditionListKey(list)
+    local keys = {}
+    for i, condition in ipairs(list) do
+        keys[i] = ST.UnifiedPanelMigration.Fingerprint(condition)
     end
-    for k in pairs(y) do
-        if x[k] == nil then return false end
-    end
-    return true
+    table.sort(keys)
+    return table.concat(keys, "|")
 end
 
--- Order does not matter: the talent picker saves its picks in hash order.
 local function SameConditionList(a, b)
-    if #a ~= #b then return false end
-    local matched = {}
-    for i = 1, #a do
-        local found
-        for j = 1, #b do
-            if not matched[j] and SameCondition(a[i], b[j]) then
-                found = j
-                break
-            end
-        end
-        if not found then return false end
-        matched[found] = true
-    end
-    return true
+    return #a == #b and ConditionListKey(a) == ConditionListKey(b)
 end
 
 -- Like GetBatchFieldValue, but entries holding different condition lists
