@@ -20,15 +20,7 @@ local function Copy(value)
     return result
 end
 
-local function Keys(map)
-    local keys = {}
-    for key in pairs(map or {}) do keys[#keys + 1] = key end
-    table.sort(keys, function(a, b)
-        if type(a) == type(b) and type(a) == "number" then return a < b end
-        return type(a) .. tostring(a) < type(b) .. tostring(b)
-    end)
-    return keys
-end
+local Keys = ST.SortedKeys
 
 local function SpecTable(map, spec)
     return type(map) == "table" and (map[spec] or map[tonumber(spec)] or map[tostring(spec)]) or nil
@@ -40,31 +32,15 @@ local function Value(primary, fallback, key, default)
     return default
 end
 
-local function Fingerprint(value)
-    local kind = type(value)
-    if kind == "table" then
-        local result = { "{" }
-        for _, key in ipairs(Keys(value)) do
-            result[#result + 1] = Fingerprint(key) .. Fingerprint(value[key])
-        end
-        return table.concat(result) .. "}"
-    end
-    local str = kind == "number" and string.format("%.17g", value) or tostring(value)
-    return kind:sub(1, 1) .. #str .. ":" .. str
-end
+local Fingerprint = ST.Fingerprint
 Migration.Fingerprint = Fingerprint
 
 local function IsParkedResourceOwner(context, owner)
     return not (context.ownerClasses and context.ownerClasses[owner])
 end
 
--- AceDB's default tables are not evidence of a legacy setup. Partial or
--- customized saved seeds still take the preservation path.
-local function HasLegacySeed(profile, key, defaultsKey)
-    local settings = rawget(profile, key)
-    return type(settings) == "table" and next(settings) ~= nil
-        and Fingerprint(settings) ~= Fingerprint(ST._defaults.profile[defaultsKey])
-end
+-- Partial or customized saved seeds take the preservation path (Utils.lua).
+local HasLegacySeed = ST.HasLegacySeed
 
 local function ReportParkedResources(profile, context, report)
     for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do

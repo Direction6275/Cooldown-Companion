@@ -76,6 +76,14 @@ local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local HIDE_AT_ZERO_ELIGIBLE = RB.HIDE_AT_ZERO_ELIGIBLE
+
+-- Maelstrom Weapon drawn as one continuous bar takes the continuous text
+-- contract the runtime gives it (ResourceBar's continuous styling): text on
+-- unless turned off, Percent offered, and no Hide at 0.
+local function IsMWContinuous(powerType, settings, specID)
+    return powerType == 100
+        and RB.GetMWDisplayStyle(settings or RB.GetResourceBarSettings(), specID) == "continuous"
+end
 local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
 local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
@@ -408,7 +416,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
     local capturedPt = powerType
     local isHealthResource = capturedPt == HealthResource.ID
-    local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100)
+    local mwContinuous = IsMWContinuous(capturedPt, settings, displaySpecID)
+    local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100 and not mwContinuous)
         or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
     if isHealthResource then
         HealthResource.EnsureSettings(settings)
@@ -548,7 +557,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
 
-        if HIDE_AT_ZERO_ELIGIBLE[capturedPt] then
+        if HIDE_AT_ZERO_ELIGIBLE[capturedPt] and not mwContinuous then
             AddCheckboxRow(panel, {
                 label = "Hide at 0",
                 setting = finderText and finderText.advanced and finderText.advanced.hideAtZero,
@@ -4088,8 +4097,11 @@ if ST._DefineSettingRoute then
                 y = { label = "Text Y Offset" },
                 hideAtZero = {
                     label = "Hide at 0",
-                    applies = function()
+                    -- The spec the resource page builds for, not the player's.
+                    applies = function(context)
+                        local specID = context and tonumber(context.resourceSpecID) or GetCurrentConfigSpecID()
                         return HIDE_AT_ZERO_ELIGIBLE[capturedPowerType] == true
+                            and not IsMWContinuous(capturedPowerType, nil, specID)
                     end,
                 },
             })

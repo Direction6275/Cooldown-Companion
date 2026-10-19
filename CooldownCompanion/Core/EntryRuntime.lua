@@ -69,29 +69,6 @@ local function DurationObjectShowsCooldown(durationObj)
 end
 EntryRuntime.DurationObjectShowsCooldown = DurationObjectShowsCooldown
 
--- Plain count only, matching the live kit's stack readout (the retired
--- current/max stackTextFormat vocabulary is gone; the migration clears the
--- stored key).
-local function SetAuraStackCountText(fontString, value)
-    if not fontString then return end
-    if value == nil then
-        fontString:SetText("")
-        return
-    end
-
-    local displayValue = value
-    if not issecretvalue(value) then
-        displayValue = tonumber(value)
-        if not displayValue then
-            fontString:SetText(value or "")
-            return
-        end
-    end
-
-    fontString:SetFormattedText("%d", displayValue)
-end
-EntryRuntime.SetAuraStackCountText = SetAuraStackCountText
-
 local function IsSpellCooldownDeferred(info)
     if not info or info.isEnabled ~= false or info.isActive == true then
         return false
@@ -253,7 +230,6 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
     result.realCooldownShown = false
     result.isOnGCD = false
     result.deferred = false
-    result.resourceGatedNoCooldown = false
 
     if not spellID then
         return result
@@ -261,7 +237,6 @@ local function EvaluateSpellCooldownLane(spellID, secrecy, baseSpellID, options)
 
     options = options or {}
     local suppressCooldownSurface = options.suppressCooldownSurface == true
-    result.resourceGatedNoCooldown = suppressCooldownSurface
 
     local info = C_Spell.GetSpellCooldown(spellID)
     result.info = info

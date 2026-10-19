@@ -19,7 +19,6 @@
 ]]
 
 local ADDON_NAME, ST = ...
-local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
 -- A right-aligned detail cluster leaves whatever the window has over as the

@@ -17,7 +17,7 @@
     - spell entries: base spellID, live override spellID
       (C_Spell.GetOverrideSpell), and the cached display ID
       (button._displaySpellId) when they differ
-    - item entries ("item"/"equipitem"): base itemID and the runtime-resolved
+    - item entries: base itemID and the runtime-resolved
       itemID (button._resolvedItemId) when they differ
     - equipment-slot entries: inventory slot number, plus the resolved itemID
       when the display lane has resolved one
@@ -87,7 +87,7 @@ local function ForEachIdentityKey(button, buttonData, callback)
         if displayId and displayId ~= baseId and displayId ~= overrideId then
             callback("spell", displayId, button)
         end
-    elseif entryType == "item" or entryType == "equipitem" then
+    elseif entryType == "item" then
         local baseId = buttonData.id
         if type(baseId) == "number" then
             callback("item", baseId, button)

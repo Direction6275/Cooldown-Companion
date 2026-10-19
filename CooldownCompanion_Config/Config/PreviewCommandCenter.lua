@@ -625,7 +625,9 @@ local CONTROLS = {
         menuOrder = 20,
         modes = { icons = true, bars = true },
         section = "cooldownText",
-        styleKeyDefaultOn = "showCooldownText",
+        -- Icons and bars draw the countdown only when the key is true; an
+        -- untouched (nil) key is off there, so the preview is too.
+        styleKey = "showCooldownText",
         settings = TextRoute("cooldownText", "barCooldownText"),
         preview = ConditionalPreview("cooldown_text"),
     },

@@ -260,8 +260,6 @@ local function GetLayoutFinderState(context)
 
     local hasIcons = HasLayoutIcons(group, groupId)
     state.customStrata = HasCustomIconStrata(group, hasIcons)
-    state.customStrataLayers = state.customStrata
-        and type(style.strataOrder) == "table"
     state.frameStrata = not isIndicator
 
     -- Finder visits both presentations; EntryPresentation's builder dispatch
@@ -1276,7 +1274,7 @@ local function BuildLayoutTab(container)
         -- (?) tooltip for anchor picking
         CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
             "Pick Frame",
-            {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this group to it, or right-click to cancel.", 1, 1, 1, true},
+            {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this panel to it, or right-click to cancel.", 1, 1, 1, true},
             " ",
             {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
         }, tabInfoButtons)
@@ -1595,11 +1593,11 @@ local function BuildLayoutTab(container)
 
     AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
         "Frame Strata",
-        {"Sets the rendering layer for this group.", 1, 1, 1, true},
+        {"Sets the rendering layer for this panel.", 1, 1, 1, true},
         " ",
-        {"Higher strata groups fully overlap lower ones.", 1, 1, 1, true},
+        {"Panels on a higher strata fully overlap lower ones.", 1, 1, 1, true},
         " ",
-        {"Only change this if you need one group to overlap another.", 1, 1, 1, true},
+        {"Only change this if you need one panel to overlap another.", 1, 1, 1, true},
     }, tabInfoButtons))
 
     if strataToggleRow then

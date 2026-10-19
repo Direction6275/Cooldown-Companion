@@ -347,7 +347,6 @@ function ST.LayoutAttachedBars(groupId, frame, group, kind)
         state.mount:SetPoint(flow.point, last or ref, flow.far,
             flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
         if #state.entries == 0 then state.tail = nil end
-        state.fixedTail = last
         previous[lane] = (not placeholders and state.tail) or last or predecessor
     end
     frame._attachmentTails = previous

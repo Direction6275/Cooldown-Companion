@@ -463,9 +463,9 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             and container._settingsTabOwner ~= group then
             CS.selectedTab = state.panelTab or CS.selectedTab
         end
-        container._settingsTabOwner, container._settingsTabScope = group, scope
+        container._settingsTabOwner = group
     else
-        container._settingsTabOwner, container._settingsTabScope = nil, nil
+        container._settingsTabOwner = nil
     end
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}

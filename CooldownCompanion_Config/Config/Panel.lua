@@ -869,6 +869,10 @@ local function ResetConfigForProfileChange()
     if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
         ST._CancelCopyPanelSettings({ skipRefresh = true })
     end
+    -- The docked spellbook adds to a panel in the outgoing profile.
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
+    end
     ResetConfigSelection(true)
     wipe(CS.collapsedPanels)
     if ClearConfigFinderText then

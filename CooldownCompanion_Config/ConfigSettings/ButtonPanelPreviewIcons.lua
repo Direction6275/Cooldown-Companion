@@ -136,11 +136,12 @@ local function EnsureSlotAuraText(slot)
     return slot.auraTextFS
 end
 
--- The pandemic marker rides the aura duration text, so its preview IS the
--- duration-text stand-in with the marker appended. Every render path below
--- sends the same remaining value through the live feature's manual twin,
--- which composes Duration Format, Low Time Threshold, and Pandemic precedence.
--- The marker's own descriptor is what keeps the sweep inside the window.
+-- Pandemic Timer Color (saved under the retired marker's keys, hence the
+-- "pandemic_marker" kind) rides the aura duration text, so its preview IS the
+-- duration-text stand-in. Every render path below sends the same remaining
+-- value through the live feature's manual twin, which composes Duration
+-- Format, Low Time Threshold, and Pandemic precedence. The descriptor is what
+-- keeps the sweep inside the window.
 local function IsAuraDurationTextKind(kind)
     return kind == "aura_duration_text" or kind == "pandemic_marker" or kind == "aura_active"
 end

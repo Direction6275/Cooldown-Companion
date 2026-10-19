@@ -173,7 +173,6 @@ local function UpdateBadgeAnchor(self)
             previous = btn
         end
     end
-    self._cdcLastBadge = previous
     local inset = LABEL_INSET + (self.indented and CHILD_INDENT or 0)
     local controlWidth = self.controlHoverAnchor and self.controlHoverAnchor:GetWidth()
         or self.controlColumn:GetWidth()
@@ -588,7 +587,6 @@ local function ResetRowBase(self)
     -- overlay the previous tenant of this pooled row left raised.
     self:SetScopeTooltip(nil)
     self.rangeTooltip = nil
-    self._cdcLastBadge = nil
     self._cdcSettingDescriptor = nil
     self.controlColumnWidthOverride = nil
     self.frame:SetHeight(ROW_HEIGHT)
@@ -1633,11 +1631,7 @@ local function ApplyCommonRowOptions(row, opts, container)
     if opts.caption then row:SetCaption(true) end
     if opts.indent then row:SetIndent(true) end
     if opts.tooltip then row:SetRowTooltip(opts.tooltip) end
-    if opts.relativeWidth then
-        row:SetRelativeWidth(opts.relativeWidth)
-    else
-        row:SetFullWidth(true)
-    end
+    row:SetFullWidth(true)
     if opts.controlColumnWidth then
         row:SetControlColumnWidth(opts.controlColumnWidth)
     end

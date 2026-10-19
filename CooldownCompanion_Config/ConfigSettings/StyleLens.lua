@@ -349,7 +349,7 @@ local function MakeWidgetTreeInert(widget, hideReverts)
     -- itself is inherited) opts out of the lock: greying it would leave an
     -- override the user just created with no live control. The flag is set
     -- only while a read-only build is underway and consumed here in the same
-    -- BuildPanelContents call, so it can never ride a pooled widget into a
+    -- BuildEditorContents call, so it can never ride a pooled widget into a
     -- later build. It exempts exactly the widget's OWN disable: the revert
     -- above still hides, and children are still walked, so a future flag on
     -- a container row cannot silently unlock a whole subtree.
@@ -598,7 +598,7 @@ end
 -- The unlock action for an advanced gear, resolved from the small LAZY spec
 -- the gear site stores in options.unlock. Only the one panel being built ever
 -- consumes an unlock, so all labels and closures are made HERE, at panel-build
--- time (BuildPanelContentsBody, AdvancedSettingsPanel.lua) - a tab rebuild
+-- time (BuildEditorContents, AdvancedSettingsPanel.lua) - a tab rebuild
 -- that opens no panel allocates none of them.
 --
 -- Lens spec { sec, enable }: the ONE next step that makes the panel's greyed

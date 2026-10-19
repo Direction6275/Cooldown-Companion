@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/ChangelogData.lua
+    CooldownCompanion_Config - Config/ChangelogData.lua
     Repo-authored release notes bundled with the addon. Paste these same notes into the GitHub release body when publishing.
 ]]
 

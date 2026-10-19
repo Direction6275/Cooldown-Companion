@@ -1623,13 +1623,13 @@ local INDICATOR_ICON_PICKER_SPEC = {
     end,
     getCurrentIcon = function(group)
         local settings = CooldownCompanion.GetIndicatorIconSettings
-            and CooldownCompanion:GetIndicatorIconSettings(group, true)
+            and CooldownCompanion:GetIndicatorIconSettings(group)
             or nil
         return settings and settings.manualIcon or nil
     end,
     applySelection = function(iconTexture, group)
         local settings = CooldownCompanion.GetIndicatorIconSettings
-            and CooldownCompanion:GetIndicatorIconSettings(group, true)
+            and CooldownCompanion:GetIndicatorIconSettings(group)
             or nil
         if not settings then
             return
@@ -2063,25 +2063,12 @@ end
 
 local function CleanRecycledEntry(entry)
     if entry.frame._cdcDisabledModuleSelection then entry.frame._cdcDisabledModuleSelection:Hide() end
-    if entry._cdcModeBadge then entry._cdcModeBadge:Hide() end
-    if entry._cdcModeBadgeHitRect then entry._cdcModeBadgeHitRect:Hide() end
     if entry.frame._cdcBadges then
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end
     end
-    if entry.frame._cdcSpecBadges then
-        for _, sb in ipairs(entry.frame._cdcSpecBadges) do sb:Hide() end
-    end
-    if entry.frame._cdcWarnBtn then entry.frame._cdcWarnBtn:Hide() end
-    if entry.frame._cdcOverrideBadge then entry.frame._cdcOverrideBadge:Hide() end
-    if entry.frame._cdcSoundBadge then entry.frame._cdcSoundBadge:Hide() end
-    if entry.frame._cdcFallbackBadge then entry.frame._cdcFallbackBadge:Hide() end
-    if entry.frame._cdcTalentBadge then entry.frame._cdcTalentBadge:Hide() end
-    if entry.frame._cdcCollapseIcon then entry.frame._cdcCollapseIcon:Hide() end
     if entry.frame._cdcCollapseBtn then entry.frame._cdcCollapseBtn:Hide() end
-    if entry.frame._cdcAddBtn then entry.frame._cdcAddBtn:Hide() end
     if entry.frame._cdcGenericRenameBadge then entry.frame._cdcGenericRenameBadge:Hide() end
     if entry.frame._cdcCopyPanelWash then entry.frame._cdcCopyPanelWash:Hide() end
-    if entry.frame._cdcCopyPanelWashLine then entry.frame._cdcCopyPanelWashLine:Hide() end
     if entry.frame._cdcTreeExpandButton then
         entry.frame._cdcTreeExpandButton:Hide()
         entry.frame._cdcTreeExpandButton:ClearAllPoints()
@@ -2106,24 +2093,8 @@ local function CleanRecycledEntry(entry)
     end
     if entry.label then entry.label:SetAlpha(1) end
     entry.frame:SetAlpha(1)
-    if entry.frame._cdcCursorAnchorBadge then entry.frame._cdcCursorAnchorBadge:Hide() end
-    if entry.frame._cdcCDMRefreshBadge then
-        entry.frame._cdcCDMRefreshBadge:Hide()
-        entry.frame._cdcCDMRefreshBadge:ClearAllPoints()
-        entry.frame._cdcCDMRefreshBadge:SetScript("OnClick", nil)
-    end
-    if entry.frame._cdcAnchorBadge then entry.frame._cdcAnchorBadge:Hide() end
-    if entry.frame._cdcResourcePinBadge then
-        entry.frame._cdcResourcePinBadge:Hide()
-        entry.frame._cdcResourcePinBadge:EnableMouse(false)
-    end
-    if entry.frame._cdcHeaderDisabledBadge then entry.frame._cdcHeaderDisabledBadge:Hide() end
-    if entry.frame._cdcDisabledBadge then entry.frame._cdcDisabledBadge:Hide() end
-    if entry.frame._cdcFallbackRemoveBtn then entry.frame._cdcFallbackRemoveBtn:Hide() end
     if entry.frame._cdcPriorityUpBtn then entry.frame._cdcPriorityUpBtn:Hide() end
     if entry.frame._cdcPriorityDownBtn then entry.frame._cdcPriorityDownBtn:Hide() end
-    if entry.frame._cdcFallbackUpBtn then entry.frame._cdcFallbackUpBtn:Hide() end
-    if entry.frame._cdcFallbackDownBtn then entry.frame._cdcFallbackDownBtn:Hide() end
     entry._cdcAfterConfigRowLayout = nil
     entry.frame:SetScript("OnMouseUp", nil)
     entry.frame:SetScript("OnReceiveDrag", nil)
@@ -2493,9 +2464,7 @@ local function SelectConfigContainer(containerId, opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     CooldownCompanion:ClearAllConfigPreviews()
     CS.configFinderRestoredCollapsedContainerId = nil
-    if not (opts and opts.keepContainerMulti) then
-        wipe(CS.selectedGroups)
-    end
+    wipe(CS.selectedGroups)
     if opts and opts.toggle and CS.selectedContainer == containerId then
         if CS.selectedGroup then
             CS.selectedGroup = nil
@@ -2511,11 +2480,6 @@ local function SelectConfigContainer(containerId, opts)
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedPanels)
-    if opts and opts.clearFinder then
-        local selectedScope = ResolveConfigContainerClassScope(CS.selectedContainer)
-        ClearConfigFinderText({ preservePrimarySelection = true })
-        RestoreOtherClassLibraryForScope(selectedScope)
-    end
 end
 
 local function ToggleConfigContainerMultiSelect(containerId)
@@ -2542,7 +2506,6 @@ local function SelectConfigPanel(panelId, opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     if CS.selectedGroup ~= panelId or CS.barsEntrySelected then
         CS.panelAddModePanelId = panelId
-        CS.panelAddMode = "entry"
         CS.panelAddPresentation = "icons"
         CS.panelAddModeQuery = nil
     end
@@ -2754,9 +2717,6 @@ local function SelectConfigResource(powerType, opts)
     -- Selecting a resource jumps to its own tabs, the same way selecting an
     -- entry does, even if a module tab was the last thing shown.
     CS.unifiedRowScope = "detail"
-    if opts and opts.clearButtonMulti then
-        wipe(CS.selectedButtons)
-    end
 
     CS.selectedResourcePowerType = numericPowerType
     CS.resourceSettingsSpecID = nil

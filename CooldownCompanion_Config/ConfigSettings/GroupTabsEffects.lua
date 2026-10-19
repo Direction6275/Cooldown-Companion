@@ -18,16 +18,12 @@ local AddLensPanelScopeNote = ST._AddLensPanelScopeNote
 
 -- Imports from SectionBuilders.lua
 local AddSettingsSubheading = ST._AddSettingsSubheading
-local BuildDesaturationControls = ST._BuildDesaturationControls
 local BuildShowTooltipsControls = ST._BuildShowTooltipsControls
-local BuildShowOutOfRangeControls = ST._BuildShowOutOfRangeControls
 local BuildAllowPingsControls = ST._BuildAllowPingsControls
-local BuildShowGCDSwipeControls = ST._BuildShowGCDSwipeControls
 local BuildAuraDurationSwipeControls = ST._BuildAuraDurationSwipeControls
 local BuildAuraDurationSwipeAdvancedControls = ST._BuildAuraDurationSwipeAdvancedControls
 local BuildIconFillTimerControls = ST._BuildIconFillTimerControls
 local BuildIconFillTimerAdvancedControls = ST._BuildIconFillTimerAdvancedControls
-local BuildLossOfControlControls = ST._BuildLossOfControlControls
 local BuildUnusableDimmingControls = ST._BuildUnusableDimmingControls
 local BuildAssistedHighlightControls = ST._BuildAssistedHighlightControls
 local BuildProcGlowControls = ST._BuildProcGlowControls
@@ -1213,10 +1209,7 @@ local function BuildEffectsTab(container, settingsGroup)
     unusableSec:Finish()
     end -- CanGroupUseOverrideSection unusableDimming
 
-    -- Inlined rather than given an opts.row mode: BuildShowOutOfRangeControls
-    -- is one checkbox with no file-private state, the same call the Duration
-    -- Format dropdown made on the Appearance tab. The shared builder is
-    -- untouched for the override editor and the other display modes.
+    -- One checkbox row with no file-private state, built inline.
     if CanGroupUseOverrideSection(group, "showOutOfRange") then
     local oorSec = BeginLensSection(lens, group, "showOutOfRange")
     local oorCb = AddCheckboxRow(stateRight, {

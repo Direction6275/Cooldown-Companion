@@ -1658,6 +1658,8 @@ function CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, delt
             local settings = self:GetIndicatorTextureSettings(group)
 
             local didSync = false
+            local beforeX = settings and tonumber(settings.x) or 0
+            local beforeY = settings and tonumber(settings.y) or 0
             local hasIndicatorAnchorTarget = HasIndicatorAnchorTarget(settings)
             if host
                 and settings
@@ -1677,9 +1679,16 @@ function CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, delt
                 and not hasIndicatorAnchorTarget
                 and ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
             then
+                didSync = true
                 if host and host.coordLabel and host:IsShown() then
                     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
                 end
+            end
+            -- The shift actually saved (rounded, or measured off the host),
+            -- not the raw delta, so Cancel can take exactly that back out.
+            if didSync and self.NoteArrangeIndicatorDrift then
+                self:NoteArrangeIndicatorDrift(panelInfo.groupId,
+                    (tonumber(settings.x) or 0) - beforeX, (tonumber(settings.y) or 0) - beforeY)
             end
         end
     end

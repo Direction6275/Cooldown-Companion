@@ -518,6 +518,15 @@ function CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
     return AURA_SOUND_ALERT_EVENTS[eventKey] == true
 end
 
+-- Whether a valid-events map offers any native aura sound event.
+function CooldownCompanion:HasAuraSoundAlertEvent(validEvents)
+    if type(validEvents) ~= "table" then return false end
+    for eventKey in pairs(AURA_SOUND_ALERT_EVENTS) do
+        if validEvents[eventKey] then return true end
+    end
+    return false
+end
+
 local function ParseBlizzardSoundSelection(soundName)
     if type(soundName) ~= "string" then
         return nil, nil
@@ -603,6 +612,8 @@ end
 -- 12.1.5: Blizzard stops an aura sound after five seconds of playback, so
 -- the preview of an aura-event pick stops there too.
 local AURA_SOUND_MAX_SECONDS = 5
+-- Minimum Gap's slider stops at the same five seconds.
+ST.AURA_SOUND_MAX_SECONDS = AURA_SOUND_MAX_SECONDS
 
 function CooldownCompanion:PreviewAuraSoundAlertSelection(buttonData, soundName)
     local soundSource = soundName and soundName ~= SOUND_NONE_KEY and LSM:Fetch("sound", soundName, true)

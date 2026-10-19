@@ -431,8 +431,10 @@ function CooldownCompanion:RebuildAddonSlotBindings()
         end
     end
 
-    -- Strategy 2: ElvUI uses non-CLICK binding commands (ELVUIBAR{n}BUTTON{m}).
-    -- Scan its frames directly and query the binding by constructed command name.
+    -- Strategy 2: ElvUI binds through override clicks that GetBinding() cannot see.
+    -- Scan its frames directly and query each button's binding command. ElvUI
+    -- stores it as keyBoundTarget: bar 1 uses ACTIONBUTTON{m}, so its paged slots
+    -- (e.g. Shadowform page 7, which is not a bonus bar) only resolve here.
     if _G["ElvUI_Bar1Button1"] then
         for bar = 1, 15 do
             for btn = 1, 12 do
@@ -440,7 +442,8 @@ function CooldownCompanion:RebuildAddonSlotBindings()
                 if frame then
                     local slot = GetFrameActionSlot(frame)
                     if slot and not addonSlotBindings[slot] then
-                        local key = GetBindingKey("ELVUIBAR" .. bar .. "BUTTON" .. btn)
+                        local command = frame.keyBoundTarget or ("ELVUIBAR" .. bar .. "BUTTON" .. btn)
+                        local key = GetBindingKey(command)
                         if key then CacheAddonBinding(slot, key) end
                     end
                 end

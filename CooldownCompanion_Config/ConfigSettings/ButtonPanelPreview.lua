@@ -706,12 +706,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         CS.panelPreviewVisualsNeedReconcile = nil
     end
     ResetPreviewLayout(preview)
-    -- Hide the texture mirror up front so switching from an Indicator to any
-    -- other type never leaves a stale texture drawn over the new mirror; only
-    -- BuildTextureMirror re-shows it.
-    if preview.textureMirror then
-        preview.textureMirror.root:Hide()
-    end
     if preview.totemSurface then preview.totemSurface:Hide() end
     if preview.indicatorSurface then
         ST.Indicator.ReleaseVisual(preview.indicatorSurface)
@@ -1007,10 +1001,6 @@ function ST._ReleaseReadOnlyPanelPreview(host)
             end
         end
         preview.used[poolName] = 0
-    end
-    if preview.textureMirror then
-        preview.textureMirror.root:EnableMouse(false)
-        preview.textureMirror.root:Hide()
     end
     preview.content:Hide()
     preview.root:Hide()

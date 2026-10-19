@@ -21,20 +21,12 @@ local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local StartDragTracking = ST._StartDragTracking
 local CancelDrag = ST._CancelDrag
 local HideDragIndicator = ST._HideDragIndicator
-local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
-local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
-local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
-local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
-local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
-local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 
-local IsTruthyConfigFlag = RB.IsTruthyConfigFlag
-local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceGlobalThickness = RB.GetResourceGlobalThickness
 local GetResourceColors = RB.GetResourceColors
 local CreateContinuousBar = RB.CreateContinuousBar
@@ -1185,6 +1177,26 @@ local function HideUnusedSlotVisuals(frame)
     end
 end
 
+
+-- A shape change swaps the slot's renderer. The outgoing one is parked on the
+-- row by shape, so toggling back reuses it instead of orphaning a frame on
+-- every change; the caller restyles, resizes and shows whichever it gets.
+local function SwapPreviewRenderer(frame, barInfo, barType, powerType, segmentCount, create, ...)
+    local parked = frame._parkedPreviewRenderers
+    if not parked then
+        parked = {}
+        frame._parkedPreviewRenderers = parked
+    end
+    if barInfo and barInfo.frame then
+        barInfo.frame:Hide()
+        local outgoing = barInfo.frame.segments and #barInfo.frame.segments or 0
+        parked[barInfo.barType .. ":" .. outgoing] = barInfo.frame
+    end
+    local key = barType .. ":" .. (segmentCount or 0)
+    local renderer = parked[key]
+    parked[key] = nil
+    return { frame = renderer or create(...), barType = barType, powerType = powerType }
+end
 local function EnsureResourcePreview(frame, slot, preview, width, height)
     HideUnusedSlotVisuals(frame)
 
@@ -1201,27 +1213,15 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
 
     if slot.powerType == 101 then
         if not barInfo or barInfo.barType ~= "stagger_continuous" then
-            if barInfo and barInfo.frame then
-                barInfo.frame:Hide()
-            end
-            barInfo = {
-                frame = CreateContinuousBar(frame.previewCanvas),
-                barType = "stagger_continuous",
-                powerType = slot.powerType,
-            }
+            barInfo = SwapPreviewRenderer(frame, barInfo, "stagger_continuous", slot.powerType, nil,
+                CreateContinuousBar, frame.previewCanvas)
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
         StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
     elseif slot.powerType == RESOURCE_HEALTH then
         if not barInfo or barInfo.barType ~= "health_continuous" then
-            if barInfo and barInfo.frame then
-                barInfo.frame:Hide()
-            end
-            barInfo = {
-                frame = CreateContinuousBar(frame.previewCanvas),
-                barType = "health_continuous",
-                powerType = slot.powerType,
-            }
+            barInfo = SwapPreviewRenderer(frame, barInfo, "health_continuous", slot.powerType, nil,
+                CreateContinuousBar, frame.previewCanvas)
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
         StyleHealthBar(barInfo.frame, rbSettings, appearance)
@@ -1232,28 +1232,16 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         local mwStyle = RB.GetMWDisplayStyle(rbSettings)
         if mwStyle == "continuous" then
             if not barInfo or barInfo.barType ~= "mw_continuous" then
-                if barInfo and barInfo.frame then
-                    barInfo.frame:Hide()
-                end
-                barInfo = {
-                    frame = CreateContinuousBar(frame.previewCanvas),
-                    barType = "mw_continuous",
-                    powerType = slot.powerType,
-                }
+                barInfo = SwapPreviewRenderer(frame, barInfo, "mw_continuous", slot.powerType, nil,
+                    CreateContinuousBar, frame.previewCanvas)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
             StyleContinuousBar(barInfo.frame, slot.powerType, rbSettings, nil, appearance)
         elseif mwStyle == "segments" then
             if not barInfo or barInfo.barType ~= "mw_segments"
                 or #barInfo.frame.segments ~= mwMaxStacks then
-                if barInfo and barInfo.frame then
-                    barInfo.frame:Hide()
-                end
-                barInfo = {
-                    frame = CreateSegmentedBar(frame.previewCanvas, mwMaxStacks),
-                    barType = "mw_segments",
-                    powerType = slot.powerType,
-                }
+                barInfo = SwapPreviewRenderer(frame, barInfo, "mw_segments", slot.powerType, mwMaxStacks,
+                    CreateSegmentedBar, frame.previewCanvas, mwMaxStacks)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
             LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
@@ -1265,14 +1253,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         else
             local halfSegments = (mwMaxStacks <= 5) and mwMaxStacks or (mwMaxStacks / 2)
             if not barInfo or barInfo.barType ~= "mw_segmented" or #barInfo.frame.segments ~= halfSegments then
-                if barInfo and barInfo.frame then
-                    barInfo.frame:Hide()
-                end
-                barInfo = {
-                    frame = CreateOverlayBar(frame.previewCanvas, halfSegments),
-                    barType = "mw_segmented",
-                    powerType = slot.powerType,
-                }
+                barInfo = SwapPreviewRenderer(frame, barInfo, "mw_segmented", slot.powerType, halfSegments,
+                    CreateOverlayBar, frame.previewCanvas, halfSegments)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
             LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, nil, nil, slot.powerType, appearance)
@@ -1296,14 +1278,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         local stackMax = RB.GetAuraStackResourceMax(slot.powerType)
         if RB.GetAuraStackDisplayStyle(rbSettings, slot.powerType) == "continuous" then
             if not barInfo or barInfo.barType ~= "stackaura_continuous" then
-                if barInfo and barInfo.frame then
-                    barInfo.frame:Hide()
-                end
-                barInfo = {
-                    frame = CreateContinuousBar(frame.previewCanvas),
-                    barType = "stackaura_continuous",
-                    powerType = slot.powerType,
-                }
+                barInfo = SwapPreviewRenderer(frame, barInfo, "stackaura_continuous", slot.powerType, nil,
+                    CreateContinuousBar, frame.previewCanvas)
             else
                 -- Pooled slot frames keep their barInfo when the shape
                 -- matches, so a reused one still carried the PREVIOUS half's
@@ -1317,14 +1293,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         else
             if not barInfo or barInfo.barType ~= "stackaura_segments"
                 or #barInfo.frame.segments ~= stackMax then
-                if barInfo and barInfo.frame then
-                    barInfo.frame:Hide()
-                end
-                barInfo = {
-                    frame = CreateSegmentedBar(frame.previewCanvas, stackMax),
-                    barType = "stackaura_segments",
-                    powerType = slot.powerType,
-                }
+                barInfo = SwapPreviewRenderer(frame, barInfo, "stackaura_segments", slot.powerType, stackMax,
+                    CreateSegmentedBar, frame.previewCanvas, stackMax)
             else
                 -- Same pooled-identity restamp as the continuous shape above.
                 barInfo.powerType = slot.powerType
@@ -1346,14 +1316,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             maxValue = 5
         end
         if not barInfo or barInfo.barType ~= "segmented" or barInfo.frame._numSegments ~= maxValue then
-            if barInfo and barInfo.frame then
-                barInfo.frame:Hide()
-            end
-            barInfo = {
-                frame = CreateSegmentedBar(frame.previewCanvas, maxValue),
-                barType = "segmented",
-                powerType = slot.powerType,
-            }
+            barInfo = SwapPreviewRenderer(frame, barInfo, "segmented", slot.powerType, maxValue,
+                CreateSegmentedBar, frame.previewCanvas, maxValue)
         else
             -- Same pooled-identity restamp as the aura-stack shapes above:
             -- a reused equal-count frame otherwise keeps the previous
@@ -1366,14 +1330,8 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings, appearance)
     else
         if not barInfo or barInfo.barType ~= "continuous" then
-            if barInfo and barInfo.frame then
-                barInfo.frame:Hide()
-            end
-            barInfo = {
-                frame = CreateContinuousBar(frame.previewCanvas),
-                barType = "continuous",
-                powerType = slot.powerType,
-            }
+            barInfo = SwapPreviewRenderer(frame, barInfo, "continuous", slot.powerType, nil,
+                CreateContinuousBar, frame.previewCanvas)
         else
             -- Same pooled-identity restamp as the other reused shapes: every
             -- continuous power type shares this barType, so a reused frame

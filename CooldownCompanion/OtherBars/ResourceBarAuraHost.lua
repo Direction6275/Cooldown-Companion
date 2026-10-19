@@ -6,8 +6,6 @@ local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
 local tostring = tostring
-local table_concat = table.concat
-local math_min = math.min
 local CreateFrame = CreateFrame
 
 local RB = ST._RB
@@ -19,19 +17,13 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
     local GetResourceDisplayValue = RB.GetResourceDisplayValue
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
-    local HidePixelBorders = RB.HidePixelBorders
     local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
     local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
     local GetResourceAuraTrackingMode = RB.GetResourceAuraTrackingMode
     local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
-    local IsVerticalFillReversed = RB.IsVerticalFillReversed
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
-    local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
-    local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
-    local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
-    local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
 
     -- Root + holders. The root is the single stable parent for every holder;
     -- its shown state follows the applied state of the resource bars and its

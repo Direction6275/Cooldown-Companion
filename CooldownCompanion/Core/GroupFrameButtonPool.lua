@@ -216,7 +216,6 @@ local function ClearReusableButtonRuntime(button)
     button._auraUnit = nil
     button._auraActive = false
     button._auraTrackingReady = nil
-    button._auraHasTimer = nil
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false

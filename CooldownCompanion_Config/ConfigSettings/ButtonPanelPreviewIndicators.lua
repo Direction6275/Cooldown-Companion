@@ -207,7 +207,7 @@ local function PinFooter(preview, footer)
 end
 
 -- The Countdown state sweeps the sample timer the way panel duration-text
--- previews do, so Low Time colors and the Pandemic marker and effect appear
+-- previews do, so Low Time colors and the Pandemic Timer Color and effect appear
 -- as the sample crosses their windows. CC-side frames only. The sweep ticks on
 -- its own child frame: the effect runtime owns the surface's OnUpdate.
 local COUNTDOWN_FROM = 12
@@ -448,7 +448,6 @@ local StylePreviewIcon = PP.StylePreviewIcon
 -- ButtonPanelPreviewEffects.lua
 local StopConditionalTicker = PP.StopConditionalTicker
 local ClearSlotEffectPreviews = PP.ClearSlotEffectPreviews
-local ApplySlotEffectPreviews = PP.ApplySlotEffectPreviews
 local EnsureConditionalTicker = PP.EnsureConditionalTicker
 
 -- ButtonPanelPreviewShared.lua
@@ -461,7 +460,6 @@ local GetHostFitScale = PP.GetHostFitScale
 local AcquireSlot = PP.AcquireSlot
 local ApplyPreviewSlotGeometry = PP.ApplyPreviewSlotGeometry
 local DisableReadOnlySlotInteraction = PP.DisableReadOnlySlotInteraction
-local PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET = PP.PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET
 local CollectEntryStatus = ST._CollectEntryStatus
 local PANEL_PREVIEW_DISABLED_ALPHA = PP.PANEL_PREVIEW_DISABLED_ALPHA
 local ApplySlotBadges = PP.ApplySlotBadges
@@ -474,7 +472,6 @@ local WireEntryInteraction = PP.WireEntryInteraction
 
 -- ButtonPanelPreviewIcons.lua
 local ResetSlotConditionalVisuals = PP.ResetSlotConditionalVisuals
-local ApplySlotConditionalPreview = PP.ApplySlotConditionalPreview
 
 local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
     StopConditionalTicker(preview)

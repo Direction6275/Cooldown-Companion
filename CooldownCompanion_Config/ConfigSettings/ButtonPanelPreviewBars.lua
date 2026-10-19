@@ -360,7 +360,7 @@ local function ApplyBarAuraFillPreview(slot, style, buttonData, isAuraPanel, pan
     if pandemicActive then
         -- Forced opaque, matching the live clone (owner ruling: the
         -- pandemic color replaces the aura fill color, never blends).
-        local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+        local pc = style.barPandemicColor or ST.DEFAULT_PANDEMIC_COLOR
         slot.statusBar:SetStatusBarColor(pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1)
     elseif shifted then
         -- White base while the shift animation owns the color.
@@ -371,7 +371,7 @@ local function ApplyBarAuraFillPreview(slot, style, buttonData, isAuraPanel, pan
     if slot._cdcAuraStackWidget then
         local color = auraColor
         if pandemicActive then
-            local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+            local pc = style.barPandemicColor or ST.DEFAULT_PANDEMIC_COLOR
             color = { pc[1] or 1, pc[2] or 0.5, pc[3] or 0, 1 }
         end
         ST.StyleStackBlockFill(slot._cdcAuraStackFill,

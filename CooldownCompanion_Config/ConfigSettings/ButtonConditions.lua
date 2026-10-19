@@ -958,7 +958,7 @@ local function AddCharacterEligibilityControls(container, opts)
     -- opts.omitHeading: the caller already opened a section around the pickers.
     if not opts.omitHeading then
         local heading = AceGUI:Create("Heading")
-        heading:SetText(opts.characterHeadingText or "Character Eligibility")
+        heading:SetText("Character Eligibility")
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
@@ -1688,6 +1688,42 @@ local function GetBatchFieldValue(group, field)
     end
     if anyTrue and anyFalse then return nil end  -- mixed
     return anyTrue  -- true if all true, false if all false
+end
+
+-- A condition list's canonical form. Order does not matter: the talent
+-- picker saves its picks in hash order.
+local function ConditionListKey(list)
+    local keys = {}
+    for i, condition in ipairs(list) do
+        keys[i] = ST.Fingerprint(condition)
+    end
+    table.sort(keys)
+    return table.concat(keys, "|")
+end
+
+-- Like GetBatchFieldValue, but entries holding different condition lists
+-- also read as mixed, so one entry's list never displays as shared.
+local function GetBatchTalentConditionsValue(group)
+    local hasValue = GetBatchFieldValue(group, "talentConditions")
+    if not hasValue then return hasValue end
+    local first, firstKey
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        local list = bd and bd.talentConditions
+        if list then
+            if not first then
+                first = list
+            elseif #list ~= #first then
+                return nil
+            else
+                firstKey = firstKey or ConditionListKey(first)
+                if ConditionListKey(list) ~= firstKey then
+                    return nil
+                end
+            end
+        end
+    end
+    return true
 end
 
 -- Scoped version: only reads from buttons matching filterFn(bd) → true.
@@ -2914,7 +2950,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     local condCount = conditions and #conditions or 0
     local hasTalent
     if isBatch then
-        hasTalent = GetBatchFieldValue(group, "talentConditions")
+        hasTalent = GetBatchTalentConditionsValue(group)
     else
         hasTalent = condCount > 0
     end

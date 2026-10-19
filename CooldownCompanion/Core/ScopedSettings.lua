@@ -446,18 +446,25 @@ local function EnsureScopedBarSystemStore(profile, storeKey)
     return store
 end
 
+-- AceDB copies every default (scalars included) into a brand-new profile, so
+-- the retired resourceBars/castBar/frameAnchoring tables exist there filled
+-- with defaults. Legacy data means a table that differs from its defaults:
+-- the same test the unified panel migration uses (ST.HasLegacySeed).
+local function HasLegacyValues(profile, legacyKey)
+    return ST.HasLegacySeed(profile, legacyKey, legacyKey)
+end
+
 local function CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
     local seed = rawget(profile, systemSpec.seedKey)
     if type(seed) == "table" then
         return seed
     end
 
-    local legacy = rawget(profile, systemSpec.legacyKey)
-    if type(legacy) ~= "table" then
+    if not HasLegacyValues(profile, systemSpec.legacyKey) then
         return nil
     end
 
-    seed = CopyTable(legacy)
+    seed = CopyTable(rawget(profile, systemSpec.legacyKey))
     profile[systemSpec.seedKey] = seed
     return seed
 end
@@ -468,13 +475,13 @@ local function ProfileHasLegacyScopedBarData(profile)
     end
 
     if type(rawget(profile, RESOURCE_BAR_SYSTEM_SPEC.seedKey)) == "table"
-        or type(rawget(profile, RESOURCE_BAR_SYSTEM_SPEC.legacyKey)) == "table" then
+        or HasLegacyValues(profile, RESOURCE_BAR_SYSTEM_SPEC.legacyKey) then
         return true
     end
 
     for _, systemSpec in pairs(SCOPED_BAR_SYSTEMS) do
         if type(rawget(profile, systemSpec.seedKey)) == "table"
-            or type(rawget(profile, systemSpec.legacyKey)) == "table" then
+            or HasLegacyValues(profile, systemSpec.legacyKey) then
             return true
         end
     end

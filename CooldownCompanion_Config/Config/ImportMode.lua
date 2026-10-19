@@ -41,8 +41,9 @@ local pendingConfirm = nil
 local function EnterImportMode()
     if CS.importMode then return end
     if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
+    -- A refresh already follows this entry.
     if CS.exportMode and ST._ExitExportMode then
-        ST._ExitExportMode()
+        ST._ExitExportMode({ skipRefresh = true })
     end
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
         CooldownCompanion:CloseTalentPicker()

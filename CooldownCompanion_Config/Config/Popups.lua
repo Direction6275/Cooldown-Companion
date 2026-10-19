@@ -458,7 +458,7 @@ StaticPopupDialogs["CDC_REVERT_ENTRY_CUSTOMIZATIONS"] = {
 }
 
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
-    text = "Rename group '%s' to:",
+    text = "Rename '%s' to:",
     button1 = "Rename",
     button2 = "Cancel",
     hasEditBox = true,
@@ -652,9 +652,7 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
                 db:SetProfile(nextProfile)
                 db:DeleteProfile(data.profileName, true)
             end
-            ResetConfigSelection(true)
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
+            -- The AceDB profile callbacks (ConfigLoader) reset config and refresh.
         end
     end,
     timeout = 0,
@@ -676,10 +674,8 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
                 return
             end
             local db = CooldownCompanion.db
+            -- OnProfileChanged resets config and refreshes.
             db:SetProfile(text)
-            ResetConfigSelection(true)
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
         end
     end,
     EditBoxOnEnterPressed = function(self)
@@ -715,9 +711,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
             db:CopyProfile(data.oldName)
             CooldownCompanion._suppressOwnershipRestamp = nil
             db:DeleteProfile(data.oldName, true)
-            ResetConfigSelection(true)
-            CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
+            -- The profile callbacks already reset config and refreshed.
         end
     end,
     EditBoxOnEnterPressed = function(self)

@@ -190,8 +190,13 @@ function RB.CreateResourceBarLifecycleModule(deps)
         if hooksInstalled then return end
         hooksInstalled = true
 
+        -- Opening config fires both hooks below in one frame; one apply serves both.
+        local applyQueued = false
         local function QueueResourceBarApply()
+            if applyQueued then return end
+            applyQueued = true
             C_Timer.After(0, function()
+                applyQueued = false
                 if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
                 local settings = GetResourceBarSettings()
                 if settings and settings.enabled then

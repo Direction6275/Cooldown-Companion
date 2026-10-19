@@ -95,7 +95,7 @@ local BAR_PREVIEW_REASON_DEFS = {
         fallback = "auraShellDim" },
     { key = "aura-active", label = "Aura active",
         rule = function(buttonData)
-            return buttonData.showWhileAuraPandemic == true
+            return CooldownCompanion:IsMissingPicturePandemicEntry(buttonData)
                 and "Aura Visibility: Show While Inactive (also shows in the pandemic window)"
                 or "Aura Visibility: Show While Inactive"
         end },
@@ -598,7 +598,6 @@ local function ClearSlotInteraction(slot)
         ST._ClearConfigShiftTooltipHover(slot._cdcShiftTooltipAdapter)
     end
     slot._cdcEntryInteraction = nil
-    slot._cdcPreviewButtonData = nil
     if slot._cdcSpecialEntryHandlers then
         slot:SetScript("OnMouseDown", nil)
         slot:SetScript("OnMouseUp", nil)

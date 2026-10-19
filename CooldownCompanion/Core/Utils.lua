@@ -39,6 +39,47 @@ ST.STATUS_BAR_TIMER_DIRECTION_REMAINING = statusBarTimerDirection and statusBarT
 ST.SEGMENTED_SMOOTHING_ON = "on"
 ST.SEGMENTED_SMOOTHING_OFF = "off"
 
+-- The one pandemic orange: glows, Indicator recolors and Pandemic Timer Color
+-- all fall back to it. Read-only; never write to its indices.
+ST.DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+
+-- A table's keys in one stable order: numbers ascending, the rest by type
+-- and text.
+local function SortedKeys(map)
+    local keys = {}
+    for key in pairs(map or {}) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b)
+        if type(a) == type(b) and type(a) == "number" then return a < b end
+        return type(a) .. tostring(a) < type(b) .. tostring(b)
+    end)
+    return keys
+end
+ST.SortedKeys = SortedKeys
+
+-- A value's canonical text: equal data gives equal text whatever the key order.
+local function Fingerprint(value)
+    local kind = type(value)
+    if kind == "table" then
+        local result = { "{" }
+        for _, key in ipairs(SortedKeys(value)) do
+            result[#result + 1] = Fingerprint(key) .. Fingerprint(value[key])
+        end
+        return table.concat(result) .. "}"
+    end
+    local str = kind == "number" and string.format("%.17g", value) or tostring(value)
+    return kind:sub(1, 1) .. #str .. ":" .. str
+end
+ST.Fingerprint = Fingerprint
+
+-- AceDB copies every default (scalars included) into a profile, so a retired
+-- settings table holding only its defaults is not evidence of a legacy setup.
+-- Partial or customized saved tables are.
+function ST.HasLegacySeed(profile, key, defaultsKey)
+    local settings = rawget(profile, key)
+    return type(settings) == "table" and next(settings) ~= nil
+        and Fingerprint(settings) ~= Fingerprint(ST._defaults.profile[defaultsKey])
+end
+
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
 -- Signs: 0 = zero offset, 1 = +size, -1 = -size
 ST.EDGE_ANCHOR_SPEC = {

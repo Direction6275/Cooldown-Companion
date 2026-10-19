@@ -161,7 +161,9 @@ function ST.CanUseBarSegmentGap(group, entry)
 end
 
 -- Read the old ownership before override cleanup. Icon entries can carry a
--- dormant bar customization too; changing presentation must retain it.
+-- dormant bar customization too; changing presentation must retain it. The
+-- retired panel-level key is dropped once its entries are seeded, so an entry
+-- that arrives later with no choice reads off instead of inheriting it.
 function ST.NormalizeEntryBarCharges(group)
     local base = ST.PanelSupportsAttachedBars(group) and (group.attachedBarStyle or ST.ATTACHED_BAR_DEFAULTS) or group.style or {}
     for _, entry in ipairs(group.buttons or {}) do
@@ -182,6 +184,8 @@ function ST.NormalizeEntryBarCharges(group)
             if not next(entry.styleOverrides) then entry.styleOverrides = nil end
         end
     end
+    if group.attachedBarStyle then group.attachedBarStyle.barSegmentCharges = nil end
+    if group.style then group.style.barSegmentCharges = nil end
 end
 
 -- Structural eligibility only: cooldown/aura visibility and temporary load

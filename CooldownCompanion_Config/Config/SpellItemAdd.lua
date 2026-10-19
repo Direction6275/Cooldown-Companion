@@ -819,7 +819,7 @@ local function TryReceiveCursorDrop(opts)
     if not cursorType then return false end
 
     if not (opts and opts.groupId or CS.selectedGroup) then
-        CooldownCompanion:Print("Select a group first before dropping spells or items.")
+        CooldownCompanion:Print("Select a panel first before dropping spells or items.")
         ClearCursor()
         return false
     end

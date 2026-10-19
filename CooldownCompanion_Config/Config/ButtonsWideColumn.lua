@@ -273,7 +273,7 @@ ST._GetEditingAddResultsAnchor = function(input)
     local col3 = CS.configFrame and CS.configFrame.col3
     local row = col3 and col3._cdcEditingActionRow
     local widget = row and row._cdcAddBox
-    local activeInput = widget and (widget.editbox and widget or widget._cdcAddInput)
+    local activeInput = widget and widget.editbox and widget
     if row and row:IsVisible()
         and input and input == activeInput
     then
@@ -657,7 +657,7 @@ local function EnsureSettingsFinder(col3)
     widget.editbox:SetPoint("BOTTOMRIGHT", widget.frame, "BOTTOMRIGHT", -18, 0)
 
     if ST._CreateInfoButton then
-        widget._cdcFinderInfoButton = ST._CreateInfoButton(
+        ST._CreateInfoButton(
             widget.frame, widget.frame, "RIGHT", "RIGHT", -1, 0,
             SETTINGS_FINDER_TOOLTIP)
     end
@@ -2048,10 +2048,10 @@ local function UpdateAddBox(col3)
     addBox.frame:Show()
     UpdateEditingActionRow(col3)
 
-    -- Also consume the shared autocomplete focus flag when an inline
-    -- inline add isn't open (its box consumes it when addingToPanelId is set).
+    -- Also consume the shared focus flag (a new panel sets it). This box is
+    -- the only consumer, so a new panel's add target does not block it.
     local wantFocus = CS.pendingWideAddFocus
-    if not wantFocus and CS.pendingEditBoxFocus and not CS.addingToPanelId then
+    if not wantFocus and CS.pendingEditBoxFocus then
         CS.pendingEditBoxFocus = false
         wantFocus = true
     end

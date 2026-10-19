@@ -17,7 +17,6 @@ local math_ceil = math.ceil
 local InCombatLockdown = InCombatLockdown
 local GetCursorPosition = GetCursorPosition
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
-local CreatePixelBorders = ST.CreatePixelBorders
 
 local GF = ST._GroupFrame
 
