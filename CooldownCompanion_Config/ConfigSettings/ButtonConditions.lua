@@ -1695,14 +1695,10 @@ end
 local function ConditionListKey(list)
     local keys = {}
     for i, condition in ipairs(list) do
-        keys[i] = ST.UnifiedPanelMigration.Fingerprint(condition)
+        keys[i] = ST.Fingerprint(condition)
     end
     table.sort(keys)
     return table.concat(keys, "|")
-end
-
-local function SameConditionList(a, b)
-    return #a == #b and ConditionListKey(a) == ConditionListKey(b)
 end
 
 -- Like GetBatchFieldValue, but entries holding different condition lists
@@ -1710,15 +1706,20 @@ end
 local function GetBatchTalentConditionsValue(group)
     local hasValue = GetBatchFieldValue(group, "talentConditions")
     if not hasValue then return hasValue end
-    local first
+    local first, firstKey
     for idx in pairs(CS.selectedButtons) do
         local bd = group.buttons[idx]
         local list = bd and bd.talentConditions
         if list then
             if not first then
                 first = list
-            elseif not SameConditionList(first, list) then
+            elseif #list ~= #first then
                 return nil
+            else
+                firstKey = firstKey or ConditionListKey(first)
+                if ConditionListKey(list) ~= firstKey then
+                    return nil
+                end
             end
         end
     end
