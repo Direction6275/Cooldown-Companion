@@ -37,7 +37,6 @@ local BeginRowGrid = ST._BeginRowGrid
 
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
-local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPanel
 local MakeCooldownTextAdvancedDescriptor = ST._MakeCooldownTextAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
@@ -417,7 +416,7 @@ local function RefreshAppearanceFinderState(context)
             ~= ST.BORDER_RENDER_MODE_CRISP
         state.lowTimeAvailable = drawsCooldownLowTime or drawsAuraLowTime
         state.lowTimeActive = state.lowTimeAvailable and lowTimeActive
-        state.lowTimeAuraToggle = state.lowTimeActive and not isAuraPanel
+        state.lowTimeAuraToggle = state.lowTimeActive and not ST.IsAuraPanelGroup(group)
             and not entryIsAuraOnly and drawsAuraLowTime
         state.lowTimeCritical = state.lowTimeActive and threshold2 ~= nil
             and threshold2 > 0 and threshold2 < threshold
@@ -1182,13 +1181,15 @@ local function BuildAppearanceTab(container, settingsGroup)
             explicitOff = lowTimeSec.scope == "customized",
             disabled = lowTimeSec.disabled,
             rightColumn = lowTimeRight,
-            auraOnly = isAuraPanel or entryIsAuraOnly,
+            -- The real Aura Panel, not the aura-entry lens: an aura entry on an
+            -- ordinary panel still needs the opt-in (as on the bars tab).
+            auraOnly = ST.IsAuraPanelGroup(group) or entryIsAuraOnly,
             -- Aura-section entries render through the auraPanel host live,
             -- so their aura text applies unconditionally: the opt-in row
             -- would be a lie at that entry's lens and hides there. The
             -- panel-scope row stays: the base grid can still hold
             -- cooldown-capable entries.
-            auraToggle = not isAuraPanel and not entryIsAuraOnly
+            auraToggle = not ST.IsAuraPanelGroup(group) and not entryIsAuraOnly
                 and IconsDrawAuraDurationLowTimeRows(group, (lens and lens.effective) or group.style),
             infoButtons = tabInfoButtons,
             rebuild = function()
@@ -1937,7 +1938,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         -- onto the end of the label's badge chain.
         AnchorRowBadge(masqueRow, CreateInfoButton(masqueRow.frame, masqueRow.frame, "LEFT", "LEFT", 0, 0, {
             "Masque Skinning",
-            {"Uses the Masque addon to apply custom button skins to this group. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
+            {"Uses the Masque addon to apply custom button skins to this panel. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
             " ",
             {"Overridden Settings:", 1, 0.82, 0},
             {"Border Thickness, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},

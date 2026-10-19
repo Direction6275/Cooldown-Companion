@@ -500,10 +500,6 @@ function CooldownCompanion:GetDefaultCursorPanelAnchor()
     return CopyAnchor(DEFAULT_CURSOR_ANCHOR)
 end
 
-function CooldownCompanion:NormalizeCursorAnchor(anchor)
-    return NormalizeCursorAnchor(anchor)
-end
-
 function CooldownCompanion:IsCursorAnchor(anchor)
     if anchor == CURSOR_ANCHOR_TARGET then
         return true

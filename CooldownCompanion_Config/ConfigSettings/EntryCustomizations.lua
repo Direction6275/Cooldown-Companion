@@ -24,9 +24,6 @@ local SCOPE_CHROME_GOLD = SH.SCOPE_CHROME_GOLD
 local WireScopeTextHover = SH.WireScopeTextHover
 local HideScopeChrome = SH.HideScopeChrome
 local EnsureScopeGlyph = SH.EnsureScopeGlyph
-local ApplyRevertGlyphLook = SH.ApplyRevertGlyphLook
-local BindRevertGlyph = SH.BindRevertGlyph
-local GetRevertTooltipTextForLabel = SH.GetRevertTooltipTextForLabel
 local WireRevertGlyph = SH.WireRevertGlyph
 
 -- Helpers.lua

@@ -205,7 +205,9 @@ local function IsRegularSpellSoundContext(context)
         and not IsEquipmentSlotContext(context)
 end
 
-local function SoundEventApplies(context, eventKey)
+-- The entry's valid sound events, cached on the Finder context; false when
+-- the context is not a regular spell sound context.
+local function GetSoundValidEvents(context)
     if not IsRegularSpellSoundContext(context) then return false end
 
     local validEvents = context._ccSoundAlertValidEvents
@@ -213,6 +215,11 @@ local function SoundEventApplies(context, eventKey)
         validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(context.buttonData, nil, nil, context.group) or false
         context._ccSoundAlertValidEvents = validEvents
     end
+    return validEvents
+end
+
+local function SoundEventApplies(context, eventKey)
+    local validEvents = GetSoundValidEvents(context)
     return validEvents and validEvents[eventKey] == true or false
 end
 
@@ -253,8 +260,7 @@ soundSettings.auraSoundGap = soundRoute:Setting({
     label = "Minimum Gap",
     aliases = { "sound throttle", "sound spam", "repeat" },
     applies = function(context)
-        return SoundEventApplies(context, "onAuraApplied") or SoundEventApplies(context, "onAuraStackGained")
-            or SoundEventApplies(context, "onAuraRemoved")
+        return CooldownCompanion:HasAuraSoundAlertEvent(GetSoundValidEvents(context))
     end,
 })
 for key, spec in pairs(SOUND_EVENT_SPECS) do
@@ -382,7 +388,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
     -- The aura sounds play through Blizzard's aura system, which accepts
     -- sound files only — offer the file-backed options.
     local auraSoundOptions, auraSoundOptionOrder
-    if validEvents.onAuraApplied or validEvents.onAuraStackGained or validEvents.onAuraRemoved then
+    if CooldownCompanion:HasAuraSoundAlertEvent(validEvents) then
         auraSoundOptions = CooldownCompanion:GetAuraSoundAlertOptions()
         auraSoundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(auraSoundOptions)
     end
@@ -460,7 +466,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
         AddSliderRow(soundRight, {
             label = "Minimum Gap",
             setting = (finderSettings or soundSettings).auraSoundGap,
-            min = 0, max = 5, step = 0.5,
+            min = 0, max = ST.AURA_SOUND_MAX_SECONDS, step = 0.5,
             value = cfg and tonumber(cfg.auraSoundGap) or 0,
             onRelease = function(val)
                 CooldownCompanion:GetButtonSoundAlertConfig(buttonData, true).auraSoundGap = val > 0 and val or nil

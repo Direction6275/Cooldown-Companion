@@ -426,6 +426,22 @@ local function NormalizeTutorialContext()
     if CS.talentPickerMode and CooldownCompanion.CloseTalentPicker then
         CooldownCompanion:CloseTalentPicker()
     end
+    -- The tutorial walks the normal workspace; leave every side mode.
+    if CS.exportMode and ST._ExitExportMode then
+        ST._ExitExportMode({ skipRefresh = true })
+    end
+    if CS.importMode and ST._ExitImportMode then
+        ST._ExitImportMode({ skipRefresh = true })
+    end
+    if CS.copyCustomization and ST._CancelCopyCustomization then
+        ST._CancelCopyCustomization({ skipRefresh = true })
+    end
+    if CS.copyPanelSettings and ST._CancelCopyPanelSettings then
+        ST._CancelCopyPanelSettings({ skipRefresh = true })
+    end
+    if CS.CloseSpellbookPanel then
+        CS.CloseSpellbookPanel()
+    end
 
     CloseDropDownMenus()
     if CS.HideAutocomplete then
@@ -701,11 +717,6 @@ local function RebuildTutorialAnchors()
     if emptyStateIconCard then
         anchors.empty_state_icon_button = emptyStateIconCard
     end
-    local resourcesButton = CS.col1ResourcesButton
-    local resourcesFrame = resourcesButton and (resourcesButton.frame or resourcesButton)
-    if resourcesFrame then
-        anchors.resources_button = resourcesFrame
-    end
 
     local selectedPanelId = CS.selectedGroup
     local selectedPanelRow
@@ -717,7 +728,6 @@ local function RebuildTutorialAnchors()
     end
 
     if selectedPanelRow then
-        anchors.selected_panel_area = selectedPanelRow.widget and selectedPanelRow.widget.frame
         local col3 = CS.configFrame and CS.configFrame.col3
         local addBox = col3 and col3.buttonsAddBox
         if addBox and addBox.frame and addBox.frame:IsShown() then

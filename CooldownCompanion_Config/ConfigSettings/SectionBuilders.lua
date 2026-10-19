@@ -538,7 +538,7 @@ local function AddDurationTextVisibilityRows(container, readSettings, writeSetti
 
     if threshold then
         rows[2] = AddSliderRow(container, {
-            label = opts.sliderLabel or "Show During Last",
+            label = "Show During Last",
             setting = opts.settings and opts.settings.threshold,
             indent = true,
             min = 1, max = 60, step = 1,
@@ -1204,20 +1204,6 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
     end
 end
 
--- Row grammar only: one checkbox row.
-local function BuildDesaturationControls(container, styleTable, refreshCallback, opts)
-    return AddCheckboxRow(container, {
-        label = "Desaturate on Cooldown",
-        setting = opts and opts.setting,
-        value = styleTable.desaturateOnCooldown or false,
-        indent = opts and opts.indent,
-        onChange = function(val)
-            styleTable.desaturateOnCooldown = val
-            refreshCallback()
-        end,
-    })
-end
-
 -- Tooltip position + combat hide (tracker D-C1). Group-level only (owner
 -- ruling 2026-07-24) and applied to both the normal button tooltip and the
 -- aura display's tooltip. Lives in the Show Tooltips advanced panel.
@@ -1302,20 +1288,6 @@ local function BuildShowTooltipsControls(container, styleTable, refreshCallback,
     return cb, advBtn
 end
 
--- Row grammar only: one checkbox row.
-local function BuildShowOutOfRangeControls(container, styleTable, refreshCallback, opts)
-    return AddCheckboxRow(container, {
-        label = "Show Out of Range",
-        setting = opts and opts.setting,
-        value = styleTable.showOutOfRange or false,
-        indent = opts and opts.indent,
-        onChange = function(val)
-            styleTable.showOutOfRange = val
-            refreshCallback()
-        end,
-    })
-end
-
 local ALLOW_PINGS_TOOLTIP_LINES = {
     "Allow Pings",
     {"Ping an entry to your group like a Cooldown Manager icon: hold the ping keybind and click it.", 1, 1, 1, true},
@@ -1342,20 +1314,6 @@ local function BuildAllowPingsControls(container, styleTable, refreshCallback, o
     AnchorRowBadge(cb, CreateInfoButton(cb.frame, cb.frame, "LEFT", "LEFT", 0, 0,
         ALLOW_PINGS_TOOLTIP_LINES, cb))
     return cb
-end
-
--- Row grammar only: one checkbox row.
-local function BuildShowGCDSwipeControls(container, styleTable, refreshCallback, opts)
-    return AddCheckboxRow(container, {
-        label = "Show GCD Swipe",
-        setting = opts and opts.setting,
-        value = styleTable.showGCDSwipe == true,
-        indent = opts and opts.indent,
-        onChange = function(val)
-            styleTable.showGCDSwipe = val
-            refreshCallback()
-        end,
-    })
 end
 
 local BuildIconFillTimerAdvancedControls
@@ -1514,7 +1472,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         indent = opts.indent,
         tooltip = disabledByMasque and {
             "Icon Fill Timer",
-            {"Unavailable while Masque skinning is enabled for this group.", 1, 1, 1, true},
+            {"Unavailable while Masque skinning is enabled for this panel.", 1, 1, 1, true},
         } or nil,
         onChange = ApplyIconFillEnabled,
     })
@@ -2014,8 +1972,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     local function BuildDetails(container)
         -- cfg.noColorStyles: styles whose art is untinted (the pandemic CDM
         -- look), so a color row would be a dead control.
-        if not opts.hidePrimaryColorPicker
-            and not (cfg.noColorStyles and cfg.noColorStyles[currentStyle]) then
+        if not (cfg.noColorStyles and cfg.noColorStyles[currentStyle]) then
             AddColorRow(container, {
                 label = cfg.colorLabel,
                 setting = opts.settings and opts.settings.color,
@@ -2494,12 +2451,9 @@ ST._BuildAuraDurationSwipeControls = BuildAuraDurationSwipeControls
 ST._BuildAuraDurationSwipeAdvancedControls = BuildAuraDurationSwipeAdvancedControls
 ST._BuildBorderControls = BuildBorderControls
 ST._BuildIconTintControls = BuildIconTintControls
-ST._BuildDesaturationControls = BuildDesaturationControls
 ST._BuildIconZoomControls = BuildIconZoomControls
 ST._BuildShowTooltipsControls = BuildShowTooltipsControls
-ST._BuildShowOutOfRangeControls = BuildShowOutOfRangeControls
 ST._BuildAllowPingsControls = BuildAllowPingsControls
-ST._BuildShowGCDSwipeControls = BuildShowGCDSwipeControls
 ST._BuildIconFillTimerControls = BuildIconFillTimerControls
 ST._BuildIconFillTimerAdvancedControls = BuildIconFillTimerAdvancedControls
 ST._BuildLossOfControlControls = BuildLossOfControlControls

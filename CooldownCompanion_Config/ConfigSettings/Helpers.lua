@@ -446,19 +446,6 @@ local function BuildCollapsibleSection(container, title, key, store, refreshFn, 
 
     if opts and opts.leftAligned then
         ApplyLeftAlignedHeading(heading, btn)
-        if opts.largeTitle then
-            local font, size, flags = heading.label:GetFont()
-            if font then
-                heading.label:SetFont(font, size + 4, flags)
-                heading:SetHeight(HEADING_STOCK_HEIGHT + HEADING_TOP_PAD + 4)
-                -- Heading widgets share a pool with subsections and other addons.
-                local prevOnRelease = heading.events["OnRelease"]
-                heading:SetCallback("OnRelease", function(widget, event, ...)
-                    heading.label:SetFont(font, size, flags)
-                    if prevOnRelease then prevOnRelease(widget, event, ...) end
-                end)
-            end
-        end
     end
 
     return heading, collapsed, btn
@@ -665,7 +652,6 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
     btn:SetParent(frame)
     btn:ClearAllPoints()
     btn:Enable()
-    btn._advancedSettingKey = settingKey
 
     local prevOnRelease = parentWidget.events and parentWidget.events["OnRelease"]
     parentWidget:SetCallback("OnRelease", function(widget, event, ...)
@@ -678,7 +664,6 @@ local function AddAdvancedToggle(parentWidget, settingKey, tabInfoBtns, isEnable
         btn:SetScript("OnClick", nil)
         btn:SetScript("OnEnter", nil)
         btn:SetScript("OnLeave", nil)
-        btn._advancedSettingKey = nil
         SetAdvancedToggleActive(btn, false)
         if CS.activeAdvancedSettingsToggleButton == btn then
             CS.activeAdvancedSettingsToggleButton = nil
@@ -1133,7 +1118,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         -- panel that actually has one, so every other panel reads as before.
         local maxVisTooltip = {
             "Max Visible Buttons",
-            {"Limits how many buttons can appear at once. The first buttons (by group order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
+            {"Limits how many buttons can appear at once. The first buttons (in panel order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
             {"The highest slider value removes the limit. A saved limit also applies as entries are added.", 1, 1, 1, true},
         }
         if ST.PanelHasAuraSection and ST.PanelHasAuraSection(group) then

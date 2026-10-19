@@ -264,7 +264,6 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             button._visualStateContext = visualStateContext
         end
         visualStateContext.displayMode = buttonDisplayMode
-        visualStateContext.preserveSecretTextRender = false
     end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
@@ -308,7 +307,9 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             end
             return false
         else
-            local targetAlpha = button._visibilityAlphaOverride or 1
+            -- An Indicator's own buttons never draw (its display host does, and
+            -- its finalize keeps them at 0), so the walk must not flip them to 1.
+            local targetAlpha = ST.IsIndicatorGroup(group) and 0 or button._visibilityAlphaOverride or 1
             if button._lastVisAlpha ~= targetAlpha then
                 -- Re-arm the ping receiver on the hidden-to-visible flip only
                 -- (not on ordinary alpha-override changes).
@@ -337,7 +338,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             end
             return false
         else
-            local targetAlpha = button._visibilityAlphaOverride or 1
+            local targetAlpha = ST.IsIndicatorGroup(group) and 0 or button._visibilityAlphaOverride or 1
             if button._lastVisAlpha ~= targetAlpha then
                 button:SetAlpha(targetAlpha)
                 button._lastVisAlpha = targetAlpha

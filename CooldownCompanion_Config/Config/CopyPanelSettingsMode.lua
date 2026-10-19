@@ -266,9 +266,6 @@ local function HideCopyPanelRowWash(frame)
     if frame._cdcCopyPanelWash then
         frame._cdcCopyPanelWash:Hide()
     end
-    if frame._cdcCopyPanelWashLine then
-        frame._cdcCopyPanelWashLine:Hide()
-    end
 end
 
 local function ResetCopyPanelRowVisuals()

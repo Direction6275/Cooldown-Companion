@@ -30,7 +30,7 @@ local type = type
 
 local function IsRuntimeItemLike(buttonData)
     return buttonData
-        and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
+        and (buttonData.type == "item" or buttonData.type == "equipmentSlot")
 end
 
 local LOCATION_CENTER = AT.LOCATION_CENTER
@@ -38,7 +38,6 @@ local LOCATION_DIMENSIONS = AT.LOCATION_DIMENSIONS
 local DEFAULT_TEXTURE_SIZE = AT.DEFAULT_TEXTURE_SIZE
 local DEFAULT_TEXTURE_PAIR_SPACING = AT.DEFAULT_TEXTURE_PAIR_SPACING
 local TEXTURE_INDICATOR_EFFECT_PULSE = AT.TEXTURE_INDICATOR_EFFECT_PULSE
-local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
 local TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = AT.TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
 local TEXTURE_INDICATOR_EFFECT_BOUNCE = AT.TEXTURE_INDICATOR_EFFECT_BOUNCE
 local MIN_TEXTURE_INDICATOR_SPEED = AT.MIN_TEXTURE_INDICATOR_SPEED
@@ -47,12 +46,9 @@ local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
 local DEFAULT_TEXTURE_SHRINK_SCALE = AT.DEFAULT_TEXTURE_SHRINK_SCALE
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
-local TRIGGER_EXPECTED_LABELS = AT.TRIGGER_EXPECTED_LABELS
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
 local NormalizeTextureIndicatorEffect = AT.NormalizeTextureIndicatorEffect
-local NormalizeTriggerConditionKey = AT.NormalizeTriggerConditionKey
-local NormalizeTriggerStateKey = AT.NormalizeTriggerStateKey
 local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
 local ResolveGroup = AT.ResolveGroup
@@ -668,7 +664,6 @@ local function ResolveTextureIndicatorSectionState(button, sectionKey, config, t
     if hasTarget then
         target.enabled = hasConfig and config.enabled == true
         target.effectType = hasConfig and config.effectType or nil
-        target.normalizedEffectType = effectType
         target.combatOnly = hasConfig and config.combatOnly == true
         target.invert = hasConfig and config.invert == true
         target.preview = false

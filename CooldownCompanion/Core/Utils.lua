@@ -39,6 +39,10 @@ ST.STATUS_BAR_TIMER_DIRECTION_REMAINING = statusBarTimerDirection and statusBarT
 ST.SEGMENTED_SMOOTHING_ON = "on"
 ST.SEGMENTED_SMOOTHING_OFF = "off"
 
+-- The one pandemic orange: glows, Indicator recolors and Pandemic Timer Color
+-- all fall back to it. Read-only; never write to its indices.
+ST.DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+
 -- Shared edge anchor spec: {point1, relPoint1, point2, relPoint2, x1sign, y1sign, x2sign, y2sign}
 -- Signs: 0 = zero offset, 1 = +size, -1 = -size
 ST.EDGE_ANCHOR_SPEC = {

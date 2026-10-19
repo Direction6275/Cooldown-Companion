@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/Changelog.lua
+    CooldownCompanion_Config - Config/Changelog.lua
     Bundled changelog data service, version helpers, and lightweight markdown parsing.
 ]]
 
@@ -114,7 +114,8 @@ end
 BuildOrderedIndex()
 
 local function GetAddonVersion()
-    return C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "unknown"
+    -- The main addon's version; this file loads with the config addon.
+    return C_AddOns.GetAddOnMetadata("CooldownCompanion", "Version") or "unknown"
 end
 
 local function IsUnresolvedVersionToken(version)
@@ -225,10 +226,6 @@ local function ParseMarkdown(markdown)
 end
 
 local Changelog = {}
-
-function Changelog.GetAddonVersion()
-    return GetAddonVersion()
-end
 
 function Changelog.GetDisplayAddonVersion()
     local version = GetAddonVersion()

@@ -523,7 +523,7 @@ local function GetDefaultSpellCustomBarAuraUnit(cabConfig, spellID)
 
     if CooldownCompanion and CooldownCompanion.ResolveStandaloneAuraDefaultUnit then
         -- The synthetic must classify the same way the live slot adapter
-        -- does (ResourceBarAuraHost's BuildEntryAdapter): the resolver
+        -- does (ResourceBarAuraHost's BuildResourceOverlayEntryAdapter): the resolver
         -- branches on addedAs, and an aura bar left unmarked takes the
         -- plain-spell branch, resolving a unit the bound candidate list
         -- disagrees with.

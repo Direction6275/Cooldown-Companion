@@ -122,7 +122,7 @@ local function ConfigureRailDestinationButton(button, opts)
     local r, g, b = GetNavigatorClassColor()
     button.label:SetText(opts.label)
     button.icon:SetAtlas(opts.atlas, false)
-    button.icon:SetVertexColor(opts.iconR or 0.82, opts.iconG or 0.78, opts.iconB or 0.70, 1)
+    button.icon:SetVertexColor(0.82, 0.78, 0.70, 1)
     button.wash:SetColorTexture(r, g, b, 0.13)
     button.accent:SetColorTexture(r, g, b, 0.95)
     button._cdcSelected = opts.selected == true
@@ -520,7 +520,10 @@ local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
             })
         end
     end
-    table.sort(flattened, function(a, b) return a.order < b.order end)
+    table.sort(flattened, function(a, b)
+        if a.order == b.order then return a.id < b.id end
+        return a.order < b.order
+    end)
     return flattened
 end
 
@@ -1711,7 +1714,10 @@ local function RenderExportModeGroups(db, selection, mode)
             }
         end
     end
-    table.sort(ordered, function(a, b) return a.order < b.order end)
+    table.sort(ordered, function(a, b)
+        if a.order == b.order then return a.cid < b.cid end
+        return a.order < b.order
+    end)
     if #ordered == 0 then
         return 0
     end

@@ -196,7 +196,7 @@ function I.StylePandemicTint(host, group, shown)
         local alpha = host._indicatorTextureAlpha or 1
         ST._AT.LayoutTexturePieces(tint.base, tinted, geometry, alpha * (host._indicatorDimAlpha or 1))
         ST._AT.LayoutTexturePieces(tint.fore, tinted, geometry, alpha)
-        -- Kept gray whatever a texture swap does (see CreateVisual).
+        -- Kept gray whatever a texture swap does (see CreatePandemicTint).
         tint.base.primaryTexture:SetDesaturated(true)
         tint.base.secondaryTexture:SetDesaturated(true)
         tint.fore.primaryTexture:SetDesaturated(true)
@@ -736,7 +736,7 @@ end
 
 -- Called only by the native aura owner's gated bind. No live updates use this.
 -- `durationOptions` is the owner's composed timer formatter (Duration Format,
--- Low Time and the Pandemic marker, built from `readouts`); this model never
+-- Low Time and Pandemic Timer Color, built from `readouts`); this model never
 -- reads aura data to build it.
 function I.StyleAura(slot, group, durationOptions, timerColor)
     local host = slot.kit.indicatorHost

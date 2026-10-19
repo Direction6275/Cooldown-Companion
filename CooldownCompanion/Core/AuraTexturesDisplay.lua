@@ -1677,9 +1677,13 @@ function CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, delt
                 and not hasIndicatorAnchorTarget
                 and ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
             then
+                didSync = true
                 if host and host.coordLabel and host:IsShown() then
                     UpdateTextureHostCoordLabel(host, settings.x, settings.y)
                 end
+            end
+            if didSync and self.NoteArrangeIndicatorDrift then
+                self:NoteArrangeIndicatorDrift(panelInfo.groupId, deltaX, deltaY)
             end
         end
     end

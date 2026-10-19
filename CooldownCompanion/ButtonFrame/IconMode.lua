@@ -122,7 +122,6 @@ local function ShouldEnrollKeyPressHighlightButton(button)
     local buttonData = button.buttonData
     if not buttonData
         or buttonData._rotationAssistantVirtual == true
-        or buttonData.type == "header"
         or buttonData.isPassive then
         return false
     end

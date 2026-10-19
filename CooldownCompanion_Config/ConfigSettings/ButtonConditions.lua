@@ -958,7 +958,7 @@ local function AddCharacterEligibilityControls(container, opts)
     -- opts.omitHeading: the caller already opened a section around the pickers.
     if not opts.omitHeading then
         local heading = AceGUI:Create("Heading")
-        heading:SetText(opts.characterHeadingText or "Character Eligibility")
+        heading:SetText("Character Eligibility")
         ColorHeading(heading)
         heading:SetFullWidth(true)
         container:AddChild(heading)
@@ -1688,6 +1688,40 @@ local function GetBatchFieldValue(group, field)
     end
     if anyTrue and anyFalse then return nil end  -- mixed
     return anyTrue  -- true if all true, false if all false
+end
+
+local function SameConditionList(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        local x, y = a[i], b[i]
+        for k, v in pairs(x) do
+            if y[k] ~= v then return false end
+        end
+        for k in pairs(y) do
+            if x[k] == nil then return false end
+        end
+    end
+    return true
+end
+
+-- Like GetBatchFieldValue, but entries holding different condition lists
+-- also read as mixed, so one entry's list never displays as shared.
+local function GetBatchTalentConditionsValue(group)
+    local hasValue = GetBatchFieldValue(group, "talentConditions")
+    if not hasValue then return hasValue end
+    local first
+    for idx in pairs(CS.selectedButtons) do
+        local bd = group.buttons[idx]
+        local list = bd and bd.talentConditions
+        if list then
+            if not first then
+                first = list
+            elseif not SameConditionList(first, list) then
+                return nil
+            end
+        end
+    end
+    return true
 end
 
 -- Scoped version: only reads from buttons matching filterFn(bd) → true.
@@ -2914,7 +2948,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     local condCount = conditions and #conditions or 0
     local hasTalent
     if isBatch then
-        hasTalent = GetBatchFieldValue(group, "talentConditions")
+        hasTalent = GetBatchTalentConditionsValue(group)
     else
         hasTalent = condCount > 0
     end

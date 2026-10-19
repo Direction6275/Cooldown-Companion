@@ -381,7 +381,7 @@ local function AcquireRow()
             return
         end
         if not CS.selectedGroup then
-            CooldownCompanion:Print("Select a group first before adding spells.")
+            CooldownCompanion:Print("Select a panel first before adding spells.")
             return
         end
         local added = ST._TryAddSpell(tostring(self.addSpellID), nil, self.forceAura,

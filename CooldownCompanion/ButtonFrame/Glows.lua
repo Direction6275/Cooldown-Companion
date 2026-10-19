@@ -26,10 +26,8 @@ local FitHighlightFrame = ST._FitHighlightFrame
 -- IMPORTANT: These tables are read-only — never write to their indices.
 local DEFAULT_WHITE = {1, 1, 1, 1}
 local DEFAULT_ASSISTED_HL_COLOR = {0.3, 1, 0.3, 0.9}
-local DEFAULT_PANDEMIC_COLOR = {1, 0.5, 0, 1}
+local DEFAULT_PANDEMIC_COLOR = ST.DEFAULT_PANDEMIC_COLOR
 local DEFAULT_PANDEMIC_COLOR2 = {1, 1, 1, 0.9} -- colorShift second color; must match Defaults.lua
--- Read-only: Indicator recolors fall back to it (IndicatorDisplay).
-ST.DEFAULT_PANDEMIC_COLOR = DEFAULT_PANDEMIC_COLOR
 local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_AURA_GLOW_COLOR2 = {0.1, 0.3, 1, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}

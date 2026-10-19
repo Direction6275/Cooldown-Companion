@@ -104,7 +104,7 @@ local whenToShow = Route("loadconditions", "whenToShow", "When to Show", "indica
     auraEntryWhen={label="When",aliases={"while active","while missing","missing","inactive"},
         applies=Applies(function(g) return I.IsMultiAura(g) end)},
     auraPandemic={label="Also During Pandemic",aliases={"pandemic window","refresh window","while missing or pandemic"},
-        applies=Applies(function(g) return I.ShowsWhileMissing(g) and I.Primary(g).auraTrackGroup ~= true end)},
+        applies=Applies(function(g) return I.ShowsWhileMissing(g) and I.CanAlsoDuringPandemic(I.Primary(g)) end)},
     stackCount={label="Stacks",aliases={"stack count"},applies=Applies(function(g)
         local compare = I.StackCompare(g)
         return compare ~= nil and compare ~= "max"
@@ -136,7 +136,7 @@ soundDefinitions.auraSoundGap={label="Minimum Gap",aliases={"sound throttle","so
     applies=Applies(function(g)
         if not I.UsesSourceSounds(g) then return false end
         local events=Addon:GetScopedValidSoundAlertEventsForButton(I.Primary(g),nil,nil,g)
-        return events and (events.onAuraApplied or events.onAuraStackGained or events.onAuraRemoved) == true
+        return Addon:HasAuraSoundAlertEvent(events)
     end)}
 ST._IndicatorSoundSettings = soundRoute:Settings(soundDefinitions)
 
@@ -540,8 +540,9 @@ local function AddListedAuraWhen(column, group, entry, changed)
     ClaimAuraFocus(row, entry)
 end
 
--- The aura's one rule: While Active, or a stack count it must reach, stay
--- under, or match. Blizzard applies it in combat (see Indicator.StackRule).
+-- The aura's one rule: While Active, While Missing, or a stack count it must
+-- reach, stay under, or match. Blizzard applies it in combat (see
+-- Indicator.StackRule).
 local AURA_WHEN_LIST = {active="While Active", missing="While Missing", atLeast="At Least N Stacks",
     fewer="Fewer Than N Stacks", exactly="Exactly N Stacks", max="At Max Stacks"}
 local STACK_CHOICES = {"atLeast", "fewer", "exactly", "max"}
@@ -574,8 +575,7 @@ local function AddAuraWhen(column, group, entry, changed)
         end})
     ClaimAuraFocus(whenRow, entry)
     if missing then
-        -- Also During Pandemic has no group form (owner ruling 2026-10-04).
-        if not entry.auraTrackGroup then
+        if I.CanAlsoDuringPandemic(entry) then
             Check(column, {setting=whenToShow.auraPandemic, indent=true, value=entry.showWhileAuraPandemic == true,
                 tooltip={"Also During Pandemic",
                     {"Also shows the Indicator near the end of the aura, in the window where recasting keeps the leftover time.", 1, 1, 1, true},

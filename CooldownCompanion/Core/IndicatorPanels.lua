@@ -130,13 +130,18 @@ end
 -- Also During Pandemic (a lone aura While Missing): the aura's own native
 -- display also shows inside its pandemic window, gated by Blizzard
 -- (AuraDisplay "pandemicIndicatorAura"). Saved on the aura entry, the same key a
--- panel entry uses (showWhileAuraPandemic). Never with group tracking (owner
--- ruling 2026-10-04).
+-- panel entry uses (showWhileAuraPandemic).
 function I.AlsoDuringPandemic(group)
     if not I.ShowsWhileMissing(group) then return false end
     local source = I.Primary(group)
-    -- Same group rule as the presence tracker it rides (AuraDisplay rebind).
-    return source.showWhileAuraPandemic == true and source.auraTrackGroup ~= true
+    return source.showWhileAuraPandemic == true and I.CanAlsoDuringPandemic(source)
+end
+
+-- Never with group tracking (owner ruling 2026-10-04), the same rule as the
+-- presence tracker it rides (AuraDisplay rebind). Runtime, config and
+-- Finder all ask here.
+function I.CanAlsoDuringPandemic(source)
+    return source ~= nil and source.auraTrackGroup ~= true
 end
 
 -- The aura's live display can show (always, or in its pandemic window): the
@@ -208,12 +213,6 @@ function I.StackMax(group)
     return source and Addon:GetAuraStackBarMax(source, true) or nil
 end
 
--- compare, count, max for an aura Indicator with a valid rule; nil otherwise.
--- `max` is the aura's reported max (nil when none), resolved once here so
--- callers never look it up again. The saved count keeps its meaning: only the
--- Stacks slider stops at the max. At Max with no max reported returns a nil
--- count and fails closed (the Indicator stays hidden), like any rule that
--- cannot be checked.
 -- The saved comparison alone, without the max lookup (Finder checks).
 function I.StackCompare(group)
     if not I.IsAura(group) or I.IsMultiAura(group) then return end
@@ -224,6 +223,12 @@ function I.StackCompare(group)
     return compare, source.indicatorStackRule
 end
 
+-- compare, count, max for an aura Indicator with a valid rule; nil otherwise.
+-- `max` is the aura's reported max (nil when none), resolved once here so
+-- callers never look it up again. The saved count keeps its meaning: only the
+-- Stacks slider stops at the max. At Max with no max reported returns a nil
+-- count and fails closed (the Indicator stays hidden), like any rule that
+-- cannot be checked.
 function I.StackRule(group)
     local compare, rule = I.StackCompare(group)
     if not compare then return end
@@ -673,6 +678,27 @@ end
 
 -- Returns true plus an optional chat line for the caller to print, or false
 -- plus a failure reason.
+-- Panels save While Missing as showWhileAuraMissing; aura Indicators save it
+-- as the aura's indicatorStackRule. An aura entry MOVED between the two is
+-- translated before it lands, so it keeps meaning the same thing (Also During
+-- Pandemic already shares showWhileAuraPandemic). Only moves call this:
+-- Change... carries the rule itself, and a stack rule has no panel form.
+function I.CarryWhileMissing(targetGroup, entry)
+    if type(entry) ~= "table" or not (entry.auraTracking or entry.addedAs == "aura") then return end
+    local ruleMissing = AuraWhenOf(entry) == "missing"
+    local panelMissing = Addon:GetAuraVisibilityMode(entry) == "missing"
+    if ruleMissing == panelMissing then return end
+    if ST.IsIndicatorGroup(targetGroup) then
+        if entry.addedAs ~= "aura" then return end
+        entry.indicatorStackRule = panelMissing and {compare = "missing"} or nil
+    else
+        entry.showWhileAuraMissing = ruleMissing or nil
+        if ruleMissing then
+            entry.hideWhileAuraNotActive, entry.auraShellDim = nil, nil
+        end
+    end
+end
+
 function I.OnSourceAdded(group, entry)
     local indicator = ST.IsIndicatorGroup(group)
     -- A source that becomes the display (an aura arriving into an Indicator
@@ -770,7 +796,7 @@ function I.NativeSettings(group, resolvedIcon)
     local settings = I.Settings(group)
     if not settings then return end
     if settings.displayType == "texture" then
-        return Addon:GetIndicatorTextureSettings(group, true)
+        return Addon:GetIndicatorTextureSettings(group)
     end
     local visual = { enabled = true, sourceType = "file", sourceValue = "Interface\\Buttons\\WHITE8x8",
         blendMode = "BLEND", locationType = "CENTER", color = {1, 1, 1, 1} }

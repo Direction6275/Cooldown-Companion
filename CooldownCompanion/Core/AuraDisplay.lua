@@ -49,7 +49,6 @@ local UnitIsPlayerControlledOrGroupMember = UnitIsPlayerControlledOrGroupMember
 local IsInRaid = IsInRaid
 local GetNumGroupMembers = GetNumGroupMembers
 local GetNumSubgroupMembers = GetNumSubgroupMembers
-local LayoutTexturePieces = AT.LayoutTexturePieces
 local Clamp = AT.Clamp
 local TEXTURE_INDICATOR_EFFECT_PULSE = AT.TEXTURE_INDICATOR_EFFECT_PULSE
 local TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
@@ -1400,7 +1399,7 @@ end
 -- marker-era names (pandemicMarkerMode, pandemicMarkerColor).
 ------------------------------------------------------------------------
 
-local DEFAULT_PANDEMIC_TIMER_COLOR = {1, 0.5, 0, 1}
+local DEFAULT_PANDEMIC_TIMER_COLOR = ST.DEFAULT_PANDEMIC_COLOR
 
 -- Effective enable, style-only since the entry's own checkbox dissolved into
 -- the panel's Pandemic override section (owner ruling 2026-08-16): the same
@@ -1606,16 +1605,8 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
         return
     end
 
-    local shown
-    if ST.IsIndicatorGroup(group) then
-        shown = ST.Indicator.StyleAura(slot, group, BuildIndicatorAuraDurationOptions(slot, group))
-    else
-        CooldownCompanion.HideIndicatorDisplayVisuals(host)
-        slot.slotButton:ClearIcon()
-        host.indicatorReadouts.root:Hide()
-        host.indicatorProgress.clip:SetAlpha(0)
-        shown = LayoutTexturePieces(host, settings, geometry, alpha)
-    end
+    -- Texture kits exist only on aura Indicators (SLOT_KIT_KINDS hosts).
+    local shown = ST.Indicator.StyleAura(slot, group, BuildIndicatorAuraDurationOptions(slot, group))
     host.visualRoot:SetAlpha(shown and 1 or 0)
     if not shown or type(effects) ~= "table" then
         return
@@ -1643,7 +1634,7 @@ local function StyleAuraIndicatorSlotKit(slot, settings, effects, group)
     local colorShiftEffect = effects[TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT]
     if colorShiftEffect then
         local speed = IndicatorEffectSpeed(colorShiftEffect)
-        local displayType = ST.IsIndicatorGroup(group) and group.indicatorSettings.displayType or "texture"
+        local displayType = group.indicatorSettings.displayType
         local base = settings.color or { 1, 1, 1, 1 }
         if displayType == "icon" then base = group.indicatorSettings.icon.iconTintColor or base end
         local shift = colorShiftEffect.color or { 1, 1, 1, 1 }
@@ -2226,7 +2217,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         -- inside the secret-driven fill rect.
         if kit.pandemicFillClone then
             if pandemicOn and not useStackFill then
-                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                local pc = style.barPandemicColor or DEFAULT_PANDEMIC_TIMER_COLOR
                 StylePandemicBarFillClone(kit.pandemicFillClone,
                     CooldownCompanion:FetchEffectiveBarTexture(style.barTexture or "Solid"), pc)
             else
@@ -2245,7 +2236,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
         end
         if kit.pandemicStackFillClone then
             if pandemicOn and useStackFill and not widgetStack then
-                local pc = style.barPandemicColor or { 1, 0.5, 0, 1 }
+                local pc = style.barPandemicColor or DEFAULT_PANDEMIC_TIMER_COLOR
                 StylePandemicBarFillClone(kit.pandemicStackFillClone, stackFillTexture, pc)
             else
                 kit.pandemicStackFillClone:SetAlpha(0)
@@ -2258,7 +2249,7 @@ local function StyleSlotKit(slot, button, buttonData, style)
             local shift = ST.IsBarAuraIndicatorEnabled(style) and style.barAuraColorShiftEnabled
                 and (style.barAuraColorShiftColor or { 1, 1, 1, 1 }) or nil
             ST.StyleStackBlockFill(kit.stackBlockFill, slot.boundStackMax, color, shift,
-                style.barAuraColorShiftSpeed, pandemicOn and (style.barPandemicColor or { 1, 0.5, 0, 1 }))
+                style.barAuraColorShiftSpeed, pandemicOn and (style.barPandemicColor or DEFAULT_PANDEMIC_TIMER_COLOR))
         end
         StyleStackSegments(kit, button, buttonData, style, slot.boundStackMax,
             segmentedStyle and not widgetStack)
@@ -5236,9 +5227,8 @@ function RunAuraRebind(configEdit, panelIds, resources)
                     and not ST.IsCollapsingAttachedBar(group, buttonData) then
                     local style = self:GetEntryEffectiveStyle(group, buttonData)
                     local spellSet = self:GetAuraCandidateSpellIDSet(buttonData, true)
-                    local textureSettings = textureAura and self:GetIndicatorTextureSettings(group) or nil
                     -- Native kits only; a presence bind sizes its cell itself.
-                    if textureAura and ST.Indicator.IsAura(group) then textureSettings = ST.Indicator.NativeSettings(group) end
+                    local textureSettings = textureAura and ST.Indicator.NativeSettings(group) or nil
                     local textureEffects = textureAura and ST.Indicator.NativeEffects(group) or nil
                     -- An aura list: each aura's spell set, unit and When,
                     -- all resolved, or the Indicator stays dark. The key

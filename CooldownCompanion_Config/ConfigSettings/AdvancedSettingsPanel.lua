@@ -45,7 +45,7 @@ local function BuildContext(extra)
         selectedContainer = CS.selectedContainer,
         selectedGroup = CS.selectedGroup,
         selectedGroupDisplayMode = group and (group.displayMode or "icons") or "",
-        selectedGroupIndicatorDisplayType = group and ST.IsIndicatorGroup(group) and CooldownCompanion.GetIndicatorDisplayType and CooldownCompanion:GetIndicatorDisplayType(group, false) or "",
+        selectedGroupIndicatorDisplayType = group and ST.IsIndicatorGroup(group) and CooldownCompanion.GetIndicatorDisplayType and CooldownCompanion:GetIndicatorDisplayType(group) or "",
         selectedButton = CS.selectedButton,
         selectedButtons = SortedKeyString(CS.selectedButtons),
         -- Which strip owns the settings surface (UnifiedTabRow.lua). Pinned
@@ -525,12 +525,6 @@ local function ReleaseAdvancedSettingsRow(settingKey, row)
     end
 end
 
-local function RebindAdvancedSettingsPanel(opts)
-    local registration = opts and registrations[opts.settingKey]
-    if not registration then return false end
-    return RegisterAdvancedSettingsRow(opts, registration.row, registration.button)
-end
-
 local function RefreshAdvancedSettingsPanel()
     if not CS.configRefreshInProgress then BuildActiveEditor() end
 end
@@ -607,7 +601,6 @@ CS.ReleaseAdvancedSettingsRow = ReleaseAdvancedSettingsRow
 CS.RunAdvancedGearBuildPass = RunAdvancedGearBuildPass
 CS.RefreshAdvancedSettingsPanel = RefreshAdvancedSettingsPanel
 CS.RefreshAdvancedSettingsPanelSoon = RefreshAdvancedSettingsPanelSoon
-CS.RebindAdvancedSettingsPanel = RebindAdvancedSettingsPanel
 CS.QueueAdvancedSettingsPanelOpen = QueueAdvancedSettingsPanelOpen
 CS.ConsumeQueuedAdvancedSettingsPanelOpen = ConsumeQueuedAdvancedSettingsPanelOpen
 CS.IsAdvancedSettingsPanelOpen = IsAdvancedSettingsPanelOpen

@@ -76,7 +76,7 @@ local INDICATOR_EFFECT_DEFS = {
 }
 
 local function GetIndicatorEffectStore(group)
-    return CooldownCompanion:GetIndicatorEffectSettings(group, true)
+    return CooldownCompanion:GetIndicatorEffectSettings(group)
 end
 
 -- The effect Text Only cannot run: Color Shift for native aura sources (the
@@ -383,7 +383,7 @@ end
 -- Row grammar (RowWidgets.lua): one collapsible section. The icon itself is
 -- shown and picked in the Live Preview above, so the tab is settings rows only.
 local function BuildIndicatorIconAppearance(container, group)
-    local settings = CooldownCompanion:GetIndicatorIconSettings(group, true)
+    local settings = CooldownCompanion:GetIndicatorIconSettings(group)
     local groupId = CS.selectedGroup
 
     -- The icon renders in the Live Preview, which is also the picker: clicking
@@ -543,15 +543,9 @@ local function BuildIndicatorIconAppearance(container, group)
     RefreshIndicatorPreviewMirror(groupId)
 end
 
--- Row grammar (RowWidgets.lua): one collapsible section. The rendered text is
--- shown in the Live Preview above; the multi-line text box stays full-width on
--- the container because the text itself is prose-shaped, not a row form.
-
 local function RefreshTextureIndicatorRuntime(group, requestAuraRestyle)
     CooldownCompanion:RefreshAllAuraTextureVisuals()
-    local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
-        and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
-    if not refreshedMirror and ST._RefreshButtonsPreviewMirror then
+    if ST._RefreshButtonsPreviewMirror then
         ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
     end
     if requestAuraRestyle then
@@ -564,9 +558,7 @@ end
 -- editbox hook it replaced did. The effect gears draw it unindented.
 local function BuildTextureIndicatorSpeedSlider(container, config, label, onChange, setting)
     local function RefreshSpeedPreview()
-        local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
-            and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
-        if not refreshedMirror and ST._RefreshButtonsPreviewMirror then
+        if ST._RefreshButtonsPreviewMirror then
             ST._RefreshButtonsPreviewMirror(CS.selectedGroup)
         end
     end
@@ -671,11 +663,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
                 hasAlpha = true,
                 onConfirm = RefreshRuntime,
                 onPreview = function()
-                    local refreshedMirror = ST._RefreshTextureIndicatorMirrorEffect
-                        and ST._RefreshTextureIndicatorMirrorEffect(CS.selectedGroup)
-                    if not refreshedMirror then
-                        ST._RefreshSelectedButtonsPreview()
-                    end
+                    ST._RefreshSelectedButtonsPreview()
                 end,
             })
         end
@@ -707,7 +695,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
 end
 
 local function GetIndicatorEffectOrderForDisplayType(group)
-    local displayType = CooldownCompanion:GetIndicatorDisplayType(group, true)
+    local displayType = CooldownCompanion:GetIndicatorDisplayType(group)
     if displayType ~= "text" then
         return ST.Indicator.EffectOrder
     end

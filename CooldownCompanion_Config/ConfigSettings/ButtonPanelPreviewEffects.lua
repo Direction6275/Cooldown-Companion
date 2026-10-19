@@ -173,8 +173,8 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
     end
 
     if SetBarAuraEffect then
-        -- Live parity (Preview.lua barAuraEffectOnToggle): nothing renders
-        -- while the bar aura indicator is disabled.
+        -- Live parity: nothing renders while the bar aura indicator is
+        -- disabled.
         barPreviewState = barPreviewState or GetStoredBarPreviewState(panelId, index)
         local effectFlags = barPreviewState.effectFlags
         local active = effectFlags and effectFlags._barAuraEffectPreview == true

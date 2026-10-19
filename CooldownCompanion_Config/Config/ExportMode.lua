@@ -41,7 +41,7 @@ local function EnterExportMode()
     end
     -- The two modes are rivals for the same two columns.
     if CS.importMode and ST._ExitImportMode then
-        ST._ExitImportMode()
+        ST._ExitImportMode({ skipRefresh = true })
     end
     -- A refresh already follows this entry.
     if CS.copyCustomization and ST._CancelCopyCustomization then
@@ -147,7 +147,10 @@ local function BuildCheckedContainerEntries(selection)
             }
         end
     end
-    table.sort(ordered, function(a, b) return a.order < b.order end)
+    table.sort(ordered, function(a, b)
+        if a.order == b.order then return a.cid < b.cid end
+        return a.order < b.order
+    end)
 
     local entries = {}
     for _, item in ipairs(ordered) do
@@ -536,7 +539,10 @@ local function RenderExportModeSummary(col3)
             }
         end
     end
-    table.sort(orderedCids, function(a, b) return a.order < b.order end)
+    table.sort(orderedCids, function(a, b)
+        if a.order == b.order then return a.cid < b.cid end
+        return a.order < b.order
+    end)
 
     if #orderedCids > 0 then
         local tileIndex = 0

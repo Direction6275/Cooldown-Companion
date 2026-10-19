@@ -18,7 +18,7 @@ local pairs = pairs
 
 local function IsRuntimeItemLike(buttonData)
     return buttonData
-        and (buttonData.type == "item" or buttonData.type == "equipmentSlot" or buttonData.type == "equipitem")
+        and (buttonData.type == "item" or buttonData.type == "equipmentSlot")
 end
 local string_upper = string.upper
 local tonumber = tonumber
@@ -238,6 +238,16 @@ local function CopyColor(color)
     return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
 end
 
+-- CopyColor's values, written into the saved table itself, so the read-time
+-- normalizers below do not allocate a fresh color on every render pass.
+local function FillColor(color)
+    if type(color) ~= "table" then
+        return nil
+    end
+    color[1], color[2], color[3], color[4] = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
+    return color
+end
+
 local function Clamp(value, minValue, maxValue)
     if type(value) ~= "number" then
         return minValue
@@ -307,7 +317,7 @@ function CooldownCompanion.NormalizeIndicatorEffectSection(effectKey, effectData
     )
 
     if defaults.color ~= nil then
-        effectData.color = CopyColor(effectData.color) or CopyColor(defaults.color) or { 1, 1, 1, 1 }
+        effectData.color = FillColor(effectData.color) or CopyColor(defaults.color) or { 1, 1, 1, 1 }
     else
         effectData.color = nil
     end
@@ -610,7 +620,7 @@ local function NormalizeAuraTextureSettings(settings)
         or nil
     settings.xOffset = nil
     settings.yOffset = nil
-    settings.color = CopyColor(settings.color) or { 1, 1, 1, 1 }
+    settings.color = FillColor(settings.color) or { 1, 1, 1, 1 }
     local normalizedLocationType, defaultPairSpacing = NormalizeTextureLayout(settings.locationType)
     settings.locationType = normalizedLocationType
     local rawPairSpacing = tonumber(settings.pairSpacing)

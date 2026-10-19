@@ -1,7 +1,7 @@
 ## Interface: 120105
 ## Title: Cooldown Companion Config
 ## Notes: Load-on-demand configuration UI for Cooldown Companion
-## Author: You
+## Author: Cantrelle
 ## Version: @project-version@
 ## RequiredDeps: CooldownCompanion
 ## IconTexture: Interface\AddOns\CooldownCompanion\Media\cdcminimap.tga
@@ -16,6 +16,8 @@ Libs\LibDeflate\lib.xml
 #@end-no-lib-strip@
 
 Bootstrap.lua
+Config\ChangelogData.lua
+Config\Changelog.lua
 Config\State.lua
 Config\BarWorkspace.lua
 Config\Tutorial.lua

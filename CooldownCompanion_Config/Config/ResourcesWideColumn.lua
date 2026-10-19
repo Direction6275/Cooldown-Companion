@@ -515,7 +515,6 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState, preservePrev
     HideWidgetFrame(col3._resourceSettingsTabGroup)
     HideWidgetFrame(col3._castBarHomeTabGroup)
     HideWidgetFrame(col3._castFramesSettingsScroll)
-    HideWidgetFrame(col3._resourcesAddBoxHost)
     if ST._ClearWideEditingExtras then
         ST._ClearWideEditingExtras(col3, preserveFinderState)
     end

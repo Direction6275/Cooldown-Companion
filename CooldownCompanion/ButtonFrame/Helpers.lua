@@ -62,14 +62,6 @@ local function GetEntryStableKey(buttonData)
 end
 CooldownCompanion.GetEntryStableKey = GetEntryStableKey
 
-local function GetEntrySettingsKind(buttonData)
-    if IsEquipmentSlotEntry(buttonData) then
-        return EQUIPMENT_SLOT_TYPE
-    end
-    return buttonData and buttonData.type or nil
-end
-CooldownCompanion.GetEntrySettingsKind = GetEntrySettingsKind
-
 local function IsEntryItemLike(buttonData)
     return buttonData and (buttonData.type == "item" or IsEquipmentSlotEntry(buttonData))
 end
@@ -507,15 +499,6 @@ local function FormatCooldownTime(seconds, source, visibilityKind)
 end
 CooldownCompanion.FormatCooldownTime = FormatCooldownTime
 
-local function GetDurationSecretFormatSpec(source)
-    local formatKey = GetDurationFormat(source)
-    if formatKey == DURATION_FORMAT_DECIMAL_UNDER_60 then
-        return "%.1f"
-    end
-    return "%.0f"
-end
-CooldownCompanion.GetDurationSecretFormatSpec = GetDurationSecretFormatSpec
-
 local function GetDurationTextRoundingDown()
     return GetEnumValue("NumericRuleFormatRounding", "Down", 2)
 end
@@ -595,22 +578,9 @@ local function BuildDurationFormatBrackets(formatKey)
     return brackets
 end
 
-local durationFormatBracketsCache = {}
-
-local function GetDurationFormatBrackets(source)
-    local formatKey = GetDurationFormat(source)
-    local brackets = durationFormatBracketsCache[formatKey]
-    if not brackets then
-        brackets = BuildDurationFormatBrackets(formatKey)
-        durationFormatBracketsCache[formatKey] = brackets
-    end
-    return brackets, formatKey
-end
-CooldownCompanion.GetDurationFormatBrackets = GetDurationFormatBrackets
-
 -- Low-time overlay over a format's bracket list. Built from FRESH bracket
--- tables (BuildDurationFormatBrackets constructs new ones per call; the shared
--- cached lists are never touched). The [0, threshold) region keeps the
+-- tables (BuildDurationFormatBrackets constructs new ones per call). The
+-- [0, threshold) region keeps the
 -- format's own zero-bracket shape — decimals only upgrade "%.0f" to "%.1f",
 -- and the color escape wraps whatever the format already renders there — then
 -- the stock zero bracket re-enters at the threshold so text returns to the
@@ -728,28 +698,6 @@ local function BuildLowTimeBrackets(formatKey, threshold, decimalScope, colorHex
     end
     return out
 end
-
--- Bracket-level duration policy for consumers that must compose another
--- engine-side decoration onto the same countdown (the aura Pandemic marker is
--- the first). Low-time lists are always fresh; plain lists come from the
--- shared format cache and must be treated as immutable. Consumers clone before
--- changing a threshold or format string.
-local function GetDurationTextBrackets(source, allowLowTime, visibilityKind)
-    local formatKey = GetDurationFormat(source)
-    local brackets
-    if allowLowTime then
-        local threshold, decimalScope, colorHex, threshold2, colorHex2 = GetDurationLowTime(source)
-        if threshold then
-            brackets = BuildLowTimeBrackets(formatKey, threshold, decimalScope, colorHex, threshold2, colorHex2)
-        end
-    end
-    if not brackets then
-        brackets = GetDurationFormatBrackets(source)
-    end
-    return BuildDurationVisibilityBrackets(brackets,
-        GetDurationTextVisibilityThreshold(source, visibilityKind)), formatKey
-end
-CooldownCompanion.GetDurationTextBrackets = GetDurationTextBrackets
 
 local function CreateDurationTextFormatter(formatKey, lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2,
         visibilityThreshold)
