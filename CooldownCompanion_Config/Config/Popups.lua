@@ -1,6 +1,9 @@
 --[[
     CooldownCompanion - Config/Popups
-    All non-diagnostic StaticPopupDialogs.
+    Most config StaticPopupDialogs (the Import Mode confirm lives in
+    ImportMode.lua, the diagnostics popups in Diagnostics.lua and profile
+    reset in Core/ConfigLoader.lua), plus the Resource Bar conflict chooser,
+    the group and setup export builders, and the group/setup import engine.
     OnAccept handlers use CS.*/ST._* for runtime state access.
 ]]
 
@@ -10,7 +13,6 @@ local CS = ST._configState
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 
 local ResetConfigSelection = ST._ResetConfigSelection
-local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelSelection = ST._ClearConfigPanelSelection
 local ClearConfigContainerSelection = ST._ClearConfigContainerSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
@@ -326,23 +328,17 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if not data then return end
-        local id = data.containerId or data.groupId
-        if id then
-            CooldownCompanion:ClearAllConfigPreviews()
-            CooldownCompanion:DeleteGroup(id)
-            if data.containerId then
-                if CS.selectedContainer == id then
-                    ClearConfigContainerSelection()
-                end
-            else
-                if CS.selectedGroup == id then
-                    ClearConfigPanelSelection()
-                end
-            end
-            CS.selectedGroups[id] = nil
-            CooldownCompanion:RefreshConfigPanel()
+        local id = data and data.containerId
+        if not id then return end
+        CooldownCompanion:ClearAllConfigPreviews()
+        -- Ids freeze at popup-show time and the Group may already be gone;
+        -- DeleteContainer does nothing for a missing id.
+        CooldownCompanion:DeleteContainer(id)
+        if CS.selectedContainer == id then
+            ClearConfigContainerSelection()
         end
+        CS.selectedGroups[id] = nil
+        CooldownCompanion:RefreshConfigPanel()
     end,
     timeout = 0,
     whileDead = true,
@@ -813,12 +809,6 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
                 CooldownCompanion:ToggleGroupGlobal(data.containerId)
                 CooldownCompanion:RefreshConfigPanel()
             end
-        elseif data.groupId then
-            local group = CooldownCompanion.db.profile.groups[data.groupId]
-            if group then
-                CooldownCompanion:ToggleGroupGlobal(data.groupId)
-                CooldownCompanion:RefreshConfigPanel()
-            end
         end
     end,
     timeout = 0,
@@ -847,31 +837,6 @@ StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_CROSS_PANEL_STRIP_OVERRIDES"] = {
-    text = "Moving '%s' to a different panel will remove its appearance overrides. Continue?",
-    button1 = "Move",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if not data then return end
-        local buttonData = ST._PerformCrossPanelMove(
-            data.sourcePanelId, data.sourceIndex,
-            data.targetPanelId, data.targetIndex
-        )
-        if buttonData then
-            CooldownCompanion:ClearAllConfigPreviews()
-            ST._StripButtonOverrides(buttonData)
-            CooldownCompanion:RefreshGroupFrame(data.sourcePanelId)
-            CooldownCompanion:RefreshGroupFrame(data.targetPanelId)
-            ClearConfigButtonSelection()
-            CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
 StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     text = "Delete %d selected groups?",
     button1 = "Delete",
@@ -879,11 +844,9 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     OnAccept = function(self, data)
         if data and data.groupIds then
             for _, gid in ipairs(data.groupIds) do
-                -- Ids freeze at popup-show time; a container deleted while the
-                -- popup was open must not fall through DeleteGroup's panel-id path.
-                if CooldownCompanion.db.profile.groupContainers[gid] then
-                    CooldownCompanion:DeleteGroup(gid)
-                end
+                -- Ids freeze at popup-show time; DeleteContainer skips a
+                -- Group deleted while the popup was open.
+                CooldownCompanion:DeleteContainer(gid)
             end
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()

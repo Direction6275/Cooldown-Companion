@@ -1615,7 +1615,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
 end
 
 ------------------------------------------------------------------------
--- Public Group API (container + panel combo operations)
+-- Public Group API
 ------------------------------------------------------------------------
 
 function CooldownCompanion:CreateGroup(name)
@@ -1627,73 +1627,6 @@ function CooldownCompanion:CreateGroup(name)
     end
 
     return containerId
-end
-
-function CooldownCompanion:DeleteGroup(id)
-    -- If this is a containerId, delete the container and all its panels
-    if self.db.profile.groupContainers[id] then
-        self:DeleteContainer(id)
-        return
-    end
-
-    -- Otherwise treat as a panel groupId
-    local group = self.db.profile.groups[id]
-    if not group then return end
-
-    local attachmentOperation = self:BeginPanelAttachmentRefresh()
-    local parentId = group.parentContainerId
-
-    ClearCursorPanelMoverBeforeMutation(self, id)
-    ResetIndicatorAnchorsTargeting(self.db.profile.groups, { [id] = true })
-    self:UnloadGroup(id)
-    self:DiscardDormantFrame(id)
-    self.db.profile.groups[id] = nil
-    self:ClearExternalAnchorMarksForPanels({ [id] = true })
-
-    -- If this was the last panel, delete the parent container too
-    if parentId and self:GetPanelCount(parentId) == 0 then
-        self:DeleteContainer(parentId)
-    elseif self.RefreshStableExternalAnchorCompactSuppression then
-        self:RefreshStableExternalAnchorCompactSuppression()
-    end
-    RefreshPanelAlphaDependencyTargets(self)
-    self:RequestAuraRebind("delete")
-    self:RefreshCursorAnchorLayoutPreview()
-    self:EndPanelAttachmentRefresh(attachmentOperation, true, "delete-group")
-end
-
-function CooldownCompanion:DuplicateGroup(id)
-    -- If this is a containerId, duplicate the container and all panels
-    if self.db.profile.groupContainers[id] then
-        return self:DuplicateContainer(id)
-    end
-
-    -- Otherwise treat as a panel groupId
-    local sourceGroup = self.db.profile.groups[id]
-    if not sourceGroup then return nil end
-
-    -- If the panel belongs to a container, duplicate within it
-    if sourceGroup.parentContainerId then
-        return self:DuplicatePanel(sourceGroup.parentContainerId, id)
-    end
-
-    -- Legacy path (no container) — should not happen post-migration
-    local attachmentOperation = self:BeginPanelAttachmentRefresh()
-    local newGroupId = self.db.profile.nextGroupId
-    self.db.profile.nextGroupId = newGroupId + 1
-
-    local newGroup = CopyTable(sourceGroup)
-    newGroup.name = sourceGroup.name .. " (Copy)"
-    newGroup.order = newGroupId
-    newGroup.cdmPanelSource = nil
-    newGroup.createdBy = self.db.keys.char
-    newGroup.isGlobal = false
-    NormalizeCopiedEntityForContainerScope(self, newGroup, newGroup)
-    self.db.profile.groups[newGroupId] = newGroup
-    self:CreateGroupFrame(newGroupId)
-    RefreshPanelAlphaDependencyTargets(self)
-    self:EndPanelAttachmentRefresh(attachmentOperation, true, "duplicate-group")
-    return newGroupId
 end
 
 function CooldownCompanion:ToggleGroupGlobal(containerId)
@@ -2103,7 +2036,7 @@ function CooldownCompanion:RemoveButtonFromGroup(groupId, buttonIndex)
     self:RefreshGroupFrame(groupId)
 end
 
--- The one way entries leave a panel (delete, move away, cross-panel drag).
+-- The one way entries leave a panel (delete, move away).
 -- A section IS its members: each leaving entry comes out of its cluster
 -- before it goes, so the last one out dissolves it. An orphaned section table
 -- would otherwise sit in the profile as a Layout-tab block for a cluster

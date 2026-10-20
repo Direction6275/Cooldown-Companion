@@ -1281,7 +1281,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                local newContainerId = CooldownCompanion:DuplicateGroup(containerId)
+                local newContainerId = CooldownCompanion:DuplicateContainer(containerId)
                 if newContainerId then
                     SelectConfigContainer(newContainerId)
                     CooldownCompanion:RefreshConfigPanel()

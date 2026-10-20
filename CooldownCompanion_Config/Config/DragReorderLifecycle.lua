@@ -19,10 +19,7 @@ local DRAG_THRESHOLD = 8
 local GetRawCursorCoordinates = DR.GetRawCursorCoordinates
 local GetScaledCursorCoordinates = DR.GetScaledCursorCoordinates
 local GetScaledCursorPosition = DR.GetScaledCursorPosition
-local GetDropIndex = DR.GetDropIndex
 local HideDragIndicator = DR.HideDragIndicator
-local ShowDragIndicator = DR.ShowDragIndicator
-local ResetDragIndicatorStyle = DR.ResetDragIndicatorStyle
 local ShowCol1DropIndicator = DR.ShowCol1DropIndicator
 local ShowRailPanelDropIndicator = DR.ShowRailPanelDropIndicator
 local GetCol1DropTarget = DR.GetCol1DropTarget
@@ -338,69 +335,13 @@ local function PerformButtonReorder(groupId, sourceIndex, dropIndex)
             CS.selectedButton = CS.selectedButton + 1
         end
     end
-    -- Structural-mutation contract (matches the delete and cross-panel move
-    -- paths): the other index-keyed stores — multi-selection and per-button
+    -- Structural-mutation contract (matches the entry Delete and Move menu
+    -- paths, PanelShared DeleteEntrySelection / MoveEntrySelection): the
+    -- other index-keyed stores — multi-selection and per-button
     -- preview state — are cleared rather than remapped, or they would stay
     -- attached to whatever entries now occupy the old indexes.
     wipe(CS.selectedButtons)
     CooldownCompanion:ClearAllConfigPreviews()
-end
-
-------------------------------------------------------------------------
--- Cross-panel move helpers
-------------------------------------------------------------------------
-local function PerformCrossPanelMove(sourcePanelId, sourceIndex, targetPanelId, targetIndex)
-    local db = CooldownCompanion.db.profile
-    local sourceGroup = db.groups[sourcePanelId]
-    local targetGroup = db.groups[targetPanelId]
-    if not sourceGroup or not targetGroup then return nil end
-    local buttonData = sourceGroup.buttons[sourceIndex]
-    if not buttonData then return nil end
-    local sourceRejectMessage = ST.Indicator.GetRemovalError(sourceGroup, {buttonData})
-    if sourceRejectMessage then
-        CooldownCompanion:Print(sourceRejectMessage)
-        return nil
-    end
-    local rejectMessage = CooldownCompanion.GetPanelManualEntryRejectMessage
-        and CooldownCompanion:GetPanelManualEntryRejectMessage(targetGroup, buttonData)
-    if rejectMessage then
-        CooldownCompanion:Print(rejectMessage)
-        return nil
-    end
-    -- A section placement belongs to the panel it was made on. An entry leaving
-    -- takes no membership with it, or it would silently join whatever section
-    -- the destination happens to keep at that anchor -- and the anchor it just
-    -- vacated goes with it if it was the last member there.
-    ST.DetachEntryBarPlacement(buttonData)
-    CooldownCompanion:RemoveEntriesFromGroup(sourceGroup, {sourceIndex})
-    -- Resolve "append" targets (nil targetIndex = after last button)
-    if not targetIndex then
-        targetIndex = #targetGroup.buttons + 1
-    end
-    local maxTarget = #targetGroup.buttons + 1
-    if targetIndex > maxTarget then targetIndex = maxTarget end
-    if CooldownCompanion.EnableIndicatorAuraDisplayForEntry then
-        CooldownCompanion:EnableIndicatorAuraDisplayForEntry(targetGroup, buttonData)
-    end
-    local previousCount = #targetGroup.buttons
-    if ST.IsIndicatorGroup(targetGroup) then targetIndex = previousCount + 1 end
-    if ST.IsAttachedBarEntry(targetGroup, buttonData) then targetIndex = previousCount + 1 end
-    -- An entry arriving in a panel needs that panel's own key, not the one it
-    -- wore where it came from: an Aura Panel mints it one, and anywhere else the
-    -- stale key comes off rather than waiting to collide inside an aura section.
-    CooldownCompanion:AdoptAuraEntryKey(targetGroup, buttonData)
-    ST.Indicator.CarryWhileMissing(sourceGroup, targetGroup, buttonData)
-    table.insert(targetGroup.buttons, targetIndex, buttonData)
-    -- An aura joining an Indicator notes what its effects became.
-    local _, notice = ST.Indicator.OnSourceAdded(targetGroup, buttonData)
-    if notice then CooldownCompanion:Print(notice) end
-    CooldownCompanion:KeepPanelSingleLineOnGrowth(targetGroup, previousCount)
-    return buttonData
-end
-
-local function StripButtonOverrides(buttonData)
-    buttonData.styleOverrides = nil
-    buttonData.overrideSections = nil
 end
 
 ------------------------------------------------------------------------
@@ -1075,18 +1016,6 @@ local function StartDragTracking()
                 )
                 CS.dragState.dropTarget = dropTarget
                 ShowCol1DropIndicator(CS.dragState)
-            else
-                local dropIndex, anchorFrame, anchorAbove = GetDropIndex(
-                    CS.dragState.scrollWidget, cursorY,
-                    CS.dragState.childOffset or 0,
-                    CS.dragState.totalDraggable
-                )
-                CS.dragState.dropIndex = dropIndex
-                -- Colour is asserted at show time, not torn down after a drag:
-                -- resetting it on teardown would recolour the line part-way
-                -- through its fade-out.
-                ResetDragIndicatorStyle()
-                ShowDragIndicator(anchorFrame, anchorAbove, CS.dragState.scrollWidget)
             end
         end
     end)
@@ -1100,6 +1029,4 @@ ST._StartDragTracking = StartDragTracking
 ST._ApplyCol1Drop = ApplyCol1Drop
 ST._HideDragIndicator = HideDragIndicator
 ST._GetScaledCursorPosition = GetScaledCursorPosition
-ST._PerformCrossPanelMove = PerformCrossPanelMove
 ST._PerformButtonReorder = PerformButtonReorder
-ST._StripButtonOverrides = StripButtonOverrides
