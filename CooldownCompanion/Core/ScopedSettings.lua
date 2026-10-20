@@ -126,6 +126,8 @@ end
 
 -- Only genuinely new setups use the current creation policy. Legacy seeds,
 -- imported buckets and missing keys in saved settings retain their defaults.
+-- IsDefaultResourceBarClassSettings recognizes this shape by its geometry
+-- stamp; keep them in step if the creation policy changes.
 local function CreateResourceBarSettings()
     local settings = CopySubsystemDefaults("resourceBars")
     settings.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
@@ -1088,23 +1090,31 @@ local function DeepEqual(left, right)
     return true
 end
 
+-- Migration stamps (_barGeometryVersion, _barSegmentGapVersion,
+-- _sharedBarStyleVersion and any later _...Version) record what the addon
+-- converted, never what the player chose, so a real setting must never be
+-- stored under that key shape.
 local function IsDefaultResourceBarClassSettings(settings, classKey)
     if type(settings) ~= "table" then
         return false
     end
-    local comparable = settings
-    if settings.keepSpecResourcesInAllForms == nil then
-        comparable = CopyTable(settings)
+    local comparable = {}
+    for key, value in pairs(settings) do
+        if not (type(key) == "string" and key:match("^_%w+Version$")) then
+            comparable[key] = value
+        end
+    end
+    if comparable.keepSpecResourcesInAllForms == nil then
         comparable.keepSpecResourcesInAllForms = false
     end
     local defaults = CopySubsystemDefaults("resourceBars")
     NormalizeResourceBarSettingsForClass(defaults, classKey)
     SanitizeResourceBarAnchors(defaults, classKey)
-    if DeepEqual(comparable, defaults) then return true end
-    defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
-    defaults._barGeometryVersion = 1
-    if DeepEqual(comparable, defaults) then return true end
-    defaults._barSegmentGapVersion = 1
+    -- Setups made by CreateResourceBarSettings carry the geometry stamp and
+    -- start with the shared bar background.
+    if settings._barGeometryVersion == 1 then
+        defaults.backgroundColor = CopyTable(ST._defaults.profile.globalStyle.barBgColor)
+    end
     return DeepEqual(comparable, defaults)
 end
 
