@@ -636,10 +636,12 @@ local function ShowPanelContextMenu(panelId, containerId)
     if not CS.panelContextMenu then
         CS.panelContextMenu = CreateFrame("Frame", "CDCPanelContextMenu", UIParent, "UIDropDownMenuTemplate")
     end
-    local switchModes = {
+    -- Only Aura and Totem Panels have a panel-level bar form; ordinary panels
+    -- show bars per entry, so they get no Panel Type row.
+    local switchModes = (ST.IsAuraPanelGroup(panel) or ST.IsTotemPanelGroup(panel)) and {
         { mode = "icons", label = "Icons" },
         { mode = "bars", label = "Bars" },
-    }
+    } or {}
     UIDropDownMenu_Initialize(CS.panelContextMenu, function(_, level, menuList)
         level = level or 1
         if level == 1 then
