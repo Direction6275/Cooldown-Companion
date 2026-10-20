@@ -783,9 +783,6 @@ function CooldownCompanion:GetInvalidAnchorTargetReason(relativeTo, options)
     if reason == "circular" then
         return "Cannot anchor: would create a circular reference."
     end
-    if reason == "unsupported-display-mode" then
-        return "That panel type cannot be used as this anchor target."
-    end
     if reason == "aura-panel-target" then
         return "An Aura Panel cannot be an anchor target. Its size follows the auras that are active."
     end

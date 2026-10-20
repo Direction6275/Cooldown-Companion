@@ -339,7 +339,7 @@ end
 --- and AnchorContainerFrame each re-resolve the body and each carry their own
 --- combat deferral, so a protected dependent simply comes back dirty.
 --- Unit frames are not touched here: FrameAnchoring owns their protected-frame
---- discipline and re-applies off its own RefreshGroupFrame hook.
+--- discipline and re-resolves the panel body when it next applies.
 function CooldownCompanion:ReanchorPanelSectionDependents(groupId)
     local profile = self.db and self.db.profile
     if not profile then return end

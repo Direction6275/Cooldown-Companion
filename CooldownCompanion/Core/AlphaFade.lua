@@ -711,7 +711,7 @@ function CooldownCompanion:EnsureAlphaDriverArmed()
 end
 
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
--- Used by both UpdateGroupAlpha and UpdateModuleAlpha.
+-- Used by UpdateGroupAlpha, UpdateContainerAlpha and UpdateModuleAlpha.
 local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     -- Effective mounted states: mounted subtype plus optional druid travel form.
     local effectiveRegularMounted = regularMounted
@@ -938,8 +938,8 @@ function CooldownCompanion:ApplyContainerAlphaPreview(containerId, alpha)
     end
 end
 
--- Module alpha: evaluates alpha for non-group frames (resource bars, cast bar).
--- moduleId: unique string key (e.g., "rb", "cb")
+-- Module alpha: evaluates alpha for non-group frames (resource bars).
+-- moduleId: unique string key ("rb")
 -- config: table with the same alpha fields as group (baselineAlpha, forceAlpha*, etc.)
 -- frames: list of frames to apply alpha to
 function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
@@ -1012,16 +1012,13 @@ function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
     end
 end
 
-function CooldownCompanion:UnregisterModuleAlpha(moduleId, preserveState)
+function CooldownCompanion:UnregisterModuleAlpha(moduleId)
     local entry = self._moduleAlphaTargets and self._moduleAlphaTargets[moduleId] or nil
-    local frames = entry and entry.frames or nil
-    if not preserveState then
-        RestoreAlphaFrames(frames)
-    end
+    RestoreAlphaFrames(entry and entry.frames or nil)
     if self._moduleAlphaTargets then
         self._moduleAlphaTargets[moduleId] = nil
     end
-    if self.alphaState and ((not preserveState) or not HasLiveAlphaFrames(frames)) then
+    if self.alphaState then
         self.alphaState[moduleId] = nil
     end
     if self.RefreshAlphaUpdateDriver then

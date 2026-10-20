@@ -56,6 +56,14 @@ function Chrome.CreateNudger(parent, buttonSize, nudge, commit)
     nudger:SetScript("OnHide", function(self)
         addon:EndMoverChromeFade(self)
     end)
+    -- A press is committed once, on release or on leaving while held; a hover
+    -- alone commits nothing.
+    local pending = false
+    local function CommitPending()
+        if not pending then return end
+        pending = false
+        commit()
+    end
     for _, dir in ipairs(directions) do
         local button = CreateFrame("Button", nil, nudger)
         nudger.buttons[#nudger.buttons + 1] = button
@@ -78,14 +86,15 @@ function Chrome.CreateNudger(parent, buttonSize, nudge, commit)
             else
                 arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             end
-            commit()
+            CommitPending()
             if not nudger:IsMouseOver() then addon:EndMoverChromeFade(nudger) end
         end)
         button:SetScript("OnMouseDown", function()
+            pending = true
             nudge(dir.dx, dir.dy)
             addon:VerifyMoverChromeHoverFade(nudger)
         end)
-        button:SetScript("OnMouseUp", commit)
+        button:SetScript("OnMouseUp", CommitPending)
     end
     return nudger
 end

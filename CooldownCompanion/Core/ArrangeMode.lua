@@ -147,7 +147,7 @@ local ARRANGE_SECTION_GEOMETRY_KEYS = {
     "iconWidth",
     "iconHeight",
 }
-local ARRANGE_TEXTURE_POSITION_KEYS = {
+local ARRANGE_INDICATOR_POSITION_KEYS = {
     "point",
     "relativePoint",
     "relativeTo",
@@ -248,7 +248,7 @@ function CooldownCompanion:CaptureArrangePanelRecord(groupId)
         sections = sections,
         signal = CaptureArrangeFields(
             group.indicatorSettings and group.indicatorSettings.signal,
-            ARRANGE_TEXTURE_POSITION_KEYS
+            ARRANGE_INDICATOR_POSITION_KEYS
         ),
         -- How far its Group's moves had carried this Indicator when this
         -- record was taken (a padlock re-captures it mid-arrange).
@@ -274,6 +274,16 @@ function CooldownCompanion:NoteArrangeIndicatorDrift(groupId, deltaX, deltaY)
     drift.y = drift.y + (tonumber(deltaY) or 0)
 end
 
+-- The Group's own rollback record. Entry capture writes it alone, since every
+-- member was just captured; CaptureArrangeContainerRecord adds the member
+-- re-capture the padlock paths need.
+local function WriteArrangeContainerRecord(snapshot, containerId, container)
+    snapshot.containers[containerId] = {
+        anchor = CopyArrangeTable(container.anchor),
+        locked = container.locked,
+    }
+end
+
 function CooldownCompanion:CaptureArrangeContainerRecord(containerId)
     local snapshot = self._arrangeSnapshot
     if not snapshot then
@@ -285,10 +295,7 @@ function CooldownCompanion:CaptureArrangeContainerRecord(containerId)
         return
     end
 
-    snapshot.containers[containerId] = {
-        anchor = CopyArrangeTable(container.anchor),
-        locked = container.locked,
-    }
+    WriteArrangeContainerRecord(snapshot, containerId, container)
     -- The Group's current position is now the committed one, so the drift
     -- its moves gave the members is part of what Cancel keeps.
     for groupId, group in pairs(self.db.profile.groups) do
@@ -360,8 +367,8 @@ function CooldownCompanion:CaptureArrangeSnapshot()
     for groupId in pairs(self.db.profile.groups) do
         self:CaptureArrangePanelRecord(groupId)
     end
-    for containerId in pairs(self.db.profile.groupContainers or {}) do
-        self:CaptureArrangeContainerRecord(containerId)
+    for containerId, container in pairs(self.db.profile.groupContainers or {}) do
+        WriteArrangeContainerRecord(self._arrangeSnapshot, containerId, container)
     end
     self:CaptureArrangeCastBarRecord()
     self:CaptureArrangeResourceRecord()
@@ -403,7 +410,7 @@ local function RestoreArrangeSnapshot(addon, snapshot)
                     and group.indicatorSettings.signal
                     or {}
                 local signal = group.indicatorSettings.signal
-                RestoreArrangeFields(signal, record.signal, ARRANGE_TEXTURE_POSITION_KEYS)
+                RestoreArrangeFields(signal, record.signal, ARRANGE_INDICATOR_POSITION_KEYS)
                 local drift = record.signalDrift
                 if drift and type(signal.x) == "number" and type(signal.y) == "number" then
                     -- Saved Indicator coordinates are tenths; keep float
@@ -804,7 +811,6 @@ function CooldownCompanion:RefreshUnlockToolbar()
     end
 
     local pill = GetArrangeModePill(self)
-    pill._listExpanded = true
     if pill._cancelButton then
         pill._cancelButton:SetShown(self:IsArrangeModeActive())
     end
@@ -815,9 +821,6 @@ function CooldownCompanion:RefreshUnlockToolbar()
     end
 end
 
--- Rebuild the pill's group list: one row per arrange-managed group, sorted by
--- name. Row name click pins the group's controls (WS2 focus); the checkbox is
--- the session-only chrome filter. Collapsed, the pill is just the top band.
 -- The unlock toolbar lists the independent bar movers next to the group
 -- containers. They share the containers' session-only chrome-hidden map and
 -- solo slot, keyed by the string ids "cast" and "resource" -- collision-free
@@ -874,184 +877,6 @@ function CooldownCompanion:RefreshArrangePillList()
     if ST.RefreshArrangeTreePill then
         return ST.RefreshArrangeTreePill(self)
     end
-    local pill = self._arrangeModePill
-    if not (pill and pill:IsShown()) then
-        return
-    end
-
-    local ROW_HEIGHT = 18
-    local rows = pill._rows
-    if not rows then
-        rows = {}
-        pill._rows = rows
-    end
-
-    local entries = {}
-    if self._arrangeModeActive then
-        for containerId, container in pairs(self.db.profile.groupContainers or {}) do
-            if container.locked == false
-                and self:IsContainerVisibleToCurrentChar(containerId)
-                and self:ContainerHasArrangeEligiblePanel(containerId) then
-                entries[#entries + 1] = { id = containerId, name = container.name or ("Group " .. containerId) }
-            end
-        end
-        if self:IsSpecialMoverUnlockEligible("cast") then
-            entries[#entries + 1] = { id = "cast", name = "Cast Bar" }
-        end
-        if self:IsSpecialMoverUnlockEligible("resource") then
-            entries[#entries + 1] = { id = "resource", name = "Resource Bars" }
-        end
-        table.sort(entries, function(a, b)
-            if a.name == b.name then
-                -- Mixed id types: special movers use string ids.
-                return tostring(a.id) < tostring(b.id)
-            end
-            return a.name < b.name
-        end)
-    end
-
-    local expanded = pill._listExpanded == true and #entries > 0
-    if pill._expanderArrow then
-        pill._expanderArrow:SetRotation(expanded and -math.pi / 2 or 0)
-    end
-
-    -- Cap the viewport so a large roster cannot push rows off screen; the
-    -- overflow scrolls with the mouse wheel.
-    local MAX_VISIBLE_ROWS = 12
-    local maxOffset = math.max(0, #entries - MAX_VISIBLE_ROWS)
-    local scrollOffset = pill._listScrollOffset or 0
-    if scrollOffset > maxOffset then
-        scrollOffset = maxOffset
-    end
-    if scrollOffset < 0 then
-        scrollOffset = 0
-    end
-    pill._listScrollOffset = scrollOffset
-    pill._listMaxScrollOffset = maxOffset
-    local visibleCount = math.min(#entries, MAX_VISIBLE_ROWS)
-
-    local function EnsureRow(index)
-        local row = rows[index]
-        if row then
-            return row
-        end
-
-        row = CreateFrame("Button", nil, pill)
-        row:SetHeight(ROW_HEIGHT)
-
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
-        row.bg:SetColorTexture(1, 0.82, 0, 0.12)
-        row.bg:Hide()
-
-        row.check = CreateFrame("Button", nil, row, "BackdropTemplate")
-        row.check:SetSize(12, 12)
-        row.check:SetPoint("LEFT", row, "LEFT", 2, 0)
-        row.check:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-        row.check:SetBackdropColor(0.16, 0.16, 0.16, 1)
-        ST.CreatePixelBorders(row.check)
-        row.check.fill = row.check:CreateTexture(nil, "OVERLAY")
-        row.check.fill:SetSize(6, 6)
-        row.check.fill:SetPoint("CENTER")
-        row.check.fill:SetColorTexture(1, 0.82, 0, 0.9)
-        row.check:SetScript("OnClick", function()
-            if row.containerId then
-                -- Toggle the MANUAL flag the checkbox renders; the effective
-                -- state also folds in solo and would misread during one.
-                local hiddenSet = CooldownCompanion._arrangeChromeHidden
-                local manuallyHidden = hiddenSet ~= nil and hiddenSet[row.containerId] == true
-                CooldownCompanion:SetContainerArrangeChromeHidden(row.containerId, not manuallyHidden)
-                CooldownCompanion:RefreshArrangePillList()
-            end
-        end)
-
-        row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
-        row.name:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        row.name:SetJustifyH("LEFT")
-        row.name:SetWordWrap(false)
-
-        row:SetScript("OnClick", function()
-            local id = row.containerId
-            if not id then
-                return
-            end
-            local hiddenSet = CooldownCompanion._arrangeChromeHidden
-            if hiddenSet and hiddenSet[id] == true then
-                return
-            end
-            if CooldownCompanion._arrangeSoloContainerId == id then
-                CooldownCompanion:SetArrangeSoloContainer(nil)
-            else
-                CooldownCompanion:SetArrangeSoloContainer(id)
-            end
-        end)
-        row:SetScript("OnEnter", function(self)
-            if not self._selected then
-                self.bg:SetColorTexture(1, 1, 1, 0.06)
-                self.bg:Show()
-            end
-        end)
-        row:SetScript("OnLeave", function(self)
-            if not self._selected then
-                self.bg:Hide()
-            end
-        end)
-
-        rows[index] = row
-        return row
-    end
-
-    local maxNameWidth = 0
-    for index = 1, visibleCount do
-        local entry = entries[scrollOffset + index]
-        local row = EnsureRow(index)
-        row.containerId = entry.id
-        row.name:SetText(entry.name)
-
-        -- The checkbox mirrors the MANUAL flag; the gray name mirrors the
-        -- effective state, so a solo grays the others without unticking them.
-        local hiddenSet = self._arrangeChromeHidden
-        local manuallyHidden = hiddenSet ~= nil and hiddenSet[entry.id] == true
-        local hidden = self:IsContainerArrangeChromeHidden(entry.id)
-        row.check.fill:SetShown(not manuallyHidden)
-        row.name:SetTextColor(hidden and 0.55 or 1, hidden and 0.55 or 1, hidden and 0.55 or 1, 1)
-
-        row._selected = self._arrangeFocusContainerId == entry.id and not hidden or nil
-        if row._selected then
-            row.bg:SetColorTexture(1, 0.82, 0, 0.12)
-            row.bg:Show()
-        elseif row:IsMouseOver() then
-            row.bg:SetColorTexture(1, 1, 1, 0.06)
-            row.bg:Show()
-        else
-            row.bg:Hide()
-        end
-
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", pill, "TOPLEFT", 8, -(30 + (index - 1) * ROW_HEIGHT))
-        row:SetPoint("TOPRIGHT", pill, "TOPRIGHT", -8, -(30 + (index - 1) * ROW_HEIGHT))
-        row:SetShown(expanded)
-
-        local nameWidth = row.name:GetStringWidth() or 0
-        if nameWidth > maxNameWidth then
-            maxNameWidth = nameWidth
-        end
-    end
-
-    for index = visibleCount + 1, #rows do
-        rows[index].containerId = nil
-        rows[index]:Hide()
-    end
-
-    if expanded then
-        pill:SetSize(
-            math.max(pill._baseWidth or 200, math.ceil(8 + 2 + 12 + 6 + maxNameWidth + 2 + 8 + 12)),
-            30 + visibleCount * ROW_HEIGHT + 6
-        )
-    else
-        pill:SetSize(pill._baseWidth or 200, 30)
-    end
 end
 
 local function CancelActiveMoverDrag(addon, frame, activeField)
@@ -1097,19 +922,14 @@ function CooldownCompanion:BeginCombatForcedLock()
         return false
     end
 
-    local snapshot = {
-        containers = {},
-        groups = {},
-        hadUnlocked = false,
-    }
+    local hadUnlocked = false
 
     for containerId, container in pairs(self.db.profile.groupContainers or {}) do
         if container
             and container.locked == false
             and self:IsContainerVisibleToCurrentChar(containerId)
         then
-            snapshot.containers[containerId] = true
-            snapshot.hadUnlocked = true
+            hadUnlocked = true
         end
     end
 
@@ -1118,11 +938,11 @@ function CooldownCompanion:BeginCombatForcedLock()
             and group.locked == false
             and self:IsGroupVisibleToCurrentChar(groupId)
         then
-            snapshot.groups[groupId] = true
-            snapshot.hadUnlocked = true
+            hadUnlocked = true
         end
     end
 
+    local snapshot = { hadUnlocked = hadUnlocked }
     self._combatForcedLock = true
     self._combatForcedLockSnapshot = snapshot
     self._arrangeSelectedPanelId = nil
@@ -1160,7 +980,6 @@ function CooldownCompanion:BeginCombatForcedLock()
         frame._combatForcedHidden = not active or nil
         SuppressFrameVisibilityForCombat(frame.dragHandle)
         SuppressFrameVisibilityForCombat(frame.coordLabel)
-        SuppressFrameVisibilityForCombat(frame.dragHelpButton)
         SuppressFrameVisibilityForCombat(frame.nudger)
         -- The chrome just came down without going through
         -- SetGroupDragControlsShown, so explicitly remove the Aura Panel's
@@ -1173,7 +992,6 @@ function CooldownCompanion:BeginCombatForcedLock()
         ST.SetSectionMoverOverlaysShown(self, frame, group, false)
         ForceCombatMouseLock(frame)
         ForceCombatMouseLock(frame.dragHandle)
-        ForceCombatMouseLock(frame.dragHelpButton)
         ForceCombatMouseLock(frame.nudger)
         for _, button in ipairs(frame.buttons or {}) do
             local buttonData = button and button.buttonData
@@ -1187,9 +1005,7 @@ function CooldownCompanion:BeginCombatForcedLock()
                 ForceCombatMouseLock(host)
                 SuppressFrameVisibilityForCombat(host.dragHandle)
                 SuppressFrameVisibilityForCombat(host.coordLabel)
-                SuppressFrameVisibilityForCombat(host.dragHelpButton)
                 SuppressFrameVisibilityForCombat(host.nudger)
-                ForceCombatMouseLock(host.dragHelpButton)
                 if host.auraTextureOutlineFill then
                     host.auraTextureOutlineFill:Hide()
                 end
@@ -1203,8 +1019,7 @@ function CooldownCompanion:BeginCombatForcedLock()
         end
 
         if active then
-            local frameAlpha = (group and group.baselineAlpha) or 1
-            frameAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
+            local frameAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
             frame:SetAlpha(frameAlpha)
         elseif frame:IsProtected() then
             frame:SetAlpha(0)
@@ -1235,7 +1050,6 @@ function CooldownCompanion:EndCombatForcedLock()
         frame._combatForcedHidden = nil
         RestoreFrameVisibilityAfterCombat(frame.dragHandle)
         RestoreFrameVisibilityAfterCombat(frame.coordLabel)
-        RestoreFrameVisibilityAfterCombat(frame.dragHelpButton)
         RestoreFrameVisibilityAfterCombat(frame.nudger)
         -- Restore the placeholder preview immediately. Container Arrange Mode
         -- previews every member even though only the selected member has drag
@@ -1255,7 +1069,6 @@ function CooldownCompanion:EndCombatForcedLock()
             local host = button and button.auraTextureHost or nil
             RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
             RestoreFrameVisibilityAfterCombat(host and host.coordLabel or nil)
-            RestoreFrameVisibilityAfterCombat(host and host.dragHelpButton or nil)
             RestoreFrameVisibilityAfterCombat(host and host.nudger or nil)
         end
     end
@@ -1313,12 +1126,13 @@ function CooldownCompanion:SetContainerEnabled(containerId, enabled)
     self:RefreshContainerPanels(containerId)
 end
 
-function CooldownCompanion:SetContainerLocked(containerId, locked)
+-- opts.deferToolbar skips the closing toolbar refresh for a caller that
+-- refreshes it once itself (EnterArrangeMode).
+function CooldownCompanion:SetContainerLocked(containerId, locked, opts)
     local container = self.db.profile.groupContainers[containerId]
     if not container then return end
-    local toolbarWasActive = self:IsUnlockToolbarActive()
     local suppressionChanged = false
-    if locked and toolbarWasActive and self:IsArrangeModeActive() then
+    if locked and self:IsArrangeModeActive() and self:IsUnlockToolbarActive() then
         self._arrangeContainerSuppressed = self._arrangeContainerSuppressed or {}
         suppressionChanged = self._arrangeContainerSuppressed[containerId] ~= true
         self._arrangeContainerSuppressed[containerId] = true
@@ -1347,7 +1161,9 @@ function CooldownCompanion:SetContainerLocked(containerId, locked)
         and self.ShowCursorAnchorLayoutPreview then
         self:RefreshCursorAnchorLayoutPreview()
     end
-    self:RefreshUnlockToolbar()
+    if not (opts and opts.deferToolbar) then
+        self:RefreshUnlockToolbar()
+    end
 end
 
 function CooldownCompanion:SetPanelLocked(panelId, locked)
@@ -1537,7 +1353,7 @@ function CooldownCompanion:EnterArrangeMode()
     for containerId in pairs(self.db.profile.groupContainers or {}) do
         if self:IsContainerVisibleToCurrentChar(containerId)
             and self:ContainerHasArrangeEligiblePanel(containerId) then
-            self:SetContainerLocked(containerId, false)
+            self:SetContainerLocked(containerId, false, { deferToolbar = true })
         end
     end
     self:EndPanelAttachmentRefresh(attachmentOperation, false, "enter-arrange")
@@ -1558,7 +1374,7 @@ function CooldownCompanion:EnterArrangeMode()
     end
     local pill = GetArrangeModePill(self)
     -- The group list is where solo focus and chrome hiding live; start every
-    -- unlock with it open so those controls are discoverable.
+    -- unlock scrolled to the top.
     pill._listScrollOffset = 0
     self:RefreshUnlockToolbar()
     self:Print("All frames unlocked. Drag to move.")

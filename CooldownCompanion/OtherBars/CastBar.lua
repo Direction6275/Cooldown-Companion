@@ -179,7 +179,7 @@ local function IndependentCastBarCoordOnUpdate(self, elapsed)
             UpdateIndependentCastBarCoordLabel(self, x, y)
         end
     end
-    CooldownCompanion:UpdateDragSnapSession(self)
+    -- Snapping runs every frame from the drag-snap session's own tracker.
 end
 
 local function StartIndependentCastBarCoordUpdates(frame, anchor)
