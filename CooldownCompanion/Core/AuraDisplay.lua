@@ -3828,6 +3828,14 @@ end
 -- the Aura Panel host functions (defined with the Aura Panel section below).
 local ApplyPanelHostGeometry, ApplyPanelHostIcon, BuildPanelGroupHost
 
+-- The fill inset every bar cell (attached and Aura Panel) carries inside its
+-- border ring. Match the shell ring's scale source without measuring the
+-- native subtree.
+local function BarCellInset(style)
+    return ST.GetEffectiveBorderLayoutSize(UIParent,
+        style.borderSize or ST.DEFAULT_BORDER_SIZE, style)
+end
+
 -- SetAuraGroupLayout REPLACES the whole options table, so every field the
 -- group needs is written every time. elementSpacing must stay 0: the flow
 -- layout advances the cursor by elementSpacing after an element AND adds
@@ -3846,9 +3854,7 @@ end
 
 local function SetAttachedBlockGeometry(group, entry)
     group.isBar = true
-    -- Match the shell ring's scale source without measuring the native subtree.
-    group.inset = ST.GetEffectiveBorderLayoutSize(UIParent,
-        entry.style.borderSize or ST.DEFAULT_BORDER_SIZE, entry.style)
+    group.inset = BarCellInset(entry.style)
     group.iconShown, group.iconSize, group.iconOffset, group.iconReverse =
         ST._GetAuraPanelBarIconGeometry(entry.style, true, entry.vertical, entry.width, entry.height)
 end
@@ -3859,7 +3865,6 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
         group.frameWidth = entry.width
         group.frameHeight = entry.height
         group.isVertical = entry.vertical
-        group.inset = entry.inset
         SetAttachedBlockGeometry(group, entry)
         record.container:SetAuraGroupLayout(entry.id, BlockGroupLayout(entry, layoutIndex))
         return group
@@ -3873,7 +3878,6 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
         frameWidth = entry.width,
         frameHeight = entry.height,
         isVertical = entry.vertical,
-        inset = entry.inset,
     }
     SetAttachedBlockGeometry(group, entry)
     -- maxFrameCount 1 is structural, not a display choice: a group that could
@@ -4420,9 +4424,10 @@ ST._GetAuraPanelBarIconGeometry = PanelBarIconGeometry
 -- prefers the group's elementWidth/Height but never resizes the frame), so the
 -- two are written from the same source every bind.
 --
--- Aura Panel cells retain their full-area mount. Attached bar entries instead
--- carry an inset fill mount inside the full bar bounds, matching BarMode's
--- statusBar geometry so native fills cannot cover the shell's border ring.
+-- Bar cells (Aura Panel and attached alike) carry an inset fill mount inside
+-- the full bar bounds, matching BarMode's statusBar geometry: the native fills
+-- are child frames, so they draw above the shell's border ring and would
+-- otherwise cover it. Icon cells keep the full-area mount (inset 0).
 --
 -- The bar-host descriptor is re-stamped here rather than at creation because an
 -- Aura Panel can be switched between its icon and bar forms, and the pooled
@@ -4552,11 +4557,11 @@ BuildPanelGroupHost = function(pgroup, frame)
     local barArea = CreateFrame("Frame", nil, proxy)
     barArea:EnableMouse(false)
     proxy._ccBarArea = barArea
-    if pgroup.record.owner then
-        local fillArea = CreateFrame("Frame", nil, proxy)
-        fillArea:EnableMouse(false)
-        proxy._ccBarFillArea = fillArea
-    end
+    -- Every host gets the fill area, for the same pooled-conversion reason;
+    -- icon cells carry inset 0, so on them it is the bar area's exact rect.
+    local fillArea = CreateFrame("Frame", nil, proxy)
+    fillArea:EnableMouse(false)
+    proxy._ccBarFillArea = fillArea
     -- The icon square, mirroring BarMode's trio: _iconBounds is the square's
     -- rect (the kit's shell replicas ring it and back it), and `icon` is the
     -- field StyleSlotKit reads to decide the square participates at all — it
@@ -4624,6 +4629,7 @@ local function EnsurePanelGroup(record, entry, layoutIndex)
         pgroup.iconSize = entry.iconSize
         pgroup.iconOffset = entry.iconOffset
         pgroup.iconReverse = entry.iconReverse
+        pgroup.inset = entry.inset
         record.container:SetAuraGroupLayout(entry.id, PanelGroupLayout(entry, layoutIndex))
         return pgroup
     end
@@ -4643,6 +4649,7 @@ local function EnsurePanelGroup(record, entry, layoutIndex)
         iconSize = entry.iconSize,
         iconOffset = entry.iconOffset,
         iconReverse = entry.iconReverse,
+        inset = entry.inset,
     }
     -- maxFrameCount 1 is structural, not a display choice: one entry is one
     -- aura, and a group that could outgrow its pre-created batch would run
@@ -4845,6 +4852,7 @@ local function BindAuraPanel(self, groupId, group, frame)
                         iconSize = iconSize,
                         iconOffset = iconOffset,
                         iconReverse = iconReverse,
+                        inset = isBar and BarCellInset(style) or 0,
                     }
                     BindPanelGroup(EnsurePanelGroup(record, entry, layoutIndex), entry)
                 end
