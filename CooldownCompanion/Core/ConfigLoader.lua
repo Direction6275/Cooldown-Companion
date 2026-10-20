@@ -322,6 +322,9 @@ function CooldownCompanion:SetupConfig()
 
     self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
         ResetLoadedConfigForProfileChange(CooldownCompanion)
+        -- Rename and Duplicate copy into this new profile next, and
+        -- OnProfileCopied migrates and refreshes it.
+        if CooldownCompanion._profileCopyFollows then return end
         local rawProfile = db and db.sv and type(db.sv.profiles) == "table" and db.sv.profiles[profileName]
         if type(rawProfile) ~= "table" or next(rawProfile) == nil then
             CooldownCompanion._allowMissingMigrationCheckpointOnce = true

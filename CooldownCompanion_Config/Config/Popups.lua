@@ -703,7 +703,9 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
             if newName == data.oldName then return end
             local db = CooldownCompanion.db
             CooldownCompanion._suppressOwnershipRestamp = true
+            CooldownCompanion._profileCopyFollows = true
             db:SetProfile(newName)
+            CooldownCompanion._profileCopyFollows = nil
             db:CopyProfile(data.oldName)
             CooldownCompanion._suppressOwnershipRestamp = nil
             db:DeleteProfile(data.oldName, true)
@@ -738,15 +740,18 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
             end
             local db = CooldownCompanion.db
             CooldownCompanion._suppressOwnershipRestamp = true
+            CooldownCompanion._profileCopyFollows = true
             db:SetProfile(newName)
+            CooldownCompanion._profileCopyFollows = nil
             db:CopyProfile(data.source)
             if StripLocalPanelMetadataFromProfile then
                 StripLocalPanelMetadataFromProfile(db.profile)
             end
             CooldownCompanion._suppressOwnershipRestamp = nil
+            -- OnProfileCopied already migrated and rebuilt the panels; this
+            -- repaints config after the CDM-source strip.
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
-            CooldownCompanion:RefreshAllGroups()
         end
     end,
     EditBoxOnEnterPressed = function(self)

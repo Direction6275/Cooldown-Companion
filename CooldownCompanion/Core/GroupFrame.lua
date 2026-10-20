@@ -311,8 +311,8 @@ function GF.EnsureMoverChrome(frame)
 end
 
 function CooldownCompanion:CreateGroupFrame(groupId)
-    -- Return existing frame to prevent duplicates (SharedMedia callbacks
-    -- can trigger RefreshAllMedia before OnEnable's CreateAllGroupFrames)
+    -- Return the existing frame: a second frame for the same panel would take
+    -- over its global name and leak the first.
     if self.groupFrames[groupId] then
         return self.groupFrames[groupId]
     end

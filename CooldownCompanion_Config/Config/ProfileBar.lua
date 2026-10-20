@@ -12,7 +12,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Imports from earlier Config/ files
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
-local ResetConfigSelection = ST._ResetConfigSelection
 
 local function RefreshProfileBar(bar)
     -- Release tracked AceGUI widgets
@@ -38,11 +37,9 @@ local function RefreshProfileBar(bar)
     profileDrop:SetValue(currentProfile)
     profileDrop:SetWidth(150)
     profileDrop:SetCallback("OnValueChanged", function(widget, event, val)
-        if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
+        -- OnProfileChanged (ConfigLoader) closes the docked spellbook, resets
+        -- config and refreshes.
         db:SetProfile(val)
-        ResetConfigSelection(true)
-        CooldownCompanion:RefreshConfigPanel()
-        CooldownCompanion:RefreshAllGroups()
     end)
     profileDrop.frame:SetParent(bar)
     profileDrop.frame:ClearAllPoints()
