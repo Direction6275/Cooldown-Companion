@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Clone project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -22,7 +22,7 @@ jobs:
           args: -d -g retail
 
       - name: Upload preview zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CooldownCompanion-preview
           path: .release/CooldownCompanion*.zip
