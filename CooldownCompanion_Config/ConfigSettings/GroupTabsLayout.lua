@@ -265,8 +265,8 @@ local function GetLayoutFinderState(context)
     -- Finder visits both presentations; EntryPresentation's builder dispatch
     -- only calls BuildGridArrangement for the eligible grid presentation.
     -- Keep that routing gate separate from the shared grid row decisions.
-    if (displayMode == "icons" and not hasIcons) or (group._attachedBarOwner and (ST.GetBarOnlyLayoutMode(owner) == "stack"
-        or ST.GetPanelLayoutKind(owner) ~= "bars")) then
+    if (displayMode == "icons" and not hasIcons)
+        or (group._attachedBarOwner and ST.GetPanelLayoutKind(owner) ~= "bars") then
         for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
             "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
     end

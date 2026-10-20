@@ -3,7 +3,6 @@
 local _, ST = ...
 local Addon, CS = ST.Addon, ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
-local BAR_LAYOUT_FIELDS = { compactLayout = true, compactGrowthDirection = true, maxVisibleButtons = true }
 
 local panelEditorStates = setmetatable({}, { __mode = "k" })
 function ST._GetPanelSettingsState(owner)
@@ -134,10 +133,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
             local saved = SavedStyle()
             if not saved then
                 saved = {}
-                if bar then
-                    owner.barOnlyLayout = owner.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(owner) }
-                    owner.attachedBarStyle = saved
-                else owner.style = saved end
+                if bar then owner.attachedBarStyle = saved else owner.style = saved end
             end
             saved[key] = value
         end,
@@ -147,7 +143,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         isCurrent = function() return context:IsCurrent() end,
         capture = function(keys)
             local restoreOwner = ST._CaptureRawSettingsFields(owner,
-                bar and { "attachedBarStyle", "barOnlyLayout" } or { "style" })
+                { bar and "attachedBarStyle" or "style" })
             local restoreStyle = ST._CaptureRawSettingsFields(SavedStyle(), keys)
             return function()
                 restoreStyle()
@@ -182,41 +178,14 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         _fittedBarLayout = bar and ST.GetPanelGeometryKind(owner) ~= "bars" or false,
         _moduleGeometryOnly = bar and context.contents and not context.contents.bars or false,
     }, {
-        __index = function(_, key)
-            if bar and BAR_LAYOUT_FIELDS[key] then
-                local value = owner.barOnlyLayout and owner.barOnlyLayout[key]
-                if value ~= nil then return value end
-                if key == "compactLayout" then return false end
-                return key == "maxVisibleButtons" and 0 or "center"
-            end
-            return owner[key]
-        end,
+        __index = owner,
         __newindex = function(_, key, value)
-            if not context:IsCurrent() then return end
-            if bar and BAR_LAYOUT_FIELDS[key] then
-                owner.barOnlyLayout = owner.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(owner) }
-                owner.barOnlyLayout[key] = value
-            else owner[key] = value end
+            if context:IsCurrent() then owner[key] = value end
         end,
     })
     getmetatable(context.group)._settingsPreviewTarget = {
         isCurrent = function() return context:IsCurrent() end,
-        capture = function(keys)
-            local ownerKeys, layoutKeys = {}, {}
-            for _, key in ipairs(keys) do
-                local destination = bar and BAR_LAYOUT_FIELDS[key] and layoutKeys or ownerKeys
-                destination[#destination + 1] = key
-            end
-            local layout = owner.barOnlyLayout
-            local savedLayout = rawget(owner, "barOnlyLayout")
-            local restoreOwner = ST._CaptureRawSettingsFields(owner, ownerKeys)
-            local restoreLayout = ST._CaptureRawSettingsFields(layout, layoutKeys)
-            return function()
-                restoreOwner()
-                restoreLayout()
-                if #layoutKeys > 0 then rawset(owner, "barOnlyLayout", savedLayout) end
-            end
-        end,
+        capture = function(keys) return ST._CaptureRawSettingsFields(owner, keys) end,
     }
     return context
 end

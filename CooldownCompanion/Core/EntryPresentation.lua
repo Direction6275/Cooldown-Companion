@@ -1,8 +1,7 @@
 -- Entry presentation is independent of tracking identity and panel ownership.
 local ADDON_NAME, ST = ...
 local Addon = ST.Addon
-ST.BAR_ONLY_LAYOUT_KEYS = { "mode", "compactLayout", "compactGrowthDirection", "maxVisibleButtons", "stackGap" }
-ST.ATTACHED_BAR_LAYOUT_KEYS = { "spacing", "gap", "length" }
+ST.ATTACHED_BAR_LAYOUT_KEYS = { "spacing", "gap" }
 
 -- Geometry has one owner even when the bar's renderer belongs to a module.
 -- Inputs are configuration/body geometry, never native aura-container extents.
@@ -14,7 +13,6 @@ function ST.ResolveBarGeometry(group, options)
     local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
     local layout = ordinary and group.attachedBarLayout or {}
     layout = layout or {}
-    local stack = ST.PanelUsesBarStack(group, options.layoutKind)
     local vertical = options.vertical == true
     if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
     local thickness = options.thickness
@@ -30,8 +28,7 @@ function ST.ResolveBarGeometry(group, options)
         thickness = thickness, length = length, vertical = vertical,
         width = vertical and thickness or length, height = vertical and length or thickness,
         spacing = attached and (layout.spacing or 3) or options.spacing or 3,
-        distance = attached and (stack and (group.barOnlyLayout and group.barOnlyLayout.stackGap or 0)
-            or layout.gap or 3) or options.distance or 3,
+        distance = attached and (layout.gap or 3) or options.distance or 3,
     }
 end
 
@@ -188,6 +185,56 @@ function ST.NormalizeEntryBarCharges(group)
     if group.style then group.style.barSegmentCharges = nil end
 end
 
+-- LEGACY CONVERSION. Bar-only panels once kept a separate arrangement block: a
+-- Grid / Collapsing Stack choice and a second Compact Mode. A panel now has one
+-- Compact Mode, and a bar-only panel is always a Grid (owner ruling
+-- 2026-10-19). The block is consumed whole and removed, so every load, import
+-- and template apply can run this. A Stack becomes the one-line Grid it drew,
+-- its near edge left where the stack began; its cooldown bars always closed
+-- their gaps, so Compact Mode comes on. Only its first bar's side survives a
+-- stack spread over several sides.
+local STACK_TO_GRID = {
+    below = { orientation = "vertical", origin = "TOPLEFT", point = "TOP", dx = 0, dy = -1 },
+    above = { orientation = "vertical", origin = "BOTTOMLEFT", point = "BOTTOM", dx = 0, dy = 1 },
+    right = { orientation = "horizontal", origin = "TOPLEFT", point = "LEFT", dx = 1, dy = 0 },
+    left = { orientation = "horizontal", origin = "TOPRIGHT", point = "RIGHT", dx = -1, dy = 0 },
+}
+function ST.RetireBarOnlyLayout(group)
+    local layout = type(group) == "table" and rawget(group, "barOnlyLayout")
+    if layout == nil then return end
+    group.barOnlyLayout = nil
+    if type(layout) ~= "table" or not ST.PanelSupportsAttachedBars(group) then return end
+    -- The block only ever arranged a panel whose entries are all bars. On any
+    -- other panel it was dormant, and the panel's own Compact Mode governed.
+    local first
+    for _, entry in ipairs(group.buttons or {}) do
+        if not ST.IsPanelBarEntry(group, entry) then return end
+        first = first or entry
+    end
+    if not first then return end
+    if layout.mode == "stack" then
+        local line = STACK_TO_GRID[(ST.GetAttachedBarPlacement(first))]
+        local style = group.attachedBarStyle or CopyTable(ST.ATTACHED_BAR_DEFAULTS)
+        group.attachedBarStyle = style
+        style.barOrientation, style.growthOrigin = line.orientation, line.origin
+        style.buttonsPerRow = math.max(#group.buttons, 12)
+        style.buttonSpacing = group.attachedBarLayout and group.attachedBarLayout.spacing or 3
+        group.compactLayout, group.compactGrowthDirection, group.maxVisibleButtons = true, "start", 0
+        local anchor = group.anchor
+        if type(anchor) == "table" and not (Addon.IsCursorAnchor and Addon:IsCursorAnchor(anchor)) then
+            local gap = tonumber(layout.stackGap) or 0
+            anchor.point = line.point
+            anchor.x = (tonumber(anchor.x) or 0) + line.dx * gap
+            anchor.y = (tonumber(anchor.y) or 0) + line.dy * gap
+            anchor.baseWidth, anchor.baseHeight = nil, nil
+        end
+    elseif layout.compactLayout == true then
+        group.compactLayout = true
+        group.compactGrowthDirection = layout.compactGrowthDirection or "center"
+        group.maxVisibleButtons = layout.maxVisibleButtons or 0
+    end
+end
+
 -- Structural eligibility only: cooldown/aura visibility and temporary load
 -- conditions cannot turn a mixed panel into a differently arranged bar grid.
 function ST.IsPanelLayoutEntryEligible(group, entry)
@@ -229,22 +276,6 @@ function ST.GetPanelGeometryKind(group, kind)
     return bars and "bars" or icons and "icons" or "empty"
 end
 
-function ST.GetBarOnlyLayoutMode(group)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    if group and group.barOnlyLayout then
-        return group.barOnlyLayout.mode == "stack" and "stack" or "grid"
-    end
-    -- The development attached-bar format predates the layout selector.
-    if group and (group.attachedBarStyle or group.attachedBarLayout) then return "stack" end
-    return "grid"
-end
-
-function ST.PanelUsesBarStack(group, kind)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    return ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group, kind) == "bars"
-        and ST.GetBarOnlyLayoutMode(group) == "stack"
-end
-
 function ST.PanelUsesAttachedBarLayout(group, kind)
     if not ST.PanelSupportsAttachedBars(group) then return false end
     kind = ST.GetPanelGeometryKind(group, kind)
@@ -256,7 +287,7 @@ function ST.PanelUsesAttachedBarLayout(group, kind)
             if ST.IsPanelBarEntry(group, entry) then return true end
         end
     end
-    return kind == "mixed" or ST.PanelUsesBarStack(group, kind)
+    return kind == "mixed"
 end
 
 function ST.IsAttachedBarEntry(group, entry, layoutKind)
@@ -278,13 +309,11 @@ function ST.InitializeNewPanelBarStyle(group)
     group._barGeometryVersion = 1
     group._sharedBarStyleVersion = 1
     group.attachedBarStyle = CopyTable(ST._defaults.profile.globalStyle)
-    group.barOnlyLayout = { mode = "grid" }
 end
 local styleCache = setmetatable({}, { __mode = "k" })
 
 function ST.GetAttachedBarStyle(group, forEditing)
     if forEditing then
-        group.barOnlyLayout = group.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(group) }
         if not group.attachedBarStyle then
             group.attachedBarStyle = CopyTable(ST.ATTACHED_BAR_DEFAULTS)
         end
@@ -316,40 +345,18 @@ end
 
 -- An ephemeral view lets the established Bar Panel grid consume its own
 -- geometry without changing the saved panel type or the icon arrangement.
+-- Compact Mode is the panel's own: one setting for icons and bars alike.
 function ST.GetPanelLayoutGroup(group, forEditing, kind)
-    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars"
-        or ST.GetBarOnlyLayoutMode(group) ~= "grid" then return group end
-    local layout = group.barOnlyLayout or {}
+    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars" then return group end
     return setmetatable({
         _unifiedPanelOwner = group, displayMode = "bars", style = ST.GetAttachedBarStyle(group, forEditing),
-        compactLayout = layout.compactLayout == true,
-        compactGrowthDirection = layout.compactGrowthDirection or "center",
-        maxVisibleButtons = layout.maxVisibleButtons or 0,
     }, { __index = group })
 end
 
 function ST.GetPanelBarStyleGroup(group)
     local style = ST.GetAttachedBarStyle(group, true)
-    local defaults = { compactLayout = false, compactGrowthDirection = "center", maxVisibleButtons = 0 }
     return setmetatable({ displayMode = "bars", style = style, _attachedBarOwner = group,
-        _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, {
-        __index = function(_, key)
-            if defaults[key] ~= nil then
-                local value = group.barOnlyLayout and group.barOnlyLayout[key]
-                if value ~= nil then return value end
-                return defaults[key]
-            end
-            return group[key]
-        end,
-        __newindex = function(_, key, value)
-            if defaults[key] ~= nil then
-                group.barOnlyLayout = group.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(group) }
-                group.barOnlyLayout[key] = value
-            else
-                group[key] = value
-            end
-        end,
-    })
+        _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, { __index = group, __newindex = group })
 end
 
 -- Movers edit the visible bar dimensions in either bar-only arrangement.
@@ -360,17 +367,7 @@ function ST.GetPanelSizingGroup(group)
     return group
 end
 
-function ST.GetBarOnlyLength(group, style)
-    local oldLayout = not group.barOnlyLayout and group.attachedBarLayout
-    return (oldLayout and oldLayout.length) or style.barLength or 180
-end
-
 function ST.GetPanelAttachmentDimensions(frame, group, region)
-    if ST.PanelUsesBarStack(group) then
-        local style = ST.GetAttachedBarStyle(group)
-        local length, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
-        return style.barFillVertical and thickness or length, style.barFillVertical and length or thickness
-    end
     if ST.PanelSupportsAttachedBars(group) and ST.GetConfiguredPanelIconGeometry
         and (frame.visibleButtonCount or 0) == 0
         and not (frame._sectionLayout and next(frame._sectionLayout.sections))

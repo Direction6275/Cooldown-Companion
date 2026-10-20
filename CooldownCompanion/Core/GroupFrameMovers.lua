@@ -343,17 +343,6 @@ local function GetPanelResizeCursorPosition()
     return cursorX / scale, cursorY / scale
 end
 
-local function GetPanelBarStackGeometry(group)
-    local included = {}
-    local includeInactive = ST.GetPanelLayoutKind(group) == "empty"
-    for index, entry in ipairs(group.buttons or {}) do
-        if includeInactive or ST.IsPanelLayoutEntryEligible(group, entry) then included[index] = true end
-    end
-    local positions, originX, originY, width, height = ST.GetAttachedBarPreviewLayout(
-        group, 1, 1, { x = 0, y = 0, width = 1, height = 1 }, included)
-    return included, positions, originX, originY, width, height
-end
-
 -- A rebuild is only a reason to recheck the resize basis, not to cancel.
 -- Use the same calculations at mouse-down and after any button population.
 local function GetPanelResizeBasis(frame, groupId, group, basis, start)
@@ -434,35 +423,10 @@ local function GetPanelResizeBasis(frame, groupId, group, basis, start)
         end
     end
 
-    if frame._barStackMoverActive then
-        -- The root stays fixed regardless of its saved anchor. The grip's
-        -- moving edge is determined by bar placement around that root.
-        local panel = group._attachedBarOwner or group
-        if start then
-            -- Compare at the drag's starting dimensions. Resizing can change
-            -- the dominant stack edge without changing its saved arrangement.
-            local view, barStyle = {}, {}
-            for key, value in pairs(panel) do view[key] = value end
-            for key, value in pairs(group.style) do barStyle[key] = value end
-            -- Effective-style resolution updates entry override metatables.
-            -- Keep those writes away from the live entries during this check.
-            view.buttons = CopyTable(panel.buttons)
-            barStyle.barLength, barStyle.barHeight = start._resizeStartPrimary, start._resizeStartSecondary
-            view.attachedBarStyle, panel = barStyle, view
-        end
-        local included, positions, originX, originY, width, height = GetPanelBarStackGeometry(panel)
-        local metrics = ST.GetBarStackResizeMetrics(panel, included, positions, originX, originY, width, height)
-        basis.cols, basis.rows = metrics.xFactor, metrics.yFactor
-        basis.kX, basis.kY = 1, 1
-        basis.signX = metrics.xSide == "LEFT" and -1 or 1
-        basis.signY = metrics.ySide == "TOP" and -1 or 1
-    end
-
     basis.kind = group.displayMode == "bars" and "bar" or style.maintainAspectRatio and "square" or "icon"
     basis.barFillVertical = basis.kind == "bar" and style.barFillVertical == true
     basis.displayMode = group.displayMode or "icons"
     basis.orientation = orientation
-    basis.stack = frame._barStackMoverActive == true
     return basis
 end
 
@@ -663,7 +627,6 @@ local function BeginPanelResizeGesture(grip)
     grip._resizeElapsed = 0
     grip._resizeRestylePending = nil
 
-    if frame._barStackMoverActive then ST.UpdatePanelMoverBounds(frame, owner) end
     grip._resizeBasis = GetPanelResizeBasis(frame, groupId, group, {})
     if group.displayMode == "bars" then
         grip._resizeStartPrimary = style.barLength or 180
@@ -918,49 +881,6 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
 end
 
--- Bar-only stacks retain a tiny positioning root. Their chrome instead uses
--- the configured, fully expanded bar footprint, never native aura dimensions.
-function ST.UpdatePanelMoverBounds(frame, group, kind)
-    if InCombatLockdown() or not frame.dragHandle or not frame.dragHandle:IsShown() then return end
-    local surface = frame
-    local stack = ST.PanelUsesBarStack(group, kind)
-    if stack then
-        surface = frame._barStackMoverBounds
-        if not surface then
-            surface = CreateFrame("Frame", nil, frame)
-            frame._barStackMoverBounds = surface
-        end
-        local included, positions, originX, originY, width, height = GetPanelBarStackGeometry(group)
-        if not (frame.resizeGrip and frame.resizeGrip._resizeActive) then
-            frame._barStackResizeMetrics = ST.GetBarStackResizeMetrics(
-                group, included, positions, originX, originY, width, height)
-        end
-        surface:ClearAllPoints()
-        surface:SetPoint("TOPLEFT", frame, "TOPLEFT", -originX, originY)
-        surface:SetSize(width, height)
-        frame.dragHandle:ClearAllPoints()
-        frame.dragHandle:SetPoint("BOTTOM", surface, "TOP", 0, 2)
-        frame.dragHandle:SetWidth(math_max(100, width))
-        if frame.coordLabel then
-            frame.coordLabel:ClearAllPoints()
-            frame.coordLabel:SetPoint("TOP", surface, "BOTTOM", 0, -2)
-            frame.coordLabel:SetWidth(math_max(100, width))
-        end
-    elseif frame._barStackMoverActive then
-        frame._barStackResizeMetrics = nil
-        frame.dragHandle:ClearAllPoints()
-        frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-        frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
-        if frame.coordLabel then
-            frame.coordLabel:ClearAllPoints()
-            frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
-            frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
-        end
-    else return end
-    frame._barStackMoverActive = stack or nil
-    CooldownCompanion:RepositionPanelResizeGrip(frame)
-end
-
 -- The resize grip lives on the panel's movable corner. Ordinary panels keep
 -- the BOTTOMRIGHT default; a parked cursor panel's anchored point is fixed at
 -- the dummy cursor, so the opposite corner is the one that tracks resizes.
@@ -971,9 +891,7 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
     end
     local group = frame.groupId and self.db.profile.groups[frame.groupId]
     local xSide, ySide = "RIGHT", "BOTTOM"
-    if frame._barStackMoverActive and frame._barStackResizeMetrics then
-        xSide, ySide = frame._barStackResizeMetrics.xSide, frame._barStackResizeMetrics.ySide
-    elseif group and IsCursorAnchor(group.anchor) then
+    if group and IsCursorAnchor(group.anchor) then
         local point = group.anchor.point or "CENTER"
         if point:find("RIGHT", 1, true) then
             xSide = "LEFT"
@@ -982,16 +900,14 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
             ySide = "TOP"
         end
     end
-    local surface = frame._barStackMoverActive and frame._barStackMoverBounds or frame
-    if grip._cornerX == xSide and grip._cornerY == ySide and grip._cornerSurface == surface then
+    if grip._cornerX == xSide and grip._cornerY == ySide then
         return
     end
     grip._cornerX = xSide
     grip._cornerY = ySide
-    grip._cornerSurface = surface
     local corner = ySide .. xSide
     grip:ClearAllPoints()
-    grip:SetPoint(corner, surface, corner,
+    grip:SetPoint(corner, frame, corner,
         xSide == "LEFT" and 1 or -1,
         ySide == "TOP" and -1 or 1)
     -- The bracket's L opens toward the corner it lives on.
@@ -1020,7 +936,6 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.nudger then
         frame.nudger:SetShown(shown)
     end
-    if shown then ST.UpdatePanelMoverBounds(frame, group) end
     -- Cursor panels resize through the positioning preview's selection gate,
     -- same as their drag; other panels keep the plain resizable check.
     local resizeShown = shown
