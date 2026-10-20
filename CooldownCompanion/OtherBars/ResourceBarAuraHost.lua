@@ -5,7 +5,6 @@ local CooldownCompanion = ST.Addon
 local ipairs = ipairs
 local pairs = pairs
 local tonumber = tonumber
-local tostring = tostring
 local CreateFrame = CreateFrame
 
 local RB = ST._RB
@@ -14,7 +13,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local resourceBarFrames = deps.resourceBarFrames
 
     local GetResourceBarSettings = RB.GetResourceBarSettings
-    local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
     local GetResourceDisplayValue = RB.GetResourceDisplayValue
     local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
     local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
@@ -178,18 +176,24 @@ function RB.CreateResourceBarAuraHostModule(deps)
         end
     end
 
-    local function IsLiveResourceAuraHolderBar(barInfo, settings)
+    -- The one liveness rule shared by the collector, the anchor sync and the
+    -- reconcile: the bar's current-spec overlay entry, or nil when the bar
+    -- carries no live overlay.
+    local function GetLiveResourceOverlayEntry(barInfo, settings)
         local frame = barInfo and barInfo.frame
         local powerType = barInfo and barInfo.powerType
         if not (frame and frame:IsShown() and powerType ~= nil
             and RESOURCE_OVERLAY_BAR_TYPES[barInfo.barType]) then
-            return false
+            return nil
         end
         local resource = settings and settings.resources and settings.resources[powerType]
         local entry = resource and IsResourceAuraOverlayEnabled(resource)
             and GetActiveResourceAuraEntry(resource) or nil
         local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
-        return auraSpellID ~= nil and auraSpellID > 0
+        if auraSpellID ~= nil and auraSpellID > 0 then
+            return entry
+        end
+        return nil
     end
 
     -- Whether the entry draws the aura border. On unless explicitly
@@ -283,8 +287,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     -- unit is left to the rebind pass's shared polarity resolve (auraUnit
     -- is its fallback for uncached spells). No soundAlerts: resource
     -- overlays carry no sound events.
-    local function BuildResourceOverlayEntryAdapter(entry, settings, shapes)
-        local layout = GetSpecLayoutOrder(settings)
+    local function BuildResourceOverlayEntryAdapter(entry, shapes)
         return {
             type = "spell",
             id = tonumber(entry.auraColorSpellID),
@@ -293,7 +296,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
             auraUnit = entry.auraUnit,
             auraBar = {
                 mode = shapes.stackLane and "stacks" or "duration",
-                segmentGap = (layout and layout.segmentGap) or settings.segmentGap or 4,
             },
         }
     end
@@ -335,8 +337,6 @@ function RB.CreateResourceBarAuraHostModule(deps)
         style.barAuraEffectThickness = tonumber(entry.auraBorderThickness)
         style.barAuraEffectSpeed = tonumber(entry.auraBorderSpeed)
         style.barAuraEffectLines = tonumber(entry.auraBorderLines)
-        -- Overwritten by the collector from the live frame's fill direction.
-        style.barReverseFill = false
 
         -- Live's overlay carries no text of its own: the resource bar's own
         -- text keeps saying what the resource is doing.
@@ -382,7 +382,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         settings = settings or GetResourceBarSettings()
         if not settings then return nil end
         local buttonData = BuildResourceOverlayEntryAdapter(
-            entry, settings, ResolveResourceOverlayShapes(entry, powerType))
+            entry, ResolveResourceOverlayShapes(entry, powerType))
         -- Constrained set, like every other max resolve on this file: the
         -- threshold policy resolves with the constrain flag, so any other
         -- choice lets the fill's max and the text's max disagree on spell
@@ -395,76 +395,66 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local collectedResources
         if settings and settings.enabled then
             for _, barInfo in ipairs(resourceBarFrames) do
-                local powerType = barInfo.powerType
-                -- One shared-appearance resolve per bar feeds the inset and the style adapter.
-                local appearance = powerType ~= nil
-                    and { style = ST.ResolveModuleBarStyle("resources", settings, powerType) } or nil
-                local inset = GetResourceBarBorderInset(settings, powerType, appearance)
-                local frame = barInfo and barInfo.frame
-                if frame and barInfo.powerType ~= nil
-                    and RESOURCE_OVERLAY_BAR_TYPES[barInfo.barType]
-                    and frame:IsShown() then
-                    -- Resource overlay leg (Phase 2): one want per shown
-                    -- resource bar whose resource has a current-spec entry.
-                    local resource = settings.resources and settings.resources[barInfo.powerType]
-                    local entry = resource and IsResourceAuraOverlayEnabled(resource)
-                        and GetActiveResourceAuraEntry(resource) or nil
-                    local auraSpellID = entry and tonumber(entry.auraColorSpellID) or nil
-                    if auraSpellID and auraSpellID > 0 then
-                        local shapes = ResolveResourceOverlayShapes(entry, barInfo.powerType, barInfo.barType)
-                        local buttonData = BuildResourceOverlayEntryAdapter(entry, settings, shapes)
-                        local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
-                        if spellSet then
-                            -- Stack lane fill max: automatic, game-data
-                            -- resolved, OOC (owner ruling — no manual max
-                            -- anywhere). A nil resolve means "not a
-                            -- stacking aura", so the lane comes off and the
-                            -- border alone carries the active state — live's
-                            -- own fallback to the recolor when no max is
-                            -- configured. The border is a separate toggle
-                            -- since 2026-08-02, so it is NOT guaranteed to
-                            -- be there: an entry with both off is legal
-                            -- (owner ruling) and renders nothing while still
-                            -- holding its slot. Nothing downstream may
-                            -- assume a want draws at least one shape.
-                            local stackBarMax
-                            if shapes.stackLane then
-                                -- Constrained (panel parity; see the block collector).
-                                stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
-                                if not stackBarMax then
-                                    shapes.stackLane = false
-                                    buttonData.auraBar.mode = "duration"
-                                end
+                -- Resource overlay leg (Phase 2): one want per shown
+                -- resource bar whose resource has a current-spec entry.
+                local entry = GetLiveResourceOverlayEntry(barInfo, settings)
+                if entry then
+                    local powerType, frame = barInfo.powerType, barInfo.frame
+                    local shapes = ResolveResourceOverlayShapes(entry, powerType, barInfo.barType)
+                    local buttonData = BuildResourceOverlayEntryAdapter(entry, shapes)
+                    local spellSet = CooldownCompanion:GetAuraCandidateSpellIDSet(buttonData)
+                    if spellSet then
+                        -- Stack lane fill max: automatic, game-data
+                        -- resolved, OOC (owner ruling — no manual max
+                        -- anywhere). A nil resolve means "not a
+                        -- stacking aura", so the lane comes off and the
+                        -- border alone carries the active state — live's
+                        -- own fallback to the recolor when no max is
+                        -- configured. The border is a separate toggle
+                        -- since 2026-08-02, so it is NOT guaranteed to
+                        -- be there: an entry with both off is legal
+                        -- (owner ruling) and renders nothing while still
+                        -- holding its slot. Nothing downstream may
+                        -- assume a want draws at least one shape.
+                        local stackBarMax
+                        if shapes.stackLane then
+                            -- Constrained (panel parity; see the block collector).
+                            stackBarMax = CooldownCompanion:GetAuraStackBarMax(buttonData, true)
+                            if not stackBarMax then
+                                shapes.stackLane = false
+                                buttonData.auraBar.mode = "duration"
                             end
-
-                            local holder = EnsureResourceHolder(barInfo.powerType)
-                            AnchorHolderToBar(holder, frame,
-                                GetResourceHolderInset(barInfo, inset),
-                                HOLDER_LEVEL_RESOURCE)
-                            AnchorResourceFillProxy(holder, frame, barInfo.barType)
-                            -- Orientation from the LAYOUT, not the frame:
-                            -- segment-cluster frames never carry the
-                            -- _isVertical/_reverseFill fields continuous
-                            -- bars do, and every resource bar follows the
-                            -- global layout orientation anyway.
-                            local vertical = IsVerticalResourceLayout(settings) == true
-                            holder._isVertical = vertical
-                            holder:Show()
-
-                            local style = BuildResourceOverlayStyleAdapter(entry, settings, shapes, powerType, appearance)
-
-                            wanted[#wanted + 1] = {
-                                button = holder,
-                                buttonData = buttonData,
-                                spellSet = spellSet,
-                                -- unit resolved by the rebind pass's shared
-                                -- polarity rule (want.unit left nil).
-                                style = style,
-                                stackBarMax = stackBarMax,
-                            }
-                            collectedResources = collectedResources or {}
-                            collectedResources[barInfo.powerType] = true
                         end
+
+                        -- One shared-appearance resolve per bar feeds the inset and the style adapter.
+                        local appearance = { style = ST.ResolveModuleBarStyle("resources", settings, powerType) }
+                        local holder = EnsureResourceHolder(powerType)
+                        AnchorHolderToBar(holder, frame,
+                            GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, powerType, appearance)),
+                            HOLDER_LEVEL_RESOURCE)
+                        AnchorResourceFillProxy(holder, frame, barInfo.barType)
+                        -- Orientation from the LAYOUT, not the frame:
+                        -- segment-cluster frames never carry the
+                        -- _isVertical/_reverseFill fields continuous
+                        -- bars do, and every resource bar follows the
+                        -- global layout orientation anyway.
+                        local vertical = IsVerticalResourceLayout(settings) == true
+                        holder._isVertical = vertical
+                        holder:Show()
+
+                        local style = BuildResourceOverlayStyleAdapter(entry, settings, shapes, powerType, appearance)
+
+                        wanted[#wanted + 1] = {
+                            button = holder,
+                            buttonData = buttonData,
+                            spellSet = spellSet,
+                            -- unit resolved by the rebind pass's shared
+                            -- polarity rule (want.unit left nil).
+                            style = style,
+                            stackBarMax = stackBarMax,
+                        }
+                        collectedResources = collectedResources or {}
+                        collectedResources[powerType] = true
                     end
                 end
             end
@@ -489,13 +479,14 @@ function RB.CreateResourceBarAuraHostModule(deps)
         if not (holder and holder._ccAnchoredFrame) then return end
         local settings = GetResourceBarSettings()
         if not settings then return end
-        if not IsLiveResourceAuraHolderBar(barInfo, settings) then
+        if not GetLiveResourceOverlayEntry(barInfo, settings) then
             holder:Hide()
             return
         end
         if holder._ccAnchoredFrame ~= frame then
+            local appearance = { style = ST.ResolveModuleBarStyle("resources", settings, powerType) }
             AnchorHolderToBar(holder, frame,
-                GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, powerType)),
+                GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, powerType, appearance)),
                 HOLDER_LEVEL_RESOURCE)
             -- Layout-derived, like the collector: cluster frames carry no
             -- _isVertical field for AnchorHolderToBar to read.
@@ -522,7 +513,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local live = {}
         if settings and settings.enabled then
             for _, barInfo in ipairs(resourceBarFrames) do
-                if IsLiveResourceAuraHolderBar(barInfo, settings) then
+                if GetLiveResourceOverlayEntry(barInfo, settings) then
                     live[barInfo.powerType] = true
                 end
             end
