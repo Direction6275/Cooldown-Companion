@@ -353,7 +353,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     local sectionLayout, sectionPlacement, cellIndex, cellOfIndex
     local sectionLists
     local cellCount = count
-    local hasAttachedBars = ST.PanelHasAttachedBars(group)
+    local hasAttachedBars = ST.PanelUsesAttachedBarLayout(group)
     if sections or wantSectionDrag or wantCursorModel or hasAttachedBars then
         -- The engine partitions objects carrying .buttonData, which the slots
         -- do not exist yet to be; a throwaway list of the entries this build is

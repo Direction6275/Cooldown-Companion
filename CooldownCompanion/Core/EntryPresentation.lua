@@ -201,20 +201,19 @@ local STACK_TO_GRID = {
 }
 -- A Stack never wrapped; this keeps its line unbroken as entries are added.
 local STACK_LINE_LENGTH = 100
-ST.COMPACT_LAYOUT_KEYS = { "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }
 
 -- Folds the block's Compact Mode into its owner's one setting. A Stack always
 -- closed its cooldown bars' gaps. The block's growth and limit are what a
 -- bar-only panel showed, so such a panel keeps them even with its bar Compact
--- Mode off; an owner with no known entries takes them only when it was on.
+-- Mode off. An owner with no known entries may have carried the block dormant,
+-- so it takes them only when the block's Compact Mode was on and its own off.
 -- True when the owner's compact trio was written.
 local function FoldLegacyBarCompact(owner, layout, barOnly)
     local stack = layout.mode == "stack"
-    if stack or layout.compactLayout == true then
-        owner.compactLayout = true
-    elseif not barOnly then
+    if not barOnly and (owner.compactLayout == true or not (stack or layout.compactLayout == true)) then
         return false
     end
+    if stack or layout.compactLayout == true then owner.compactLayout = true end
     owner.compactGrowthDirection = stack and "start" or layout.compactGrowthDirection or "center"
     owner.maxVisibleButtons = not stack and tonumber(layout.maxVisibleButtons) or 0
     return true
@@ -491,7 +490,7 @@ function ST.DetachEntryBarPlacement(entry)
 end
 
 function ST.GetPanelIconButtons(frame, group, buttons)
-    if not ST.PanelHasAttachedBars(group) then return buttons end
+    if not ST.PanelUsesAttachedBarLayout(group) then return buttons end
     local icons = frame._iconLayoutButtons or {}
     frame._iconLayoutButtons = icons
     wipe(icons)
@@ -503,7 +502,3 @@ function ST.GetPanelIconButtons(frame, group, buttons)
     return icons
 end
 
-function ST.PanelHasAttachedBars(group)
-    if not ST.PanelUsesAttachedBarLayout(group) then return false end
-    return true
-end

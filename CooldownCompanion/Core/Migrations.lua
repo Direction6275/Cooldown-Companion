@@ -3564,7 +3564,8 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     ST.IndicatorMigration.ApplyTemplates(originalStore)
     if ST.MigrateSharedBarStyleTemplates then ST.MigrateSharedBarStyleTemplates(originalStore) end
     -- Bar-only arrangement blocks retired with Collapsing Stack (2026-10-19).
-    for _, template in pairs(originalStore.groups) do ST.RetireTemplateBarOnlyLayout(template) end
+    -- Only current snapshots ever carried one.
+    for _, template in pairs(currentGroups) do ST.RetireTemplateBarOnlyLayout(template) end
 end
 
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles

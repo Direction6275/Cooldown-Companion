@@ -312,7 +312,7 @@ end
 function ST.CollectAttachedBarAuraBlocks(wants, owners)
     for groupId, frame in pairs(Addon.groupFrames or {}) do
         local group = Addon.db.profile.groups[groupId]
-        if (not owners or owners[groupId] == frame) and ST.PanelHasAttachedBars(group) then
+        if (not owners or owners[groupId] == frame) and ST.PanelUsesAttachedBarLayout(group) then
             -- Restore the current owner mounts before the OOC bind pass. The
             -- collectors use saved eligibility, never aura activity.
             ST.LayoutAttachedBars(groupId, frame, group)
