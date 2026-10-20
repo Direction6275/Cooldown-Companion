@@ -1511,7 +1511,16 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     ["aura-entries"] = "Aura entries require icon, bar, or Indicator panels.",
     ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
     ["aura-panel-create-only"] = "Aura Panels cannot be converted from an existing panel. Create a new Aura Panel instead.",
+    ["ordinary-bars"] = "Only Aura and Totem Panels switch to bars. Other panels show bars per entry.",
 }
+
+-- A mode change reads pseudo-modes like creation does, except that a plain
+-- "bars" stays "bars": it names the bar form of an Aura or Totem Panel, while
+-- creation reads it as the retired Bar Panel and makes icons.
+local function ResolvePanelChangeMode(newMode)
+    if newMode == "bars" then return "bars", false, false end
+    return ResolvePanelCreationMode(newMode)
+end
 
 function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     local group = self.db.profile.groups[groupId]
@@ -1521,7 +1530,7 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     -- between its icon and bar forms (the flag survives), and no ordinary panel
     -- may gain or lose the flag by converting.
     local requestedAuraPanel, requestedTotemPanel
-    newMode, requestedAuraPanel, requestedTotemPanel = ResolvePanelCreationMode(newMode)
+    newMode, requestedAuraPanel, requestedTotemPanel = ResolvePanelChangeMode(newMode)
     if ST.IsTotemPanelGroup(group) then
         if requestedAuraPanel or (newMode ~= "icons" and newMode ~= "bars") then
             return false, "totem-panel-modes"
@@ -1548,9 +1557,11 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
     if oldMode ~= newMode and (oldMode == "indicator" or newMode == "indicator") then
         return false, "indicator"
     end
-
-
-
+    -- Ordinary panels show bars per entry (entry.displayAs); a displayMode of
+    -- "bars" would bring back the retired Bar Panel.
+    if newMode == "bars" and not (ST.IsAuraPanelGroup(group) or ST.IsTotemPanelGroup(group)) then
+        return false, "ordinary-bars"
+    end
 
     -- Primary aura entries only convert between icon and bar panels; refuse
     -- conversions to any other mode that would strand them.
@@ -1583,7 +1594,7 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
     -- Only now that the request has been judged: an Aura Panel pseudo-mode
     -- carries the same base displayMode as its plain twin, so translating any
     -- earlier would let a non-aura panel be converted straight into one.
-    newMode = ResolvePanelCreationMode(newMode)
+    newMode = ResolvePanelChangeMode(newMode)
 
     local oldMode = group.displayMode
 
