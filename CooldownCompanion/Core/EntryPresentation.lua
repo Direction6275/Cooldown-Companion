@@ -202,21 +202,16 @@ local STACK_TO_GRID = {
 -- A Stack never wrapped; this keeps its line unbroken as entries are added.
 local STACK_LINE_LENGTH = 100
 
--- Folds the block's Compact Mode into its owner's one setting. A Stack always
--- closed its cooldown bars' gaps. The block's growth and limit are what a
--- bar-only panel showed, so such a panel keeps them even with its bar Compact
--- Mode off. An owner with no known entries may have carried the block dormant,
--- so it takes them only when the block's Compact Mode was on and its own off.
--- True when the owner's compact trio was written.
-local function FoldLegacyBarCompact(owner, layout, barOnly)
+-- Writes the block's compact trio onto its owner's one setting. A Stack always
+-- closed its cooldown bars' gaps, so it counts as on.
+local function IsLegacyBarCompactOn(layout)
+    return layout.mode == "stack" or layout.compactLayout == true
+end
+local function ApplyLegacyBarCompact(owner, layout)
     local stack = layout.mode == "stack"
-    if not barOnly and (owner.compactLayout == true or not (stack or layout.compactLayout == true)) then
-        return false
-    end
-    if stack or layout.compactLayout == true then owner.compactLayout = true end
+    if IsLegacyBarCompactOn(layout) then owner.compactLayout = true end
     owner.compactGrowthDirection = stack and "start" or layout.compactGrowthDirection or "center"
     owner.maxVisibleButtons = not stack and tonumber(layout.maxVisibleButtons) or 0
-    return true
 end
 
 function ST.RetireBarOnlyLayout(group)
@@ -248,12 +243,15 @@ function ST.RetireBarOnlyLayout(group)
             anchor.baseWidth, anchor.baseHeight = nil, nil
         end
     end
-    FoldLegacyBarCompact(group, layout, true)
+    -- The block's growth and limit are what a bar-only panel showed, so it
+    -- keeps them even with the block's Compact Mode off.
+    ApplyLegacyBarCompact(group, layout)
 end
 
 -- The template-store twin. A template has no entries to show whether its panel
--- was bar-only, so only a Compact Mode that was on carries over, and its
--- captured coverage grows to match. Never touches a template's position.
+-- was bar-only, so its block may have been dormant: the block's Compact Mode
+-- (a Stack counts as on) carries over only when the template's own is off, and
+-- the captured coverage grows to match. Never touches a template's position.
 function ST.RetireTemplateBarOnlyLayout(template)
     if type(template) ~= "table" then return end
     local fields = type(template.capturedFields) == "table" and template.capturedFields or nil
@@ -262,7 +260,9 @@ function ST.RetireTemplateBarOnlyLayout(template)
     if layout == nil then return end
     template.barOnlyLayout = nil
     if type(layout) ~= "table" or not ST.PanelSupportsAttachedBars(template) then return end
-    if FoldLegacyBarCompact(template, layout, false) and fields and type(fields.group) == "table" then
+    if template.compactLayout == true or not IsLegacyBarCompactOn(layout) then return end
+    ApplyLegacyBarCompact(template, layout)
+    if fields and type(fields.group) == "table" then
         for _, key in ipairs(ST.COMPACT_LAYOUT_KEYS) do fields.group[key] = true end
     end
 end
