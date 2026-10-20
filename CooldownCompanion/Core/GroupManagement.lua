@@ -646,20 +646,6 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             end
         end
         copiedVisibility = true
-        -- A template saved before the bar-only block retired still carries it.
-        -- Only its Compact Mode still applies, after the template's own, through
-        -- the conversion saved panels get. Its Stack shape never moves this
-        -- panel, which keeps its position and arrangement.
-        local legacy = templateFields.barOnlyLayout and source.barOnlyLayout
-        if type(legacy) == "table" then
-            targetGroup.barOnlyLayout = {}
-            for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do
-                if templateFields.barOnlyLayout[key] then
-                    targetGroup.barOnlyLayout[key] = CopyPresetValue(legacy[key])
-                end
-            end
-            ST.RetireBarOnlyLayout(targetGroup)
-        end
     end
 
     for _, scopeName in ipairs(scopes) do

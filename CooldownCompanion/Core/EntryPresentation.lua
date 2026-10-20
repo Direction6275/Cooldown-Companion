@@ -188,17 +188,38 @@ end
 -- LEGACY CONVERSION. Bar-only panels once kept a separate arrangement block: a
 -- Grid / Collapsing Stack choice and a second Compact Mode. A panel now has one
 -- Compact Mode, and a bar-only panel is always a Grid (owner ruling
--- 2026-10-19). The block is consumed whole and removed, so every load, import
--- and template apply can run this. A Stack becomes the one-line Grid it drew,
--- its near edge left where the stack began; its cooldown bars always closed
--- their gaps, so Compact Mode comes on. Only its first bar's side survives a
--- stack spread over several sides.
+-- 2026-10-19). The block is consumed whole and removed, so every load and
+-- import can run this; panel templates retire theirs in the template store.
+-- A Stack becomes the one-line Grid it drew, its near edge left where the
+-- stack began. Only its first bar's side survives a stack spread over several
+-- sides, and a Stack's Resources or cast bar now attach to the Grid's edge.
 local STACK_TO_GRID = {
     below = { orientation = "vertical", origin = "TOPLEFT", point = "TOP", dx = 0, dy = -1 },
     above = { orientation = "vertical", origin = "BOTTOMLEFT", point = "BOTTOM", dx = 0, dy = 1 },
     right = { orientation = "horizontal", origin = "TOPLEFT", point = "LEFT", dx = 1, dy = 0 },
     left = { orientation = "horizontal", origin = "TOPRIGHT", point = "RIGHT", dx = -1, dy = 0 },
 }
+-- A Stack never wrapped; this keeps its line unbroken as entries are added.
+local STACK_LINE_LENGTH = 100
+ST.COMPACT_LAYOUT_KEYS = { "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }
+
+-- Folds the block's Compact Mode into its owner's one setting. A Stack always
+-- closed its cooldown bars' gaps. The block's growth and limit are what a
+-- bar-only panel showed, so such a panel keeps them even with its bar Compact
+-- Mode off; an owner with no known entries takes them only when it was on.
+-- True when the owner's compact trio was written.
+local function FoldLegacyBarCompact(owner, layout, barOnly)
+    local stack = layout.mode == "stack"
+    if stack or layout.compactLayout == true then
+        owner.compactLayout = true
+    elseif not barOnly then
+        return false
+    end
+    owner.compactGrowthDirection = stack and "start" or layout.compactGrowthDirection or "center"
+    owner.maxVisibleButtons = not stack and tonumber(layout.maxVisibleButtons) or 0
+    return true
+end
+
 function ST.RetireBarOnlyLayout(group)
     local layout = type(group) == "table" and rawget(group, "barOnlyLayout")
     if layout == nil then return end
@@ -217,9 +238,8 @@ function ST.RetireBarOnlyLayout(group)
         local style = group.attachedBarStyle or CopyTable(ST.ATTACHED_BAR_DEFAULTS)
         group.attachedBarStyle = style
         style.barOrientation, style.growthOrigin = line.orientation, line.origin
-        style.buttonsPerRow = math.max(#group.buttons, 12)
+        style.buttonsPerRow = math.max(#group.buttons, STACK_LINE_LENGTH)
         style.buttonSpacing = group.attachedBarLayout and group.attachedBarLayout.spacing or 3
-        group.compactLayout, group.compactGrowthDirection, group.maxVisibleButtons = true, "start", 0
         local anchor = group.anchor
         if type(anchor) == "table" and not (Addon.IsCursorAnchor and Addon:IsCursorAnchor(anchor)) then
             local gap = tonumber(layout.stackGap) or 0
@@ -228,10 +248,23 @@ function ST.RetireBarOnlyLayout(group)
             anchor.y = (tonumber(anchor.y) or 0) + line.dy * gap
             anchor.baseWidth, anchor.baseHeight = nil, nil
         end
-    elseif layout.compactLayout == true then
-        group.compactLayout = true
-        group.compactGrowthDirection = layout.compactGrowthDirection or "center"
-        group.maxVisibleButtons = layout.maxVisibleButtons or 0
+    end
+    FoldLegacyBarCompact(group, layout, true)
+end
+
+-- The template-store twin. A template has no entries to show whether its panel
+-- was bar-only, so only a Compact Mode that was on carries over, and its
+-- captured coverage grows to match. Never touches a template's position.
+function ST.RetireTemplateBarOnlyLayout(template)
+    if type(template) ~= "table" then return end
+    local fields = type(template.capturedFields) == "table" and template.capturedFields or nil
+    if fields then fields.barOnlyLayout = nil end
+    local layout = rawget(template, "barOnlyLayout")
+    if layout == nil then return end
+    template.barOnlyLayout = nil
+    if type(layout) ~= "table" or not ST.PanelSupportsAttachedBars(template) then return end
+    if FoldLegacyBarCompact(template, layout, false) and fields and type(fields.group) == "table" then
+        for _, key in ipairs(ST.COMPACT_LAYOUT_KEYS) do fields.group[key] = true end
     end
 end
 

@@ -171,7 +171,7 @@ local function AdaptOrdinaryBarTemplate(self, template)
             for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do fields.loadConditions[option.key] = true end
         end
         if template.compactLayout ~= nil then
-            for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do fields.group[key] = true end
+            for _, key in ipairs(ST.COMPACT_LAYOUT_KEYS) do fields.group[key] = true end
         end
     end
     adapted.attachedBarStyle = {}
