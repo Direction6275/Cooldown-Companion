@@ -1633,7 +1633,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
         if count == 0 and #modules == 0 then
             return 220, 90
         end
-        local hasAttachedBars = ST.PanelHasAttachedBars(group)
+        local hasAttachedBars = ST.PanelUsesAttachedBarLayout(group)
         if hasAttachedBars then
             count = 0
             for _, entry in ipairs(group.buttons) do

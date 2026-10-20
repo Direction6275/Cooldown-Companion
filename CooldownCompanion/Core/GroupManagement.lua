@@ -549,7 +549,6 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
                 for _, scope in ipairs(scopes) do if scope == "arrangement" then arrangement = true end end
                 if not arrangement then return end
             end
-            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
             targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
             local sourceStyle = templateFields and (source.attachedBarStyle or {})
                 or ST.GetAttachedBarStyle(source)
@@ -563,22 +562,14 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             targetGroup.attachedBarLayout = targetGroup.attachedBarLayout or {}
             targetGroup.attachedBarLayout[key] = CopyPresetValue((source.attachedBarLayout or {})[key])
         end
-        local function CopyBarOnlyLayout(key)
-            targetGroup.barOnlyLayout = targetGroup.barOnlyLayout or { mode = ST.GetBarOnlyLayoutMode(targetGroup) }
-            local value = (source.barOnlyLayout or {})[key]
-            if key == "mode" and not templateFields then value = ST.GetBarOnlyLayoutMode(source) end
-            targetGroup.barOnlyLayout[key] = CopyPresetValue(value)
-        end
         if templateFields then
             for key in pairs(templateFields.attachedBarStyle or {}) do CopyAttachedStyle(key) end
             for key in pairs(templateFields.attachedBarLayout or {}) do CopyAttachedLayout(key) end
-            for key in pairs(templateFields.barOnlyLayout or {}) do CopyBarOnlyLayout(key) end
         else
             ForEachPanelCopyStyleKey("bars", scopes, CopyAttachedStyle, false)
             for _, scope in ipairs(scopes) do
                 if scope == "arrangement" then
                     for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do CopyAttachedLayout(key) end
-                    for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do CopyBarOnlyLayout(key) end
                     for _, key in ipairs({ "barOrientation", "growthOrigin", "buttonsPerRow", "buttonSpacing" }) do CopyAttachedStyle(key) end
                 end
             end

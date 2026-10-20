@@ -209,19 +209,9 @@ local function ConvertPanels(profile, report, context)
             local style = Copy(ST._defaults.profile.globalStyle)
             for key, value in pairs(group.style or {}) do style[key] = Copy(value) end
             group.attachedBarStyle = style
-            group.barOnlyLayout = { mode = "grid", compactLayout = group.compactLayout,
-                compactGrowthDirection = group.compactGrowthDirection, maxVisibleButtons = group.maxVisibleButtons }
             group.displayMode = "icons"
             for _, entry in ipairs(group.buttons or {}) do entry.displayAs = "bars" end
             report.panels = report.panels + 1
-        elseif ST.PanelSupportsAttachedBars(group) and (group.attachedBarStyle or group.attachedBarLayout) then
-            if not group.barOnlyLayout then
-                group.barOnlyLayout = { mode = "stack" }
-                if group.attachedBarLayout and group.attachedBarLayout.length ~= nil then
-                    group.attachedBarStyle = group.attachedBarStyle or Copy(ST.ATTACHED_BAR_DEFAULTS)
-                    group.attachedBarStyle.barLength = group.attachedBarLayout.length
-                end
-            end
         end
         if ST.PanelSupportsAttachedBars(group) then
             ST._NormalizeBarStyleForPanelConversion(group.attachedBarStyle)
@@ -302,6 +292,8 @@ local function NewDestination(profile, classKey, spec, settings, layout, context
     profile.groups[id] = {
         name = "Bars", displayMode = "icons", buttons = {}, enabled = true, parentContainerId = containerId,
         order = 1, style = Copy(ST._defaults.profile.globalStyle), attachedBarStyle = style,
+        -- The retired stack shape, consumed by ST.RetireBarOnlyLayout once
+        -- this conversion has placed the stack's bars.
         barOnlyLayout = { mode = "stack", stackGap = style.barFillVertical
             and Value(layout, settings, "verticalXOffset", Value(layout, settings, "yOffset", 3))
             or Value(layout, settings, "yOffset", 3) },
@@ -1348,7 +1340,7 @@ local function BuildConversion(source, context)
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(profile) end
-    for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+    for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group); ST.RetireBarOnlyLayout(group) end
     NormalizeSegmentGaps(profile, context, report)
     valid, errorText = Validate(profile)
     if not valid then return nil, errorText end
@@ -1366,7 +1358,7 @@ local function NeedsConversion(profile, context)
     if stamp and (tonumber(stamp.version) or 0) < CONVERTED_VERSION then return true end
     for _, group in pairs(profile.groups or {}) do
         if IsOrdinaryBars(group) or (ST.PanelSupportsAttachedBars(group)
-            and (group._barGeometryVersion ~= 1 or ((group.attachedBarStyle or group.attachedBarLayout) and not group.barOnlyLayout))) then return true end
+            and group._barGeometryVersion ~= 1) then return true end
     end
     for classKey, settings in pairs(profile.resourceBarsByClass or {}) do
         if settings._barGeometryVersion ~= 1 or #LegacyEntries(settings, classKey, context) > 0 then return true end
@@ -1403,7 +1395,7 @@ function Migration.Build(source, context)
     if not source._unifiedPanelMigration then ReportParkedResources(source, context, report) end
     RepairCastOffsets(candidate, context, report)
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(candidate) end
-    for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+    for _, group in pairs(candidate.groups or {}) do ST.NormalizeEntryBarCharges(group); ST.RetireBarOnlyLayout(group) end
     NormalizeSegmentGaps(candidate, context, report)
     valid, errorText = Validate(candidate)
     if not valid then return nil, errorText end
@@ -1433,7 +1425,7 @@ function Migration.Apply(profile, context)
             profile._unifiedPanelMigration = candidate._unifiedPanelMigration
         end
         if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(profile) end
-        for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group) end
+        for _, group in pairs(profile.groups or {}) do ST.NormalizeEntryBarCharges(group); ST.RetireBarOnlyLayout(group) end
         NormalizeSegmentGaps(profile, context, report)
         return true, report
     end

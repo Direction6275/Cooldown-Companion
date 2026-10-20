@@ -114,8 +114,6 @@ local function GetPanelTemplateFields(group, mode)
         end
         for _, key in ipairs(ST.PANEL_TEMPLATE_STYLE_KEYS.bars) do fields.attachedBarStyle[key] = true end
         for _, key in ipairs(ST.ATTACHED_BAR_LAYOUT_KEYS) do fields.attachedBarLayout[key] = true end
-        fields.barOnlyLayout = {}
-        for _, key in ipairs(ST.BAR_ONLY_LAYOUT_KEYS) do fields.barOnlyLayout[key] = true end
     end
     return fields
 end
@@ -173,7 +171,7 @@ local function AdaptOrdinaryBarTemplate(self, template)
             for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do fields.loadConditions[option.key] = true end
         end
         if template.compactLayout ~= nil then
-            for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do fields.group[key] = true end
+            for _, key in ipairs(ST.COMPACT_LAYOUT_KEYS) do fields.group[key] = true end
         end
     end
     adapted.attachedBarStyle = {}
@@ -194,13 +192,6 @@ local function AdaptOrdinaryBarTemplate(self, template)
     end
     if fields.style.durationFormat and self.GetDurationFormat then
         adapted.attachedBarStyle.durationFormat = self.GetDurationFormat(sourceStyle)
-    end
-    adapted.barOnlyLayout, fields.barOnlyLayout = { mode = "grid" }, { mode = true }
-    for _, key in ipairs({ "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }) do
-        if fields.group[key] then
-            adapted.barOnlyLayout[key] = ST._CopyPresetValue(template[key])
-            fields.barOnlyLayout[key], fields.group[key] = true, nil
-        end
     end
     fields.attachedBarStyle, fields.style = fields.style, {}
     fields.attachedBarLayout, adapted.attachedBarLayout = {}, {}
@@ -284,11 +275,6 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
         for key in pairs(fields.attachedBarLayout) do
             template.attachedBarLayout[key] = ST._CopyPresetValue((group.attachedBarLayout or {})[key])
         end
-        template.barOnlyLayout = {}
-        for key in pairs(fields.barOnlyLayout) do
-            template.barOnlyLayout[key] = ST._CopyPresetValue((group.barOnlyLayout or {})[key])
-        end
-        template.barOnlyLayout.mode = ST.GetBarOnlyLayoutMode(group)
     end
     -- Reuse the hide-rule reader's missing-table versus empty-table semantics.
     ST._CopyPanelVisibility(self, group, template, ST.PANEL_COPY_SCOPES[mode].visibility)

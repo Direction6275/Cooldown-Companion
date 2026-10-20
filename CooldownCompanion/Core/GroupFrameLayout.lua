@@ -446,8 +446,7 @@ local function ClearStyleUpdateEntries(entries, visibleCount)
 end
 
 local function GetStyleUpdateEntries(self, groupId, frame, group)
-    if frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group)
-        or frame._barOnlyLayoutMode ~= ST.GetBarOnlyLayoutMode(group) then return nil end
+    if frame._panelLayoutKind ~= ST.GetPanelGeometryKind(group) then return nil end
     if IsIconMasqueStyleRefreshUnsafe(self, group) then
         return nil
     end
@@ -517,7 +516,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if not frame or not group then return end
     frame._panelLayoutKind = ST.GetPanelGeometryKind(group)
     frame._panelLayoutRevision = (frame._panelLayoutRevision or 0) + 1
-    frame._barOnlyLayoutMode = ST.GetBarOnlyLayoutMode(group)
     if not ST.IsTotemPanelGroup(group) and frame._totemPanelSurface then
         frame._totemPanelSurface:Hide()
     end
@@ -686,10 +684,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
         and (not sectionLayout or not next(sectionLayout.sections)) then
         local configured = ST.GetConfiguredPanelIconGeometry(group)
         targetWidth, targetHeight = configured.footprintWidth, configured.footprintHeight
-    elseif numButtons == 0 and not sectionLayout and ST.PanelUsesBarStack(group, geometryKind) then
-        -- An attached-only panel has no icon cell. Its bars carry their own
-        -- explicit length; the owner frame is only their positioning root.
-        targetWidth, targetHeight = 1, 1
     elseif numButtons == 0 and not sectionLayout then
         targetWidth, targetHeight = buttonWidth, buttonHeight
     elseif sectionLayout then
@@ -775,7 +769,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     -- The section click overlays re-fit at the same choke point, so a wheel or
     -- grip resize mid-gesture keeps them glued to the rects they name.
     ST.UpdateSectionMoverOverlays(self, frame, group)
-    ST.UpdatePanelMoverBounds(frame, group, geometryKind)
     if not deferAttachments then self:RefreshPanelAttachmentGeometry(groupId, geometryKind) end
     return true
 end

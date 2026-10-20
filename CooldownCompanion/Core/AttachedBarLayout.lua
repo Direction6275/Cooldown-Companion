@@ -102,7 +102,7 @@ function ST.ResolveAttachedBarDimensions(group, style, side, width, height, layo
     local kind = ST.GetPanelGeometryKind(group, layoutKind)
     local geometry = ST.ResolveBarGeometry(group, { style = style, thickness = style.barHeight,
         side = side, fit = kind == "mixed" or kind == "icons", width = width, height = height,
-        vertical = style.barFillVertical, length = ST.GetBarOnlyLength(group, style), layoutKind = kind })
+        vertical = style.barFillVertical, length = style.barLength, layoutKind = kind })
     return geometry.width, geometry.height, geometry.vertical, geometry.length
 end
 
@@ -133,12 +133,6 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
         local lane, body = side .. ":" .. region, Region(region)
         local vertical = side == "left" or side == "right"
         local length = vertical and body.height or body.width
-        if ST.PanelUsesBarStack(group) then
-            local style = ST.GetAttachedBarStyle(group)
-            local barLength, thickness = ST.GetBarOnlyLength(group, style), style.barHeight or 12
-            local w, h = style.barFillVertical and thickness or barLength, style.barFillVertical and barLength or thickness
-            length = vertical and h or w
-        end
         local yOffset = module.kind == "cast" and module.attachmentOffset or 0
         local offset = (offsets[lane] or gap) + (module.side == "above" and yOffset or -yOffset)
         local position = Place(side, region, vertical and module.thickness or length,
@@ -177,55 +171,6 @@ function ST.GetAttachedBarPreviewLayout(group, width, height, base, included, mo
         if module.kind == "cast" then PlaceModule(module) end
     end
     return positions, -minX, -minY, maxX - minX, maxY - minY, modulePositions
-end
-
--- Resize the configured stack, not its 1px owner or its dormant Grid cells.
--- Edge factors count only dimensions inherited from the panel. Customized
--- shapes still contribute to the bounds, but resizing cannot change them.
-function ST.GetBarStackResizeMetrics(group, included, positions, originX, originY, width, height)
-    local panelStyle = ST.GetAttachedBarStyle(group)
-    local vertical = panelStyle.barFillVertical == true
-    local widthKey = vertical and "barHeight" or "barLength"
-    local heightKey = vertical and "barLength" or "barHeight"
-    local metrics = {
-        xSide = originX > width - originX - 1 and "LEFT" or "RIGHT",
-        ySide = originY > height - originY - 1 and "TOP" or "BOTTOM",
-        xFactor = 0, yFactor = 0,
-    }
-    local xEdge = metrics.xSide == "LEFT" and 0 or 1
-    local yEdge = metrics.ySide == "TOP" and 0 or 1
-    local offsets = {}
-    for _, area in ipairs(ST.BuildAttachedBarAreas(group)) do
-        local lane = area.side .. ":" .. area.region
-        local offset = offsets[lane] or 0
-        local sideways = area.side == "left" or area.side == "right"
-        for _, item in ipairs(ST.GetAttachedBarAreaOrder(group, area.entries)) do
-            if included[item.index] then
-                local style = Addon:GetEntryEffectiveStyle(group, item.entry)
-                local base = ST.GetEntryBaseStyle(group, item.entry)
-                local sameOrientation = (style.barFillVertical == true) == vertical
-                local dw = sameOrientation and (style == base or rawget(style, widthKey) == nil) and 1 or 0
-                local dh = sameOrientation and (style == base or rawget(style, heightKey) == nil) and 1 or 0
-                local left, right, top, bottom = -dw / 2, dw / 2, -dh / 2, dh / 2
-                if area.side == "left" then left, right = -offset - dw, -offset
-                elseif area.side == "right" then left, right = offset, offset + dw
-                elseif area.side == "above" then top, bottom = -offset - dh, -offset
-                else top, bottom = offset, offset + dh end
-                local position = positions[item.index]
-                local x = metrics.xSide == "LEFT" and -position.x or position.x + position.width
-                local y = metrics.ySide == "TOP" and position.y or -position.y + position.height
-                local xFactor = metrics.xSide == "LEFT" and -left or right
-                local yFactor = metrics.ySide == "TOP" and -top or bottom
-                if x > xEdge then xEdge, metrics.xFactor = x, xFactor
-                elseif x == xEdge then metrics.xFactor = math.max(metrics.xFactor, xFactor) end
-                if y > yEdge then yEdge, metrics.yFactor = y, yFactor
-                elseif y == yEdge then metrics.yFactor = math.max(metrics.yFactor, yFactor) end
-                offset = offset + (sideways and dw or dh)
-            end
-        end
-        offsets[lane] = offset
-    end
-    return metrics
 end
 
 function ST.LayoutAttachedBars(groupId, frame, group, kind)
@@ -367,7 +312,7 @@ end
 function ST.CollectAttachedBarAuraBlocks(wants, owners)
     for groupId, frame in pairs(Addon.groupFrames or {}) do
         local group = Addon.db.profile.groups[groupId]
-        if (not owners or owners[groupId] == frame) and ST.PanelHasAttachedBars(group) then
+        if (not owners or owners[groupId] == frame) and ST.PanelUsesAttachedBarLayout(group) then
             -- Restore the current owner mounts before the OOC bind pass. The
             -- collectors use saved eligibility, never aura activity.
             ST.LayoutAttachedBars(groupId, frame, group)

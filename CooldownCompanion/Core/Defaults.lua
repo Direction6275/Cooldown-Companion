@@ -1621,9 +1621,12 @@ ST.PANEL_TEMPLATE_STYLE_KEYS = {
 
 -- Eligibility, identity, entries, anchor connections and placement are never
 -- ordinary field writes. Placement has a separate create-only path.
-ST.PANEL_TEMPLATE_GROUP_KEYS = {
-    "inheritPanelAlpha", "frameStrata", "compactLayout", "compactGrowthDirection", "maxVisibleButtons",
-}
+-- The compact trio: one Compact Mode per panel, for icons and bars alike.
+ST.COMPACT_LAYOUT_KEYS = { "compactLayout", "compactGrowthDirection", "maxVisibleButtons" }
+ST.PANEL_TEMPLATE_GROUP_KEYS = { "inheritPanelAlpha", "frameStrata" }
+for _, key in ipairs(ST.COMPACT_LAYOUT_KEYS) do
+    ST.PANEL_TEMPLATE_GROUP_KEYS[#ST.PANEL_TEMPLATE_GROUP_KEYS + 1] = key
+end
 for _, key in ipairs(PANEL_VISIBILITY_COPY_SCOPE.groupKeys) do
     ST.PANEL_TEMPLATE_GROUP_KEYS[#ST.PANEL_TEMPLATE_GROUP_KEYS + 1] = key
 end
