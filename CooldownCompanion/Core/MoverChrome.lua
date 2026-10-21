@@ -86,7 +86,13 @@ function Chrome.CreateNudger(parent, buttonSize, nudge, commit)
             else
                 arrow:SetVertexColor(0.8, 0.8, 0.8, 0.8)
             end
-            CommitPending()
+            -- Leaving while held commits the press. With no button down the
+            -- press ended unseen (the nudger hid mid-press), so drop it.
+            if IsMouseButtonDown() then
+                CommitPending()
+            else
+                pending = false
+            end
             if not nudger:IsMouseOver() then addon:EndMoverChromeFade(nudger) end
         end)
         button:SetScript("OnMouseDown", function()

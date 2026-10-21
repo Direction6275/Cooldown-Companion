@@ -702,6 +702,12 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
             end
             if newName == data.oldName then return end
             local db = CooldownCompanion.db
+            -- CopyProfile errors on a source that is gone; check before the
+            -- switch, so a failed copy never strands the empty new profile.
+            if not rawget(db.profiles, data.oldName) then
+                CooldownCompanion:Print("Profile '" .. data.oldName .. "' no longer exists.")
+                return
+            end
             CooldownCompanion._suppressOwnershipRestamp = true
             CooldownCompanion._profileCopyFollows = true
             db:SetProfile(newName)
@@ -739,6 +745,12 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
                 return
             end
             local db = CooldownCompanion.db
+            -- CopyProfile errors on a source deleted while this popup was
+            -- open; check before the switch, as Rename does.
+            if not rawget(db.profiles, data.source) then
+                CooldownCompanion:Print("Profile '" .. data.source .. "' no longer exists.")
+                return
+            end
             CooldownCompanion._suppressOwnershipRestamp = true
             CooldownCompanion._profileCopyFollows = true
             db:SetProfile(newName)
@@ -877,6 +889,37 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+-- Confirms that act on the current profile's Groups, panels, entries or
+-- settings by id, index or selection (the two copy confirms are defined
+-- further down). Ids repeat across profiles, so a profile change closes them
+-- before an Accept could act on the new profile's namesakes.
+local PROFILE_SCOPED_POPUPS = {
+    "CDC_DELETE_GROUP",
+    "CDC_DELETE_PANEL",
+    "CDC_DELETE_EMPTY_CDM_PANEL",
+    "CDC_REFRESH_CDM_PANEL",
+    "CDC_FLATTEN_PANEL_SECTIONS",
+    "CDC_REVERT_ENTRY_CUSTOMIZATIONS",
+    "CDC_RENAME_GROUP",
+    "CDC_SAVE_PANEL_TEMPLATE",
+    "CDC_UPDATE_PANEL_TEMPLATE",
+    "CDC_DELETE_BUTTON",
+    "CDC_DELETE_SELECTED_BUTTONS",
+    "CDC_DELETE_SELECTED_PANELS",
+    "CDC_UNGLOBAL_GROUP",
+    "CDC_DRAG_UNGLOBAL_GROUP",
+    "CDC_DELETE_SELECTED_GROUPS",
+    "CDC_UNGLOBAL_SELECTED_GROUPS",
+    "CDC_CONFIRM_CHARACTER_SCOPED_COPY",
+    "CDC_CONFIRM_RESOURCE_SPEC_COPY",
+}
+
+function ST._HideProfileScopedPopups()
+    for _, which in ipairs(PROFILE_SCOPED_POPUPS) do
+        StaticPopup_Hide(which)
+    end
+end
 
 ------------------------------------------------------------------------
 -- Group export and apply
