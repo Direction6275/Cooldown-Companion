@@ -669,6 +669,11 @@ local function EnsureAuraTextureNudger(host)
                 if CooldownCompanion.UpdateCursorAnchoredFrames then
                     CooldownCompanion:UpdateCursorAnchoredFrames()
                 end
+                -- The parked host is part of its Group's outline, as on the
+                -- non-cursor path below.
+                if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+                    CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+                end
                 return
             end
         end

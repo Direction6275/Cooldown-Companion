@@ -257,6 +257,11 @@ local function CreateNudger(frame, groupId)
                 if CooldownCompanion.UpdateCursorAnchoredFrames then
                     CooldownCompanion:UpdateCursorAnchoredFrames()
                 end
+                -- The parked panel is part of its Group's outline; the cursor
+                -- move skips the save that refreshes it on other nudges.
+                if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
+                    CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
+                end
                 return
             end
 

@@ -890,36 +890,17 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
     preferredIndex = 3,
 }
 
--- Confirms that act on the current profile's Groups, panels, entries or
--- settings by id, index or selection (the two copy confirms are defined
--- further down, Reset Profile in Core/ConfigLoader.lua). Ids repeat across
--- profiles, so a profile change closes them before an Accept could act on
--- the new profile's namesakes.
-local PROFILE_SCOPED_POPUPS = {
-    "CDC_DELETE_GROUP",
-    "CDC_DELETE_PANEL",
-    "CDC_DELETE_EMPTY_CDM_PANEL",
-    "CDC_REFRESH_CDM_PANEL",
-    "CDC_FLATTEN_PANEL_SECTIONS",
-    "CDC_REVERT_ENTRY_CUSTOMIZATIONS",
-    "CDC_RENAME_GROUP",
-    "CDC_SAVE_PANEL_TEMPLATE",
-    "CDC_UPDATE_PANEL_TEMPLATE",
-    "CDC_DELETE_BUTTON",
-    "CDC_DELETE_SELECTED_BUTTONS",
-    "CDC_DELETE_SELECTED_PANELS",
-    "CDC_UNGLOBAL_GROUP",
-    "CDC_DRAG_UNGLOBAL_GROUP",
-    "CDC_DELETE_SELECTED_GROUPS",
-    "CDC_UNGLOBAL_SELECTED_GROUPS",
-    "CDC_CONFIRM_CHARACTER_SCOPED_COPY",
-    "CDC_CONFIRM_RESOURCE_SPEC_COPY",
-    "CDC_RESET_PROFILE",
-}
-
+-- A profile change closes every open Cooldown Companion popup (all are named
+-- CDC_*, in this file and elsewhere). Popups capture Group, panel, entry and
+-- profile names or ids as they stood when shown, and ids repeat across
+-- profiles, so an Accept after the switch would act on the new profile's
+-- namesakes. A popup whose own Accept switches profile closes itself early;
+-- StaticPopup's closing Hide then finds it already hidden.
 function ST._HideProfileScopedPopups()
-    for _, which in ipairs(PROFILE_SCOPED_POPUPS) do
-        StaticPopup_Hide(which)
+    for which in pairs(StaticPopupDialogs) do
+        if type(which) == "string" and which:sub(1, 4) == "CDC_" then
+            StaticPopup_Hide(which)
+        end
     end
 end
 
