@@ -59,9 +59,15 @@ StaticPopupDialogs["CDC_RESET_PROFILE"] = {
     button1 = "Reset",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if data and data.profileName and CooldownCompanion.db then
-            CooldownCompanion.db:ResetProfile()
+        local db = CooldownCompanion.db
+        if not (data and data.profileName and db) then return end
+        -- ResetProfile resets whichever profile is current; a popup left open
+        -- across a profile switch must not reset one it never named.
+        if db:GetCurrentProfile() ~= data.profileName then
+            CooldownCompanion:Print("Profile '" .. data.profileName .. "' is no longer active, so nothing was reset.")
+            return
         end
+        db:ResetProfile()
     end,
     timeout = 0,
     whileDead = true,

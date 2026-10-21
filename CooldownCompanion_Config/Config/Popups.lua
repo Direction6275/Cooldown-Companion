@@ -892,8 +892,9 @@ StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
 
 -- Confirms that act on the current profile's Groups, panels, entries or
 -- settings by id, index or selection (the two copy confirms are defined
--- further down). Ids repeat across profiles, so a profile change closes them
--- before an Accept could act on the new profile's namesakes.
+-- further down, Reset Profile in Core/ConfigLoader.lua). Ids repeat across
+-- profiles, so a profile change closes them before an Accept could act on
+-- the new profile's namesakes.
 local PROFILE_SCOPED_POPUPS = {
     "CDC_DELETE_GROUP",
     "CDC_DELETE_PANEL",
@@ -913,6 +914,7 @@ local PROFILE_SCOPED_POPUPS = {
     "CDC_UNGLOBAL_SELECTED_GROUPS",
     "CDC_CONFIRM_CHARACTER_SCOPED_COPY",
     "CDC_CONFIRM_RESOURCE_SPEC_COPY",
+    "CDC_RESET_PROFILE",
 }
 
 function ST._HideProfileScopedPopups()
