@@ -314,7 +314,8 @@ local function MakeChanged(group)
 end
 
 -- One short name per rule, shared by the Visibility editor and the Live
--- Preview's rules card, so a tag and the row it opens read the same.
+-- Preview's rules card, so a tag and the row it opens read the same. These are
+-- the only display labels for rules.
 local RULE_LABELS = {
     cooldownActive = {["true"]="On Cooldown", ["false"]="Off Cooldown"},
     procActive = {["true"]="Proc Active", ["false"]="No Proc"},
@@ -340,12 +341,12 @@ end
 -- Every rule an entry offers, as one dropdown of "key:value" choices. A saved
 -- rule the list no longer offers stays listed so it can be seen and replaced.
 local function RuleChoices(entry, clause)
-    local _, keys = Addon:GetTriggerConditionTypeOptions(entry)
+    local keys = Addon:GetTriggerConditionTypeOptions(entry)
     local list, order = {}, {}
     for _, key in ipairs(keys) do
         local labels = I.ConditionKeys[key] and RULE_LABELS[key]
         if labels then
-            local _, values = Addon:GetTriggerConditionExpectedOptions(key)
+            local values = Addon:GetTriggerConditionExpectedOptions(key)
             for _, value in ipairs(values) do
                 if labels[value] then
                     local id = key .. ":" .. value

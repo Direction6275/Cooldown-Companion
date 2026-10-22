@@ -569,9 +569,3 @@ local function BuildSelectionStrip(preview, host, panelId, group, readOnly)
 end
 
 PP.BuildSelectionStrip = BuildSelectionStrip
-
-function ST._RefreshIndicatorDisplayVisual(groupId)
-    if groupId ~= CS.selectedGroup then return false end
-    ST._RefreshButtonsPreviewMirror(groupId)
-    return true
-end
