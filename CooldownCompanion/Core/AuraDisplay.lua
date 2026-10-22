@@ -448,8 +448,8 @@ end
 -- Armed from the ENTRY'S OPT-IN, not from ally record creation: while solo a
 -- group-scoped entry resolves to { "player" } only, so waiting for a party/raid
 -- record meant the watcher never existed and joining a group did nothing until
--- some unrelated rebind happened. GROUP_ROSTER_UPDATE has no other handler in
--- the addon.
+-- some unrelated rebind happened. GROUP_ROSTER_UPDATE has no other aura handler
+-- in the addon.
 local function EnsureGroupWatcher()
     if groupWatcher then return end
     groupWatcher = CreateFrame("Frame")

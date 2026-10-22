@@ -19,11 +19,21 @@ local wipe = wipe
 
 local SOAR_SPELL_ID = 430747
 
+-- Frames store alpha in 1/255 steps (read back as float32): SetAlpha(0.5)
+-- reads back as 128/255 (0.50196). An exact compare called such a frame
+-- unsettled forever, so a 0.5 baseline kept the 30 Hz driver awake and
+-- re-wrote its alpha every pass. "Differs" means the frame does not already
+-- hold the step SetAlpha(alpha) would store: rounding puts that step within
+-- half a step of alpha, and the margin covers float32 noise. Any other step,
+-- such as 1/255 when 0 is wanted, still differs, so writes reach exact 0 and 1.
+local ALPHA_READBACK_TOLERANCE = 0.5 / 255 + 1e-5
+
 local function FrameAlphaDiffers(frame, alpha)
     if not (frame and frame.GetAlpha) then
         return false
     end
-    return frame:GetAlpha() ~= alpha
+    local diff = frame:GetAlpha() - alpha
+    return diff > ALPHA_READBACK_TOLERANCE or diff < -ALPHA_READBACK_TOLERANCE
 end
 
 local function HasLiveAlphaFrames(frames)
@@ -76,23 +86,22 @@ end
 -- Disarm contract (EnsureAlphaDriverArmed / EvaluateAlphaDriverNeedsWork): the
 -- 30 Hz driver may stop only while every live alpha config has SETTLED
 -- (currentAlpha == desiredAlpha, no fade running, no hover grace left) AND every
--- condition it reads arrives as an event that re-arms the driver. These three
--- force conditions are polled, not evented, so one live config using any of them
--- keeps the driver running for the session:
+-- condition it reads arrives as an event that re-arms the driver. These two
+-- force conditions are polled, not evented, so one live config using either of
+-- them keeps the driver running for the session:
 --   forceAlphaMouseover        geometric IsMouseOver, deliberately frame-polled
 --                              so it still works on click-through panels
---   forceAlphaFocusExists      PLAYER_FOCUS_CHANGED is registered nowhere here
 --   forceAlphaTargetEnemyOnly  a hostility flip on a RETAINED target fires no
 --                              event this addon listens to
 -- Every other condition input owes a re-arm hook: combat edges (OnCombatStart /
 -- OnCombatEnd), mount and Soar (InvalidateMountAlphaCache), target existence
--- (OnTargetChanged), druid travel form (UPDATE_SHAPESHIFT_FORM), the
+-- (OnTargetChanged), focus existence (OnFocusChanged and
+-- OnFocusExistenceFallback), druid travel form (UPDATE_SHAPESHIFT_FORM), the
 -- cursor-anchor layout preview, and the config / lock / panel-lifecycle paths
 -- that already call RefreshAlphaUpdateDriver. A NEW force condition must either
 -- bring its event hook or be listed above.
 local function AlphaConfigNeedsDriverPolling(config)
     return config.forceAlphaMouseover == true
-        or config.forceAlphaFocusExists == true
         or (config.forceAlphaTargetExists == true and config.forceAlphaTargetEnemyOnly == true)
 end
 
@@ -710,6 +719,24 @@ function CooldownCompanion:EnsureAlphaDriverArmed()
     end
 end
 
+-- Focus re-arm hook for PLAYER_FOCUS_CHANGED, which fires when the focus is
+-- set, cleared or lost.
+function CooldownCompanion:OnFocusChanged()
+    self:EnsureAlphaDriverArmed()
+end
+
+-- Fallback for focus existence changes that fire no PLAYER_FOCUS_CHANGED: a
+-- focused group member who leaves the group stops existing, and a zone change
+-- can drop the focus. Blizzard's own focus frame re-checks on
+-- GROUP_ROSTER_UPDATE and PLAYER_ENTERING_WORLD for these. Roster updates
+-- arrive in bursts in a raid, so this wakes the driver only when the focus's
+-- existence differs from what the last alpha pass read.
+function CooldownCompanion:OnFocusExistenceFallback()
+    if UnitExists("focus") ~= self._alphaPassHasFocus then
+        self:EnsureAlphaDriverArmed()
+    end
+end
+
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
 -- Used by UpdateGroupAlpha, UpdateContainerAlpha and UpdateModuleAlpha.
 local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
@@ -1122,6 +1149,8 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local hasTarget = UnitExists("target")
     local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
     local hasFocus = UnitExists("focus")
+    -- What OnFocusExistenceFallback compares against while the driver sleeps.
+    self._alphaPassHasFocus = hasFocus
     local mounted = IsMounted()
     local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
 
