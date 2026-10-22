@@ -357,9 +357,6 @@ StaticPopupDialogs["CDC_DELETE_PANEL"] = {
         if CS.selectedGroup == data.panelId then
             ClearConfigPanelSelection()
         end
-        if CS.addingToPanelId == data.panelId then
-            CS.addingToPanelId = nil
-        end
         CooldownCompanion:RefreshConfigPanel()
     end,
     timeout = 0,

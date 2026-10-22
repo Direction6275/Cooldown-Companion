@@ -771,20 +771,6 @@ function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpell
         return DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds)
     end
 
-    local panels = self:GetPanels(CS.selectedContainer)
-    for _, panelInfo in ipairs(panels or {}) do
-        local panelId = panelInfo.groupId
-        local panel = panelInfo.group
-        local entriesVisible = not CS.collapsedPanels[panelId]
-        if entriesVisible and panel and panel.buttons then
-            for _, buttonData in ipairs(panel.buttons) do
-                if DoesButtonReferencePendingOverrideSpell(buttonData, pendingSpellIds) then
-                    return true
-                end
-            end
-        end
-    end
-
     return false
 end
 
@@ -878,7 +864,6 @@ local function ResetConfigForProfileChange()
         ST._HideProfileScopedPopups()
     end
     ResetConfigSelection(true)
-    wipe(CS.collapsedPanels)
     if ClearConfigFinderText then
         ClearConfigFinderText()
     end

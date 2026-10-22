@@ -157,8 +157,6 @@ local function UpdateRailDestinations()
     local otherClasses = EnsureRailDestinationButton(host, "other-classes")
     local showOtherClasses = ST._ShouldShowOtherClassNavigatorRow
         and ST._ShouldShowOtherClassNavigatorRow() or false
-    local old = host._cdcDestinationButtons and host._cdcDestinationButtons["bars-frames"]
-    if old then old:Hide() end
     otherClasses:ClearAllPoints()
     otherClasses:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -8)
     otherClasses:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -8)
@@ -1084,7 +1082,7 @@ local function MaybeSelectInitialConfigContainer()
         or next(CS.selectedButtons)
         or CS.importMode or CS.exportMode or CS.talentPickerMode
         or CS.copyPanelSettings or CS.otherClassLibraryActive
-        or CS.inlineTextureBrowserOpen or CS.addingToPanelId or CS.dragState
+        or CS.inlineTextureBrowserOpen or CS.dragState
         or (CS.configSearchText and CS.configSearchText ~= "")
         or (CS.tutorialRuntime and CS.tutorialRuntime.active) then
         return
@@ -2062,7 +2060,6 @@ end
 
 local function RefreshColumn1(preserveDrag)
     if not CS.col1Scroll then return end
-    CS.col1ResourcesButton = nil
 
     CS.col1Scroll.frame:Show()
 
@@ -2852,7 +2849,6 @@ local function RefreshColumn1(preserveDrag)
                     CooldownCompanion:RefreshConfigPanel()
                 end)
                 groupUnit:AddChild(entry)
-                if kind == "resources" then CS.col1ResourcesButton = entry end
             end
         end
         TrackRenderedRow({

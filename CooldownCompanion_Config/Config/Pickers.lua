@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config/Pickers
-    Frame picker + CDM picker modes.
+    Frame picker, plus CDM aura-category and passive/proc spell helpers.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -491,10 +491,6 @@ local function IsSpellInCDMBuffBar(spellId)
     end
     return false
 end
-
-------------------------------------------------------------------------
--- Helper: Check if a spell is in CDM Essential or Utility categories
-------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
 -- Helper: Detect passive or proc spells (zero-cooldown CDM-tracked spells)

@@ -449,7 +449,6 @@ local function NormalizeTutorialContext()
     end
 
     ResetConfigSelection(true)
-    CS.newInput = ""
     CS.pendingEditBoxFocus = false
 
     if ST._SetConfigPrimaryMode then

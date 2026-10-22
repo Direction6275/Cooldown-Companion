@@ -45,8 +45,8 @@ local DRAG_INDICATOR_MOVE_ALPHA = 0.4
 -- White source texture + SetGradient, the same way the row-grammar section rule
 -- is built: the gradient supplies both the colour and the alpha ramp.
 --
--- API verified against blizzard-ui-ptr, lane ptr, Interface 120100, build
--- 12.1.0 (68914), source commit d3915c78:
+-- API verified against blizzard-ui, lane live, Interface 120105, build
+-- 12.1.5 (70448), source commit b9be9379:
 --   Texture:SetGradient(orientation, minColor, maxColor) with ColorMixin args --
 --     Blizzard_NamePlates/Blizzard_NamePlates.lua:642 uses exactly this shape.
 --     (Pre-10.0 it took r,g,b tables; that form is gone.)
@@ -803,7 +803,7 @@ end
 -- silently painting the line in the wrong class's colour.
 --
 -- C_ClassColor.GetClassColor is documented MayReturnNothing=true
--- (blizzard-ui-ptr, ptr lane, Interface 120100, build 12.1.0), hence the guard.
+-- (blizzard-ui, live lane, Interface 120105, build 12.1.5), hence the guard.
 local function GetCol1SectionColor(section)
     if section == "global" then
         local c = ST._COL1_GLOBAL_SECTION_COLOR

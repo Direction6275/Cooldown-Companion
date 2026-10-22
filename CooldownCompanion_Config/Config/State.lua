@@ -227,13 +227,10 @@ ST._configState = {
     -- "primary" (a panel or module tab was opened without dropping that
     -- selection).
     unifiedRowScope = "detail",
-    newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
     tutorialHighlight = nil,
-    tutorialArrow = nil,
     tutorialRuntime = nil,
-    tutorialButton = nil,
 
     -- Main frame reference
     configFrame = nil,
@@ -260,7 +257,6 @@ ST._configState = {
 
     buttonSettingsScroll = nil,
     columnInfoButtons = {},
-    moveMenuFrame = nil,
     groupContextMenu = nil,
     buttonContextMenu = nil,
     gearDropdownFrame = nil,
@@ -295,7 +291,6 @@ ST._configState = {
 
     -- Collapsed sections state
     collapsedSections = {},
-    collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
     springOpenContainer = nil,
@@ -306,8 +301,6 @@ ST._configState = {
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
     otherClassLibrarySnapshot = nil,
-    panelClickTimes = {},
-    addingToPanelId = nil,
     _panelDropTargets = {},
 
     -- Talent picker mode
@@ -347,7 +340,6 @@ ST._configState = {
     copyPanelSettingsBanner = nil,
 
     -- Static lookup tables
-    fontOptions = GetFontOptions,
     SetupFontDropdown = SetupFontDropdown,
     SetFontDropdownCallback = SetFontDropdownCallback,
     SetupFontOutlineDropdown = SetupFontOutlineDropdown,
@@ -632,8 +624,6 @@ local function SnapshotOtherClassLibraryState()
         barWorkspaceKind = CS.barWorkspaceKind,
         castFramesSelectedItem = CS.castFramesSelectedItem,
         unifiedBarKind = CS.unifiedBarKind,
-        addingToPanelId = CS.addingToPanelId,
-        newInput = CS.newInput,
         expandedContainer = CS.expandedContainer,
         peekedContainers = CopyConfigStateMap(CS.peekedContainers),
         selectedTab = CS.selectedTab,
@@ -665,8 +655,6 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.barWorkspaceKind = snapshot.barWorkspaceKind
     CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
     CS.unifiedBarKind = snapshot.unifiedBarKind
-    CS.addingToPanelId = snapshot.addingToPanelId
-    CS.newInput = snapshot.newInput
     CS.expandedContainer = snapshot.expandedContainer
     wipe(CS.peekedContainers)
     for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
@@ -1056,7 +1044,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     if selectedScope and selectedScope.isOtherClass then
         EnterOtherClassLibraryState(selectedScope.ownerClassKey)
     else
-        ResetOtherClassLibraryState({ skipRefresh = true })
+        ResetOtherClassLibraryState()
     end
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
@@ -1073,7 +1061,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
-    CS.addingToPanelId = nil
     CS.configFinderNavigated = true
     CS.pendingConfigFinderEntryScrollReset = buttonIndex ~= nil
     RestoreOtherClassLibraryForScope(selectedScope)
@@ -2574,7 +2561,6 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedGroups)
-    CS.addingToPanelId = nil
 end
 
 -- Selecting an entry makes that entry the editing target. A panel tab that is
@@ -2781,13 +2767,10 @@ local function SelectUnifiedAnchorBar(slot, opts)
     return true
 end
 
--- Route legacy Resources-home callers to the actual stack destination.
--- Only the workspace router requests a standalone inventory destination.
+-- Selects a standalone bar destination in the Navigator inventory; only
+-- BarWorkspace's OpenWorkspace calls this.
 local function SelectConfigBarsEntry(opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    if not (opts and opts.standalone) and ST._OpenBarWorkspace then
-        return ST._OpenBarWorkspace("resources")
-    end
     local kind = opts and opts.kind or "resources"
     CS.barWorkspaceKind = kind
     CooldownCompanion:ClearAllConfigPreviews(opts and opts.previewSession)
@@ -2886,7 +2869,6 @@ local function ResetConfigSelection(full)
         CS.barsEntrySelected = false
         CS.castFramesSelectedItem = nil
         wipe(CS.selectedGroups)
-        CS.addingToPanelId = nil
         ResetOtherClassLibraryState({ discardSelectionSnapshot = true })
     end
 end
@@ -3259,15 +3241,13 @@ ST._ApplyConfigRoute = function(route)
         CS.selectedContainerTab = "general"
         CS.collapsedSections.container_layout = false
     elseif route.kind == "resource" then
-        SetConfigPrimaryMode("bars")
-        SelectConfigBarsEntry()
+        if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+        ST._OpenBarWorkspace("resources")
         CS.resourcesSettingsTab = "layout"
         if ST._RBP and ST._RBP.collapsedSections then
             ST._RBP.collapsedSections.rb_stack_position = false
         end
     elseif route.kind == "cast" then
-        SetConfigPrimaryMode("bars")
-        SelectConfigBarsEntry()
         SelectConfigCastFramesItem("castbar")
         CS.unifiedRowScope = "detail"
         CS.castBarHomeTab = "layout"
