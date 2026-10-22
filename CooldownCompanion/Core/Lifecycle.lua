@@ -285,6 +285,10 @@ function CooldownCompanion:OnEnable()
     -- Target change — marks dirty so ticker reads fresh viewer data next pass
     self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnTargetChanged")
 
+    -- Focus change — wakes the alpha driver for the focus-exists condition
+    self:RegisterEvent("PLAYER_FOCUS_CHANGED", "OnFocusChanged")
+    self:RegisterEvent("GROUP_ROSTER_UPDATE", "OnFocusChanged")
+
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
     -- receive it). The "player" filter means this only fires for the player's
     -- own target changes, alongside PLAYER_TARGET_CHANGED. Marks dirty so the

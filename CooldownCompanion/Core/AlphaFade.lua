@@ -76,23 +76,21 @@ end
 -- Disarm contract (EnsureAlphaDriverArmed / EvaluateAlphaDriverNeedsWork): the
 -- 30 Hz driver may stop only while every live alpha config has SETTLED
 -- (currentAlpha == desiredAlpha, no fade running, no hover grace left) AND every
--- condition it reads arrives as an event that re-arms the driver. These three
--- force conditions are polled, not evented, so one live config using any of them
--- keeps the driver running for the session:
+-- condition it reads arrives as an event that re-arms the driver. These two
+-- force conditions are polled, not evented, so one live config using either of
+-- them keeps the driver running for the session:
 --   forceAlphaMouseover        geometric IsMouseOver, deliberately frame-polled
 --                              so it still works on click-through panels
---   forceAlphaFocusExists      PLAYER_FOCUS_CHANGED is registered nowhere here
 --   forceAlphaTargetEnemyOnly  a hostility flip on a RETAINED target fires no
 --                              event this addon listens to
 -- Every other condition input owes a re-arm hook: combat edges (OnCombatStart /
 -- OnCombatEnd), mount and Soar (InvalidateMountAlphaCache), target existence
--- (OnTargetChanged), druid travel form (UPDATE_SHAPESHIFT_FORM), the
--- cursor-anchor layout preview, and the config / lock / panel-lifecycle paths
--- that already call RefreshAlphaUpdateDriver. A NEW force condition must either
--- bring its event hook or be listed above.
+-- (OnTargetChanged), focus existence (OnFocusChanged), druid travel form
+-- (UPDATE_SHAPESHIFT_FORM), the cursor-anchor layout preview, and the config /
+-- lock / panel-lifecycle paths that already call RefreshAlphaUpdateDriver. A NEW
+-- force condition must either bring its event hook or be listed above.
 local function AlphaConfigNeedsDriverPolling(config)
     return config.forceAlphaMouseover == true
-        or config.forceAlphaFocusExists == true
         or (config.forceAlphaTargetExists == true and config.forceAlphaTargetEnemyOnly == true)
 end
 
@@ -708,6 +706,14 @@ function CooldownCompanion:EnsureAlphaDriverArmed()
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
+end
+
+-- Focus re-arm hook. PLAYER_FOCUS_CHANGED fires when the focus is set, cleared
+-- or lost, but a focused group member who leaves the group can stop existing
+-- without it: Blizzard's own focus frame re-checks on GROUP_ROSTER_UPDATE for
+-- that case, so both events land here.
+function CooldownCompanion:OnFocusChanged()
+    self:EnsureAlphaDriverArmed()
 end
 
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
