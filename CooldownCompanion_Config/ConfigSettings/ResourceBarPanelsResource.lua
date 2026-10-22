@@ -2777,40 +2777,40 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showBarText then
-    if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
-    -- The same Bar Appearance rows as every other bar surface. Here they edit
-    -- the defaults every resource starts from.
-    ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
-        leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
-            and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
+        if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
+            -- The same Bar Appearance rows as every other bar surface. Here they edit
+            -- the defaults every resource starts from.
+            ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
+                leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+                    and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
 
-    local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
-        ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide"), resourceBarCollapsedSections, nil, ROW_SECTION)
-    if not segmentsCollapsed then
-        local gapColumn, smoothingColumn = BeginRowGrid(container)
-        local layout = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
-        -- Segment Gap
-        AddMirrorFirstSliderRow(gapColumn, {
-            label = "Segment Gap",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.segmentGap,
-            min = 0, max = 20, step = 0.1,
-            value = layout.segmentGap or settings.segmentGap or 4,
-            set = function(val) layout.segmentGap = val end,
-            apply = function()
-                applyBars()
-            end,
-            stateOwner = layout,
-            stateKeys = "segmentGap",
-        })
-        ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
-    end
-    end
+            local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
+                ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide"), resourceBarCollapsedSections, nil, ROW_SECTION)
+            if not segmentsCollapsed then
+                local gapColumn, smoothingColumn = BeginRowGrid(container)
+                local layout = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
+                -- Segment Gap
+                AddMirrorFirstSliderRow(gapColumn, {
+                    label = "Segment Gap",
+                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                        and RESOURCE_FINDER.primary.size.segmentGap,
+                    min = 0, max = 20, step = 0.1,
+                    value = layout.segmentGap or settings.segmentGap or 4,
+                    set = function(val) layout.segmentGap = val end,
+                    apply = function()
+                        applyBars()
+                    end,
+                    stateOwner = layout,
+                    stateKeys = "segmentGap",
+                })
+                ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
+            end
+        end
 
-    if showResourceText then
-        BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars,
-            ST._SharedBarStyleCollapseKey("barValueTypography", "resource"))
-    end
+        if showResourceText then
+            BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars,
+                ST._SharedBarStyleCollapseKey("barValueTypography", "resource"))
+        end
     end
 
     if showHealthColors then
@@ -2827,23 +2827,23 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showThresholdsTicks then
-    -- ============ Thresholds & Ticks Section ============
-    local thresholdKey = "rb_thresholds_ticks"
-    local thresholdHeading, thresholdCollapsed = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections, nil, ROW_SECTION)
+        -- ============ Thresholds & Ticks Section ============
+        local thresholdKey = "rb_thresholds_ticks"
+        local thresholdHeading, thresholdCollapsed = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdHeading.label, "LEFT", "RIGHT", 4, 0, {
-        "Thresholds & Ticks",
-        {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
-        " ",
-        {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
-    }, thresholdHeading)
-    AnchorLeftAlignedHeadingRule(thresholdHeading, thresholdInfoBtn)
+        local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdHeading.label, "LEFT", "RIGHT", 4, 0, {
+            "Thresholds & Ticks",
+            {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
+            " ",
+            {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
+        }, thresholdHeading)
+        AnchorLeftAlignedHeadingRule(thresholdHeading, thresholdInfoBtn)
 
-    if not thresholdCollapsed then
-        -- One toggle for the one resource this page is about - the values it
-        -- gates all live behind its gear - so the left column carries it alone.
-        local thresholdLeft = BeginRowGrid(container)
-        local rbThresholdTickAdvBtns = {}
+        if not thresholdCollapsed then
+            -- One toggle for the one resource this page is about - the values it
+            -- gates all live behind its gear - so the left column carries it alone.
+            local thresholdLeft = BeginRowGrid(container)
+            local rbThresholdTickAdvBtns = {}
             local capturedPt = resourceSettingsPowerType
             local resourceEntry = settings.resources[capturedPt]
             if not (resourceEntry and resourceEntry.enabled == false) then
@@ -3072,7 +3072,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     )
                 end
             end
-    end
+        end
 
     end
 
