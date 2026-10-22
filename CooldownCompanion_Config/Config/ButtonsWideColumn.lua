@@ -1085,8 +1085,8 @@ local function GetEditingHeaderPath()
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
         if CS.selectedResourcePowerType and ST._RBP
-            and ST._RBP.IsResourceEditableInColumn4
-            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true) then
+            and ST._RBP.IsResourceEditable
+            and ST._RBP.IsResourceEditable(CS.selectedResourcePowerType, settings) then
             local powerNames = ST._RB and ST._RB.POWER_NAMES
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
             return BARS_HOME_LABEL, resourceName or "Resource"
@@ -2160,8 +2160,8 @@ local function GetValidatedUnifiedBarKind()
     if kind == "resource" then
         local settings = CooldownCompanion:GetResourceBarSettings()
         local RBP = ST._RBP
-        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
-            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true)) then
+        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditable
+            and RBP.IsResourceEditable(CS.selectedResourcePowerType, settings)) then
             CS.unifiedBarKind = nil
             return nil
         end

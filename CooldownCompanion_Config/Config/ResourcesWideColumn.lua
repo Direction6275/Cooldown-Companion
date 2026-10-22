@@ -153,7 +153,7 @@ local function CollectBarsOffCanvasChipItems(rendered)
     local powerNames = RB and RB.POWER_NAMES or {}
 
     for _, powerType in ipairs(RBP and RBP.GetConfigEditableResources
-        and RBP.GetConfigEditableResources(settings, true) or {}) do
+        and RBP.GetConfigEditableResources(settings) or {}) do
         local capturedPowerType = powerType
         local key = "resource:" .. tostring(powerType)
         if not rendered[key] then
@@ -200,9 +200,6 @@ local function SetBarsOffCanvasChips(col3)
     if visibilityChanged and content and content:IsVisible() then
         ST._AnchorButtonsContentFrame(col3, content)
     end
-end
-
-local function PrepareResourcesEditingChrome(col3)
 end
 
 ------------------------------------------------------------------------
@@ -343,10 +340,7 @@ local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
     end
 end
 
--- One Settings tab, panel-entry parity: the bar's icon rides the label the
--- same way an entry's does (DecorateEntryTabs, read at call time -
--- ButtonSettings.lua loads after this file). Bars without a tracked spell
--- get the accent-only label, same as today's iconless tabs.
+-- Scroll-restore key for a resource's settings page: one per resource and spec tab.
 local function GetResourceSettingsDetailScrollKey()
     if not CS.selectedResourcePowerType or not CS.resourceSettingsSpecID then return nil end
     return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
@@ -968,19 +962,14 @@ local function RefreshBarsWideColumn(col3, edit)
     if PruneConfigResourceSelection then
         local RBP = ST._RBP
         PruneConfigResourceSelection(function(powerType)
-            if not (RBP and RBP.IsResourceEditableInColumn4) then
+            if not (RBP and RBP.IsResourceEditable) then
                 return false
             end
-            return RBP.IsResourceEditableInColumn4(powerType, settings, true)
+            return RBP.IsResourceEditable(powerType, settings)
         end)
     end
 
     UpdateResourcesPreviewHost(col3, edit, preservePreview)
-
-    -- Import and export actions belong to the enabled Resources home.
-    if item == nil and settings and settings.enabled == true then
-        PrepareResourcesEditingChrome(col3)
-    end
 
     if item == "castbar" then
         ShowCastBarSettings(col3)

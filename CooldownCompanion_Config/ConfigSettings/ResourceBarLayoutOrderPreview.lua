@@ -1192,7 +1192,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
         -- Mirrors the two real aura-stack shapes (ResourceBar.lua's apply
         -- branch); the canvas must show the shape the bar will actually be.
         -- Reached through RB rather than new file-level aliases: this chunk
-        -- is at Lua 5.1's 200-local ceiling.
+        -- holds about 160 of the 200 locals Lua 5.1 allows (158 on 2026-10-21).
         -- The resolver, not the raw field: a member whose maximum is read
         -- live shows its real cap here too. Previewing another class's
         -- resources answers with that member's fallback, which is the
@@ -3294,7 +3294,7 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
         state.layout = positions[1].module.layout
     else
         state.rbSettings, state.cbSettings = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
-        state.layout = CooldownCompanion:GetSpecLayoutOrder(state.rbSettings)
+        state.layout = CooldownCompanion:GetSpecLayoutOrder()
     end
     state.anchorPanelId = panelId
     state.used.slots = 0

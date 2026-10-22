@@ -206,11 +206,6 @@ local function ResourceListContains(resourceList, powerType)
     return false
 end
 
-local function IsResourceConfigEnabled(settings, powerType)
-    local resource = settings and settings.resources and settings.resources[powerType]
-    return not (type(resource) == "table" and resource.enabled == false)
-end
-
 local function GetPlayerClassAndSpecsConfig()
     local _, _, classID = UnitClass("player")
     local specIDs = {}
@@ -224,7 +219,7 @@ local function GetPlayerClassAndSpecsConfig()
     return classID, specIDs
 end
 
-local function GetConfigEditableResources(settings, includeDisabled)
+local function GetConfigEditableResources(settings)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if not (type(settings) == "table" and settings.enabled == true) then
         return {}
@@ -238,16 +233,12 @@ local function GetConfigEditableResources(settings, includeDisabled)
     local result = {}
     local seen = {}
     for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[classID] or {}) do
-        if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
-            AddUniqueResource(result, seen, powerType)
-        end
+        AddUniqueResource(result, seen, powerType)
     end
 
     for _, specID in ipairs(specIDs) do
         for _, powerType in ipairs(SPEC_RESOURCES_CONFIG[specID] or {}) do
-            if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
-                AddUniqueResource(result, seen, powerType)
-            end
+            AddUniqueResource(result, seen, powerType)
         end
     end
 
@@ -281,15 +272,12 @@ local function GetResourceApplicableSpecIDs(powerType)
     return applicable
 end
 
-local function IsResourceEditableInColumn4(powerType, settings, includeDisabled)
+local function IsResourceEditable(powerType, settings)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if powerType == nil or powerType == RESOURCE_HEALTH then
         return false
     end
     if not (type(settings) == "table" and settings.enabled == true) then
-        return false
-    end
-    if not includeDisabled and not IsResourceConfigEnabled(settings, powerType) then
         return false
     end
     return #GetResourceApplicableSpecIDs(powerType) > 0
@@ -735,7 +723,7 @@ ST._RBP = {
     GetConfigActiveResources = GetConfigActiveResources,
     GetConfigEditableResources = GetConfigEditableResources,
     GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,
-    IsResourceEditableInColumn4 = IsResourceEditableInColumn4,
+    IsResourceEditable = IsResourceEditable,
     GetDefaultResourceSettingsSpecID = GetDefaultResourceSettingsSpecID,
     GetCurrentConfigSpecID = GetCurrentConfigSpecID,
     ReadSpecOverrideKey = ReadSpecOverrideKey,

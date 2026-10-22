@@ -133,7 +133,8 @@ end
 -- label text (the row's label is a FontString, so the icon rides an inline
 -- texture escape) and a Remove link owned by the row's control column. The
 -- pre-redesign 22px Flow row broke the 30px rhythm inside a grid column and had
--- no call sites left after the conversion packets.
+-- no call sites left after the conversion packets. opts.indent = false draws
+-- the row flush.
 local function AddAuraCandidateRow(container, spellID, onRemove, opts)
     local info = C_Spell.GetSpellInfo(spellID)
     local name = info and info.name or ("Spell " .. spellID)
@@ -141,7 +142,7 @@ local function AddAuraCandidateRow(container, spellID, onRemove, opts)
 
     local row = AddLabelRow(container, {
         label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(icon, name, spellID),
-        indent = true,
+        indent = not (opts and opts.indent == false),
     })
 
     -- Right-justified so the word lands on the control column's right edge

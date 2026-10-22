@@ -387,7 +387,6 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
 end
 
 local function BuildCastBarAnchoringPanel(container)
-    local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetCastBarSettings()
 
     -- ================================================================

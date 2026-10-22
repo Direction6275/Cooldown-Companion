@@ -443,8 +443,8 @@ local function GetColumn3HeaderMode(selection)
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
                 and ST._RBP
-                and ST._RBP.IsResourceEditableInColumn4
-                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings, true)
+                and ST._RBP.IsResourceEditable
+                and ST._RBP.IsResourceEditable(CS.selectedResourcePowerType, resourceBarSettings)
             then
                 return "resource_settings"
             end
@@ -2135,8 +2135,7 @@ local function CreateConfigPanel()
     CS.col1Scroll = scroll1
 
     -- Button Settings TabGroup. The tab list is refreshed later from the
-    -- selected entry: one Settings tab (labelled "Condition" on trigger
-    -- panels), or the single appended multi-select tab.
+    -- selected entry: one Settings tab, or the single appended multi-select tab.
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
         { value = "settings", text = "Settings" },
