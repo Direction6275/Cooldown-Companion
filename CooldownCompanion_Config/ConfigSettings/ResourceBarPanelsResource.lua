@@ -3348,8 +3348,12 @@ if ST._RegisterSettingsFinderContextPreparer then
         local settings = RESOURCE_FINDER.Settings(context)
         local specID = tonumber(context and context.resourceSpecID)
             or GetCurrentConfigSpecID()
-        context._settingsFinderResourceLayout = RB.GetSpecLayoutOrder
-            and RB.GetSpecLayoutOrder(CopyTable(settings or {}), specID) or settings
+        -- A raw read: every reader falls back to the settings table for a
+        -- key the spec layout does not hold (RESOURCE_FINDER.Layout).
+        local layoutOrder = type(settings) == "table" and settings.layoutOrder
+        local entry = specID and type(layoutOrder) == "table"
+            and (layoutOrder[specID] or layoutOrder[tostring(specID)]) or nil
+        context._settingsFinderResourceLayout = type(entry) == "table" and entry or nil
 
         if context.scope == "resources" then
             local active = {}

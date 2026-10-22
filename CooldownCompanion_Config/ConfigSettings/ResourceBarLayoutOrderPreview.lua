@@ -39,7 +39,6 @@ local StyleHealthBar = RB.StyleHealthBar
 local StyleSegmentedBar = RB.StyleSegmentedBar
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
-local POWER_SHORT_NAMES = RB.POWER_SHORT_NAMES or {}
 
 -- The bars workspace draws ONE canvas for every object it configures: the
 -- resource stack, the attached cast bar, and the unit-frame badges. Its
@@ -280,22 +279,8 @@ local function CreateSlotFrame(parent)
     frame:SetClipsChildren(false)
     frame:RegisterForClicks("LeftButtonDown", "AnyUp")
 
-    frame.titleIcon = frame:CreateTexture(nil, "ARTWORK")
-    frame.titleIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    frame.titleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.titleText:SetJustifyH("LEFT")
-    frame.titleText:SetWordWrap(false)
-
-    frame.shortText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.shortText:SetJustifyH("CENTER")
-    frame.shortText:SetWordWrap(false)
-
     frame.previewCanvas = CreateFrame("Frame", nil, frame)
     frame.previewCanvas:SetClipsChildren(false)
-
-    frame.grip = frame:CreateTexture(nil, "OVERLAY")
-    frame.grip:SetColorTexture(1, 1, 1, 0.14)
 
     frame.hoverHighlight = CreateFrame("Frame", nil, frame)
     frame.hoverHighlight:SetAllPoints(frame.previewCanvas)
@@ -692,20 +677,6 @@ local function ResolveLayoutPreviewSourcePanel(panelId)
 end
 
 
-local function GetShortLabel(label)
-    if not label or label == "" then
-        return "Bar"
-    end
-    local first = string.match(label, "^(%S+)")
-    if not first then
-        return label
-    end
-    if #first > 4 then
-        return string.sub(first, 1, 4)
-    end
-    return first
-end
-
 -- Both resource lists keep listing BOTH halves of a mutually exclusive pair
 -- (the runtime filter that drops the hidden half lives in ApplyResourceBars),
 -- but the pair is one bar in the world and therefore one slot here. Drop the
@@ -722,22 +693,6 @@ local function CollapseToPlacementPowerTypes(powerTypes)
         end
     end
     return placementResources
-end
-
--- The configured resource list and preview share eligibility, without needing
--- rendered slots, live geometry, or writes to either settings owner.
-local function IsConfiguredPreviewResource(settings, powerType)
-    local resource = settings.resources and settings.resources[powerType]
-    if powerType == RESOURCE_HEALTH and type(resource) ~= "table" then return false end
-    if resource and resource.enabled == false then return false end
-    if powerType == 0 and settings.hideManaForNonHealer then
-        local specIndex = C_SpecializationInfo.GetSpecialization()
-        if specIndex then
-            local specID, _, _, _, role = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-            if specID ~= 62 and role ~= "HEALER" then return false end
-        end
-    end
-    return true
 end
 
 local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLayout, includeResourceSlots,
@@ -761,26 +716,6 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             geometryHost or ST.GetModuleGeometryHost("resources")).thickness
     end
 
-    local function GetSlotColor(powerType)
-        if powerType == RESOURCE_HEALTH then
-            local health = rbSettings.resources and rbSettings.resources[RESOURCE_HEALTH]
-            local color = CloneColor(health and health.healthBarColor, RB.DEFAULT_HEALTH_BAR_COLOR)
-            color[4] = tonumber(health and health.healthBarOpacity) or RB.DEFAULT_HEALTH_BAR_OPACITY
-            return color
-        end
-
-        local color = { GetResourceColors(powerType, rbSettings) }
-        if color[1] == nil then
-            return { 1, 1, 1, 1 }
-        end
-        return {
-            color[1] or 1,
-            color[2] or 1,
-            color[3] or 1,
-            color[4] ~= nil and color[4] or 1,
-        }
-    end
-
     for _, powerType in ipairs(activeResources) do
         -- `powerType` is the slot's PLACEMENT identity throughout (the entry
         -- every drag reads and writes); `renderType` is the half the slot
@@ -791,13 +726,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         -- — enabled state, name, color, icon, shape — follows renderType,
         -- because those live per half in settings.resources.
         local renderType = RB.GetPlacementRenderPowerType(powerType)
-        if renderType == RESOURCE_HEALTH and type(rbSettings.resources[renderType]) ~= "table" then
-            rbSettings.resources[renderType] = { enabled = false }
-        else
-            rbSettings.resources[renderType] = rbSettings.resources[renderType] or {}
-        end
-        local resourceConfig = rbSettings.resources[renderType]
-        local showResource = resourceBarsEnabled and IsConfiguredPreviewResource(rbSettings, renderType)
+        local showResource = resourceBarsEnabled and RB.IsResourceEnabled(renderType, rbSettings)
 
         if showResource then
             local function EnsureLayoutResource()
@@ -817,10 +746,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 kind = "resource",
                 powerType = renderType,
                 label = POWER_NAMES[renderType] or ("Power " .. renderType),
-                shortLabel = POWER_SHORT_NAMES[renderType] or GetShortLabel(POWER_NAMES[renderType] or ("Power " .. renderType)),
                 thickness = ResolveSlotThickness(powerType),
-                color = GetSlotColor(renderType),
-                icon = resourceConfig.previewIcon or LAYOUT_PREVIEW_ICON_FALLBACK,
                 getPos = function()
                     local slot = layout.resources[powerType]
                     if isVerticalLayout then
@@ -866,12 +792,10 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             slotCategory = "cast",
             kind = "cast",
             label = "Cast Bar",
-            shortLabel = "Cast",
             -- The cast bar's own height, not the stack's: it used to be
             -- folded into one max with the resource thickness, which
             -- clamped every bar up to whichever was taller.
             thickness = ST.ResolveCastBarGeometry(cbSettings, ST.GetModuleGeometryHost("castbar")).thickness,
-            color = CloneColor(cbSettings.barColor, { 1.0, 0.72, 0.18, 1 }),
             icon = LAYOUT_PREVIEW_ICON_FALLBACK,
             getPos = function()
                 return (layout.castBar and layout.castBar.position) or "below"
@@ -916,20 +840,13 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     return primarySlots, castSlots
 end
 
--- Stack sections. The live stack packs aura-block entries into collapsing
--- containers at the far end of the side, past every fixed bar, and the cast
--- bar anchors past everything: the stack reserves no space for an
--- interleaved cast bar, so the far end is the only slot live geometry can
--- honour (owner ruling 2026-08-09). Order values alone cannot express any
--- of that, so the sort ranks sections first and orders within a section
--- second — ALWAYS, so this canvas can never show an arrangement the live
--- stack cannot render. A lane of only fixed bars has one rank and still
--- sorts purely on order.
---
--- A container tracks exactly ONE unit, so the block is really two chained
--- buckets: the bars watching YOUR auras nearest the panel, the bars watching
--- the TARGET past them. Each bucket is its own rank, which is all the sort
--- and the section-local drag math need to keep them from interleaving.
+-- Stack sections. Fixed bars rank by their anchor region, and the cast bar
+-- anchors past everything: the stack reserves no space for an interleaved
+-- cast bar, so the far end is the only slot live geometry can honour (owner
+-- ruling 2026-08-09). Order values alone cannot express that, so the sort
+-- ranks sections first and orders within a section second — ALWAYS, so this
+-- canvas can never show an arrangement the live stack cannot render. A lane
+-- of fixed bars in one region has one rank and still sorts purely on order.
 local STACK_RANK_FIXED = 0
 local STACK_RANK_CAST = 1
 local function GetSlotStackRank(slot, regionOverride)
@@ -940,7 +857,7 @@ local function GetSlotStackRank(slot, regionOverride)
 end
 
 -- Sections run the same direction the lane does: on a reversed lane index 1
--- is the slot furthest from the panel, so the block has to come first there
+-- is the slot furthest from the panel, so the cast bar has to come first there
 -- and last everywhere else.
 local function CompareStackRank(a, b, reversed)
     local aRank = GetSlotStackRank(a)
@@ -1139,23 +1056,28 @@ local function TickPreview(preview)
     end
 end
 
+-- One OnUpdate closure per preview table (long-lived on its host), so a drag
+-- does not allocate a new one every frame.
+local function GetPreviewTick(preview)
+    local tick = preview.tick
+    if not tick then
+        tick = function() TickPreview(preview) end
+        preview.tick = tick
+    end
+    return tick
+end
+
 -- A running preview keeps the ticker alive on its own, independently of the
 -- drag tweens that otherwise own it.
 local function StartPreviewAnimationDriver(preview)
     if #preview.animated == 0 then
         return
     end
-    preview.root:SetScript("OnUpdate", function()
-        TickPreview(preview)
-    end)
+    preview.root:SetScript("OnUpdate", GetPreviewTick(preview))
 end
 
-local function ConfigureSlotChrome(frame, slot, skin, isVertical)
+local function ConfigureSlotChrome(frame)
     ApplyBackdrop(frame, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
-    frame.titleIcon:Hide()
-    frame.titleText:Hide()
-    frame.shortText:Hide()
-    frame.grip:Hide()
     if frame.hoverHighlight then
         frame.hoverHighlight:SetFrameLevel(frame:GetFrameLevel() + 20)
         frame.hoverHighlight:Hide()
@@ -1439,8 +1361,8 @@ local function ConfigureCastPreview(frame, slot, preview, width, height)
     end
 end
 
-local function ConfigureSlotPreview(frame, slot, preview, width, height, isVerticalSlot)
-    ConfigureSlotChrome(frame, slot, preview.skin, isVerticalSlot)
+local function ConfigureSlotPreview(frame, slot, preview, width, height)
+    ConfigureSlotChrome(frame)
     if slot.kind == "cast" then
         ConfigureCastPreview(frame, slot, preview, width, height)
     else
@@ -1452,9 +1374,9 @@ end
 -- throwaway frames in the animation list. That list is only emptied by a
 -- full rebuild, and cancelling a drag does not rebuild — so each cancelled
 -- drag left an entry ticking a hidden ghost, and they accumulated.
-local function ConfigureGhostSlotPreview(frame, slot, preview, width, height, isVerticalSlot)
+local function ConfigureGhostSlotPreview(frame, slot, preview, width, height)
     local enrolled = #preview.animated
-    ConfigureSlotPreview(frame, slot, preview, width, height, isVerticalSlot)
+    ConfigureSlotPreview(frame, slot, preview, width, height)
     for index = #preview.animated, enrolled + 1, -1 do
         preview.animated[index] = nil
     end
@@ -1626,19 +1548,12 @@ local function BuildLaneSlotGeometry(lane, index, sizes)
     return x, -offset, lane.slotWidth, extent
 end
 
--- The contiguous run of slots each aura-block bucket owns, in render order.
--- The sort already guarantees the buckets do not interleave, so a run is
--- simply the stretch of one bucket IDENTITY; everything else breaks the run.
--- Only the seam handle needs this: membership itself is drawn per bar.
 -- The insert index a drop is ALLOWED to take, clamped out of the raw one.
 -- `filtered` is the destination lane's slots with the dragged one lifted out.
 --
 -- One rule covers every case: the drop may not break the lane's rank order.
--- A block bar therefore cannot leave its own bucket's run, and a fixed bar or
--- the cast bar cannot land inside one. Cross-lane drops read the DESTINATION
--- lane's bucket order, so a bar dropped on the other side lands inside that
--- side's same-unit bucket, or - when that side has no such bucket yet - at
--- the position that bucket would occupy there.
+-- A fixed bar therefore stays inside its region's run and the cast bar at the
+-- far end; cross-lane drops read the destination lane's ranks.
 --
 -- Ranks always bind: a lane of only fixed bars has one rank and stays a
 -- free reorder, while the cast bar is confined to the far end everywhere —
@@ -1655,7 +1570,7 @@ local function ClampLaneInsertIndex(lane, slotData, filtered, insertIndex)
     local reversed = lane.reversed == true
     -- Every new attached placement has destination region rank zero: main
     -- placements save main, and split panel destinations have no region tie.
-    -- The source's collapsed-stack rank must not constrain the landing.
+    -- The source's own region rank must not constrain the landing.
     local rank = GetSlotStackRank(slotData, 0)
 
     local lower = 1
@@ -1847,11 +1762,6 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         axis = axis,
         side = side,
         reversed = reversed,
-        -- Resolved once, here: the sort that produced `slotModels` used this
-        -- same answer, and the drag containment has to agree with it. Flag
-        -- side, not lane side: on the merged independent lane the two can
-        -- disagree (a split-side lane falls back to the lane side, where the
-        -- flag is moot — the seam never builds there).
         slotModels = slotModels,
         baseWidth = width,
         baseHeight = height,
@@ -1873,21 +1783,15 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
     for index, slotModel in ipairs(slotModels) do
         local slotFrame = AcquireSlot(preview, laneFrame)
         -- Explicit, and before the chrome pass reads it: the drop gap rides
-        -- at the lane's level + 1 and the bucket wash is offset from this
-        -- one, so a pooled slot must not come back carrying a level from
-        -- another lane.
+        -- at the lane's level + 1, so a pooled slot must not come back
+        -- carrying a level from another lane.
         slotFrame:SetFrameLevel(laneFrame:GetFrameLevel() + 2)
         local slotExtent = lane.naturalSizes[index]
         ConfigureSlotPreview(
             slotFrame, slotModel, preview,
             axis == "x" and slotExtent or slotWidth,
-            axis == "x" and slotHeight or slotExtent,
-            axis == "x")
-        slotFrame.slotData = slotModel
+            axis == "x" and slotHeight or slotExtent)
         ApplySlotHitExpansion(slotFrame, slotExtent, lane.slotGap, axis == "x")
-        -- Read by the identity-mark pass, which runs after the content
-        -- scale is known and no longer has the lane in hand.
-        slotFrame._cdcIdentityVertical = axis == "x"
         preview.renderedSelectionKeys[slotModel.id] = true
 
         -- Mark the bar currently being configured: held hover-style glow
@@ -2443,9 +2347,9 @@ end
 
 -- The cursor's raw landing spot, CLAMPED into the positions the drop is
 -- allowed to take. Clamping here rather than at commit time is what makes the
--- drag teach the rule: the gap indicator reads this same index, so a block
--- bar dragged past the end of its bucket shows the gap holding at the
--- bucket's edge instead of opening somewhere it would only snap back from.
+-- drag teach the rule: the gap indicator reads this same index, so the cast
+-- bar dragged toward the panel shows the gap holding at the far end instead
+-- of opening somewhere it would only snap back from.
 local function GetLaneInsertIndex(lane, cursorX, cursorY, draggedSlotId, draggedSlot)
     local _, slots, models = BuildStableLaneSlots(lane, draggedSlotId)
     if not slots then
@@ -2547,10 +2451,7 @@ local function ResolveDropTarget(layoutDrag, cursorX, cursorY, draggedSlot)
     return nil
 end
 
--- `draggedSlot` is the model behind `draggedSlotId`, carried in for the drop
--- cue alone: a bucket bar in flight has to leave a bucket-coloured hole
--- behind, or the run it came out of reads as having lost the room for it.
-local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget, draggedSlot)
+local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget)
     local gapIndex = (dropTarget and dropTarget.lane == lane and dropTarget.insertIndex) or nil
 
     -- Render order for this frame: the lane's slots with the dragged one
@@ -2600,20 +2501,13 @@ local function UpdateLanePreview(preview, lane, draggedSlotId, dropTarget, dragg
 
     if gapIndex then
         local x, y, w, h = BuildLaneSlotGeometry(lane, gapIndex)
-        ApplyBackdrop(lane.gapFrame, preview.skin.gapBg, preview.skin.gapBorder)
-        lane.gapFrame.inner:SetColorTexture(preview.skin.slotHover[1],
-            preview.skin.slotHover[2], preview.skin.slotHover[3], 0.22)
+        -- BuildLane already painted the gap with this preview's skin, which
+        -- only changes on a rebuild; the backdrop re-fits itself as it tweens.
         lane.gapFrame:SetAlpha(0.95)
         QueueSlotTween(preview, lane.gapFrame, lane.frame, x, y, w, h, 1, LAYOUT_PREVIEW_ANIM_DURATION)
         lane.gapFrame:Show()
     else
         lane.gapFrame:Hide()
-    end
-
-    -- The seam moves while the stack shuffles, and a handle chasing it would
-    -- read as a drop target. It comes back when the drag ends.
-    if lane.swapButton then
-        lane.swapButton:Hide()
     end
 end
 
@@ -2630,9 +2524,6 @@ local function ResetLanePreview(preview, lane)
         end
     end
     lane.gapFrame:Hide()
-    if lane.swapButton then
-        lane.swapButton:Show()
-    end
     if lane.setPreviewOverflow then
         lane.setPreviewOverflow(0)
     end
@@ -2654,16 +2545,9 @@ local function ConfigureGhost(preview, slotData, slotFrame)
     local ghostSlot = ghost._cdcSlot
     ghostSlot.previewBarInfo = ghost.previewBarInfo
     ghostSlot.castPreview = ghost.castPreview
-    ConfigureGhostSlotPreview(ghostSlot, slotData, preview, ghost:GetWidth(), ghost:GetHeight(), slotFrame.shortText:IsShown())
+    ConfigureGhostSlotPreview(ghostSlot, slotData, preview, ghost:GetWidth(), ghost:GetHeight())
     ghost.previewBarInfo = ghostSlot.previewBarInfo
     ghost.castPreview = ghostSlot.castPreview
-
-    -- The ghost carries the dragged bar's name too. Its own slot is at
-    -- alpha 0 for the duration, so without this the one bar you are
-    -- actually moving is the only one left unnamed. Scale 1: the ghost
-    -- hangs off UIParent, not off the scaled preview content.
-    ghostSlot.slotData = slotData
-    ghostSlot._cdcIdentityVertical = slotFrame._cdcIdentityVertical
     ghost:SetAlpha(0.92)
     ghost:Show()
     preview.ghostActive = true
@@ -2681,8 +2565,8 @@ local function CreateLayoutDragModel(preview)
     local layoutDrag = { host = preview.host, lanes = {} }
 
     -- The lifecycle hands the drag state through, and the dragged bar's model
-    -- is what the containment clamp needs: which bucket it belongs to decides
-    -- where the gap is allowed to open.
+    -- is what the containment clamp needs: its rank decides where the gap is
+    -- allowed to open.
     layoutDrag.resolveDropTarget = function(cursorX, cursorY, state)
         return ResolveDropTarget(layoutDrag, cursorX, cursorY, state and state.slotData)
     end
@@ -2694,11 +2578,9 @@ local function CreateLayoutDragModel(preview)
         preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         ConfigureGhost(preview, state.slotData, state.widget)
         for _, lane in ipairs(layoutDrag.lanes) do
-            UpdateLanePreview(preview, lane, state.slotData.id, state.dropTarget, state.slotData)
+            UpdateLanePreview(preview, lane, state.slotData.id, state.dropTarget)
         end
-        preview.root:SetScript("OnUpdate", function()
-            TickPreview(preview)
-        end)
+        preview.root:SetScript("OnUpdate", GetPreviewTick(preview))
     end
 
     layoutDrag.onUpdate = function(state, cursorX, cursorY, dropTarget)
@@ -2707,35 +2589,28 @@ local function CreateLayoutDragModel(preview)
         layoutDrag.draggedSlotData = state.slotData
         preview.draggedSlotExtent = GetSlotExtent(state.slotData, nil)
         for _, lane in ipairs(layoutDrag.lanes) do
-            UpdateLanePreview(preview, lane, state.slotData.id, dropTarget, state.slotData)
+            UpdateLanePreview(preview, lane, state.slotData.id, dropTarget)
         end
         if not preview.ghostActive then
             ConfigureGhost(preview, state.slotData, state.widget)
         else
             UpdateGhostPosition(preview.ghost)
         end
-        preview.root:SetScript("OnUpdate", function()
-            TickPreview(preview)
-        end)
+        preview.root:SetScript("OnUpdate", GetPreviewTick(preview))
     end
 
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         layoutDrag.draggedSlotData = nil
         local geometryPanel = ST.GetModuleGeometryPanel(preview.standaloneCast and "castbar" or "resources")
-    if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
-    preview.draggedSlotExtent = nil
-        -- Thaw the reveal once the drag really is over. Deferred because
-        -- this runs while CS.dragState is still set (CancelDrag clears it
-        -- immediately after), which is what the freeze keys on.
+        if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
+        preview.draggedSlotExtent = nil
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)
         end
         ClearGhost(preview)
         HideDragIndicator()
-        preview.root:SetScript("OnUpdate", function()
-            TickPreview(preview)
-        end)
+        preview.root:SetScript("OnUpdate", GetPreviewTick(preview))
     end
 
     layoutDrag.applyDrop = function(state)
@@ -2776,13 +2651,11 @@ local function CreateLayoutDragModel(preview)
         else
             local oldPos = slotData.getPos()
             local oldOrder = slotData.getOrder()
-            -- Order values interleave across a section boundary once the
-            -- aura block is in play, so the new order has to be midpointed
-            -- against the dropped slot's OWN section. Measured against the
-            -- whole lane, a within-block move lands on a fixed bar's order
-            -- and re-renders on the wrong side of its own block. Each aura
-            -- bucket is its own rank, so this is what orders a block entry
-            -- inside the bucket containment already confined it to.
+            -- Sections are the anchor regions plus the cast bar, and order
+            -- values can interleave across a section boundary, so the new
+            -- order has to be midpointed against the dropped slot's OWN
+            -- section. Measured against the whole lane, a move could land on
+            -- another section's order and re-render on the wrong side of it.
             local peers = filtered
             local peerIndex = adjustedIndex
             do
@@ -2817,7 +2690,7 @@ local function CreateLayoutDragModel(preview)
     return layoutDrag
 end
 
-function ST._BuildLayoutOrderPreviewPanel(container, opts)
+function ST._BuildLayoutOrderPanel(container, opts)
     if CS.dragState and CS.dragState.kind == LAYOUT_PREVIEW_DRAG_KIND and CancelDrag then
         CancelDrag()
     end
@@ -3311,12 +3184,11 @@ PanelHasConfiguredModuleBars = function(panelId, kind)
     if kind == "castbar" then return false end
     local saved = ST.GetConfiguredModuleBarSettings("resources")
     if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
-    local settings = CopyTable(saved)
-    -- The addon wrapper always loads the live bucket. Normalize only this
-    -- detached copy, so legacy attachment defaults agree without being saved.
-    if not RB.GetSpecLayoutOrder(settings) or not ModuleBelongsToPreview("resources", panelId, true, settings) then return false end
+    -- Read-only on the live settings: module attachment falls back to their
+    -- own independentAnchorEnabled, exactly what layout seeding writes.
+    if not RB.GetCurrentSpecID() or not ModuleBelongsToPreview("resources", panelId, true, saved) then return false end
     for _, powerType in ipairs(GetConfigActiveResources()) do
-        if IsConfiguredPreviewResource(settings, powerType) then return true end
+        if RB.IsResourceEnabled(powerType, saved) then return true end
     end
     return false
 end
@@ -3437,7 +3309,7 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
             local vertical = position.vertical
             local width, height = vertical and extent or position.width, vertical and position.height or extent
             state.isVerticalLayout = vertical
-            ConfigureSlotPreview(frame, slot, state, width, height, vertical)
+            ConfigureSlotPreview(frame, slot, state, width, height)
             if preview.groupOverview and slot.kind == "resource" then
                 -- The overview identifies the composition; sample values crowd
                 -- thin resource stacks. Focused styling restores saved text.
@@ -3458,7 +3330,6 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
                 frame:SetAlpha(1)
             end
             frame._attachmentX, frame._attachmentY = x, y
-            frame.slotData = slot
             state.renderedSelectionKeys[slot.id] = true
             frame:EnableMouse(not state.readOnly)
             if state.readOnly and frame.copyTargetHighlight then frame.copyTargetHighlight:Hide() end

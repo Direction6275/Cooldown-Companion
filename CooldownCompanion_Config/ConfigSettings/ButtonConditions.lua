@@ -1920,7 +1920,7 @@ local function RemapBatchValue(widget, val)
 end
 
 ------------------------------------------------------------------------
--- Talent condition display helpers (shared with ResourceBarPanels)
+-- Talent condition display helpers (shared with the Live Preview)
 ------------------------------------------------------------------------
 
 local function ResolveConditionClassName(cond)

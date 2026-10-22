@@ -2,7 +2,7 @@
     CooldownCompanion - ResourceBarConstants
     Shared constant tables, color defaults, and power mappings used by the
     runtime modules (ResourceBarHelpers, ResourceBarVisuals, ResourceBar)
-    and the config panel modules (ResourceBarPanelsHelpers, ResourceBarPanels).
+    and the config panel modules (ResourceBarPanelsHelpers, ResourceBarPanelsResource).
 
     Exported via ST._RB table. Consuming files alias to locals at load time
     so there is no runtime lookup cost.
@@ -301,7 +301,7 @@ local RESOURCE_COLOR_DEFS = {
 }
 
 ------------------------------------------------------------------------
--- Config UI text defaults (used by ResourceBarPanels)
+-- Config UI text defaults (used by the Resources settings pages)
 ------------------------------------------------------------------------
 
 local DEFAULT_RESOURCE_TEXT_ANCHOR = "CENTER"

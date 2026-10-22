@@ -84,8 +84,6 @@ ConfigSettings\ButtonPanelPreview.lua
 ConfigSettings\GroupPanelOverviewPreview.lua
 ConfigSettings\UnifiedAnchorPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
-ConfigSettings\ResourceBarPanelsLayoutOrder.lua
-ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettingsMultiSelect.lua

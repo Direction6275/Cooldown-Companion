@@ -608,9 +608,7 @@ local function UpdateResourcesPreviewHost(col3, edit, preservePreview)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
     if ST._SetActiveWidePreview then
         ST._SetActiveWidePreview(col3, host, function(hostFrame)
-            if ST._BuildLayoutOrderPanel then
-                BuildResourcesLayoutPreview(hostFrame)
-            end
+            BuildResourcesLayoutPreview(hostFrame)
         end)
     end
     if ST._ComputeWidePreviewHostHeight then
@@ -637,7 +635,7 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
     if CS.barsEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         local host = col3 and col3._resourcesPreviewHost
-        if host and host:IsShown() and ST._BuildLayoutOrderPanel then
+        if host and host:IsShown() then
             BuildResourcesLayoutPreview(host, mirrorReuse)
             return true
         end
