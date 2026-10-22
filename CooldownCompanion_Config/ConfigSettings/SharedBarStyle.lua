@@ -337,9 +337,9 @@ if ST._DefineSettingRoute then
                 local route = ST._DefineSettingRoute({idPrefix=(scope == "health" and "resources.health"
                         or scope == "resourceWide" and "resources" or scope)..".sharedBar."..id,
                     scope=scope == "panel" and {"panel","entry"} or scope == "castbar" and "castBar" or primary and "resources" or scope,
-                    tab=scope == "resource" and "settings" or scope == "health" and "health" or "appearance",tabLabel=scope == "health" and "Health" or "Appearance",
-                    tabStateKey=scope == "castbar" and "castBarHomeTab" or scope == "resource" and "resourcesSettingsTab" or nil,
-                    rowScope=primary and "primary" or scope ~= "panel" and "detail" or nil,
+                    tab=scope == "resource" and "settings" or scope == "health" and "health" or "appearance",
+                    tabStateKey=scope == "castbar" and "castBarHomeTab" or nil,
+                    rowScope=(primary or scope == "panel") and "primary" or "detail",
                     -- Breadcrumbs name the heading the row sits under.
                     section=id,sectionId=id,sectionLabel=IsTextSection(id) and ST.OVERRIDE_SECTIONS[id].label
                         or id == "barSmoothing" and "Segments"

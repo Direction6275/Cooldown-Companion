@@ -47,8 +47,8 @@ local function Enabled(settings, key)
     return r[key] ~= "none"
 end
 
--- Row labels match the panel Text rows. Descriptors are keyed by the old
--- setting keys, so saved finder ids and old names keep working.
+-- Row labels match the panel Text rows. Descriptors keep the old setting keys
+-- as ids, and the aliases keep the old names searchable.
 local READOUT_ROWS = {
     label = {label="Show Label Text", aliases={"label"}},
     timer = {label="Show Cooldown Text", aliases={"timer"},

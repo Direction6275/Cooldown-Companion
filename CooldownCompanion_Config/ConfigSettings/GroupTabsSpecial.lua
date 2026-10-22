@@ -1192,8 +1192,9 @@ if ST._DefineSettingRoute then
         SPECIAL_FINDER.triggerEffects[key] = finder
     end
 
-    -- Stable IDs keep saved finder destinations valid; each control now reveals
-    -- its own section, and paired spacing no longer opens a separate editor.
+    -- Finder ids are session-only navigation keys (nothing saves them). Each
+    -- control reveals its own section, and paired spacing no longer opens a
+    -- separate editor.
     local textureShape = ST._DefineSettingRoute({
         idPrefix = "panel.texture.appearance",
         scope = SPECIAL_FINDER_SCOPE,

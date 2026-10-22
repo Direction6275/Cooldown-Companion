@@ -56,13 +56,12 @@ local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.
 -- SETTINGS FINDER CATALOG (Visibility surfaces)
 ------------------------------------------------------------------------
 
-local function DefineLoadConditionFinderSettings(idPrefix, scope, rowScope, tab, collapseKey)
+local function DefineLoadConditionFinderSettings(idPrefix, scope, collapseKey)
     local route = ST._DefineSettingRoute({
         idPrefix = idPrefix,
         scope = scope,
-        rowScope = rowScope,
-        tab = tab,
-        tabLabel = tab == "settings" and "Settings" or "Visibility",
+        rowScope = "primary",
+        tab = "loadconditions",
         section = "where_to_hide",
         sectionLabel = "Where To Hide It",
         collapseKeys = { collapseKey },
@@ -81,9 +80,9 @@ local function DefineLoadConditionFinderSettings(idPrefix, scope, rowScope, tab,
 end
 
 local panelLoadConditionSettings = DefineLoadConditionFinderSettings(
-    "panel.visibility.where", "panel", "primary", "loadconditions", "loadconditions_panel_local")
+    "panel.visibility.where", "panel", "loadconditions_panel_local")
 local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
-    "entry.visibility.where", "entry", "primary", "loadconditions", "loadconditions_entry_local")
+    "entry.visibility.where", "entry", "loadconditions_entry_local")
 
 local function HasSavedSourceRestrictions(source)
     return type(source.loadConditions) == "table" and next(source.loadConditions) ~= nil
