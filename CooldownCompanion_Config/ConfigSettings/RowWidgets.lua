@@ -11,8 +11,8 @@
     grid container types and top-aligned layout they sit in, and the thin
     builders that replace the AceGUI boilerplate at each call site.
 
-    BuildAppearanceTab's icons path is the proving ground; the other tabs are
-    converted by later packets.
+    BuildAppearanceTab's icons path (GroupTabsAppearance.lua) carries the
+    recipe comment every row-grammar section follows.
 
     AceGUI recycles widgets from pools that are SHARED WITH EVERY OTHER ADDON,
     so these are new widget types with their own pools rather than mutations of
@@ -1730,7 +1730,10 @@ local function AddSoundPreviewDropdownRow(container, opts)
         return originalOpen(widget, ...)
     end
     pullout.Open = OpenSoundMenu
-    row:SetCallback("OnRelease", function()
+    -- Chained, so the common row cleanup still drops the settings context.
+    local prevOnRelease = row.events and row.events.OnRelease
+    row:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then prevOnRelease(widget, event, ...) end
         -- An unopened menu must also return to AceGUI's pool unmodified.
         if pullout.Open == OpenSoundMenu then pullout.Open = originalOpen end
     end)
@@ -2173,7 +2176,7 @@ local function BeginFullWidthRowGroup(container)
 end
 
 ------------------------------------------------------------------------
--- Expose for the conversion packets
+-- Exports
 ------------------------------------------------------------------------
 ST._RowGrammar = {
     ROW_HEIGHT = ROW_HEIGHT,

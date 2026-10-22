@@ -22,7 +22,6 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddTextPositionControls = ST._AddTextPositionControls
-local AddBarTextPositionControls = ST._AddBarTextPositionControls
 local AddFontControls = ST._AddFontControls
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
@@ -479,7 +478,7 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
 
             local refreshStyle = ST._MakeConfigEditRefresh({ _settingsContext = ST._GetSettingsWidgetContext(panel) })
 
-            local anchorRow = AddBarTextPositionControls(panel, style,
+            local anchorRow = AddTextPositionControls(panel, style,
                 "barTimeTextAnchor", "barCdTextOffsetX", "barCdTextOffsetY", refreshStyle, {
                     automatic = true, settings = finderSettings,
                 })
@@ -967,7 +966,7 @@ local function BuildBarAppearanceTab(container, group, style)
 
     -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
     local function BuildBarNameTextAdvanced(panel)
-        AddBarTextPositionControls(panel, nameSec.tbl,
+        AddTextPositionControls(panel, nameSec.tbl,
             "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", refreshStyle, {
                 automatic = true, settings = BAR_FINDER.advanced.name, disabled = nameSec.disabled,
             })
@@ -1230,7 +1229,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 })
             end
             if usesOnlyAura or auraTextSec.read.barAuraTextIndependent == true then
-                AddBarTextPositionControls(panel, auraTextSec.tbl,
+                AddTextPositionControls(panel, auraTextSec.tbl,
                     "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY", refreshStyle, {
                         settings = BAR_FINDER.advanced.auraText,
                         disabled = auraTextSec.disabled,

@@ -12,15 +12,6 @@ local CS = ST._configState
 local SH = {}
 ST._SettingsHelpers = SH
 
--- Helper: build a class-colored collapsible section Heading wired to a
--- collapse-state store. store defaults to CS.collapsedSections (the config
--- columns' store); resource-bar panels pass their own. refreshFn defaults to
--- a full config-panel refresh. Returns the heading, its collapsed state, and
--- the collapse button (for callers that anchor extra controls to it).
---
--- opts.leftAligned opts into the row-grammar header shape (caret, then a
--- left-aligned label, then a rule fading right). Omitting opts keeps the
--- stock centered heading every existing call site draws today.
 local RegisterLensAnchorHeading
 
 ------------------------------------------------------------------------

@@ -19,13 +19,12 @@ local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 -- Imports from RowWidgets.lua (the row grammar). Sound Alerts, Item Settings,
 -- Custom Name, Custom Keybind Text and the Indicator sound surface are
 -- converted; the fallback item rows still draw stock widgets.
--- ST._BeginRowGrid stays a function-local at each builder, the convention
--- every converted surface follows.
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
+local BeginRowGrid = ST._BeginRowGrid
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
@@ -33,13 +32,11 @@ local ROW_SECTION = { leftAligned = true }
 
 -- Sound option labels read "Category - Name" and LibSharedMedia font names run
 -- well past the 140px control column, and a dropdown sizes its menu from the
--- control. Trigger condition labels ("Player has a target", the state phrases)
--- run past it too.
+-- control.
 local SOUND_PULLOUT_WIDTH = 300
 local FONT_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
-local RefreshPanelMultiSelect = ST._RefreshPanelMultiSelect
 
 
 
@@ -349,9 +346,6 @@ local customKeybindSettings = ST._DefineSettingRoute({
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
 local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
     local soundHeading, soundCollapsed =
         BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey(), nil, nil, ROW_SECTION)
 
@@ -480,9 +474,6 @@ end
 -- with a single panel-level event instead of a filtered set. One row, so it
 -- takes the left column and the right one stays empty.
 local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
     if not CooldownCompanion:IsConditionsIndicatorGroup(group) then
         return
     end
@@ -546,13 +537,7 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
     BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
 end
 
--- Conditions stay in one vertical sequence. Each clause uses the shared
--- half-width grid for Check / State, with a readable summary above it.
-
 local function BuildItemSettings(scroll, buttonData, infoButtons)
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
@@ -1114,10 +1099,9 @@ local function RefreshButtonSettingsColumn()
     elseif hasSelection then
         local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
 
-        -- The remembered tab can only hold values from the current tab list
-        -- ("settings" today - retired tab names have no writer left and CS
-        -- state is session-only). This normalizes a remembered tab a trigger
-        -- panel does not offer, which matters again if the cluster regrows.
+        -- The remembered tab is used as-is: it can only hold values from the
+        -- current tab list ("settings" today - retired tab names have no
+        -- writer left and CS state is session-only).
 
         local tabs = BuildButtonSettingsTabs(group, buttonData)
         if tabs then
@@ -1213,9 +1197,6 @@ local function ConfigureInlineEditBoxInstructions(editBoxWidget, placeholderText
 end
 
 local function BuildCustomNameSection(scroll, buttonData)
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
@@ -1252,9 +1233,6 @@ end
 
 local function BuildCustomKeybindSection(scroll, buttonData)
     if buttonData.rotationAssistant then return end
-    -- Function-local, not an upvalue: see the note by the row-grammar imports.
-    local BeginRowGrid = ST._BeginRowGrid
-
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group or group.displayMode ~= "icons" then return end
     -- An Aura Panel offers no Keybind Text at all (owner ruling 2026-08-15,
@@ -1296,8 +1274,6 @@ end
 ST._BuildItemSettings = BuildItemSettings
 ST._BuildItemFallbacksSection = BuildItemFallbacksSection
 ST._RefreshButtonSettingsColumn = RefreshButtonSettingsColumn
-ST._RefreshButtonSettingsMultiSelect = RefreshButtonSettingsMultiSelect
-ST._RefreshPanelMultiSelect = RefreshPanelMultiSelect
 ST._BuildCustomNameSection = BuildCustomNameSection
 ST._BuildCustomKeybindSection = BuildCustomKeybindSection
 ST._BuildEntrySoundAlertsSection = BuildEntrySoundAlertsSection
