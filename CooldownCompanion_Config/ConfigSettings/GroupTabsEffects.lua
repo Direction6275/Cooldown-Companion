@@ -2,10 +2,9 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
--- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
--- only on an Aura Panel, for the sections that read spell cooldown, castability,
--- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+-- Core's per-panel rule ("Can this PANEL ever use this override section?"),
+-- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
@@ -49,9 +48,8 @@ local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescrip
 -- Imports from BarModeTabs.lua
 local BuildBarEffectsTab = ST._BuildBarEffectsTab
 
--- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry. Shared helper
--- (Helpers.lua) so BarModeTabs can gate its aura section too.
+-- Whether the aura style sections apply; StyleLens.lua states the rule.
+-- Shared so BarModeTabs can gate its aura section too.
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
@@ -108,7 +106,6 @@ local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnus
 local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 -- Populated at module load near the exports. Exact maps are passed through the
 -- shared effects builders because many advanced panels intentionally reuse
@@ -162,27 +159,12 @@ local function PrimeReadyGlowNormalTransitions(groupId, onlyButtonData)
     end
 end
 
-local function ClearEffectsTabWidgets()
-    for _, btn in ipairs(tabInfoButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(tabInfoButtons)
-    for _, elem in ipairs(appearanceTabElements) do
-        elem:ClearAllPoints()
-        elem:Hide()
-        elem:SetParent(nil)
-    end
-    wipe(appearanceTabElements)
-end
-
 -- The four glow sections below are icons-mode only and are each called exactly
 -- once, from BuildEffectsTab's icons path, so they were converted to the row
 -- grammar outright rather than growing an opts.row mode. `container` is the
 -- grid column the row belongs to.
 --
--- STYLE LENS (Helpers.lua): each takes the tab's lens, resolved ONCE in
+-- STYLE LENS (StyleLens.lua): each takes the tab's lens, resolved ONCE in
 -- BuildEffectsTab and handed down, and resolves its OWN section against it -
 -- the same shape the bars twins use. With an entry selected the rows read that
 -- entry's effective values and write only where the entry owns the section; a
@@ -313,7 +295,7 @@ local function BuildAuraGlowSection(container, group, style, lens)
     auraSec:Finish()
 end
 
--- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
+-- Pandemic effect: a second kit glow the game reveals only while the
 -- tracked aura sits inside its refresh window. It shares the Pandemic
 -- subheading, and the "pandemic" OVERRIDE section, with the marker below — one
 -- feature, two rows.
@@ -387,9 +369,6 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ settingKey = "pandemicMarker" })
-        end
         return
     end
     if not container or not GroupHasAuraTrackingEntry(group) then
@@ -783,13 +762,13 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
 -- text maps (ST._APPEARANCE_SECTION_BY_ADVANCED_KEY and friends) - never feed
 -- one map's values to the other's consumer.
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
--- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
--- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a
+-- section's gear. Stale-panel cleanup no longer iterates it: the gear-stamp
+-- sweep in AdvancedSettingsPanel.lua closes unrebuilt gear panels by key,
+-- mapless.
 --
 -- It lists every icons-mode gear on the tab. Bars-only gears (barActiveAura,
--- barPandemicMarker) are NOT here - BarModeTabs owns its own map - and
--- neither are the textures gears, which have no override sections at all.
+-- barPandemicMarker) are NOT here - BarModeTabs owns its own map.
 --
 -- A gear added to any section on this tab belongs here the same day.
 ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
@@ -818,8 +797,6 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
 -- land on the dispatch-level gear build pass's sweep
 -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 local function BuildEffectsTab(container, settingsGroup)
-    if not settingsGroup then ClearEffectsTabWidgets() end
-
     if not CS.selectedGroup then return end
     local group = settingsGroup or CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -864,7 +841,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- move off a wide control.
     -- ================================================================
 
-    -- STYLE LENS (Helpers.lua). With an entry selected these sections stop
+    -- STYLE LENS (StyleLens.lua). With an entry selected these sections stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
     -- ones, with per-section scope deciding where - or whether - they write.
     -- Resolved ONCE here and handed to every section below, so one tab cannot
@@ -873,9 +850,9 @@ local function BuildEffectsTab(container, settingsGroup)
 
     -- Under a multi selection these sections edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
-    -- No-op in every other lens mode. The trigger, texture and
-    -- bar-mode paths returned above, so only the standard icons path carries
-    -- it; the modes with their own builders add their own.
+    -- No-op in every other lens mode. Only the bar-mode path returned above,
+    -- so only the standard icons path carries it here; the bar builder adds
+    -- its own.
     AddLensPanelScopeNote(container, lens)
 
     -- Named once here: the Aura Indicators section below is gated on it

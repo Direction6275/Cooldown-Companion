@@ -267,7 +267,7 @@ local function GetLayoutFinderState(context)
     -- Keep that routing gate separate from the shared grid row decisions.
     if (displayMode == "icons" and not hasIcons)
         or (group._attachedBarOwner and ST.GetPanelLayoutKind(owner) ~= "bars") then
-        for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine", "entriesPerLine",
+        for _, key in ipairs({ "horizontalBars", "orientation", "growth", "collapse", "buttonsPerLine",
             "compact", "compactAdvanced", "compactGrowth" }) do state[key] = false end
     end
     if state.buttonsPerLine then state[WrapCountKey(group)] = true end
@@ -341,11 +341,6 @@ if ST._DefineSettingRoute then
             aliases = { "anchor point", "trigger point" },
             applies = LayoutFinderFlag("displayPoint"),
         },
-        texturePoint = {
-            label = "Texture Point",
-            aliases = { "anchor point" },
-            applies = LayoutFinderFlag("texturePoint"),
-        },
         targetPoint = { label = "Target Point", aliases = { "relative point" }, applies = LayoutFinderFlag("targetPoint") },
         screenPoint = { label = "Screen Point", aliases = { "relative point" }, applies = LayoutFinderFlag("screenPoint") },
         relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
@@ -372,7 +367,6 @@ if ST._DefineSettingRoute then
         iconsPerColumn = { label = "Icons Per Column", aliases = { "wrap count", "buttons per column" }, applies = LayoutFinderFlag("iconsPerColumn") },
         barsPerRow = { label = "Bars Per Row", aliases = { "wrap count", "buttons per row" }, applies = LayoutFinderFlag("barsPerRow") },
         barsPerColumn = { label = "Bars Per Column", aliases = { "wrap count", "buttons per column" }, applies = LayoutFinderFlag("barsPerColumn") },
-        entriesPerLine = { label = "Entries per Row/Column", aliases = { "wrap count" }, applies = LayoutFinderFlag("entriesPerLine") },
         compact = { label = "Compact Mode", aliases = { "pack visible buttons" }, applies = LayoutFinderFlag("compact") },
     })
 
@@ -454,7 +448,6 @@ if ST._DefineSettingRoute then
 end
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 -- Early returns in here (missing group, and the Indicator settings guard) land
 -- on the dispatch-level gear build pass's sweep (RunAdvancedGearBuildPass,
@@ -661,13 +654,6 @@ local function BuildGridArrangement(container, group, layoutCount)
 end
 
 local function BuildLayoutTab(container)
-    for _, elem in ipairs(appearanceTabElements) do
-        elem:ClearAllPoints()
-        elem:Hide()
-        elem:SetParent(nil)
-    end
-    wipe(appearanceTabElements)
-
     if not CS.selectedGroup then return end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -787,7 +773,7 @@ local function BuildLayoutTab(container)
         end
 
         -- ============================================================
-        -- Position (what this texture hangs off, and where it sits there)
+        -- Position (what this Indicator hangs off, and where it sits there)
         -- ============================================================
         -- One section: the target and the points/offsets answer the same
         -- question. It keeps the "layout_anchor" key the mover menu opens.
@@ -1392,9 +1378,7 @@ local function BuildLayoutTab(container)
     -- the block here because "only auras live here, and they pack" is a
     -- statement about the cluster's layout rather than its look.
     local hasIcons = HasLayoutIcons(group, CS.selectedGroup)
-    local panelSections = not ST._ResolveStylingGroup(group)._attachedBarOwner
-        and hasIcons
-        and ST.PanelSupportsSections(group) and group.sections or nil
+    local panelSections = hasIcons and ST.PanelSupportsSections(group) and group.sections or nil
     if type(panelSections) == "table" and next(panelSections) then
         -- Reading order, so the blocks sit in the order the anchors read on the
         -- panel rather than whatever order the profile happens to store them in.

@@ -7,10 +7,9 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
--- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
--- only on an Aura Panel, for the sections that read spell cooldown, castability,
--- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+-- Core's per-panel rule ("Can this PANEL ever use this override section?"),
+-- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 local function ShowChargeGap(group)
     local entry = ST._GetPanelSettingsSelection(group)
     return CanGroupUseOverrideSection(group, "barCharges")
@@ -226,14 +225,14 @@ local function BarsLensHasMissingPicture(lens, group)
 end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
--- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
+-- `if not usesOnlyAura`): nothing there has a cooldown, so the toggle is dead and
 -- Duration Format remains a shared row in the duration options; time placement
 -- and the two time-text offsets move under the aura duration text they place. The
 -- section itself stays usable, so this is an `available` predicate rather than a
 -- denial in ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the
 -- Customizations index would offer a name link onto a row that is not drawn.
 local function GroupDrawsCooldownTextRow(group)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
 end
 
 -- Low Time Threshold is drawn once beside a duration surface that can consume
@@ -242,7 +241,7 @@ end
 -- Keep these predicates in step with the icon-mode twins in
 -- GroupTabsAppearance.lua: both modes edit the same durationLowTime policy.
 local function BarsDrawCooldownDurationRows(group, style)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
         and style and style.showCooldownText == true
 end
 
@@ -495,7 +494,7 @@ end
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
-    -- STYLE LENS (Helpers.lua). With an entry selected the sections below stop
+    -- STYLE LENS (StyleLens.lua). With an entry selected the sections below stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
     -- ones, with per-section scope deciding where - or whether - they write.
     -- Resolved ONCE here and handed to every section, so one tab cannot
@@ -514,7 +513,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- it that DO still work - Duration Format, Time text positioning and the two
     -- time-text offsets - under the aura duration text they actually place
     -- (owner ruling 2026-08-15).
-    local isAuraPanel = (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    local usesOnlyAura = ST._SettingsUsesOnlyAura(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
     -- so - the per-section scope chrome speaks under an entry lens alone. No-op
@@ -653,13 +652,9 @@ local function BuildBarAppearanceTab(container, group, style)
         and ((group.buttons and #group.buttons > 1) or group._settingsContext) then
         AddSliderRow(barRight, {
             label = "Bar Spacing",
-            setting = BAR_FINDER.appearance.barSettings
-                and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "gridSpacing" or "spacing"],
-            tooltip = group._attachedBarOwner and { "Grid Spacing",
-                { "Space between bars when the panel contains only bars and uses Grid arrangement.", 1, 1, 1, true } } or nil,
+            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.spacing,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
-            disabled = lens.mode == "entry",
             onChange = function(val)
                 ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
             end,
@@ -852,7 +847,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- near-expiry policy) lead, as on the Icons tab.
     local sharedLeft, sharedRight
     if drawsCooldownFormat or drawsAuraFormat or drawsCooldownLowTime or drawsAuraLowTime then
-        if isAuraPanel then
+        if usesOnlyAura then
             sharedLeft = BeginRowGrid(container)
             sharedRight = sharedLeft
         else
@@ -994,7 +989,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- down, so the toggle itself is dead there and is left out; everything live
     -- that hung off it (Duration Format, time text positioning, the two time-text
     -- offsets) moves into the aura duration text section on the right.
-    if not isAuraPanel then
+    if not usesOnlyAura then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = durationLeft })
 
     local showTimeRow = AddCheckboxRow(durationLeft, {
@@ -1046,7 +1041,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if drawsCooldownLowTime then
         AddDurationLowTimeSection()
     end
-    end -- not isAuraPanel
+    end -- not usesOnlyAura
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
     -- Panel never counts anything here; the aura's own stack count is the Show
@@ -1174,12 +1169,10 @@ local function BuildBarAppearanceTab(container, group, style)
     readySec:Finish()
     end -- CanGroupUseOverrideSection barReadyText
 
-    -- Bar aura block: the aura text toggles. Shown only while the GROUP has an
-    -- aura-tracking entry (same gate as the icon-side aura sections, and as the
-    -- Bar Aura Timer Color row up with the other bar colors). The gate stays on
-    -- the group: with an entry selected that tracks no aura, the rows are still
-    -- drawn and the lens resolves them "not available" for that entry, which is
-    -- what states the reason rather than hiding it. Style edits route through
+    -- Bar aura block: the aura text toggles. Shown where the aura style
+    -- sections apply (GroupHasAuraTrackingEntry, StyleLens.lua; the same gate as
+    -- the icon-side aura sections, and as the Bar Aura Timer Color row up with
+    -- the other bar colors). Style edits route through
     -- refreshStyle -> UpdateGroupStyle -> RequestAuraRebind, which defers to
     -- combat end with the one-time note when needed.
     if GroupHasAuraTrackingEntry(group) then
@@ -1222,7 +1215,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 disabled = auraTextSec.disabled,
                 onConfirm = refreshStyle,
             })
-            if not isAuraPanel then
+            if not usesOnlyAura then
                 AddCheckboxRow(panel, {
                     label = "Independent Position",
                     setting = BAR_FINDER.advanced.auraText.independent,
@@ -1236,7 +1229,7 @@ local function BuildBarAppearanceTab(container, group, style)
                     end,
                 })
             end
-            if isAuraPanel or auraTextSec.read.barAuraTextIndependent == true then
+            if usesOnlyAura or auraTextSec.read.barAuraTextIndependent == true then
                 AddBarTextPositionControls(panel, auraTextSec.tbl,
                     "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY", refreshStyle, {
                         settings = BAR_FINDER.advanced.auraText,
@@ -1269,7 +1262,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- On an Aura Panel the anchor and offset rows live in this section's own
         -- gear, so the pointer to the Cooldown Text section would send the user
         -- to a row that is not drawn.
-        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, isAuraPanel and {
+        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, usesOnlyAura and {
             "Aura Duration Text",
             {"Shows the remaining aura time while the aura is active. Set its Anchor and offsets in this section.", 1, 1, 1, true},
         } or {
@@ -1496,7 +1489,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     auraSec:Finish()
 end
 
--- Pandemic color (PTR 8): the aura kit reveals a pandemic-colored clone of
+-- Pandemic color: the aura kit reveals a pandemic-colored clone of
 -- the duration fill while the tracked aura sits inside its refresh window.
 -- Enable + color only; the window itself is game-computed.
 --
@@ -1566,9 +1559,6 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ settingKey = "barPandemicMarker" })
-        end
         return
     end
     if not container or not GroupHasAuraTrackingEntry(group) then
@@ -1623,7 +1613,7 @@ end
 local function BuildBarEffectsTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
-    -- STYLE LENS (Helpers.lua), resolved ONCE for the whole tab and handed to
+    -- STYLE LENS (StyleLens.lua), resolved ONCE for the whole tab and handed to
     -- every section below - see the note at the top of BuildBarAppearanceTab
     -- for what the scopes mean and why the write table is the only gate.
     local lens = ResolveStyleLens(group)
@@ -2019,7 +2009,7 @@ local function BarFinderSectionState(context, sectionId)
 end
 
 local function BarFinderAuraPositionVisible(context)
-    if (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group) then return true end
+    if ST._SettingsUsesOnlyAura(context.group) then return true end
     local read = BarFinderSectionState(context, "auraText")
     return read and read.barAuraTextIndependent == true or false
 end
@@ -2109,7 +2099,7 @@ local function BarFinderEffectRoute(prefix, section, sectionLabel, applies,
 end
 
 local function BarFinderCooldownText(context)
-    return context and context.group and not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group)
+    return context and context.group and not ST._SettingsUsesOnlyAura(context.group)
 end
 
 local function BarFinderCooldownTextVisible(context)
@@ -2390,7 +2380,7 @@ if ST._DefineSettingRoute then
         color = { label = "Aura Text Color", aliases = { "aura timer color", "aura duration color" } },
         independent = {
             label = "Independent Position", aliases = { "separate aura position", "aura anchor", "center aura text", "aura offset" },
-            applies = function(context) return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group) end,
+            applies = function(context) return not ST._SettingsUsesOnlyAura(context.group) end,
         },
         anchor = { label = "Anchor", aliases = { "position", "center" }, applies = BarFinderAuraPositionVisible },
         xOffset = { label = "X Offset", applies = BarFinderAuraPositionVisible },

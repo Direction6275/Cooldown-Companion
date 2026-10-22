@@ -48,9 +48,10 @@ local function GetSelectedRuntimeButton(buttonData)
     return nil
 end
 
--- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry. Shared by
--- GroupTabs and BarModeTabs (load order: Helpers loads first).
+-- Whether the aura style sections apply. With a settings context: always at
+-- panel and multi scope, and under an entry lens only when that entry tracks
+-- an aura. Without a context: when any of the panel's entries tracks an aura.
+-- Shared by GroupTabs and BarModeTabs.
 local function GroupHasAuraTrackingEntry(group)
     local context = group and group._settingsContext
     if context then
@@ -625,10 +626,6 @@ end
 -- "denied" - a denied section structurally cannot exist for the entry, so it
 -- keeps no gear at all.
 local ADVANCED_UNLOCK_REFRESH = {
-    -- The styling tabs' standard write-then-rebuild pair.
-    groupStyle = function(target)
-        ST._CompleteConfigEdit(target, "style-settings")
-    end,
     -- Resource settings: apply the module, then rebuild.
     resourceBars = function(target)
         ST._CompleteConfigEdit(target, "style-settings")
@@ -675,7 +672,7 @@ local function ResolveAdvancedUnlock(spec, widgetContext)
         return {
             label = enable.label,
             onClick = function()
-                if (context or spec.refreshKind == "groupStyle") and not ST._IsConfigEditTargetCurrent(target) then return end
+                if context and not ST._IsConfigEditTargetCurrent(target) then return end
                 ApplyAdvancedUnlockEnable(enable, spec.target)
                 ADVANCED_UNLOCK_REFRESH[spec.refreshKind](target)
             end,

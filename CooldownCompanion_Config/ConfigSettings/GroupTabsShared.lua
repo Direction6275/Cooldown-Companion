@@ -24,9 +24,11 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(slider)
     local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
 
+    -- The target carries this same context, so its check covers both.
     slider:SetCallback("OnValueChanged", function(_, _, value)
-        if (context and not context:IsCurrent())
-            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
+        if target then
+            if not ST._IsConfigEditTargetCurrent(target) then return end
+        elseif context and not context:IsCurrent() then return end
         ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function(outcome)
             if previewFn == false then
                 -- Some sliders change screen-space placement, which the pinned
@@ -39,8 +41,9 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
         end)
     end)
     slider:SetCallback("OnMouseUp", function(_, _, value)
-        if (context and not context:IsCurrent())
-            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
+        if target then
+            if not ST._IsConfigEditTargetCurrent(target) then return end
+        elseif context and not context:IsCurrent() then return end
         applyValue(value)
         if commitFn then
             commitFn()

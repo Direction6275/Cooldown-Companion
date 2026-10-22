@@ -35,7 +35,6 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local HasItemFallbacks = CooldownCompanion.HasItemFallbacks
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
 local ResolvePanelAlphaAnchorSourceMode
@@ -2946,21 +2945,6 @@ end
 -- VISIBILITY TAB (internal tab key stays "loadconditions")
 ------------------------------------------------------------------------
 
--- Raw (non-AceGUI) frames the previous tab left parented to widgets AceGUI
--- is about to recycle. Cleared on the way in to whichever half of the
--- Visibility tab builds, so a leftover badge cannot ride a pooled frame.
--- CS.tabInfoButtons is not touched: the settings host clears it before every
--- rebuild, and a section built ahead of this tab on the same page (an
--- Indicator's When to Show) has already added its own.
-local function ReleaseVisibilityTabScratch()
-    for _, elem in ipairs(appearanceTabElements) do
-        elem:ClearAllPoints()
-        elem:Hide()
-        elem:SetParent(nil)
-    end
-    wipe(appearanceTabElements)
-end
-
 -- A plain scoping line naming the family of sections beneath it. It is not a
 -- setting and not a section: no caret, no collapse state, no "?" badge. It
 -- takes the entry identity heading's anatomy (Helpers.lua), gold label
@@ -3015,8 +2999,6 @@ local function BuildPanelAlphaControls(container, config, refreshFn, collapseKey
 end
 
 local function BuildLoadConditionsTab(container)
-    ReleaseVisibilityTabScratch()
-
     if not CS.selectedGroup then return end
     local groupId = CS.selectedGroup
     local group = CooldownCompanion.db.profile.groups[groupId]
@@ -3277,7 +3259,6 @@ local function BuildVisibilityTab(container)
             if CS.selectedButton then
                 local buttonData = group.buttons and group.buttons[CS.selectedButton]
                 if buttonData then
-                    ReleaseVisibilityTabScratch()
                     ST._BuildEntryIdentityHeading(container, buttonData)
                     -- Live rules first, then the static ones that decide
                     -- whether the entry loads at all.

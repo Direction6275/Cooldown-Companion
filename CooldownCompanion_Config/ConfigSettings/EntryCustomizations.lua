@@ -73,7 +73,7 @@ local CUSTOMIZATIONS_TOOLTIP = {
 }
 
 -- This list's framing around the single-sourced denial clause (see
--- SECTION_DENIAL_CLAUSES above - never word a denial here directly).
+-- SECTION_DENIAL_CLAUSES in StyleLens.lua - never word a denial here directly).
 local function GetInactiveCustomizationReason(reason)
     return "Saved for this entry, but inactive: " .. GetSectionDenialClause(reason) .. "."
 end
@@ -140,9 +140,8 @@ end
 -- this list can never offer a gear the mode does not draw. Icons builds both
 -- the Appearance and Indicators tabs off both maps; bars builds
 -- its two tabs off the one bars map (its pandemic, unusable and tooltip gears
--- are listed there, so the indicators map is not a bars source); text's map is
--- deliberately empty today. Textures has no override sections at all, so it has
--- no entry and no row here ever resolves a gear.
+-- are listed there, so the indicators map is not a bars source). A mode with
+-- no map here never resolves a gear.
 local CUSTOMIZATIONS_GEAR_MAPS_BY_MODE = {
     icons = { "_APPEARANCE_SECTION_BY_ADVANCED_KEY", "_INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY" },
     bars = { "_BARMODE_SECTION_BY_ADVANCED_KEY" },

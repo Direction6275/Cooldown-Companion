@@ -328,7 +328,6 @@ ST._configState = {
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
     tabInfoButtons = {},
-    appearanceTabElements = {},
     -- A standalone bar destination in the panel inventory
     barsEntrySelected = false,
     barWorkspaceKind = nil,
