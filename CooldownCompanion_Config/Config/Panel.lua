@@ -54,18 +54,8 @@ local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
 local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
-local function GetAddonVersionText()
-    if ST._GetAddonVersion then
-        return ST._GetAddonVersion()
-    end
-    return "unknown"
-end
-
 local function GetVersionFooterText()
-    local version = GetAddonVersionText()
-    if ST._Changelog and ST._Changelog.GetDisplayAddonVersion then
-        version = ST._Changelog.GetDisplayAddonVersion()
-    end
+    local version = ST._Changelog.GetDisplayAddonVersion()
     version = tostring(version or "unknown")
     if version ~= "" and version ~= "unknown" and version ~= "dev" and not version:match("^[Vv]") then
         version = "v" .. version
@@ -1610,7 +1600,7 @@ local function CreateConfigPanel()
             info6.func = function()
                 CloseDropDownMenus()
                 if StartFirstIconPanelTutorial then
-                    StartFirstIconPanelTutorial(true)
+                    StartFirstIconPanelTutorial()
                 end
             end
             UIDropDownMenu_AddButton(info6, level)

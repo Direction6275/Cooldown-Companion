@@ -235,14 +235,6 @@ function Changelog.GetDisplayAddonVersion()
     return version
 end
 
-function Changelog.GetOrderedVersions()
-    local versions = {}
-    for i, version in ipairs(orderedVersions) do
-        versions[i] = version
-    end
-    return versions
-end
-
 function Changelog.GetDropdownVersions(selectedVersion)
     local versions = {}
     local seen = {}

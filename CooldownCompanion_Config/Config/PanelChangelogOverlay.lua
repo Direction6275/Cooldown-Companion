@@ -5,6 +5,8 @@
 
 local ADDON_NAME, ST = ...
 local CS = ST._configState
+-- Changelog.lua loads first and owns the font size, its bounds and the data.
+local Changelog = ST._Changelog
 
 local AceGUI = LibStub("AceGUI-3.0")
 
@@ -14,7 +16,17 @@ local CHANGELOG_CLOSE_BUTTON_WIDTH = 72
 local CHANGELOG_CONTROL_ROW_INSET_Y = 12
 local CHANGELOG_CONTROL_ROW_RESERVE = 38
 
-function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
+-- Heading looks: size above the body text, colour, the spacers around the
+-- divider that precedes a heading, and the spacer after it.
+local HEADING_STYLES = {
+    heading2 = { sizeOffset = 4, color = { 1, 0.82, 0 }, beforeDivider = 10, afterDivider = 12, after = 8 },
+    heading3 = { sizeOffset = 2, color = { 1, 0.92, 0.65 }, beforeDivider = 8, afterDivider = 10, after = 6 },
+}
+local BODY_COLOR = { 0.96, 0.96, 0.96 }
+local LIST_IMPORTANT_COLOR = { 1.00, 0.91, 0.67 }
+local LIST_NESTED_COLOR = { 0.70, 0.87, 0.95 }
+
+function ST._SetupChangelogOverlay(frame, colParent)
     local changelogOverlay
     local changelogContainer
     local changelogScroll
@@ -31,7 +43,6 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
     local function SaveChangelogScroll()
         local status = changelogScroll and (changelogScroll.status or changelogScroll.localstatus)
         return {
-            offset = tonumber(status and status.offset) or 0,
             scrollvalue = tonumber(status and status.scrollvalue) or 0,
         }
     end
@@ -49,10 +60,14 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         spacer:SetFullWidth(true)
         spacer:SetHeight(height)
         spacer.noAutoHeight = true
-        if spacer.frame._changelogDividerTex then
-            spacer.frame._changelogDividerTex:Hide()
-        end
         changelogScroll:AddChild(spacer)
+    end
+
+    -- The divider texture rides a pooled SimpleGroup frame, so it hides when
+    -- the widget goes back to the pool and can never show on another one.
+    -- AceGUI clears callbacks on release, so this is set on every acquire.
+    local function HideDividerOnRelease(widget)
+        widget.frame._changelogDividerTex:Hide()
     end
 
     local function AddChangelogDivider()
@@ -69,6 +84,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         end
         divider.frame._changelogDividerTex:SetColorTexture(0.35, 0.35, 0.35, 0.4)
         divider.frame._changelogDividerTex:Show()
+        divider:SetCallback("OnRelease", HideDividerOnRelease)
         changelogScroll:AddChild(divider)
     end
 
@@ -98,12 +114,8 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
     end
 
     local function UpdateChangelogFontButtons()
-        local changelog = ST._Changelog
-        local fontSize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
-        local minSize, maxSize = 11, 18
-        if changelog and changelog.GetFontSizeBounds then
-            minSize, maxSize = changelog.GetFontSizeBounds()
-        end
+        local fontSize = Changelog.GetFontSize()
+        local minSize, maxSize = Changelog.GetFontSizeBounds()
         if changelogFontDownBtn then
             changelogFontDownBtn:SetDisabled(fontSize <= minSize)
         end
@@ -117,9 +129,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
             return
         end
 
-        local changelog = ST._Changelog
-        local orderedVersions = (changelog and changelog.GetDropdownVersions and changelog.GetDropdownVersions(selectedVersion))
-            or ((changelog and changelog.GetOrderedVersions and changelog.GetOrderedVersions()) or {})
+        local orderedVersions = Changelog.GetDropdownVersions(selectedVersion)
         local versionList = {}
         for _, version in ipairs(orderedVersions) do
             versionList[version] = version
@@ -184,10 +194,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
     changelogFontUpBtn:SetWidth(CHANGELOG_TEXT_BUTTON_WIDTH)
     changelogFontUpBtn:SetHeight(22)
     changelogFontUpBtn:SetCallback("OnClick", function()
-        local changelog = ST._Changelog
-        if changelog and changelog.AdjustFontSize then
-            changelog.AdjustFontSize(1)
-        end
+        Changelog.AdjustFontSize(1)
         if frame.RenderChangelogOverlay then
             frame.RenderChangelogOverlay(frame._changelogCurrentVersion, true)
         end
@@ -211,10 +218,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
     changelogFontDownBtn:SetWidth(CHANGELOG_TEXT_BUTTON_WIDTH)
     changelogFontDownBtn:SetHeight(22)
     changelogFontDownBtn:SetCallback("OnClick", function()
-        local changelog = ST._Changelog
-        if changelog and changelog.AdjustFontSize then
-            changelog.AdjustFontSize(-1)
-        end
+        Changelog.AdjustFontSize(-1)
         if frame.RenderChangelogOverlay then
             frame.RenderChangelogOverlay(frame._changelogCurrentVersion, true)
         end
@@ -251,19 +255,17 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
     changelogVersionDrop.frame:Show()
 
     local function RenderChangelogOverlay(version, preserveScroll)
-        local changelog = ST._Changelog
         local activeVersion = version
-        if activeVersion and changelog and not changelog.HasEntry(activeVersion) then
-            activeVersion = changelog.GetNewestVersion()
+        if activeVersion and not Changelog.HasEntry(activeVersion) then
+            activeVersion = Changelog.GetNewestVersion()
         end
 
         local savedScroll = preserveScroll and SaveChangelogScroll() or nil
         local bodyFontPath, _, bodyFontFlags = GameFontHighlightSmall:GetFont()
         local headingFontPath, _, headingFontFlags = GameFontNormal:GetFont()
-        local bodySize = (changelog and changelog.GetFontSize and changelog.GetFontSize()) or 13
-        local heading2Size = bodySize + 4
-        local heading3Size = bodySize + 2
-        local versionFontSize = heading2Size + 2
+        local bodySize = Changelog.GetFontSize()
+        -- The version title sits two points above a top-level heading.
+        local versionFontSize = bodySize + HEADING_STYLES.heading2.sizeOffset + 2
         local estimatedVersionHeight = versionFontSize + 8
         local versionBandHeight = math.max(54, versionFontSize + 26)
         local versionTopSpacer = math.max(6, math.floor((versionBandHeight - estimatedVersionHeight) * 0.5))
@@ -274,7 +276,7 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         changelogScroll:PauseLayout()
         changelogScroll:ReleaseChildren()
 
-        if activeVersion and changelog and changelog.HasEntry(activeVersion) then
+        if activeVersion and Changelog.HasEntry(activeVersion) then
             AddChangelogSpacer(versionTopSpacer)
             AddChangelogLabel("v" .. activeVersion, headingFontPath, versionFontSize, headingFontFlags, {1, 0.82, 0})
             AddChangelogSpacer(versionBottomSpacer)
@@ -292,66 +294,40 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
                 return true
             end
 
-            local tokens = changelog.GetRenderTokens(activeVersion) or {}
+            local tokens = Changelog.GetRenderTokens(activeVersion) or {}
             if #tokens == 0 then
                 FlushVersionDivider(10)
                 AddChangelogLabel("No release notes were bundled for this version.", bodyFontPath, bodySize, bodyFontFlags, {0.92, 0.92, 0.92})
             else
-                local renderedAny = false
                 for _, token in ipairs(tokens) do
                     local tokenType = token.type or "paragraph"
                     local text = token.text or ""
-                    if tokenType == "heading2" then
-                        if FlushVersionDivider(12) then
-                        elseif renderedAny then
-                            AddChangelogSpacer(10)
+                    local style = HEADING_STYLES[tokenType]
+                    if style then
+                        -- The first token takes the version divider; every
+                        -- later heading draws its own.
+                        if not FlushVersionDivider(style.afterDivider) then
+                            AddChangelogSpacer(style.beforeDivider)
                             AddChangelogDivider()
-                            AddChangelogSpacer(12)
-                        else
-                            AddChangelogSpacer(10)
+                            AddChangelogSpacer(style.afterDivider)
                         end
-                        AddChangelogLabel(text, headingFontPath, heading2Size, headingFontFlags, {1, 0.82, 0})
-                        AddChangelogSpacer(8)
-                        renderedAny = true
-                    elseif tokenType == "heading3" then
-                        if FlushVersionDivider(10) then
-                        elseif renderedAny then
-                            AddChangelogSpacer(8)
-                            AddChangelogDivider()
-                            AddChangelogSpacer(10)
-                        else
-                            AddChangelogSpacer(10)
-                        end
-                        AddChangelogLabel(text, headingFontPath, heading3Size, headingFontFlags, {1, 0.92, 0.65})
-                        AddChangelogSpacer(6)
-                        renderedAny = true
-                    elseif tokenType == "bullet" then
+                        AddChangelogLabel(text, headingFontPath, bodySize + style.sizeOffset, headingFontFlags, style.color)
+                        AddChangelogSpacer(style.after)
+                    elseif tokenType == "bullet" or tokenType == "ordered_bullet" then
                         FlushVersionDivider(10)
-                        local bulletColor = {0.96, 0.96, 0.96}
+                        local listColor = BODY_COLOR
                         if token.important then
-                            bulletColor = {1.00, 0.91, 0.67}
+                            listColor = LIST_IMPORTANT_COLOR
                         elseif (tonumber(token.depth) or 0) > 0 then
-                            bulletColor = {0.70, 0.87, 0.95}
+                            listColor = LIST_NESTED_COLOR
                         end
-                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, nil, token.important) .. text, bodyFontPath, bodySize, bodyFontFlags, bulletColor)
+                        -- Plain bullets carry no index, so they keep the bullet glyph.
+                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, token.index, token.important) .. text, bodyFontPath, bodySize, bodyFontFlags, listColor)
                         AddChangelogSpacer(5)
-                        renderedAny = true
-                    elseif tokenType == "ordered_bullet" then
-                        FlushVersionDivider(10)
-                        local orderedColor = {0.96, 0.96, 0.96}
-                        if token.important then
-                            orderedColor = {1.00, 0.91, 0.67}
-                        elseif (tonumber(token.depth) or 0) > 0 then
-                            orderedColor = {0.70, 0.87, 0.95}
-                        end
-                        AddChangelogLabel(BuildChangelogListPrefix(token.depth, token.index, token.important) .. text, bodyFontPath, bodySize, bodyFontFlags, orderedColor)
-                        AddChangelogSpacer(5)
-                        renderedAny = true
                     else
                         FlushVersionDivider(10)
-                        AddChangelogLabel(text, bodyFontPath, bodySize, bodyFontFlags, {0.96, 0.96, 0.96})
+                        AddChangelogLabel(text, bodyFontPath, bodySize, bodyFontFlags, BODY_COLOR)
                         AddChangelogSpacer(6)
-                        renderedAny = true
                     end
                 end
             end
@@ -385,17 +361,13 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
             child:Show()
         end
         wipe(changelogHiddenFrames)
-        if onHighlightChanged then
-            onHighlightChanged()
-        end
     end
     frame.OpenChangelogOverlay = function(version, opts)
         if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
-        local changelog = ST._Changelog
         local targetVersion = version
 
-        if not (changelog and targetVersion and changelog.HasEntry(targetVersion)) then
-            targetVersion = changelog and changelog.GetNewestVersion() or nil
+        if not (targetVersion and Changelog.HasEntry(targetVersion)) then
+            targetVersion = Changelog.GetNewestVersion()
         end
 
         wipe(changelogHiddenFrames)
@@ -407,13 +379,10 @@ function ST._SetupChangelogOverlay(frame, colParent, onHighlightChanged)
         end
         changelogOverlay:Show()
         changelogOverlay:Raise()
-        if onHighlightChanged then
-            onHighlightChanged()
-        end
         RenderChangelogOverlay(targetVersion)
 
-        if opts and opts.autoOpen and targetVersion and changelog then
-            changelog.MarkSeen(targetVersion)
+        if opts and opts.autoOpen and targetVersion then
+            Changelog.MarkSeen(targetVersion)
         end
     end
     frame.ToggleChangelogOverlay = function()
