@@ -225,38 +225,6 @@ local function GetRawCursorCoordinates()
     return GetCursorPosition()
 end
 
-local function GetDropIndex(scrollWidget, cursorY, childOffset, totalDraggable)
-    -- childOffset: number of non-draggable children at the start of the scroll (e.g. input box, buttons, separator)
-    -- Iterate draggable children and compare cursor Y to midpoints
-    local children = { scrollWidget.content:GetChildren() }
-    local dropIndex = totalDraggable + 1  -- default: after last
-    local anchorFrame = nil
-    local anchorAbove = true
-
-    for ci = 1, totalDraggable do
-        local child = children[ci + childOffset]
-        if child and child:IsShown() then
-            local top = child:GetTop()
-            local bottom = child:GetBottom()
-            if top and bottom then
-                local mid = (top + bottom) / 2
-                if cursorY > mid then
-                    dropIndex = ci
-                    anchorFrame = child
-                    anchorAbove = true
-                    break
-                end
-                -- Track the last child we passed as potential "below" anchor
-                anchorFrame = child
-                anchorAbove = false
-                dropIndex = ci + 1
-            end
-        end
-    end
-
-    return dropIndex, anchorFrame, anchorAbove
-end
-
 local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
     if not anchorFrame then
         HideDragIndicator()
@@ -825,14 +793,6 @@ local function PartitionSelectedContainersByLoadBucket(sourceContainerIds, rende
     return loaded, unloaded
 end
 
--- Reset drag indicator to default line style
-local function ResetDragIndicatorStyle()
-    local ind = CS.dragIndicator
-    if not ind then return end
-    ind:SetHeight(DRAG_INDICATOR_HEIGHT)
-    ApplyDragIndicatorColor(ind, unpack(DRAG_INDICATOR_DEFAULT_COLOR))
-end
-
 -- The line says WHERE the group is going: the Global section's identity colour
 -- for "global", the player's class colour for their own "char" section.
 --
@@ -1254,14 +1214,11 @@ DR.HideDragIndicator = HideDragIndicator
 DR.GetScaledCursorCoordinates = GetScaledCursorCoordinates
 DR.GetScaledCursorPosition = GetScaledCursorPosition
 DR.GetRawCursorCoordinates = GetRawCursorCoordinates
-DR.GetDropIndex = GetDropIndex
-DR.ShowDragIndicator = ShowDragIndicator
 DR.ShowCol1DropIndicator = ShowCol1DropIndicator
 DR.ShowRailPanelDropIndicator = ShowRailPanelDropIndicator
 DR.SetDragIndicatorColor = SetDragIndicatorColor
 DR.GetCol1SectionColor = GetCol1SectionColor
 DR.GetCol1DropTarget = GetCol1DropTarget
-DR.ResetDragIndicatorStyle = ResetDragIndicatorStyle
 DR.IsCol1GroupDropNoOp = IsCol1GroupDropNoOp
 DR.IsUnloadedTopLevelDrop = IsUnloadedTopLevelDrop
 DR.ShouldIncludeCol1TopLevelOrderRow = ShouldIncludeCol1TopLevelOrderRow

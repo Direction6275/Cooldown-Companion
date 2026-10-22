@@ -48,10 +48,8 @@ end
 
 local function RefreshIndicatorAnchor(groupId, group)
     CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+    -- RefreshGroupFrame also refreshes the parent Group's wrapper.
     CooldownCompanion:RefreshGroupFrame(groupId)
-    if group.parentContainerId then
-        CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
-    end
     CooldownCompanion:RefreshConfigPanel()
 end
 
@@ -805,15 +803,11 @@ function CooldownCompanion:RefreshArrangeTreeHover()
     end
 end
 
--- GroupOperations delegates its existing public refresh entry point here once
--- this module has loaded.
+-- ArrangeMode's CooldownCompanion:RefreshArrangePillList is the public entry
+-- point; it delegates here.
 function ST.RefreshArrangeTreePill(self)
     local pill = self._arrangeModePill
     if not (pill and pill:IsShown()) then return end
-
-    for _, legacyRow in ipairs(pill._rows or {}) do
-        legacyRow:Hide()
-    end
 
     local roots = BuildArrangeTree(self)
     local entries = FlattenArrangeTree(roots)

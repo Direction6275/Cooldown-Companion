@@ -454,6 +454,15 @@ local function SaveTextureHostPosition(host)
     if not settings then
         return
     end
+    if group and CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(group) then
+        -- The host's parked screen position must never be written into the
+        -- Indicator's own anchor settings: the cursor offset was already saved
+        -- by the nudge or the cursor-preview drag.
+        if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+        return
+    end
 
     local previousRelativeTo = settings.relativeTo
     if not SaveGroupedIndicatorPreviewSettings(host, group, settings, owner and owner._groupId) then
@@ -659,6 +668,11 @@ local function EnsureAuraTextureNudger(host)
                 UpdateTextureHostCoordLabel(host, anchor.x, anchor.y)
                 if CooldownCompanion.UpdateCursorAnchoredFrames then
                     CooldownCompanion:UpdateCursorAnchoredFrames()
+                end
+                -- The parked host is part of its Group's outline, as on the
+                -- non-cursor path below.
+                if group.parentContainerId and CooldownCompanion.RefreshShownContainerWrapper then
+                    CooldownCompanion:RefreshShownContainerWrapper(group.parentContainerId)
                 end
                 return
             end

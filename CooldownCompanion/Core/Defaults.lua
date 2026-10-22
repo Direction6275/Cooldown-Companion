@@ -720,9 +720,9 @@ end
 --
 -- ENGINE INVARIANT, so it lives in Core and every inserting path calls it:
 -- AddButtonToGroup for the adds it owns, and the config paths that push an entry
--- table in directly (entry duplicate, multi-select duplicate, the move menus, a
--- cross-panel drag), where the table would otherwise arrive with no key at all
--- or still wearing the key of the panel it came from.
+-- table in directly (entry duplicate, multi-select duplicate, the move menus),
+-- where the table would otherwise arrive with no key at all or still wearing
+-- the key of the panel it came from.
 --
 -- Keys are unique per PANEL only. Duplicating a whole panel copies them along
 -- with it, which is fine: nothing reads them across panels.

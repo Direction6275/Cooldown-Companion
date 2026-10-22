@@ -130,7 +130,7 @@ local function IndependentStackCoordOnUpdate(self, elapsed)
             UpdateIndependentStackCoordLabel(self, x, y)
         end
     end
-    CooldownCompanion:UpdateDragSnapSession(self)
+    -- Snapping runs every frame from the drag-snap session's own tracker.
 end
 
 local function StartIndependentStackCoordUpdates(frame, anchor)

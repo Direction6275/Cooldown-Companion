@@ -25,6 +25,33 @@ local minimapButton = ST._minimapButton
 -- LibSharedMedia for font/texture selection
 local LSM = LibStub("LibSharedMedia-3.0")
 
+-- Shared-media registrations waiting for the next-frame flush, by media type.
+local pendingMediaTypes = {}
+local mediaFlushQueued = false
+
+local function FlushSharedMediaRegistrations(addon)
+    mediaFlushQueued = false
+    local font = pendingMediaTypes.font
+    local texture = pendingMediaTypes.statusbar or pendingMediaTypes.background or pendingMediaTypes.border
+    local sound = pendingMediaTypes.sound
+    wipe(pendingMediaTypes)
+    if font or texture then
+        addon:RefreshAllMedia()
+    end
+    if texture or sound then
+        addon:RefreshConfigPanel()
+    end
+    if texture and ST._configState and ST._configState.RefreshAuraTexturePicker then
+        ST._configState.RefreshAuraTexturePicker()
+    end
+    if sound then
+        -- Native aura sounds are registered during the rebind pass, and a
+        -- sound that was not registered yet resolved to nil there. Rebind
+        -- so late-loading media addons' sounds actually take effect.
+        addon:RequestAuraRebind("sound-media")
+    end
+end
+
 -- Viewer frame list used by BuildViewerAuraMap, FindViewerChildForSpell, and OnEnable hooks.
 local VIEWER_NAMES = {
     "EssentialCooldownViewer",
@@ -75,6 +102,9 @@ function CooldownCompanion:OnInitialize()
     self:SetupConfig()
 
     -- Re-apply fonts/textures when shared media used elsewhere in the addon updates.
+    -- LSM fires this inside each Register call, so a media pack sends one per
+    -- key: coalesce them into one next-frame flush. Before OnEnable nothing is
+    -- built yet, and OnEnable builds from whatever media exists by then.
     LSM.RegisterCallback(self, "LibSharedMedia_Registered", function(event, mediatype, key)
         if mediatype == "font" then
             -- Styles cached by saved font name compare this to re-resolve.
@@ -82,19 +112,15 @@ function CooldownCompanion:OnInitialize()
             if ST._InvalidateFontCache then
                 ST._InvalidateFontCache()
             end
-            self:RefreshAllMedia()
-        elseif mediatype == "statusbar" or mediatype == "background" or mediatype == "border" then
-            self:RefreshAllMedia()
-            self:RefreshConfigPanel()
-            if ST._configState and ST._configState.RefreshAuraTexturePicker then
-                ST._configState.RefreshAuraTexturePicker()
-            end
-        elseif mediatype == "sound" then
-            self:RefreshConfigPanel()
-            -- Native aura sounds are registered during the rebind pass, and a
-            -- sound that was not registered yet resolved to nil there. Rebind
-            -- so late-loading media addons' sounds actually take effect.
-            self:RequestAuraRebind("sound-media")
+        elseif mediatype ~= "statusbar" and mediatype ~= "background"
+            and mediatype ~= "border" and mediatype ~= "sound" then
+            return
+        end
+        if not self._sharedMediaReady then return end
+        pendingMediaTypes[mediatype] = true
+        if not mediaFlushQueued then
+            mediaFlushQueued = true
+            C_Timer.After(0, function() FlushSharedMediaRegistrations(self) end)
         end
     end)
 
@@ -128,6 +154,9 @@ function CooldownCompanion:EnsureRuntimeInitialized()
 end
 
 function CooldownCompanion:OnEnable()
+    -- Shared-media registrations restyle built panels from here on.
+    self._sharedMediaReady = true
+
     -- Audit-program switches removed (2026-07): scrub stale keys.
     self.db.global.cooldownDoneSignalDisabled = nil
     self.db.global.combatTickerFloorDisabled = nil

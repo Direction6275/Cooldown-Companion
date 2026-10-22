@@ -1076,6 +1076,18 @@ local function PaintContainerMemberHover(frame, overlay, labelIndex, rect, hover
     labelFrame:Show()
 end
 
+-- Refresh a Group's outline only while it has one. On a locked or
+-- chrome-hidden Group, RefreshContainerWrapper tears down unlock state
+-- (ClearContainerUnlockState), which deselects a cursor panel that is
+-- unlocked on its own inside that Group.
+function CooldownCompanion:RefreshShownContainerWrapper(containerId)
+    local container = containerId and self.db.profile.groupContainers[containerId]
+    if container and container.locked == false
+        and not self:IsContainerArrangeChromeHidden(containerId) then
+        self:RefreshContainerWrapper(containerId)
+    end
+end
+
 function CooldownCompanion:RefreshContainerWrapper(containerId)
     if self:DeferPanelRefreshCompletion("wrappers", containerId) then return end
     local frame = self.containerFrames and self.containerFrames[containerId]

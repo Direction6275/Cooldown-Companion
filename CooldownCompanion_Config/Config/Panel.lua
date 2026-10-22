@@ -873,6 +873,10 @@ local function ResetConfigForProfileChange()
     if CS.CloseSpellbookPanel then
         CS.CloseSpellbookPanel()
     end
+    -- Open confirm popups name entities in the outgoing profile too.
+    if ST._HideProfileScopedPopups then
+        ST._HideProfileScopedPopups()
+    end
     ResetConfigSelection(true)
     wipe(CS.collapsedPanels)
     if ClearConfigFinderText then

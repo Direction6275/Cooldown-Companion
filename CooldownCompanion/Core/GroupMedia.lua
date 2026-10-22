@@ -33,15 +33,9 @@ function CooldownCompanion:FetchEffectiveBarTexture(name)
     return self:FetchStatusBar(effectiveName)
 end
 
--- Re-apply all media after a SharedMedia pack registers new fonts/textures
+-- Re-apply all media after a SharedMedia pack registers new fonts/textures.
+-- Called once per coalesced media burst from the Lifecycle LSM callback.
 function CooldownCompanion:RefreshAllMedia()
-    -- SharedMedia registrations from other addons can fire during startup before
-    -- the aura texture runtime has finished attaching its visual methods.
-    if type(self.UpdateAuraTextureVisual) ~= "function"
-        or type(self.HideAuraTextureVisual) ~= "function" then
-        return
-    end
-
     self:RefreshAllGroups("shared-media")
 end
 

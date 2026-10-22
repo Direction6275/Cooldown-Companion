@@ -371,8 +371,8 @@ local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
     group.anchor.x = newX
     group.anchor.y = newY
 
+    -- Also updates the coordinate label from the anchor just saved.
     ApplyCursorAnchorPosition(self, frame, group.anchor, cursorX, cursorY)
-    UpdateCoordLabel(frame, newX, newY)
     if host and self.RefreshCursorAnchoredHostControls then
         self:RefreshCursorAnchoredHostControls(host, groupId, group, true, true)
     end

@@ -257,15 +257,18 @@ local function CreateNudger(frame, groupId)
                 if CooldownCompanion.UpdateCursorAnchoredFrames then
                     CooldownCompanion:UpdateCursorAnchoredFrames()
                 end
+                -- The parked panel is part of its Group's outline; the cursor
+                -- move skips the save that refreshes it on other nudges.
+                if group.parentContainerId and CooldownCompanion.RefreshShownContainerWrapper then
+                    CooldownCompanion:RefreshShownContainerWrapper(group.parentContainerId)
+                end
                 return
             end
 
             gFrame:AdjustPointsOffset(dx, dy)
-            -- Save the base-grid position, not the outer frame offsets.
+            -- Save the base-grid position, not the outer frame offsets. The
+            -- save also refreshes the parent Group's wrapper.
             CooldownCompanion:SaveGroupPosition(groupId)
-            if group.parentContainerId and CooldownCompanion.RefreshContainerWrapper then
-                CooldownCompanion:RefreshContainerWrapper(group.parentContainerId)
-            end
         end
     end, function()
         if not IsCursorPreviewNudge() and not IsSectionNudge() then
@@ -345,7 +348,7 @@ end
 
 -- A rebuild is only a reason to recheck the resize basis, not to cancel.
 -- Use the same calculations at mouse-down and after any button population.
-local function GetPanelResizeBasis(frame, groupId, group, basis, start)
+local function GetPanelResizeBasis(frame, groupId, group, basis)
     local style = group.style
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
     local buttonsPerRow = style.buttonsPerRow or 12
@@ -449,7 +452,7 @@ local function ApplyPanelResizeFromCursor(grip)
             grip._resizeSizingGroup = nil
             return false
         end
-        local basis = GetPanelResizeBasis(frame, groupId, current, grip._resizeBasisCheck or {}, grip)
+        local basis = GetPanelResizeBasis(frame, groupId, current, grip._resizeBasisCheck or {})
         grip._resizeBasisCheck = basis
         for key, value in pairs(grip._resizeBasis) do
             if basis[key] ~= value then
@@ -810,36 +813,29 @@ function ST.LockPanelFromMover(groupId)
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
+local function SyncPlaceholderRootLevel(frame, root, raiseAboveWrapper)
+    if not root then
+        return
+    end
+    if raiseAboveWrapper then
+        root:SetFrameStrata("FULLSCREEN_DIALOG")
+        root:SetFrameLevel(89)
+    else
+        root:SetFrameStrata(frame:GetFrameStrata())
+        root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
+    end
+end
+
 -- Both placeholder roots take the same rule: an Aura Panel owns the first, a
 -- mixed panel carrying an aura section owns the second, and no panel ever owns
--- both (a panel is one or the other). Written out twice rather than through a
--- helper because this file rides its file-scope local ceiling.
+-- both (a panel is one or the other).
 function ST._SyncAuraPanelPlaceholderLevels(frame, raiseAboveWrapper)
     if not frame then
         return
     end
 
-    local root = frame._auraPanelPlaceholderRoot
-    if root then
-        if raiseAboveWrapper then
-            root:SetFrameStrata("FULLSCREEN_DIALOG")
-            root:SetFrameLevel(89)
-        else
-            root:SetFrameStrata(frame:GetFrameStrata())
-            root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
-        end
-    end
-
-    root = frame._auraSectionPlaceholderRoot
-    if root then
-        if raiseAboveWrapper then
-            root:SetFrameStrata("FULLSCREEN_DIALOG")
-            root:SetFrameLevel(89)
-        else
-            root:SetFrameStrata(frame:GetFrameStrata())
-            root:SetFrameLevel((frame:GetFrameLevel() or 1) + 1)
-        end
-    end
+    SyncPlaceholderRootLevel(frame, frame._auraPanelPlaceholderRoot, raiseAboveWrapper)
+    SyncPlaceholderRootLevel(frame, frame._auraSectionPlaceholderRoot, raiseAboveWrapper)
 end
 
 local function SyncGroupControlLevels(frame, raiseAboveWrapper)
