@@ -19,18 +19,21 @@ local wipe = wipe
 
 local SOAR_SPELL_ID = 430747
 
--- Frames store alpha in 1/255 steps: SetAlpha(0.5) reads back as 128/255
--- (0.50196). An exact compare called such a frame unsettled forever, so a 0.5
--- baseline kept the 30 Hz driver awake and re-wrote its alpha every pass.
--- Anything within one step is the same visible alpha.
-local ALPHA_STEP = 1 / 255
+-- Frames store alpha in 1/255 steps (read back as float32): SetAlpha(0.5)
+-- reads back as 128/255 (0.50196). An exact compare called such a frame
+-- unsettled forever, so a 0.5 baseline kept the 30 Hz driver awake and
+-- re-wrote its alpha every pass. "Differs" means the frame does not already
+-- hold the step SetAlpha(alpha) would store: rounding puts that step within
+-- half a step of alpha, and the margin covers float32 noise. Any other step,
+-- such as 1/255 when 0 is wanted, still differs, so writes reach exact 0 and 1.
+local ALPHA_READBACK_TOLERANCE = 0.5 / 255 + 1e-5
 
 local function FrameAlphaDiffers(frame, alpha)
     if not (frame and frame.GetAlpha) then
         return false
     end
     local diff = frame:GetAlpha() - alpha
-    return diff > ALPHA_STEP or diff < -ALPHA_STEP
+    return diff > ALPHA_READBACK_TOLERANCE or diff < -ALPHA_READBACK_TOLERANCE
 end
 
 local function HasLiveAlphaFrames(frames)
