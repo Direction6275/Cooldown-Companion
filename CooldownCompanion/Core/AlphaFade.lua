@@ -85,10 +85,11 @@ end
 --                              event this addon listens to
 -- Every other condition input owes a re-arm hook: combat edges (OnCombatStart /
 -- OnCombatEnd), mount and Soar (InvalidateMountAlphaCache), target existence
--- (OnTargetChanged), focus existence (OnFocusChanged), druid travel form
--- (UPDATE_SHAPESHIFT_FORM), the cursor-anchor layout preview, and the config /
--- lock / panel-lifecycle paths that already call RefreshAlphaUpdateDriver. A NEW
--- force condition must either bring its event hook or be listed above.
+-- (OnTargetChanged), focus existence (OnFocusChanged and
+-- OnFocusExistenceFallback), druid travel form (UPDATE_SHAPESHIFT_FORM), the
+-- cursor-anchor layout preview, and the config / lock / panel-lifecycle paths
+-- that already call RefreshAlphaUpdateDriver. A NEW force condition must either
+-- bring its event hook or be listed above.
 local function AlphaConfigNeedsDriverPolling(config)
     return config.forceAlphaMouseover == true
         or (config.forceAlphaTargetExists == true and config.forceAlphaTargetEnemyOnly == true)
@@ -708,12 +709,22 @@ function CooldownCompanion:EnsureAlphaDriverArmed()
     end
 end
 
--- Focus re-arm hook. PLAYER_FOCUS_CHANGED fires when the focus is set, cleared
--- or lost, but a focused group member who leaves the group can stop existing
--- without it: Blizzard's own focus frame re-checks on GROUP_ROSTER_UPDATE for
--- that case, so both events land here.
+-- Focus re-arm hook for PLAYER_FOCUS_CHANGED, which fires when the focus is
+-- set, cleared or lost.
 function CooldownCompanion:OnFocusChanged()
     self:EnsureAlphaDriverArmed()
+end
+
+-- Fallback for focus existence changes that fire no PLAYER_FOCUS_CHANGED: a
+-- focused group member who leaves the group stops existing, and a zone change
+-- can drop the focus. Blizzard's own focus frame re-checks on
+-- GROUP_ROSTER_UPDATE and PLAYER_ENTERING_WORLD for these. Roster updates
+-- arrive in bursts in a raid, so this wakes the driver only when the focus's
+-- existence differs from what the last alpha pass read.
+function CooldownCompanion:OnFocusExistenceFallback()
+    if UnitExists("focus") ~= self._alphaPassHasFocus then
+        self:EnsureAlphaDriverArmed()
+    end
 end
 
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
@@ -1128,6 +1139,8 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local hasTarget = UnitExists("target")
     local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
     local hasFocus = UnitExists("focus")
+    -- What OnFocusExistenceFallback compares against while the driver sleeps.
+    self._alphaPassHasFocus = hasFocus
     local mounted = IsMounted()
     local regularMounted, dragonridingMounted = self:ResolveMountedAlphaStates(mounted)
 

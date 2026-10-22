@@ -287,7 +287,19 @@ function CooldownCompanion:OnEnable()
 
     -- Focus change — wakes the alpha driver for the focus-exists condition
     self:RegisterEvent("PLAYER_FOCUS_CHANGED", "OnFocusChanged")
-    self:RegisterEvent("GROUP_ROSTER_UPDATE", "OnFocusChanged")
+
+    -- Focus existence can also change on a roster update or zone change
+    -- without PLAYER_FOCUS_CHANGED (see OnFocusExistenceFallback). A plain
+    -- frame, so a later AceEvent registration of either event on the addon
+    -- (AceEvent keeps one handler per event) can never silently replace it.
+    if not self._focusFallbackFrame then
+        self._focusFallbackFrame = CreateFrame("Frame")
+        self._focusFallbackFrame:SetScript("OnEvent", function()
+            self:OnFocusExistenceFallback()
+        end)
+    end
+    self._focusFallbackFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    self._focusFallbackFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
     -- UNIT_TARGET requires RegisterUnitEvent (plain RegisterEvent does not
     -- receive it). The "player" filter means this only fires for the player's
@@ -457,6 +469,11 @@ function CooldownCompanion:OnDisable()
     -- Unregister UNIT_TARGET frame (keep reference for reuse on re-enable)
     if self._unitTargetFrame then
         self._unitTargetFrame:UnregisterAllEvents()
+    end
+
+    -- Unregister the focus existence fallback frame (kept for re-enable)
+    if self._focusFallbackFrame then
+        self._focusFallbackFrame:UnregisterAllEvents()
     end
 
     -- Unregister filtered unit events (keep reference for reuse on re-enable)
