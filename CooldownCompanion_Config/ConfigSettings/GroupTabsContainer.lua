@@ -299,7 +299,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
         if container.groupAlphaEnabled == true then
             BuildAlphaControls(scroll, container, RefreshContainerAlphaSettings, nil, {
-                row = true,
                 isGlobal = container.isGlobal,
                 hideHeading = true,
                 settings = CONTAINER_FINDER.alpha,
@@ -373,8 +372,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
             eligibilitySubjectLabel = "group",
             allowClassEligibility = container.isGlobal == true,
             ownerCharKey = container.createdBy,
-            omitHeading = true,
-            showSelectedRows = true,
             onChanged = RefreshContainerLoadConditions,
         }
 
@@ -416,7 +413,6 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
         inheritedSources = inheritedSources,
         headingText = "Where To Hide It",
         localCollapsedKey = "container_loadconditions_local",
-        row = true,
         infoTooltipLines = BuildWhereToHideTooltip("group", true, true),
         infoButtons = tabInfoButtons,
         settings = CONTAINER_FINDER.where,

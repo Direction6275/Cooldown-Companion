@@ -4,12 +4,12 @@
     Every setting in the redesigned config is a fixed-height row: label on the
     LEFT, its control right-aligned into a fixed-width (140px) control column
     on the RIGHT, and its gear/info/scope badges chained left-to-right off
-    the end of the label text. Rows live in two-column grids built by
-    BeginRowGrid, so a cell is roughly 400px wide and the badge scatter stays
-    bounded inside the label's own cell. This file registers the custom AceGUI
-    widget types for those rows, the grid container types and top-aligned
-    layout they sit in, and the thin builders that replace the AceGUI
-    boilerplate at each call site.
+    the end of the label text. Rows live in grids built by BeginRowGrid, whose
+    two columns stack into one lane the width of the settings column (see the
+    grid layout below), so the badge scatter stays bounded inside each row.
+    This file registers the custom AceGUI widget types for those rows, the
+    grid container types and top-aligned layout they sit in, and the thin
+    builders that replace the AceGUI boilerplate at each call site.
 
     BuildAppearanceTab's icons path is the proving ground; the other tabs are
     converted by later packets.
@@ -55,8 +55,7 @@ local floor, min, max = math.floor, math.min, math.max
 -- ROW GRAMMAR CONSTANTS
 -- One block so the proving-ground packet can tune the whole grammar here.
 ------------------------------------------------------------------------
--- The control column is deliberately compact: rows sit in half-width grid
--- cells (~360px at the default window size), so every pixel the column does
+-- The control column is deliberately compact: every pixel the column does
 -- not take is label room.
 local ROW_HEIGHT             = 30    -- every row is exactly this tall
 local CONTROL_COLUMN_WIDTH   = 140   -- fixed control column pinned to the row's right edge
@@ -2143,7 +2142,8 @@ local function CreateInlineSettingsGroup(row)
     return group
 end
 
--- Open a top-aligned two-column grid; either column can be left empty.
+-- Open a top-aligned grid of two columns that stack, first above second;
+-- either column can be left empty.
 local function BeginRowGrid(container)
     local grid = AceGUI:Create(ROW_GRID_TYPE)
     grid:SetFullWidth(true)

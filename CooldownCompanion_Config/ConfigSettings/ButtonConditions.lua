@@ -10,16 +10,15 @@ local CS = ST._configState
 
 -- Imports from Helpers.lua and State.lua
 local ColorHeading = ST._ColorHeading
-local AttachCollapseButton = ST._AttachCollapseButton
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 local CreateInfoButton = ST._CreateInfoButton
 local BuildAlphaControls = ST._BuildAlphaControls
 
--- Imports from RowWidgets.lua (the row grammar). The Visibility tabs and the
--- per-entry Visibility / Talent Conditions builder are converted; every
--- other builder in this file still draws stock widgets.
+-- Imports from RowWidgets.lua (the row grammar), used throughout this file.
+-- Helper sentences and section action buttons remain stock Label/Button
+-- widgets.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddDropdownRow = ST._AddDropdownRow
 local AddLabelRow = ST._AddLabelRow
@@ -377,8 +376,7 @@ end
 -- Row grammar (RowWidgets.lua): a left-aligned collapsible header and the
 -- environment toggles as CDC-CheckBoxRows in a two-column grid. Returns that
 -- grid's two columns so the caller can park a section action in the shorter
--- one. Every caller passes opts.row = true, which is why there is no stock
--- shape here any more.
+-- one.
 local function AddScopedLoadConditionToggles(container, opts)
     local target = opts.target
     if not target.loadConditions and not opts.preserveMissing then
@@ -411,8 +409,7 @@ local function AddScopedLoadConditionToggles(container, opts)
     end
     if localCollapsed then return end
 
-    -- The one write every toggle performs, shared so both shapes wire the
-    -- identical behaviour onto the identical store.
+    -- The one write every toggle performs.
     local function SetCondition(cond, newVal)
         if not target.loadConditions then
             target.loadConditions = {}
@@ -621,14 +618,6 @@ local function GetClassDisplayLabel(classChoice)
     return WrapClassColoredText(classChoice.label or classChoice.key, classChoice.classFilename or classChoice.key)
 end
 
-local function GetSpecClassChoice(specId)
-    if not (C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID) then
-        return nil
-    end
-    local classID = C_SpecializationInfo.GetClassIDFromSpecID(tonumber(specId))
-    return GetClassChoiceByID(classID)
-end
-
 local function SplitCharacterKey(charKey)
     if type(charKey) ~= "string" then return "", nil end
     local name, realm = charKey:match("^(.-)%s+%-%s+(.+)$")
@@ -780,14 +769,6 @@ local function ResolveOwnerClassChoice(opts)
     if opts.ownerClassChoice then
         return opts.ownerClassChoice
     end
-    if opts.ownerClassID then
-        local choice = GetClassChoiceByID(opts.ownerClassID)
-        if choice then return choice end
-    end
-    if opts.ownerClassFilename then
-        local choice = GetClassChoiceByFilename(opts.ownerClassFilename)
-        if choice then return choice end
-    end
 
     local db = CooldownCompanion.db
     local charKey = opts.ownerCharKey
@@ -921,15 +902,6 @@ local function AddEligibilitySelectedRow(container, rowInfo, onRemove)
     end
 end
 
--- omitCategory: rows rendered directly under their own picker don't need the
--- category prefix, the dropdown above them already names the category.
-local function FormatActiveEligibilityLabel(category, value, omitCategory)
-    if omitCategory then
-        return tostring(value or "")
-    end
-    return "|cffffd100" .. tostring(category or "Filter") .. ":|r " .. tostring(value or "")
-end
-
 local function AddEligibilitySelectedRows(container, rows)
     for _, row in ipairs(rows or {}) do
         AddEligibilitySelectedRow(container, row, row.onRemove)
@@ -937,7 +909,7 @@ local function AddEligibilitySelectedRows(container, rows)
 end
 
 -- Forward declarations: the selected-row builders sit below the pickers, but
--- the pickers render their own rows when opts.showSelectedRows is set.
+-- each picker renders its own removable rows beneath it.
 local AddActiveCharacterEligibilityRows
 local BuildActiveClassSpecEligibilityRows
 
@@ -953,26 +925,6 @@ local function AddCharacterEligibilityControls(container, opts)
     end
     local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
     if #choices == 0 then return end
-
-    -- opts.omitHeading: the caller already opened a section around the pickers.
-    if not opts.omitHeading then
-        local heading = AceGUI:Create("Heading")
-        heading:SetText("Character Eligibility")
-        ColorHeading(heading)
-        heading:SetFullWidth(true)
-        container:AddChild(heading)
-
-        local collapsed = opts.characterCollapsedKey and CS.collapsedSections[opts.characterCollapsedKey]
-        local collapseButton
-        if opts.characterCollapsedKey then
-            collapseButton = AttachCollapseButton(heading, collapsed, function()
-                CS.collapsedSections[opts.characterCollapsedKey] = not CS.collapsedSections[opts.characterCollapsedKey]
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-        end
-        ApplyLeftAlignedHeading(heading, collapseButton, not collapseButton)
-        if collapsed then return end
-    end
 
     if inheritedRestricted then
         local inheritedLabel = AceGUI:Create("Label")
@@ -1020,11 +972,9 @@ local function AddCharacterEligibilityControls(container, opts)
     })
     AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
 
-    if opts.showSelectedRows then
-        local rows = {}
-        AddActiveCharacterEligibilityRows(rows, opts)
-        AddEligibilitySelectedRows(container, rows)
-    end
+    local rows = {}
+    AddActiveCharacterEligibilityRows(rows, opts, choices, localMap, inheritedMap, inheritedRestricted)
+    AddEligibilitySelectedRows(container, rows)
 end
 
 local function AddClassForSpecId(classChoices, classByKey, specId)
@@ -1271,18 +1221,13 @@ local function BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, conf
     return choices, bySubTreeID
 end
 
+-- Every specInfo comes from AddSpecsForClass, which stamps classKey and
+-- classLabel from the same class lookup.
 local function FormatEligibilitySpecLabel(specInfo, includeClass)
     if not specInfo then return "" end
-    local classKey = specInfo.classKey
-    if not classKey then
-        local classChoice = GetSpecClassChoice(specInfo.id)
-        classKey = classChoice and classChoice.key or nil
-    end
-    local specLabel = WrapClassColoredText(specInfo.name or specInfo.label or tostring(specInfo.id), classKey)
+    local specLabel = WrapClassColoredText(specInfo.name or specInfo.label or tostring(specInfo.id), specInfo.classKey)
     if includeClass and specInfo.classLabel then
-        local classChoice = GetClassChoiceByFilename(specInfo.classKey)
-        local classLabel = GetClassDisplayLabel(classChoice) or specInfo.classLabel
-        return classLabel .. ": " .. specLabel
+        return WrapClassColoredText(specInfo.classLabel, specInfo.classKey) .. ": " .. specLabel
     end
     return specLabel
 end
@@ -1330,22 +1275,56 @@ local function AddClassSpecEligibilityControls(container, opts)
     if type(target) ~= "table" then return end
     local subjectLabel = GetEligibilitySubjectLabel(opts)
 
+    -- Every picker and its removable rows read one resolved state, built
+    -- before any widget. Neither consumer may mutate these tables.
     local allowClassEligibility = opts.allowClassEligibility == true
     local scopeClassChoice
     if not allowClassEligibility then
         scopeClassChoice = ResolveOwnerClassChoice(opts)
     end
 
-    local inheritedClassMap, inheritedClassRestricted = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")
-    local classChoices = BuildClassChoices(target, inheritedClassMap)
-    local localClassMap = target.loadConditions and target.loadConditions.classAllowlist
-
-    -- opts.showSelectedRows: each picker carries its own removable selections
-    -- instead of a separate summary section further down the tab.
-    local selectedClassRows, selectedSpecRows, selectedHeroRows
-    if opts.showSelectedRows then
-        selectedClassRows, selectedSpecRows, selectedHeroRows = BuildActiveClassSpecEligibilityRows(opts)
+    local inheritedClassMap, inheritedClassRestricted, classChoices, localClassMap
+    if allowClassEligibility then
+        inheritedClassMap, inheritedClassRestricted = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")
+        classChoices = BuildClassChoices(target, inheritedClassMap)
+        localClassMap = target.loadConditions and target.loadConditions.classAllowlist
     end
+
+    local useSpecAllowlist = opts.useSpecAllowlist == true
+    local selectedSpecMap = GetSpecSelectionMap(target, useSpecAllowlist)
+    local allowedSpecMap = opts.allowedSpecMap
+    local allowedSpecRestricted = opts.allowedSpecRestricted == true
+    local specChoices = BuildEligibilitySpecChoices({
+        target = target,
+        inheritedSources = opts.inheritedSources,
+        allowClassEligibility = allowClassEligibility,
+        ownerClassChoice = scopeClassChoice,
+        ownerCharKey = opts.ownerCharKey,
+        effectiveSpecs = opts.effectiveSpecs,
+        choiceSpecMap = opts.choiceSpecMap,
+    })
+    local specById, specsByClassKey = BuildSpecChoiceIndex(specChoices)
+
+    local configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID()
+    local heroTalentsSource = opts.useHeroTalentsSource and opts.heroTalentsSource or target.heroTalents
+    if type(heroTalentsSource) ~= "table" then
+        heroTalentsSource = nil
+    end
+    local heroChoices, heroById = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
+
+    local selectedClassRows, selectedSpecRows, selectedHeroRows = BuildActiveClassSpecEligibilityRows(opts, {
+        allowClassEligibility = allowClassEligibility,
+        classChoices = classChoices,
+        localClassMap = localClassMap,
+        useSpecAllowlist = useSpecAllowlist,
+        selectedSpecMap = selectedSpecMap,
+        allowedSpecMap = allowedSpecMap,
+        allowedSpecRestricted = allowedSpecRestricted,
+        specChoices = specChoices,
+        specsByClassKey = specsByClassKey,
+        heroTalentsSource = heroTalentsSource,
+        heroById = heroById,
+    })
 
     if allowClassEligibility then
         if inheritedClassRestricted then
@@ -1388,23 +1367,6 @@ local function AddClassSpecEligibilityControls(container, opts)
         AddEligibilitySelectedRows(container, selectedClassRows)
     end
 
-    local useSpecAllowlist = opts.useSpecAllowlist == true
-    local selectedSpecMap = GetSpecSelectionMap(target, useSpecAllowlist)
-    local allowedSpecMap = opts.allowedSpecMap
-    local allowedSpecRestricted = opts.allowedSpecRestricted == true
-    local specChoices = BuildEligibilitySpecChoices({
-        target = target,
-        inheritedSources = opts.inheritedSources,
-        allowClassEligibility = allowClassEligibility,
-        ownerClassChoice = scopeClassChoice,
-        ownerCharKey = opts.ownerCharKey,
-        ownerClassID = opts.ownerClassID,
-        ownerClassFilename = opts.ownerClassFilename,
-        effectiveSpecs = opts.effectiveSpecs,
-        choiceSpecMap = opts.choiceSpecMap,
-    })
-    local specById = BuildSpecChoiceIndex(specChoices)
-
     local specValues = {}
     local specOrder = {}
     local specSortLabels = {}
@@ -1438,13 +1400,7 @@ local function AddClassSpecEligibilityControls(container, opts)
         AddEligibilitySelectedRows(container, selectedSpecRows)
     end
 
-    local configID = opts.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
     local mutableHeroTalents = opts.disableHeroTalents ~= true
-    local heroTalentsSource = opts.useHeroTalentsSource and opts.heroTalentsSource or target.heroTalents
-    if type(heroTalentsSource) ~= "table" then
-        heroTalentsSource = nil
-    end
-    local heroChoices = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
     local heroValues = {}
     local heroOrder = {}
     local heroSortLabels = {}
@@ -1487,26 +1443,9 @@ local function AddClassSpecEligibilityControls(container, opts)
 
 end
 
-local function NotifyEligibilityChanged(opts, callbackName)
-    local callback = opts and opts[callbackName]
-    if not callback and opts then
-        callback = opts.onChanged
-    end
-    if callback then callback() end
-end
-
-function AddActiveCharacterEligibilityRows(rows, opts)
+-- The picker's own resolved state comes in, so nothing is computed twice.
+function AddActiveCharacterEligibilityRows(rows, opts, choices, localMap, inheritedMap, inheritedRestricted)
     local target = opts.target
-    if type(target) ~= "table" then return end
-    local omitCategory = opts.showSelectedRows == true
-
-    local inheritedMap, inheritedRestricted = GetInheritedAllowlist(opts.inheritedSources, "characterAllowlist", "character")
-    local scopeClassChoice
-    if opts.allowClassEligibility == false then
-        scopeClassChoice = ResolveOwnerClassChoice(opts)
-    end
-    local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
-    local localMap = target.loadConditions and target.loadConditions.characterAllowlist
     local characterRows = {}
 
     for _, choice in ipairs(choices) do
@@ -1515,17 +1454,13 @@ function AddActiveCharacterEligibilityRows(rows, opts)
             local outsideInherited = inheritedRestricted and not (inheritedMap and inheritedMap[key])
             characterRows[#characterRows + 1] = {
                 key = key,
-                label = FormatActiveEligibilityLabel(
-                    "Character",
-                    outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label,
-                    omitCategory
-                ),
+                label = outsideInherited and (choice.label .. " |cff888888(unavailable from parent)|r") or choice.label,
                 tooltipTitle = choice.tooltipTitle,
                 tooltipText = choice.tooltipText,
                 sortLabel = choice.sortLabel,
                 onRemove = function()
                     SetAllowlistValue(target, "characterAllowlist", "character", key, false)
-                    NotifyEligibilityChanged(opts, "characterOnChanged")
+                    if opts.onChanged then opts.onChanged() end
                 end,
             }
         end
@@ -1540,42 +1475,20 @@ end
 -- Returns the class, specialization and hero talent rows as three lists so the
 -- pickers can each carry their own selections. A spec with hero talents chosen
 -- contributes hero rows instead of a spec row: the hero row already names it.
-function BuildActiveClassSpecEligibilityRows(opts)
+-- `state` is AddClassSpecEligibilityControls' resolved picker state.
+function BuildActiveClassSpecEligibilityRows(opts, state)
     local target = opts.target
-    if type(target) ~= "table" then return {}, {}, {} end
-    local omitCategory = opts.showSelectedRows == true
-
-    local allowClassEligibility = opts.allowClassEligibility == true
-    local scopeClassChoice
-    if not allowClassEligibility then
-        scopeClassChoice = ResolveOwnerClassChoice(opts)
-    end
-
-    local inheritedClassMap = GetInheritedAllowlist(opts.inheritedSources, "classAllowlist", "class")
-    local classChoices = BuildClassChoices(target, inheritedClassMap)
-    local localClassMap = target.loadConditions and target.loadConditions.classAllowlist
-    local useSpecAllowlist = opts.useSpecAllowlist == true
-    local selectedSpecMap = GetSpecSelectionMap(target, useSpecAllowlist)
-    local allowedSpecMap = opts.allowedSpecMap
-    local allowedSpecRestricted = opts.allowedSpecRestricted == true
-    local specChoices = BuildEligibilitySpecChoices({
-        target = target,
-        inheritedSources = opts.inheritedSources,
-        allowClassEligibility = allowClassEligibility,
-        ownerClassChoice = scopeClassChoice,
-        ownerCharKey = opts.ownerCharKey,
-        ownerClassID = opts.ownerClassID,
-        ownerClassFilename = opts.ownerClassFilename,
-        effectiveSpecs = opts.effectiveSpecs,
-        choiceSpecMap = opts.choiceSpecMap,
-    })
-    local _, specsByClassKey = BuildSpecChoiceIndex(specChoices)
-    local configID = opts.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID())
-    local heroTalentsSource = opts.useHeroTalentsSource and opts.heroTalentsSource or target.heroTalents
-    if type(heroTalentsSource) ~= "table" then
-        heroTalentsSource = nil
-    end
-    local _, heroById = BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
+    local allowClassEligibility = state.allowClassEligibility
+    local classChoices = state.classChoices
+    local localClassMap = state.localClassMap
+    local useSpecAllowlist = state.useSpecAllowlist
+    local selectedSpecMap = state.selectedSpecMap
+    local allowedSpecMap = state.allowedSpecMap
+    local allowedSpecRestricted = state.allowedSpecRestricted
+    local specChoices = state.specChoices
+    local specsByClassKey = state.specsByClassKey
+    local heroTalentsSource = state.heroTalentsSource
+    local heroById = state.heroById
 
     local selectedHeroBySpec = {}
     for subTreeID in pairs(heroTalentsSource or {}) do
@@ -1601,7 +1514,7 @@ function BuildActiveClassSpecEligibilityRows(opts)
                 end
                 if #selectedSpecs == 0 then
                     classRows[#classRows + 1] = {
-                        label = FormatActiveEligibilityLabel("Class", GetClassDisplayLabel(classChoice) or classChoice.label, omitCategory),
+                        label = GetClassDisplayLabel(classChoice) or classChoice.label,
                         sortLabel = classChoice.label or classKey,
                         onRemove = function()
                             SetAllowlistValue(target, "classAllowlist", "class", classKey, false)
@@ -1611,7 +1524,7 @@ function BuildActiveClassSpecEligibilityRows(opts)
                                     CooldownCompanion:CleanHeroTalentsForSpec(target, specInfo.id)
                                 end
                             end
-                            NotifyEligibilityChanged(opts, "specOnChanged")
+                            if opts.onChanged then opts.onChanged() end
                         end,
                     }
                 end
@@ -1632,35 +1545,27 @@ function BuildActiveClassSpecEligibilityRows(opts)
                 end)
                 for _, heroInfo in ipairs(specHeroes) do
                     heroRows[#heroRows + 1] = {
-                        label = FormatActiveEligibilityLabel(
-                            "Hero Talent",
-                            FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility),
-                            omitCategory
-                        ),
+                        label = FormatEligibilityHeroChoiceLabel(heroInfo, specInfo, allowClassEligibility),
                         sortLabel = (specInfo.classLabel or "") .. (specInfo.name or "") .. (heroInfo.label or ""),
                         disabled = opts.disableHeroTalents == true,
                         onRemove = function()
                             SetHeroTalentValue(target, heroInfo.id, false)
-                            NotifyEligibilityChanged(opts, "specOnChanged")
+                            if opts.onChanged then opts.onChanged() end
                         end,
                     }
                 end
             else
                 local outsideAllowed = allowedSpecRestricted and not (allowedSpecMap and allowedSpecMap[specId])
                 specRows[#specRows + 1] = {
-                    label = FormatActiveEligibilityLabel(
-                        "Specialization",
-                        FormatEligibilitySpecRowLabel(specInfo, allowClassEligibility)
-                            .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or ""),
-                        omitCategory
-                    ),
+                    label = FormatEligibilitySpecRowLabel(specInfo, allowClassEligibility)
+                        .. (outsideAllowed and " |cff888888(unavailable from parent)|r" or ""),
                     sortLabel = (specInfo.classLabel or "") .. (specInfo.name or specInfo.label or tostring(specId)),
                     onRemove = function()
                         SetSpecEligibilityValue(target, specId, false, useSpecAllowlist)
                         if CooldownCompanion.CleanHeroTalentsForSpec then
                             CooldownCompanion:CleanHeroTalentsForSpec(target, specId)
                         end
-                        NotifyEligibilityChanged(opts, "specOnChanged")
+                        if opts.onChanged then opts.onChanged() end
                     end,
                 }
             end
@@ -1873,15 +1778,13 @@ local function GetEntryVisibilityFinderState(context)
     if not (group and buttonData) then return nil end
 
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
-    local skipShowHideRules = isAuraPanel
     local state = {
         group = group,
         buttonData = buttonData,
-        isAuraPanel = isAuraPanel,
-        visible = not skipShowHideRules,
+        visible = not isAuraPanel,
     }
     context._ccEntryVisibilityFinderState = state
-    if skipShowHideRules then return state end
+    if isAuraPanel then return state end
 
     local isItem = buttonData.type == "item"
     local passive = buttonData.isPassive == true
@@ -1896,9 +1799,8 @@ local function GetEntryVisibilityFinderState(context)
     local nonEquippableItem = isItem and not CooldownCompanion.IsItemEquippable(buttonData)
 
     state.auraPair = auraEntry and (displayMode == "icons" or displayMode == "bars")
-        and not isAuraPanel
-    state.cooldownFamily = not passive and not noCooldown and not isAuraPanel
-    state.unusableFamily = not passive and not neverUnusable and not isAuraPanel
+    state.cooldownFamily = not passive and not noCooldown
+    state.unusableFamily = not passive and not neverUnusable
     state.noProcFamily = not passive and buttonData.type == "spell"
         and buttonData.addedAs ~= "aura" and not buttonData.isPassiveCooldown
     state.chargeFamily = chargeCapable
@@ -2137,15 +2039,14 @@ end
 ------------------------------------------------------------------------
 -- PER-BUTTON VISIBILITY SETTINGS
 ------------------------------------------------------------------------
--- Every state dropdown in the Show & Hide Rules section offers the same Hide
--- choice, and most offer Dim, so what those two do is stated once here and
--- appended to each row's own tooltip rather than repeated inside the builder.
--- `lines` is the row's own body; `offersDim` drops the Dim sentence on rows
--- whose list has no Dim item.
+-- Every state dropdown in the Show & Hide Rules section offers Dim and Hide,
+-- so what those two do is stated once here and appended to each row's own
+-- tooltip rather than repeated inside the builder. `lines` is the row's own
+-- body.
 local VISIBILITY_DIM_TOOLTIP_LINE = {"Dim shows the button dimmed and keeps its layout position.", 1, 1, 1, true}
 local VISIBILITY_HIDE_TOOLTIP_LINE = {"Hide removes the button entirely.", 1, 1, 1, true}
 local VISIBILITY_TOOLTIP_SPACER = { " ", 1, 1, 1, true }
-local function BuildVisibilityModeTooltip(title, lines, offersDim)
+local function BuildVisibilityModeTooltip(title, lines)
     local tooltip = { title }
     for _, line in ipairs(lines) do
         tooltip[#tooltip + 1] = line
@@ -2153,10 +2054,8 @@ local function BuildVisibilityModeTooltip(title, lines, offersDim)
     if #lines > 0 then
         tooltip[#tooltip + 1] = VISIBILITY_TOOLTIP_SPACER
     end
-    if offersDim then
-        tooltip[#tooltip + 1] = VISIBILITY_DIM_TOOLTIP_LINE
-        tooltip[#tooltip + 1] = VISIBILITY_TOOLTIP_SPACER
-    end
+    tooltip[#tooltip + 1] = VISIBILITY_DIM_TOOLTIP_LINE
+    tooltip[#tooltip + 1] = VISIBILITY_TOOLTIP_SPACER
     tooltip[#tooltip + 1] = VISIBILITY_HIDE_TOOLTIP_LINE
     return tooltip
 end
@@ -2165,16 +2064,6 @@ end
 -- reason text (Helpers.lua owns them), so a rename lands on every surface at
 -- once.
 local COOLDOWN_VISIBILITY = ST._COOLDOWN_VISIBILITY
--- Every value a state row can read, for the one case a row has to show a
--- stored value its own list does not offer (see AddVisibilityDropdown).
-local STATE_VALUE_LABELS = {
-    show = "Show",
-    desaturate = "Desaturate",
-    dim = "Dim",
-    hide = "Hide",
-    dim_cooldown = COOLDOWN_VISIBILITY.labels.dim_cooldown,
-    dim_ready = COOLDOWN_VISIBILITY.labels.dim_ready,
-}
 
 -- Apply a value to all selected buttons if multi-select, else just this one.
 -- File scope because both sections below write entry fields this way; each one
@@ -2200,10 +2089,6 @@ end
 -- batch surface for a selection; both draw the row grammar, so this builder
 -- was converted outright rather than growing an opts.row mode.
 local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
-    -- Function-local, not upvalues: see the note by the row-grammar imports.
-    local AddCheckboxRow = ST._AddCheckboxRow
-    local AnchorRowBadge = ST._AnchorRowBadge
-    local BeginRowGrid = ST._BeginRowGrid
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
 
@@ -2351,19 +2236,15 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         return true
     end
 
-    -- Every entry an Aura Panel holds is a pure aura entry, so nothing here has
-    -- a spell cooldown or a castability state to answer. It gates three row
-    -- families below as well as the whole section.
+    -- An Aura Panel entry has no Show & Hide Rules section. Every entry an
+    -- Aura Panel holds is a pure aura entry: the show-while-active pair is
+    -- inherent to the panel, and every remaining family here is keyed to a
+    -- cooldown, a castability state, charges, item stacks or equipped state
+    -- that a pure aura entry never has. The section would build its header and
+    -- then pour no rows, so it does not build at all.
     local isAuraPanel = CooldownCompanion:IsAuraPanel(group)
 
-    -- An Aura Panel entry has no configurable Show & Hide Rules section: the
-    -- show-while-active pair is inherent to the panel, and every remaining
-    -- family here is keyed to a cooldown, a castability state, charges, item
-    -- stacks or equipped state that a pure aura entry never has. The section
-    -- would build its header and then pour no rows, so it does not build at all.
-    local skipShowHideRules = isAuraPanel
-
-    if not skipShowHideRules then
+    if not isAuraPanel then
     -- The families are collected BEFORE the heading is drawn. Which of them
     -- survive is an entry-type answer that can come out empty (a member of an
     -- Aura Only Section: its aura pair leaves with the section, and every other
@@ -2405,13 +2286,6 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- until one pick writes every entry the same. opts.disabledItems greys the
     -- values that would contradict another row's current state, which is what
     -- replaced the old rows' silent clearing of each other.
-    --
-    -- A stored state the row's list does not offer (a dim key on a Texture
-    -- panel, carried in by a display-mode change or a settings copy) is added
-    -- to the list rather than folded into a neighbour: the runtime still
-    -- applies it, so the row has to say so, and AceGUI fires nothing when the
-    -- already-checked item is re-picked, so folding would leave no one-pick
-    -- way to clear it.
     local function AddVisibilityDropdown(column, opts)
         local value
         if isBatch then
@@ -2433,18 +2307,11 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         else
             value = opts.read(buttonData)
         end
-        local list, order = opts.list, opts.order
-        if value ~= nil and list[value] == nil then
-            list = CopyTable(list)
-            order = CopyTable(order)
-            list[value] = STATE_VALUE_LABELS[value] or tostring(value)
-            order[#order + 1] = value
-        end
         local row = AddDropdownRow(column, {
             setting = opts.setting,
             indent = opts.indent,
-            list = list,
-            order = order,
+            list = opts.list,
+            order = opts.order,
             value = value,
             onChange = opts.write,
         })
@@ -2466,8 +2333,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     end
 
     -- The value list, reader and writer the hide/dim families share, so the
-    -- value-to-keys mapping lives in one place. A stored value a list does not
-    -- offer still shows through AddVisibilityDropdown's escape above.
+    -- value-to-keys mapping lives in one place.
     -- opts.desaturateKey is nil for the families without one.
     local function BuildStateList(withDesaturate)
         local list, order = { show = "Show" }, { "show" }
@@ -2527,7 +2393,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 read = function(bd)
                     return ReadHideDimState(bd, spec.hideKey, spec.dimKey, spec.desaturateKey)
                 end,
-                tooltip = BuildVisibilityModeTooltip(spec.title, spec.tooltipLines, list.dim ~= nil),
+                tooltip = BuildVisibilityModeTooltip(spec.title, spec.tooltipLines),
                 write = function(value)
                     WriteHideDimState(spec.apply, value, spec.hideKey, spec.dimKey, spec.desaturateKey)
                     if spec.afterWrite then spec.afterWrite(value) end
@@ -2569,16 +2435,8 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     else anyAuraEntry = FilterAuraEntry(buttonData) end
     -- Icon and bar groups only (both compose a full shell); no other mode has
     -- a shell for an inactive state to hide or dim.
-    --
-    -- An Aura Panel is already this pair, panel-wide and unconditionally: every
-    -- cell shows only while its aura is up, and Blizzard's container gives the
-    -- inactive ones no space at all. Neither row has anything left to say there,
-    -- so both leave rather than sit as toggles that change nothing.
     local displayMode = group.displayMode or "icons"
-    -- isAuraPanel is resolved once at the top of this builder; it gates this
-    -- pair as well as the row families below.
-    if anyAuraEntry and (displayMode == "icons" or displayMode == "bars")
-        and not isAuraPanel then
+    if anyAuraEntry and (displayMode == "icons" or displayMode == "bars") then
         local auraList = { show = "Normal", dim = "Dim While Inactive", hide = "Show While Active",
             missing = "Show While Inactive" }
         local auraOrder = { "show", "dim", "hide", "missing" }
@@ -2596,7 +2454,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     {"Show While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target. Tracked on your group, it shows while nobody has it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
                     {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
-                }, true),
+                }),
                 write = function(value)
                     ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)
                     ApplyToAuraEntries("auraShellDim", value == "dim" or nil)
@@ -2661,11 +2519,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     if isBatch then allNeverUnusable = AllSelectedNeverUnusable(group)
     else allNeverUnusable = IsNeverUnusableButton(buttonData) end
 
-    -- The whole cooldown family (both directions, their dim variants and the
-    -- ready side's charge refinement) needs a spell cooldown to react to; an
-    -- Aura Panel entry has none, and the panel draws no CC button for the rule
-    -- to hide in the first place.
-    if not allPassive and not allNoCooldown and not isAuraPanel then
+    if not allPassive and not allNoCooldown then
     -- One dropdown states the whole family. The five keys underneath are
     -- unchanged: the row derives one value from them and writes them back as
     -- a set, so the two directions can never both be on.
@@ -2686,16 +2540,12 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     local cooldownLabels = COOLDOWN_VISIBILITY.labels
     local cooldownList = {
         show = cooldownLabels.show,
+        dim_cooldown = cooldownLabels.dim_cooldown,
         hide_cooldown = cooldownLabels.hide_cooldown,
+        dim_ready = cooldownLabels.dim_ready,
         hide_ready = cooldownLabels.hide_ready,
     }
-    local cooldownOrder = { "show" }
-    cooldownList.dim_cooldown = cooldownLabels.dim_cooldown
-    cooldownOrder[#cooldownOrder + 1] = "dim_cooldown"
-    cooldownOrder[#cooldownOrder + 1] = "hide_cooldown"
-    cooldownList.dim_ready = cooldownLabels.dim_ready
-    cooldownOrder[#cooldownOrder + 1] = "dim_ready"
-    cooldownOrder[#cooldownOrder + 1] = "hide_ready"
+    local cooldownOrder = { "show", "dim_cooldown", "hide_cooldown", "dim_ready", "hide_ready" }
     if offerZeroOnly then
         cooldownList.zero_only = cooldownLabels.zero_only
         cooldownOrder[#cooldownOrder + 1] = "zero_only"
@@ -2719,7 +2569,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                 return "show"
             end,
             tooltip = BuildVisibilityModeTooltip("Cooldown Visibility",
-                COOLDOWN_VISIBILITY.tooltipLines, true),
+                COOLDOWN_VISIBILITY.tooltipLines),
             write = function(value)
                 local hideOn = value == "hide_cooldown" or value == "dim_cooldown"
                 local hideReady = value == "hide_ready" or value == "dim_ready" or value == "zero_only"
@@ -2740,9 +2590,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     end -- not allPassive and not allNoCooldown
 
     if not allPassive then
-    -- Same reason as the cooldown family: usability is a spell state an Aura
-    -- Panel entry never carries.
-    if not allNeverUnusable and not isAuraPanel then
+    if not allNeverUnusable then
     AddStateFamily({
         setting = entryVisibilitySettings.unusable,
         apply = ApplyToSelected,
@@ -2901,16 +2749,13 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    end -- not skipShowHideRules
+    end -- not isAuraPanel
 end
 
 ------------------------------------------------------------------------
 -- TALENT CONDITIONS (its own section, independent of the show/hide rules)
 ------------------------------------------------------------------------
 local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons, batchContext, sourceIndex)
-    -- Function-local, not upvalues: see the note by the row-grammar imports.
-    local AddLabelRow = ST._AddLabelRow
-    local BeginRowGrid = ST._BeginRowGrid
     local profile, groupId = CooldownCompanion.db.profile, CS.selectedGroup
     local group = profile.groups[groupId]
     if not group then return end
@@ -2927,10 +2772,27 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         else ApplyFieldToSelection(group, buttonData, field, value) end
     end
 
+    -- The one write path for pick, batch and clear. A 2+ batch gets a copy
+    -- per entry so later edits to one do not reach the others.
+    local function WriteTalentConditions(results)
+        if results and not sourceIndex and CS.selectedButtons then
+            local count = 0
+            for _ in pairs(CS.selectedButtons) do count = count + 1 end
+            if count >= 2 then
+                for idx in pairs(CS.selectedButtons) do
+                    local bd = group.buttons[idx]
+                    if bd then bd.talentConditions = CopyTable(results) end
+                end
+                return
+            end
+        end
+        ApplyToSelected("talentConditions", results)
+    end
+
     local talentKey = sourceIndex and (groupId .. "_indicator_source_" .. sourceIndex .. "_talentcondition")
         or isBatch
-        and (CS.selectedGroup .. "_batch_talentcondition")
-        or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_talentcondition")
+        and (groupId .. "_batch_talentcondition")
+        or  (groupId .. "_" .. CS.selectedButton .. "_talentcondition")
     local headingText = sourceIndex and ("Talents: " .. (buttonData.name or tostring(buttonData.id or sourceIndex)))
         or "Talent Conditions"
     local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, headingText, talentKey,
@@ -3039,74 +2901,11 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
     pickBtn:SetCallback("OnClick", function()
         local initialConditions = not isBatch and buttonData.talentConditions or nil
+        -- The picker's Accept already hands back normalized conditions.
         CooldownCompanion:OpenTalentPicker(function(results)
             if not IsCurrentSource() then return end
-            if results then
-                local normalized, changed = CooldownCompanion:NormalizeTalentConditions(results)
-                if changed then
-                    results = normalized
-                end
-            end
-            if results then
-                -- Deep-copy each condition for batch mode safety
-                if CS.selectedButtons and not sourceIndex then
-                    local count = 0
-                    for _ in pairs(CS.selectedButtons) do count = count + 1 end
-                    if count >= 2 then
-                        for idx in pairs(CS.selectedButtons) do
-                            local bd = group.buttons[idx]
-                            if bd then
-                                local copy = {}
-                                for i, cond in ipairs(results) do
-                                    copy[i] = {
-                                        nodeID  = cond.nodeID,
-                                        entryID = cond.entryID,
-                                        spellID = cond.spellID,
-                                        name    = cond.name,
-                                        show    = cond.show,
-                                        classID = cond.classID,
-                                        className = cond.className,
-                                        specID = cond.specID,
-                                        specName = cond.specName,
-                                        heroSubTreeID = cond.heroSubTreeID,
-                                        heroName = cond.heroName,
-                                    }
-                                end
-                                bd.talentConditions = copy
-                                -- Clean old fields for migration safety
-                                bd.talentNodeID  = nil
-                                bd.talentEntryID = nil
-                                bd.talentSpellID = nil
-                                bd.talentName    = nil
-                                bd.talentShow    = nil
-                            end
-                        end
-                    else
-                        buttonData.talentConditions = results
-                        buttonData.talentNodeID  = nil
-                        buttonData.talentEntryID = nil
-                        buttonData.talentSpellID = nil
-                        buttonData.talentName    = nil
-                        buttonData.talentShow    = nil
-                    end
-                else
-                    buttonData.talentConditions = results
-                    buttonData.talentNodeID  = nil
-                    buttonData.talentEntryID = nil
-                    buttonData.talentSpellID = nil
-                    buttonData.talentName    = nil
-                    buttonData.talentShow    = nil
-                end
-            else
-                -- Clear all
-                ApplyToSelected("talentConditions", nil)
-                ApplyToSelected("talentNodeID", nil)
-                ApplyToSelected("talentEntryID", nil)
-                ApplyToSelected("talentSpellID", nil)
-                ApplyToSelected("talentName", nil)
-                ApplyToSelected("talentShow", nil)
-            end
-            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
+            WriteTalentConditions(results)
+            CooldownCompanion:RefreshGroupFrame(groupId)
             CooldownCompanion:RefreshConfigPanel()
         end, initialConditions, group)
     end)
@@ -3119,13 +2918,8 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         clearBtn:SetText("Clear")
         clearBtn:SetCallback("OnClick", function()
             if not IsCurrentSource() then return end
-            ApplyToSelected("talentConditions", nil)
-            ApplyToSelected("talentNodeID", nil)
-            ApplyToSelected("talentEntryID", nil)
-            ApplyToSelected("talentSpellID", nil)
-            ApplyToSelected("talentName", nil)
-            ApplyToSelected("talentShow", nil)
-            CooldownCompanion:RefreshGroupFrame(sourceIndex and groupId or CS.selectedGroup)
+            WriteTalentConditions(nil)
+            CooldownCompanion:RefreshGroupFrame(groupId)
             CooldownCompanion:RefreshConfigPanel()
         end)
         talentActionButtons[2] = clearBtn
@@ -3230,11 +3024,7 @@ local function BuildLoadConditionsTab(container)
 
     -- Ensure loadConditions table exists
     if not group.loadConditions then
-        group.loadConditions = {
-            raid = false, dungeon = false, delve = false, battleground = false,
-            arena = false, openWorld = false, rested = false, petBattle = true,
-            vehicleUI = true,
-        }
+        group.loadConditions = CooldownCompanion:GetDefaultLoadConditions()
     end
     local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
     local inheritedSpecs, inheritedSpecFilter = CooldownCompanion:GetInheritedEffectiveSpecs(group)
@@ -3278,8 +3068,6 @@ local function BuildLoadConditionsTab(container)
             heroTalentsSource = effectiveHeroTalents,
             useHeroTalentsSource = inheritedHeroFilter,
             disableHeroTalents = inheritedHeroFilter,
-            omitHeading = true,
-            showSelectedRows = true,
             onChanged = RefreshPanelLoadConditions,
         }
 
@@ -3300,7 +3088,6 @@ local function BuildLoadConditionsTab(container)
         inheritedSources = inheritedSources,
         headingText = "Where To Hide It",
         localCollapsedKey = "loadconditions_panel_local",
-        row = true,
         infoTooltipLines = BuildWhereToHideTooltip("panel", true, true),
         infoButtons = tabInfoButtons,
         onChanged = RefreshPanelLoadConditions,
@@ -3378,31 +3165,22 @@ local function BuildLoadConditionsTab(container)
         end
     end
 
-    if ST.IsIndicatorGroup(group) then
-        BuildPanelAlphaControls(container, group, function()
+    -- An Indicator's alpha rides its display visuals as well.
+    local isIndicator = ST.IsIndicatorGroup(group)
+    BuildPanelAlphaControls(container, group, function()
+        if isIndicator then
             CooldownCompanion:RefreshAllAuraTextureVisuals()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "loadconditions_alpha", {
-            isGlobal = group.isGlobal,
-            row = true,
-            disabled = alphaControlsDisabled,
-            disabledText = alphaDisabledText,
-            leadingRows = alphaLeadingRows,
-            onBaselineCommitted = function()
-                CooldownCompanion:RefreshAllAuraTextureVisuals()
-            end,
-        })
-    else
-        BuildPanelAlphaControls(container, group, function()
-            CooldownCompanion:RefreshConfigPanel()
-        end, "loadconditions_alpha", {
-            isGlobal = group.isGlobal,
-            row = true,
-            disabled = alphaControlsDisabled,
-            disabledText = alphaDisabledText,
-            leadingRows = alphaLeadingRows,
-        })
-    end
+        end
+        CooldownCompanion:RefreshConfigPanel()
+    end, "loadconditions_alpha", {
+        isGlobal = group.isGlobal,
+        disabled = alphaControlsDisabled,
+        disabledText = alphaDisabledText,
+        leadingRows = alphaLeadingRows,
+        onBaselineCommitted = isIndicator and function()
+            CooldownCompanion:RefreshAllAuraTextureVisuals()
+        end or nil,
+    })
 end
 
 local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, opts)
@@ -3422,7 +3200,6 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, o
         headingText = opts.headingText or "Where To Hide It",
         localCollapsedKey = opts.collapseKey or "loadconditions_entry_local",
         preserveMissing = true,
-        row = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
         infoButtons = infoButtons,
         onChanged = function()
@@ -3503,8 +3280,7 @@ local function BuildVisibilityTab(container)
                     ReleaseVisibilityTabScratch()
                     ST._BuildEntryIdentityHeading(container, buttonData)
                     -- Live rules first, then the static ones that decide
-                    -- whether the entry loads at all. Trigger entries have
-                    -- neither store, exactly as before.
+                    -- whether the entry loads at all.
                     BuildShowHideRulesSection(container, buttonData, tabInfoButtons)
                     AddFamilyHeading(container, "Load Conditions")
                     BuildEntryLoadConditionsTab(container, buttonData, tabInfoButtons)
