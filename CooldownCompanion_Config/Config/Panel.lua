@@ -2273,10 +2273,6 @@ local function CreateConfigPanel()
     CS.buttonSettingsScroll = bsScroll
 
     -- Per-panel drop highlight system
-    local function IsCursorDropPayload(cursorType)
-        return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
-    end
-
     CS._panelDropTargets = {}
 
     -- Throttled OnUpdate scanner: shows/hides per-panel overlays based on cursor position
@@ -2321,11 +2317,21 @@ local function CreateConfigPanel()
     local function UpdatePanelDropScan()
         local cursorType = GetCursorInfo()
         local targets = CS._panelDropTargets
-        if IsCursorDropPayload(cursorType)
+        if ST._IsPanelCursorDropPayload(cursorType)
             and targets and #targets > 0
             and col1.frame:IsShown()
             and not (IsConfigFinderActive and IsConfigFinderActive())
             and not CS.otherClassLibraryActive then
+            -- Each row lights up only if its panel would take this payload
+            -- (the preview overlay's rule). A refused row keeps a near-clear
+            -- overlay, so the drop still reaches it and prints the refusal.
+            local groups = CooldownCompanion.db.profile.groups
+            for _, target in ipairs(targets) do
+                local group = groups[target.panelId]
+                target.showHighlight = group ~= nil
+                    and ST._IsPanelCursorDropPayload(cursorType, group)
+                    and CooldownCompanion:CanPanelAcceptManualEntry(group)
+            end
             dropScanElapsed = DROP_SCAN_INTERVAL  -- scan immediately on first tick
             dropScanFrame:Show()
         else

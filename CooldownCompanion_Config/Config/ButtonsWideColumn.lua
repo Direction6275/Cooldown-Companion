@@ -1521,6 +1521,8 @@ local function IsCursorDropPayload(cursorType, group)
     end
     return true
 end
+-- The Navigator's panel-row drop highlights ask the same question (Panel.lua).
+ST._IsPanelCursorDropPayload = IsCursorDropPayload
 
 -- Drop-to-add overlay over the preview: shown while a spell/item is on the
 -- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop

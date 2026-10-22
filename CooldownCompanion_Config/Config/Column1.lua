@@ -43,8 +43,6 @@ local ConfigPanelHasWarning = ST._ConfigPanelHasWarning
 local ClearOtherClassBrowseState = ST._ResetOtherClassLibraryState
 local TryReceiveCursorDrop = ST._TryReceiveCursorDrop
 
-local GenerateGroupName
-
 local TREE = {
     GROUP_ROW_HEIGHT = 42,
     GROUP_ICON_SIZE = 32,
@@ -1343,6 +1341,50 @@ local function ClearColumn1ButtonBar()
     end
 end
 
+-- Mount a two-button footer on the Navigator's button bar: left and right
+-- halves, each half the bar's width, resized with the bar.
+local function MountFooterButtonPair(leftBtn, rightBtn)
+    local bar = CS.col1ButtonBar
+    for index, btn in ipairs({ leftBtn, rightBtn }) do
+        local point = index == 1 and "TOPLEFT" or "TOPRIGHT"
+        btn.frame:SetParent(bar)
+        btn.frame:ClearAllPoints()
+        btn.frame:SetPoint(point, bar, point, 0, -1)
+        btn.frame:SetHeight(28)
+        btn.frame:Show()
+        table.insert(CS.col1BarWidgets, btn)
+    end
+    local function SizeFooterButtons(width)
+        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
+        leftBtn.frame:SetWidth(half)
+        rightBtn.frame:SetWidth(half)
+    end
+    bar._topRowBtns = { leftBtn.frame, rightBtn.frame }
+    bar:SetScript("OnSizeChanged", function(_, w)
+        SizeFooterButtons(w)
+    end)
+    SizeFooterButtons(bar:GetWidth())
+end
+
+-- Helper: generate a unique group name with the given base
+local function GenerateGroupName(base)
+    local profile = CooldownCompanion.db.profile
+    local existing = {}
+    -- Check container names (groups are now "panels" under containers)
+    for _, c in pairs(profile.groupContainers or {}) do
+        existing[c.name] = true
+    end
+    local name = base
+    if existing[name] then
+        local n = 1
+        while existing[name .. " " .. n] do
+            n = n + 1
+        end
+        name = name .. " " .. n
+    end
+    return name
+end
+
 local function CreateGroupFromRail()
     if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     local containerId = CooldownCompanion:CreateGroup(GenerateGroupName("New Group"))
@@ -1410,13 +1452,7 @@ local function PopulateColumn1ButtonBar()
     local createBtn = AceGUI:Create("Button")
     createBtn:SetText("New Group")
     createBtn:SetCallback("OnClick", CreateGroupFromRail)
-    createBtn.frame:SetParent(CS.col1ButtonBar)
-    createBtn.frame:ClearAllPoints()
-    createBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    createBtn.frame:SetHeight(28)
-    createBtn.frame:Show()
     CS.col1CreateButton = createBtn
-    table.insert(CS.col1BarWidgets, createBtn)
 
     local arrangeBtn = AceGUI:Create("Button")
     arrangeBtn:SetCallback("OnClick", function()
@@ -1445,25 +1481,9 @@ local function PopulateColumn1ButtonBar()
     arrangeBtn:SetCallback("OnLeave", function()
         GameTooltip:Hide()
     end)
-    arrangeBtn.frame:SetParent(CS.col1ButtonBar)
-    arrangeBtn.frame:ClearAllPoints()
-    arrangeBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
-    arrangeBtn.frame:SetHeight(28)
-    arrangeBtn.frame:Show()
     CS.col1ArrangeButton = arrangeBtn
-    table.insert(CS.col1BarWidgets, arrangeBtn)
+    MountFooterButtonPair(createBtn, arrangeBtn)
     UpdateArrangeRailButton()
-
-    local function SizeMainBarButtons(width)
-        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
-        createBtn.frame:SetWidth(half)
-        arrangeBtn.frame:SetWidth(half)
-    end
-    CS.col1ButtonBar._topRowBtns = { createBtn.frame, arrangeBtn.frame }
-    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
-        SizeMainBarButtons(w)
-    end)
-    SizeMainBarButtons(CS.col1ButtonBar:GetWidth())
 end
 
 local function PopulateOtherClassBrowseButtonBar()
@@ -1611,6 +1631,44 @@ local function AddColumn1BottomSpacer()
     CS.col1Scroll:AddChild(spacer)
 end
 
+-- A centred Navigator message: an optional 15pt title, then a grey 12pt body.
+local function AddNavigatorMessage(title, body)
+    local spacer = AceGUI:Create("SimpleGroup")
+    spacer:SetFullWidth(true)
+    spacer:SetHeight(20)
+    spacer.noAutoHeight = true
+    CS.col1Scroll:AddChild(spacer)
+
+    if title then
+        local header = AceGUI:Create("Label")
+        header:SetText(title)
+        header:SetFullWidth(true)
+        header:SetJustifyH("CENTER")
+        header:SetFont((GameFontNormal:GetFont()), 15, "")
+        header.label:SetWordWrap(true)
+        header.label:SetNonSpaceWrap(true)
+        header.label:SetMaxLines(0)
+        CS.col1Scroll:AddChild(header)
+
+        local descSpacer = AceGUI:Create("SimpleGroup")
+        descSpacer:SetFullWidth(true)
+        descSpacer:SetHeight(6)
+        descSpacer.noAutoHeight = true
+        CS.col1Scroll:AddChild(descSpacer)
+    end
+
+    local desc = AceGUI:Create("Label")
+    desc:SetText(body)
+    desc:SetFullWidth(true)
+    desc:SetJustifyH("CENTER")
+    desc:SetFont((GameFontNormal:GetFont()), 12, "")
+    desc:SetColor(0.7, 0.7, 0.7)
+    desc.label:SetWordWrap(true)
+    desc.label:SetNonSpaceWrap(true)
+    desc.label:SetMaxLines(0)
+    CS.col1Scroll:AddChild(desc)
+end
+
 ------------------------------------------------------------------------
 -- EXPORT MODE: the Navigator re-presents as a pick-what-to-export
 -- checklist. Clicks toggle inclusion using the multi-select blue; the
@@ -1631,35 +1689,14 @@ local function PopulateExportModeButtonBar()
     exportBtn:SetCallback("OnClick", function()
         if ST._ConfirmExportMode then ST._ConfirmExportMode() end
     end)
-    exportBtn.frame:SetParent(CS.col1ButtonBar)
-    exportBtn.frame:ClearAllPoints()
-    exportBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    exportBtn.frame:SetHeight(28)
-    exportBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, exportBtn)
 
     local cancelBtn = AceGUI:Create("Button")
     cancelBtn:SetText("|cffff4444Cancel|r")
     cancelBtn:SetCallback("OnClick", function()
         if ST._ExitExportMode then ST._ExitExportMode() end
     end)
-    cancelBtn.frame:SetParent(CS.col1ButtonBar)
-    cancelBtn.frame:ClearAllPoints()
-    cancelBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
-    cancelBtn.frame:SetHeight(28)
-    cancelBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, cancelBtn)
 
-    local function SizeExportBarButtons(width)
-        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
-        exportBtn.frame:SetWidth(half)
-        cancelBtn.frame:SetWidth(half)
-    end
-    CS.col1ButtonBar._topRowBtns = { exportBtn.frame, cancelBtn.frame }
-    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
-        SizeExportBarButtons(w)
-    end)
-    SizeExportBarButtons(CS.col1ButtonBar:GetWidth())
+    MountFooterButtonPair(exportBtn, cancelBtn)
     CS.col1ButtonBar:Show()
 end
 
@@ -1923,35 +1960,14 @@ local function PopulateImportModeButtonBar()
     importBtn:SetCallback("OnClick", function()
         if ST._ConfirmImportMode then ST._ConfirmImportMode() end
     end)
-    importBtn.frame:SetParent(CS.col1ButtonBar)
-    importBtn.frame:ClearAllPoints()
-    importBtn.frame:SetPoint("TOPLEFT", CS.col1ButtonBar, "TOPLEFT", 0, -1)
-    importBtn.frame:SetHeight(28)
-    importBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, importBtn)
 
     local cancelBtn = AceGUI:Create("Button")
     cancelBtn:SetText("|cffff4444Cancel|r")
     cancelBtn:SetCallback("OnClick", function()
         if ST._ExitImportMode then ST._ExitImportMode() end
     end)
-    cancelBtn.frame:SetParent(CS.col1ButtonBar)
-    cancelBtn.frame:ClearAllPoints()
-    cancelBtn.frame:SetPoint("TOPRIGHT", CS.col1ButtonBar, "TOPRIGHT", 0, -1)
-    cancelBtn.frame:SetHeight(28)
-    cancelBtn.frame:Show()
-    table.insert(CS.col1BarWidgets, cancelBtn)
 
-    local function SizeImportBarButtons(width)
-        local half = math.max(1, math.floor(((width or 0) - 4) / 2))
-        importBtn.frame:SetWidth(half)
-        cancelBtn.frame:SetWidth(half)
-    end
-    CS.col1ButtonBar._topRowBtns = { importBtn.frame, cancelBtn.frame }
-    CS.col1ButtonBar:SetScript("OnSizeChanged", function(_, w)
-        SizeImportBarButtons(w)
-    end)
-    SizeImportBarButtons(CS.col1ButtonBar:GetWidth())
+    MountFooterButtonPair(importBtn, cancelBtn)
     CS.col1ButtonBar:Show()
 
     -- Reclassifying a paste only re-renders the wide column's review area;
@@ -1967,28 +1983,13 @@ local function RenderImportModeNavigator()
         CS.col1DestinationBar:Hide()
     end
 
-    local spacer = AceGUI:Create("SimpleGroup")
-    spacer:SetFullWidth(true)
-    spacer:SetHeight(20)
-    spacer.noAutoHeight = true
-    CS.col1Scroll:AddChild(spacer)
-
-    local header = AceGUI:Create("Label")
-    header:SetText("Paste an import string on the right.")
-    header:SetFullWidth(true)
-    header:SetJustifyH("CENTER")
-    header:SetFont((GameFontNormal:GetFont()), 12, "")
-    header:SetColor(0.7, 0.7, 0.7)
-    header.label:SetWordWrap(true)
-    header.label:SetNonSpaceWrap(true)
-    header.label:SetMaxLines(0)
-    CS.col1Scroll:AddChild(header)
+    AddNavigatorMessage(nil, "Paste an import string on the right.")
 
     AddColumn1BottomSpacer()
     PopulateImportModeButtonBar()
 end
 
-local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
+local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive, resourcePanelId)
     panelEntry:SetText(panel.name or ("Panel " .. tostring(panelId)))
     panelEntry:SetFullWidth(true)
     panelEntry:SetFontObject(GameFontHighlight)
@@ -2023,7 +2024,7 @@ local function RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
         panel
     )
     local resourceReserve = SetupPanelResourceIndicator(
-        panelEntry, panelId, metaReserve + 2
+        panelEntry, panelId, metaReserve + 2, resourcePanelId
     )
     local renameReserve = ConfigureGenericRenameBadge(
         panelEntry, panel.name, IsGenericPanelName(panel.name),
@@ -2108,38 +2109,8 @@ local function RefreshColumn1(preserveDrag)
         if CS.col1ButtonBar then CS.col1ButtonBar:Hide() end
         if CS.col1DestinationBar then CS.col1DestinationBar:Hide() end
 
-        local spacer = AceGUI:Create("SimpleGroup")
-        spacer:SetFullWidth(true)
-        spacer:SetHeight(20)
-        spacer.noAutoHeight = true
-        CS.col1Scroll:AddChild(spacer)
-
-        local header = AceGUI:Create("Label")
-        header:SetText("This profile is unsupported.")
-        header:SetFullWidth(true)
-        header:SetJustifyH("CENTER")
-        header:SetFont((GameFontNormal:GetFont()), 15, "")
-        header.label:SetWordWrap(true)
-        header.label:SetNonSpaceWrap(true)
-        header.label:SetMaxLines(0)
-        CS.col1Scroll:AddChild(header)
-
-        local descSpacer = AceGUI:Create("SimpleGroup")
-        descSpacer:SetFullWidth(true)
-        descSpacer:SetHeight(6)
-        descSpacer.noAutoHeight = true
-        CS.col1Scroll:AddChild(descSpacer)
-
-        local desc = AceGUI:Create("Label")
-        desc:SetText(CooldownCompanion:GetLegacySupportCutoffMessage("profile"))
-        desc:SetFullWidth(true)
-        desc:SetJustifyH("CENTER")
-        desc:SetFont((GameFontNormal:GetFont()), 12, "")
-        desc:SetColor(0.7, 0.7, 0.7)
-        desc.label:SetWordWrap(true)
-        desc.label:SetNonSpaceWrap(true)
-        desc.label:SetMaxLines(0)
-        CS.col1Scroll:AddChild(desc)
+        AddNavigatorMessage("This profile is unsupported.",
+            CooldownCompanion:GetLegacySupportCutoffMessage("profile"))
         AddColumn1BottomSpacer()
         return
     end
@@ -2148,6 +2119,10 @@ local function RefreshColumn1(preserveDrag)
         RenderExportModeNavigator(db)
         return
     end
+
+    -- One resolve per paint: every row asks the same question, and the
+    -- in-place repaint (ST._RefreshConfigEditNavigator) resolves its own.
+    local resourcePlacement, resourcePanelId = ST._GetBarWorkspacePlacement("resources")
 
     local containerStats = {}
 
@@ -2305,7 +2280,9 @@ local function RefreshColumn1(preserveDrag)
 
         local entry = AceGUI:Create("InteractiveLabel")
         CleanRecycledEntry(entry)
-        local function RefreshContainerRowAppearance(newStats, inactive)
+        -- resourcePanelId is a parameter on purpose: it shadows the build
+        -- local, so the in-place repaint never reads a build-time value.
+        local function RefreshContainerRowAppearance(newStats, inactive, resourcePanelId)
             stats, isInactive = newStats, inactive
             panelCount = stats and stats.panelCount or 0
             groupUnit.frame:SetAlpha(isInactive and 0.58 or 1)
@@ -2325,7 +2302,7 @@ local function RefreshColumn1(preserveDrag)
             })
             entry:SetHighlight("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
-            SetupGroupRowIndicators(entry, container, isEmpty)
+            SetupGroupRowIndicators(entry, container, isEmpty, resourcePanelId)
             local expandReserve = 0
             if not searchResults and not browsePanels and allowPanelRows and panelCount > 0 then
                 expandReserve = ConfigureTreeExpandButton(
@@ -2366,7 +2343,7 @@ local function RefreshColumn1(preserveDrag)
                 entry:SetColor(1, 1, 1)
             end
         end
-        RefreshContainerRowAppearance(stats, isInactive)
+        RefreshContainerRowAppearance(stats, isInactive, resourcePanelId)
         groupUnit:AddChild(entry)
 
         entry.frame:SetScript("OnMouseUp", function(_, button)
@@ -2481,7 +2458,7 @@ local function RefreshColumn1(preserveDrag)
                 local searchPanelResult = visiblePanel.searchResult
                 local panelEntry = AceGUI:Create("InteractiveLabel")
                 CleanRecycledEntry(panelEntry)
-                RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive)
+                RefreshPanelRowAppearance(panelEntry, panelId, panel, isInactive, resourcePanelId)
 
                 groupUnit:AddChild(panelEntry)
                 firstPanelEntry = firstPanelEntry or panelEntry
@@ -2567,7 +2544,6 @@ local function RefreshColumn1(preserveDrag)
                         panelId = panelId,
                         frame = panelFrame,
                         overlay = overlay,
-                        showHighlight = true,
                     }
                 end
 
@@ -2716,24 +2692,6 @@ local function RefreshColumn1(preserveDrag)
         return groupUnit
     end
 
-    -- Helper: generate a unique group name with the given base
-    GenerateGroupName = function(base)
-        local profile = CooldownCompanion.db.profile
-        local existing = {}
-        -- Check container names (groups are now "panels" under containers)
-        for _, c in pairs(profile.groupContainers or {}) do
-            existing[c.name] = true
-        end
-        local name = base
-        if existing[name] then
-            local n = 1
-            while existing[name .. " " .. n] do
-                n = n + 1
-            end
-            name = name .. " " .. n
-        end
-        return name
-    end
 
     -- Render a section (global, current class, or another class)
     -- Only the topmost row in the column drops its top pad. RefreshColumn1 owns
@@ -3250,7 +3208,12 @@ local function RefreshColumn1(preserveDrag)
             { kind = "castbar", label = "Cast Bar", atlas = "ui_adv_health" },
             { kind = "player", label = "Unit Frames", atlas = "ui_adv_health" },
         }) do
-            local placement, anchorId = ST._GetBarWorkspacePlacement(item.kind)
+            local placement, anchorId
+            if item.kind == "resources" then
+                placement, anchorId = resourcePlacement, resourcePanelId
+            else
+                placement, anchorId = ST._GetBarWorkspacePlacement(item.kind)
+            end
             -- The shared unit-frame entry must remain reachable when only
             -- Target is unplaced, and open Target's editor in that case.
             if item.kind == "player" and anchorId then
@@ -3300,38 +3263,8 @@ local function RefreshColumn1(preserveDrag)
         ClearOtherClassBrowseState()
         TakeCol1FirstRow()
 
-        local spacer = AceGUI:Create("SimpleGroup")
-        spacer:SetFullWidth(true)
-        spacer:SetHeight(20)
-        spacer.noAutoHeight = true
-        CS.col1Scroll:AddChild(spacer)
-
-        local header = AceGUI:Create("Label")
-        header:SetText("Organize cooldowns with groups.")
-        header:SetFullWidth(true)
-        header:SetJustifyH("CENTER")
-        header:SetFont((GameFontNormal:GetFont()), 15, "")
-        header.label:SetWordWrap(true)
-        header.label:SetNonSpaceWrap(true)
-        header.label:SetMaxLines(0)
-        CS.col1Scroll:AddChild(header)
-
-        local descSpacer = AceGUI:Create("SimpleGroup")
-        descSpacer:SetFullWidth(true)
-        descSpacer:SetHeight(6)
-        descSpacer.noAutoHeight = true
-        CS.col1Scroll:AddChild(descSpacer)
-
-        local desc = AceGUI:Create("Label")
-        desc:SetText("For cooldown entries, start with New Group below. Resource Bars and Cast Bar can be used on their own.")
-        desc:SetFullWidth(true)
-        desc:SetJustifyH("CENTER")
-        desc:SetFont((GameFontNormal:GetFont()), 12, "")
-        desc:SetColor(0.7, 0.7, 0.7)
-        desc.label:SetWordWrap(true)
-        desc.label:SetNonSpaceWrap(true)
-        desc.label:SetMaxLines(0)
-        CS.col1Scroll:AddChild(desc)
+        AddNavigatorMessage("Organize cooldowns with groups.",
+            "For cooldown entries, start with New Group below. Resource Bars and Cast Bar can be used on their own.")
     else
         if searchResults and searchResults.truncated then
             local summary = AceGUI:Create("Label")
@@ -3483,10 +3416,11 @@ function ST._RefreshConfigEditNavigator(panelId)
         end
     end
     if not header then return false end
-    header.refreshAppearance(stats, inactive)
+    local _, resourcePanelId = ST._GetBarWorkspacePlacement("resources")
+    header.refreshAppearance(stats, inactive, resourcePanelId)
     for _, row in ipairs(rows) do
         if row.rowType == "panel" and row.id == panelId then
-            RefreshPanelRowAppearance(row.widget, panelId, panel, inactive)
+            RefreshPanelRowAppearance(row.widget, panelId, panel, inactive, resourcePanelId)
         elseif row.rowType == "finder-entry" and row.ownerPanelId == panelId then
             local disabled = inactive or not CooldownCompanion:IsButtonEnabled(row.owner, panel)
             local icon = row.widget._cdcConfigRow

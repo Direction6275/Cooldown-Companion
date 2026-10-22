@@ -2224,9 +2224,10 @@ local function ConfigureResourceAttachmentBadge(frame, index, description)
     return badge
 end
 
-local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
-    local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-    if placement ~= "attached" or anchorPanelId ~= panelId then return 0 end
+-- resourcePanelId: the panel Resource Bars attach to, resolved once per
+-- Navigator paint by the caller (nil when none).
+local function SetupPanelResourceIndicator(entry, panelId, rightReserve, resourcePanelId)
+    if resourcePanelId ~= panelId then return 0 end
     local badge = ConfigureResourceAttachmentBadge(entry.frame, 1,
         "Your resource bars are attached to this panel. Select Resources below the preview to edit shared settings and bar order.")
     badge:SetSize(16, 16)
@@ -2235,7 +2236,7 @@ local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
     return badge:GetWidth() + BADGE_SPACING
 end
 
-local function SetupGroupRowIndicators(entry, group, isEmpty)
+local function SetupGroupRowIndicators(entry, group, isEmpty, resourcePanelId)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -2272,20 +2273,16 @@ local function SetupGroupRowIndicators(entry, group, isEmpty)
     -- Mouse is enabled for the tooltip with clicks propagating to the row;
     -- SetPropagateMouseClicks is protected in combat, so the tooltip is
     -- skipped when refreshed mid-combat.
-    -- ST._ lookup: GetResourcesEntryPlacement is declared later in this file.
-    if ST._GetResourcesEntryPlacement then
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if placement == "attached" and anchorPanelId then
-            local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
-            local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[anchorPanelId]
-            local anchorContainer = anchorGroup and dbProfile.groupContainers
-                and dbProfile.groupContainers[anchorGroup.parentContainerId]
-            if anchorContainer ~= nil and anchorContainer == group then
-                local anchorPanelName = anchorGroup.name or "a panel"
-                badgeIndex = badgeIndex + 1
-                ConfigureResourceAttachmentBadge(frame, badgeIndex,
-                    "Your resource bars are anchored to " .. anchorPanelName .. " in this group.")
-            end
+    if resourcePanelId then
+        local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
+        local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[resourcePanelId]
+        local anchorContainer = anchorGroup and dbProfile.groupContainers
+            and dbProfile.groupContainers[anchorGroup.parentContainerId]
+        if anchorContainer ~= nil and anchorContainer == group then
+            local anchorPanelName = anchorGroup.name or "a panel"
+            badgeIndex = badgeIndex + 1
+            ConfigureResourceAttachmentBadge(frame, badgeIndex,
+                "Your resource bars are anchored to " .. anchorPanelName .. " in this group.")
         end
     end
     -- Spec filter badges
@@ -2805,23 +2802,6 @@ local function SelectConfigCastFramesItem(item, opts)
     return changed
 end
 
--- Where the "Resource Bars" entry lives in the panel list right now.
--- Returns "disabled" | "independent" | "attached", anchorPanelId (nil when
--- enabled+dependent but no eligible anchor panel exists).
-local function GetResourcesEntryPlacement()
-    local settings = CooldownCompanion.GetResourceBarSettings
-        and CooldownCompanion:GetResourceBarSettings()
-        or nil
-    if not settings or settings.enabled ~= true then
-        return "disabled"
-    end
-    if CooldownCompanion.IsResourceBarAnchorIndependent
-        and CooldownCompanion:IsResourceBarAnchorIndependent() then
-        return "independent"
-    end
-    local target = CooldownCompanion:ResolveModulePanel("resources")
-    return "attached", target.group and target.panelId
-end
 
 -- A disabled standalone feature introduces itself before exposing its editor.
 -- The resource conflict gate must remain reachable instead of being covered.
@@ -3218,7 +3198,6 @@ ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigBarsEntry = SelectConfigBarsEntry
 ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
-ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._GetBarWorkspaceIntroKind = GetBarWorkspaceIntroKind
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection

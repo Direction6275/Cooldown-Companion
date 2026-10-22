@@ -82,6 +82,9 @@ local tabScroll = {}
 local suppressSearchChanged = false
 local rowPool, activeRows = {}, {}
 local headerPool, activeHeaders = {}, {}
+-- The catalog from the last open, tab click or refresh event. Search
+-- keystrokes re-filter it rather than walking the spellbook again.
+local collectedSections
 
 local RebuildList
 
@@ -511,7 +514,7 @@ end
 
 -- Refresh events keep the current view; leaving search or changing tabs
 -- restores that tab's last browsing position. Query edits start at the top.
-RebuildList = function(keepScroll)
+RebuildList = function(keepScroll, reuseSections)
     if not chrome then
         return
     end
@@ -525,7 +528,10 @@ RebuildList = function(keepScroll)
     local y = 0
     local shown = 0
 
-    for _, section in ipairs(GetVisibleSections(CollectSections(), searchText, activeTab)) do
+    if not (reuseSections and collectedSections) then
+        collectedSections = CollectSections()
+    end
+    for _, section in ipairs(GetVisibleSections(collectedSections, searchText, activeTab)) do
         -- Spells and auras identify their owning spec/class; Unavailable
         -- needs a category heading only when mixed into global search.
         if searching or activeTab ~= "unavailable" then
@@ -729,7 +735,8 @@ local function EnsureChrome()
     searchHint:SetWordWrap(false)
     searchHint:SetText("Search everything...")
 
-    -- Live filtering, one rebuild per keystroke. The widget only fires this when
+    -- Live filtering: each keystroke re-filters the sections collected at the
+    -- last open, tab click or refresh event. The widget only fires this when
     -- the text differs from what its own SetText last recorded, so the reset in
     -- OpenSpellbookPanel is already silent -- but the flag stays: the Ace3 that
     -- wins the load order need not be the copy vendored here.
@@ -742,7 +749,7 @@ local function EnsureChrome()
             tabScroll[activeTab] = chrome.scrollFrame:GetVerticalScroll()
         end
         searchText = text or ""
-        RebuildList(false)
+        RebuildList(false, true)
     end)
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, host)
@@ -864,6 +871,7 @@ local function CleanupWindow(widget)
 
     SetEventsRegistered(false)
     ReleaseListFrames()
+    collectedSections = nil
     DetachChrome()
     AceGUI:Release(widget)
     local configFrame = CS.configFrame
