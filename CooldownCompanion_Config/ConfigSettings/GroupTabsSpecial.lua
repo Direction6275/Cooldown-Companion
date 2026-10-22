@@ -716,19 +716,10 @@ local function BuildIndicatorEffectsTab(container, group)
         return
     end
 
-    local anyEnabled = false
     local effectOrder = GetIndicatorEffectOrderForDisplayType(group)
-    for _, effectKey in ipairs(effectOrder) do
-        if effects[effectKey] and effects[effectKey].enabled then
-            anyEnabled = true
-            break
-        end
-    end
 
     -- One row-grammar section. The gears inside it are safe behind a collapse:
-    -- the preview command center's trigger route is tab-only (it plays every
-    -- enabled effect at once, so it names no single advanced key), and the
-    -- finder's structural trigger-effect routes DO queue `triggerEffect_*`
+    -- the finder's structural trigger-effect routes queue `triggerEffect_*`
     -- keys but always force this section open first (collapseKeys names
     -- "effects_triggerEffects"), so the gear builds and consumes the queue.
     -- Any future entrance that queues one of these keys must do the same.
@@ -743,11 +734,6 @@ local function BuildIndicatorEffectsTab(container, group)
         for index, effectKey in ipairs(effectOrder) do
             BuildIndicatorEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
         end
-    end
-
-    if not anyEnabled and CS.selectedGroup then
-        ST._ConfigPreview.StopCommand("triggerEffects", CS.selectedGroup)
-        ST._ConfigPreview.StopCommand("textureAura", CS.selectedGroup)
     end
 end
 

@@ -105,10 +105,8 @@ end
 
 local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
         effectiveStyle, barPreviewState)
-    local style = effectiveStyle or group.style or {}
-    if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
-    end
+    -- RenderPreviewEntry, the only caller, always resolves the style first.
+    local style = effectiveStyle
     slot.style = style
 
     local canQuery = CooldownCompanion.IsPreviewFlagActive ~= nil

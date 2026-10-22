@@ -20,9 +20,18 @@ local ResolveIconFillTimerValue = ST._ResolveIconFillTimerValue
 local PP = ST._ButtonPanelPreview
 local StylePreviewIcon = PP.StylePreviewIcon
 
-local function StyleIconEntry(slot, buttonData, group)
+local function StyleIconEntry(slot, buttonData, group, effectiveStyle)
     PP.RestoreMissingReminderPreview(slot)
-    StylePreviewIcon(slot, buttonData, group)
+    -- RenderPreviewEntry resolves the style once and hands it in; the drop
+    -- ghost resolves it here.
+    local style = effectiveStyle
+    if not style then
+        style = group and group.style or {}
+        if CooldownCompanion.GetEffectiveStyle then
+            style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
+        end
+    end
+    StylePreviewIcon(slot, buttonData, group, style)
 
     -- Keybind label: live icon buttons pin this above every layer so it stays
     -- readable whatever is drawn over the icon (IconMode.lua). Same font keys,
@@ -36,10 +45,6 @@ local function StyleIconEntry(slot, buttonData, group)
     -- reads true for the base grid beside it, making this a per-ENTRY answer.
     -- Custom keybind text rides the same resolver and goes dark with it, which
     -- is what the world shows.
-    local style = group and group.style or {}
-    if CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
-    end
     local text
     if style.showKeybindText and CooldownCompanion.GetDisplayedKeybindText
         and not ST.IsAuraSectionEntry(group, buttonData) then
@@ -533,8 +538,7 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
     if forceDesat then
         slot.icon:SetDesaturated(true)
     end
-    local previewState = PP.GetStoredBarPreviewState(panelId, index)
-    PP.ApplyMissingReminderPreview(slot, buttonData, group, previewState)
+    PP.ApplyMissingReminderPreview(slot, buttonData, group, state)
 end
 
 -- Private helpers consumed by later ButtonPanelPreview files.

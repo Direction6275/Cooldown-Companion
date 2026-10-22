@@ -699,7 +699,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             slot.icon:SetDesaturated(true)
         end
     end
-    PP.ApplyMissingReminderPreview(slot, buttonData, group, previewState)
+    PP.ApplyMissingReminderPreview(slot, buttonData, group, state)
 end
 
 -- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same
