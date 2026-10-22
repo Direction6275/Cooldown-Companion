@@ -519,11 +519,7 @@ local SCOPE_GLYPH_ICON_SIZE = 12
 -- column) off the line, so the NAME is cut rather than the sentence round it.
 local SCOPE_ENTRY_NAME_MAX_CHARS = 18
 
--- _cdcScopeRevert is the heading's RETIRED glyph. The heading reverts through
--- _cdcScopeRevertText now, but a Heading frame that already carries the glyph
--- from an earlier build must still have it hidden, so the field stays on the
--- cleanup list. Rows keep the glyph and use their own field.
-local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert", "_cdcScopeRevertText" }
+local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevertText" }
 local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert", "_cdcScopeRowPanel" }
 
 -- A grey row has no affordance to explain itself, so the explanation is a
@@ -1038,14 +1034,16 @@ end
 
 -- Scope chrome for a section HEADING: the note says whose values the section
 -- is showing, and the affordance after it is the only way to change that.
--- Returns the resolved scope for callers that also gate the section's body.
-local function AttachHeadingScopeChrome(heading, lens, group, sectionId)
+-- Returns the section's scope (resolved once at BeginLensSection) for callers
+-- that also gate the section's body.
+local function AttachHeadingScopeChrome(heading, sec)
     local frame = heading and heading.frame
     if not frame then
         return nil
     end
 
-    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    local lens, group, sectionId = sec.lens, sec.group, sec.sectionId
+    local scope, deniedReason = sec.scope, sec.deniedReason
     if ST._MarkSettingsScope then ST._MarkSettingsScope(heading, scope, group) end
     HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
 
@@ -1117,13 +1115,14 @@ end
 --
 -- Call this AFTER the row's disabled state is set: a row greyed out by its own
 -- dependency keeps that grey, and the revert glyph still shows ownership.
-local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
+local function AttachRowScopeChrome(rowWidget, sec)
     local frame = rowWidget and rowWidget.frame
     if not (frame and rowWidget.badgeAnchor) then
         return nil
     end
 
-    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    local lens, group, sectionId = sec.lens, sec.group, sec.sectionId
+    local scope, deniedReason = sec.scope, sec.deniedReason
     if ST._MarkSettingsScope then ST._MarkSettingsScope(rowWidget, scope, group) end
     HideScopeChrome(frame, ROW_SCOPE_FIELDS)
     SetRowScopeTooltip(rowWidget, nil)
@@ -1224,6 +1223,10 @@ end
 --   sec:Chrome(row)   -- row-level scope chrome, AFTER the row's disabled state is final
 --   sec:Finish()      -- applies the inert bracket when the section is read-only
 --
+-- Chrome and HeadingChrome wear sec.scope and sec.deniedReason as resolved at
+-- Begin and never re-resolve, so the chrome always matches the table the rows
+-- were bound to.
+--
 -- Field contract, all derived once at Begin:
 --   scope         "panel" | "multi" | "panelOnly" | "denied" | "customized" | "inherited"
 --   read / write  ResolveLensSection's tables; write == nil is the inert marker
@@ -1286,7 +1289,7 @@ function LensSection:Chrome(row)
         and not pendingHighlight.sectionRowWidget then
         pendingHighlight.sectionRowWidget = row
     end
-    return AttachRowScopeChrome(row, self.lens, self.group, self.sectionId)
+    return AttachRowScopeChrome(row, self)
 end
 
 -- Make an inherited color swatch direct-manipulable without enabling the
@@ -1364,7 +1367,7 @@ function LensSection:DirectColorControl(row, key, externallyDisabled)
 end
 
 function LensSection:HeadingChrome(heading)
-    return AttachHeadingScopeChrome(heading, self.lens, self.group, self.sectionId)
+    return AttachHeadingScopeChrome(heading, self)
 end
 
 -- Chrome for a panel-owned row inside this section (see
