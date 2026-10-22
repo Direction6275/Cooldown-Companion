@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/AuraTexturesBuiltins.lua
+    CooldownCompanion_Config - Config/AuraTexturesBuiltins.lua
     Hand-authored builtin atlas library for the aura texture picker.
 ]]
 
@@ -13,6 +13,7 @@ local type = type
 
 local FILTER_SYMBOLS = AT.FILTER_SYMBOLS
 local FILTER_OTHER = AT.FILTER_OTHER
+AT.BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY or {}
 local BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY
 
 local function AddBuiltinAtlas(categoryKey, atlas, width, height, subtitle, searchText, label)

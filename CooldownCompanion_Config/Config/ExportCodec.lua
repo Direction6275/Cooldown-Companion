@@ -947,7 +947,7 @@ local function NormalizeTextureLibraryProfile(profile)
         return profile
     end
 
-    -- The runtime owns the store's conversion (Core/AuraTexturesPicker.lua).
+    -- The texture catalog owns the store's conversion (Config/AuraTexturesPicker.lua).
     profile.auraTextureLibrary = CooldownCompanion:NormalizeAuraTextureLibraryStore(profile.auraTextureLibrary)
     return profile
 end

@@ -505,7 +505,6 @@ function AT.ShrinkScaleAtPhase(phase)
     local t = 0.5 - (0.5 * math.cos(phase * 2 * math.pi))
     return 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * t)
 end
-AT.BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY or {}
 AT.CopyColor = CopyColor
 AT.Clamp = Clamp
 AT.NormalizeBlendMode = NormalizeBlendMode
