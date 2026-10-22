@@ -290,11 +290,14 @@ local function ApplyImportModeReview(review)
         applyReview = { ok = true, kind = review.kind, data = data,
             existingPanelIds = review.existingPanelIds }
     end
-    if CooldownCompanion:ApplyReviewedImport(applyReview) then
-        ExitImportMode()
-        return true
+    local applied = CooldownCompanion:ApplyReviewedImport(applyReview)
+    if applied then
+        ExitImportMode({ skipRefresh = true })
     end
-    return false
+    -- The one config repaint for this click, success or failure: the
+    -- appliers rebuild the runtime only.
+    CooldownCompanion:RefreshConfigPanel()
+    return applied
 end
 
 local function ConfirmImportMode()

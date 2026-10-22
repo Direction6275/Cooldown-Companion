@@ -1737,6 +1737,23 @@ local function AcquireExportModeRow(text)
     return entry
 end
 
+-- The one export ordering rule, shared by this checklist and ExportMode's
+-- payload and summary: the current spec's order, then container id.
+local function CompareExportContainerItems(a, b)
+    if a.order == b.order then return a.cid < b.cid end
+    return a.order < b.order
+end
+
+-- items: { cid = ..., container = ... } entries; stamps each order, sorts.
+local function SortExportContainerItems(items)
+    for _, item in ipairs(items) do
+        item.order = CooldownCompanion:GetOrderForSpec(item.container, CooldownCompanion._currentSpecId, item.cid)
+    end
+    table.sort(items, CompareExportContainerItems)
+    return items
+end
+ST._SortExportContainerItems = SortExportContainerItems
+
 local function RenderExportModeGroups(db, selection, mode)
     local ordered = {}
     for cid, container in pairs(db.groupContainers or {}) do
@@ -1744,17 +1761,10 @@ local function RenderExportModeGroups(db, selection, mode)
             and CooldownCompanion:ResolveContainerClassScope(container)
             or nil
         if not scope or scope.runtimeVisible == true then
-            ordered[#ordered + 1] = {
-                cid = cid,
-                container = container,
-                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
-            }
+            ordered[#ordered + 1] = { cid = cid, container = container }
         end
     end
-    table.sort(ordered, function(a, b)
-        if a.order == b.order then return a.cid < b.cid end
-        return a.order < b.order
-    end)
+    SortExportContainerItems(ordered)
     if #ordered == 0 then
         return 0
     end

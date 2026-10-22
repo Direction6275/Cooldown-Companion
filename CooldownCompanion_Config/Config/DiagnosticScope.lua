@@ -31,7 +31,14 @@ local function BuildScopedDiagnosticProfile(profile, meta, config, runtime, char
             knownClasses[info.classFilename:upper()] = true
         end
     end
-    local scoped = CopyTable(profile)
+    -- Everything but the panel and group stores, which are rebuilt below
+    -- from only the kept entries (each copied once).
+    local scoped = {}
+    for key, value in pairs(profile) do
+        if key ~= "groups" and key ~= "groupContainers" then
+            scoped[key] = type(value) == "table" and CopyTable(value) or value
+        end
+    end
     local groups, containers = profile.groups or {}, profile.groupContainers or {}
     local keptGroups, keptContainers = {}, {}
     local pending = {}

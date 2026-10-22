@@ -248,18 +248,6 @@ local function NormalizeLoadConditionAllowlists(loadConditions)
     return normalized
 end
 
-local LOAD_CONDITIONS_DEFAULTS = {
-    raid = false,
-    dungeon = false,
-    delve = false,
-    battleground = false,
-    arena = false,
-    openWorld = false,
-    rested = false,
-    petBattle = true,
-    vehicleUI = true,
-}
-
 local LOCAL_LOAD_CONDITIONS_DEFAULTS = {
     raid = false,
     dungeon = false,
@@ -272,55 +260,9 @@ local LOCAL_LOAD_CONDITIONS_DEFAULTS = {
     vehicleUI = false,
 }
 
-local PANEL_DEFAULTS = {
-    displayMode = "icons",
-    masqueEnabled = false,
-    compactLayout = true,
-    maxVisibleButtons = 0,
-    compactGrowthDirection = "center",
-    inheritPanelAlpha = true,
-    baselineAlpha = 1,
-    forceAlphaTargetEnemyOnly = false,
-    forceAlphaFocusExists = false,
-    fadeDelay = 1,
-    fadeInDuration = 0.2,
-    fadeOutDuration = 0.2,
-}
-
 local function ShouldDefaultPanelCompactLayout(displayMode)
     return displayMode == "icons" or displayMode == "bars"
 end
-
-local CONTAINER_DEFAULTS = {
-    enabled = true,
-    locked = true,
-    groupAlphaEnabled = false,
-    baselineAlpha = 1,
-    forceAlphaInCombat = false,
-    forceAlphaOutOfCombat = false,
-    forceAlphaRegularMounted = false,
-    forceAlphaDragonriding = false,
-    forceAlphaTargetExists = false,
-    forceAlphaTargetEnemyOnly = false,
-    forceAlphaFocusExists = false,
-    forceAlphaMouseover = false,
-    forceHideInCombat = false,
-    forceHideOutOfCombat = false,
-    forceHideRegularMounted = false,
-    forceHideDragonriding = false,
-    treatTravelFormAsMounted = false,
-    fadeDelay = 1,
-    fadeInDuration = 0.2,
-    fadeOutDuration = 0.2,
-}
-
-local CONTAINER_DEFAULT_ANCHOR = {
-    point = "CENTER",
-    relativeTo = "UIParent",
-    relativePoint = "CENTER",
-    x = 0,
-    y = 0,
-}
 
 local function IsPanelAnchor(anchor)
     local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
@@ -501,10 +443,11 @@ local SCOPED_STORE_KEYS = {
 }
 
 -- Compact payloads must rehydrate against a frozen baseline, not the
--- importer's current runtime defaults. The current compact baseline is seeded
--- from Core/Defaults so export compaction and runtime defaults stay in sync.
--- If profile defaults change in a future release, keep the old snapshot here
--- and bump CURRENT_COMPACT_FORMAT_VALUE.
+-- importer's current runtime defaults. Every baseline here is frozen:
+-- compact6 and the current compact7 derive from the Compact5Defaults
+-- snapshot, not Core/Defaults, so editing Core/Defaults never changes export
+-- compaction. A new baseline is a new frozen entry plus a
+-- CURRENT_COMPACT_FORMAT_VALUE bump; never edit an existing entry.
 local COMPACT_PROFILE_DEFAULTS = {
     [COMPACT3_FORMAT_VALUE] = StripAuraDurationSwipeDefaults(BuildCompact3ProfileDefaults()),
     [COMPACT4_FORMAT_VALUE] = BuildCompact4ProfileDefaults(),
@@ -541,7 +484,15 @@ local function PrepareSharedImportText(text)
 end
 
 local function IsMigrationSentinelKey(key)
-    return type(key) == "string" and (key:match("^_migrated") or key:match("Migrated$"))
+    if type(key) ~= "string" then
+        return false
+    end
+    -- The migration registry names every current and retired stamp; the
+    -- patterns cover stamps older than the registry.
+    if ST._IsRegisteredMigrationSentinelKey and ST._IsRegisteredMigrationSentinelKey(key) then
+        return true
+    end
+    return key:match("^_migrated") or key:match("Migrated$")
 end
 
 local function DeepEqual(a, b)
@@ -621,11 +572,7 @@ local function MergeWithDefaults(source, defaults)
 end
 
 local function GetDefaultsProfile(formatVersion)
-    local frozenDefaults = COMPACT_PROFILE_DEFAULTS[formatVersion]
-    if frozenDefaults then
-        return frozenDefaults
-    end
-    return ST._defaults and ST._defaults.profile or {}
+    return COMPACT_PROFILE_DEFAULTS[formatVersion]
 end
 
 local function GetSubsystemDefaults(defaultKey, formatVersion)
@@ -649,19 +596,11 @@ local function GetLoadConditionsDefaults(formatVersion, localScope)
     if localScope then
         return LOCAL_LOAD_CONDITIONS_DEFAULTS
     end
-    local entityDefaults = GetEntityDefaults(formatVersion)
-    if entityDefaults and entityDefaults.loadConditions then
-        return entityDefaults.loadConditions
-    end
-    return LOAD_CONDITIONS_DEFAULTS
+    return GetEntityDefaults(formatVersion).loadConditions
 end
 
 local function GetPanelDefaults(formatVersion)
-    local entityDefaults = GetEntityDefaults(formatVersion)
-    if entityDefaults and entityDefaults.panel then
-        return entityDefaults.panel
-    end
-    return PANEL_DEFAULTS
+    return GetEntityDefaults(formatVersion).panel
 end
 
 local function GetPanelCompactLayoutDefault(formatVersion, displayMode)
@@ -679,19 +618,11 @@ local function GetEffectivePanelDefaults(formatVersion, group)
 end
 
 local function GetContainerDefaults(formatVersion)
-    local entityDefaults = GetEntityDefaults(formatVersion)
-    if entityDefaults and entityDefaults.container then
-        return entityDefaults.container
-    end
-    return CONTAINER_DEFAULTS
+    return GetEntityDefaults(formatVersion).container
 end
 
 local function GetContainerDefaultAnchor(formatVersion)
-    local entityDefaults = GetEntityDefaults(formatVersion)
-    if entityDefaults and entityDefaults.containerAnchor then
-        return entityDefaults.containerAnchor
-    end
-    return CONTAINER_DEFAULT_ANCHOR
+    return GetEntityDefaults(formatVersion).containerAnchor
 end
 
 local function BuildPanelDefaultAnchor(containerRef)
@@ -1007,51 +938,6 @@ local function RehydrateScopedStore(store, defaultKey, formatVersion)
     return store
 end
 
-local function NormalizeTextureLibraryStore(store)
-    if type(store) ~= "table" then
-        return store
-    end
-
-    if type(CooldownCompanion.NormalizeAuraTextureLibraryStore) == "function" then
-        return CooldownCompanion:NormalizeAuraTextureLibraryStore(store)
-    end
-
-    -- Retired store (see NormalizeAuraTextureLibraryStore).
-    store.customTextures = nil
-    if type(store.textureFavorites) ~= "table" then
-        store.textureFavorites = {}
-    end
-
-    local legacyFavorites = store.sharedMediaFavorites
-    if type(legacyFavorites) == "table" then
-        for storedKey, storedValue in pairs(legacyFavorites) do
-            if type(storedValue) == "string" then
-                store.textureFavorites[storedValue] = store.textureFavorites[storedValue] or storedValue
-            elseif type(storedValue) == "table" then
-                local favoriteKey = storedValue.favoriteKey
-                if type(favoriteKey) == "string" then
-                    store.textureFavorites[favoriteKey] = store.textureFavorites[favoriteKey] or CopyTable(storedValue)
-                end
-            end
-            legacyFavorites[storedKey] = nil
-        end
-    end
-
-    if type(store.textureFavorites) == "table" then
-        for favoriteKey, favoriteValue in pairs(store.textureFavorites) do
-            local storedFavoriteKey = type(favoriteValue) == "table" and favoriteValue.favoriteKey or nil
-            if (type(favoriteKey) == "string" and string.find(favoriteKey, "^favorite:legacy%-proc:"))
-                or (type(storedFavoriteKey) == "string" and string.find(storedFavoriteKey, "^favorite:legacy%-proc:")) then
-                store.textureFavorites[favoriteKey] = nil
-            end
-        end
-    end
-
-    store.sharedMediaFavorites = nil
-    store.recentProcOverlays = nil
-    return store
-end
-
 local function NormalizeTextureLibraryProfile(profile)
     if type(profile) ~= "table" then
         return profile
@@ -1061,7 +947,8 @@ local function NormalizeTextureLibraryProfile(profile)
         return profile
     end
 
-    profile.auraTextureLibrary = NormalizeTextureLibraryStore(profile.auraTextureLibrary)
+    -- The runtime owns the store's conversion (Core/AuraTexturesPicker.lua).
+    profile.auraTextureLibrary = CooldownCompanion:NormalizeAuraTextureLibraryStore(profile.auraTextureLibrary)
     return profile
 end
 
@@ -1087,7 +974,9 @@ local function CompactProfile(profile, formatVersion)
         return profile
     end
 
-    profile = NormalizeTextureLibraryProfile(CopyTable(profile))
+    -- The input is EncodeSharedPayload's private deep copy, so the in-place
+    -- texture normalize touches only that copy; `compact` is a new table.
+    profile = NormalizeTextureLibraryProfile(profile)
     local profileDefaults = GetDefaultsProfile(formatVersion)
     local globalStyleDefaults = profile.globalStyle or profileDefaults.globalStyle or {}
     local compact = {}
@@ -1304,7 +1193,9 @@ local function CompactDiagnosticSnapshot(snapshot, formatVersion)
         return snapshot
     end
 
-    local compact = CopyTable(snapshot)
+    -- The input is EncodeSharedPayload's private deep copy, so the runtime
+    -- field clears below touch only that copy.
+    local compact = snapshot
 
     if type(compact.profile) == "table" then
         compact.profile = CompactProfile(compact.profile, formatVersion)

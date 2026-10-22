@@ -92,30 +92,17 @@ local function BuildPortableEligibilityIndex(profile)
     return index
 end
 
-local function ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex)
+local function ContainerHasPortableEligibility(containerId, container, eligibilityIndex)
     if EntityHasPortableEligibility(container) then
         return true
     end
 
-    local indexedGroups = eligibilityIndex and eligibilityIndex.panelsByContainerId[containerId]
+    local indexedGroups = eligibilityIndex.panelsByContainerId[containerId]
     if indexedGroups then
         for _, group in ipairs(indexedGroups) do
             if EntityHasPortableEligibility(group) then
                 return true
             end
-        end
-        return false
-    elseif eligibilityIndex then
-        return false
-    end
-
-    local groups = type(profile.groups) == "table" and profile.groups or {}
-    for _, group in pairs(groups) do
-        if type(group) == "table"
-            and group.parentContainerId == containerId
-            and EntityHasPortableEligibility(group)
-        then
-            return true
         end
     end
     return false
@@ -129,8 +116,8 @@ end
 -- class lands in that class's section.
 
 local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
--- Upper bound for class-ID scans, matching Core/GroupOperations.lua and
--- Core/ScopedSettings.lua (both file-local there).
+-- Upper bound for class-ID scans, matching Core/ScopedSettings.lua
+-- (file-local there) and the literal 30 in Column1.lua's class scan.
 local CLASS_SCAN_LIMIT = 30
 
 -- Foreign specs return nothing against the player's own config; the shared
@@ -401,7 +388,7 @@ local function ResolvePortableEligibilityLanding(profile)
     for containerId, container in pairs(groupContainers) do
         if type(container) == "table"
             and container.isGlobal ~= true
-            and ContainerHasPortableEligibility(profile, containerId, container, eligibilityIndex)
+            and ContainerHasPortableEligibility(containerId, container, eligibilityIndex)
         then
             local acc = { classes = {} }
             local foldEntities = { container }
@@ -812,9 +799,6 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         self:SanitizeCursorAnchorPolicy(db.profile)
     end
 
-    if self.RefreshConfigPanel then
-        self:RefreshConfigPanel()
-    end
     if self.RefreshAllGroups then
         self:RefreshAllGroups(options.runtimeReason or "profile-import")
     end

@@ -795,7 +795,9 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
             end
         end
         local db = CooldownCompanion.db
-        local exportData = CopyTable(db.profile)
+        -- Shallow: only top-level keys are added here, and EncodeSharedPayload
+        -- deep-copies before it changes anything.
+        local exportData = CopyTable(db.profile, true)
         exportData._exporterCharKey = db.keys.char
         exportData._characterInfo = db.global.characterInfo
         self.EditBox:SetText(EncodeSharedPayload(exportData, "profile"))
@@ -1614,12 +1616,12 @@ local function ApplyGroupImportData(data, options)
         migrationOk = RunPostImportMigrations()
     end
 
-    -- Refresh even when the migration failed: the groups above are already
-    -- written and there is no rollback, so returning early would only leave
-    -- the config and the live frames describing a profile that no longer
-    -- exists. The failure is reported by RunPostImportMigrations and carried
-    -- out in the return value.
-    CooldownCompanion:RefreshConfigPanel()
+    -- Rebuild the live frames even when the migration failed: the groups
+    -- above are already written and there is no rollback, so returning early
+    -- would only leave them describing a profile that no longer exists. The
+    -- failure is reported by RunPostImportMigrations and carried out in the
+    -- return value. The config repaint belongs to the import door
+    -- (ImportMode's ApplyImportModeReview), which repaints once per click.
     CooldownCompanion:RefreshAllGroups()
     if not deferAnchorRemap then
         PrintImportSanitizerNotes(rootImportState)
@@ -1830,7 +1832,6 @@ local function ApplySetupImportData(data, existingPanelIds)
     -- deferred its migration to this function.
     if resourcesSection then
         CooldownCompanion:ApplyResourceBars()
-        CooldownCompanion:RefreshConfigPanel()
     end
 
     if failed then

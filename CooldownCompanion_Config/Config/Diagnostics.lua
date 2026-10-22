@@ -418,7 +418,9 @@ local function BuildDiagnosticSnapshot(fullProfile)
     snapshot.meta.specNameCache = specNameCache
 
     if fullProfile then
-        snapshot.profile = CopyTable(db.profile)
+        -- Shallow: only top-level keys are added here, and EncodeSharedPayload
+        -- deep-copies before it changes anything.
+        snapshot.profile = CopyTable(db.profile, true)
         snapshot.profile._characterInfo = CopyTable(db.global and db.global.characterInfo or {})
         snapshot.scope = { kind = "full" }
     else

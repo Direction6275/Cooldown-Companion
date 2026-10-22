@@ -1662,6 +1662,21 @@ local MIGRATION_SENTINELS = {
     DURATION_TEXT_VISIBILITY_SENTINEL,
 }
 
+-- Every registered stamp name, current and retired. The export filter
+-- (ExportCodec's IsMigrationSentinelKey) reads it, so a generation bump stays
+-- one registry edit.
+local MIGRATION_SENTINEL_KEYS = {}
+for _, sentinel in ipairs(MIGRATION_SENTINELS) do
+    MIGRATION_SENTINEL_KEYS[sentinel.current] = true
+    for _, key in ipairs(sentinel.retired or {}) do
+        MIGRATION_SENTINEL_KEYS[key] = true
+    end
+end
+
+function ST._IsRegisteredMigrationSentinelKey(key)
+    return MIGRATION_SENTINEL_KEYS[key] == true
+end
+
 -- False when the profile is already stamped; otherwise clears the retired
 -- generations and lets the pass run. The caller stamps sentinel.current
 -- when its transform completes.

@@ -643,6 +643,8 @@ function CooldownCompanion:ClassifyImportReviewText(text)
     return review
 end
 
+-- Appliers rebuild the runtime only; the caller (ImportMode's
+-- ApplyImportModeReview) repaints config once afterwards.
 function CooldownCompanion:ApplyReviewedImport(review)
     if type(review) ~= "table" or review.ok ~= true or review.blockedReason then
         return false
