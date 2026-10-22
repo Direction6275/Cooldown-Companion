@@ -19,11 +19,18 @@ local wipe = wipe
 
 local SOAR_SPELL_ID = 430747
 
+-- Frames store alpha in 1/255 steps: SetAlpha(0.5) reads back as 128/255
+-- (0.50196). An exact compare called such a frame unsettled forever, so a 0.5
+-- baseline kept the 30 Hz driver awake and re-wrote its alpha every pass.
+-- Anything within one step is the same visible alpha.
+local ALPHA_STEP = 1 / 255
+
 local function FrameAlphaDiffers(frame, alpha)
     if not (frame and frame.GetAlpha) then
         return false
     end
-    return frame:GetAlpha() ~= alpha
+    local diff = frame:GetAlpha() - alpha
+    return diff > ALPHA_STEP or diff < -ALPHA_STEP
 end
 
 local function HasLiveAlphaFrames(frames)
