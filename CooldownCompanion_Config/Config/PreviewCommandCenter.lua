@@ -249,9 +249,9 @@ local function BarAuraIndicatorEnabled(group, buttonIndex)
     return ST.IsBarAuraIndicatorEnabled(ResolveTargetStyle(group, buttonIndex)) == true
 end
 
--- Effective pandemic enable (PTR 8 visuals): the effective style's
+-- Effective pandemic enable: the effective style's
 -- explicit-true key, which at entry scope is that entry's own value whenever it
--- customized the Pandemic section â€” the same resolution the live bind gate and
+-- customized the Pandemic section, the same resolution the live bind gate and
 -- the config mirror perform, so the control is never offered where the preview
 -- renders nothing nor hidden at entry scope where the live rig actually renders.
 local function PandemicEffectEnabled(group, buttonIndex)
@@ -281,8 +281,8 @@ end
 
 -- Effective marker enable, the same resolution the live bind gate performs
 -- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
--- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
--- â€” the marker and the effect are independent settings, and the effect is off
+-- tracked-unit default. Deliberately separate from PandemicEffectEnabled above:
+-- the marker and the effect are independent settings, and the effect is off
 -- by default, so sharing that gate would hide the marker preview on almost
 -- every panel.
 local function PandemicMarkerEnabled(group, buttonIndex)
@@ -549,7 +549,7 @@ local CONTROLS = {
         requiresPandemicEffect = true,
         -- No advanced key exists for the bars pandemic FILL rows (enable +
         -- color only), so the gear lands on the Effects tab with the Aura
-        -- Indicators section forced open by name â€” the Pandemic rows are a
+        -- Indicators section forced open by name: the Pandemic rows are a
         -- subheading inside it, and a subheading owns no collapse state of its
         -- own. The section constant is GroupTabs' (EFFECTS_AURA_SECTION); bars
         -- shares it.
@@ -999,8 +999,8 @@ local OBJECT_CONTROLS = {
 }
 
 -- Which objects a surface hosts. The homes list the objects that
--- workspace configures; the buttons workspace lists the bars its unified
--- anchor preview actually draws as lanes, which is also exactly when a
+-- workspace configures; the buttons workspace lists the bars its panel
+-- mirror actually draws attached, which is also exactly when a
 -- bar's settings can be open in the Settings column there.
 local function CollectObjectControls(objects)
     local applicable = {}

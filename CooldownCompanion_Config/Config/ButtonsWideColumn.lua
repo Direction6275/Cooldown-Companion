@@ -1874,8 +1874,8 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         local activePanelId = CS.selectedGroup
         if activePanelId then
             SetButtonsPreviewRenderer(hostFrame, "panel")
-            -- Anchor-aware build: the unified preview (real mirror + attached
-            -- bar lanes) on the anchor panel, the plain mirror elsewhere.
+            -- Anchor-aware build: the mirror (attached bars render inside it)
+            -- plus its quick-toggle badges.
             if ST._BuildAnchorAwarePanelPreview then
                 ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId, outcome)
             elseif ST._BuildButtonPanelPreview then
@@ -1903,18 +1903,10 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         if ST._UpdatePreviewCommandCenter then
             ST._UpdatePreviewCommandCenter(host)
         end
-        if previousReserve == (host._cdcPreviewReserveBottom or 0) then
-            local selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(host, panelId)
-            if not selectionRefreshed and host._cdcUnifiedMirrorHost then
-                selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(
-                    host._cdcUnifiedMirrorHost,
-                    panelId
-                )
-            end
-            if selectionRefreshed then
-                UpdatePreviewDropOverlay()
-                return
-            end
+        if previousReserve == (host._cdcPreviewReserveBottom or 0)
+            and ST._RefreshButtonPanelPreviewSelection(host, panelId) then
+            UpdatePreviewDropOverlay()
+            return
         end
     end
 

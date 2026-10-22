@@ -643,8 +643,8 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
         end
         return false
     end
-    -- Buttons view: the lanes live inside the unified anchor preview on
-    -- the buttons preview host; the mirror refresh self-gates.
+    -- Buttons view: the attached bars render inside the panel mirror on the
+    -- buttons preview host; the mirror refresh self-gates.
     if ST._RefreshButtonsPreviewMirror then
         return ST._RefreshButtonsPreviewMirror(CS.selectedGroup, mirrorReuse == true)
     end

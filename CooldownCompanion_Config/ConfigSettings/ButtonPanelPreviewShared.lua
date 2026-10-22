@@ -665,17 +665,8 @@ end
 -- any of the focused preview's entry interaction or preview-state machinery.
 -- Focused builds explicitly re-enable mouse input when wiring a recycled slot.
 local function DisableReadOnlySlotInteraction(slot)
-    if slot._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
-        ST._ClearConfigShiftTooltipHover(slot._cdcShiftTooltipAdapter)
-    end
-    if ResetBarSlotWorkspaceState then
-        ResetBarSlotWorkspaceState(slot)
-    end
-    slot:EnableMouse(false)
+    ResetBarSlotWorkspaceState(slot)
     ClearSlotInteraction(slot)
-    slot._cdcDraggable = false
-    slot._cdcEntryIndex = nil
-    slot._cdcEntryStatus = nil
     slot._cdcCondAnim = nil
     slot:SetAlpha(1)
     if slot.hoverHighlight then slot.hoverHighlight:Hide() end
@@ -886,7 +877,7 @@ local function SetPreviewMessage(preview, message, title, note)
 
     -- A title opts this message into the focused empty-panel treatment. The
     -- plain-message path remains for read-only and filtered states, and for the
-    -- compact bands beneath Texture and Trigger mirrors.
+    -- compact guidance band beneath an entry-less mirror.
     if title then
         local titleLabel = preview.messageTitle
         if not titleLabel then
@@ -1606,7 +1597,8 @@ local STRIP_ICON_SIZE = 36
 local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
--- Bottom band reserved for compact entry guidance beneath a specialized mirror.
+-- Bottom band reserved for compact entry guidance beneath a mirror that shows
+-- attached bars but no entries.
 local EMPTY_ENTRY_GUIDANCE_BAND = 44
 
 local function GetPanelPreviewNaturalSize(group, includeSections, modules)

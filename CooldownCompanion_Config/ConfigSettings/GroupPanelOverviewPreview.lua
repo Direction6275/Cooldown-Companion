@@ -1522,7 +1522,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
             naturalWidth = math_max(1, tonumber(naturalWidth) or 220),
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
             hasAttachedResources = #modules > 0,
-            previewOptions = { groupOverview = true, includeSections = includeSections, previewModules = modules },
+            previewOptions = { groupOverview = true, previewModules = modules },
             canToggleAnchorLock = not browsingOtherClasses,
         }
         local panelDisabled = panelInfo.group.enabled == false
@@ -1535,10 +1535,6 @@ function ST._BuildGroupPanelOverview(host, containerId)
             record.disabledReason = "Disabled"
         end
         tile.label.text:SetText(record.name)
-        -- Row height is intentionally standardized by the overview. Horizontal
-        -- allocation should therefore follow the Panel's saved-design width,
-        -- not its area (which over-rewards tall, narrow Panels).
-        record.weight = record.naturalWidth
         records[index] = record
         tile._cdcOverviewRecord = record
         ApplyTileBorder(tile, TILE_BORDER_COLOR)

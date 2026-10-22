@@ -626,12 +626,11 @@ do
         return SectionDrag.AnchorTarget(preview, model, best, sourceIndex, laneBlocked)
     end
 
-    --- Is the cursor within `margin` screen pixels of the box the preview
-    --- may use (the Live Preview host in the unified composition, the
-    --- mirror's root otherwise)? A landing's reach can poke past a tightly
-    --- fitted mirror; this is what bounds every resolve.
+    --- Is the cursor within `margin` screen pixels of the mirror's root? A
+    --- landing's reach can poke past a tightly fitted mirror; this is what
+    --- bounds every resolve.
     function SectionDrag.CursorInBox(preview, cursorX, cursorY, margin)
-        local box = preview.laneChromeHost or preview.root
+        local box = preview.root
         if not (box and box.GetScaledRect) then return false end
         local left, bottom, width, height = box:GetScaledRect()
         if not left then return false end
@@ -714,27 +713,6 @@ do
             memberPos = LaneInsertPosition(bestLane, view, cursorX, cursorY),
         }
     end
-
-    --- The unified anchor preview wraps this mirror in the attached bars'
-    --- Layout & Order lanes, and a section gesture's landings can sit on
-    --- the strip above or below the mirror where those lanes sit. Two
-    --- affordances in one place read as a bug, so the lanes go quiet for
-    --- the duration of a section gesture -- the same move arrange mode makes
-    --- when it fades its mover chrome during a drag. Faded while a gesture
-    --- is open (BeginGesture), restored when it ends. Idempotent, and a
-    --- no-op for a mirror with no lanes around it; both directions early-out
-    --- on the state they would write, since a gesture asks on every frame.
-    local function SetLaneChromeFaded(preview, faded)
-        if not (preview.laneChromeHost and ST._SetLayoutOrderLaneChromeFaded) then
-            return
-        end
-        faded = faded and true or false
-        if faded == (preview.laneChromeFaded == true) then return end
-        preview.laneChromeFaded = faded or nil
-        ST._SetLayoutOrderLaneChromeFaded(preview.laneChromeHost, faded)
-    end
-
-    SectionDrag.SetLaneChromeFaded = SetLaneChromeFaded
 
     ------------------------------------------------------------------
     -- Lanes
@@ -1296,13 +1274,8 @@ do
     --- `stateFn(anchor, lane, rect, context)`. Once per (model, key): the
     --- record is written, whether any anchor is free is noted (the overlay
     --- words its line on it), and the hover chip goes (it offers a move
-    --- while a gesture owns the cursor). Every frame: the attached bar
-    --- lanes fade while the gesture is `engaged` (SetLaneChromeFaded), which
-    --- the drags always are and a cursor payload is only while it is on the
-    --- preview (a spell picked up for an action bar must not blank them).
-    --- nil means engaged.
-    function SectionDrag.BeginGesture(preview, model, key, stateFn, context, engaged)
-        SetLaneChromeFaded(preview, engaged ~= false)
+    --- while a gesture owns the cursor).
+    function SectionDrag.BeginGesture(preview, model, key, stateFn, context)
         if preview.gestureModel == model and preview.gestureKey == key then return end
         SectionDrag.HideHandle(preview)
         preview.gestureModel = model
@@ -1322,7 +1295,7 @@ do
         preview.gestureHasFree = hasFree
     end
 
-    --- The record cleared; the attached bar lanes come back. The rebuild
+    --- The record cleared. The rebuild
     --- prologue calls here (the model it read is being replaced), the entry
     --- and handle drags' cancel does, and so does the overlay's hide. The
     --- section outline and the trail are the caller's to settle.
@@ -1334,11 +1307,8 @@ do
         preview.gestureContext = nil
         preview.gestureHasFree = nil
         preview.cursorTarget = nil
-        SetLaneChromeFaded(preview, false)
     end
 
-    ------------------------------------------------------------------
-    -- The landing
     ------------------------------------------------------------------
     -- The landing
     --
@@ -1469,26 +1439,13 @@ do
     -- three questions here: track the cursor and say what it is on, end the
     -- gesture, and say what a release means.
 
-    --- The mirror the Live Preview host is showing: the unified
-    --- composition's inner mirror when attached bars are up (the host's own
-    --- is released then), else the host's own. Same rule DropGhost.Mirror
-    --- applies for the ghost; the drop overlay only ever knows the host.
-    local function CursorMirror(host)
-        local inner = host and host._cdcUnifiedMirrorHost
-        local preview = inner and inner:IsShown() and inner._cdcPanelPreview or nil
-        if preview and preview.root:IsVisible() then
-            return preview
-        end
-        return host and host._cdcPanelPreview
-    end
-
     --- The preview behind `host` and its cursor model, or nothing when this
     --- host offers no section landings: a released or hidden mirror (the
     --- model outlives a release, the root does not), a build with no model
-    --- (a bar, text, Aura or empty panel, a read-only or filtered mirror),
+    --- (a bar, Indicator, Aura or empty panel, a read-only or filtered mirror),
     --- or a mirror of some panel other than the one the drop will add to.
     local function CursorPadModel(host)
-        local preview = CursorMirror(host)
+        local preview = host and host._cdcPanelPreview
         if not (preview and preview.panelId == CS.selectedGroup
             and preview.root:IsVisible() and (preview.content:IsShown()
                 or (preview.dropGhostLayoutActive and preview.dropGhostLayoutActive.content))) then
@@ -1545,7 +1502,7 @@ do
         local inside = SectionDrag.CursorInBox(preview, cursorX, cursorY, 0)
         SectionDrag.BeginGesture(preview, model, "cursor",
             SectionDrag.CursorAnchorState,
-            CooldownCompanion.db.profile.groups[preview.panelId], inside)
+            CooldownCompanion.db.profile.groups[preview.panelId])
         local target
         if inside then
             local view = SectionDrag.View(preview.content)
@@ -1574,7 +1531,7 @@ do
     --- asking: no gesture is live once the overlay hides, and a ring a drop
     --- left behind cannot be told from this frame's by identity.
     function SectionDrag.EndCursorDrop(host)
-        local preview = CursorMirror(host)
+        local preview = host and host._cdcPanelPreview
         if not preview then return end
         SectionDrag.HideSectionOutline(preview)
         SectionDrag.EndGesture(preview)

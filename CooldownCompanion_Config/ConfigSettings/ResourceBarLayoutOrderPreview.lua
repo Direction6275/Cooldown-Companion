@@ -1527,21 +1527,14 @@ end
 -- section draws its own lane around, because one frame cannot sit in two
 -- places.
 --
--- Two ways in, and they compose: `opts.externalPanel` lends instance 1 as an
--- already-built frame, while `opts.panelFrameProvider(index, panelData)` is
--- asked for whichever instance is still unclaimed. The provider is called
--- from the render path that wraps a panel and nowhere else, which is the
--- point of it: a message-only build asks for nothing, so an owner never pays
--- to mirror a panel this canvas was not going to wrap. Returning nil is the
--- defensive leg only (see RenderPanelPlaceholder).
+-- The owner lends frames through `opts.panelFrameProvider(index, panelData)`,
+-- asked once per instance. The provider is called from the render path that
+-- wraps a panel and nowhere else, which is the point of it: a message-only
+-- build asks for nothing, so an owner never pays to mirror a panel this
+-- canvas was not going to wrap. Returning nil is the defensive leg only (see
+-- RenderPanelPlaceholder).
 local function AcquirePanelFrame(preview, parent, panelData, index)
-    local external
-    if index == 1 then
-        external = preview.externalPanelFrame
-    end
-    if not external and preview.panelFrameProvider then
-        external = preview.panelFrameProvider(index, panelData)
-    end
+    local external = preview.panelFrameProvider and preview.panelFrameProvider(index, panelData)
     if external then
         external:SetParent(parent)
         external:Show()
@@ -2831,18 +2824,13 @@ function ST._BuildLayoutOrderPreviewPanel(container, opts)
 
     local preview = EnsurePreviewState(container)
     preview.host = container
-    -- Panel-frame injection (see AcquirePanelFrame): the caller either hands
-    -- over the real button-panel mirror outright, or stands ready to build
-    -- one per instance the render path asks for. Everything lent is hidden
-    -- up front and re-shown only by the render path that uses it, so
-    -- message-only builds don't leave a mirror floating.
+    -- Panel-frame injection (see AcquirePanelFrame): the caller stands ready
+    -- to build the real button-panel mirror per instance the render path asks
+    -- for. Everything lent is hidden up front and re-shown only by the render
+    -- path that uses it, so message-only builds don't leave a mirror floating.
     preview.anchorPanelId = opts and opts.anchorPanelId or GetPreviewPanelId()
-    preview.externalPanelFrame = opts and opts.externalPanel or nil
     preview.panelFrameProvider = opts and opts.panelFrameProvider or nil
     ReleaseLentPanelFrames(preview)
-    if preview.externalPanelFrame then
-        preview.externalPanelFrame:Hide()
-    end
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
     local workspaceKind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or nil
@@ -3134,8 +3122,8 @@ end
 
 -- True when the Layout & Order lanes would actually render bars around an
 -- anchored panel: something enabled and attached, spec layout loaded, and
--- at least one active slot. The unified anchor preview gates on this so it
--- never trades the real mirror for a message-only pane.
+-- at least one active slot. The buttons view gates the attached-bar badge
+-- and the command center's bar controls on this.
 function ST._HasAttachedBarLanesToRender(panelId)
     panelId = panelId or GetPreviewPanelId()
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
@@ -3281,36 +3269,6 @@ function ST._GetLayoutPreviewRenderedSelectionKeys(host)
         return PanelKeys(inner._cdcPanelPreview)
     end
     return preview.renderedSelectionKeys
-end
-
--- The pools that hold this canvas's own lane chrome. A constant, not a literal
--- rebuilt inside the fade below: that runs on a drag's frame budget.
-local LANE_CHROME_POOLS = { "slots", "gaps", "pills" }
-
---- Fade this canvas's bar lanes out of the way (or bring them back).
---- The panel-section drag lays its anchor pads exactly where the wrapped bars
---- sit -- above, below, and beside the icon grid -- and two things claiming the
---- same pixels reads as a bug. Same philosophy as arrange mode fading its mover
---- chrome for the duration of a drag, done config-side.
----
---- Only the lane CHROME fades: the panel mirror the canvas wraps is a frame
---- lent to it by its owner, parented into a lane container, so fading the root
---- or the containers would take the icon grid with it.
---- Alpha, not Hide: the lanes keep their measured size, so nothing reflows and
---- the composition the drag is happening inside cannot move under the cursor.
-function ST._SetLayoutOrderLaneChromeFaded(host, faded)
-    local preview = host and host._cdcLayoutPreview
-    local pools = preview and preview.pools
-    if not pools then return false end
-    -- Written over the whole pool, not just this pass's used range: a pooled
-    -- frame that goes idle mid-gesture must not come back at the faded alpha.
-    local alpha = faded and 0 or 1
-    for _, poolName in ipairs(LANE_CHROME_POOLS) do
-        for _, frame in ipairs(pools[poolName] or {}) do
-            frame:SetAlpha(alpha)
-        end
-    end
-    return true
 end
 
 -- Config-safe icon identity is also used by the button preview family.
