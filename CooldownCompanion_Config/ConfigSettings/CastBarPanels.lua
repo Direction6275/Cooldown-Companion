@@ -26,7 +26,7 @@ local ROW_SECTION = { leftAligned = true }
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a rebuild
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a rebuild
 -- allocates none of them; the channel-tick spec stays inline at its site
 -- because its checkbox sequence also repaints the canvas, so it rides `run`.
 local TURNON_SHOW_ICON = { label = "Enable Spell Icon", key = "showIcon" }

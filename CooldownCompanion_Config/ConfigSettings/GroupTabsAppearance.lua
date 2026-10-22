@@ -64,7 +64,7 @@ local KEYBIND_CUSTOM_TOOLTIP = {
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a tab
 -- rebuild allocates none of them.
 local TURNON_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
 local TURNON_CHARGE_TEXT = { label = "Enable Count Text", key = "showChargeText" }
@@ -128,7 +128,7 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- section is this gear inside", this one answers "which OVERRIDE section owns
 -- this gear's values". Keep them apart - they are read for different reasons.
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a section's gear.
 -- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
 -- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
@@ -1438,6 +1438,10 @@ local function BuildAppearanceTab(container, settingsGroup)
                 -- cannot clear (the never-share-a-key rule the bar name offsets
                 -- and Duration Format both follow). So they are openly
                 -- PANEL-OWNED and wear the grey "Panel setting" label.
+                -- Under a panel settings context (group._settingsContext) they
+                -- instead open the cooldownText lens section itself, so they
+                -- read, write and wear that section's scope; the grey panel
+                -- label is the no-context path.
                 local sharedPosition = group._settingsContext and BeginLensSection(lens, group, "cooldownText", { column = panel })
                 local positionStyle = sharedPosition and sharedPosition.tbl or group.style
                 local anchorRow, offsetXRow, offsetYRow = AddTextPositionControls(panel, positionStyle,

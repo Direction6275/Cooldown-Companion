@@ -279,7 +279,7 @@ local function AddRowTooltipLines(lines)
 end
 
 -- One tooltip per row, three sources: the row's own lines, a slider's range,
--- and the style-lens scope explanation (Helpers.lua's grey-row chrome). The
+-- and the style-lens scope explanation (StyleLens.lua's grey-row chrome). The
 -- scope lines are a SEPARATE channel rather than an append to tooltipLines
 -- because their owners are different - the call site describes the setting,
 -- the lens describes whose values it is showing - and because they are shown
@@ -336,7 +336,7 @@ end
 -- belongs to the control the owner cannot use, not to the whole line. It is
 -- delivered by a transparent overlay pinned over the row's CONTROL region,
 -- created lazily on the row and shown only while the row carries scope lines
--- (Helpers' AttachRowScopeChrome sets them, and clears them on release).
+-- (StyleLens.lua's AttachRowScopeChrome sets them, and clears them on release).
 --
 -- The region is "leftmost control -> the control column's right edge, full row
 -- height": every control is pinned to that right edge, so each row type only

@@ -26,9 +26,9 @@ local AddFontControls = ST._AddFontControls
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 
--- Style lens (Helpers.lua). Selecting an entry turns these tabs into a view of
+-- Style lens (StyleLens.lua). Selecting an entry turns these tabs into a view of
 -- that entry's effective values, with per-section scope deciding where - or
--- whether - each section writes. Helpers.lua loads first (the .toc), so these
+-- whether - each section writes. StyleLens.lua loads first (the .toc), so these
 -- resolve at load like every other import above.
 -- ResolveLensSection is kept for the finder predicates below, which only ask
 -- a section's scope; every section that draws rows goes through the host
@@ -63,7 +63,7 @@ local tabInfoButtons = CS.tabInfoButtons
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a tab
 -- rebuild allocates none of them.
 local TURNON_BAR_NAME_TEXT = { label = "Enable Name Text", key = "showBarNameText" }
 local TURNON_BAR_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
@@ -142,7 +142,7 @@ local EFFECTS_INTERACTION_SECTION = "effects_interaction"
 -- beside it: that map answers "which COLLAPSE section is this gear inside",
 -- this one answers "which OVERRIDE section owns this gear's values".
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a section's gear.
 -- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
 -- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
@@ -284,7 +284,7 @@ end
 -- them for a consumer that cannot see the tab, and each is a one-liner copied
 -- from the gate it cites so drift shows up in a diff.
 --
--- The consumer is the entry Settings pane's Customizations list (Helpers.lua):
+-- The consumer is the entry Settings pane's Customizations list (EntryCustomizations.lua):
 -- it gates a row's name LINK on `available`, because a click landing on a tab
 -- that never draws the section goes nowhere, and its advanced gear on both,
 -- because a gear queues a panel that a gear which was never built can never
@@ -352,9 +352,6 @@ ST._SECTION_HOME.bars = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         available = BarsGroupTracksAura,
     },
-    -- Icon Zoom is edited inside the Show Icon gear's advanced panel in bar
-    -- mode, so its home is that gear's section.
-    iconZoom = { tab = "appearance", collapseKey = "barappearance_textIcon" },
     -- The bar-host slice of While Aura Active (aura icon swap + active-state
     -- desaturate; the keep-swipe/keep-text keys are icons-only in effect).
     -- Both rows render on the icon square, so the section is drawn only while

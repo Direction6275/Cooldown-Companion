@@ -345,21 +345,7 @@ local function MakeWidgetTreeInert(widget, hideReverts)
         end
     end
 
-    -- A row inside a locked advanced panel whose OWN nested lens section is
-    -- independently writable (bar mode's Icon Zoom, customized while Bar Icon
-    -- itself is inherited) opts out of the lock: greying it would leave an
-    -- override the user just created with no live control. The flag is set
-    -- only while a read-only build is underway and consumed here in the same
-    -- BuildEditorContents call, so it can never ride a pooled widget into a
-    -- later build. It exempts exactly the widget's OWN disable: the revert
-    -- above still hides, and children are still walked, so a future flag on
-    -- a container row cannot silently unlock a whole subtree.
-    local exempt = widget._cdcReadOnlyExempt
-    if exempt then
-        widget._cdcReadOnlyExempt = nil
-    end
-
-    if not exempt and widget.SetDisabled then
+    if widget.SetDisabled then
         widget:SetDisabled(true)
     end
 
@@ -863,12 +849,11 @@ end
 
 -- Read-only gate for a locked advanced panel, applied AFTER the build so the
 -- panel can never drift from its live twin - the same built-like-live rule the
--- main column's inert ranges follow. Runs before the unlock strip is appended,
--- so the sweep covers exactly the build's own rows. One traversal: the
--- hideReverts flag folds the revert-glyph hiding (owner ruling 2026-08-31,
--- see MakeWidgetTreeInert) into the same walk, and embedded rows with their
--- OWN lens sections (bar mode's Icon Zoom inside Bar Icon Advanced) keep
--- their scope chrome live - Customize is the escape hatch into the section.
+-- main column's inert ranges follow. The unlock strip is built into the editor
+-- above this body (AdvancedSettingsPanel.lua BuildEditorContents), so the
+-- sweep covers exactly the build's own rows. One traversal: the hideReverts
+-- flag folds the revert-glyph hiding (owner ruling 2026-08-31, see
+-- MakeWidgetTreeInert) into the same walk.
 local function MakeAdvancedPanelReadOnly(scroll)
     local children = scroll and scroll.children
     if not children then

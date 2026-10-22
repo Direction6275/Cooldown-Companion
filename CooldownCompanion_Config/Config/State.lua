@@ -282,10 +282,10 @@ ST._configState = {
     -- One-shot navigated-setting highlight request: written by the gear /
     -- Customizations navigation writers (PreviewCommandCenter), matched by
     -- the section and advanced-gear builders during the rebuild, consumed by
-    -- the deferred scroll-and-pulse fire (ConfigSettings/Helpers.lua).
+    -- the deferred scroll-and-pulse fire (ConfigSettings/SettingsNavigation.lua).
     pendingSettingHighlight = nil,
     -- One-shot semantic scroll handoff between the Panel and Entry lenses.
-    -- Helpers.lua owns both the active heading registry and the pending anchor.
+    -- SettingsNavigation.lua owns both the active heading registry and the pending anchor.
     lensAnchorRegistry = nil,
     pendingLensAnchor = nil,
 

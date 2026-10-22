@@ -24,7 +24,7 @@ local AddEditBoxRow = ST._AddEditBoxRow
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
 
--- Style lens (Helpers.lua): only read here to know whether an entry selection
+-- Style lens (StyleLens.lua): only read here to know whether an entry selection
 -- is active, so the panel-scope note can speak. Nothing in this tab lenses.
 local ResolveStyleLens = ST._ResolveStyleLens
 local AddLensPanelScopeNote = ST._AddLensPanelScopeNote

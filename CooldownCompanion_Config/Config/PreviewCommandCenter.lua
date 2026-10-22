@@ -1212,7 +1212,7 @@ end
 -- Force one collapsible open, on BOTH sides of the style lens.
 --
 -- Which key a collapsible actually uses is ST._ResolveLensCollapseKey's call
--- (Helpers.lua): a section the selected entry cannot edit gets its OWN
+-- (StyleLens.lua): a section the selected entry cannot edit gets its OWN
 -- lens-scoped key and opens collapsed the first time that key is seen. Which
 -- side a given collapse key landed on is a per-tab fact - the same key names a
 -- whole mixed section on one panel and one lens section on another - so this
@@ -1261,13 +1261,12 @@ local function NavigateToSectionHome(sectionId, opts)
         CS.CancelPickAuraTexture()
     end
 
-    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- One-shot navigated-setting highlight request (fired and cleared by SettingsNavigation.lua):
     -- ForceSectionOpen below records the section keys on it, the rebuild
     -- records the destination widgets, and the scheduled fire after the
     -- refresh scrolls to and pulses the most specific one - the row wearing
     -- the advanced key, else the section's own anchor row, else the section
-    -- heading. The format row names a whole tab rather than a setting, so it
-    -- makes no request.
+    -- heading.
     if sectionId or home or (opts and opts.advancedKey) then
         CS.pendingSettingHighlight = {
             presentation = editing and editing.presentation,
@@ -1462,7 +1461,7 @@ local function NavigateToPreviewSettings(bar)
         CS.CancelPickAuraTexture()
     end
 
-    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- One-shot navigated-setting highlight request (fired and cleared by SettingsNavigation.lua):
     -- ApplyGearRoute's section opens record their keys on it, the rebuild
     -- records the destination widgets, and the scheduled fire after the
     -- refresh scrolls to and pulses the most specific one - the row wearing

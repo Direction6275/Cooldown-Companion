@@ -58,7 +58,7 @@ local ROW_SECTION = { leftAligned = true }
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock / opts.advancedUnlock (resolved only at
--- panel-build time by ST._ResolveAdvancedUnlock, Helpers.lua). File-local
+-- panel-build time by ST._ResolveAdvancedUnlock, StyleLens.lua). File-local
 -- constants so a tab rebuild allocates none of them.
 local TURNON_PROC_GLOW = {
     label = "Enable Proc Glow",

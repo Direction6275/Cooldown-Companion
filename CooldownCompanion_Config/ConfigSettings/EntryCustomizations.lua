@@ -371,8 +371,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     -- Row-grammar label rows in the grid's left column, so the list keeps the
     -- config's half-width cell instead of stretching across the pane. The
     -- revert glyph rides the label's badge chain; the reason is the row's
-    -- hover tooltip. Read at call time, not load time: RowWidgets and Helpers
-    -- have no load-order contract between them.
+    -- hover tooltip. Read at call time, not load time: RowWidgets.lua loads
+    -- after this file (TOC order).
     local AddLabelRow = ST._AddLabelRow
     local AnchorRowBadge = ST._AnchorRowBadge
     local listLeft = ST._BeginRowGrid(scroll)
@@ -409,11 +409,10 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         -- advanced panel carries the gear too, so the list is one click from the
         -- deep settings rather than a stop on the way to them.
         --
-        -- ACTIVE rows only, and never the Text Format row. An inactive section
-        -- is not drawn anywhere in this mode, so the tab it would land on builds
-        -- no gear to consume the queue and the panel would never open; the
-        -- format row is a flat field with no section and no advanced panel at
-        -- all. Both fall out of the gates below rather than being special-cased.
+        -- ACTIVE rows only. An inactive section is not drawn anywhere in this
+        -- mode, so the tab it would land on builds no gear to consume the queue
+        -- and the panel would never open. That falls out of the gates below
+        -- rather than being special-cased.
         --
         -- The gear ALSO has to exist at the destination: a structural gate
         -- (Masque, the fill-timer interlock) can leave a drawn section with no
@@ -468,8 +467,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
             -- row still explains itself under the pointer.
             WireScopeTextHover(nav, reasonText)
             -- The route resolves the destination itself, from the same
-            -- registry consulted above; the format row has no section and
-            -- names its tab instead.
+            -- registry consulted above.
             local sectionId = item.sectionId
             nav:SetScript("OnClick", function()
                 if moduleContext then
