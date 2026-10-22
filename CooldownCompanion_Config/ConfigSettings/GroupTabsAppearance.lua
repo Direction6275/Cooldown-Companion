@@ -1287,7 +1287,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
-    -- every builder runs with { row = true } and no rightColumn.
+    -- every builder runs with no rightColumn.
     --
     -- The three count colors are the panel's longest labels. They end in a 19px
     -- swatch, which is the narrow control the row grammar reserves long labels
@@ -1300,7 +1300,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- read-only inherited view the unlock strip fronts.
     local function BuildChargeTextAdvanced(panel)
         AddFontControls(panel, chargeSec.tbl, "charge", { size = 12 }, refreshStyle, {
-            row = true,
             settings = {
                 size = APPEARANCE_FINDER.count.fontSize,
                 font = APPEARANCE_FINDER.count.font,
@@ -1373,7 +1372,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         })
 
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
-        -- { row = true } and no rightColumn.
+        -- no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
@@ -1388,7 +1387,6 @@ local function BuildAppearanceTab(container, settingsGroup)
                     completeEdit = refreshStyleSettings,
                 })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
-                row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraText.fontSize,
                     font = APPEARANCE_FINDER.auraText.font,
@@ -1521,10 +1519,9 @@ local function BuildAppearanceTab(container, settingsGroup)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
             AddFontControls(panel, auraStackSec.tbl, "auraStack", { size = 12 }, refreshStyle, {
-                row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraStacks.fontSize,
                     font = APPEARANCE_FINDER.auraStacks.font,
@@ -1578,7 +1575,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     local function BuildKeybindTextAdvanced(panel)
         AddTextPositionControls(panel, kbSec.tbl, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshStyle, {
             defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
@@ -1586,7 +1583,6 @@ local function BuildAppearanceTab(container, settingsGroup)
             settings = APPEARANCE_FINDER.keybind,
         })
         AddFontControls(panel, kbSec.tbl, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
-            row = true,
             settings = {
                 size = APPEARANCE_FINDER.keybind.fontSize,
                 font = APPEARANCE_FINDER.keybind.font,
@@ -1820,7 +1816,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
         refreshStyleSettings()
     end, group.masqueEnabled or borderSec.disabled, {
-        row = true,
         setting = APPEARANCE_FINDER.border.thickness,
     })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()

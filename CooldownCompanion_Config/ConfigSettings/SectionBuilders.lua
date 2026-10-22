@@ -187,7 +187,7 @@ end
 -- whether it is there or not. It always indents, because it is always a child
 -- of the stacks toggle it explains, and row labels never wrap, so the sentence
 -- also says its piece on hover.
-local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
+local function AddAuraStackMaxStatusLabel(container, maxStacks)
     local statusText = GetAuraStackMaxStatusText(maxStacks)
 
     return AddLabelRow(container, {
@@ -997,7 +997,6 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
         RefreshStructuralControls(container, refreshCallback)
     end, nil, {
-        row = true,
         setting = settings.thickness,
     })
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then

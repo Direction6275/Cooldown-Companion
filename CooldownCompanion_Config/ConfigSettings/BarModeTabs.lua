@@ -882,7 +882,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- scope, and wears the section's chrome itself when Bar Settings has no
     -- rows on screen.
     local function AddBarDurationFormat(column, textSec)
-        local formatOpts = { row = true, sharedHelp = true, infoButtons = tabInfoButtons,
+        local formatOpts = { sharedHelp = true, infoButtons = tabInfoButtons,
             setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat }
         if not group._attachedBarOwner then
             local row = AddDurationFormatDropdown(column, group.style, refreshStyle, formatOpts)
@@ -961,7 +961,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     local function BuildBarNameTextAdvanced(panel)
         AddTextPositionControls(panel, nameSec.tbl,
             "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", refreshStyle, {
@@ -1057,7 +1057,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     --
     -- The three count colors are the panel's longest labels. They end in a 19px
     -- swatch, the narrow control the row grammar reserves long labels for, and
@@ -1116,7 +1116,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
     -- CDC-EditBoxRow embeds a stock EditBox, so the raw frame the Instructions
     -- text hangs on is still reachable through row.editbox.
     local function BuildBarReadyTextAdvanced(panel)
@@ -1143,7 +1143,6 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
         })
         AddFontControls(panel, readySec.tbl, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
-            row = true,
             settings = BAR_FINDER.advanced.ready and {
                 size = BAR_FINDER.advanced.ready.fontSize,
                 font = BAR_FINDER.advanced.ready.font,
@@ -1188,7 +1187,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildBarAuraTextAdvanced(panel)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
@@ -1292,7 +1291,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
             AddTextPositionControls(panel, auraStackSec.tbl, "auraStackAnchor", "auraStackXOffset", "auraStackYOffset", refreshStyle, {
                 defaults = {anchor = "BOTTOMLEFT", x = 2, y = 2, range = 20},
@@ -1451,16 +1450,13 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- opts.singleRail suppresses it and rails the border effect and the two
     -- fill effects onto the panel scroll in order.
     --
-    -- The panel captures the section's WRITE table with the panel style
-    -- behind it in opts - the styleTable + fallbackStyle pair a customized
-    -- section passes. The section's enable toggle lives on the row above,
-    -- never in the shared builder.
+    -- The panel captures the section's resolved table (sec.tbl). The
+    -- section's enable toggle lives on the row above, never in the shared
+    -- builder.
     local function BuildBarActiveAuraAdvanced(panel)
         BuildBarActiveAuraControls(panel, auraSec.tbl, refreshStyle, {
-            row = true,
             singleRail = true,
             infoButtons = tabInfoButtons,
-            fallbackStyle = auraSec.fallbackStyle,
             settings = BAR_FINDER.advanced.activeAura,
         })
     end
@@ -1852,11 +1848,9 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "unusableDimming") then
         local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
         local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, refreshStyle, {
-            row = true,
             advanced = unusableSec.scope ~= "denied",
             advancedUnlock = { sec = unusableSec,
                 enable = unusableSec.read.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
-            fallbackStyle = unusableSec.fallbackStyle,
             setting = BAR_FINDER.effects.spell.unusable,
             settings = BAR_FINDER.advanced.unusable,
         })
@@ -1889,7 +1883,6 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "lossOfControl") then
         local locSec = BeginLensSection(lens, group, "lossOfControl")
         local locRow = BuildLossOfControlControls(stateRight, locSec.tbl, refreshStyle, {
-            row = true,
             setting = BAR_FINDER.effects.spell.lossOfControl,
         })
         locRow:SetDisabled(locSec.disabled)
@@ -1922,12 +1915,10 @@ local function BuildBarEffectsTab(container, group, style)
         local tooltipRow = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function(operation)
             return refreshStyle(operation or "style-settings", "interaction")
         end, {
-            row = true,
             advanced = tooltipSec.scope ~= "denied",
             advancedUnlock = { sec = tooltipSec,
                 enable = tooltipSec.read.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
             infoButtons = tabInfoButtons,
-            fallbackStyle = tooltipSec.fallbackStyle,
             setting = BAR_FINDER.effects.interaction.tooltips,
             settings = BAR_FINDER.advanced.tooltip,
         })
@@ -1947,7 +1938,6 @@ local function BuildBarEffectsTab(container, group, style)
         BuildAllowPingsControls(interactionRight, style, function(operation)
             return refreshStyle(operation or "style", "interaction")
         end, {
-            row = true,
             setting = BAR_FINDER.effects.interaction.pings,
         })
         pingsSec:Finish()

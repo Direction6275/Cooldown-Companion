@@ -481,7 +481,6 @@ local function BuildIndicatorIconAppearance(container, group)
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
     end, nil, {
-        row = true,
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderThickness,
     })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
@@ -573,8 +572,8 @@ end
 
 -- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per effect, its advanced
 -- gear chained off the label. Called exactly once per effect from the
--- Indicator Effects tab below, so it was converted outright rather than
--- growing an opts.row mode. `container` is the grid column the row belongs to.
+-- Indicator Effects tab below, so it was converted outright. `container` is
+-- the grid column the row belongs to.
 --
 -- Native aura sources draw the same rows without Animate When and Only In
 -- Combat: their effects always run while Blizzard shows the aura, since

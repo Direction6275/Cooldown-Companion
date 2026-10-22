@@ -172,7 +172,7 @@ local function BuildRows(column, group, id)
                 onRelease=function(value) set(key,value) end })
         elseif widget == "border" then
             local _, modeRow = ST._AddBorderRenderModeDropdown(column,sec.tbl,key,refresh,sec.disabled,
-                {row=true,setting=setting,label=label})
+                {setting=setting,label=label})
             row = modeRow
         elseif widget == "zoom" then
             row = ST._BuildIconZoomControls(column,sec.tbl,refresh,{setting=setting,
@@ -204,7 +204,7 @@ local function BuildRows(column, group, id)
             if widget == "font" then
                 local prefix = key:sub(1,-5)
                 ST._AddFontControls(column,sec.tbl,prefix,{size=10,sizeMin=6,sizeMax=32},refresh,{
-                    row=true,settings={font=setting,size=finder[scope][prefix.."FontSize"],outline=finder[scope][prefix.."FontOutline"]}})
+                    settings={font=setting,size=finder[scope][prefix.."FontSize"],outline=finder[scope][prefix.."FontOutline"]}})
             end
         end
     end

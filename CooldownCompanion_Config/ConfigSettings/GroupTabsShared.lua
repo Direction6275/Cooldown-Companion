@@ -109,10 +109,9 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
             end
 
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
-            -- column, so every builder is called with { row = true } and no
-            -- rightColumn, and each falls back to `container` for its extras.
+            -- column, so every builder is called with no rightColumn, and
+            -- each falls back to `container` for its extras.
             AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, {
-                row = true,
                 settings = finderSettings and {
                     size = finderSettings.fontSize,
                     font = finderSettings.font,

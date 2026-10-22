@@ -1135,7 +1135,6 @@ local function BuildResourceBarAnchoringPanel(container)
     BuildAlphaControls(container, settings, function()
         applyBars("style-settings")
     end, "rb_alpha", {
-        row = true,
         isGlobal = group and group.isGlobal,
         disabled = inheritsPanelAlpha,
         -- Attached resources follow the panel's alpha until customized, so the
@@ -1307,7 +1306,6 @@ local function BuildResourceBarPositioningPanel(container)
             -- column, immediately across the 16px gutter.
             local targetLeft, targetRight = BeginRowGrid(container)
             BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
-                row = true,
                 pickContainer = targetRight,
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                     and RESOURCE_FINDER.primary.anchor.frame,
@@ -1335,13 +1333,11 @@ local function BuildResourceBarPositioningPanel(container)
 
             AddAnchorDropdown(stackLeft, anchor, "point", "CENTER",
                 refreshResourceBarAnchor, "Anchor Point", {
-                    row = true,
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                         and RESOURCE_FINDER.primary.anchor.point,
                 })
             AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER",
                 refreshResourceBarAnchor, "Relative Point", {
-                    row = true,
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                         and RESOURCE_FINDER.primary.anchor.relativePoint,
                 })

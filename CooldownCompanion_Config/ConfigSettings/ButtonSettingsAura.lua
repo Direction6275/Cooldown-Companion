@@ -213,7 +213,7 @@ local function AddCandidateRow(container, buttonData, spellID)
         if RemoveAuraCandidate(buttonData, removedID, OnCandidateListChanged) then
             RefreshAuraConfig()
         end
-    end, { row = true })
+    end)
 end
 
 local AURA_TRACKING_TOOLTIP = {
@@ -795,7 +795,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
                 end
 
-                AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })
+                AddAuraStackMaxStatusLabel(panel, maxStacks)
             end,
         })
     end

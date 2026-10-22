@@ -152,7 +152,7 @@ end
 
 local function TextControls(left, right, style, prefix, settings, isBar, isName)
     ST._AddFontControls(left, style, prefix, { size = isName and 10 or 12 }, Refresh,
-        { row = true, settings = settings })
+        { settings = settings })
     Tint(left, settings.color, style, prefix .. "FontColor", {1, 1, 1, 1})
     if isBar then
         ST._AddTextPositionControls(right, style,

@@ -2086,7 +2086,7 @@ end
 -- is inactive, while unusable, at zero charges or stacks, and while not
 -- equipped, each stated as one Show / Dim / Hide style dropdown. Built on the Visibility tab for a single entry and on the
 -- batch surface for a selection; both draw the row grammar, so this builder
--- was converted outright rather than growing an opts.row mode.
+-- was converted outright.
 local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchContext)
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end

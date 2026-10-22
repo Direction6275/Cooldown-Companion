@@ -1706,9 +1706,7 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- leadingRows = fn(leftTarget, rightTarget), settings = finder descriptor map }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
--- and a two-column grid of fixed-height rows. Every caller opts in, so there is
--- no stock shape left to draw; opts.row is accepted and ignored for callers
--- that still state it.
+-- and a two-column grid of fixed-height rows.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local finderSettings = opts.settings or {}

@@ -940,7 +940,6 @@ local function BuildLayoutTab(container)
         if targetMode == "cursor" then
             AddAnchorDropdown(positionLeft, group.anchor, "point", "BOTTOMLEFT",
                 RefreshCursorAnchor, "Panel Point", {
-                    row = true,
                     setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.panelPoint,
                 })
             AddOffsetSliders(positionRight, group.anchor, "x", "y", {
@@ -949,7 +948,6 @@ local function BuildLayoutTab(container)
                 range = 2000,
                 step = 1,
             }, RefreshCursorAnchor, {
-                row = true,
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
                     y = LAYOUT_FINDER.position.yOffset,
@@ -987,7 +985,6 @@ local function BuildLayoutTab(container)
         else
             AddAnchorDropdown(positionLeft, settings, "point", "CENTER",
                 RefreshTextureVisual, anchorLabel, {
-                    row = true,
                     setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.displayPoint,
                 })
             -- "Group" is the screen only for an Indicator outside a group.
@@ -996,7 +993,6 @@ local function BuildLayoutTab(container)
                 RefreshTextureVisual,
                 targetsScreen and "Screen Point" or "Target Point",
                 {
-                    row = true,
                     setting = LAYOUT_FINDER.position and (targetsScreen
                         and LAYOUT_FINDER.position.screenPoint
                         or LAYOUT_FINDER.position.targetPoint),
@@ -1007,7 +1003,6 @@ local function BuildLayoutTab(container)
                 range = 2000,
                 step = 1,
             }, RefreshTextureVisual, {
-                row = true,
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
                     y = LAYOUT_FINDER.position.yOffset,
@@ -1298,7 +1293,6 @@ local function BuildLayoutTab(container)
         refreshGroupAnchor,
         targetMode == "cursor" and "Panel Point" or "Anchor Point",
         {
-            row = true,
             setting = LAYOUT_FINDER.position and (
                 targetMode == "cursor" and LAYOUT_FINDER.position.panelPoint
                 or LAYOUT_FINDER.position.anchorPoint),
@@ -1307,7 +1301,6 @@ local function BuildLayoutTab(container)
     if targetMode ~= "cursor" then
         AddAnchorDropdown(positionLeft, group.anchor, "relativePoint", "CENTER",
             refreshGroupAnchor, "Relative Point", {
-                row = true,
                 setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.relativePoint,
             })
     end

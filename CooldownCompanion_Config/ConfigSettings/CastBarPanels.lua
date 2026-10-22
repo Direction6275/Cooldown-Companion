@@ -513,7 +513,6 @@ local function BuildCastBarPositioningPanel(container)
     -- the 16px gutter.
     local targetLeft, targetRight = BeginRowGrid(container)
     BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshCastBarAnchor, {
-        row = true,
         pickContainer = targetRight,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorFrame,
     })
@@ -537,11 +536,9 @@ local function BuildCastBarPositioningPanel(container)
     })
 
     AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", {
-        row = true,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorPoint,
     })
     AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", {
-        row = true,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.relativePoint,
     })
 
@@ -770,7 +767,6 @@ local function BuildCastBarStylingPanel(container)
                 CS.RefreshAdvancedSettingsPanel()
             end
         end, nil, {
-            row = true,
             indent = true,
             setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderThickness,
         })
