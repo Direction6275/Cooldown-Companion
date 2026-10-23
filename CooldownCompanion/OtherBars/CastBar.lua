@@ -1673,8 +1673,11 @@ end
 
 -- Resource-only edits and native aura tails change attachment geometry, not
 -- cast styling. Retain full lifecycle convergence for suspended bars and
--- independent movers, whose setup belongs to ApplyCastBarSettings.
+-- independent movers, whose setup belongs to ApplyCastBarSettings. One anchor
+-- pass: the check here and every layout step under it resolve the same panel
+-- (GroupOperations.lua BeginModuleAnchorPass).
 function CooldownCompanion:RefreshCastBarAttachment()
+    ST.BeginModuleAnchorPass()
     local settings = GetCastBarSettings()
     local groupId = settings and GetEffectiveAnchorGroupId(settings)
     local group = groupId and self.db.profile.groups[groupId]
@@ -1690,9 +1693,11 @@ function CooldownCompanion:RefreshCastBarAttachment()
             HandleCastEvent(castEventFrame, "PLAYER_ENTERING_WORLD")
         end
         self:RefreshUnlockToolbar()
+        ST.EndModuleAnchorPass()
         return
     end
     self:EvaluateCastBar({ skipRuntimeGate = true })
+    ST.EndModuleAnchorPass()
 end
 
 ------------------------------------------------------------------------
