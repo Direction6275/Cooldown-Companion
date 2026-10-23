@@ -14,6 +14,7 @@ local type = type
 local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
+local GetTime = GetTime
 local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
 -- ArrangeMode.lua
@@ -242,6 +243,35 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     return true
 end
 
+-- Pass-scoped anchor memo. ACTIVE ONLY between BeginModuleAnchorPass and
+-- EndModuleAnchorPass, which wrap the module phase of a panel attachment
+-- refresh (BarsAndFramesRuntime.lua), the compact suppression read below and a
+-- cast bar re-attach. Panel visibility has settled before each opens, and the
+-- bar, cast bar and frame-anchor layouts inside ask this same question many
+-- times (about 60 walks of every panel per Cat/Bear swap, 2026-10-22 trace).
+-- With no pass open the search runs unmemoized. A remembered panel is checked
+-- again on every hit, so one that dropped out mid-pass takes the full walk, and
+-- an empty answer is never remembered. The stamp is the frame time the pass
+-- opened, so an error escaping before the end call cannot carry the memo into
+-- a later frame.
+local anchorPassDepth = 0
+local anchorPassStamp = 0
+local anchorMemo = {}
+
+function ST.BeginModuleAnchorPass()
+    local now = GetTime()
+    if anchorPassDepth == 0 or anchorPassStamp ~= now then
+        anchorPassDepth, anchorPassStamp = 0, now
+        wipe(anchorMemo)
+    end
+    anchorPassDepth = anchorPassDepth + 1
+end
+
+function ST.EndModuleAnchorPass()
+    if anchorPassDepth > 0 then anchorPassDepth = anchorPassDepth - 1 end
+    if anchorPassDepth == 0 then wipe(anchorMemo) end
+end
+
 function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
     local db = self.db.profile
     local groups = db.groups
@@ -249,6 +279,20 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
     local containers = db.groupContainers
     if not containers then return nil end
     specId = specId or self._currentSpecId
+    local requireShown = options and options.requireShown
+
+    local memoKey
+    if anchorPassDepth > 0 and anchorPassStamp == GetTime() then
+        memoKey = tostring(specId) .. (requireShown and "|shown" or "")
+            .. (options and options.configured and "|configured" or "")
+        local remembered = anchorMemo[memoKey]
+        if remembered and self:IsGroupAvailableForAnchoring(remembered, specId, options) then
+            local frame = self.groupFrames and self.groupFrames[remembered]
+            if not requireShown or (frame and frame:IsShown()) then
+                return remembered
+            end
+        end
+    end
 
     -- One walk over the panels, bucketed by container, in place of one
     -- GetPanels walk-and-sort per container: this runs on the bars-and-frames
@@ -299,7 +343,8 @@ function CooldownCompanion:GetFirstAvailableAnchorGroup(specId, options)
             for _, panelInfo in ipairs(panels) do
                 if self:IsGroupAvailableForAnchoring(panelInfo.groupId, specId, options) then
                     local frame = self.groupFrames and self.groupFrames[panelInfo.groupId]
-                    if not (options and options.requireShown) or (frame and frame:IsShown()) then
+                    if not requireShown or (frame and frame:IsShown()) then
+                        if memoKey then anchorMemo[memoKey] = panelInfo.groupId end
                         return panelInfo.groupId
                     end
                 end
@@ -322,6 +367,7 @@ local function CollectStableExternalAnchorCompactReasons(self)
         reasons[#reasons + 1] = reason
     end
     local frameSettings = self:GetFrameAnchoringSettings()
+    ST.BeginModuleAnchorPass()
     for _, kind in ipairs({ "resources", "castbar", "player", "target" }) do
         local settings = kind == "resources" and self:GetResourceBarSettings()
             or kind == "castbar" and self:GetCastBarSettings() or frameSettings
@@ -338,6 +384,7 @@ local function CollectStableExternalAnchorCompactReasons(self)
             end
         end
     end
+    ST.EndModuleAnchorPass()
     return byPanel
 end
 

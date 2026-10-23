@@ -3845,7 +3845,40 @@ end
 -- their spares), so binds style the spares in full, then stop every animation
 -- CC started on them. Blizzard's own pandemic animations are left alone. If
 -- the hand-out order ever changes, a spare shows with its effects frozen.
-local function HoldPooledSpareStill(kit)
+--
+-- Spares are also restyled only when their entry or its look may have changed.
+-- Rebinds that follow game state (RUNTIME_REBIND_REASONS: a shapeshift's
+-- availability pass, CDM viewer-map churn, resource bar swaps, the roster)
+-- restyle only the frame each group shows. A panel-scoped request (populate,
+-- style, config, aura-panel) bumps that panel's epoch; any other request bumps
+-- the shared one. A spare stamped with an older epoch or another entry is
+-- restyled at its next bind. A Cat/Bear swap restyled all 54 Buffs spares, most
+-- of CC's share of that hitch (2026-10-22 trace).
+local spareStyleEpoch = 0
+local panelStyleEpochs = {}
+local RUNTIME_REBIND_REASONS = {
+    availability = true, ["viewer-map"] = true, resources = true, roster = true,
+}
+
+local function HostsToStyle(hosts, buttonData, groupId)
+    local panelEpoch = panelStyleEpochs[groupId] or 0
+    local index = 0
+    return function()
+        repeat
+            index = index + 1
+            local host = hosts[index]
+            if host and (index == #hosts or host.styledEntry ~= buttonData
+                or host.styledEpoch ~= spareStyleEpoch or host.styledPanelEpoch ~= panelEpoch) then
+                return index, host
+            end
+        until not host
+    end
+end
+
+local function HoldPooledSpareStill(host, buttonData, groupId)
+    local kit = host.kit
+    host.styledEntry, host.styledEpoch = buttonData, spareStyleEpoch
+    host.styledPanelEpoch = panelStyleEpochs[groupId] or 0
     ST._StopKitGlowAnimations(kit.glow)
     if kit.pandemicGlow then
         ST._StopKitGlowAnimations(kit.pandemicGlow)
@@ -3950,10 +3983,13 @@ local function BindBlockGroup(group, entry)
     container:SetAuraGroupCandidateFilters(group.key,
         BuildCandidateFilters(group.unit, entry.spellSet))
     group.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the one shown: initializeFrame ran
-    -- once per pooled frame at group creation, and each stays a complete
-    -- fallback. Only the last one animates (HoldPooledSpareStill).
-    for index, host in ipairs(group.hosts) do
+    -- Style every owned frame the group could hand out, not just the one shown:
+    -- initializeFrame ran once per pooled frame at group creation, and each
+    -- stays a complete fallback. Only the last one animates, and spares are
+    -- restyled only on a change (HoldPooledSpareStill).
+    local owner = group.record.owner
+    local ownerId = owner and owner.groupId
+    for index, host in HostsToStyle(group.hosts, entry.buttonData, ownerId) do
         ApplyPanelHostGeometry(group, host)
         host.proxy._ccWholeAuraPanel = false
         ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
@@ -3966,7 +4002,7 @@ local function BindBlockGroup(group, entry)
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
         if index < #group.hosts then
-            HoldPooledSpareStill(host.kit)
+            HoldPooledSpareStill(host, entry.buttonData, ownerId)
         end
         -- Attached entries honor panel tooltip settings. Converge reused
         -- frames every bind.
@@ -4725,10 +4761,12 @@ local function BindPanelGroup(pgroup, entry)
     container:SetAuraGroupCandidateFilters(pgroup.key,
         BuildCandidateFilters(pgroup.unit, entry.spellSet))
     pgroup.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the one shown: initializeFrame ran
-    -- once per pooled frame at group creation, and each stays a complete
-    -- fallback. Only the last one animates (HoldPooledSpareStill).
-    for index, host in ipairs(pgroup.hosts) do
+    -- Style every owned frame the group could hand out, not just the one shown:
+    -- initializeFrame ran once per pooled frame at group creation, and each
+    -- stays a complete fallback. Only the last one animates, and spares are
+    -- restyled only on a change (HoldPooledSpareStill).
+    local panelId = pgroup.record.groupId
+    for index, host in HostsToStyle(pgroup.hosts, entry.buttonData, panelId) do
         ApplyPanelHostGeometry(pgroup, host)
         -- Both whole Aura Panels and ordinary-panel aura sections use the
         -- auraPanel host kit. Preserve the distinction explicitly: only the
@@ -4746,7 +4784,7 @@ local function BindPanelGroup(pgroup, entry)
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
         if index < #pgroup.hosts then
-            HoldPooledSpareStill(host.kit)
+            HoldPooledSpareStill(host, entry.buttonData, panelId)
         end
         -- Tooltips: an Aura Panel cell has no CC button under it, so this frame
         -- is the ONLY surface a tooltip could hang off — panels therefore honor
@@ -5620,8 +5658,14 @@ end
 function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     if not self.db then return end
     rebindRequestCount = rebindRequestCount + 1
-    if groupId and (reason == "populate" or reason == "style"
-        or reason == "config" or reason == "aura-panel") then
+    local panelScoped = groupId and (reason == "populate" or reason == "style"
+        or reason == "config" or reason == "aura-panel")
+    if panelScoped then
+        panelStyleEpochs[groupId] = (panelStyleEpochs[groupId] or 0) + 1
+    elseif not RUNTIME_REBIND_REASONS[reason] then
+        spareStyleEpoch = spareStyleEpoch + 1
+    end
+    if panelScoped then
         if not fullRebindRequested then panelRebindIds[groupId] = true end
     elseif reason == "resources" then
         if not fullRebindRequested then

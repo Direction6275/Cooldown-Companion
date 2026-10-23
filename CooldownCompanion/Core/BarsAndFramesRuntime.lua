@@ -251,6 +251,10 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
 
     FinishPanelRefreshCompletion(refresh, true)
 
+    -- Panel visibility is settled from here on, so every module layout below
+    -- shares one anchor search per question (GroupOperations.lua
+    -- BeginModuleAnchorPass).
+    ST.BeginModuleAnchorPass()
     local opts = { skipRuntimeGate = true, skipCompactSuppression = true }
     local resourceMethod = evaluate and (refresh.full and "evaluate" or refresh.resourceBars)
     if resourceMethod and flags.resourceBars then
@@ -293,6 +297,7 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     if evaluate and not flags.resourceBars and not flags.castBar then
         CallIfAvailable("RefreshUnlockToolbar")
     end
+    ST.EndModuleAnchorPass()
     FinishPanelRefreshCompletion(refresh)
     attachmentRefresh = nil
     completionGuard:Hide()
