@@ -3836,6 +3836,35 @@ local function BarCellInset(style)
         style.borderSize or ST.DEFAULT_BORDER_SIZE, style)
 end
 
+-- A group's pooled frames are handed out last-in, first-out: AcquireFrame
+-- takes the newest available frame and ReleaseFrame puts it back on top
+-- (Blizzard_AuraContainerFrameProviders.lua). With maxFrameCount 1 a group
+-- never holds two, so it only ever shows the LAST frame its batch created and
+-- the other nine stay hidden. Hidden AnimationGroups keep running (2026-10-22:
+-- six "dashes" glow entries cost ~0.3 ms and ~1.5 ms of frame time through
+-- their spares), so binds style the spares in full, then stop every animation
+-- CC started on them. Blizzard's own pandemic animations are left alone. If
+-- the hand-out order ever changes, a spare shows with its effects frozen.
+local function HoldPooledSpareStill(kit)
+    ST._StopKitGlowAnimations(kit.glow)
+    if kit.pandemicGlow then
+        ST._StopKitGlowAnimations(kit.pandemicGlow)
+    end
+    if kit.barFillPulseAG then
+        kit.barFillPulseAG:Stop()
+        kit.barFillCsAG:Stop()
+    end
+    if kit.stackFillPulseAG then
+        kit.stackFillPulseAG:Stop()
+        kit.stackFillCsAG:Stop()
+    end
+    if kit.stackBlockFill then
+        for _, tex in ipairs(kit.stackBlockFill.fills) do
+            tex.shift:Stop()
+        end
+    end
+end
+
 -- SetAuraGroupLayout REPLACES the whole options table, so every field the
 -- group needs is written every time. elementSpacing must stay 0: the flow
 -- layout advances the cursor by elementSpacing after an element AND adds
@@ -3921,10 +3950,10 @@ local function BindBlockGroup(group, entry)
     container:SetAuraGroupCandidateFilters(group.key,
         BuildCandidateFilters(group.unit, entry.spellSet))
     group.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the assigned one: initializeFrame
-    -- ran once per pooled frame at group creation, and which frame the group
-    -- hands out next is Blizzard's business.
-    for _, host in ipairs(group.hosts) do
+    -- Re-style every owned frame, not just the one shown: initializeFrame ran
+    -- once per pooled frame at group creation, and each stays a complete
+    -- fallback. Only the last one animates (HoldPooledSpareStill).
+    for index, host in ipairs(group.hosts) do
         ApplyPanelHostGeometry(group, host)
         host.proxy._ccWholeAuraPanel = false
         ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
@@ -3936,6 +3965,9 @@ local function BindBlockGroup(group, entry)
             unit = group.unit,
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
+        if index < #group.hosts then
+            HoldPooledSpareStill(host.kit)
+        end
         -- Attached entries honor panel tooltip settings. Converge reused
         -- frames every bind.
         host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
@@ -4693,10 +4725,10 @@ local function BindPanelGroup(pgroup, entry)
     container:SetAuraGroupCandidateFilters(pgroup.key,
         BuildCandidateFilters(pgroup.unit, entry.spellSet))
     pgroup.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the assigned one: initializeFrame
-    -- ran once per pooled frame at group creation, and which frame the group
-    -- hands out next is Blizzard's business.
-    for _, host in ipairs(pgroup.hosts) do
+    -- Re-style every owned frame, not just the one shown: initializeFrame ran
+    -- once per pooled frame at group creation, and each stays a complete
+    -- fallback. Only the last one animates (HoldPooledSpareStill).
+    for index, host in ipairs(pgroup.hosts) do
         ApplyPanelHostGeometry(pgroup, host)
         -- Both whole Aura Panels and ordinary-panel aura sections use the
         -- auraPanel host kit. Preserve the distinction explicitly: only the
@@ -4713,6 +4745,9 @@ local function BindPanelGroup(pgroup, entry)
             unit = pgroup.unit,
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
+        if index < #pgroup.hosts then
+            HoldPooledSpareStill(host.kit)
+        end
         -- Tooltips: an Aura Panel cell has no CC button under it, so this frame
         -- is the ONLY surface a tooltip could hang off — panels therefore honor
         -- the panel's own Show Tooltips setting rather than forcing motion off
