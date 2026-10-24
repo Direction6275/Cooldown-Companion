@@ -373,9 +373,9 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
 end
 
 -- Row grammar (RowWidgets.lua): a left-aligned collapsible header and the
--- environment toggles as CDC-CheckBoxRows in a two-column grid. Returns that
--- grid's two columns so the caller can park a section action in the shorter
--- one.
+-- environment toggles as CDC-CheckBoxRows in a row grid. Returns that grid's
+-- two columns: the toggles fill the first, so a section action the caller
+-- parks in the second comes last.
 local function AddScopedLoadConditionToggles(container, opts)
     local target = opts.target
     if not target.loadConditions and not opts.preserveMissing then
@@ -418,18 +418,15 @@ local function AddScopedLoadConditionToggles(container, opts)
         if onChanged then onChanged() end
     end
 
-    -- LEFT column: the instanced content. RIGHT column: everything else,
-    -- ending with the two that ship pre-checked. Nine options split 5/4, which
-    -- is as even as an odd list gets. Locked rows keep their long "(locked by
-    -- ...)" suffix: a row label runs the full width of its cell minus the
-    -- 140px control column, which is far more room than the half-width
-    -- checkbox they replaced had.
+    -- The instanced content first, then everything else, ending with the two
+    -- that ship pre-checked. Locked rows keep their long "(locked by ...)"
+    -- suffix: a row label runs the full row width minus the 140px control
+    -- column.
     local togglesLeft, togglesRight = BeginRowGrid(container)
-    local splitAt = math.ceil(#LOAD_CONDITION_OPTIONS / 2)
 
-    for index, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
-        local row = AddCheckboxRow(index <= splitAt and togglesLeft or togglesRight, {
+        local row = AddCheckboxRow(togglesLeft, {
             label = inheritedLabel
                 and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r")
                 or cond.label,
@@ -2362,16 +2359,14 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    -- Every row here belongs to a FAMILY, the unit the grid is poured by.
-    -- Which families survive depends on the entry type, so this is a FILTERED
-    -- row set (see the fill rule in the recipe comment at the top of
-    -- BuildAppearanceTab's icons path): the families are collected first, then
-    -- poured into the grid LEFT column first until it holds half the rows.
-    -- Every family is one row now: a state dropdown, or one of the two plain
-    -- toggles that survived.
+    -- Every row here belongs to a FAMILY. Which families survive depends on
+    -- the entry type, so this is a FILTERED row set: the families are
+    -- collected first, then written into the grid in order. Every family is
+    -- one row now: a state dropdown, or one of the two plain toggles that
+    -- survived.
     local families, totalRows = {}, 0
     local function AddFamily(rows, build)
-        families[#families + 1] = { rows = rows, build = build }
+        families[#families + 1] = { build = build }
         totalRows = totalRows + rows
     end
 
@@ -2739,11 +2734,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
         local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
         if not visCollapsed then
-            local visLeft, visRight = BeginRowGrid(scroll)
-            local placed, half = 0, math.ceil(totalRows / 2)
+            local visColumn = BeginRowGrid(scroll)
             for _, family in ipairs(families) do
-                family.build(placed < half and visLeft or visRight)
-                placed = placed + family.rows
+                family.build(visColumn)
             end
         end
     end
@@ -3194,8 +3187,8 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, o
     })
 
     if opts.allowClear or CooldownCompanion:HasLocalLoadConditions(buttonData) then
-        -- Compact and flush left, filling the shorter (4-row) right column's
-        -- tail. With the section collapsed there is no grid to sit in, so it
+        -- Compact and flush left, last, in the grid's second column under the
+        -- toggles. With the section collapsed there is no grid to sit in, so it
         -- falls back to the tab surface - still reachable, still compact.
         local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")

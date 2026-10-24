@@ -14,13 +14,10 @@ local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 -- draws from these: the pre-redesign stock shapes are gone, so there is only
 -- one shape left per section.
 --
--- opts.rightColumn is the second half of the grid the CALLER opened: a builder
--- with a natural two-column split writes its "what it looks like / where it
--- lands" rows there and its "what it is drawn with" rows into `container`.
--- Builders that ignore it simply fill the left column, which is what the
--- fill-LEFT-first rule asks for. The styling tabs pass it wherever a section
--- opens its own two-column grid (for example the bar aura indicator's
--- effects grid).
+-- opts.rightColumn is the second column of the grid the CALLER opened: a
+-- builder that reads it writes its "what it looks like / where it lands" rows
+-- there, below its "what it is drawn with" rows in `container`. Builders that
+-- ignore it write everything into `container`.
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
 local AddDropdownRow = ST._AddDropdownRow
@@ -28,7 +25,6 @@ local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
-local BeginRowGrid = ST._BeginRowGrid
 local CleanRecycledEntry = ST._CleanRecycledEntry
 
 -- Dropdown items past ~16 characters need a menu wider than the 140px control
@@ -441,14 +437,13 @@ end
 
 -- FAMILY COLUMN CAPTIONS
 --
--- The standing rule for the styling tabs is that a section's LEFT column holds
--- the cooldown/spell settings and its RIGHT column the aura ones. The rule is
--- only useful if it is visible, so a two-column grid that genuinely splits that
--- way names its columns once at the top.
+-- The standing rule for the styling tabs is that a section's first column holds
+-- the cooldown/spell settings and its second column the aura ones. The columns
+-- stack, so a grid that genuinely splits that way captions each block once at
+-- its top, and the AURA caption reads as the divider between the two lists.
 --
--- Row grammar, not a Heading: a caption occupies exactly one row slot in each
--- column, so the two columns' first real rows stay on the same line - which is
--- the whole point of a top-aligned grid. The look is the read-only voice
+-- Row grammar, not a Heading: a caption occupies one row slot at the top of
+-- each column. The look is the read-only voice
 -- (RowWidgets' SetCaption: small, grey), deliberately quieter than the gold
 -- subheadings above it, and the row carries no control, no badge and no
 -- tooltip.
@@ -1168,9 +1163,8 @@ local function BuildIconTintControls(leftColumn, rightColumn, sec, opts)
         })
     end
 
-    -- The right column runs 2-3 rows short of the left one, so the section
-    -- action fills its empty tail instead of hanging off the bottom of the
-    -- grid. No wrapper needed: SetAutoWidth leaves widget.width nil, so the
+    -- The section action goes last, inside the grid's second column under its
+    -- color rows. No wrapper needed: SetAutoWidth leaves widget.width nil, so the
     -- column's List layout neither stretches nor right-anchors it and it sits
     -- flush left under the last row.
     --
@@ -2269,40 +2263,26 @@ local FILL_EFFECTS_TOOLTIP = {
     {"The bar fill breathes (pulse) or cycles color (color shift) while the aura is active. Use the preview toggle to see them without a live aura.", 1, 1, 1, true},
 }
 
--- Row grammar only (RowWidgets.lua): the builder opens its own two-column grid
--- on `container` and returns the two columns. LEFT is the border effect (style,
--- its color, its per-style sliders); RIGHT is the two fill effects and their
--- children.
---
--- opts.singleRail suppresses that grid: an advanced settings panel is ONE
--- narrow column (AdvancedSettingsPanel.lua), where a two-column split would
--- leave ~150px per cell, so both halves rail onto `container` itself in the
--- order they are written. It is additive - the two tab callers that omit it get
--- byte-identical output - and railing onto the container is also what keeps the
--- panel's refresh seam intact, since RefreshStructuralControls only routes to
--- the panel rebuild while it can still see the scroll's own
+-- Row grammar only (RowWidgets.lua). Its one caller is the Active Aura
+-- Indicator advanced panel (BarModeTabs.lua), so every row rails onto
+-- `container`, the panel scroll, in the order written: the border effect
+-- (style, its color, its per-style sliders), then the two fill effects and
+-- their children. Railing onto the container is also what keeps the panel's
+-- refresh seam intact, since RefreshStructuralControls only routes to the
+-- panel rebuild while it can still see the scroll's own
 -- _isAdvancedSettingsPanel marker.
 local function BuildBarActiveAuraControls(container, styleTable, refreshCallback, opts)
     opts = opts or {}
 
-    local effectsLeft, effectsRight
-    if opts.singleRail then
-        effectsLeft, effectsRight = container, container
-    else
-        effectsLeft, effectsRight = BeginRowGrid(container)
-    end
-
-    -- The LEFT column IS the border effect, which is exactly what the shared
-    -- glow builder draws - style, its color, its per-style sliders.
-    -- Delegating rather than re-implementing is what keeps every surface on one
-    -- store.
-    BuildGlowStyleControls(effectsLeft, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
+    -- The border effect is exactly what the shared glow builder draws - style,
+    -- its color, its per-style sliders. Delegating rather than re-implementing
+    -- is what keeps every surface on one store.
+    BuildGlowStyleControls(container, styleTable, refreshCallback, BAR_AURA_EFFECT_CFG, {
         previewRefresh = opts.previewRefresh,
         settings = opts.settings,
-        advancedKey = not opts.singleRail and "barAuraEffectBorder" or nil,
     })
 
-    local pulseRow = AddCheckboxRow(effectsRight, {
+    local pulseRow = AddCheckboxRow(container, {
         label = "Pulse Bar Fill",
         setting = opts.settings and opts.settings.pulseFill,
         value = styleTable.barAuraPulseEnabled == true,
@@ -2320,8 +2300,8 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
     -- pinned Buttons preview. The live apply lands on release in either case.
     local previewRefresh = opts.previewRefresh or ST._RefreshSelectedButtonsPreview
 
-    local function BuildPulseDetails(panel)
-        AddSliderRow(panel, {
+    local function BuildPulseDetails(column)
+        AddSliderRow(column, {
             label = "Fill Pulse Duration",
             setting = opts.settings and opts.settings.pulseFillDuration,
             indent = true,
@@ -2337,21 +2317,9 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         })
 
     end
-    if opts.singleRail then
-        if styleTable.barAuraPulseEnabled == true then BuildPulseDetails(effectsRight) end
-    else
-        ST._AddAdvancedToggle(pulseRow, "barAuraEffectPulse", {}, true, {
-            unlock = styleTable.barAuraPulseEnabled ~= true and { enable = {
-                label = "Enable Bar Fill Pulse", run = function()
-                    styleTable.barAuraPulseEnabled = true
-                    RefreshStructuralControls(container, refreshCallback)
-                end,
-            } } or nil,
-            build = BuildPulseDetails,
-        })
-    end
+    if styleTable.barAuraPulseEnabled == true then BuildPulseDetails(container) end
 
-    local shiftRow = AddCheckboxRow(effectsRight, {
+    AddCheckboxRow(container, {
         label = "Color Shift Bar Fill",
         setting = opts.settings and opts.settings.colorShiftFill,
         value = styleTable.barAuraColorShiftEnabled == true,
@@ -2361,8 +2329,8 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         end,
     })
 
-    local function BuildShiftDetails(panel)
-        AddSliderRow(panel, {
+    local function BuildShiftDetails(column)
+        AddSliderRow(column, {
             label = "Fill Shift Duration",
             setting = opts.settings and opts.settings.colorShiftDuration,
             indent = true,
@@ -2377,7 +2345,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
             end,
         })
 
-        AddColorRow(panel, {
+        AddColorRow(column, {
             label = "Shift Color",
             setting = opts.settings and opts.settings.shiftColor,
             indent = true,
@@ -2390,21 +2358,7 @@ local function BuildBarActiveAuraControls(container, styleTable, refreshCallback
         })
 
     end
-    if opts.singleRail then
-        if styleTable.barAuraColorShiftEnabled == true then BuildShiftDetails(effectsRight) end
-    else
-        ST._AddAdvancedToggle(shiftRow, "barAuraEffectShift", {}, true, {
-            unlock = styleTable.barAuraColorShiftEnabled ~= true and { enable = {
-                label = "Enable Bar Fill Color Shift", run = function()
-                    styleTable.barAuraColorShiftEnabled = true
-                    RefreshStructuralControls(container, refreshCallback)
-                end,
-            } } or nil,
-            build = BuildShiftDetails,
-        })
-    end
-
-    return effectsLeft, effectsRight
+    if styleTable.barAuraColorShiftEnabled == true then BuildShiftDetails(container) end
 end
 
 local KPH_STYLE_OPTIONS = {["solid"] = "Solid Border", ["overlay"] = "Overlay"}

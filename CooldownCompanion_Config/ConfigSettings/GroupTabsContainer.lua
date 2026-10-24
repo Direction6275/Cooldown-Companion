@@ -274,7 +274,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
         end
 
         -- The switch that gates everything else in this section, in a grid of
-        -- its own so the alpha builder below can open its own two columns.
+        -- its own so the alpha builder below can open its own grid.
         local switchLeft = BeginRowGrid(scroll)
 
         local groupAlphaRow = AddCheckboxRow(switchLeft, {
@@ -387,10 +387,8 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
                 and next(container.loadConditions.specAllowlist) ~= nil)
             or (type(container.heroTalents) == "table" and next(container.heroTalents) ~= nil)
         if hasOwnSpecs then
-            -- Compact and inside the grid. It clears exactly what the right
-            -- column holds, so it sits at that column's tail even though the
-            -- left one is usually shorter - meaning wins over balance for a
-            -- control this destructive.
+            -- Compact and inside the grid. It clears exactly what the second
+            -- column holds, so it sits last, at that column's tail.
             local clearBtn = AceGUI:Create("Button")
             clearBtn:SetText("Clear All Spec Filters")
             clearBtn:SetAutoWidth(true)

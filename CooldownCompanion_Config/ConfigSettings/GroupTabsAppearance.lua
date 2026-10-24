@@ -746,18 +746,19 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- Row grammar (RowWidgets.lua): every setting below is a fixed-height row
     -- - label left, control right-aligned in a 140px control column,
     -- gear/info/scope badges chained off the end of the label. Rows sit in
-    -- curated two-column grids from BeginRowGrid, each section splitting its
-    -- rows along whatever line reads naturally for that section. Sections with
-    -- too little to split keep the left column only.
+    -- grids from BeginRowGrid, whose two columns stack at full width: the
+    -- first column's rows read above the second's, so every section is one
+    -- list of rows.
     --
-    -- Standing ruling (owner, 2026-07-27) - the two rules every row-grammar
+    -- Standing rules (owner, 2026-10-24, retiring the 2026-07-27 rule that
+    -- balanced the two columns side by side) - the two rules every row-grammar
     -- section on every tab follows:
     --
-    -- 1. Split the rows so the columns run as even as the semantics allow.
-    --    Meaning still wins where the two disagree: rows that must stay
-    --    adjacent (one disables the next) stay adjacent, and a gated row can
-    --    leave its column short, because the grid top-aligns its columns and
-    --    a short side just ends early.
+    -- 1. A section reads as one list, top to bottom. A parent row and the rows
+    --    it gates stay adjacent, a family caption (AddFamilyColumnCaptions)
+    --    heads each family as a divider, and rows that come out of a filter
+    --    (event families, a gate) keep their order - there is no column to
+    --    balance, so a filter only shortens the list.
     -- 2. Every section is collapsible (BuildCollapsibleSection with a
     --    ROW_SECTION header). A collapsed section builds none of its rows, so
     --    any gear inside one needs queue-safe uncollapse wiring: whatever
@@ -767,16 +768,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     --    (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) read by the preview command
     --    center; bar mode's text section names its key on the route itself
     --    (`uncollapse`). Either shape is fine; having neither is not.
-    -- 3. When a section's row set comes out of a FILTER - event families, a
-    --    gate, anything that can delete whole groups of rows before they are
-    --    assigned - fill the LEFT column first. A populated right column
-    --    beside an empty left one is never acceptable. A semantic split that
-    --    survives the filter intact still wins (both halves populated), but
-    --    the moment the filter leaves only one of them the survivors split
-    --    themselves across the columns left-first, ceil(n/2) left. The entry
-    --    Sound Alerts section is the worked example: it splits cooldown-family
-    --    left / aura-family right when an entry has both, and an aura-only
-    --    entry's three dropdowns 2/1 instead of 0/3.
     --
     -- Section headers are left-aligned (ROW_SECTION) and own the vertical air
     -- BEFORE their section, so sections never butt together and nothing here
@@ -786,9 +777,8 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- and flush left: SetAutoWidth(true),
     -- never SetFullWidth. A page-wide button is louder than every setting it
     -- sits under, and both List and Flow anchor their children from the left,
-    -- so no alignment wrapper is needed. They go INSIDE the grid, filling the
-    -- shorter column's empty tail, rather than below it - a lopsided section
-    -- with a lone button hanging off the bottom reads as unfinished.
+    -- so no alignment wrapper is needed. They go last, still INSIDE the grid
+    -- (its last column), never straight onto the full-width container below.
     -- ================================================================
     local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
     -- An Aura Panel draws no cooldown text (nothing on it has a cooldown), so
@@ -1134,9 +1124,9 @@ local function BuildAppearanceTab(container, settingsGroup)
         AddFamilyColumnCaptions(otherLeft, otherRight)
     end
 
-    -- Ordinary icon panels give cooldown and aura parallel columns. Aura
+    -- Ordinary icon panels list the cooldown rows, then the aura rows. Aura
     -- Panels have no cooldown consumer, so their duration and other-text rows
-    -- share the left half, leaving the right column empty.
+    -- all go in the first column, leaving the second empty.
     local auraTextHost = usesOnlyAura and durationLeft or durationRight
 
     local durationFormatAdded = false

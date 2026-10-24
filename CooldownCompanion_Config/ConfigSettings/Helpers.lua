@@ -1706,7 +1706,7 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- leadingRows = fn(leftTarget, rightTarget), settings = finder descriptor map }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
--- and a two-column grid of fixed-height rows.
+-- and a row grid of fixed-height rows.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local finderSettings = opts.settings or {}
@@ -1754,8 +1754,8 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
     -- LEFT column holds the baseline and the four combat/mount force
     -- conditions, RIGHT the unit and mouseover conditions plus the fade
-    -- behaviour they all share. Both halves are top-aligned, so the gated
-    -- child rows on either side just end their column early.
+    -- behaviour they all share. Gated child rows sit right under the row that
+    -- gates them.
     local leftTarget, rightTarget = ST._BeginRowGrid(container)
 
     -- One caller leads the grid with rows of its own: the panel Visibility tab

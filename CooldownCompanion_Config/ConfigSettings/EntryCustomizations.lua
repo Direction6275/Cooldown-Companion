@@ -368,8 +368,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         return
     end
 
-    -- Row-grammar label rows in the grid's left column, so the list keeps the
-    -- config's half-width cell instead of stretching across the pane. The
+    -- Row-grammar label rows in the grid's first column, never straight onto
+    -- the full-width container. The
     -- revert glyph rides the label's badge chain; the reason is the row's
     -- hover tooltip. Read at call time, not load time: RowWidgets.lua loads
     -- after this file (TOC order).

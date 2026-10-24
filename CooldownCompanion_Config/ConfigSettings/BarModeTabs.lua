@@ -1396,17 +1396,11 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): this builder's row path opens
-    -- its own two-column grid, which a ~330px panel has no room for, so
-    -- opts.singleRail suppresses it and rails the border effect and the two
-    -- fill effects onto the panel scroll in order.
-    --
     -- The panel captures the section's resolved table (sec.tbl). The
     -- section's enable toggle lives on the row above, never in the shared
     -- builder.
     local function BuildBarActiveAuraAdvanced(panel)
         BuildBarActiveAuraControls(panel, auraSec.tbl, refreshStyle, {
-            singleRail = true,
             infoButtons = tabInfoButtons,
             settings = BAR_FINDER.advanced.activeAura,
         })
@@ -1564,11 +1558,9 @@ local function BuildBarEffectsTab(container, group, style)
     -- An Aura Panel keeps NONE of the States rows below (the panel predicate
     -- denies every one of them), so that section is skipped outright rather
     -- than re-columned, and the Interaction section at the foot leads with Show
-    -- Tooltips in its left column on every bar panel - the standing fill rule
-    -- (stated in full in the recipe comment at the top of BuildAppearanceTab's
-    -- icons path in GroupTabsAppearance.lua, rule 3). What this predicate still
-    -- decides is the icon-square block: an Aura Panel opens it for Show
-    -- Tooltips alone, with the bar icon hidden.
+    -- Tooltips on every bar panel. What this predicate still decides is the
+    -- icon-square block: an Aura Panel opens it for Show Tooltips alone, with
+    -- the bar icon hidden.
     local isAuraPanel = ST.IsAuraPanelGroup(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
@@ -1858,8 +1850,8 @@ local function BuildBarEffectsTab(container, group, style)
 
         if not interactionCollapsed then
         -- LEFT column: the hover behavior. RIGHT column: the click behavior,
-        -- which an Aura Panel does not offer - and the fill-left-first rule is
-        -- why the hover row is on the left rather than beside an empty column.
+        -- which an Aura Panel does not offer, so there the hover row is the
+        -- whole section.
         local interactionLeft, interactionRight = BeginRowGrid(container)
 
         local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })

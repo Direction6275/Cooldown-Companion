@@ -810,8 +810,8 @@ local function BuildEffectsTab(container, settingsGroup)
     -- Row grammar (RowWidgets.lua) - icons mode only; every other display
     -- mode returned above. Each setting is a fixed-height row (label left,
     -- control right-aligned in a 140px column, gear/info/scope badges
-    -- chained off the end of the label), and each section splits its rows
-    -- into a curated two-column grid from BeginRowGrid.
+    -- chained off the end of the label), and each section lists its rows in
+    -- a BeginRowGrid grid, whose two columns stack at full width.
     --
     -- THREE sections, and all three collapse like every other row-grammar
     -- section: Cooldown / Spell Indicators, Aura Indicators, Interaction (owner
@@ -1414,8 +1414,8 @@ local function BuildEffectsTab(container, settingsGroup)
 
     if not interactionCollapsed then
     -- LEFT column: the hover behavior. RIGHT column: the click behavior, which
-    -- an Aura Panel does not offer - and the fill-left-first rule is why the
-    -- hover row is on the left rather than beside an empty column.
+    -- an Aura Panel does not offer, so there the hover row is the whole
+    -- section.
     local interactionLeft, interactionRight = BeginRowGrid(container)
 
     -- Show Tooltips. Its gear is the builder's own and always builds while

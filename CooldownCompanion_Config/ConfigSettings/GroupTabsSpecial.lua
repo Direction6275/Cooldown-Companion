@@ -714,12 +714,11 @@ local function BuildIndicatorEffectsTab(container, group)
         "effects_triggerEffects", nil, nil, ROW_SECTION)
 
     if not effectsCollapsed then
-        -- The offered set is FILTERED (Text Only drops one effect), so
-        -- the rows fill the left column first: ceil(n/2) left, the rest right.
-        local effectLeft, effectRight = BeginRowGrid(container)
-        local splitAt = math.ceil(#effectOrder / 2)
-        for index, effectKey in ipairs(effectOrder) do
-            BuildIndicatorEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
+        -- The offered set is FILTERED (Text Only drops one effect); the rows
+        -- that remain are written in order.
+        local effectColumn = BeginRowGrid(container)
+        for _, effectKey in ipairs(effectOrder) do
+            BuildIndicatorEffectSection(effectColumn, group, effects, effectKey)
         end
     end
 end

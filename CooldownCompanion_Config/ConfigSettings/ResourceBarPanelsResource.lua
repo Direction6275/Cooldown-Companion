@@ -438,7 +438,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
     -- LEFT column: the resource's own value text. RIGHT column: the recharge
     -- readout, which only runes have - every other resource leaves it empty,
-    -- and the grid top-aligns its columns, so a short side just ends early.
+    -- and an empty column takes no height.
     local textLeft, textRight = BeginRowGrid(container)
     ST._AddSettingsSubheading(textLeft, name .. " Value Text")
     if capturedPt == 5 then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
@@ -1206,7 +1206,7 @@ local function BuildResourceBarPositioningPanel(container)
         -- orientation above it, and is disabled otherwise. RIGHT column: the
         -- one setting that belongs to the choice of anchoring rather than to
         -- the stack itself - where its alpha comes from. Independent stacks
-        -- have no panel to inherit from, so that side ends early.
+        -- have no panel to inherit from, so that column stays empty.
         local placementLeft, placementRight = BeginRowGrid(container)
 
         local placementFinder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement or {}
@@ -1693,17 +1693,14 @@ local function BuildResourceColorControls(container, settings, powerType, specID
         return true
     end
 
-    -- One list with no internal grouping to split on, so the columns are cut
-    -- purely for balance: the first half reads down the left, the rest down
-    -- the right, in the order the descriptors declare.
-    local colorLeft, colorRight = BeginRowGrid(container)
-    local leftCount = math.ceil(#descriptors / 2)
+    -- One list, in the order the descriptors declare.
+    local colorColumn = BeginRowGrid(container)
     local fields = ST._ResourceSpecFields(container, settings, powerType, specID)
 
-    for index, descriptor in ipairs(descriptors) do
+    for _, descriptor in ipairs(descriptors) do
         local capturedKey = descriptor.key
         local capturedDefault = descriptor.defaultColor
-        AddColorRow(index <= leftCount and colorLeft or colorRight, {
+        AddColorRow(colorColumn, {
             label = descriptor.label,
             setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
                 and RESOURCE_FINDER.detail[powerType].colors
