@@ -991,8 +991,7 @@ CooldownCompanion.ApplyFontStyle = ApplyFontStyle
 -- Stack text preview stand-in: the simulated count and its color for config
 -- previews. The one-stack option selects 1 as the base sample; threshold/max
 -- colors still prefer their most interesting configured state. Live text is
--- formatted engine-side because the real count is secret. Defined here,
--- rather than in the preview file, to stay below its Lua 5.1 local ceiling.
+-- formatted engine-side because the real count is secret.
 function CooldownCompanion:GetAuraStackPreviewCountAndColor(buttonData, style, fallbackText)
     -- Thin reader of the ONE policy resolver (review batch 2026-08-15):
     -- the clamp/prefer rules live there, so the preview can never disagree

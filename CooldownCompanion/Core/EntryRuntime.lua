@@ -377,8 +377,8 @@ function EntryRuntime.RecordChargeSpent(owner)
     end
 end
 
--- Single charge-state classifier shared by the button tick (via the
--- ResolveChargeState adapter in CooldownUpdate) and charge previews.
+-- Single charge-state classifier for the button tick (via the
+-- ResolveChargeState adapter in CooldownUpdate).
 -- readableCharges: plain (non-secret) current charge count, or nil when the
 -- count is unreadable; nil routes to the confirmation/recharge fallback.
 -- Owner-specific input policy (e.g. stack-quantity items) stays in the

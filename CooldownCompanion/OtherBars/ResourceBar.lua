@@ -891,8 +891,7 @@ end
 
 -- Forward declaration: the native segmented branches below light the
 -- max-stack border, and its definition lives with the border section
--- further down. Declared-then-assigned, so the chunk's local count is
--- unchanged (200-local ceiling).
+-- further down.
 local UpdateMaxStackBorder
 
 local function UpdateSegmentedBar(holder, powerType, settings)

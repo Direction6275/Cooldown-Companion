@@ -1292,7 +1292,7 @@ end
 local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     -- Stack-counted resources get threshold colours alongside the real
     -- segmented power types: Maelstrom Weapon and every aura-stack family
-    -- member (reached through RB, which adds no local to this chunk).
+    -- member.
     if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
         and RB.AURA_STACK_RESOURCES[powerType] == nil then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
