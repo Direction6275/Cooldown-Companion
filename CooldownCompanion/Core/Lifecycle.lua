@@ -264,7 +264,7 @@ function CooldownCompanion:OnEnable()
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnPlayerSpecializationChanged")
-    self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnHeroTalentChanged")
+    self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnTalentsChanged")
 
     -- Zone/instance change events — load condition evaluation
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")
@@ -407,7 +407,7 @@ end
 function CooldownCompanion:OnCooldownStateChanged(event, ...)
     -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
     -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
-    -- classify -- secret/nil arg, panel-matched button, generation churn --
+    -- classify -- secret/nil arg, Indicator-source button, generation churn --
     -- returns false and falls through to the broad path below unchanged.
     if event == "SPELL_UPDATE_COOLDOWN" then
         if self:RouteCooldownEventFire(...) then
@@ -431,16 +431,20 @@ end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
 -- Skips buttons without buttonData.
-function CooldownCompanion:ForEachButton(callback)
+-- Extra arguments are forwarded to the callback, so a file-level callback
+-- needs no per-call closure. Returns how many callbacks returned a truthy value.
+function CooldownCompanion:ForEachButton(callback, ...)
+    local hits = 0
     for _, frame in pairs(self.groupFrames) do
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
-                if button.buttonData then
-                    callback(button, button.buttonData)
+                if button.buttonData and callback(button, button.buttonData, ...) then
+                    hits = hits + 1
                 end
             end
         end
     end
+    return hits
 end
 
 function CooldownCompanion:OnDisable()
@@ -529,23 +533,25 @@ function CooldownCompanion:OnProcGlowHide(event, spellID)
     self:QueueCooldownRefresh("proc-event")
 end
 
+local function RecordCastChargeSpent(button, buttonData, addon, spellID)
+    if buttonData.type == "spell"
+        and not buttonData.isPassive then
+        local displaySpellID = button._displaySpellId or buttonData.id
+        if spellID == buttonData.id or spellID == displaySpellID then
+            if addon.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
+                -- Track charge consumption for restricted-mode color heuristic.
+                -- _chargeRecharging at event time reflects the PRE-cast state:
+                --   false = casting from full charges → reset to 1
+                --   true  = already recharging → increment
+                EntryRuntime.RecordChargeSpent(button)
+            end
+        end
+    end
+end
+
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        self:ForEachButton(function(button, buttonData)
-            if buttonData.type == "spell"
-                and not buttonData.isPassive then
-                local displaySpellID = button._displaySpellId or buttonData.id
-                if spellID == buttonData.id or spellID == displaySpellID then
-                    if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
-                        -- Track charge consumption for restricted-mode color heuristic.
-                        -- _chargeRecharging at event time reflects the PRE-cast state:
-                        --   false = casting from full charges → reset to 1
-                        --   true  = already recharging → increment
-                        EntryRuntime.RecordChargeSpent(button)
-                    end
-                end
-            end
-        end)
+        self:ForEachButton(RecordCastChargeSpent, self, spellID)
         self:QueueCooldownRefresh("cast-event")
     end
 end
@@ -553,11 +559,30 @@ end
 -- Cooldown Press Flash: the player tried to use a spell and the cast failed.
 -- Only entries CC already knows to be on a REAL cooldown (or at zero
 -- charges) flash; a GCD-only press never does. Icon-mode spell entries only,
--- pet spells included (their cast fails on the pet unit). Item and
--- equipment-slot entries are denied the section instead (Defaults.lua).
--- spellID is plain for the player's and pet's own casts
--- (SecretWhenUnitSpellCastRestricted covers other units), but the guard
--- stays so a secret can never error here.
+-- pet spells included. Item and equipment-slot entries are denied the
+-- section instead (Defaults.lua).
+local function TryCooldownPressFlash(button, buttonData, addon, spellID, inCombat, playFlash)
+    if buttonData.type ~= "spell" or buttonData.isPassive then return end
+    if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
+    if button._isBar or not button.keyPressHighlight then return end
+    local style = button.style
+    if not (style and style.cooldownPressFlashEnabled == true) then return end
+    if style.cooldownPressFlashCombatOnly and not inCombat then return end
+    if button._visibilityHidden or not button:IsShown() then return end
+    local onRealCooldown
+    if addon.UsesChargeBehavior(buttonData) then
+        onRealCooldown = button._chargeState == CHARGE_STATE_ZERO
+    else
+        onRealCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    end
+    if onRealCooldown then
+        playFlash(button, style)
+    end
+end
+
+-- Pet spells fail on the pet unit. spellID is plain for the player's and
+-- pet's own casts (SecretWhenUnitSpellCastRestricted covers other units), but
+-- the guard stays so a secret can never error here.
 function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
     if (unit ~= "player" and unit ~= "pet")
         or type(spellID) ~= "number" or issecretvalue(spellID) then
@@ -565,25 +590,7 @@ function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
     end
     local playFlash = ST._PlayCooldownPressFlash
     if not playFlash then return end
-    local inCombat = InCombatLockdown()
-    self:ForEachButton(function(button, buttonData)
-        if buttonData.type ~= "spell" or buttonData.isPassive then return end
-        if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
-        if button._isBar or not button.keyPressHighlight then return end
-        local style = button.style
-        if not (style and style.cooldownPressFlashEnabled == true) then return end
-        if style.cooldownPressFlashCombatOnly and not inCombat then return end
-        if button._visibilityHidden or not button:IsShown() then return end
-        local onRealCooldown
-        if self.UsesChargeBehavior(buttonData) then
-            onRealCooldown = button._chargeState == CHARGE_STATE_ZERO
-        else
-            onRealCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
-        end
-        if onRealCooldown then
-            playFlash(button, style)
-        end
-    end)
+    self:ForEachButton(TryCooldownPressFlash, self, spellID, InCombatLockdown(), playFlash)
 end
 
 

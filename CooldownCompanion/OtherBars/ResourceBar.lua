@@ -21,7 +21,6 @@ local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
 local SetStatusBarSegmentedValue = ST.SetStatusBarSegmentedValue
-local UnbindDurationText = CooldownCompanion.UnbindDurationText
 
 local math_floor = math.floor
 local math_min = math.min
@@ -29,12 +28,6 @@ local math_max = math.max
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local issecretvalue = issecretvalue
-
-local function UnbindFrameDurationText(frame)
-    if frame and frame.text then
-        UnbindDurationText(frame.text)
-    end
-end
 
 ------------------------------------------------------------------------
 -- Imports from ResourceBarConstants / ResourceBarHelpers / ResourceBarVisuals
@@ -56,7 +49,6 @@ local INDEPENDENT_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
 local IsBarsConfigActive = RB.IsBarsConfigActive
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
-local RESOURCE_COLOR_DEFS = RB.RESOURCE_COLOR_DEFS
 
 -- Helpers
 local GetResourceBarSettings = RB.GetResourceBarSettings
@@ -190,9 +182,9 @@ local lastAppliedIndependentStack = false
 -- retained renderers belong to actual resources, never to list positions.
 local resourceBarFrames = {}
 local ResourceBars = { instances = {} }
--- Unlock-to-position assist, not a preview: the real bars are forced visible
--- so an independent stack can be dragged. Their data stays real (owner
--- ruling 2026-07-26 — previews live in the config canvas and nowhere else).
+-- Unlock-to-position assist, not a preview: set while an independent stack is
+-- unlocked for positioning, it only mutes resource sounds. The bars stay real
+-- (owner ruling 2026-07-26 — previews live in the config canvas and nowhere else).
 local isUnlockAssistActive = false
 local savedContainerAlpha = nil
 local alphaSyncFrame = nil
@@ -242,12 +234,7 @@ local lifecycleModule = nil
 
 local function ResetResourceBarRuntimeState(frame, keepBorderVisuals)
     if not frame then return end
-    ST.ChargeBarSegments.End(frame)
-    UnbindFrameDurationText(frame)
     ClearStatusBarMotion(frame)
-    frame:SetMovable(false)
-    frame:EnableMouse(false)
-    frame:RegisterForDrag()
 
     -- A visible renderer still belongs to the same resource. Its border
     -- already compares style and explicit geometry on update, so keep both
@@ -572,15 +559,21 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
     end
     ST.MoverChrome.UpdateIndependent(frame, "resource", unlocked)
 
-    -- Force the bars visible while unlocked so they can be dragged. Their
-    -- contents stay real — a health bar shows your health, a shell bar shows
-    -- its (empty) frame instead of nothing at all.
+    -- Resource sounds stay muted while the stack is unlocked for positioning.
     if unlocked and not isUnlockAssistActive then
         CooldownCompanion:StartResourceBarUnlockAssist()
         frame._cdcUnlockAssist = true
     elseif not unlocked and frame._cdcUnlockAssist then
         frame._cdcUnlockAssist = false
         CooldownCompanion:StopResourceBarUnlockAssist()
+        -- The lock edge re-anchors the wrapper to its saved anchor and
+        -- relativeTo: a drag saves offsets only, and a cancelled drag is not
+        -- saved. Only a live stack needs it: RevertResourceBars clears
+        -- isApplied before hiding the wrapper, so a teardown cannot bring the
+        -- bars back. The runtime gate drops this call when nested inside an apply.
+        if isApplied then
+            CooldownCompanion:ApplyResourceBars()
+        end
     end
 end
 
@@ -708,7 +701,6 @@ local function UpdateContinuousBar(bar, powerType, settings)
     SetStatusBarSmoothRange(bar, 0, maxPower)
     SetStatusBarSmoothValue(bar, currentPower)
 
-    ApplyContinuousFillColor(bar, powerType, settings)
     UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 
     -- Text: pass directly to C-level SetFormattedText — accepts secrets
@@ -903,8 +895,7 @@ end
 
 -- Forward declaration: the native segmented branches below light the
 -- max-stack border, and its definition lives with the border section
--- further down. Declared-then-assigned, so the chunk's local count is
--- unchanged (200-local ceiling).
+-- further down.
 local UpdateMaxStackBorder
 
 local function UpdateSegmentedBar(holder, powerType, settings)
@@ -1178,13 +1169,7 @@ local function UpdateSegmentedBar(holder, powerType, settings)
         return
     end
     RB.ResourceSounds.Observe(holder, powerType, current, max)
-    local normalColor, maxColor
-    if RESOURCE_COLOR_DEFS[powerType] then
-        normalColor, maxColor = GetResourceColors(powerType, settings)
-    else
-        local color = GetResourceColors(powerType, settings)
-        normalColor, maxColor = color, color
-    end
+    local normalColor, maxColor = GetResourceColors(powerType, settings)
     local isMax = (current == max and max > 0)
     local thresholdActive, thresholdColor = GetSegmentedThresholdColorForValue(powerType, settings, current, holder)
     local activeColor = isMax and maxColor or (thresholdActive and thresholdColor or normalColor)
@@ -1689,9 +1674,7 @@ RB.CreateResourceBarAuraHostModule({
 local function CompareBarOrder(a, b)
     if a._regionRank ~= b._regionRank then return (a._regionRank or 0) < (b._regionRank or 0) end
     if a._order ~= b._order then return a._order < b._order end
-    local aKey = a.powerType or ""
-    local bKey = b.powerType or ""
-    return tostring(aKey) < tostring(bKey)
+    return tostring(a.powerType) < tostring(b.powerType)
 end
 
 RelayoutBars = function()
@@ -1817,7 +1800,6 @@ local function OnUpdate(self, elapsed)
         end
         RB.ResourceSounds.EndSample(barInfo.frame, barInfo.powerType)
     end
-    RB.ResourceSounds.RetainFrames(resourceBarFrames)
 
     -- Re-materialization runs after the loop, never inside it:
     -- ApplyResourceBars rebuilds the active list this tick just
@@ -1907,8 +1889,9 @@ local DisableEventFrame
 -- (max, then threshold, then base) every poll tick, so a reused visible
 -- same-resource holder skips the static fill paint here — painting it
 -- flashed an at-max bar the wrong colour for a frame on every in-place
--- re-apply. Classic continuous bars pass nothing: their tick runs
--- ApplyContinuousFillColor itself, so the apply-time write matches it.
+-- re-apply. Classic continuous bars pass nothing: their fill colour and
+-- brightness are static style, painted only here at apply, the boundary every
+-- colour, texture, brightness and spec writer commits through.
 local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, appearance)
     bar._ccResourceDisplayStyle = RB.GetResourceDisplayStyle(settings, powerType, appearance)
     local shared = appearance and appearance.style
@@ -2107,7 +2090,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
         local normalColor, maxColor = color1, color2
         filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
         emptyColor = normalColor
-    elseif RESOURCE_COLOR_DEFS[powerType] then
+    else
         local normalColor, maxColor = color1, color2
         filledColor = (filled >= numSegments) and maxColor or (thresholdActive and thresholdColor or normalColor)
         emptyColor = normalColor
@@ -2137,7 +2120,6 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
 end
 
 RB.StyleContinuousBar = StyleContinuousBar
-RB.StyleHealthBar = HealthBar.Style
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 
@@ -2360,33 +2342,30 @@ function CooldownCompanion:ApplyResourceBars(opts)
     local regionRanks = {}
     local placementGroup = RB.GetBarAnchorGroup()
     local fallbackOrder = 900
-    for idx, entry in ipairs(filtered) do
-        local powerType = entry
+    for idx, powerType in ipairs(filtered) do
         local side, order, region
-            -- Placement identity, not the power type: a mutually exclusive
-            -- pair shares one slot, so the half that is up reads the
-            -- canonical half's side and order and lands where the pair
-            -- lives.
-            local res = layout and layout.resources
-                and layout.resources[RB.GetCanonicalPowerType(powerType)]
-            region = res and res.anchorRegion
-            if isVerticalLayout then
-                local storedHorizontalSide = (res and res.position) or "below"
-                side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
-                order = (res and res.verticalOrder) or (res and res.order) or (fallbackOrder + idx)
-            else
-                side = (res and res.position) or "below"
-                order = (res and res.order) or (fallbackOrder + idx)
+        -- Placement identity, not the power type: a mutually exclusive
+        -- pair shares one slot, so the half that is up reads the
+        -- canonical half's side and order and lands where the pair
+        -- lives.
+        local res = layout.resources
+            and layout.resources[RB.GetCanonicalPowerType(powerType)]
+        region = res and res.anchorRegion
+        if isVerticalLayout then
+            local storedHorizontalSide = (res and res.position) or "below"
+            side = (res and res.verticalPosition) or GetVerticalSideFallback(storedHorizontalSide)
+            order = (res and res.verticalOrder) or (res and res.order) or (fallbackOrder + idx)
+        else
+            side = (res and res.position) or "below"
+            order = (res and res.order) or (fallbackOrder + idx)
+        end
+        if isVerticalLayout then
+            if side ~= "left" and side ~= "right" then
+                side = "right"
             end
-        if side then
-            if isVerticalLayout then
-                if side ~= "left" and side ~= "right" then
-                    side = "right"
-                end
-            else
-                if side ~= "above" and side ~= "below" then
-                    side = "below"
-                end
+        else
+            if side ~= "above" and side ~= "below" then
+                side = "below"
             end
         end
         if not isIndependentStack then
@@ -2529,10 +2508,6 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     -- Position bars within containers (reusable for relayout on visibility change)
     local aboveThickness, belowThickness = RelayoutBars()
-
-    -- Hand the aura block to its mount every pass, empty sides included, so
-    -- the mount can park a container the stack no longer feeds. Guarded: the
-    -- mount side is a separate owner and may not be present.
 
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
@@ -2700,10 +2675,6 @@ function CooldownCompanion:RevertResourceBars()
     if containerFrameAbove then containerFrameAbove:Hide() end
     if containerFrameBelow then containerFrameBelow:Hide() end
     HideIndependentWrapperFrame()
-
-    -- Park the aura block with the stack. Both orientations are reported
-    -- empty: the teardown does not know which one the mount last built from.
-
 
     isUnlockAssistActive = false
     -- Config-canvas preview state is deliberately NOT cleared here. This

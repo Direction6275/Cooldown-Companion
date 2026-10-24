@@ -399,58 +399,6 @@ local function CreateContinuousBar(parent)
     return bar
 end
 
-local function CreateSegmentedBar(parent, numSegments)
-    local holder = CreateFrame("Frame", nil, parent)
-
-    holder.segments = {}
-    for i = 1, numSegments do
-        local seg = CreateFrame("StatusBar", nil, holder)
-        seg:SetStatusBarTexture(CooldownCompanion:FetchStatusBar("Solid"))
-        seg:SetMinMaxValues(0, 1)
-        SetStatusBarImmediateValue(seg, 0)
-
-        seg.bg = seg:CreateTexture(nil, "BACKGROUND")
-        seg.bg:SetAllPoints()
-        seg.bg:SetColorTexture(0, 0, 0, 0.5)
-
-        seg.borders = CreatePixelBorders(seg)
-
-        holder.segments[i] = seg
-    end
-
-    -- Segmented bars are resource-only, so the text layer mounts straight
-    -- into the stack's text band (see RESOURCE_TEXT_LAYER_LEVEL).
-    holder.textLayer = CreateFrame("Frame", nil, holder)
-    holder.textLayer:SetAllPoints(holder)
-    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
-
-    local textFont = CooldownCompanion:FetchFont("Friz Quadrata TT")
-    local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
-
-    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
-    holder.text:SetFont(textFont, 10, textOutline)
-    ST.ApplyFontShadowForOutline(holder.text, textOutline)
-    holder.text:SetPoint("CENTER")
-    holder.text:SetTextColor(1, 1, 1, 1)
-    holder.text:Hide()
-
-    holder.rechargeTexts = {}
-    for i = 1, numSegments do
-        local text = holder.textLayer:CreateFontString(nil, "OVERLAY")
-        text:SetFont(textFont, 10, textOutline)
-        ST.ApplyFontShadowForOutline(text, textOutline)
-        text:SetPoint("CENTER", holder.segments[i], "CENTER", 0, 0)
-        text:SetTextColor(1, 1, 1, 1)
-        text:Hide()
-        holder.rechargeTexts[i] = text
-    end
-
-    holder._barType = "segmented"
-    holder._numSegments = numSegments
-    holder._activeSegments = numSegments
-    return holder
-end
-
 -- A resource retains one segmented holder across talent and maximum changes.
 -- Grow to the high-water mark; LayoutSegments parks excess capacity and live
 -- updates use the active count. Preview holders can use the same contract.
@@ -491,6 +439,32 @@ local function EnsureSegmentCount(holder, n)
 
     holder._activeSegments = n
     holder._numSegments = n
+end
+
+local function CreateSegmentedBar(parent, numSegments)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder.segments = {}
+
+    -- Segmented bars are resource-only, so the text layer mounts straight
+    -- into the stack's text band (see RESOURCE_TEXT_LAYER_LEVEL).
+    holder.textLayer = CreateFrame("Frame", nil, holder)
+    holder.textLayer:SetAllPoints(holder)
+    holder.textLayer:SetFrameLevel(holder:GetFrameLevel() + RB.RESOURCE_TEXT_LAYER_LEVEL)
+
+    local textOutline = ST.GetEffectiveFontOutline("OUTLINE")
+    holder.text = holder.textLayer:CreateFontString(nil, "OVERLAY")
+    holder.text:SetFont(CooldownCompanion:FetchFont("Friz Quadrata TT"), 10, textOutline)
+    ST.ApplyFontShadowForOutline(holder.text, textOutline)
+    holder.text:SetPoint("CENTER")
+    holder.text:SetTextColor(1, 1, 1, 1)
+    holder.text:Hide()
+
+    -- The segments and their recharge texts come from the grow path.
+    holder.rechargeTexts = {}
+    EnsureSegmentCount(holder, numSegments)
+
+    holder._barType = "segmented"
+    return holder
 end
 
 ------------------------------------------------------------------------

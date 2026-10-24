@@ -26,7 +26,7 @@ local RAGING_MAELSTROM_SPELL_ID = 384143
 local RESOURCE_AURA_PREVIEW_STACKS = 3
 local RESOURCE_HEALTH = -1
 local RESOURCE_MAELSTROM_WEAPON = 100
--- Stagger power type ID: 101 (used inline to stay under Lua 200-local limit)
+-- Stagger is power type 101, written inline where used.
 
 ------------------------------------------------------------------------
 -- Default Colors
@@ -71,25 +71,18 @@ local INDEPENDENT_NUDGE_BTN_SIZE = 12
 -- Power Colors & Names
 ------------------------------------------------------------------------
 
+-- Single-colour fallback for power types with no RESOURCE_COLOR_DEFS entry.
 local DEFAULT_POWER_COLORS = {
-    [RESOURCE_HEALTH] = DEFAULT_HEALTH_BAR_COLOR,
     [0]  = { 0, 0, 1 },              -- Mana
     [1]  = { 1, 0, 0 },              -- Rage
     [2]  = { 1, 0.5, 0.25 },         -- Focus
     [3]  = { 1, 1, 0 },              -- Energy
-    [4]  = { 1, 0.96, 0.41 },        -- ComboPoints
-    [5]  = { 0.5, 0.5, 0.5 },        -- Runes
     [6]  = { 0, 0.82, 1 },           -- RunicPower
-    [7]  = { 0.5, 0.32, 0.55 },      -- SoulShards
     [8]  = { 0.3, 0.52, 0.9 },       -- LunarPower
-    [9]  = { 0.95, 0.9, 0.6 },       -- HolyPower
     [11] = { 0, 0.5, 1 },            -- Maelstrom
-    [12] = { 0.71, 1, 0.92 },        -- Chi
     [13] = { 0.4, 0, 0.8 },          -- Insanity
-    [16] = { 0.1, 0.1, 0.98 },       -- ArcaneCharges
     [17] = { 0.788, 0.259, 0.992 },  -- Fury
     [18] = { 1, 0.612, 0 },          -- Pain
-    [19] = { 0.286, 0.773, 0.541 },  -- Essence
 }
 
 local POWER_NAMES = {
@@ -208,7 +201,8 @@ local CLASS_RESOURCES = {
     [13] = { 19, 0 },       -- Evoker: Essence, Mana
 }
 
--- Spec-specific resource overrides (specID -> replaces class defaults)
+-- Spec-specific resource overrides (specID -> replaces class defaults). The
+-- config reuses these lists as SPEC_RESOURCES_CONFIG.
 local SPEC_RESOURCES = {
     [258] = { 13, 0 },      -- Shadow Priest: Insanity, Mana
     [262] = { 11, 0 },      -- Elemental Shaman: Maelstrom, Mana
@@ -222,7 +216,8 @@ local SPEC_RESOURCES = {
     -- Devourer DH: both halves of the Void Metamorphosis pair ahead of
     -- Fury. Only one of the two is ever materialized — the runtime filter
     -- in ApplyResourceBars drops the suppressed half — but both stay in
-    -- this list so the swap happens in place, without reordering Fury.
+    -- this list so the swap happens in place, without reordering Fury, and
+    -- the config always lists both halves.
     [1480] = { 104, 105, 17 },
 }
 
@@ -243,37 +238,12 @@ local DRUID_FORM_RESOURCES = {
 }
 local DRUID_DEFAULT_RESOURCES = { 0 }  -- No form: Mana
 
--- Class-to-resource mapping for config UI (Druid shows all possible)
-local CLASS_RESOURCES_CONFIG = {
-    [1]  = { 1 },
-    [2]  = { 9, 0 },
-    [3]  = { 2 },
-    [4]  = { 4, 3 },
-    [5]  = { 0 },
-    [6]  = { 5, 6 },
-    [7]  = { 0 },
-    [8]  = { 0 },
-    [9]  = { 7, 0 },
-    [10] = { 0 },
-    [11] = { 1, 4, 3, 8, 0 },  -- All possible druid resources
-    [12] = { 17 },
-    [13] = { 19, 0 },
-}
-
-local SPEC_RESOURCES_CONFIG = {
-    [258] = { 13, 0 },
-    [262] = { 11, 0 },
-    [263] = { 100, 0 },
-    [62]  = { 16, 0 },
-    [269] = { 12, 3 },
-    [268] = { 101, 3 },  -- Brewmaster: Stagger, Energy
-    [581] = { 17 },
-    [64]  = { 102, 0 },  -- Frost Mage: Icicles, Mana
-    [255] = { 103, 2 },  -- Survival: Tip of the Spear, Focus
-    -- Devourer: the config always lists both halves of the pair, whichever
-    -- one the player happens to be showing right now.
-    [1480] = { 104, 105, 17 },
-}
+-- Class-to-resource mapping for config UI: the runtime lists, plus every
+-- possible Druid resource (the runtime resolves Druid by form).
+local CLASS_RESOURCES_CONFIG = { [11] = { 1, 4, 3, 8, 0 } }
+for classID, resources in pairs(CLASS_RESOURCES) do
+    CLASS_RESOURCES_CONFIG[classID] = resources
+end
 
 ------------------------------------------------------------------------
 -- Color definition lookup table (used by GetResourceColors)
@@ -321,8 +291,7 @@ ST._RB = {
     -- The APPLIED Maelstrom Weapon aura (CumulativeAura=5 in SpellAuraOptions,
     -- 10 with Raging Maelstrom). Not live's 187880, which is the proc trigger
     -- carrying no stacks — live only resolved the real aura through a CDM
-    -- viewer frame's auraInstanceID, a path 12.1 closed. Written inline
-    -- rather than as a local: this chunk is at Lua 5.1's 200-local ceiling.
+    -- viewer frame's auraInstanceID, a path 12.1 closed.
     MW_AURA_SPELL_ID = 344179,
     RESOURCE_HEALTH = RESOURCE_HEALTH,
     RESOURCE_MAELSTROM_WEAPON = RESOURCE_MAELSTROM_WEAPON,
@@ -334,8 +303,7 @@ ST._RB = {
     -- previews all ask it rather than testing ids. Maelstrom Weapon is
     -- deliberately NOT a member: its shipped mw* keys, its third (overlay)
     -- shape and its talent-driven maximum are its own, and generalizing them
-    -- would change what already ships. Written inline rather than as locals:
-    -- this chunk is at Lua 5.1's 200-local ceiling.
+    -- would change what already ships.
     --   102 Icicles (Frost Mage), 103 Tip of the Spear (Survival Hunter),
     --   104 Void Metamorphosis / 105 Collapsing Star (Devourer DH)
     --
@@ -451,7 +419,7 @@ ST._RB = {
     DEFAULT_MW_MAX_COLOR = DEFAULT_MW_MAX_COLOR,
     -- Max-stack border default. Deliberately NOT the max fill colour: the
     -- border draws on top of the at-max fill, and matching it would make
-    -- the border invisible. Written inline: 200-local ceiling.
+    -- the border invisible.
     DEFAULT_MW_MAX_STACK_BORDER_COLOR = { 1, 1, 1, 1 },
     DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = DEFAULT_RESOURCE_AURA_ACTIVE_COLOR,
     -- How far above a resource bar its aura overlay mounts. Clear of every
@@ -547,7 +515,7 @@ ST._RB = {
     DRUID_FORM_RESOURCES = DRUID_FORM_RESOURCES,
     DRUID_DEFAULT_RESOURCES = DRUID_DEFAULT_RESOURCES,
     CLASS_RESOURCES_CONFIG = CLASS_RESOURCES_CONFIG,
-    SPEC_RESOURCES_CONFIG = SPEC_RESOURCES_CONFIG,
+    SPEC_RESOURCES_CONFIG = SPEC_RESOURCES,
 
     -- Config UI text defaults
     DEFAULT_RESOURCE_TEXT_ANCHOR = DEFAULT_RESOURCE_TEXT_ANCHOR,
@@ -558,25 +526,15 @@ ST._RB = {
 -- Every aura-stack family member carries the same two-key colour shape as
 -- Holy Power (base, at-max), so its colour def is derived from the family
 -- entry instead of restated here: adding a member stays one table entry.
--- Written as explicit statements rather than a loop to add no locals to this
--- chunk (200-local ceiling). RESOURCE_COLOR_DEFS is exported by reference,
--- so mutating it after the export is what every consumer sees.
-RESOURCE_COLOR_DEFS[102] = {
-    keys = ST._RB.AURA_STACK_RESOURCES[102].colorKeys,
-    defaults = ST._RB.AURA_STACK_RESOURCES[102].colorDefaults,
-}
-RESOURCE_COLOR_DEFS[103] = {
-    keys = ST._RB.AURA_STACK_RESOURCES[103].colorKeys,
-    defaults = ST._RB.AURA_STACK_RESOURCES[103].colorDefaults,
-}
-RESOURCE_COLOR_DEFS[104] = {
-    keys = ST._RB.AURA_STACK_RESOURCES[104].colorKeys,
-    defaults = ST._RB.AURA_STACK_RESOURCES[104].colorDefaults,
-}
-RESOURCE_COLOR_DEFS[105] = {
-    keys = ST._RB.AURA_STACK_RESOURCES[105].colorKeys,
-    defaults = ST._RB.AURA_STACK_RESOURCES[105].colorDefaults,
-}
+-- RESOURCE_COLOR_DEFS is exported by reference, so mutating it after the
+-- export is what every consumer sees.
+for powerType, member in pairs(ST._RB.AURA_STACK_RESOURCES) do
+    RESOURCE_COLOR_DEFS[powerType] = { keys = member.colorKeys, defaults = member.colorDefaults }
+end
 
--- Direct ST exports for files that import individual constants rather than the _RB table
-ST.POWER_ATLAS_TYPES = { [8] = true, [11] = true, [13] = true, [17] = true, [18] = true }
+-- Direct ST exports for files that import individual constants rather than
+-- the _RB table. The atlas set is derived from POWER_ATLAS_INFO.
+ST.POWER_ATLAS_TYPES = {}
+for powerType in pairs(POWER_ATLAS_INFO) do
+    ST.POWER_ATLAS_TYPES[powerType] = true
+end

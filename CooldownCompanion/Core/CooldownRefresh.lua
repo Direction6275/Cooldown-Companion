@@ -58,8 +58,11 @@
         2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
            Coupled to the hide-unusable floorFailOpen term in
-           CooldownUpdate.UpdateButtonCooldown: usability has no event
-           precisely because power marks are demoted, so lifting the demotion
+           CooldownUpdate.UpdateButtonCooldown: SPELL_UPDATE_USABLE and
+           ACTION_USABLE_CHANGED only queue a pass when a shown panel has a
+           Ready Glow Only While Usable icon (EventHandlers
+           OnReadyGlowUsabilityChanged), so with power marks demoted,
+           hide-while-unusable re-show rides the walk. Lifting the demotion
            and lifting that floor must be decided together.
       Discrete cooldown start/end edges stay event-covered. The safety walk
       (TICKER_MAX_CONSECUTIVE_SKIPS) is load-bearing in combat.
@@ -76,7 +79,7 @@
       (forcing an extra walk) for a forced routed button -- never the permissive
       one: only a completed broad walk latches _tickerIdleEligible true, so a
       mini-pass cannot cause a false idle-skip. A secret or nil PRIMARY arg,
-      panel-matched, rebuild-pending, assistant-excluded, and generation-churned
+      Indicator-matched, rebuild-pending, assistant-excluded, and generation-churned
       fires all take the broad path. A secret/unreadable BASE arg is ignored as
       a refinement key -- the readable primary still routes; identity-churn
       rebuilds keep base identities indexed (owner decision 2026-07-04: forcing

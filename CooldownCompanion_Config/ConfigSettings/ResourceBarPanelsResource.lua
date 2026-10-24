@@ -1660,9 +1660,10 @@ local function GetResourceColorDescriptors(powerType, effectiveBarTextureName)
             RB.AURA_STACK_RESOURCES[powerType].colorLabels[2],
             RB.AURA_STACK_RESOURCES[powerType].colorDefaults[2], false)
     elseif powerType == 101 then
-        AddResourceColorDescriptor(descriptors, "staggerGreenColor", "Stagger (Low)", { 0.52, 0.90, 0.52 }, false)
-        AddResourceColorDescriptor(descriptors, "staggerYellowColor", "Stagger (Medium)", { 1.0, 0.85, 0.36 }, false)
-        AddResourceColorDescriptor(descriptors, "staggerRedColor", "Stagger (High)", { 1.0, 0.42, 0.42 }, false)
+        local staggerDefaults = RB.RESOURCE_COLOR_DEFS[101].defaults
+        AddResourceColorDescriptor(descriptors, "staggerGreenColor", "Stagger (Low)", staggerDefaults[1], false)
+        AddResourceColorDescriptor(descriptors, "staggerYellowColor", "Stagger (Medium)", staggerDefaults[2], false)
+        AddResourceColorDescriptor(descriptors, "staggerRedColor", "Stagger (High)", staggerDefaults[3], false)
     elseif effectiveBarTextureName == "blizzard_class" and ST.POWER_ATLAS_TYPES and ST.POWER_ATLAS_TYPES[powerType] then
         return descriptors
     else
@@ -2584,7 +2585,7 @@ function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
         order = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions), pulloutWidth = MEDIA_PULLOUT_WIDTH,
         onChange = function(value) Write("resourceSound", value) end,
         onPreview = function(value)
-            CooldownCompanion:PreviewResourceSoundAlertSelection(powerType, value, config.trigger, config.amount)
+            CooldownCompanion:PlayResourceSoundAlert(powerType, value, config.trigger, config.amount)
         end,
     })
     AddCheckboxRow(right, {

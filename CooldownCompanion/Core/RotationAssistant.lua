@@ -146,14 +146,7 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._liveOverrideSpellId = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
-    button._noCooldown = nil
-    button._noCooldownSpellId = nil
-    button._resourceGateCost = nil
-    button._resourceGateCostSpellId = nil
-    button._baseResourceGateCost = nil
-    button._baseResourceGateCostSpellId = nil
+    ST.EntryRuntime.ClearSpellTraitCaches(button)
     button._spellOutOfRange = nil
     button._auraActive = false
     button._procOverlayActive = false

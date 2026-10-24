@@ -804,13 +804,20 @@ function HealthBar.Update(bar, settings)
     -- means a recursive CopyTable of the whole health bucket on every tick,
     -- and every writer of that bucket commits through ApplyResourceBars, which
     -- always re-styles this bar. A bar that somehow never went through Style
-    -- resolves live, exactly as before.
+    -- resolves live and paints every colour leg, exactly as before.
     local config = bar._ccHealthConfig
-    if config == nil then
+    local styled = config ~= nil
+    if not styled then
         config = HealthBar.GetConfig(settings)
     end
-    HealthBar.ApplyFillColor(bar, config)
-    HealthBar.ApplyBackgroundColor(bar, config)
+    -- On a styled bar only the gradient legs follow live health; Style and
+    -- the UNIT_MAXHEALTH path paint the static ones.
+    if not styled or HealthBar.IsFillGradientEnabled(config) then
+        HealthBar.ApplyFillColor(bar, config)
+    end
+    if not styled or HealthBar.IsBackgroundGradientEnabled(config) then
+        HealthBar.ApplyBackgroundColor(bar, config)
+    end
     HealthBar.UpdateEffectBars(bar, config, maxHealth)
 
     if bar.text and bar.text:IsShown() then

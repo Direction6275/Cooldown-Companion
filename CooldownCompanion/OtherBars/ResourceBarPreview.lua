@@ -472,25 +472,16 @@ function RB.CreateResourceBarPreviewModule(deps)
     ------------------------------------------------------------------------
     -- Unlock-to-position assist
     --
-    -- Deliberately NOT a preview. An independent resource stack is dragged
-    -- out in the world, so the bars have to be visible to be positioned —
-    -- including a Show Only While Aura Active bar, whose CC frame renders
-    -- nothing of its own and would otherwise be an invisible drag target.
-    -- Nothing here fabricates data: the bars show what they always show.
+    -- A flag, not a preview: it mutes resource sounds while an independent
+    -- stack is unlocked for positioning. The bars show what they always show.
     ------------------------------------------------------------------------
 
     function CooldownCompanion:StartResourceBarUnlockAssist()
-        if GetUnlockAssistActive() then return end
         SetUnlockAssistActive(true)
-        self:ApplyResourceBars()
     end
 
     function CooldownCompanion:StopResourceBarUnlockAssist()
-        if not GetUnlockAssistActive() then return end
         SetUnlockAssistActive(false)
-        if self.ApplyResourceBars then
-            self:ApplyResourceBars()
-        end
     end
 
     function CooldownCompanion:IsResourceBarUnlockAssistActive()

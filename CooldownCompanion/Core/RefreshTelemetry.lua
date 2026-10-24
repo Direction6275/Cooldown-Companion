@@ -116,9 +116,8 @@ function T:CountForce(term)
     self.passForceTerms[term] = true
 end
 
--- Wrapper for call sites inside UpdateButtonCooldown, which sits at the
--- Lua 5.1 60-upvalue ceiling and cannot capture a new file-local; it reaches
--- this through the CooldownCompanion upvalue it already holds.
+-- Method form for callers that hold the addon object rather than
+-- ST.RefreshTelemetry: CooldownCompanion:PinCooldownTicker (Core/CooldownRefresh.lua).
 function CooldownCompanion:CountTickerForce(term)
     T:CountForce(term)
 end

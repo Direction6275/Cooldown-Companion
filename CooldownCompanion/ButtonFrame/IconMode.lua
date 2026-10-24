@@ -13,7 +13,6 @@ local COOLDOWN_STATE_COOLDOWN = CooldownLogic.STATE_COOLDOWN
 local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
-local pairs = pairs
 local ipairs = ipairs
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
@@ -501,7 +500,7 @@ end
 -- DIM_FALLBACK_ALPHA (auraShellDim, Dim While Aura Inactive — a standalone
 -- key on 12.1; the toggles are mutually exclusive). Static by design — no
 -- aura state exists to read at runtime. The predicate, the alpha decision,
-    -- and the unlock exposure rule all live in Core/Aura.lua.
+-- and the unlock exposure rule all live in Core/Aura.lua.
 local function SetGlowContainerShellAlpha(container, alpha)
     if not container then return end
     -- Stamp the shell alpha so glow state changes can't resurrect the
@@ -917,11 +916,6 @@ function CooldownCompanion:UpdateButtonIcon(button, totemTexture)
     else
         button.icon:SetTexture(QUESTION_MARK_ICON)
     end
-
-    -- Composite text entries bake the resolved name/icon into their aura
-    -- columns at measure time; this is the identity edge that re-measures
-    -- them (no-op for every other button). After the texture write above so
-    -- the probe sees the new icon.
 
     -- Update cooldown secrecy when override spell changes (e.g. Command Demon → pet ability)
     if displayId ~= prevDisplayId and buttonData.type == "spell" then

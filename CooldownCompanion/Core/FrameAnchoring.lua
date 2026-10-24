@@ -435,13 +435,15 @@ local function AutoDetectUnitFrameAddon()
     return "blizzard"
 end
 
+-- Shared read-only option table: nothing may write into it
+-- (ValidateAddonFrameAnchorTarget only reads its options).
+local EXTERNAL_ANCHOR_VALIDATION = { domain = "external" }
+
 local function ResolveCustomUnitFrame(frameName)
     if not frameName or frameName == "" then
         return nil
     end
-    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(frameName, {
-        domain = "external",
-    })
+    local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(frameName, EXTERNAL_ANCHOR_VALIDATION)
     if not ok then
         return nil
     end

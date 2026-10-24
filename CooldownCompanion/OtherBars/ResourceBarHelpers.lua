@@ -597,7 +597,7 @@ local function CopyIndependentAnchor(anchor)
     return CopyTable(anchor)
 end
 
-local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID)
+local function SeedResourceLayoutFromGlobal(layout, settings)
     if type(layout) ~= "table" or type(settings) ~= "table" then
         return layout
     end
@@ -639,11 +639,11 @@ local function SeedResourceLayoutFromGlobal(layout, settings, cbSettings, specID
     return layout
 end
 
-local function CreateDefaultLayoutOrder(settings, cbSettings, specID)
+local function CreateDefaultLayoutOrder(settings)
     return SeedResourceLayoutFromGlobal({
         resources = {},
         castBar = { position = "below", order = 2000 },
-    }, settings, cbSettings, specID)
+    }, settings)
 end
 
 GetSpecLayoutOrder = function(settings, specID)
@@ -653,9 +653,9 @@ GetSpecLayoutOrder = function(settings, specID)
     specID = tonumber(specID) or specID
     if not settings.layoutOrder then settings.layoutOrder = {} end
     if type(settings.layoutOrder[specID]) ~= "table" then
-        settings.layoutOrder[specID] = CreateDefaultLayoutOrder(settings, nil, specID)
+        settings.layoutOrder[specID] = CreateDefaultLayoutOrder(settings)
     else
-        SeedResourceLayoutFromGlobal(settings.layoutOrder[specID], settings, nil, specID)
+        SeedResourceLayoutFromGlobal(settings.layoutOrder[specID], settings)
     end
     return settings.layoutOrder[specID]
 end
@@ -965,10 +965,6 @@ local function ClampIndependentDimension(value, fallback, minVal)
         dim = 1200
     end
     return dim
-end
-
-local function IsTruthyConfigFlag(value)
-    return value == true or value == 1 or value == "1" or value == "true"
 end
 
 ------------------------------------------------------------------------
@@ -1296,7 +1292,7 @@ end
 local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     -- Stack-counted resources get threshold colours alongside the real
     -- segmented power types: Maelstrom Weapon and every aura-stack family
-    -- member (reached through RB, which adds no local to this chunk).
+    -- member.
     if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
         and RB.AURA_STACK_RESOURCES[powerType] == nil then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
@@ -1592,7 +1588,6 @@ RB.GetAnchorOffset = GetAnchorOffset
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
-RB.IsTruthyConfigFlag = IsTruthyConfigFlag
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources
 RB.GetResourceColors = GetResourceColors

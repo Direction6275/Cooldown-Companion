@@ -126,16 +126,10 @@ local function UpdateDisplayCountTracking(button, buttonData, spellID)
     end
 
     local maxCharges = buttonData.maxCharges
-    if cur ~= nil then
-        button._chargeRecharging = (maxCharges ~= nil and cur < maxCharges) or false
-    elseif secretDisplayCount then
-        -- Do not infer zero/non-zero state from spell usability when the display
-        -- count itself is secret. Usability can fail for unrelated reasons
-        -- (costs, reactives, etc.), so treat the zero-state as unknown.
-        button._chargeRecharging = false
-    else
-        button._chargeRecharging = false
-    end
+    -- Do not infer zero/non-zero state from spell usability when the display
+    -- count itself is secret. Usability can fail for unrelated reasons
+    -- (costs, reactives, etc.), so treat the zero-state as unknown.
+    button._chargeRecharging = (cur ~= nil and maxCharges ~= nil and cur < maxCharges) or false
     button._chargeDurationObj = nil
     button._chargesSpent = nil
 

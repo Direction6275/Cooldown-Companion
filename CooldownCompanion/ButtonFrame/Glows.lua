@@ -11,7 +11,6 @@ local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 -- Localize frequently-used globals
 local ipairs = ipairs
 local next = next
-local pairs = pairs
 local unpack = unpack
 -- string.format was previously used for glow cache keys; replaced with
 -- per-field comparisons to eliminate per-tick string allocations.

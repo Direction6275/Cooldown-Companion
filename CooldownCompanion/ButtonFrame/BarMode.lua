@@ -13,7 +13,6 @@ local CHARGE_STATE_ZERO = CooldownLogic.CHARGE_STATE_ZERO
 
 -- Localize frequently-used globals
 local GetTime = GetTime
-local pairs = pairs
 local ipairs = ipairs
 local issecretvalue = issecretvalue
 

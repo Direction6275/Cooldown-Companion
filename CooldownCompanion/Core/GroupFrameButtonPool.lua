@@ -174,14 +174,7 @@ local function ClearReusableButtonRuntime(button)
     button._spellOutOfRange = nil
     button._lastSpellTexture = nil
     button._lastTextureCheckAt = nil
-    button._noCooldown = nil
-    button._noCooldownSpellId = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
-    button._resourceGateCost = nil
-    button._resourceGateCostSpellId = nil
-    button._baseResourceGateCost = nil
-    button._baseResourceGateCostSpellId = nil
+    ST.EntryRuntime.ClearSpellTraitCaches(button)
     button._cooldownDeferred = nil
     button._durationObj = nil
     ST.ChargeBarSegments.Invalidate(button.statusBar)

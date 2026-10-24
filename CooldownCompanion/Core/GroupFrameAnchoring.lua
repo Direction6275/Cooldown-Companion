@@ -312,21 +312,11 @@ function CooldownCompanion:WouldCreateCircularAnchor(sourceId, targetId, targetK
                 relTo = c.anchor.relativeTo
             end
         end
-        if not relTo then break end
-        -- Determine next node in the chain
-        local nextGroupId = relTo:match("^CooldownCompanionGroup(%d+)$")
-        if nextGroupId then
-            currentKind = "group"
-            currentId = tonumber(nextGroupId)
-        else
-            local nextContainerId = relTo:match("^CooldownCompanionContainer(%d+)$")
-            if nextContainerId then
-                currentKind = "container"
-                currentId = tonumber(nextContainerId)
-            else
-                break  -- anchored to a non-addon frame, chain ends
-            end
-        end
+        -- Determine next node in the chain: a non-addon frame, the cursor or
+        -- no anchor ends it.
+        local nextKind, nextId = ParseAddonAnchorFrameName(relTo)
+        if nextKind ~= "group" and nextKind ~= "container" then break end
+        currentKind, currentId = nextKind, nextId
     end
     return false
 end

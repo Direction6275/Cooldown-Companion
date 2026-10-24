@@ -286,16 +286,16 @@ function CooldownCompanion.NormalizeIndicatorEffectSection(effectKey, effectData
     return effectData
 end
 
-function CooldownCompanion.NormalizeIndicatorEffectStore(triggerSettings)
-    if type(triggerSettings) ~= "table" then
+function CooldownCompanion.NormalizeIndicatorEffectStore(indicatorSettings)
+    if type(indicatorSettings) ~= "table" then
         return nil
     end
 
-    if type(triggerSettings.effects) ~= "table" then
-        triggerSettings.effects = {}
+    if type(indicatorSettings.effects) ~= "table" then
+        indicatorSettings.effects = {}
     end
 
-    local store = triggerSettings.effects
+    local store = indicatorSettings.effects
     for _, effectKey in ipairs(ST.Indicator.EffectOrder) do
         store[effectKey] = CooldownCompanion.NormalizeIndicatorEffectSection(effectKey, store[effectKey])
     end
@@ -559,7 +559,6 @@ local function NormalizeAuraTextureSettings(settings)
 
     settings.sourceType = NormalizeAuraTextureSourceType(settings.sourceType)
     settings.label = type(settings.label) == "string" and settings.label or nil
-    settings.sourceValue = settings.sourceValue
     settings.enabled = settings.sourceType ~= nil and settings.sourceValue ~= nil
     settings.mode = settings.mode == "replace" and "replace" or "overlay"
     settings.scale = Clamp(settings.scale or 1, 0.25, 4)
@@ -735,9 +734,9 @@ function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
     settings.borderSize = Clamp(tonumber(settings.borderSize) or 1, 0, 5)
     settings.borderRenderMode = ST.GetBorderRenderMode(settings)
-    settings.borderColor = CopyColor(settings.borderColor) or { 0, 0, 0, 1 }
-    settings.backgroundColor = CopyColor(settings.backgroundColor) or { 0, 0, 0, 0.5 }
-    settings.iconTintColor = CopyColor(settings.iconTintColor) or { 1, 1, 1, 1 }
+    settings.borderColor = FillColor(settings.borderColor) or { 0, 0, 0, 1 }
+    settings.backgroundColor = FillColor(settings.backgroundColor) or { 0, 0, 0, 0.5 }
+    settings.iconTintColor = FillColor(settings.iconTintColor) or { 1, 1, 1, 1 }
 
     return settings
 end

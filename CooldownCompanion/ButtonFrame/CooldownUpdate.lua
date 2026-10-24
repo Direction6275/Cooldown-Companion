@@ -9,16 +9,12 @@ local CooldownLogic = ST.CooldownLogic
 local EntryRuntime = ST.EntryRuntime
 -- Per-tick EntryRuntime calls hoisted to file-locals: UpdateButtonCooldown is
 -- the measured hot path, and these run for every button on every tick.
-local ResolveBaseNoCooldownState = EntryRuntime.ResolveBaseNoCooldownState
-local ResolveBaseResourceGateCostState = EntryRuntime.ResolveBaseResourceGateCostState
-local ResolveNoCooldownState = EntryRuntime.ResolveNoCooldownState
-local ResolveResourceGateCostState = EntryRuntime.ResolveResourceGateCostState
+local ResolveSpellTraits = EntryRuntime.ResolveSpellTraits
+local ClearSpellTraitCaches = EntryRuntime.ClearSpellTraitCaches
 local ClassifyChargeState = EntryRuntime.ClassifyChargeState
 local ResolveZeroChargesConfirmed = EntryRuntime.ResolveZeroChargesConfirmed
 -- Forcing-attribution sink (loaded before this file; dev-gated, observe-only).
--- Referenced only by NoteButtonTimeState -- UpdateButtonCooldown runs near
--- Lua 5.1's 60-upvalue ceiling, so telemetry is reached via
--- CooldownCompanion methods rather than new upvalues.
+-- Referenced only by NoteButtonTimeState.
 local RefreshTelemetry = ST.RefreshTelemetry
 
 -- Localize frequently-used globals
@@ -70,6 +66,7 @@ local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
 local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
+local ResolveItemFallback = CooldownCompanion.ResolveItemFallback
 local HasCastCountText = CooldownCompanion.HasCastCountText
 local GetCastCountSpellID = CooldownCompanion.GetCastCountSpellID
 local GetConditionalCastCountSpellID = CooldownCompanion.GetConditionalCastCountSpellID
@@ -98,21 +95,7 @@ function CooldownCompanion:RefreshButtonVisualStateSnapshot(button, context, pha
     return nil
 end
 
-local function HideIconFillForHiddenButton(button)
-    if type(ClearIconFillVisualState) == "function" then
-        ClearIconFillVisualState(button, button and button.style, nil, true)
-        return
-    end
-    if not (button and button.iconFill) then return end
-    button.iconFill:Hide()
-    button.iconFill:SetScript("OnUpdate", nil)
-    button._iconFillOnUpdateInstalled = nil
-    button._iconFillActive = nil
-    button._iconFillMode = nil
-    button._iconFillIntent = nil
-end
-
-local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
+local function ApplyChargeTextColor(button, style, usesChargeBehavior, useChargeTextLane)
     if not (button and button.count and (style.chargeFontColor or style.chargeFontColorMissing or style.chargeFontColorZero)) then
         return
     end
@@ -122,11 +105,8 @@ local function ApplyChargeTextColor(button, buttonData, style, usesChargeBehavio
         cc = style.chargeFontColorZero or DEFAULT_WHITE
     elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_MISSING then
         cc = style.chargeFontColorMissing or DEFAULT_WHITE
-    elseif usesChargeBehavior and button._chargeState == CHARGE_STATE_FULL then
-        cc = style.chargeFontColor or DEFAULT_WHITE
-    elseif usesChargeBehavior then
-        cc = style.chargeFontColor or DEFAULT_WHITE
-    elseif UsesChargeTextLane(buttonData) then
+    elseif useChargeTextLane then
+        -- Full charges, plain charge behavior, and the shared count-text lane.
         cc = style.chargeFontColor or DEFAULT_WHITE
     end
 
@@ -179,7 +159,9 @@ local function DispatchIndicatorVisual(button, group)
         return
     end
 
-    CooldownCompanion:UpdateAuraTextureVisual(button)
+    if button.auraTextureHost then
+        CooldownCompanion:UpdateAuraTextureVisual(button)
+    end
 end
 
 local function ClearCooldownWidget(widget)
@@ -284,7 +266,7 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
         -- Non-compact mode: alpha=0 for hidden, restore for visible
         if button._visibilityHidden then
             button.cooldown:Hide()  -- prevent stale IsShown() across ticks
-            HideIconFillForHiddenButton(button)
+            ClearIconFillVisualState(button, button.style, nil, true)
             if button._lastVisAlpha ~= 0 then
                 button:SetAlpha(0)
                 button._lastVisAlpha = 0
@@ -323,11 +305,10 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
     else
         -- Compact mode: Show/Hide handled by UpdateGroupLayout
         if button._visibilityHidden then
-            -- Prevent stale IsShown() across ticks. SetCooldown(0,0) does not
-            -- auto-hide the CooldownFrame; without this, bar mode _mainCDShown
-            -- and icon mode force-show both read stale true on next tick.
+            -- Hide the CooldownFrame explicitly: SetCooldown(0,0) does not hide
+            -- it, so a hidden button's widget would otherwise stay shown across ticks.
             button.cooldown:Hide()
-            HideIconFillForHiddenButton(button)
+            ClearIconFillVisualState(button, button.style, nil, true)
             DispatchIndicatorVisual(button, group)
             if shouldCaptureVisualState then
                 CooldownCompanion:RefreshButtonVisualStateSnapshot(button, visualStateContext, "hidden")
@@ -482,10 +463,8 @@ local function ResolveChargeState(button, buttonData, usesChargeBehavior)
     )
 end
 
-local function EvaluateItemCooldown(button, buttonData, style, renderCooldown)
+local function EvaluateItemCooldown(button, buttonData, style, renderCooldown, isEquippable)
     button._isEquippableNotEquipped = false
-    local isEquipmentSlot = IsEquipmentSlotEntry(buttonData)
-    local isEquippable = (not isEquipmentSlot) and IsItemEquippable(buttonData)
     local itemID = button._resolvedItemId or buttonData.id
     if not itemID then
         if renderCooldown then
@@ -559,26 +538,36 @@ local function UpdateResolvedItemState(button, buttonData)
         return false
     end
 
-    local effectiveItem = ResolveEffectiveItem(buttonData, true)
-    if IsEquipmentSlotEntry(buttonData) and not (effectiveItem and effectiveItem.trackable) then
-        if InCombatLockdown() and button._resolvedItemId then
-            return false
+    local isEquipmentSlot = IsEquipmentSlotEntry(buttonData)
+    local resolvedItemID, availableQuantity, quantityKind
+    if isEquipmentSlot then
+        local effectiveItem = ResolveEffectiveItem(buttonData, true)
+        if not (effectiveItem and effectiveItem.trackable) then
+            if InCombatLockdown() and button._resolvedItemId then
+                return false
+            end
+            local changed = button._resolvedItemId ~= nil
+                or button._resolvedItemAvailableQuantity ~= nil
+                or button._resolvedItemQuantityKind ~= nil
+                or button._equipmentSlotTrackable ~= false
+            button._resolvedItemId = nil
+            button._resolvedItemAvailableQuantity = 0
+            button._resolvedItemQuantityKind = "equipment"
+            button._resolvedItemMaxCharges = nil
+            button._equipmentSlotTrackable = false
+            return changed
         end
-        local changed = button._resolvedItemId ~= nil
-            or button._resolvedItemAvailableQuantity ~= nil
-            or button._resolvedItemQuantityKind ~= nil
-            or button._equipmentSlotTrackable ~= false
-        button._resolvedItemId = nil
-        button._resolvedItemAvailableQuantity = 0
-        button._resolvedItemQuantityKind = "equipment"
-        button._resolvedItemMaxCharges = nil
-        button._equipmentSlotTrackable = false
-        return changed
+        resolvedItemID = effectiveItem.itemID
+        availableQuantity = effectiveItem.availableQuantity
+        quantityKind = effectiveItem.quantityKind
+    else
+        -- The values ResolveEffectiveItem builds for a plain item, without its
+        -- name/icon reads, which nothing here consumes.
+        resolvedItemID, availableQuantity, quantityKind = ResolveItemFallback(buttonData)
+        resolvedItemID = resolvedItemID or buttonData.id
+        availableQuantity = availableQuantity or 0
+        quantityKind = quantityKind or "stacks"
     end
-
-    local resolvedItemID = effectiveItem and effectiveItem.itemID
-    local availableQuantity = effectiveItem and effectiveItem.availableQuantity
-    local quantityKind = effectiveItem and effectiveItem.quantityKind
     local changed = resolvedItemID ~= button._resolvedItemId
         or quantityKind ~= button._resolvedItemQuantityKind
 
@@ -588,7 +577,7 @@ local function UpdateResolvedItemState(button, buttonData)
     button._resolvedItemId = resolvedItemID or buttonData.id
     button._resolvedItemAvailableQuantity = availableQuantity or 0
     button._resolvedItemQuantityKind = quantityKind or "stacks"
-    button._equipmentSlotTrackable = IsEquipmentSlotEntry(buttonData) and true or nil
+    button._equipmentSlotTrackable = isEquipmentSlot and true or nil
     return changed
 end
 
@@ -642,8 +631,9 @@ local function NoteButtonTimeState(button, now, floorFailOpen)
     end
 
     -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
-    -- by the self-animating icon/bar path (no SPELL_UPDATE_USABLE event; power
-    -- marks demoted), so it must force regardless of timeActive.
+    -- by the self-animating icon/bar path (the usability events only queue a
+    -- pass for Ready Glow Only While Usable icons; power marks demoted), so it
+    -- must force regardless of timeActive.
     local floorForce = false
     if not forced and floorFailOpen then
         floorForce = true
@@ -680,8 +670,10 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     -- Combat ticker floor fail-open gate ("hide-unusable" / nil; any truthy
     -- value forces). hideWhileUnusable must keep the ticker walking whether the
-    -- button is shown or hidden (visibility re-show is walk-driven; usability
-    -- has no event): hidden buttons early-return before NoteButtonTimeState, so
+    -- button is shown or hidden (visibility re-show is walk-driven: the
+    -- SPELL_UPDATE_USABLE/ACTION_USABLE_CHANGED pass only runs for Ready Glow
+    -- Only While Usable icons, see EventHandlers OnReadyGlowUsabilityChanged):
+    -- hidden buttons early-return before NoteButtonTimeState, so
     -- this is also applied in the visibility-hidden branch below. The string
     -- doubles as the term name for the dev-gated forcing attribution.
     -- Indicators do NOT force: every panel input is event-covered,
@@ -794,19 +786,9 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- Keep the base classification too, so temporary no-CD overrides do not
     -- bypass cooldown visibility rules for a real cooldown entry.
     if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
-        ResolveBaseNoCooldownState(button, buttonData.id, false)
-        ResolveBaseResourceGateCostState(button, buttonData.id, false)
-        ResolveNoCooldownState(button, cooldownSpellId, false)
-        ResolveResourceGateCostState(button, cooldownSpellId, false)
+        ResolveSpellTraits(button, buttonData.id, cooldownSpellId)
     else
-        button._noCooldown = false
-        button._noCooldownSpellId = nil
-        button._baseNoCooldown = nil
-        button._baseNoCooldownSpellId = nil
-        button._resourceGateCost = false
-        button._resourceGateCostSpellId = nil
-        button._baseResourceGateCost = nil
-        button._baseResourceGateCostSpellId = nil
+        ClearSpellTraitCaches(button, false)
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).
@@ -821,9 +803,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Clear per-tick DurationObject; set below if a cooldown is active.
-    -- Used by bar fill, desaturation, visibility checks instead of
-    -- GetCooldownTimes() which returns secret values after
-    -- SetCooldownFromDurationObject() in 12.0.1.
+    -- Read by bar fill and time text, icon fill and Indicator readouts.
     button._durationObj = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
@@ -836,6 +816,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local spellCooldownDuration
     local spellRealCooldownShown = false
     local spellCooldownResult
+    local itemEquippable = false
 
     -- Passive aura entries do not own a spell cooldown widget.
     if buttonData.isPassive then
@@ -885,7 +866,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
             button.cooldown:SetCooldown(0, 0)
         end
     elseif IsEntryItemLike(buttonData) then
-        isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true)
+        itemEquippable = buttonData.type == "item" and IsItemEquippable(buttonData)
+        isGCDOnly = EvaluateItemCooldown(button, buttonData, style, true, itemEquippable)
         fetchOk = true
     end
 
@@ -916,68 +898,36 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeDurationObj = nil
         button._chargesSpent = nil
         button._chargeText = nil
+        -- Shared count-text lane for non-charge spells: Blizzard display/use
+        -- counts and cast-count stacks (e.g. Mana Tea) reuse the charge-text
+        -- font/toggle without driving charge-specific cooldown logic.
         if buttonData.type == "spell" then
             button.count:SetText("")
-        end
-        -- Shared count-text lane for non-charge spells:
-        --   1) Blizzard display/use counts (e.g. pooled/shared uses)
-        --   2) Cast-count stacks (e.g. Mana Tea)
-        -- Both intentionally reuse the charge-text font/toggle without driving
-        -- charge-specific cooldown logic.
-        if buttonData.type == "spell"
-                and ST._ShouldShowChargeText(button) then
-            local displayCountShown = false
-            local hasCastCountText = HasCastCountText(buttonData)
-            local conditionalCastCountSpellID
-            if buttonData._hasDisplayCount or buttonData._displayCountFamily then
-                local displayCount = button.count:GetText()
-                if issecretvalue(displayCount) then
-                    displayCountShown = true
-                elseif displayCount and displayCount ~= "" then
-                    displayCountShown = true
+            if ST._ShouldShowChargeText(button) then
+                -- A display count already on the FontString wins over cast-count
+                -- text. It reads secret after the clear only while the FontString
+                -- keeps the sticky Text secret aspect (CC never calls ClearText).
+                local displayCountShown = (buttonData._hasDisplayCount or buttonData._displayCountFamily)
+                    and issecretvalue(button.count:GetText()) or false
+                if not displayCountShown then
+                    -- Cast-count text is only shown for explicitly supported
+                    -- spell families, on the current live spell/override when
+                    -- it belongs to that family. Conditional families are tied
+                    -- to the live override identified by SPELL_UPDATE_USES, so
+                    -- transformed spells like Thunderblast show text without
+                    -- the base spell rendering a stale or always-on count.
+                    local castCountSpellID
+                    if HasCastCountText(buttonData) then
+                        castCountSpellID = GetCastCountSpellID(buttonData, cooldownSpellId)
+                    elseif buttonData._castCountCandidate then
+                        castCountSpellID = GetConditionalCastCountSpellID(buttonData, cooldownSpellId)
+                    end
+                    local castCount = castCountSpellID and C_Spell.GetSpellCastCount(castCountSpellID)
+                    if issecretvalue(castCount) or (castCount and castCount > 0) then
+                        button.count:SetText(castCount)
+                    end
                 end
             end
-            if not hasCastCountText and buttonData._castCountCandidate then
-                conditionalCastCountSpellID = GetConditionalCastCountSpellID(buttonData, cooldownSpellId)
-            end
-
-            if not displayCountShown and hasCastCountText then
-                -- Cast-count text is only shown for explicitly supported
-                -- spell families. Use the current live spell/override path
-                -- when it belongs to that family.
-                button._chargeText = nil
-                local castCountSpellID = GetCastCountSpellID(buttonData, cooldownSpellId)
-                local castCount = castCountSpellID and C_Spell.GetSpellCastCount(castCountSpellID)
-                if castCountSpellID and issecretvalue(castCount) then
-                    button.count:SetText(castCount)
-                elseif castCountSpellID and not issecretvalue(castCount) and castCount and castCount > 0 then
-                    button.count:SetText(castCount)
-                else
-                    button.count:SetText("")
-                end
-            elseif not displayCountShown and conditionalCastCountSpellID then
-                -- Conditional cast-count text is tied to the live override spell
-                -- identified by SPELL_UPDATE_USES. This keeps transformed spells
-                -- like Thunderblast showing text without making the base spell
-                -- render a stale or always-on count.
-                button._chargeText = nil
-                local castCount = C_Spell.GetSpellCastCount(conditionalCastCountSpellID)
-                if issecretvalue(castCount) then
-                    button.count:SetText(castCount)
-                elseif castCount and castCount > 0 then
-                    button.count:SetText(castCount)
-                else
-                    button.count:SetText("")
-                end
-            elseif not displayCountShown then
-                button.count:SetText("")
-            end
-        elseif (buttonData._hasDisplayCount or buttonData._displayCountFamily or HasCastCountText(buttonData) or buttonData._castCountCandidate) and buttonData.type == "spell" then
-            -- Count text disabled: ensure display/use-count and cast-count text is cleared.
-            button.count:SetText("")
-        elseif button._chargeText ~= nil then
-            button._chargeText = nil
-            button.count:SetText("")
         end
     end
 
@@ -1022,9 +972,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._mainCDShown = false
         if buttonData.type == "item" then
             -- Items: 0 charges = on cooldown. No GCD to filter.
-            local itemID = button._resolvedItemId or buttonData.id
-            local chargeCount = C_Item.GetItemCount(itemID, false, true)
-            button._mainCDShown = (chargeCount == 0)
+            button._mainCDShown = (button._currentReadableCharges == 0)
         elseif buttonData.type == "spell"
            and button._chargeCountReadable == true
            and button._currentReadableCharges ~= nil then
@@ -1173,9 +1121,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     -- Item count display (inventory quantity for non-equipment tracked items)
-    if buttonData.type == "item" and not buttonData.hasCharges and not IsItemEquippable(buttonData) then
+    if buttonData.type == "item" and not buttonData.hasCharges and not itemEquippable then
         local count = button._resolvedItemAvailableQuantity
-            or C_Item.GetItemCount(button._resolvedItemId or buttonData.id)
         if button._itemCount ~= count then
             button._itemCount = count
             if count and count >= 1 then
@@ -1188,7 +1135,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Charge text color: three-state (zero / partial / max).
     -- Uses the canonical charge state resolved above.
-    ApplyChargeTextColor(button, buttonData, style, usesChargeBehavior)
+    ApplyChargeTextColor(button, style, usesChargeBehavior, useChargeTextLane)
 
     -- Per-button sound alerts (Blizzard-scoped events, CDM-valid only).
     if buttonData.type == "spell" and buttonData._rotationAssistantVirtual ~= true then

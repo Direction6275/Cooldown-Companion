@@ -81,8 +81,8 @@ function Sounds.ResetCombat()
     end
 end
 
--- Called after materialization as well as after ticks: even a resource that
--- disappears and returns between ticks must not carry an old crossing forward.
+-- Called after materialization, so a resource that leaves the active list
+-- does not carry an old crossing forward when it returns.
 function Sounds.RetainFrames(frames)
     for powerType in pairs(states) do
         local found = false
@@ -119,8 +119,14 @@ function Sounds.EndSample(holder, powerType)
         state = { config = {} }
         states[powerType] = state
     end
-    local config = Sounds.ReadConfig(tickSettings, powerType, tickSpec, state.config)
     if state.spec ~= tickSpec then state.initialized = false; state.spec = tickSpec end
+    -- Off is the common case: settle it before reading the other four keys.
+    if Read(tickSettings, powerType, tickSpec, "resourceSoundEnabled", false) ~= true then
+        state.config.enabled = false
+        state.initialized = false
+        return
+    end
+    local config = Sounds.ReadConfig(tickSettings, powerType, tickSpec, state.config)
     if not config.enabled or config.sound == "None" then
         state.initialized = false
         return

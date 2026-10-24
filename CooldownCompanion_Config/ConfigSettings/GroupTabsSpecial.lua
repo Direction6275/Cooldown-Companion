@@ -318,11 +318,9 @@ local function OpenOrRebindIndicatorTexturePicker(group, settings, forceOpen)
         return
     end
 
-    local buttonIndex = nil
     local groupId = CS.selectedGroup
     local pickerOpts = {
         groupId = groupId,
-        buttonIndex = buttonIndex,
         initialSelection = settings and settings.sourceType and settings or nil,
         callback = GetIndicatorTextureCommitCallback(group, groupId),
     }
@@ -1038,8 +1036,8 @@ local function SpecialFinderIndicatorType(displayType)
 end
 
 local function SpecialFinderIndicatorIconSettings(context)
-    local trigger = context and context.group and context.group.indicatorSettings
-    return trigger and trigger.icon or nil
+    local settings = context and context.group and context.group.indicatorSettings
+    return settings and settings.icon or nil
 end
 
 
@@ -1049,7 +1047,6 @@ local function SpecialFinderTextureSettings(context)
 end
 
 local function SpecialFinderTextureAppearance(context)
-    local group = context and context.group
     local rightMode = SpecialFinderIndicatorType("texture")(context)
     if not rightMode then
         return false
