@@ -862,22 +862,27 @@ local function SpecBelongsToClass(specId, classKey)
     return specClassKey == classKey
 end
 
+-- true: the hero tree is one of this class's. false: the class's trees were
+-- read and it is not among them. nil: the class's trees could not be read
+-- (another class's specs return nothing against the player's own config,
+-- MayReturnNothing), so the caller cannot tell and keeps the limit.
 local function HeroTalentBelongsToClass(subTreeID, classKey)
     subTreeID = tonumber(subTreeID)
     if not classKey then return true end
-    if not (subTreeID
-        and C_ClassTalents
+    if not subTreeID then return false end
+    if not (C_ClassTalents
         and C_ClassTalents.GetHeroTalentSpecsForClassSpec
         and C_SpecializationInfo
         and C_SpecializationInfo.GetNumSpecializationsForClassID
         and C_SpecializationInfo.GetSpecializationInfo)
     then
-        return false
+        return nil
     end
 
     local classID = GetClassIDFromClassKey(classKey)
-    if not classID then return false end
+    if not classID then return nil end
 
+    local answered = false
     local numSpecs = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
     for specIndex = 1, numSpecs do
         local specId = C_SpecializationInfo.GetSpecializationInfo(
@@ -890,13 +895,17 @@ local function HeroTalentBelongsToClass(subTreeID, classKey)
             classID
         )
         local subTreeIDs = specId and C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
+        if subTreeIDs and #subTreeIDs > 0 then
+            answered = true
+        end
         for _, availableSubTreeID in ipairs(subTreeIDs or {}) do
             if tonumber(availableSubTreeID) == subTreeID then
                 return true
             end
         end
     end
-    return false
+    if answered then return false end
+    return nil
 end
 
 local function GetCharacterClassKey(addon, charKey)
@@ -1155,7 +1164,9 @@ local function PruneHeroTalentMapToClass(entity, classKey)
     local changed = false
     for subTreeID in pairs(entity.heroTalents) do
         local normalizedSubTreeID = tonumber(subTreeID)
-        if normalizedSubTreeID and HeroTalentBelongsToClass(normalizedSubTreeID, classKey) then
+        -- Keep what this class's trees confirm and what they could not be read
+        -- to check (nil); drop only a non-numeric key or a confirmed stranger.
+        if normalizedSubTreeID and HeroTalentBelongsToClass(normalizedSubTreeID, classKey) ~= false then
             if subTreeID ~= normalizedSubTreeID then
                 entity.heroTalents[normalizedSubTreeID] = true
                 entity.heroTalents[subTreeID] = nil

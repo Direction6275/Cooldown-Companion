@@ -2883,6 +2883,52 @@ local function BuildPlayerHeroTalentSet(playerSpecIds)
     return playerHeroTalentIds, true
 end
 
+-- Blizzard's shared talent preview loadout, used by Who Can Use This, profile
+-- import and the talent picker's tree.
+local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
+
+-- Rebuilds the preview loadout for specID and returns its config ID, or nil.
+-- Never the active config: the talent picker draws whole trees from it,
+-- your inactive specs included.
+local function SetupTalentViewLoadout(specID, playerLevel)
+    if not (specID
+        and C_ClassTalents
+        and C_ClassTalents.InitializeViewLoadout
+        and C_Traits
+        and C_Traits.GetConfigInfo) then
+        return nil
+    end
+    playerLevel = playerLevel or (UnitLevel and UnitLevel("player")) or nil
+    if not playerLevel or playerLevel < 1 then
+        return nil
+    end
+    C_ClassTalents.InitializeViewLoadout(specID, playerLevel)
+    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
+        return VIEW_TRAIT_CONFIG_ID
+    end
+    return nil
+end
+
+-- A spec's hero tree IDs, plus the config ID to read their names from.
+-- Foreign specs return nothing against the player's own config; the shared
+-- view loadout resolves them, and its ID is then the one to read names from.
+local function GetSpecHeroSubTreeIDs(specID, namesConfigID, playerLevel)
+    if not (specID and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
+        return nil, namesConfigID
+    end
+    -- Never tail-return the API call: its second return is requiredPlayerLevel.
+    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specID)
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, namesConfigID
+    end
+    local viewConfigID = SetupTalentViewLoadout(specID, playerLevel)
+    subTreeIDs = viewConfigID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(viewConfigID, specID) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, viewConfigID
+    end
+    return nil, namesConfigID
+end
+
 local function HasEnabledMapValue(map)
     if type(map) ~= "table" then return false end
     for _, enabled in pairs(map) do
@@ -3118,6 +3164,8 @@ end
 -- ST._ exports (consumed by later Config/ files at load time)
 ------------------------------------------------------------------------
 ST._CompactUntitledInlineGroupConfig = CompactUntitledInlineGroupConfig
+ST._SetupTalentViewLoadout = SetupTalentViewLoadout
+ST._GetSpecHeroSubTreeIDs = GetSpecHeroSubTreeIDs
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow
