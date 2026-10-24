@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Core/PanelSections.lua: panel section membership,
-    per-section geometry, and the shared layout metrics Core/GroupFrame.lua
+    per-section geometry, and the shared layout metrics Core/GroupFrameLayout.lua
     positions its live buttons from.
 
     A SECTION is a small placed cluster of icons pinned to one of the eight
@@ -12,21 +12,22 @@
     stays panel-wide, text included.
 
     Sections apply to plain icon panels only. An Aura Panel renders through
-    Blizzard's flow container, which assumes one cell size per line. Bar Panels,
-    Totem Panels, and Indicators are outside the model. Assistant entries use
-    ordinary icon sections.
+    Blizzard's flow container, which assumes one cell size per line. Totem
+    Panels, Indicators and any panel shown as bars are outside the model, and
+    an entry shown as a bar on an ordinary panel is never a section member
+    (GetPanelSectionForEntry). Assistant entries use ordinary icon sections.
     Everywhere sections do not apply, GetSectionsForLayout returns nil and the
     panel lays out through the exact code it always did.
 
     The base grid is NOT re-derived here. A sectioned panel parks an invisible
     anchor frame over the base cluster's slot inside the (now larger) panel
-    frame, and GroupFrame's existing corner/centered-edge arithmetic runs against
+    frame, and GroupFrameLayout's existing corner/centered-edge arithmetic runs against
     that frame instead of the panel -- same expressions, same digits.
 ]]
 
 local ADDON_NAME, ST = ...
+local CooldownCompanion = ST.Addon
 
-local C_Spell = C_Spell
 local CreateFrame = CreateFrame
 local issecretvalue = issecretvalue
 local ipairs = ipairs
@@ -488,7 +489,7 @@ end
 ------------------------------------------------------------------------
 
 --- A section's icon size and spacing, falling back to the panel's own resolved
---- values. panelWidth/panelHeight arrive already resolved by GroupFrame's
+--- values. panelWidth/panelHeight arrive already resolved by GroupFrameLayout's
 --- GetButtonDimensions, so the fallback can never drift from the panel's own
 --- maintainAspectRatio / buttonSize / iconWidth / iconHeight rule.
 --- A square panel stays square in its sections: one stored dimension drives
@@ -844,7 +845,7 @@ function ST.ApplyPanelSectionButtonSize(button, width, height)
     end
 end
 
--- The base cluster's stand-in inside a sectioned panel frame. GroupFrame's
+-- The base cluster's stand-in inside a sectioned panel frame. GroupFrameLayout's
 -- corner and centered-edge formulas are handed this frame in place of the panel
 -- frame, so a base member's arithmetic is byte-for-byte what it always was --
 -- only the rectangle it is measured against moved.
@@ -1154,8 +1155,7 @@ function ST.UpdateAuraSectionPlaceholders(addon, groupId, frame, group)
                             effectiveStyle.iconZoom)
                     end
 
-                    local icon = buttonData.type == "spell"
-                        and C_Spell.GetSpellTexture(buttonData.id) or nil
+                    local icon = ST._GetEntryPlaceholderIcon(buttonData, effectiveStyle)
                     if icon and not issecretvalue(icon) then
                         tile.icon:SetTexture(icon)
                         tile.icon:Show()
@@ -1588,7 +1588,7 @@ function ST.GetPanelBasePointOffset(frame, point)
 end
 
 function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
-    local group = ST.Addon.db.profile.groups[frame.groupId]
+    local group = CooldownCompanion.db.profile.groups[frame.groupId]
     local dx, dy = 0, 0
     -- Legacy positions are converted once the first real layout is available.
     if group and group.baseRowAnchorVersion == 1 then
@@ -1601,7 +1601,7 @@ function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
     local target = anchor and _G[anchor.relativeTo or "UIParent"]
     frame._panelBaseUsesSavedAnchor = anchor and point == anchor.point
         and ((relativeFrame == ST.GetPanelAnchorBodyFrame(target) and relativePoint == anchor.relativePoint)
-            or ST.Addon:IsCursorAnchor(anchor)) or false
+            or CooldownCompanion:IsCursorAnchor(anchor)) or false
 end
 
 function ST.UpdatePanelBaseAnchor(frame, group, layout, fixedPoint, newWidth, newHeight)

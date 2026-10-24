@@ -102,7 +102,7 @@ function ST.ResolveAttachedBarDimensions(group, style, side, width, height, layo
     local kind = ST.GetPanelGeometryKind(group, layoutKind)
     local geometry = ST.ResolveBarGeometry(group, { style = style, thickness = style.barHeight,
         side = side, fit = kind == "mixed" or kind == "icons", width = width, height = height,
-        vertical = style.barFillVertical, length = style.barLength, layoutKind = kind })
+        vertical = style.barFillVertical, length = style.barLength })
     return geometry.width, geometry.height, geometry.vertical, geometry.length
 end
 
@@ -192,7 +192,7 @@ function ST.LayoutAttachedBars(groupId, frame, group, kind)
     local byEntry = {}
     for _, button in ipairs(frame.buttons or {}) do byEntry[button.buttonData] = button end
     local base = ST.GetAttachedBarStyle(group)
-    local geometry = ST.ResolveBarGeometry(group, { style = base, layoutKind = kind })
+    local geometry = ST.ResolveBarGeometry(group, { style = base })
     local spacing, gap = geometry.spacing, geometry.distance
     local body = ST.GetPanelAnchorBodyFrame(frame)
     local hasIcons = (frame.visibleButtonCount or 0) > 0

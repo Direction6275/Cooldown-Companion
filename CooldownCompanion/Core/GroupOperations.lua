@@ -416,7 +416,7 @@ local function RefreshCompactSuppressionAffectedGroup(self, groupId)
     groupId = tonumber(groupId)
     if not groupId then return end
 
-    local group = ST.GetPanelLayoutGroup(self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not group or group.compactLayout ~= true then return end
 
     local frame = self.groupFrames and self.groupFrames[groupId]

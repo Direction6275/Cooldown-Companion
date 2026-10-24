@@ -168,7 +168,6 @@ local function UpdateBarFill(button)
     -- Single-bar path
     -- DurationObjects are handed to StatusBar:SetTimerDuration so drain/fill motion
     -- is engine-driven instead of re-sampled as Lua percentages.
-    -- HasSecretValues gates expiry detection and time text formatting.
     -- Items use stored C_Item.GetItemCooldown values (_itemCdStart/_itemCdDuration).
     local onCooldown = false
     local itemRemaining = 0

@@ -12,7 +12,6 @@ function ST.ResolveBarGeometry(group, options)
     local attached = ordinary and options.attached ~= false
     local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
     local layout = ordinary and group.attachedBarLayout or {}
-    layout = layout or {}
     local vertical = options.vertical == true
     if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
     local thickness = options.thickness
@@ -302,7 +301,8 @@ end
 
 -- Eligibility still controls runtime membership. When none is eligible,
 -- configured entries provide the geometry for editing their inactive ghosts.
--- The same decision owns fitting, the saved bar arrangement and its controls.
+-- The same decision picks attached-bar fitting versus the bar-only grid, and
+-- which dimensions the movers edit.
 function ST.GetPanelGeometryKind(group, kind)
     kind = kind or ST.GetPanelLayoutKind(group)
     if kind ~= "empty" then return kind end
@@ -383,8 +383,8 @@ function ST.GetEntryBaseStyle(group, entry, barStyle)
     return group and group.style or {}
 end
 
--- An ephemeral view lets the established Bar Panel grid consume its own
--- geometry without changing the saved panel type or the icon arrangement.
+-- An ephemeral view lets the bars-mode grid lay out a bar-only panel from its
+-- shared bar style without changing the saved panel type or the icon arrangement.
 -- Compact Mode is the panel's own: one setting for icons and bars alike.
 function ST.GetPanelLayoutGroup(group, forEditing, kind)
     if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars" then return group end
@@ -399,7 +399,7 @@ function ST.GetPanelBarStyleGroup(group)
         _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, { __index = group, __newindex = group })
 end
 
--- Movers edit the visible bar dimensions in either bar-only arrangement.
+-- Movers on a bar-only panel edit its shared bar style's dimensions.
 function ST.GetPanelSizingGroup(group)
     if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars" then
         return ST.GetPanelBarStyleGroup(group)

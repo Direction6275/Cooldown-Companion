@@ -1043,6 +1043,15 @@ local function ShouldShowLiveAuraIcon(buttonData, style)
     return ShouldShowAuraIcon(buttonData, style)
 end
 
+-- The picture an unlock placeholder shows: what the locked display puts in
+-- that square; the spell texture stands in for the live aura icon.
+function ST._GetEntryPlaceholderIcon(buttonData, style)
+    if ShouldShowLiveAuraIcon(buttonData, style) then
+        return buttonData.type == "spell" and buttonData.id and C_Spell.GetSpellTexture(buttonData.id) or nil
+    end
+    return GetEntryIconTexture(buttonData)
+end
+
 ------------------------------------------------------------------------
 -- Standalone aura stacks retain separate capacity blocks and empty gaps.
 -- Fixed fill blocks are clipped by Blizzard's native application-fill rect;

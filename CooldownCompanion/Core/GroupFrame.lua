@@ -833,7 +833,7 @@ function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
             ShowIndicator(
                 "group:" .. groupId,
                 self.groupFrames[groupId],
-                group.name or ("Group " .. groupId),
+                group.name or ("Panel " .. groupId),
                 sourceGroupId,
                 self:WouldCreateCircularAnchor(sourceGroupId, groupId)
             )
@@ -847,7 +847,7 @@ function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
             ShowIndicator(
                 "container:" .. containerId,
                 self.containerFrames[containerId],
-                container.name or ("Container " .. containerId),
+                container.name or ("Group " .. containerId),
                 sourceGroupId,
                 self:WouldCreateCircularAnchor(sourceGroupId, containerId, "container")
             )

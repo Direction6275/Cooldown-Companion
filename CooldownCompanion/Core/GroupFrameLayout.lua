@@ -298,7 +298,7 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
                 end
             end
 
-            local icon = buttonData.type == "spell" and C_Spell.GetSpellTexture(buttonData.id) or nil
+            local icon = ST._GetEntryPlaceholderIcon(buttonData, effectiveStyle)
             if placeholderIconShown and icon and not issecretvalue(icon) then
                 tile.icon:SetTexture(icon)
                 tile.icon:Show()
@@ -637,7 +637,8 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if auraRebindNeeded then self:RequestAuraRebind("populate", groupId) end
 end
 
--- Group frames become protected when they contain secure action buttons.
+-- A panel becomes protected when a protected frame (for example a secure unit
+-- frame, see FrameAnchoring) is anchored to it.
 -- Defer resizing during combat and retry from the layout ticker.
 local function DeferProtectedResize(frame)
     if InCombatLockdown() and frame:IsProtected() then
