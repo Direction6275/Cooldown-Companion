@@ -1372,6 +1372,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         body.groupId = frame.groupId
         frame._indicatorAnchorBody = body
     end
+    local bodyAppeared = not frame._indicatorAnchorBodyActive
     frame._indicatorAnchorBodyActive = true
     local settings = self:GetIndicatorTextureSettings(group)
     local display = ST.Indicator.Settings(group)
@@ -1396,6 +1397,8 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         PlaceIndicatorDisplay(self, body, group, settings, frame.groupId, previewFrame)
     end
     self:RefreshIndicatorAnchorAlpha(frame, group)
+    -- Outside anchors follow the box from now on (GetExternalAnchorTargetFrame).
+    if bodyAppeared then self:OnIndicatorAnchorBodyChanged() end
     return body
 end
 

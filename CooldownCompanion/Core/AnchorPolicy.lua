@@ -800,6 +800,33 @@ function CooldownCompanion:PrintInvalidAnchorTargetReason(relativeTo, options)
     self:Print(message)
 end
 
+-- An Indicator's panel frame is a 1x1 point pinned to the centre of its
+-- visible box (the anchor body, AuraTexturesDisplay.lua
+-- UpdateIndicatorAnchorBody), so outside anchors take the body instead: the
+-- cast bar, resource bars and the stable External Anchor line up with the box
+-- the player sees (owner ruling 2026-10-24). Indicator-only on purpose:
+-- ST.GetPanelAnchorBodyFrame also returns the section base for sectioned
+-- panels, which would move their external bindings from the panel's full
+-- outline to its base row.
+function CooldownCompanion:GetExternalAnchorTargetFrame(frame)
+    if frame and frame._indicatorAnchorBodyActive and frame._indicatorAnchorBody then
+        return frame._indicatorAnchorBody
+    end
+    return frame
+end
+
+-- The box appeared or went away. Re-point the stable External Anchor, and
+-- re-place the bars once modules run (a full pass evaluates them only after
+-- the login settle), so a bar placed before the box existed moves onto it
+-- and one left on a retired box moves back to the panel.
+function CooldownCompanion:OnIndicatorAnchorBodyChanged()
+    self:RefreshExternalAnchorFrame()
+    -- Inside an open pass this only marks it full; the outer pass keeps its
+    -- own reason.
+    local operation = self:BeginPanelAttachmentRefresh()
+    self:EndPanelAttachmentRefresh(operation, true, operation and "indicator-anchor-body" or nil)
+end
+
 function CooldownCompanion:GetExternalAnchorFrame(relativeTo)
     if not relativeTo or relativeTo == "" or relativeTo == "UIParent" then
         return UIParent, "ui-parent"
@@ -810,7 +837,7 @@ function CooldownCompanion:GetExternalAnchorFrame(relativeTo)
         return UIParent, reason
     end
 
-    return _G[relativeTo] or UIParent, "ok"
+    return self:GetExternalAnchorTargetFrame(_G[relativeTo]) or UIParent, "ok"
 end
 
 function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)

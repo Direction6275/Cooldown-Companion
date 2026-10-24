@@ -71,8 +71,11 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         end
         return
     else
+        local bodyRetired = frame._indicatorAnchorBodyActive
         frame._indicatorAnchorBodyActive = nil
         frame._indicatorAlphaOwned = nil
+        -- No longer an Indicator: outside anchors return to the panel frame.
+        if bodyRetired then self:OnIndicatorAnchorBodyChanged() end
     end
 
     if IsCursorAnchor(anchor) then
