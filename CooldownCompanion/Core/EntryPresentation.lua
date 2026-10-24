@@ -267,15 +267,17 @@ function ST.RetireTemplateBarOnlyLayout(template)
     end
 end
 
+-- Read-only; nothing may write into it.
+local LAYOUT_ELIGIBILITY_OPTS = { eligibilityOnly = true }
+
 -- Structural eligibility only: cooldown/aura visibility and temporary load
 -- conditions cannot turn a mixed panel into a differently arranged bar grid.
 function ST.IsPanelLayoutEntryEligible(group, entry)
     if not entry or entry.enabled == false then return false end
     if entry.specs and next(entry.specs) and not entry.specs[Addon._currentSpecId] then return false end
     if Addon.GetLoadConditionSourcesForEntry and Addon.EvaluateLoadConditionSources then
-        return Addon:EvaluateLoadConditionSources(Addon:GetLoadConditionSourcesForEntry(entry, group), {
-            eligibilityOnly = true,
-        })
+        return Addon:EvaluateLoadConditionSources(Addon:GetLoadConditionSourcesForEntry(entry, group),
+            LAYOUT_ELIGIBILITY_OPTS)
     end
     return true
 end

@@ -45,6 +45,13 @@ local LOAD_CONDITION_ALLOWLIST_KEYS = {
     characterAllowlist = true,
 }
 
+-- Shared read-only option tables: nothing may write into them.
+local EMPTY_OPTS = {}
+local ELIGIBILITY_ONLY_OPTS = { eligibilityOnly = true }
+local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
+    checkLoadConditions = false,
+}
+
 local function NormalizeClassKey(key)
     if type(key) ~= "string" or key == "" then return nil end
     return string.upper(key)
@@ -295,9 +302,7 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
         -- FRAME check is exempted: the data checks stay in force, because
         -- those entries are saved entries and answer them honestly.
         local failsEntryChecks = not (group.buttons and #group.buttons > 0)
-            or not self:GroupHasUsableButtons(group, {
-                checkLoadConditions = false,
-            })
+            or not self:GroupHasUsableButtons(group, UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS)
             or (groupFrame
                 and not ST.PanelHasAuraSection(group)
                 and (not groupFrame.buttons or #groupFrame.buttons == 0))
@@ -625,7 +630,7 @@ end
 
 function CooldownCompanion:GroupHasUsableButtons(group, opts)
     if ST.IsTotemPanelGroup(group) then return true end
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     if not (group and group.buttons and #group.buttons > 0) then
         return false
     end
@@ -639,7 +644,7 @@ end
 
 function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
     if ST.IsTotemPanelGroup(group) then return GetNumTotemSlots() end
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
 
     if not (group and group.buttons and #group.buttons > 0) then
         return 0
@@ -739,10 +744,6 @@ function CooldownCompanion:GetAuraSectionEntrySignature(group, buttonUsabilityOp
     return signature
 end
 
-local UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS = {
-    checkLoadConditions = false,
-}
-
 function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
     local frame = groupId and self.groupFrames and self.groupFrames[groupId]
     if frame
@@ -755,7 +756,7 @@ function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
 end
 
 function CooldownCompanion:IsGroupActive(groupId, opts)
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     local db = self.db and self.db.profile
     local group = opts.group or (db and db.groups and db.groups[groupId])
     if not group then return false end
@@ -810,9 +811,8 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         end
     end
 
-    if opts.requireButtons and not self:GroupHasUsableButtons(group, {
-        checkLoadConditions = opts.checkLoadConditions,
-    }) then
+    if opts.requireButtons and not self:GroupHasUsableButtons(group,
+        opts.checkLoadConditions == false and UNLOCK_PREVIEW_BUTTON_USABILITY_OPTIONS or nil) then
         return false
     end
 
@@ -1381,11 +1381,11 @@ function CooldownCompanion:GetLoadConditionSourcesForEntry(buttonData, group)
 end
 
 function CooldownCompanion:EvaluateLoadConditionSources(sources, opts)
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     local eligibility
     local identity
 
-    for _, source in ipairs(sources or {}) do
+    for _, source in ipairs(sources or EMPTY_OPTS) do
         if opts.eligibilityOnly ~= true
             and not self:EvaluateLoadConditions(source.loadConditions, source.defaults)
         then
@@ -1419,10 +1419,8 @@ function CooldownCompanion:IsGroupLoadConditionMet(group)
 end
 
 function CooldownCompanion:IsGroupEligibilityMet(group, specId)
-    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group), {
-        eligibilityOnly = true,
-        specId = specId,
-    })
+    return self:EvaluateLoadConditionSources(self:GetLoadConditionSourcesForGroup(group),
+        specId and { eligibilityOnly = true, specId = specId } or ELIGIBILITY_ONLY_OPTS)
 end
 
 function CooldownCompanion:IsButtonLoadConditionMet(buttonData, group)
@@ -1462,7 +1460,7 @@ function CooldownCompanion:IsButtonEnabled(buttonData, group)
 end
 
 function CooldownCompanion:IsButtonUsable(buttonData, group, opts)
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     if not self:IsButtonEnabled(buttonData, group) then return false end
 
     if opts.checkLoadConditions ~= false and not self:IsButtonLoadConditionMet(buttonData, group) then return false end
@@ -1572,6 +1570,13 @@ function CooldownCompanion:GetHeroSubTreeRootNode(configID, treeID, heroSubTreeI
     return bestNodeID, bestNodeInfo
 end
 
+local function CacheTalentNode(cache, nodeID, nodeInfo)
+    cache[nodeID] = {
+        activeRank = nodeInfo.activeRank or 0,
+        activeEntryID = nodeInfo.activeEntry and nodeInfo.activeEntry.entryID or nil,
+    }
+end
+
 -- Rebuild the runtime talent node cache from the active talent config.
 -- Called on TRAIT_CONFIG_UPDATED, PLAYER_ENTERING_WORLD, spec changes.
 function CooldownCompanion:RebuildTalentNodeCache()
@@ -1594,36 +1599,37 @@ function CooldownCompanion:RebuildTalentNodeCache()
     if not treeID then return end
 
     local activeHeroSubTreeID = self._currentHeroSpecId or C_ClassTalents.GetActiveHeroTalentSpec()
-    local heroRootNodeID = nil
-    if activeHeroSubTreeID then
-        heroRootNodeID = self:GetHeroSubTreeRootNode(configID, treeID, activeHeroSubTreeID)
-    end
 
     local nodeIDs = C_Traits.GetTreeNodes(treeID)
     if not nodeIDs then return end
 
+    -- One walk. Ordinary visible nodes and the active hero subtree's visible
+    -- choice nodes are cached as they come; the subtree's root is found along
+    -- the way and cached after, if visible. The root rule must match
+    -- GetHeroSubTreeRootNode (config's TalentPicker still calls it): every
+    -- active-subtree node that is not a SubTreeSelection, hidden ones too,
+    -- lowest posY then posX, first in nodeIDs order on a tie.
+    local cache = self._talentNodeCache
+    local rootID, rootInfo
     for _, nodeID in ipairs(nodeIDs) do
         local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
-        local includeNode = nodeInfo
-            and nodeInfo.isVisible
-            and nodeInfo.type ~= Enum.TraitNodeType.SubTreeSelection
-            and (
-                not nodeInfo.subTreeID
-                or (
-                    activeHeroSubTreeID
-                    and nodeInfo.subTreeID == activeHeroSubTreeID
-                    and (
-                        nodeInfo.type == Enum.TraitNodeType.Selection
-                        or nodeID == heroRootNodeID
-                    )
-                )
-            )
-        if includeNode then
-            self._talentNodeCache[nodeID] = {
-                activeRank = nodeInfo.activeRank or 0,
-                activeEntryID = nodeInfo.activeEntry and nodeInfo.activeEntry.entryID or nil,
-            }
+        if nodeInfo and nodeInfo.type ~= Enum.TraitNodeType.SubTreeSelection then
+            if not nodeInfo.subTreeID then
+                if nodeInfo.isVisible then CacheTalentNode(cache, nodeID, nodeInfo) end
+            elseif activeHeroSubTreeID and nodeInfo.subTreeID == activeHeroSubTreeID then
+                if not rootInfo
+                    or nodeInfo.posY < rootInfo.posY
+                    or (nodeInfo.posY == rootInfo.posY and nodeInfo.posX < rootInfo.posX) then
+                    rootID, rootInfo = nodeID, nodeInfo
+                end
+                if nodeInfo.isVisible and nodeInfo.type == Enum.TraitNodeType.Selection then
+                    CacheTalentNode(cache, nodeID, nodeInfo)
+                end
+            end
         end
+    end
+    if rootInfo and rootInfo.isVisible and not cache[rootID] then
+        CacheTalentNode(cache, rootID, rootInfo)
     end
 end
 
