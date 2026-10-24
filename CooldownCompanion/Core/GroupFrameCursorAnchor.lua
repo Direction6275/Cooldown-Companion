@@ -86,15 +86,16 @@ end
 -- 2026-10-24 for this remembered placement). The stamp is the FINAL placement:
 -- point, cursor position, offset (also the label's x/y) and the section base
 -- correction dx/dy, recomputed every tick, so a reflow that shifts the base
--- row under a still mouse still re-places. Every writer clears it:
--- ST.SetPanelBasePoint and ST.UpdatePanelBaseAnchor's AdjustPointsOffset
--- (PanelSections.lua), the Indicator host's raw point writers and the cursor
--- label writers that show the saved rather than the staged offset
--- (AuraTexturesDisplay.lua and SetCursorAnchorLayoutPreviewGroupState), and
--- the ticker itself while a panel is being dragged. A raw SetPoint or
--- ClearAllPoints added anywhere else on a cursor frame would not clear it, and
--- the panel would stay put until the mouse (or, while parked, the dummy
--- cursor) moves. Every other caller places unconditionally.
+-- row under a still mouse still re-places. Every other writer calls
+-- ST.InvalidateCursorPlacement (PanelSections.lua): ST.SetPanelBasePoint and
+-- ST.UpdatePanelBaseAnchor's AdjustPointsOffset, the Indicator host's raw point
+-- writers and the cursor label writers that show the saved rather than the
+-- staged offset (AuraTexturesDisplay.lua and
+-- SetCursorAnchorLayoutPreviewGroupState), and the ticker itself while a panel
+-- is being dragged. A raw SetPoint or ClearAllPoints added anywhere else on a
+-- cursor frame must call it too, or the panel stays put until the mouse (or,
+-- while parked, the dummy cursor) moves. Every other caller places
+-- unconditionally.
 local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, fromTicker)
     if not (frame and anchor) then
         return false
@@ -263,7 +264,7 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     elseif selected then
         UpdateCoordLabel(frame, group.anchor.x or CURSOR_ANCHOR_X, group.anchor.y or CURSOR_ANCHOR_Y)
         -- The label now shows the saved offset; the ticker repaints a staged one.
-        frame._cursorPlacedPoint = nil
+        ST.InvalidateCursorPlacement(frame)
     end
     self:UpdateGroupClickthrough(groupId)
 end
@@ -1058,9 +1059,9 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
                 -- so its stamp is cleared while the drag lasts: however the
                 -- drag ends (drop, cancel, combat lock), the first tick after
                 -- it places the panel again.
-                frame._cursorPlacedPoint = nil
+                ST.InvalidateCursorPlacement(frame)
                 local host = GetCursorAnchoredIndicatorHost(frame, group)
-                if host then host._cursorPlacedPoint = nil end
+                if host then ST.InvalidateCursorPlacement(host) end
             elseif frame and frame:IsShown() then
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
                 local anchorX = previewX or cursorX

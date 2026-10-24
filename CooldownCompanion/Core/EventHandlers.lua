@@ -79,6 +79,8 @@ end
 
 local function RunTalentFamilyRefresh(addon)
     local merge = talentFamilyRefresh
+    -- Already run by combat start (FlushPendingTalentFamilyRefresh).
+    if not merge.pending then return end
     merge.pending = false
     local opts, settle, chargeRefresh = merge.opts, merge.settle, merge.chargeRefresh
     merge.opts, merge.settle, merge.chargeRefresh = {}, false, false
@@ -103,6 +105,13 @@ local function QueueTalentFamilyRefresh(addon, opts, chargeRefresh)
     if merge.pending then return end
     merge.pending = true
     C_Timer.After(0, function() RunTalentFamilyRefresh(addon) end)
+end
+
+-- Combat start runs a pending merge at once: PLAYER_REGEN_DISABLED arrives just
+-- before the lockdown begins, so the out-of-combat refresh never lands in
+-- combat. The queued next-frame call then finds nothing pending.
+function CooldownCompanion:FlushPendingTalentFamilyRefresh()
+    RunTalentFamilyRefresh(self)
 end
 
 -- The settle exists for late-resolving charge data and entry usability. It

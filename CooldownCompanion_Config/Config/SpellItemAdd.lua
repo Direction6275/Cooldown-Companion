@@ -1174,10 +1174,10 @@ end
 -- way the add door asks: OnAutocompleteSelect adds `entry.id`, and TryAddSpell
 -- probes it as { type = "spell", id = entry.id, addedAs = "aura" }, stamps the
 -- probe's auraUnit from ResolveStandaloneAuraDefaultUnit, then asks
--- ResolveAuraEntryUnit. The stamp is copied here too: that resolver falls back
--- to the stored unit for a head the client cannot classify, so an unstamped
--- probe would answer "unknown" (offered) where the door answers "player"
--- (refused on a target panel). The resolver walks GetBaseSpell, the CDM row
+-- ResolveAuraEntryUnit, which returns that stamp. So the stamp itself is the
+-- answer here: an unstamped ResolveAuraEntryUnit probe would answer "unknown"
+-- (offered) where the door answers "player" (refused on a target panel) for a
+-- head the client cannot classify. The resolver walks GetBaseSpell, the CDM row
 -- and its linkedSpellIDs to the APPLIED aura before asking polarity, which a
 -- raw IsSpellHarmful on the row id does not: CDM rows carry CAST ids while the
 -- aura they apply lives in linkedSpellIDs, and the two can disagree. Asking the
@@ -1197,21 +1197,19 @@ local function ResolveAutocompleteAuraUnit(entry)
         auraUnitMemoByCache[cache] = memo
     end
 
-    -- `false` stands in for "unresolvable", so a nil answer is still a cache hit.
+    -- The stamped answer is always "player" or "target", so every miss fills the memo.
     local unit = memo and memo[spellId]
     if unit == nil then
-        local probe = {
+        unit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit({
             type = "spell",
             id = spellId,
             addedAs = "aura",
-        }
-        probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
-        unit = CooldownCompanion:ResolveAuraEntryUnit(probe) or false
+        })
         if memo then
             memo[spellId] = unit
         end
     end
-    return unit or nil
+    return unit
 end
 
 -- Would this row survive the panel's unit rule? Asked with the add door's own

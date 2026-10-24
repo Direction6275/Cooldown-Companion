@@ -690,41 +690,25 @@ end
 -- polarity cannot be resolved right now are skipped rather than treated as an
 -- answer. `anchor` limits the count to one section; `exclude` leaves one entry
 -- out, for callers asking what the OTHER members say.
-local function IsAuraSurfaceVoter(group, buttonData, anchor, exclude, enabledOnly)
-    return buttonData and buttonData ~= exclude and buttonData.addedAs == "aura"
-        and (not enabledOnly or buttonData.enabled ~= false)
-        and (not anchor or ST.GetPanelSectionForEntry(group, buttonData) == anchor)
-end
-
-local function TallyAuraSurfaceUnit(self, group, anchor, exclude, enabledOnly)
-    local buttons = group.buttons or {}
-    local remaining = 0
-    for _, buttonData in ipairs(buttons) do
-        if IsAuraSurfaceVoter(group, buttonData, anchor, exclude, enabledOnly) then
-            remaining = remaining + 1
-        end
-    end
+local function VoteAuraSurfaceUnit(self, voters)
+    local remaining = #voters
     local firstUnit
     local playerCount, targetCount, savedPlayer, savedTarget = 0, 0, 0, 0
-    for _, buttonData in ipairs(buttons) do
-        if remaining == 0 then break end
-        if IsAuraSurfaceVoter(group, buttonData, anchor, exclude, enabledOnly) then
-            remaining = remaining - 1
-            local unit = self:ResolveAuraEntryUnit(buttonData)
-            if unit then
-                firstUnit = firstUnit or unit
-                if unit == "target" then targetCount = targetCount + 1 else playerCount = playerCount + 1 end
-                if buttonData.auraUnit == "target" then
-                    savedTarget = savedTarget + 1
-                elseif buttonData.auraUnit == "player" then
-                    savedPlayer = savedPlayer + 1
-                end
-                -- Decided once the entries left can neither catch nor tie the
-                -- leader, so a uniform surface resolves only about half its
-                -- entries.
-                if playerCount > targetCount + remaining then return "player" end
-                if targetCount > playerCount + remaining then return "target" end
+    for _, buttonData in ipairs(voters) do
+        remaining = remaining - 1
+        local unit = self:ResolveAuraEntryUnit(buttonData)
+        if unit then
+            firstUnit = firstUnit or unit
+            if unit == "target" then targetCount = targetCount + 1 else playerCount = playerCount + 1 end
+            if buttonData.auraUnit == "target" then
+                savedTarget = savedTarget + 1
+            elseif buttonData.auraUnit == "player" then
+                savedPlayer = savedPlayer + 1
             end
+            -- Decided once the entries left can neither catch nor tie the
+            -- leader, so a uniform surface resolves only about half its entries.
+            if playerCount > targetCount + remaining then return "player" end
+            if targetCount > playerCount + remaining then return "target" end
         end
     end
     if not firstUnit then return nil end
@@ -734,8 +718,17 @@ local function TallyAuraSurfaceUnit(self, group, anchor, exclude, enabledOnly)
 end
 
 local function ResolveAuraSurfaceUnit(self, group, anchor, exclude)
-    return TallyAuraSurfaceUnit(self, group, anchor, exclude, true)
-        or TallyAuraSurfaceUnit(self, group, anchor, exclude, false)
+    local enabled, disabled = {}, {}
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if buttonData and buttonData ~= exclude and buttonData.addedAs == "aura"
+            and (not anchor or ST.GetPanelSectionForEntry(group, buttonData) == anchor) then
+            local voters = self:IsButtonEnabled(buttonData, group) and enabled or disabled
+            voters[#voters + 1] = buttonData
+        end
+    end
+    -- Turned-on entries that resolved nothing already contributed nothing, so
+    -- the fallback asks only the turned-off ones.
+    return VoteAuraSurfaceUnit(self, enabled) or VoteAuraSurfaceUnit(self, disabled)
 end
 
 function CooldownCompanion:GetAuraPanelUnit(group, exclude)

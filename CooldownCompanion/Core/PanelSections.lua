@@ -1587,6 +1587,13 @@ function ST.GetPanelBasePointOffset(frame, point)
         layout.baseOffsetX, layout.baseOffsetY, layout.baseWidth, layout.baseHeight)
 end
 
+-- Invalidates the cursor ticker's placement stamp (GroupFrameCursorAnchor.lua
+-- ApplyCursorAnchorPosition). Every point or label writer on a cursor frame
+-- other than that function calls this, so the next tick places it again.
+function ST.InvalidateCursorPlacement(frame)
+    frame._cursorPlacedPoint = nil
+end
+
 -- The base correction SetPanelBasePoint subtracts from a placement.
 function ST.GetPanelBasePointCorrection(frame, point, group)
     group = group or CooldownCompanion.db.profile.groups[frame.groupId]
@@ -1598,10 +1605,8 @@ function ST.GetPanelBasePointCorrection(frame, point, group)
 end
 
 function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
-    -- Every placement through here invalidates the cursor ticker's stamp
-    -- (GroupFrameCursorAnchor.lua ApplyCursorAnchorPosition re-stamps after
-    -- its own call).
-    frame._cursorPlacedPoint = nil
+    -- ApplyCursorAnchorPosition re-stamps after its own call.
+    ST.InvalidateCursorPlacement(frame)
     local group = CooldownCompanion.db.profile.groups[frame.groupId]
     local dx, dy = ST.GetPanelBasePointCorrection(frame, point, group)
     frame:SetPoint(point, relativeFrame, relativePoint, x - dx, y - dy)
@@ -1665,7 +1670,7 @@ function ST.UpdatePanelBaseAnchor(frame, group, layout, fixedPoint, newWidth, ne
     local moveY = -dy - (frame._panelBaseCorrectionY or 0) + migrationY + growthY
     if moveX ~= 0 or moveY ~= 0 then
         frame:AdjustPointsOffset(moveX, moveY)
-        frame._cursorPlacedPoint = nil
+        ST.InvalidateCursorPlacement(frame)
     end
     frame._panelBaseCorrectionX, frame._panelBaseCorrectionY = -dx, -dy
     if frame._panelBaseUsesSavedAnchor then

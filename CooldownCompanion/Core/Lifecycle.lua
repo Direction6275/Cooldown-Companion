@@ -595,6 +595,7 @@ end
 
 
 function CooldownCompanion:OnCombatStart()
+    self:FlushPendingTalentFamilyRefresh()
     self:BeginCombatForcedLock()
     self:QueueCooldownRefresh("combat-event")
     -- Combat entry moves inCombat and _combatForcedLock, both read fresh by the
