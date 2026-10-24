@@ -2584,7 +2584,7 @@ function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
         order = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions), pulloutWidth = MEDIA_PULLOUT_WIDTH,
         onChange = function(value) Write("resourceSound", value) end,
         onPreview = function(value)
-            CooldownCompanion:PreviewResourceSoundAlertSelection(powerType, value, config.trigger, config.amount)
+            CooldownCompanion:PlayResourceSoundAlert(powerType, value, config.trigger, config.amount)
         end,
     })
     AddCheckboxRow(right, {

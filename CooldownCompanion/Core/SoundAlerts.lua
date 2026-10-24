@@ -125,11 +125,6 @@ local function ResolveGroup(groupOrId)
     return profile and profile.groups and profile.groups[groupOrId] or nil
 end
 
-local function AddRowSpell(spellToCooldownIDs, spellID, cooldownID)
-    if not spellID or spellID == 0 then return end
-    AddCooldownIDForSpell(spellToCooldownIDs, spellID, cooldownID)
-end
-
 function CooldownCompanion:RebuildSoundAlertSpellMap()
     local spellToCooldownIDs = {}
 
@@ -139,20 +134,20 @@ function CooldownCompanion:RebuildSoundAlertSpellMap()
             for _, cooldownID in ipairs(cooldownIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
                 if info then
-                    AddRowSpell(spellToCooldownIDs, info.spellID, cooldownID)
-                    AddRowSpell(spellToCooldownIDs, info.overrideSpellID, cooldownID)
-                    AddRowSpell(spellToCooldownIDs, info.overrideTooltipSpellID, cooldownID)
+                    AddCooldownIDForSpell(spellToCooldownIDs, info.spellID, cooldownID)
+                    AddCooldownIDForSpell(spellToCooldownIDs, info.overrideSpellID, cooldownID)
+                    AddCooldownIDForSpell(spellToCooldownIDs, info.overrideTooltipSpellID, cooldownID)
 
                     if info.linkedSpellIDs then
                         for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                            AddRowSpell(spellToCooldownIDs, linkedSpellID, cooldownID)
+                            AddCooldownIDForSpell(spellToCooldownIDs, linkedSpellID, cooldownID)
                         end
                     end
 
                     if info.spellID then
                         local baseSpellID = C_Spell.GetBaseSpell(info.spellID)
                         if baseSpellID and baseSpellID ~= info.spellID then
-                            AddRowSpell(spellToCooldownIDs, baseSpellID, cooldownID)
+                            AddCooldownIDForSpell(spellToCooldownIDs, baseSpellID, cooldownID)
                         end
                     end
                 end
@@ -599,10 +594,6 @@ function CooldownCompanion:PlayResourceSoundAlert(powerType, soundName, trigger,
     local name = ST._RB.POWER_NAMES[powerType] or "Resource"
     local threshold = trigger == "amount" and tostring(amount or 1) or "maximum"
     return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, name .. ": " .. threshold)
-end
-
-function CooldownCompanion:PreviewResourceSoundAlertSelection(powerType, soundName, trigger, amount)
-    return self:PlayResourceSoundAlert(powerType, soundName, trigger, amount)
 end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)

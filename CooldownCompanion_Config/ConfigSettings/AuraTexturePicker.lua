@@ -35,7 +35,6 @@ local chrome = nil
 local thumbnailPool = {}
 local activeThumbs = {}
 local currentGroupId = nil
-local currentButtonIndex = nil
 local currentOnCommit = nil
 local currentSelection = nil
 local currentFilter = "symbols"
@@ -74,7 +73,7 @@ local function GetEntryActionMode(entry)
     return nil
 end
 
-local function BuildPreviewSelection(groupId, buttonIndex, entry)
+local function BuildPreviewSelection(groupId, entry)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
     local baseSettings = group and CooldownCompanion:GetIndicatorTextureSettings(group)
@@ -180,7 +179,7 @@ local function StageEntryPreview(entry)
         ClearStagedPreview()
         return
     end
-    local selection = BuildPreviewSelection(currentGroupId, currentButtonIndex, entry)
+    local selection = BuildPreviewSelection(currentGroupId, entry)
     UpdateSelectionLabel(entry)
     CS.textureMirrorStage = { groupId = currentGroupId, selection = selection }
     if ST._RefreshButtonsPreviewMirror then
@@ -464,7 +463,7 @@ local function RebuildGrid()
             ClearStagedPreview()
         end)
         thumb:SetScript("OnClick", function()
-            CommitSelection(BuildPreviewSelection(currentGroupId, currentButtonIndex, entry))
+            CommitSelection(BuildPreviewSelection(currentGroupId, entry))
         end)
         thumb:SetScript("OnMouseWheel", function(_, delta)
             ScrollGridByWheel(delta)
@@ -801,7 +800,6 @@ local function OpenBrowser(opts)
     end
 
     currentGroupId = opts.groupId or CS.selectedGroup
-    currentButtonIndex = opts.buttonIndex
     currentOnCommit = opts.callback
     currentSelection = (opts.initialSelection and opts.initialSelection.sourceType and opts.initialSelection) or nil
     currentFilter = CooldownCompanion:GetAuraTexturePickerFilterForSelection(currentSelection)

@@ -161,16 +161,9 @@ local function HasIndicatorAnchorTarget(settings)
     return type(relativeTo) == "string" and relativeTo ~= "" and relativeTo ~= UI_PARENT_NAME
 end
 
-local function GetIndicatorAnchorValidationOptions(relativeTo, groupId, domain)
-    if domain == "panel" then
-        return {
-            domain = "panel",
-            sourceGroupId = groupId,
-            sourceKind = "group",
-        }
-    end
+local function GetIndicatorAnchorValidationOptions(groupId, domain)
     return {
-        domain = "external",
+        domain = domain == "panel" and "panel" or "external",
         sourceGroupId = groupId,
         sourceKind = "group",
     }
@@ -191,7 +184,7 @@ local function GetIndicatorAnchorTargetFrame(group, settings, groupId, domain)
 
     local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(
         relativeTo,
-        GetIndicatorAnchorValidationOptions(relativeTo, groupId, domain)
+        GetIndicatorAnchorValidationOptions(groupId, domain)
     )
     if not ok then
         return nil, relativeTo
@@ -1219,7 +1212,7 @@ function CooldownCompanion.ApplyIndicatorIconVisual(host, settings)
 end
 
 
-function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driverButton, displayType, settings, isConditionsIndicator)
+function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driverButton, settings, isConditionsIndicator)
     local groupedPreviewFrame = GetGroupedPreviewContainerFrame(group, driverButton and driverButton._groupId)
     local combatForcedLock = self._combatForcedLock == true
     local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
@@ -1257,7 +1250,7 @@ function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driv
     return state
 end
 
-function CooldownCompanion:RenderIndicatorDisplay(host, driverButton, group, settings, displayType, isConditionsIndicator, effectsActive)
+function CooldownCompanion:RenderIndicatorDisplay(host, driverButton, group, settings, displayType, effectsActive)
     host._indicatorTeardownFor = nil
     host._ccPresenceMode = nil
     host:SetFrameStrata(driverButton:GetFrameStrata())
@@ -1270,9 +1263,10 @@ end
 -- load visibility, and alpha, but render their production pixels only beneath
 -- Blizzard's AuraButton. This prepares the safe outer shell without touching
 -- any AuraContainer descendant; AuraDisplay styles that subtree OOC.
-function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, settings, revealRuntime)
+function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, resolvedIcon, revealRuntime)
     local group = driverButton._groupId and ResolveGroup(driverButton._groupId)
-    if ST.IsIndicatorGroup(group) then settings = ST.Indicator.NativeSettings(group) end
+    local settings = ST.Indicator.NativeSettings(group, resolvedIcon)
+    if not settings then return false end
     local resolvedSourceType = self:ResolveAuraTextureAsset(
         settings.sourceType,
         settings.sourceValue,
@@ -1352,7 +1346,7 @@ end
 -- A panel-owned, nonvisual anchor rectangle. It never belongs to the source
 -- button or its native aura subtree, and stays usable when either is absent.
 -- Both this rectangle and the visible host use the same placement writer.
-function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost)
+function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, resolvedIcon)
     if not frame or not ST.IsIndicatorGroup(group) then return end
     local body = frame._indicatorAnchorBody
     if InCombatLockdown() and (frame:IsProtected() or (body and body:IsProtected())) then
@@ -1374,7 +1368,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost)
         local geometry = self:GetIndicatorTextureRenderGeometry(settings)
         width, height = geometry.boundsWidth, geometry.boundsHeight
     elseif display.displayType == "icon" then
-        width, height = self.GetIndicatorIconDimensions(self.NormalizeIndicatorIconSettings(display.icon))
+        width, height = self.GetIndicatorIconDimensions(resolvedIcon or self.NormalizeIndicatorIconSettings(display.icon))
     else
         width, height = display.text.width or 180, display.text.height or 48
     end
@@ -1392,7 +1386,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost)
     return body
 end
 
-function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, isConditionsIndicator, visibilityState)
+function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, visibilityState)
     -- This is the only path that shows the host, so it clears the teardown latch.
     host._indicatorTeardownFor = nil
     local sharedSettings = CooldownCompanion:GetIndicatorAnchorSettings(group) or {
@@ -1728,8 +1722,9 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     end
 
     local displayType, settings = CooldownCompanion.ResolveActiveIndicatorDisplay(driverButton)
-    self:UpdateIndicatorAnchorBody(frame, group, driverButton.auraTextureHost)
-    local visibilityState = self:GetIndicatorDisplayVisibilityState(group, frame, driverButton, displayType, settings, isConditionsIndicator)
+    local resolvedIcon = displayType == "icon" and settings or nil
+    self:UpdateIndicatorAnchorBody(frame, group, driverButton.auraTextureHost, resolvedIcon)
+    local visibilityState = self:GetIndicatorDisplayVisibilityState(group, frame, driverButton, settings, isConditionsIndicator)
 
     if isConditionsIndicator and self.UpdateConditionsIndicatorSoundAlerts then
         self:UpdateConditionsIndicatorSoundAlerts(frame, group, visibilityState.triggerSoundVisible)
@@ -1773,15 +1768,13 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         -- unchanged, the others only need their effects stepped.
         local styleBefore = presence._indicatorStyle
         presence._ccPresenceReleased = nil
-        shown = ST.Indicator.Render(presence, driverButton, group, false, nil, rulesPass,
-            displayType == "icon" and settings or nil)
+        shown = ST.Indicator.Render(presence, driverButton, group, false, nil, rulesPass, resolvedIcon)
         local restyled = presence._indicatorStyle ~= styleBefore
         for index = 2, #presences do
             local copy = presences[index]
             if restyled or copy._ccPresenceReleased or not copy._indicatorStyle then
                 copy._ccPresenceReleased = nil
-                ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass,
-                    displayType == "icon" and settings or nil)
+                ST.Indicator.Render(copy, driverButton, group, false, nil, rulesPass, resolvedIcon)
             elseif shown then
                 self:ApplyIndicatorEffects(copy, driverButton, group, rulesPass == true)
             end
@@ -1830,14 +1823,14 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
     elseif presenceRuntime then
         -- Not bound yet (the rebind is queued or deferred by combat): keep
         -- the host placed and sized from the saved design, drawing nothing.
-        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings, false)
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, resolvedIcon, false)
     elseif useManagedRuntime then
         -- A While Missing tracker can stay bound until a combat-deferred
         -- rebind parks it; its drawing must not outlive the mode switch.
         ReleasePresenceDisplay(driverButton)
         -- Extra sources' rules gate only the reveal alpha. The host and the
         -- native slot stay up, so the aura's own sounds keep following it.
-        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, settings,
+        shown = self:PrepareManagedAuraTextureDisplay(host, driverButton, resolvedIcon,
             hasBoundSlot and ST.Indicator.ExtraSourcesMatch(frame, group))
     else
         ReleasePresenceDisplay(driverButton)
@@ -1853,7 +1846,6 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
             group,
             settings,
             displayType,
-            isConditionsIndicator,
             visibilityState.triggerMatched
         )
     end
@@ -1867,15 +1859,22 @@ function CooldownCompanion:UpdateAuraTextureVisual(button)
         return
     end
 
-    self:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, isConditionsIndicator, visibilityState)
+    self:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, visibilityState)
 end
 
 function CooldownCompanion:RefreshAllAuraTextureVisuals()
     self:RebuildPanelAlphaDependencyTargets()
     for _, frame in pairs(self.groupFrames or {}) do
-        self:UpdateIndicatorAnchorBody(frame, ResolveGroup(frame.groupId))
-        for _, button in ipairs(frame.buttons or {}) do
-            self:UpdateAuraTextureVisual(button)
+        local group = ResolveGroup(frame.groupId)
+        self:UpdateIndicatorAnchorBody(frame, group)
+        -- One Indicator display reads every source's fresh state: update it once.
+        local driver = ST.IsIndicatorGroup(group) and ST.Indicator.RuntimeSource(frame, group)
+        if driver then
+            self:UpdateAuraTextureVisual(driver)
+        else
+            for _, button in ipairs(frame.buttons or {}) do
+                self:UpdateAuraTextureVisual(button)
+            end
         end
     end
     if self.RefreshAllContainerWrappers then
