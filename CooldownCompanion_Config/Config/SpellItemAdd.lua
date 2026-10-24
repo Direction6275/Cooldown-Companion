@@ -383,9 +383,8 @@ local function ResolveSpellAddRoute(spellId, spellName, forceAura, groupId)
             name = spellName,
             addedAs = "aura",
         }
-        probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
         local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(
-            GetTargetGroup(groupId), probe)
+            GetTargetGroup(groupId), probe, CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe))
         if rejectMessage then
             return nil, "aura-panel", rejectMessage
         end
@@ -1172,12 +1171,11 @@ end
 
 -- The polarity the row will resolve to once it is an entry, answered exactly the
 -- way the add door asks: OnAutocompleteSelect adds `entry.id`, and TryAddSpell
--- probes it as { type = "spell", id = entry.id, addedAs = "aura" }, stamps the
--- probe's auraUnit from ResolveStandaloneAuraDefaultUnit, then asks
--- ResolveAuraEntryUnit, which returns that stamp. So the stamp itself is the
--- answer here: an unstamped ResolveAuraEntryUnit probe would answer "unknown"
--- (offered) where the door answers "player" (refused on a target panel) for a
--- head the client cannot classify. The resolver walks GetBaseSpell, the CDM row
+-- probes it as { type = "spell", id = entry.id, addedAs = "aura" } through
+-- ResolveStandaloneAuraDefaultUnit and hands that unit to the admission check.
+-- ResolveAuraEntryUnit alone would answer "unknown" (offered) where the door
+-- answers "player" (refused on a target panel) for a head the client cannot
+-- classify. The resolver walks GetBaseSpell, the CDM row
 -- and its linkedSpellIDs to the APPLIED aura before asking polarity, which a
 -- raw IsSpellHarmful on the row id does not: CDM rows carry CAST ids while the
 -- aura they apply lives in linkedSpellIDs, and the two can disagree. Asking the
@@ -1197,7 +1195,7 @@ local function ResolveAutocompleteAuraUnit(entry)
         auraUnitMemoByCache[cache] = memo
     end
 
-    -- The stamped answer is always "player" or "target", so every miss fills the memo.
+    -- The answer is always "player" or "target", so every miss fills the memo.
     local unit = memo and memo[spellId]
     if unit == nil then
         unit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit({

@@ -824,13 +824,27 @@ function CooldownCompanion:OnIndicatorAnchorBodyChanged(frame)
     self:RefreshExternalAnchorFrame()
     local frameName = frame and frame:GetName()
     if not (frameName and self:IsBarsAndFramesRuntimeInitialized()) then return end
-    local castBar, resources = {}, {}
-    AddCastBarDependents(castBar, self:GetCastBarSettings(), frameName, "cast bar")
-    AddResourceBarDependents(resources, self:GetResourceBarSettings(), frameName, "resource bars")
-    if castBar[1] then
+    local cast = self:GetCastBarSettings()
+    local castAnchor = type(cast) == "table" and cast.independentAnchor
+    if type(castAnchor) == "table" and castAnchor.relativeTo == frameName then
         self:RefreshBarsAndFramesRuntimeFeature("castBar", "indicator-anchor-body", true)
     end
-    if resources[1] then
+    -- The same anchors AddResourceBarDependents names: the shared one and each
+    -- spec layout's.
+    local resources = self:GetResourceBarSettings()
+    if type(resources) ~= "table" then return end
+    local resourceAnchored = type(resources.independentAnchor) == "table"
+        and resources.independentAnchor.relativeTo == frameName
+    if not resourceAnchored and type(resources.layoutOrder) == "table" then
+        for _, layout in pairs(resources.layoutOrder) do
+            local anchor = type(layout) == "table" and layout.independentAnchor
+            if type(anchor) == "table" and anchor.relativeTo == frameName then
+                resourceAnchored = true
+                break
+            end
+        end
+    end
+    if resourceAnchored then
         self:RefreshBarsAndFramesRuntimeFeature("resourceBars", "indicator-anchor-body", true)
     end
 end

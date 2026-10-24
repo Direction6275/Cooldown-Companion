@@ -717,8 +717,13 @@ local function VoteAuraSurfaceUnit(self, voters)
     return firstUnit
 end
 
+-- Scratch voter lists, refilled on every call: the vote never re-enters itself.
+local auraSurfaceEnabled, auraSurfaceDisabled = {}, {}
+
 local function ResolveAuraSurfaceUnit(self, group, anchor, exclude)
-    local enabled, disabled = {}, {}
+    local enabled, disabled = auraSurfaceEnabled, auraSurfaceDisabled
+    wipe(enabled)
+    wipe(disabled)
     for _, buttonData in ipairs(group.buttons or {}) do
         if buttonData and buttonData ~= exclude and buttonData.addedAs == "aura"
             and (not anchor or ST.GetPanelSectionForEntry(group, buttonData) == anchor) then
@@ -783,7 +788,10 @@ function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entry
     return nil
 end
 
-function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
+-- knownUnit: the unit of a single probe whose caller already resolved it (the
+-- aura add doors, through ResolveStandaloneAuraDefaultUnit), so it is not
+-- resolved a second time here.
+function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData, knownUnit)
     local indicatorReason = ST.Indicator.AddRestriction(group, entryData)
     if indicatorReason then return indicatorReason end
     if ST.IsTotemPanelGroup(group) then
@@ -810,7 +818,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
             if not (bd and bd.type == "spell" and bd.addedAs == "aura") then
                 return "Aura Panels hold only Aura entries."
             end
-            local entryUnit = self:ResolveAuraEntryUnit(bd)
+            local entryUnit = (bd == entryData and knownUnit) or self:ResolveAuraEntryUnit(bd)
             if panelUnit and entryUnit and entryUnit ~= panelUnit then
                 if panelUnit == "player" then
                     return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
