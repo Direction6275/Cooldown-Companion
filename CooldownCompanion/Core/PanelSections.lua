@@ -1587,13 +1587,23 @@ function ST.GetPanelBasePointOffset(frame, point)
         layout.baseOffsetX, layout.baseOffsetY, layout.baseWidth, layout.baseHeight)
 end
 
-function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
-    local group = CooldownCompanion.db.profile.groups[frame.groupId]
-    local dx, dy = 0, 0
+-- The base correction SetPanelBasePoint subtracts from a placement.
+function ST.GetPanelBasePointCorrection(frame, point, group)
+    group = group or CooldownCompanion.db.profile.groups[frame.groupId]
     -- Legacy positions are converted once the first real layout is available.
     if group and group.baseRowAnchorVersion == 1 then
-        dx, dy = ST.GetPanelBasePointOffset(frame, point)
+        return ST.GetPanelBasePointOffset(frame, point)
     end
+    return 0, 0
+end
+
+function ST.SetPanelBasePoint(frame, point, relativeFrame, relativePoint, x, y)
+    -- Every placement through here invalidates the cursor ticker's stamp
+    -- (GroupFrameCursorAnchor.lua ApplyCursorAnchorPosition re-stamps after
+    -- its own call).
+    frame._cursorPlacedPoint = nil
+    local group = CooldownCompanion.db.profile.groups[frame.groupId]
+    local dx, dy = ST.GetPanelBasePointCorrection(frame, point, group)
     frame:SetPoint(point, relativeFrame, relativePoint, x - dx, y - dy)
     frame._panelBaseCorrectionX, frame._panelBaseCorrectionY = -dx, -dy
     frame._panelBasePoint = point
@@ -1653,7 +1663,10 @@ function ST.UpdatePanelBaseAnchor(frame, group, layout, fixedPoint, newWidth, ne
     end
     local moveX = -dx - (frame._panelBaseCorrectionX or 0) + migrationX + growthX
     local moveY = -dy - (frame._panelBaseCorrectionY or 0) + migrationY + growthY
-    if moveX ~= 0 or moveY ~= 0 then frame:AdjustPointsOffset(moveX, moveY) end
+    if moveX ~= 0 or moveY ~= 0 then
+        frame:AdjustPointsOffset(moveX, moveY)
+        frame._cursorPlacedPoint = nil
+    end
     frame._panelBaseCorrectionX, frame._panelBaseCorrectionY = -dx, -dy
     if frame._panelBaseUsesSavedAnchor then
         anchor.baseWidth, anchor.baseHeight = baseWidth, baseHeight

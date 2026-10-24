@@ -611,6 +611,7 @@ local function FinishTextureHostDrag(host)
     local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(host, not cancelSave)
     if snapDX ~= nil or snapDY ~= nil then
         host:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+        host._cursorPlacedPoint = nil -- cursor ticker stamp (GroupFrameCursorAnchor.lua)
     end
     StopGroupedIndicatorWrapperTracking(host)
     if cancelSave then
@@ -671,6 +672,7 @@ local function EnsureAuraTextureNudger(host)
             end
         end
         host:AdjustPointsOffset(dx, dy)
+        host._cursorPlacedPoint = nil -- cursor ticker stamp (GroupFrameCursorAnchor.lua)
         local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
@@ -1317,6 +1319,7 @@ local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId,
         else
             local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
+            host._cursorPlacedPoint = nil -- cursor ticker stamp (GroupFrameCursorAnchor.lua)
             local anchorTargetFrame = GetIndicatorResolvedAnchorFrame(group, sharedSettings, groupId)
             if anchorTargetFrame then
                 host:SetPoint(
@@ -1386,6 +1389,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         -- Temporary positional following only; no visibility/alpha inheritance.
         body:ClearAllPoints()
         body:SetPoint("CENTER", dragHost, "CENTER", 0, 0)
+        body._cursorPlacedPoint = nil -- cursor ticker stamp (GroupFrameCursorAnchor.lua)
     else
         local previewFrame = GetGroupedPreviewContainerFrame(group, frame.groupId)
         body._wrapperManaged = previewFrame ~= nil
@@ -1477,6 +1481,8 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
             -- or nudge writes back to the anchor.
             local anchor = group and group.anchor
             UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
+            -- The cursor ticker repaints a staged offset (GroupFrameCursorAnchor.lua).
+            host._cursorPlacedPoint = nil
         elseif visibilityState.isGroupedPreview and not HasIndicatorAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
@@ -1544,6 +1550,9 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
         SyncAuraTextureControlLevels(host, false)
         local anchor = group and group.anchor
         UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
+        -- The label now shows the saved offset; the cursor ticker repaints a
+        -- staged one (GroupFrameCursorAnchor.lua).
+        host._cursorPlacedPoint = nil
     end
     if host.dragHandle then
         SetAuraTextureDragControlsShown(host, showControls, nil)
