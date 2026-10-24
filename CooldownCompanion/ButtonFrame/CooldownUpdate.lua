@@ -10,6 +10,7 @@ local EntryRuntime = ST.EntryRuntime
 -- Per-tick EntryRuntime calls hoisted to file-locals: UpdateButtonCooldown is
 -- the measured hot path, and these run for every button on every tick.
 local ResolveSpellTraits = EntryRuntime.ResolveSpellTraits
+local ClearSpellTraitCaches = EntryRuntime.ClearSpellTraitCaches
 local ClassifyChargeState = EntryRuntime.ClassifyChargeState
 local ResolveZeroChargesConfirmed = EntryRuntime.ResolveZeroChargesConfirmed
 -- Forcing-attribution sink (loaded before this file; dev-gated, observe-only).
@@ -787,7 +788,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     if buttonData.type == "spell" and not buttonData.isPassive and not usesChargeBehavior then
         ResolveSpellTraits(button, buttonData.id, cooldownSpellId)
     else
-        EntryRuntime.ClearSpellTraitCaches(button, false)
+        ClearSpellTraitCaches(button, false)
     end
 
     -- Proc state: event-driven table lookup (base spell + current displayed override).

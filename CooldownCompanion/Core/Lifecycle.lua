@@ -432,7 +432,7 @@ end
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
 -- Skips buttons without buttonData.
 -- Extra arguments are forwarded to the callback, so a file-level callback
--- needs no per-call closure. Returns how many callbacks returned true.
+-- needs no per-call closure. Returns how many callbacks returned a truthy value.
 function CooldownCompanion:ForEachButton(callback, ...)
     local hits = 0
     for _, frame in pairs(self.groupFrames) do
@@ -556,6 +556,11 @@ function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     end
 end
 
+-- Cooldown Press Flash: the player tried to use a spell and the cast failed.
+-- Only entries CC already knows to be on a REAL cooldown (or at zero
+-- charges) flash; a GCD-only press never does. Icon-mode spell entries only,
+-- pet spells included. Item and equipment-slot entries are denied the
+-- section instead (Defaults.lua).
 local function TryCooldownPressFlash(button, buttonData, addon, spellID, inCombat, playFlash)
     if buttonData.type ~= "spell" or buttonData.isPassive then return end
     if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
@@ -575,14 +580,9 @@ local function TryCooldownPressFlash(button, buttonData, addon, spellID, inComba
     end
 end
 
--- Cooldown Press Flash: the player tried to use a spell and the cast failed.
--- Only entries CC already knows to be on a REAL cooldown (or at zero
--- charges) flash; a GCD-only press never does. Icon-mode spell entries only,
--- pet spells included (their cast fails on the pet unit). Item and
--- equipment-slot entries are denied the section instead (Defaults.lua).
--- spellID is plain for the player's and pet's own casts
--- (SecretWhenUnitSpellCastRestricted covers other units), but the guard
--- stays so a secret can never error here.
+-- Pet spells fail on the pet unit. spellID is plain for the player's and
+-- pet's own casts (SecretWhenUnitSpellCastRestricted covers other units), but
+-- the guard stays so a secret can never error here.
 function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
     if (unit ~= "player" and unit ~= "pet")
         or type(spellID) ~= "number" or issecretvalue(spellID) then
