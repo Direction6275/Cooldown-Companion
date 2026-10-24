@@ -33,9 +33,13 @@ local pendingSlotChangedSlots = {}
 -- never weaker than any single fire's: flags are ORed, it skips the settling
 -- pass only if every merged fire did, and a talent fire queues the charge
 -- settle after it. A talent save's third report (about 0.45 s later) is
--- another instant and gets its own refresh.
+-- another instant and gets its own refresh. If an out-of-combat SPELLS_CHANGED
+-- pass already ran earlier in the same frame, it read the old talent nodes, so
+-- that burst's fires run at once as they always did: the frame then draws the
+-- final talent state, never the half-updated one.
 local TALENT_FAMILY_FLAGS = { "applyResourceBars", "evaluateResourceBars", "refreshAllChargeTypes", "rebuildViewerMap" }
-local talentFamilyRefresh = { pending = false, opts = {}, settle = false, chargeRefresh = false }
+local talentFamilyRefresh = { pending = false, opts = {}, settle = false, chargeRefresh = false,
+    spellsChangedAt = nil }
 
 local function IsPlayerInVehicleUI()
     return UnitInVehicle("player")
@@ -84,7 +88,8 @@ local function RunTalentFamilyRefresh(addon)
 end
 
 local function QueueTalentFamilyRefresh(addon, opts, chargeRefresh)
-    if InCombatLockdown() then
+    -- GetTime() holds one value for the whole frame.
+    if InCombatLockdown() or talentFamilyRefresh.spellsChangedAt == GetTime() then
         addon:RefreshSpellAvailabilityState(opts)
         if chargeRefresh then QueueTalentChargeRefresh(addon) end
         return
@@ -293,6 +298,7 @@ function CooldownCompanion:OnSpellsChanged()
         talentFamilyRefresh.settle = true
         return
     end
+    talentFamilyRefresh.spellsChangedAt = GetTime()
     self:RefreshSpellAvailabilityState({
         skipTalentCache = true,
         perGroupRebuild = true,

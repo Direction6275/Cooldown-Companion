@@ -815,16 +815,24 @@ function CooldownCompanion:GetExternalAnchorTargetFrame(frame)
     return frame
 end
 
--- The box appeared or went away. Re-point the stable External Anchor, and
--- re-place the bars once modules run (a full pass evaluates them only after
--- the login settle), so a bar placed before the box existed moves onto it
--- and one left on a retired box moves back to the panel.
-function CooldownCompanion:OnIndicatorAnchorBodyChanged()
+-- The box of the Indicator panel `frame` appeared or went away. Re-point the
+-- stable External Anchor, and re-apply only the cast bar or resource bars
+-- whose saved anchor names this panel, so a bar placed before the box existed
+-- moves onto it and one left on a retired box moves back to the panel. Before
+-- the login settle no bar has been placed yet, so there is nothing to move.
+function CooldownCompanion:OnIndicatorAnchorBodyChanged(frame)
     self:RefreshExternalAnchorFrame()
-    -- Inside an open pass this only marks it full; the outer pass keeps its
-    -- own reason.
-    local operation = self:BeginPanelAttachmentRefresh()
-    self:EndPanelAttachmentRefresh(operation, true, operation and "indicator-anchor-body" or nil)
+    local frameName = frame and frame:GetName()
+    if not (frameName and self:IsBarsAndFramesRuntimeInitialized()) then return end
+    local castBar, resources = {}, {}
+    AddCastBarDependents(castBar, self:GetCastBarSettings(), frameName, "cast bar")
+    AddResourceBarDependents(resources, self:GetResourceBarSettings(), frameName, "resource bars")
+    if castBar[1] then
+        self:RefreshBarsAndFramesRuntimeFeature("castBar", "indicator-anchor-body", true)
+    end
+    if resources[1] then
+        self:RefreshBarsAndFramesRuntimeFeature("resourceBars", "indicator-anchor-body", true)
+    end
 end
 
 function CooldownCompanion:GetExternalAnchorFrame(relativeTo)

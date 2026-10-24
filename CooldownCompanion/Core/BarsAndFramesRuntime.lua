@@ -349,6 +349,12 @@ function CooldownCompanion:RefreshBarsAndFramesRuntimeFeature(feature, reason, a
     return self:EndPanelAttachmentRefresh(operation, false, reason)
 end
 
+-- True once the login settle has evaluated the modules (before that, panel
+-- passes never start them).
+function CooldownCompanion:IsBarsAndFramesRuntimeInitialized()
+    return runtime.initialized == true
+end
+
 function CooldownCompanion:EvaluateBarsAndFramesRuntime(reason)
     local operation = self:BeginPanelAttachmentRefresh()
     attachmentRefresh.requested = true

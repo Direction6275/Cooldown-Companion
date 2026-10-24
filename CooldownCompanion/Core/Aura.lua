@@ -1017,19 +1017,22 @@ end
 -- answer, which reads as "unknown" rather than a unit, so admission callers
 -- stay permissive instead of guessing.
 --
--- The head for a primary aura entry does not need auraTracking: the add doors
--- and the autocomplete filter probe with synthetic tables that never set it,
--- and ResolveIndicatorAuraSpellID reads the same ordered candidate head without
--- that gate. Spell entries keep ResolveAuraSpellID alone, so a legacy spell
--- entry carrying a texture-display flag without auraTracking still answers
--- from its stored unit rather than from its own cast ID.
+-- A primary aura entry's head is its ordered candidate head, read directly:
+-- that is what ResolveAuraSpellID and ResolveIndicatorAuraSpellID both return
+-- for it (the ID override leads the list), and it needs no auraTracking, which
+-- the add doors' and autocomplete's synthetic probes never set. Spell entries
+-- keep ResolveAuraSpellID, so a legacy spell entry carrying a texture-display
+-- flag without auraTracking still answers from its stored unit rather than
+-- from its own cast ID.
 function CooldownCompanion:ResolveAuraEntryUnit(buttonData)
     if not buttonData then return nil end
     local unitOverride = GetEntryAuraUnitOverride(buttonData)
     if unitOverride then return unitOverride end
-    local head = self:ResolveAuraSpellID(buttonData)
-    if not head and buttonData.addedAs == "aura" then
-        head = self:ResolveIndicatorAuraSpellID(buttonData)
+    local head
+    if buttonData.addedAs == "aura" then
+        head = ResolveOrderedAuraCandidateIDs(buttonData)[1]
+    else
+        head = self:ResolveAuraSpellID(buttonData)
     end
     local unit = ClassifyAuraSpellUnit(head)
     if unit then return unit end

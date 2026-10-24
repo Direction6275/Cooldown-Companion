@@ -1398,7 +1398,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
     end
     self:RefreshIndicatorAnchorAlpha(frame, group)
     -- Outside anchors follow the box from now on (GetExternalAnchorTargetFrame).
-    if bodyAppeared then self:OnIndicatorAnchorBodyChanged() end
+    if bodyAppeared then self:OnIndicatorAnchorBodyChanged(frame) end
     return body
 end
 

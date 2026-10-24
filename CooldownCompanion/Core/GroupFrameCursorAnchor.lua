@@ -90,10 +90,11 @@ end
 -- ST.SetPanelBasePoint and ST.UpdatePanelBaseAnchor's AdjustPointsOffset
 -- (PanelSections.lua), the Indicator host's raw point writers and the cursor
 -- label writers that show the saved rather than the staged offset
--- (AuraTexturesDisplay.lua and SetCursorAnchorLayoutPreviewGroupState). A raw
--- SetPoint or ClearAllPoints added anywhere else on a cursor frame would not
--- clear it, and the panel would stay put until the mouse (or, while parked,
--- the dummy cursor) moves. Every other caller places unconditionally.
+-- (AuraTexturesDisplay.lua and SetCursorAnchorLayoutPreviewGroupState), and
+-- the ticker itself while a panel is being dragged. A raw SetPoint or
+-- ClearAllPoints added anywhere else on a cursor frame would not clear it, and
+-- the panel would stay put until the mouse (or, while parked, the dummy
+-- cursor) moves. Every other caller places unconditionally.
 local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, fromTicker)
     if not (frame and anchor) then
         return false
@@ -1052,7 +1053,15 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
             and IsCursorAnchor(group.anchor)
             and self:CanGroupUseCursorAnchor(group) then
             local frame = self.groupFrames and self.groupFrames[groupId] or nil
-            if frame and frame:IsShown() and not GroupIdsEqual(draggedGroupId, groupId) then
+            if frame and GroupIdsEqual(draggedGroupId, groupId) then
+                -- The engine moves a dragged panel without any placement call,
+                -- so its stamp is cleared while the drag lasts: however the
+                -- drag ends (drop, cancel, combat lock), the first tick after
+                -- it places the panel again.
+                frame._cursorPlacedPoint = nil
+                local host = GetCursorAnchoredIndicatorHost(frame, group)
+                if host then host._cursorPlacedPoint = nil end
+            elseif frame and frame:IsShown() then
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
                 local anchorX = previewX or cursorX
                 local anchorY = previewY or cursorY
