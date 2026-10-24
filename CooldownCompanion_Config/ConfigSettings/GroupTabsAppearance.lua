@@ -36,7 +36,6 @@ local BeginRowGrid = ST._BeginRowGrid
 
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
-local MakeCooldownTextAdvancedDescriptor = ST._MakeCooldownTextAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
 
@@ -1224,32 +1223,50 @@ local function BuildAppearanceTab(container, settingsGroup)
     })
 
     if cdTextSec.scope ~= "denied" then
-        -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). A customized entry
-        -- hands its override store; an inherited one hands the effective read
-        -- table, whose panel opens read-only behind the unlock strip.
-        local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor(
-            (group._settingsContext or cdTextSec.scope == "customized") and cdTextSec.tbl
-                or cdTextSec.write == nil and cdTextSec.read or nil,
-            APPEARANCE_FINDER.cooldown)
+        local function BuildCooldownTextAdvanced(panel)
+            AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
+                "cooldown", refreshStyle, {
+                    indent = false,
+                    explicitOff = cdTextSec.scope == "customized",
+                    disabled = cdTextSec.disabled,
+                    settings = {
+                        mode = APPEARANCE_FINDER.text.cooldownVisible,
+                        threshold = APPEARANCE_FINDER.text.cooldownLast,
+                    },
+                    infoButtons = CS.advancedSettingsInfoButtons,
+                    completeEdit = refreshStyleSettings,
+                })
 
-        AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, true, {
-            title = cdTextAdvanced.title,
-            build = function(panel)
-                AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
-                    "cooldown", refreshStyle, {
-                        indent = false,
-                        explicitOff = cdTextSec.scope == "customized",
-                        disabled = cdTextSec.disabled,
-                        settings = {
-                            mode = APPEARANCE_FINDER.text.cooldownVisible,
-                            threshold = APPEARANCE_FINDER.text.cooldownLast,
-                        },
-                        infoButtons = CS.advancedSettingsInfoButtons,
-                        completeEdit = refreshStyleSettings,
-                    })
-                cdTextAdvanced.build(panel)
-            end,
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so every builder is called with no rightColumn, and
+            -- each falls back to `container` for its extras.
+            local finderSettings = APPEARANCE_FINDER.cooldown
+            AddFontControls(panel, cdTextSec.tbl, "cooldown", { size = 12 }, refreshStyle, {
+                settings = finderSettings and {
+                    size = finderSettings.fontSize,
+                    font = finderSettings.font,
+                    outline = finderSettings.outline,
+                },
+            })
+
+            AddColorRow(panel, {
+                label = "Font Color",
+                setting = finderSettings and finderSettings.color,
+                tbl = cdTextSec.tbl,
+                key = "cooldownFontColor",
+                default = {1, 1, 1, 1},
+                onConfirm = refreshStyle,
+            })
+
+            AddTextPositionControls(panel, cdTextSec.tbl, "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", refreshStyle, {
+                defaults = {anchor = "CENTER", range = 20},
+                settings = finderSettings,
+            })
+        end
+
+        AddAdvancedToggle(cdTextRow, "cooldownText", tabInfoButtons, true, {
+            title = "Cooldown Text Advanced",
+            build = BuildCooldownTextAdvanced,
             unlock = { sec = cdTextSec,
                 enable = cdTextSec.read.showCooldownText ~= true and TURNON_COOLDOWN_TEXT or nil },
         })
