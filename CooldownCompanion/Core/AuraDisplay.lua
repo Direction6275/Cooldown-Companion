@@ -177,8 +177,7 @@ local pendingConfigEdit = false
 
 -- Idle-health counters (2026-08-10 feedback-loop lesson): rebind work runs at
 -- config-change frequency, so these climbing on an idle session IS a feedback
--- loop. Read-only, never reset; surfaced in GetAuraDisplayStatus and copied
--- into DevBridge snapshots.
+-- loop. Read-only, never reset; surfaced in GetAuraDisplayStatus.
 local rebindRequestCount = 0
 local rebindPassCount = 0
 local lastRebindPassAt = nil
@@ -477,7 +476,7 @@ end
 -- across entries; per-entry enable/disable is alpha at bind time (P6).
 ------------------------------------------------------------------------
 
-local function BuildSlotKit(slotButton, pandemicGated)
+local function BuildSlotKit(slotButton, pandemicGated, noPandemicRig)
     local kit = {}
 
     -- Also During Pandemic (a Show While Inactive entry's second display):
@@ -732,18 +731,20 @@ local function BuildSlotKit(slotButton, pandemicGated)
     -- which hides it while the pandemic glow is showing (Glows.lua
     -- BuildAuraGlowReplace).
     kit.auraGlowGate, kit.auraGlowReplace = ST._BuildAuraGlowReplace(parent, slotButton)
-    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true)
-    kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true, nil, kit.swipe:GetFrameLevel() + 1)
 
     -- Pandemic glow: a second glow kit that Blizzard shows only while the
     -- aura sits inside its refresh window, through the 12.1.5 window rig
     -- (Glows.lua BuildPandemicWindowRig) and its open/close effects. CC
     -- styles it at OOC bind time and never reads it back. Registration is
-    -- creation-only, so every slot carries the rig and per-entry enable is
-    -- style-time "none" (P6). Same level as the aura glow, created after it,
-    -- so the pandemic effect draws above. The rig pins its CDM frame there
-    -- too: left at its default level it would TIE kit.textOverlay at swipe+2.
-    if slotButton.AddPandemicRegion then
+    -- creation-only, so every slot except a resource overlay's carries the
+    -- rig and per-entry enable is style-time "none" (P6). A resource holder
+    -- is a permanent bar host whose pandemic glow StyleSlotKit never lights,
+    -- so it skips the rig and StyleSlotKit's `if kit.pandemicGlow` block.
+    -- Same level as the aura glow, created after it, so the pandemic effect
+    -- draws above. The kit builder pins the rig's CDM frame there too: left at
+    -- its default level it would TIE kit.textOverlay at swipe+2.
+    if slotButton.AddPandemicRegion and not noPandemicRig then
         kit.pandemicWindow = ST._BuildPandemicWindowRig(parent, slotButton, slotButton,
             kit.swipe:GetFrameLevel() + 1)
         kit.pandemicGlow = kit.pandemicWindow.glow
@@ -1040,6 +1041,15 @@ local function ShouldShowLiveAuraIcon(buttonData, style)
         return GetEntryManualIcon(buttonData) == nil
     end
     return ShouldShowAuraIcon(buttonData, style)
+end
+
+-- The picture an unlock placeholder shows: what the locked display puts in
+-- that square; the spell texture stands in for the live aura icon.
+function ST._GetEntryPlaceholderIcon(buttonData, style)
+    if ShouldShowLiveAuraIcon(buttonData, style) then
+        return buttonData.type == "spell" and buttonData.id and C_Spell.GetSpellTexture(buttonData.id) or nil
+    end
+    return GetEntryIconTexture(buttonData)
 end
 
 ------------------------------------------------------------------------
@@ -2058,9 +2068,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- an entry that customized the Pandemic section carries in its own
     -- styleOverrides since the entry checkbox dissolved into that section
     -- (owner ruling 2026-08-16). Resource overlays carry no pandemic story
-    -- at all. Blizzard flips the rig's secret
-    -- Shown state regardless; this gate only decides whether the rig has
-    -- anything visible to show.
+    -- at all. Blizzard's Pandemic animations drive the window rig regardless;
+    -- this gate only decides whether the rig has anything visible to show.
     local pandemicOn = false
     if not isResourceHost then
         pandemicOn = style.pandemicEffectEnabled == true
@@ -2697,7 +2706,7 @@ end
 -- bound trackers' (allocation-free: UNIT_FACTION reaches here).
 function Presence.MatchesToken(record, isMatch)
     if isMatch(record.unit) then return true end
-    for _, tracker in ipairs(record.trackers or {}) do
+    for _, tracker in ipairs(record.trackers) do
         if tracker.bound and isMatch(tracker.unit) then return true end
     end
     return false
@@ -2909,27 +2918,6 @@ function CooldownCompanion:HasIndicatorPandemicTwin(button)
     return false
 end
 
--- One display per host button (D-A0 rung (c)): the container's parent is a
--- plain CC visibility frame set once at CreateFrame and never changed (only
--- the BUTTONS carry the ChangeParent aspect), and the slot button is anchored
--- inside initializeFrame — the sanctioned setup window — and never moved,
--- re-leveled, or reparented afterwards. The container is pinned to the
--- layer's frame level so the slot lands at layer+1, exactly where the
--- pre-PTR 7 design put it — but the layer's own level is now a configurable
--- slot, so where that band SITS follows the panel's strata order.
--- Visibility, alpha, and strata all reach the slot through plain parentage;
--- a hidden container is inert (P1a) and
--- re-registers + refreshes itself on show (OnShow_Intrinsic).
--- Keyed by (button, host kind, unit), which makes record.unit IMMUTABLE: a
--- record is for one unit for its whole life, and the container's SetUnit is
--- only ever called once, here. The alternative — one record per button whose
--- unit is swapped at bind — cannot represent an entry tracked on several
--- units at once.
---
--- Consequence: a pooled button re-acquired for an entry of the other polarity
--- now gains a second record rather than mutating its first. The first is parked
--- (hidden, deregistered, rendering nothing), so this is invisible; the cost is
--- at most one extra container per polarity that button has ever hosted.
 -- Shared with the config mirror. Only ordinary CC frames enter this helper.
 local function StyleMissingAuraReminder(host, anchor, style)
     style = style or {}
@@ -3088,6 +3076,27 @@ local function BindMissingAuraReminder(button, buttonData, style, tracksTarget)
     UpdateMissingReminderVisibility(button)
 end
 
+-- One display per host button (D-A0 rung (c)): the container's parent is a
+-- plain CC visibility frame set once at CreateFrame and never changed (only
+-- the BUTTONS carry the ChangeParent aspect), and the slot button is anchored
+-- inside initializeFrame — the sanctioned setup window — and never moved,
+-- re-leveled, or reparented afterwards. The container is pinned to the
+-- layer's frame level so the slot lands at layer+1, exactly where the
+-- pre-PTR 7 design put it — but the layer's own level is now a configurable
+-- slot, so where that band SITS follows the panel's strata order.
+-- Visibility, alpha, and strata all reach the slot through plain parentage;
+-- a hidden container is inert (P1a) and
+-- re-registers + refreshes itself on show (OnShow_Intrinsic).
+-- Keyed by (button, host kind, unit), which makes record.unit IMMUTABLE: a
+-- record is for one unit for its whole life, and the container's SetUnit is
+-- only ever called once, here. The alternative — one record per button whose
+-- unit is swapped at bind — cannot represent an entry tracked on several
+-- units at once.
+--
+-- Consequence: a pooled button re-acquired for an entry of the other polarity
+-- now gains a second record rather than mutating its first. The first is parked
+-- (hidden, deregistered, rendering nothing), so this is invisible; the cost is
+-- at most one extra container per polarity that button has ever hosted.
 local function EnsureDisplay(button, unit, groupScoped, hostKind)
     hostKind = hostKind or "button"
     local recordKey = hostKind .. "\031" .. unit
@@ -3166,7 +3175,7 @@ local function EnsureDisplay(button, unit, groupScoped, hostKind)
                 frame:SetMouseMotionEnabled(false)
                 record.kit = BuildSlotKit(frame, true)
             else
-                record.kit = BuildSlotKit(frame)
+                record.kit = BuildSlotKit(frame, false, button._ccAuraHostKind == "resourceBar")
             end
         end,
     })
@@ -3277,6 +3286,32 @@ local AURA_TOOLTIP_ANCHORS = {
     cursor = "ANCHOR_CURSOR",
 }
 
+-- Breakpoint list for a stack-count formatter. The engine picks the highest
+-- breakpoint whose threshold is <= the (secret) count. Stock behavior stays
+-- hidden below 2; the opt-in lowers that first visible breakpoint to 1.
+-- Threshold/max entries wrap the number in their color escape; max wins a
+-- collision with the threshold by overwriting its slot in the map.
+local function BuildStackCountBreakpoints(showCountAtOne, policy)
+    -- threshold -> format map; later writes win collisions (max last).
+    local firstVisible = showCountAtOne and 1 or 2
+    local formats = { [0] = "", [firstVisible] = "%d" }
+    if policy and policy.threshold then
+        formats[policy.threshold] = PandemicColorEscape(policy.thresholdColor) .. "%d|r"
+    end
+    if policy and policy.maxOn then
+        formats[policy.maxStacks < firstVisible and firstVisible or policy.maxStacks] =
+            PandemicColorEscape(policy.maxColor) .. "%d|r"
+    end
+    local thresholds = {}
+    for value in pairs(formats) do thresholds[#thresholds + 1] = value end
+    table.sort(thresholds)
+    local breakpoints = {}
+    for i = 1, #thresholds do
+        breakpoints[i] = { threshold = thresholds[i], format = formats[thresholds[i]] }
+    end
+    return breakpoints
+end
+
 -- Stack fill re-call (tracker C2): converge the registered max to this bind
 -- before styling — always a number (ApplyApplicationBar runs math.max(max, 1),
 -- so a nil errors inside Blizzard's refresh and freezes the display), 1 =
@@ -3292,35 +3327,6 @@ local AURA_TOOLTIP_ANCHORS = {
 -- parity); segmented follows the per-entry toggle. Plain duration binds
 -- (wantMax == 1) never use the stack fill, so they keep the creation-time
 -- registration untouched.
--- Breakpoint list for a stack-count formatter. The engine picks the highest
--- breakpoint whose threshold is <= the (secret) count. Stock behavior stays
--- hidden below 2; the opt-in lowers that first visible breakpoint to 1.
--- Threshold/max entries wrap the number in their color escape; max wins a
--- collision with the threshold by overwriting its slot in the map. prefix
--- and suffix are baked around every VISIBLE format (text hosts carry their
--- column's static text this way); the hidden zero bracket stays "" so they
--- vanish with the number. Icon/bar callers pass "" for both.
-local function BuildStackCountBreakpoints(showCountAtOne, policy, prefix, suffix)
-    -- threshold -> format map; later writes win collisions (max last).
-    local firstVisible = showCountAtOne and 1 or 2
-    local formats = { [0] = "", [firstVisible] = prefix .. "%d" .. suffix }
-    if policy and policy.threshold then
-        formats[policy.threshold] = prefix .. PandemicColorEscape(policy.thresholdColor) .. "%d|r" .. suffix
-    end
-    if policy and policy.maxOn then
-        formats[policy.maxStacks < firstVisible and firstVisible or policy.maxStacks] =
-            prefix .. PandemicColorEscape(policy.maxColor) .. "%d|r" .. suffix
-    end
-    local thresholds = {}
-    for value in pairs(formats) do thresholds[#thresholds + 1] = value end
-    table.sort(thresholds)
-    local breakpoints = {}
-    for i = 1, #thresholds do
-        breakpoints[i] = { threshold = thresholds[i], format = formats[thresholds[i]] }
-    end
-    return breakpoints
-end
-
 local function ConvergeApplicationBar(slotButton, kit, buttonData, stackBarMax, style)
     if not (kit and kit.stackFill) then return end
     local wantMax = stackBarMax or 1
@@ -3351,11 +3357,10 @@ end
 -- (breakpoints rebuilt first); entries with neither option converge back
 -- to the bare stock registration. All threshold clamp/prefer rules live
 -- in ResolveAuraStackThresholdPolicy — never re-derive them here.
--- Breakpoints come from BuildStackCountBreakpoints below, shared with the
--- text host so the one-stack and threshold-color keys read the same on
--- every surface that renders a count.
-local function ConvergeApplicationCount(slotButton, kit, buttonData)
-    if not (kit and kit.stackText and kit.stackFormatter) then return end
+-- Breakpoints come from BuildStackCountBreakpoints above. The policy is
+-- resolved once per entry (ResolveApplicationCount) and handed to every
+-- copy, so a pooled panel or block group does not re-resolve it per host.
+local function ResolveApplicationCount(buttonData)
     local showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     local policy = CooldownCompanion:ResolveAuraStackThresholdPolicy(buttonData)
     local wantKey = showCountAtOne and "one" or "off"
@@ -3369,12 +3374,17 @@ local function ConvergeApplicationCount(slotButton, kit, buttonData)
         end
         wantKey = table.concat(parts, "/")
     end
+    return showCountAtOne, policy, wantKey
+end
+
+local function ConvergeApplicationCount(slotButton, kit, showCountAtOne, policy, wantKey)
+    if not (kit and kit.stackText and kit.stackFormatter) then return end
     if kit.stackCountFormatterKey == wantKey then return end
     if not (showCountAtOne or policy) then
         slotButton:SetApplicationCount(kit.stackText)
     else
         kit.stackFormatter:ClearBreakpoints()
-        kit.stackFormatter:SetBreakpoints(BuildStackCountBreakpoints(showCountAtOne, policy, "", ""))
+        kit.stackFormatter:SetBreakpoints(BuildStackCountBreakpoints(showCountAtOne, policy))
         slotButton:SetApplicationCount(kit.stackText, { formatter = kit.stackFormatter })
     end
     kit.stackCountFormatterKey = wantKey
@@ -3494,7 +3504,7 @@ local function BindDisplay(record, buttonData, spellSet, unit, style, stackBarMa
         BuildCandidateFilters(unit, spellSet, groupScoped))
     if not textureKit then
         ConvergeApplicationBar(record.slotButton, record.kit, buttonData, stackBarMax, style)
-        ConvergeApplicationCount(record.slotButton, record.kit, buttonData)
+        ConvergeApplicationCount(record.slotButton, record.kit, ResolveApplicationCount(buttonData))
     end
     -- Set before styling: StyleSlotKit selects the stack fill from this tag.
     record.boundStackMax = stackBarMax
@@ -3555,8 +3565,8 @@ end
 
 ------------------------------------------------------------------------
 -- The rebind pass — the single place slot subtrees are touched. Idempotent,
--- coalesced, OOC-only: park everything, then bind every aura-tracking entry
--- currently materialized as a button.
+-- coalesced, OOC-only: park what changed, then bind every selected want
+-- (unchanged slot contracts stay mounted; see the retained set below).
 ------------------------------------------------------------------------
 
 -- The units an entry is tracked on, in bind order.
@@ -3574,7 +3584,7 @@ end
 -- opt-in. That is what keeps an illegal pairing — your debuff on an ally, which
 -- the gate would silently refuse to filter — unrepresentable at runtime even if
 -- stored config drifts.
-local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
+local function ResolveEntryAuraUnits(self, buttonData)
     -- Pet scope is EXCLUSIVE (owner ruling 2026-08-21): a pet-tracked buff
     -- lives only on the pet, so binding a player record beside it would waste
     -- a container and forfeit aura sounds (the single-unit rule below). The
@@ -3583,10 +3593,11 @@ local function ResolveEntryAuraUnits(self, buttonData, allowGroupScope)
     -- Resolved to { "pet" } pet or no pet: the set is computed at rebind
     -- time, and a pet summoned later arrives via UNIT_PET — whose watcher can
     -- only wake a record that already exists. A petless record stays hidden
-    -- by the identity gate, not by omission.
-    local kind = self:GetAuraEntryUnitKind(buttonData, allowGroupScope)
-    if kind == "group" then return GroupAuraTokens() end
-    return { kind }
+    -- by the identity gate, not by omission. The kind rides along so callers
+    -- read group scope from the same answer.
+    local kind = self:GetAuraEntryUnitKind(buttonData)
+    if kind == "group" then return GroupAuraTokens(), kind end
+    return { kind }, kind
 end
 
 ------------------------------------------------------------------------
@@ -3594,8 +3605,8 @@ end
 --
 -- Such an entry cannot hold a fixed slot in its owner panel's CC-laid-out
 -- attached stack: aura presence is secret, so CC can never pack the stack
--- around it. Each side of the stack instead gets ONE AuraContainer running in
--- GROUP mode.
+-- around it. Each attached area of the panel instead gets ONE AuraContainer
+-- per unit, running in GROUP mode.
 -- Blizzard assigns a pooled AuraButton per ACTIVE aura and packs the
 -- survivors with its own flow layout, in the layoutIndex order written here;
 -- CC never learns which groups are up.
@@ -3610,13 +3621,13 @@ end
 -- geometry number arrives from the CC-side block contract
 -- (ST.CollectAttachedBarAuraBlocks in Core/AttachedBarLayout.lua).
 --
--- One container per (side, UNIT). A container tracks exactly one unit and
--- SetUnit is called once, at creation — the same immutability the slot
--- records rely on. A side whose entries resolve to BOTH units therefore
--- renders as two CHAINED buckets: the player container takes the stack-end
--- mount and the target container hangs off its trailing edge, riding a size
--- CC never reads. Buckets never interleave, and player is always the one
--- nearer the panel.
+-- One container per (attached area = side:region:resources, UNIT). A
+-- container tracks exactly one unit and SetUnit is called once, at creation —
+-- the same immutability the slot records rely on. An area whose entries
+-- resolve to BOTH units therefore renders as two CHAINED buckets: the first
+-- container takes the stack-end mount and the second hangs off its trailing
+-- edge, riding a size CC never reads. Buckets never interleave, and
+-- want.targetFirst decides which bucket is nearer the panel.
 --
 -- Every container is created with DisableUntrustedLayoutScriptsTemplate
 -- alongside CustomAuraContainerTemplate, which is what makes it legal to
@@ -3626,7 +3637,7 @@ end
 -- Flow geometry per side. The layout AXIS is the direction bars stack along,
 -- so a horizontal resource stack (above/below) flows vertically and a
 -- vertical one (left/right) flows horizontally. Anchor point and growth
--- mirror RelayoutBars' own accumulator signs for that side, and the anchor
+-- mirror AttachedBarLayout.lua's FLOW signs for that side, and the anchor
 -- point matches the container's own mount corner so both grow the same way.
 local BLOCK_FLOW = {
     above = { axis = "Vertical", anchor = "BOTTOMLEFT", h = "Right", v = "Up" },
@@ -3635,9 +3646,8 @@ local BLOCK_FLOW = {
     right = { axis = "Horizontal", anchor = "TOPLEFT", h = "Right", v = "Down" },
 }
 
-local blockContainers = {} -- side .. "\031" .. unit -> block record
+local blockContainers = {} -- owner.key .. "\031" .. unit -> block record (owner.key = "entry-bars:<frame>:<area.key>")
 local blockRecords = {}    -- flat, append-only list of every block record
-local blockChainBlocked = 0 -- entries the last bind dropped for a dead chain
 
 function RefreshSlotIdentityVisibility(record)
     local applicable
@@ -3750,9 +3760,9 @@ end
 
 -- The second bucket's mount: same one-point rule, but the anchor is the
 -- FIRST bucket's container rather than the stack container, so this bucket
--- rides a secret extent instead of a CC-side offset. Legal only because both
--- containers carry DisableUntrustedLayoutScriptsTemplate — callers must have
--- checked `chainable` on both.
+-- rides a secret extent instead of a CC-side offset. Legal because
+-- EnsureBlockContainer creates every block container with
+-- DisableUntrustedLayoutScriptsTemplate.
 local function ApplyBlockChainMount(record, anchorRecord)
     local owner = record.owner
     record.container:ClearAllPoints()
@@ -3802,10 +3812,6 @@ local function EnsureBlockContainer(side, unit, owner)
         unit = unit,
         container = container,
         visibilityRoot = visibilityRoot,
-        -- Stamped at creation, never inferred later: a container built before
-        -- this rule (same session, code swapped under a live client) has no
-        -- way back to the aspect, and anchoring one errors.
-        chainable = true,
         groups = {},
         groupList = {},
     }
@@ -3992,12 +3998,13 @@ local function BindBlockGroup(group, entry)
     -- restyled only on a change (HoldPooledSpareStill).
     local owner = group.record.owner
     local ownerId = owner and owner.groupId
+    local countAtOne, countPolicy, countKey = ResolveApplicationCount(entry.buttonData)
     for index, host in HostsToStyle(group.hosts, entry.buttonData, ownerId) do
         ApplyPanelHostGeometry(group, host)
         host.proxy._ccWholeAuraPanel = false
         ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
         ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
-        ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
+        ConvergeApplicationCount(host.frame, host.kit, countAtOne, countPolicy, countKey)
         StyleSlotKit({
             kit = host.kit,
             slotButton = host.frame,
@@ -4034,16 +4041,6 @@ local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
     if not record.identityApplicable then return nil end
     local mounted
     if anchorRecord then
-        if not (record.chainable and anchorRecord.chainable) then
-            -- A container from before the dual-template rule cannot be
-            -- anchored to or from: the call errors on the forbidden aspect,
-            -- and an error inside the aura refresh pipeline freezes the whole
-            -- display until reload. So this bucket simply does not render
-            -- this session; /reload rebuilds every container chainable.
-            record.chainBlocked = #entries
-            blockChainBlocked = blockChainBlocked + record.chainBlocked
-            return nil
-        end
         mounted = ApplyBlockChainMount(record, anchorRecord)
         if mounted then record.chainAnchor = anchorRecord end
     else
@@ -4071,8 +4068,6 @@ local function RebindAttachedAuraBlocks(self, owners, retireIds)
         if not owners or (owner and ((retireIds and retireIds[owner.groupId])
             or owners[owner.groupId] == owner.parent)) then
             record.configured = nil
-            blockChainBlocked = blockChainBlocked - (record.chainBlocked or 0)
-            record.chainBlocked = nil
             for _, group in ipairs(record.groupList) do
                 ParkBlockGroup(group)
             end
@@ -4123,8 +4118,8 @@ end
 ------------------------------------------------------------------------
 -- AURA PANELS — whole panels (icon or bar) whose every entry is an aura.
 --
--- The block section above hangs aura groups off ONE side of the resource
--- stack. This one does the same thing to a PANEL: an Aura Panel materializes
+-- The block section above hangs aura groups off one attached area of a
+-- panel. This one does the same thing to a PANEL: an Aura Panel materializes
 -- no CC buttons at all (GroupFrame's PopulateGroupButtons short-circuits),
 -- and instead mounts ONE AuraContainer under its group frame with ONE aura
 -- group per entry. Blizzard's flow layout packs only the ACTIVE ones, so an
@@ -4331,9 +4326,9 @@ end
 -- vocabulary the 12.0 compact-mode option used, because it is the same question
 -- ("which end does the packed block hold?") answered by a different engine.
 -- CC's compact layout never runs on an Aura Panel (compactLayout is forced
--- false at birth), so the key is this display's alone in practice. GroupFrame's
--- NormalizeCompactGrowthDirection is file-local, so this repeats the fold
--- rather than reaching across for it; both must stay the same three-way.
+-- false at birth), so the key is this display's alone in practice.
+-- GroupFrameShared exports the same fold (GF.NormalizeCompactGrowthDirection);
+-- this local twin repeats it, and the two must stay the same three-way.
 local function NormalizePanelGrowthDirection(growthDirection)
     if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
         return "start"
@@ -4769,6 +4764,7 @@ local function BindPanelGroup(pgroup, entry)
     -- stays a complete fallback. Only the last one animates, and spares are
     -- restyled only on a change (HoldPooledSpareStill).
     local panelId = pgroup.record.groupId
+    local countAtOne, countPolicy, countKey = ResolveApplicationCount(entry.buttonData)
     for index, host in HostsToStyle(pgroup.hosts, entry.buttonData, panelId) do
         ApplyPanelHostGeometry(pgroup, host)
         -- Both whole Aura Panels and ordinary-panel aura sections use the
@@ -4779,7 +4775,7 @@ local function BindPanelGroup(pgroup, entry)
         -- for the occluding cover and the aura icon's own texcoords.
         ApplyPanelHostIcon(pgroup, host, entry.buttonData, entry.style)
         ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
-        ConvergeApplicationCount(host.frame, host.kit, entry.buttonData)
+        ConvergeApplicationCount(host.frame, host.kit, countAtOne, countPolicy, countKey)
         StyleSlotKit({
             kit = host.kit,
             slotButton = host.frame,
@@ -5331,8 +5327,8 @@ function RunAuraRebind(configEdit, panelIds, resources)
                             -- Group tracking (a lone aura only, AuraListProblem):
                             -- one While Missing aura per member under "all", so
                             -- it shows while nobody has it.
-                            local auraUnits = ResolveEntryAuraUnits(self, aura, true)
-                            local groupScoped = self:GetAuraEntryUnitKind(aura, true) == "group"
+                            local auraUnits, auraKind = ResolveEntryAuraUnits(self, aura)
+                            local groupScoped = auraKind == "group"
                             for unitIndex = 1, groupScoped and #auraUnits or 1 do
                                 local auraUnit = auraUnits[unitIndex]
                                 presenceAuras[#presenceAuras + 1] = { set = set, unit = auraUnit,
@@ -5419,14 +5415,13 @@ function RunAuraRebind(configEdit, panelIds, resources)
         collectResourceWants(wanted)
     end
 
-    -- Shared unit resolution: every want derives its token set the same way
-    -- (resource wants arrive with unit unset). One want fans out to one
-    -- record per token.
+    -- Shared unit resolution: every want derives its token set and group
+    -- scope here, from one unit-kind answer. One want fans out to one record
+    -- per token.
     for _, want in ipairs(wanted) do
-        want.units = want.unit and { want.unit }
-            or ResolveEntryAuraUnits(self, want.buttonData, true)
-        want.groupScoped = want.buttonData.auraTrackGroup == true
-            and want.units[1] ~= "target"
+        local units, kind = ResolveEntryAuraUnits(self, want.buttonData)
+        want.units = units
+        want.groupScoped = kind == "group"
         -- Armed from the opt-in, not from a resolved ally token: solo the set is
         -- { "player" } and there would be no ally record to trigger it.
         if want.groupScoped then
@@ -5724,8 +5719,7 @@ function CooldownCompanion:GetAuraDisplayStatus()
     status.presence = presence
     status.pandemic = pandemic
     -- Aura blocks: containers created (permanent once created), groups by
-    -- bind state, how many sides run a two-bucket chain, and any entries the
-    -- chain safety dropped (see BindBlockBucket — clears on /reload).
+    -- bind state, and how many sides run a two-bucket chain.
     local blocks = {
         containers = #blockRecords,
         shown = 0,
@@ -5733,7 +5727,6 @@ function CooldownCompanion:GetAuraDisplayStatus()
         parked = 0,
         hosts = 0,
         chained = 0,
-        chainBlocked = blockChainBlocked,
     }
     for _, record in ipairs(blockRecords) do
         -- CC-side tags, not container reads: these are the only diagnostics

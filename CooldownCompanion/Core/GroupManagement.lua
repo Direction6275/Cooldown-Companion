@@ -503,6 +503,8 @@ end
 --                quick-copy scope ownership
 --   skipCompact  leave the target's compact trio alone (an Aura template
 --                carries none)
+--   skipAttachedBars  leave the target's attached bar style alone
+--                (PanelTemplates passes it for templates older than version 4)
 --   sections     { [anchor] = { <ST.PANEL_TEMPLATE_SECTION_KEYS> } }: per
 --                anchor, the section's settings, written onto the target's
 --                section at that anchor (created member-less when absent).
@@ -1315,7 +1317,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     end
     ST.InitializeNewPanelBarStyle(db.groups[groupId])
 
-    -- Style defaults (nil-guard respects user-customized globalStyle)
+    -- Birth stamps: values every new panel starts with on top of its globalStyle copy.
     local style = db.groups[groupId].style
     style.orientation = "horizontal"
     -- Stamp the per-mode orientation key at birth: new-format bar/text
@@ -1332,25 +1334,6 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
         style.cooldownSwipeReverse = true
         style.auraGlowStyle = "none"
     end
-    if style.desaturateOnCooldown == nil then style.desaturateOnCooldown = true end
-    if style.showOutOfRange == nil then style.showOutOfRange = true end
-    if style.showGCDSwipe == nil then style.showGCDSwipe = false end
-    if style.showLossOfControl == nil then style.showLossOfControl = true end
-    if style.showTooltips == nil then style.showTooltips = false end
-    if style.showUnusable == nil then style.showUnusable = true end
-    if style.unusableVisualMode == nil then style.unusableVisualMode = "dim" end
-    if style.showCooldownSwipe == nil then style.showCooldownSwipe = true end
-    if style.showAuraDurationSwipe == nil then style.showAuraDurationSwipe = style.showCooldownSwipe ~= false end
-    if style.auraDurationSwipeReverse == nil then style.auraDurationSwipeReverse = true end
-    if style.auraDurationSwipeEdgeEnabled == nil then style.auraDurationSwipeEdgeEnabled = style.cooldownSwipeEdgeEnabled == true end
-    if style.auraDurationSwipeAlpha == nil then style.auraDurationSwipeAlpha = style.cooldownSwipeAlpha or 0.8 end
-    if style.auraDurationSwipeEdgeColor == nil then style.auraDurationSwipeEdgeColor = CopyTable(style.cooldownSwipeEdgeColor or {1, 1, 1, 1}) end
-    if style.iconFillEnabled == nil then style.iconFillEnabled = false end
-    if style.iconFillOrientation == nil then style.iconFillOrientation = "vertical" end
-    if style.iconFillReverse == nil then style.iconFillReverse = false end
-    if style.iconFillTimerBehavior == nil then style.iconFillTimerBehavior = "drain" end
-    if style.iconFillCooldownColor == nil then style.iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55} end
-    if style.barAuraEffect == nil then style.barAuraEffect = "color" end
     if style.barAuraIndicatorEnabled == nil then
         style.barAuraIndicatorEnabled = (style.barAuraEffect or "none") ~= "none"
     end
@@ -1499,7 +1482,6 @@ local DISPLAY_MODE_CHANGE_REFUSALS = {
     ["totem-panel-modes"] = "Totem Panels can only switch between icons and bars.",
     ["totem-panel-create-only"] = "Create a new Totem Panel to display totem slots.",
     unsupported = "This panel type is no longer supported. Create an Indicator instead.",
-    ["aura-entries"] = "Aura entries require icon, bar, or Indicator panels.",
     ["aura-panel-modes"] = "Aura Panels can only switch between icons and bars.",
     ["aura-panel-create-only"] = "Aura Panels cannot be converted from an existing panel. Create a new Aura Panel instead.",
     ["ordinary-bars"] = "Only Aura and Totem Panels switch to bars. Other panels show bars per entry.",
@@ -1554,19 +1536,6 @@ function CooldownCompanion:CanChangePanelDisplayMode(groupId, newMode)
         return false, "ordinary-bars"
     end
 
-    -- Primary aura entries only convert between icon and bar panels; refuse
-    -- conversions to any other mode that would strand them.
-    if oldMode ~= newMode
-        and newMode ~= "icons"
-        and newMode ~= "bars"
-        and newMode ~= nil then
-        for _, bd in ipairs(group.buttons or {}) do
-            if bd.addedAs == "aura" then
-                return false, "aura-entries"
-            end
-        end
-    end
-
     return true
 end
 
@@ -1594,14 +1563,14 @@ function CooldownCompanion:ChangePanelDisplayMode(groupId, newMode)
         group.cdmPanelSource = nil
     end
     -- Config previews are stored per-group and gated by the panel's mirror
-    -- surface at APPLY time; a transition across the mirror boundary (e.g.
-    -- icons -> textures) would migrate previews armed for the config mirror
-    -- onto the live world buttons. Clear them on every mode change.
+    -- surface at APPLY time; a transition across the mirror boundary would
+    -- migrate previews armed for the config mirror onto the live world
+    -- buttons. Clear them on every mode change.
     if oldMode ~= newMode and self.ClearAllConfigPreviews then
         self:ClearAllConfigPreviews()
     end
     -- Orientation is remembered per mode (ST.GetPanelLayoutOrientation), so
-    -- entering bars/text no longer stomps the icons layout: only stamp the
+    -- entering bars no longer stomps the icons layout: only stamp the
     -- mode's own key on first entry so new-format panels always carry it.
     if newMode == "bars" and group.style.barOrientation == nil then
         group.style.barOrientation = "vertical"
@@ -1621,7 +1590,7 @@ end
 function CooldownCompanion:CreateGroup(name)
     local containerId = self:CreateContainer(name)
 
-    -- Create container frame (Phase 3 — safe noop if method doesn't exist yet)
+    -- Create the container frame
     if self.CreateContainerFrame then
         self:CreateContainerFrame(containerId)
     end

@@ -132,9 +132,7 @@ function I.CreatePandemicGlow(host, auraOwned, nativeSlot)
             nativeSlot, level)
         glow = host.indicatorPandemicWindow.glow
     else
-        glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned)
-        glow.host:SetFrameLevel(level)
-        glow.cdm.frame:SetFrameLevel(level)
+        glow = ST._BuildKitGlowRegions(host.visualRoot, true, auraOwned, nil, level)
     end
     root:SetFrameLevel(level + 1)
     host.indicatorPandemicGlow = glow

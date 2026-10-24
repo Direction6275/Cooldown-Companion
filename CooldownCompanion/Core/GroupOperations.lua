@@ -416,7 +416,7 @@ local function RefreshCompactSuppressionAffectedGroup(self, groupId)
     groupId = tonumber(groupId)
     if not groupId then return end
 
-    local group = ST.GetPanelLayoutGroup(self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
+    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not group or group.compactLayout ~= true then return end
 
     local frame = self.groupFrames and self.groupFrames[groupId]
@@ -742,7 +742,11 @@ function CooldownCompanion:FinalizePanelAnchors(sizedFrames)
             local previousCount = frame.layoutButtonCount
             -- Totem surfaces own their live or three-slot editing footprint.
             if not ST.IsTotemPanelGroup(group) and not self:IsGroupCompactLayoutActive(groupId, group) then
-                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+                -- Same usability options as the layout pass's writer
+                -- (ApplyActiveButtonLayout), so an unlock preview counts alike.
+                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
+                    buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group),
+                })
             else
                 frame.layoutButtonCount = nil
             end
@@ -1320,13 +1324,4 @@ function CooldownCompanion:UpdateAllGroupLayouts()
     if attachmentOperation then
         self:EndPanelAttachmentRefresh(attachmentOperation)
     end
-end
-
--- Utility functions
-function CooldownCompanion:GetSpellInfo(spellId)
-    local spellInfo = C_Spell.GetSpellInfo(spellId)
-    if spellInfo then
-        return spellInfo.name, spellInfo.iconID, spellInfo.castTime
-    end
-    return nil
 end

@@ -64,11 +64,9 @@ local function ResetButtonGlowTransitionState(button)
     end
 
     button._procGlowActive = nil
-    button._auraGlowActive = nil
     button._readyGlowActive = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = false
-    button._barAuraEffectActive = nil
     -- No statusBar alpha reset here: the deleted aura pulse animation was the
     -- only writer it undid, and it would unhide a show-only-while-active
     -- shell's bar on compact re-show. Shell state owns statusBar alpha now.
@@ -84,8 +82,10 @@ local function ClearButtonCompactSlotCache(button)
     button._compactSlotY = nil
 end
 
-local function GetButtonPoolKey(group, buttonData, style)
-    if ST.IsAttachedBarEntry(group, buttonData) then return "attachedBars" end
+-- layoutKind: the frame's stamped _panelLayoutKind (callers run in the
+-- populate or a guarded style pass); nil falls back to a fresh walk.
+local function GetButtonPoolKey(group, buttonData, layoutKind)
+    if ST.IsAttachedBarEntry(group, buttonData, layoutKind) then return "attachedBars" end
     local displayMode = ST.GetEntryPresentation(group, buttonData)
     if displayMode == "bars" then
         return "bars"
@@ -159,16 +159,6 @@ local function HideButtonGlowContainer(container)
 end
 
 local function ClearButtonPreviewState(button)
-    button._procGlowPreview = nil
-    button._auraGlowPreview = nil
-    button._pandemicPreview = nil
-    button._barAuraEffectPreview = nil
-    button._readyGlowPreview = nil
-    button._keyPressHighlightPreview = nil
-    button._textureProcPreview = nil
-    button._textureAuraPreview = nil
-    button._textureReadyPreview = nil
-    button._textureUnusablePreview = nil
     button._forceVisibleByConfig = nil
     button._prevForceVisibleByConfig = nil
 end
@@ -246,14 +236,11 @@ local function ClearReusableButtonRuntime(button)
     button._iconFillColorB = nil
     button._iconFillColorA = nil
     button._procGlowActive = nil
-    button._auraGlowActive = nil
-    button._auraGlowPandemic = nil
     button._readyGlowActive = nil
     button._readyGlowStartTime = nil
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
-    button._barAuraEffectActive = nil
     button._barGCDSuppressed = nil
     button._barCdColor = nil
     button._barReadyTextColor = nil
@@ -332,7 +319,6 @@ local function DeactivatePooledButton(self, groupId, button)
     if ST._StopCooldownPressFlash then
         ST._StopCooldownPressFlash(button)
     end
-    HideButtonGlowContainer(button.barAuraEffect)
     ClearReusableButtonRuntime(button)
     button._buttonPoolKey = GetExistingButtonPoolKey(button)
     button:Hide()

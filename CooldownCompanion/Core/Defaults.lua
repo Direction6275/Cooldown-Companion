@@ -95,7 +95,7 @@ local defaults = {
                     -- can dissolve, and an import can carry a stale name).
                     --
                     -- Sections apply ONLY while displayMode is "icons" and the
-                    -- panel is not an Aura Panel; anywhere else they are inert, not
+                    -- panel is not an Aura or Totem Panel; anywhere else they are inert, not
                     -- an error (Core/PanelSections.lua, ST.GetSectionsForLayout).
                     -- A section owns its icon size, spacing, and offset and nothing
                     -- else: text, border, glow and every other styling key stay
@@ -116,164 +116,10 @@ local defaults = {
                         --                       -- container instead of CC buttons
                         -- },
                     },
-                    style = {
-                        buttonSize = 36,
-                        buttonSpacing = 2,
-                        borderSize = 1,
-                        borderRenderMode = "custom",
-                        borderColor = {0, 0, 0, 1},
-                        backgroundColor = {0, 0, 0, 0.5},
-                        orientation = "horizontal", -- "horizontal" or "vertical"
-                        growthOrigin = "TOPLEFT", -- corners "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"; centered growth stores the pinned edge "TOP"/"BOTTOM" (horizontal) or "LEFT"/"RIGHT" (vertical)
-                        buttonsPerRow = 12,
-                        showCooldownText = true,
-                        cooldownFontSize = 12,
-                        cooldownFontOutline = "OUTLINE",
-                        cooldownFont = "Friz Quadrata TT",
-                        cooldownFontColor = {1, 1, 1, 1},
-                        cooldownTextAnchor = "CENTER",
-                        cooldownTextXOffset = 0,
-                        cooldownTextYOffset = 0,
-                        separateTextPositions = false,
-                        auraKeepSpellCooldownSwipe = false,
-                        auraShowAuraIcon = false,
-                        invertAuraDesaturationLogic = false,
-                        auraTextAnchor = "TOPLEFT",
-                        auraTextXOffset = 2,
-                        auraTextYOffset = -2,
-                        showAuraText = true, -- nil defaults to true via ~= false
-                        auraTextFont = "Friz Quadrata TT",
-                        auraTextFontSize = 12,
-                        auraTextFontOutline = "OUTLINE",
-                        auraTextFontColor = {0, 0.925, 1, 1},
-                        pandemicMarkerMode = "auto", -- Pandemic Timer Color: "auto" (target debuffs only) / "on" / "off"
-                        pandemicMarkerColor = {1, 0.5, 0, 1}, -- Pandemic Timer Color
-                        maintainAspectRatio = true, -- Prevent icon image stretching
-                        iconZoom = 0, -- % the artwork is cropped toward center (WeakAuras-style zoom)
-                        showTooltips = false,
-                        tooltipAnchor = "default", -- "default"/"above"/"below"/"left"/"right"/"cursor"
-                        tooltipHideInCombat = false,
-                        allowPings = false, -- Entries answer the ping keybind like Cooldown Manager items
-                        desaturateOnCooldown = true, -- Desaturate icon while on cooldown
-                        missingAuraIndicatorEnabled = false,
-                        desaturateWhileAuraNotActive = false, -- Desaturate icon while the tracked aura is missing
-                        showCooldownSwipe = true,
-                        showAuraDurationSwipe = true,
-                        cooldownSwipeReverse = false,
-                        cooldownSwipeEdgeEnabled = false, -- explicit-true; Blizzard's 12.1 cooldowns draw no edge
-                        cooldownSwipeAlpha = 0.8,
-                        cooldownSwipeEdgeColor = {1, 1, 1, 1},
-                        auraDurationSwipeReverse = true,
-                        auraDurationSwipeEdgeEnabled = false, -- explicit-true; mirrors the cooldown edge default
-                        auraDurationSwipeAlpha = 0.8,
-                        auraDurationSwipeEdgeColor = {1, 1, 1, 1},
-                        auraUseBlizzardSwipe = false,
-                        showGCDSwipe = false, -- Show GCD swipe animation on icons
-                        showOutOfRange = true, -- Red-tint icons when target is out of range
-                        showAssistedHighlight = false, -- Highlight the assisted combat recommended spell
-                        assistedHighlightHostileTargetOnly = true, -- Show only for hostile (attackable) targets
-                        assistedHighlightStyle = "blizzard", -- "blizzard", "solid", or "proc"
-                        assistedHighlightColor = {0.3, 1, 0.3, 0.9},
-                        assistedHighlightBorderSize = 2,
-                        assistedHighlightBlizzardOverhang = 32, -- % overhang for blizzard style
-                        assistedHighlightProcOverhang = 32, -- % overhang for proc style
-                        assistedHighlightProcColor = {1, 1, 1, 1},
-                        assistedHighlightCombatOnly = false,
-                        showUnusable = true,
-                        unusableVisualMode = "dim",
-                        iconUnusableTintColor = {0.4, 0.4, 0.4, 1},
-                        iconTintColor = {1, 1, 1, 1},           -- base icon vertex color (RGBA)
-                        iconCooldownTintEnabled = false,         -- apply separate tint when on cooldown
-                        iconCooldownTintColor = {1, 0, 0.102, 1}, -- cooldown tint (default: 60% opacity white)
-                        iconAuraTintEnabled = false,             -- apply separate tint when aura is active
-                        iconAuraTintColor = {0, 0.925, 1, 1},       -- aura tint (default: white full opacity)
-                        iconFillEnabled = false,
-                        iconFillOrientation = "vertical",
-                        iconFillReverse = false,
-                        iconFillTimerBehavior = "drain",
-                        iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
-                        showLossOfControl = true,
-                        procGlowColor = {1, 1, 1, 1},
-                        procGlowStyle = "glow",
-                        procGlowSize = 30,
-                        procGlowThickness = 4,
-                        procGlowSpeed = 50,
-                        procGlowLines = 8,
-                        procGlowCombatOnly = false,
-                        pandemicEffectEnabled = false, -- explicit-true master switch (PTR 8 pandemic display)
-                        pandemicGlowStyle = "solid", -- kit styles, same menu as auraGlowStyle
-                        pandemicGlowColor = {1, 0.5, 0, 1},
-                        pandemicGlowColor2 = {1, 1, 1, 0.9}, -- colorShift second color
-                        pandemicGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
-                        pandemicGlowThickness = 3,   -- dash thickness px
-                        pandemicGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
-                        pandemicGlowLines = 5,       -- dash count
-                        pandemicStartEffect = "none",    -- 12.1.5 window rig: none/flash/swell
-                        pandemicStartColor = {1, 0.5, 0, 1}, -- Flash color
-                        pandemicStartLength = 0.3,      -- seconds
-                        pandemicRefreshEffect = "vanish", -- vanish/fade/flash
-                        pandemicRefreshColor = {1, 1, 1, 1}, -- Flash color
-                        pandemicRefreshLength = 0.3,     -- seconds
-                        barPandemicColor = {1, 0.5, 0, 1},
-                        auraGlowStyle = "pulse", -- kit styles: none/solid/pulse/colorShift/dashes/autocast/ants/proc/overlay
-                        auraGlowColor = {1, 0.84, 0, 0.9},
-                        auraGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
-                        auraGlowSize = 2,        -- border/dash px, or overhang % (proc/ants)
-                        auraGlowSpeed = 0.5,     -- seconds: pulse/shift cycle, or dashes lap
-                        auraGlowDashCount = 5,   -- dashes style only (1..8)
-                        auraGlowDashThickness = 3, -- dashes style only, line thickness px
-                        readyGlowStyle = "none",
-                        readyGlowColor = {0.2, 1.0, 0.2, 1},
-                        readyGlowSize = 5,
-                        readyGlowThickness = 4,
-                        readyGlowSpeed = 50,
-                        readyGlowLines = 8,
-                        readyGlowCombatOnly = false,
-                        readyGlowOnlyWhileUsable = false,
-                        readyGlowDuration = 0,
-                        keyPressHighlightStyle = "none",
-                        keyPressHighlightColor = {1, 1, 1, 0.4},
-                        keyPressHighlightSize = 5,
-                        keyPressHighlightCombatOnly = false,
-                        cooldownPressFlashEnabled = false,
-                        cooldownPressFlashColor = {1, 0.25, 0.25, 0.6},
-                        cooldownPressFlashDuration = 0.25,
-                        cooldownPressFlashCombatOnly = false,
-                        barAuraColor = {0.2, 1.0, 0.2, 1.0},
-                        barAuraMissingColor = {0.6, 0.15, 0.15, 1.0}, -- Show While Inactive bars
-                        barAuraEffect = "color",
-                        barAuraEffectColor = {1, 0.84, 0, 0.9},
-                        barAuraEffectSize = 8,
-                        barAuraEffectThickness = 4,
-                        barAuraEffectSpeed = 50,
-                        barAuraEffectLines = 8,
-                        barAuraPulseEnabled = false,
-                        barAuraPulseSpeed = 0.5,
-                        barAuraColorShiftEnabled = false,
-                        barAuraColorShiftSpeed = 0.5,
-                        barAuraColorShiftColor = {1, 1, 1, 1},
-                        strataOrder = nil, -- custom layer order (ST.DEFAULT_STRATA_ORDER length) or nil for default
-                        showKeybindText = false,
-                        keybindFont = "Friz Quadrata TT",
-                        keybindFontSize = 10,
-                        keybindFontOutline = "OUTLINE",
-                        keybindFontColor = {1, 1, 1, 1},
-                        keybindAnchor = "TOPRIGHT",
-                        keybindXOffset = -2,
-                        keybindYOffset = -2,
-                        showChargeText = true,
-                        chargeFont = "Friz Quadrata TT",
-                        chargeFontSize = 12,
-                        chargeFontOutline = "OUTLINE",
-                        chargeFontColor = {1, 1, 1, 1},
-                        chargeFontColorMissing = {1, 1, 1, 1},
-                        chargeFontColorZero = {1, 1, 1, 1},
-                        chargeAnchor = "BOTTOMRIGHT",
-                        chargeXOffset = -2,
-                        chargeYOffset = 2,
-                    },
+                    -- style = CopyTable(globalStyle) below, plus CreatePanel's birth stamps
+                    -- (Core/GroupManagement.lua).
                     enabled = true,
-                    displayMode = "icons",    -- "icons" or "bars"
+                    displayMode = "icons",    -- "icons" | "bars" | "indicator"
                     frameStrata = nil,        -- nil = "MEDIUM" (default), or "BACKGROUND"/"LOW"/"HIGH"/"DIALOG"
                     inheritPanelAlpha = true, -- panels anchored to panels inherit target panel alpha by default
                     -- Alpha fade system
@@ -986,7 +832,7 @@ ST.OVERRIDE_SECTIONS = {
     -- Icon Mode — Appearance Tab
     borderSettings = {
         label = "Border",
-        keys = {"borderSize", "borderRenderMode", "borderColor"},
+        keys = {"borderSize", "borderRenderMode", "borderColor", "barBorderStyle"},
         modes = {icons = true, bars = true},
     },
     cooldownText = {
@@ -1243,16 +1089,14 @@ ST.OVERRIDE_SECTIONS = {
         keys = {"barAuraMissingColor"},
         modes = {bars = true},
     },
+    -- Bar texture, fill direction, segmented smoothing, the three bar text
+    -- fonts and bar icon appearance belong to the shared bar sections in
+    -- Core/BarStyle.lua; ST.MigrateSharedBarStyle moves older saved ownership
+    -- out of barShape, barNameText and barIcon. Every key has one owning section.
     barIcon = {
         label = "Bar Icon",
-        keys = {"showBarIcon", "barIconReverse", "barIconOffset", "barIconSizeOverride", "barIconSize"},
-        defaults = {
-            showBarIcon = true,
-            barIconReverse = false,
-            barIconOffset = 0,
-            barIconSizeOverride = false,
-            barIconSize = 20,
-        },
+        keys = {"showBarIcon"},
+        defaults = { showBarIcon = true },
         modes = {bars = true},
     },
     barThickness = {
@@ -1261,8 +1105,8 @@ ST.OVERRIDE_SECTIONS = {
     },
     barShape = {
         label = "Bar Settings",
-        keys = { "barLength", "barTexture", "barFillVertical", "barReverseFill", "durationFormat" },
-        defaults = { barLength = 180, barTexture = "Solid", barFillVertical = false, barReverseFill = false, durationFormat = "clock" },
+        keys = { "barLength", "barFillVertical", "durationFormat" },
+        defaults = { barLength = 180, barFillVertical = false, durationFormat = "clock" },
         modes = { bars = true },
     },
     barColor = {
@@ -1293,7 +1137,7 @@ ST.OVERRIDE_SECTIONS = {
     },
     barNameText = {
         label = "Name Text",
-        keys = {"showBarNameText", "barNameTextReverse", "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", "barNameFont", "barNameFontSize", "barNameFontOutline", "barNameFontColor"},
+        keys = {"showBarNameText", "barNameTextReverse", "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY"},
         modes = {bars = true},
     },
     barReadyText = {

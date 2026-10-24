@@ -1599,7 +1599,6 @@ local function ApplyStrataOrder(button, order)
         },
         keyPressHighlight = {
             button.keyPressHighlight and button.keyPressHighlight.solidFrame,
-            button.keyPressHighlight and button.keyPressHighlight.procFrame,
             -- The cooldown press flash shares this slot (Glows.lua); its
             -- texture sublevel puts it above the highlight's own regions.
             button._cooldownPressFlash and button._cooldownPressFlash.frame,

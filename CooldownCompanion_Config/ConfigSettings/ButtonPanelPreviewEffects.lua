@@ -50,7 +50,7 @@ local EFFECT_PREVIEWS = {
         pandemicOverride = true },
     { flag = "_readyGlowPreview", containerKey = "readyGlow", setter = ST._SetReadyGlow },
     { flag = "_keyPressHighlightPreview", containerKey = "keyPressHighlight",
-        setter = ST._SetKeyPressHighlight, withOverlay = true },
+        setter = ST._SetKeyPressHighlight, withOverlay = true, noProc = true },
 }
 
 -- Pandemic Start / Refresh (12.1.5): inside the looping Aura Active cycle,
@@ -141,7 +141,7 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
                     end
                 end
                 if active and not slot[def.containerKey] and CreateGlowContainer then
-                    slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay)
+                    slot[def.containerKey] = CreateGlowContainer(slot, 32, def.withOverlay, def.noProc)
                 end
                 if slot[def.containerKey] then
                     if def.pandemicOverride then

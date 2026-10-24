@@ -167,35 +167,17 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         iconFillIntentReason = iconFill.intentReason,
         readyGlowActive = glows.readyActive,
         procGlowActive = glows.procActive,
-        auraGlowActive = glows.auraActive,
         procGlowReason = glows.procReason,
-        procGlowPreview = glows.procPreview,
         procGlowCombatSuppressed = glows.procCombatSuppressed,
-        auraGlowReason = glows.auraReason,
-        auraGlowPreview = glows.auraPreview,
-        auraGlowCombatSuppressed = glows.auraCombatSuppressed,
-        auraGlowPandemicIntent = glows.auraPandemicIntent,
-        auraGlowPandemicApplied = glows.auraPandemic,
         readyGlowReason = glows.readyReason,
-        readyGlowPreview = glows.readyPreview,
         readyGlowCombatSuppressed = glows.readyCombatSuppressed,
         readyGlowSuppressedByProc = glows.readySuppressedByProc,
-        readyGlowAuraSuppressed = glows.readyAuraSuppressed,
         readyGlowMaxCharges = glows.readyMaxCharges,
     }
     row.bar = {
         intentAvailable = bar.intentAvailable,
         domain = bar.domain,
         colorReason = bar.colorReason,
-        auraColorReason = bar.auraColorReason,
-        auraEffectActive = bar.auraEffectActive,
-        auraEffectReason = bar.auraEffectReason,
-        pulseActive = bar.pulseActive,
-        pulseMode = bar.pulseMode,
-        colorShiftActive = bar.colorShiftActive,
-        colorShiftMode = bar.colorShiftMode,
-        stackDisplay = bar.stackDisplay,
-        stackMode = bar.stackMode,
         gcdSuppressed = bar.gcdSuppressed,
     }
     CompareValue(row, "cooldown.state", cooldown.state, button._cooldownState)
@@ -230,13 +212,8 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     end
     CompareValue(row, "glows.readyActive", glows.readyActive, IsTrue(button._readyGlowActive))
     CompareValue(row, "glows.procActive", glows.procActive, IsTrue(button._procGlowActive))
-    CompareValue(row, "glows.auraActive", glows.auraActive, IsTrue(button._auraGlowActive))
     if compareVisibleIconIntent and glows.intentAvailable == true then
         CompareValue(row, "glows.proc.intent", glows.procIntentActive, glows.procActive)
-        CompareValue(row, "glows.aura.intent", glows.auraIntentActive, glows.auraActive)
-        if glows.auraIntentActive == true or glows.auraActive == true then
-            CompareValue(row, "glows.aura.pandemic", glows.auraPandemicIntent, glows.auraPandemic)
-        end
         CompareValue(row, "glows.ready.intent", glows.readyIntentActive, glows.readyActive)
     end
     local compareVisibleBarIntent = row.displayMode == "bars"
@@ -249,9 +226,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
             AddMismatch(row, "bar.applied.missing")
         else
             CompareValue(row, "bar.colorReason", bar.appliedColorReason, bar.colorReason)
-            CompareValue(row, "bar.auraEffectActive", bar.appliedAuraEffectActive, bar.auraEffectActive)
-            CompareValue(row, "bar.pulseActive", bar.appliedPulseActive, bar.pulseActive)
-            CompareValue(row, "bar.colorShiftActive", bar.appliedColorShiftActive, bar.colorShiftActive)
             CompareValue(row, "bar.gcdSuppressed", bar.appliedGcdSuppressed, bar.gcdSuppressed)
         end
     end

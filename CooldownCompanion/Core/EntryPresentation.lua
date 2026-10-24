@@ -12,7 +12,6 @@ function ST.ResolveBarGeometry(group, options)
     local attached = ordinary and options.attached ~= false
     local style = options.style or (ordinary and ST.GetAttachedBarStyle(group)) or {}
     local layout = ordinary and group.attachedBarLayout or {}
-    layout = layout or {}
     local vertical = options.vertical == true
     if attached and options.fit then vertical = options.side == "left" or options.side == "right" end
     local thickness = options.thickness
@@ -44,14 +43,18 @@ function ST.GetConfiguredModuleBarSettings(kind)
     return profile.castBarByChar and profile.castBarByChar[char]
 end
 
-function ST.GetModuleGeometryHost(kind, spec)
-    if not Addon.ResolveModulePanel then return nil end
-    local target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
+-- target: an already resolved runtime ResolveModulePanel(kind) result, so a
+-- caller that resolved once per apply reuses it.
+function ST.GetModuleGeometryHost(kind, spec, target)
+    if not target then
+        if not Addon.ResolveModulePanel then return nil end
+        target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
+    end
     return target and target.mode ~= "independent" and target.group or nil
 end
 
-function ST.GetModuleGeometryPanel(kind, spec)
-    local group = ST.GetModuleGeometryHost(kind, spec)
+function ST.GetModuleGeometryPanel(kind, spec, target)
+    local group = ST.GetModuleGeometryHost(kind, spec, target)
     return ST.PanelSupportsAttachedBars(group) and group or nil
 end
 
@@ -267,15 +270,17 @@ function ST.RetireTemplateBarOnlyLayout(template)
     end
 end
 
+-- Read-only; nothing may write into it.
+local LAYOUT_ELIGIBILITY_OPTS = { eligibilityOnly = true }
+
 -- Structural eligibility only: cooldown/aura visibility and temporary load
 -- conditions cannot turn a mixed panel into a differently arranged bar grid.
 function ST.IsPanelLayoutEntryEligible(group, entry)
     if not entry or entry.enabled == false then return false end
     if entry.specs and next(entry.specs) and not entry.specs[Addon._currentSpecId] then return false end
     if Addon.GetLoadConditionSourcesForEntry and Addon.EvaluateLoadConditionSources then
-        return Addon:EvaluateLoadConditionSources(Addon:GetLoadConditionSourcesForEntry(entry, group), {
-            eligibilityOnly = true,
-        })
+        return Addon:EvaluateLoadConditionSources(Addon:GetLoadConditionSourcesForEntry(entry, group),
+            LAYOUT_ELIGIBILITY_OPTS)
     end
     return true
 end
@@ -296,7 +301,8 @@ end
 
 -- Eligibility still controls runtime membership. When none is eligible,
 -- configured entries provide the geometry for editing their inactive ghosts.
--- The same decision owns fitting, the saved bar arrangement and its controls.
+-- The same decision picks attached-bar fitting versus the bar-only grid, and
+-- which dimensions the movers edit.
 function ST.GetPanelGeometryKind(group, kind)
     kind = kind or ST.GetPanelLayoutKind(group)
     if kind ~= "empty" then return kind end
@@ -368,15 +374,17 @@ function ST.GetAttachedBarStyle(group, forEditing)
     return style
 end
 
-function ST.GetEntryBaseStyle(group, entry)
+-- barStyle: an already resolved GetAttachedBarStyle(owner) for a caller
+-- walking many entries in one pass.
+function ST.GetEntryBaseStyle(group, entry, barStyle)
     if entry and entry._geometryContext then return entry._geometryContext:ReadStyle() end
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    if ST.IsPanelBarEntry(group, entry) then return ST.GetAttachedBarStyle(group) end
+    if ST.IsPanelBarEntry(group, entry) then return barStyle or ST.GetAttachedBarStyle(group) end
     return group and group.style or {}
 end
 
--- An ephemeral view lets the established Bar Panel grid consume its own
--- geometry without changing the saved panel type or the icon arrangement.
+-- An ephemeral view lets the bars-mode grid lay out a bar-only panel from its
+-- shared bar style without changing the saved panel type or the icon arrangement.
 -- Compact Mode is the panel's own: one setting for icons and bars alike.
 function ST.GetPanelLayoutGroup(group, forEditing, kind)
     if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars" then return group end
@@ -391,7 +399,7 @@ function ST.GetPanelBarStyleGroup(group)
         _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, { __index = group, __newindex = group })
 end
 
--- Movers edit the visible bar dimensions in either bar-only arrangement.
+-- Movers on a bar-only panel edit its shared bar style's dimensions.
 function ST.GetPanelSizingGroup(group)
     if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars" then
         return ST.GetPanelBarStyleGroup(group)
@@ -416,18 +424,31 @@ function Addon:GetEntryEffectiveStyle(group, entry)
     return self:GetEffectiveStyle(ST.GetEntryBaseStyle(group, entry), entry, group)
 end
 
+local function WidenBarCell(width, height, group, entry, barStyle)
+    local effective = Addon:GetEffectiveStyle(ST.GetEntryBaseStyle(group, entry, barStyle), entry, group)
+    local w, h = effective.barLength or 180, effective.barHeight or 12
+    if effective.barFillVertical then w, h = h, w end
+    return math.max(width, w), math.max(height, h)
+end
+
 function ST.GetBarGridCellDimensions(group)
     local style = group.style or {}
     local width, height = style.barLength or 180, style.barHeight or 20
     if style.barFillVertical then width, height = height, width end
-    if group._unifiedPanelOwner then
-        local includeInactive = ST.GetPanelLayoutKind(group._unifiedPanelOwner) == "empty"
+    local owner = group._unifiedPanelOwner
+    if owner then
+        local barStyle = ST.GetAttachedBarStyle(owner)
+        local anyEligible = false
         for _, entry in ipairs(group.buttons or {}) do
-            if includeInactive or ST.IsPanelLayoutEntryEligible(group, entry) then
-                local effective = Addon:GetEntryEffectiveStyle(group, entry)
-                local w, h = effective.barLength or 180, effective.barHeight or 12
-                if effective.barFillVertical then w, h = h, w end
-                width, height = math.max(width, w), math.max(height, h)
+            if ST.IsPanelLayoutEntryEligible(group, entry) then
+                anyEligible = true
+                width, height = WidenBarCell(width, height, group, entry, barStyle)
+            end
+        end
+        -- Nothing eligible: the configured entries size the inactive ghosts.
+        if not anyEligible and ST.GetPanelLayoutKind(owner) == "empty" then
+            for _, entry in ipairs(group.buttons or {}) do
+                width, height = WidenBarCell(width, height, group, entry, barStyle)
             end
         end
     end
@@ -489,8 +510,11 @@ function ST.DetachEntryBarPlacement(entry)
     if entry then entry.barPlacement = nil end
 end
 
+-- Its only caller, ApplyActiveButtonLayout, runs after the populate stamp or
+-- the style pass's stamp check, so the stamped kind is current; a nil stamp
+-- falls back to a fresh walk.
 function ST.GetPanelIconButtons(frame, group, buttons)
-    if not ST.PanelUsesAttachedBarLayout(group) then return buttons end
+    if not ST.PanelUsesAttachedBarLayout(group, frame._panelLayoutKind) then return buttons end
     local icons = frame._iconLayoutButtons or {}
     frame._iconLayoutButtons = icons
     wipe(icons)

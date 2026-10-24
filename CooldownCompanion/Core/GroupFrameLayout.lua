@@ -24,7 +24,6 @@ local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
-local GetGroupButtonSizingOptions = GF.GetGroupButtonSizingOptions
 local GetGrowthMultipliers = GF.GetGrowthMultipliers
 local PropagateFrameStrata = GF.PropagateFrameStrata
 local NormalizeCompactGrowthDirection = GF.NormalizeCompactGrowthDirection
@@ -46,8 +45,7 @@ local ResetButtonGlowTransitionState = GF.ResetButtonGlowTransitionState
 local UpdateResizedPanelContainerWrapper = GF.UpdateResizedPanelContainerWrapper
 
 -- Compute button width/height from group style (bar mode vs square vs non-square).
--- Returns width, height, isBarMode.
-local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
+local function GetButtonDimensions(group)
     local style = group.style or {}
     local isBarMode = group.displayMode == "bars"
     local isIndicator = ST.IsIndicatorGroup(group)
@@ -63,7 +61,7 @@ local function GetButtonDimensions(group, buttonUsabilityOptions, groupId)
         w = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
         h = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
     end
-    return w, h, isBarMode
+    return w, h
 end
 
 -- Zero-based row, col of a 1-based Aura Panel cell.
@@ -89,12 +87,12 @@ end
 -- instead of recomputed, so cell placement and cell count can never disagree.
 -- An empty panel still owns one cell, which keeps it grabbable while unlocked.
 -- Returns cols, rows, cellCount, cellWidth, cellHeight, spacing.
-function CooldownCompanion:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions)
-    local cellWidth, cellHeight = GetButtonDimensions(group, buttonSizingOptions, groupId)
+function CooldownCompanion:GetAuraPanelGridMetrics(groupId, group, buttonUsabilityOptions)
+    local cellWidth, cellHeight = GetButtonDimensions(group)
     local style = group.style or {}
     local cellCount = self.GetGroupLayoutButtonCount
         and self:GetGroupLayoutButtonCount(groupId, group, {
-            buttonUsabilityOptions = buttonSizingOptions,
+            buttonUsabilityOptions = buttonUsabilityOptions,
         })
         or 0
     local cols, rows = 1, 1
@@ -173,9 +171,9 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local cellWidth, cellHeight, spacing = select(4, self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions))
     local style = group.style or {}
+    local cellWidth, cellHeight = GetButtonDimensions(group)
+    local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local xMul, yMul, growthAnchor = GetGrowthMultipliers(style.growthOrigin)
     local isBarMode = group.displayMode == "bars"
 
@@ -300,7 +298,7 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
                 end
             end
 
-            local icon = buttonData.type == "spell" and C_Spell.GetSpellTexture(buttonData.id) or nil
+            local icon = ST._GetEntryPlaceholderIcon(buttonData, effectiveStyle)
             if placeholderIconShown and icon and not issecretvalue(icon) then
                 tile.icon:SetTexture(icon)
                 tile.icon:Show()
@@ -318,8 +316,8 @@ function CooldownCompanion:UpdateAuraPanelPlaceholders(groupId)
 end
 
 
-local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
+local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonUsabilityOptions)
+    local buttonWidth, buttonHeight = GetButtonDimensions(group)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
@@ -337,7 +335,7 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     local iconButtons = ST.GetPanelIconButtons(frame, group, frame.buttons)
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
         frame, group, iconButtons, buttonWidth, buttonHeight, spacing,
-        buttonSizingOptions)
+        buttonUsabilityOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or iconButtons
     local total = #layoutButtons
@@ -389,7 +387,8 @@ local function ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizing
     frame.visibleButtonCount = isIndicator and (visibleIndex > 0 and 1 or 0) or visibleIndex
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and self.GetGroupLayoutButtonCount then
         frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
-            buttonUsabilityOptions = buttonSizingOptions,
+            buttonUsabilityOptions = buttonUsabilityOptions,
+            layoutKind = frame._panelLayoutKind,
         })
     else
         frame.layoutButtonCount = nil
@@ -402,7 +401,7 @@ local function FinishGroupButtonRefresh(self, groupId, frame, group)
     -- until the immediate reflow has the final visible base dimensions.
     local compact = self:IsGroupCompactLayoutActive(groupId, group)
     frame._deferPanelBaseAnchor = compact or nil
-    self:ResizeGroupFrame(groupId, compact)
+    self:ResizeGroupFrame(groupId, compact, frame._panelLayoutKind)
 
     -- Update clickthrough state
     self:UpdateGroupClickthrough(groupId)
@@ -480,7 +479,7 @@ local function GetStyleUpdateEntries(self, groupId, frame, group)
                 return nil
             end
             local effectiveStyle = self:GetEntryEffectiveStyle(group, buttonData)
-            local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
+            local poolKey = GetButtonPoolKey(group, buttonData, frame._panelLayoutKind)
             if button.buttonData ~= buttonData
                 or button.index ~= sourceIndex
                 or GetExistingButtonPoolKey(button) ~= poolKey then
@@ -523,9 +522,6 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local isBarMode = group.displayMode == "bars"
-    local style = group.style or {}
     local sourceButtons = GetRuntimeGroupButtonList(self, frame, group)
 
     -- Capture cleanup debt before releasing/reusing hosts. The final aura entry
@@ -551,7 +547,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         self:ReleaseGroupButtonPools(frame)
         -- The counts carry the FULL expanded grid rather than aura activity, so
         -- the footprint holds still while auras come and go.
-        local cellCount = select(3, self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions))
+        local cellCount = select(3, self:GetAuraPanelGridMetrics(groupId, group, buttonUsabilityOptions))
         frame.visibleButtonCount = cellCount
         -- There is no frame.buttons list here for the availability sweep's
         -- identity comparison to read, so stamp the equivalent: the ordered
@@ -559,7 +555,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         -- under the same usability options the count used.
         -- GroupButtonSetNeedsRebuild diffs against this to decide whether the
         -- panel needs repopulating -- it is the panel's only refresh trigger.
-        frame._auraPanelEntrySig = self:GetAuraPanelEntrySignature(group, buttonSizingOptions)
+        frame._auraPanelEntrySig = self:GetAuraPanelEntrySignature(group, buttonUsabilityOptions)
         -- layoutButtonCount reserves container space for entries that did not
         -- materialize; the grid already counts every entry, so it has no work.
         frame.layoutButtonCount = nil
@@ -576,13 +572,13 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             if self:IsButtonUsable(buttonData, group, buttonUsabilityOptions)
                 and not (auraSectionPanel and ST.IsAuraSectionEntry(group, buttonData)) then
                 local effectiveStyle = self:GetEntryEffectiveStyle(group, buttonData)
-                local poolKey = GetButtonPoolKey(group, buttonData, effectiveStyle)
+                local poolKey = GetButtonPoolKey(group, buttonData, frame._panelLayoutKind)
                 local button = AcquireButtonFromPool(frame, poolKey, buttonData)
                 local reusedButton = button ~= nil
                 if not button then
                     if poolKey == "bars" or poolKey == "attachedBars" then
                         button = self:CreateBarFrame(frame, i, buttonData, effectiveStyle,
-                            ST.IsAttachedBarEntry(group, buttonData))
+                            poolKey == "attachedBars")
                     else
                         button = self:CreateButtonFrame(frame, i, buttonData, effectiveStyle)
                         if ST.IsIndicatorGroup(group) then
@@ -616,7 +612,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
         -- next availability sweep. nil while the panel has no aura section, so
         -- an ordinary panel stores nothing and compares nothing.
         frame._auraSectionEntrySig = auraSectionPanel
-            and self:GetAuraSectionEntrySignature(group, buttonSizingOptions)
+            and self:GetAuraSectionEntrySignature(group, buttonUsabilityOptions)
             or nil
 
         -- The other half of that trigger: the pass that turns the LAST aura
@@ -630,7 +626,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
             frame._auraSectionRebindOwed = true
         end
 
-        ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
+        ApplyActiveButtonLayout(self, groupId, frame, group, buttonUsabilityOptions)
     end
 
     FinishGroupButtonRefresh(self, groupId, frame, group)
@@ -641,19 +637,21 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
     if auraRebindNeeded then self:RequestAuraRebind("populate", groupId) end
 end
 
-function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryKind)
-    local frame = self.groupFrames[groupId]
-    local owner = self.db.profile.groups[groupId]
-    geometryKind = ST.GetPanelGeometryKind(owner, geometryKind)
-    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
+-- A panel becomes protected when a protected frame (for example a secure unit
+-- frame, see FrameAnchoring) is anchored to it.
+-- Defer resizing during combat and retry from the layout ticker.
+local function DeferProtectedResize(frame)
+    if InCombatLockdown() and frame:IsProtected() then
+        frame._sizeDirty = true
+        return true
+    end
+    return false
+end
 
-    if not frame or not group then return end
-
-    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
-        and self:GetGroupButtonUsabilityOptions(groupId, group)
-        or nil
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
+-- Size the frame from an already resolved layout view and cell size.
+-- UpdateGroupLayout hands over the exact view it placed buttons with.
+local function SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
+        buttonUsabilityOptions, buttonWidth, buttonHeight, deferAttachments)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
@@ -700,7 +698,7 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
         if ST.IsAuraPanelGroup(group) then
             -- Aura Panels claim the full expanded grid regardless of which of
             -- their auras happen to be up right now.
-            cols, rows = self:GetAuraPanelGridMetrics(groupId, group, buttonSizingOptions)
+            cols, rows = self:GetAuraPanelGridMetrics(groupId, group, buttonUsabilityOptions)
         elseif orientation == "horizontal" then
             cols = math_min(numButtons, buttonsPerRow)
             rows = math_ceil(numButtons / buttonsPerRow)
@@ -714,13 +712,6 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
 
         targetWidth = math_max(width, buttonWidth)
         targetHeight = math_max(height, buttonHeight)
-    end
-
-    -- Group frames become protected when they contain secure action buttons.
-    -- Defer resizing during combat and retry from the layout ticker.
-    if InCombatLockdown() and frame:IsProtected() then
-        frame._sizeDirty = true
-        return false
     end
 
     frame:SetSize(targetWidth, targetHeight)
@@ -773,16 +764,34 @@ function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryK
     return true
 end
 
+function CooldownCompanion:ResizeGroupFrame(groupId, deferAttachments, geometryKind)
+    local frame = self.groupFrames[groupId]
+    local owner = self.db.profile.groups[groupId]
+    if not frame or not owner then return end
+    if DeferProtectedResize(frame) then return false end
+
+    geometryKind = ST.GetPanelGeometryKind(owner, geometryKind)
+    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
+    local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
+        and self:GetGroupButtonUsabilityOptions(groupId, group)
+        or nil
+    local buttonWidth, buttonHeight = GetButtonDimensions(group)
+    return SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
+        buttonUsabilityOptions, buttonWidth, buttonHeight, deferAttachments)
+end
+
 -- Compact layout reflow: reposition visible buttons to fill gaps left by hidden ones.
 -- Only runs when compact layout is effective and _layoutDirty is true.
 function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     local frame = self.groupFrames[groupId]
     local owner = self.db.profile.groups[groupId]
-    local geometryKind = ST.GetPanelGeometryKind(owner)
-    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
-    if not frame or not group then return end
+    if not frame or not owner then return end
+    -- Population stamps the kind its buttons were built for, and eligibility
+    -- changes repopulate (GroupButtonSetNeedsRebuild or RefreshGroupFrame), so
+    -- the stamp matches the materialized buttons. No stamp walks fresh.
+    local geometryKind = frame._panelLayoutKind or ST.GetPanelGeometryKind(owner)
 
-    if not self:IsGroupCompactLayoutActive(groupId, group) then
+    if not self:IsGroupCompactLayoutActive(groupId, owner) then
         for _, button in ipairs(frame.buttons) do
             ClearButtonCompactSlotCache(button)
         end
@@ -791,11 +800,11 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
         return
     end
 
+    local group = ST.GetPanelLayoutGroup(owner, nil, geometryKind)
     local buttonUsabilityOptions = self.GetGroupButtonUsabilityOptions
         and self:GetGroupButtonUsabilityOptions(groupId, group)
         or nil
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    local buttonWidth, buttonHeight, isBarMode = GetButtonDimensions(group, buttonSizingOptions, groupId)
+    local buttonWidth, buttonHeight = GetButtonDimensions(group)
     local style = group.style or {}
     local spacing = style.buttonSpacing or ST.BUTTON_SPACING
     local orientation = ST.GetPanelLayoutOrientation(group.displayMode, style)
@@ -836,7 +845,7 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     -- of a base row here.
     local sectionLayout, sectionLists, baseAnchor = ST.PrepareSectionedPanelLayout(
         frame, group, visibleButtons, buttonWidth, buttonHeight, spacing,
-        buttonSizingOptions)
+        buttonUsabilityOptions)
     local layoutRef = baseAnchor or frame
     local layoutButtons = sectionLists and sectionLists.base or visibleButtons
     local layoutCount = #layoutButtons
@@ -903,7 +912,11 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
     end
     if forceResize or frame.visibleButtonCount ~= visibleCount or footprintChanged then
         frame.visibleButtonCount = visibleCount
-        self:ResizeGroupFrame(groupId, true, geometryKind)
+        -- Same view and cell size the buttons were just placed with.
+        if not DeferProtectedResize(frame) then
+            SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
+                buttonUsabilityOptions, buttonWidth, buttonHeight, true)
+        end
     end
 
     self:RefreshPanelAttachmentGeometry(groupId, geometryKind)
@@ -922,8 +935,8 @@ end
 -- Reuse only fitted geometry, not the old appearance or effective-style table.
 -- A style edit otherwise writes the saved unfitted length, forcing the attachment
 -- finisher to destructively restyle and evaluate the same bar a second time.
-local function PreserveFittedBarGeometry(group, button, style)
-    if button._isBar and button.style and ST.IsAttachedBarEntry(group, button.buttonData) then
+local function PreserveFittedBarGeometry(group, button, style, layoutKind)
+    if button._isBar and button.style and ST.IsAttachedBarEntry(group, button.buttonData, layoutKind) then
         local fitted = {}
         for key, value in pairs(ST.GetAttachedBarStyle(group)) do fitted[key] = value end
         for key, value in pairs(style) do fitted[key] = value end
@@ -946,19 +959,17 @@ local function ApplyNarrowStyleEdit(self, groupId, frame, group, entries, button
         for index = 1, entries.count do
             local button = frame.buttons[index]
             if IsStyleEditEntry(button, scope) then
-                local style = PreserveFittedBarGeometry(group, button, entries[index].style)
+                local style = PreserveFittedBarGeometry(group, button, entries[index].style, frame._panelLayoutKind)
                 if effect == "appearance" then self:UpdateButtonAppearance(button, style)
                 elseif button._isBar then self:UpdateBarInteraction(button, style)
                 else self:UpdateButtonInteraction(button, style) end
             end
         end
     elseif effect == "layout" then
-        local style = group.style or {}
-        local sizing = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-        ApplyActiveButtonLayout(self, groupId, frame, group, sizing)
+        ApplyActiveButtonLayout(self, groupId, frame, group, buttonUsabilityOptions)
         local compact = self:IsGroupCompactLayoutActive(groupId, group)
         frame._deferPanelBaseAnchor = compact or nil
-        self:ResizeGroupFrame(groupId, compact)
+        self:ResizeGroupFrame(groupId, compact, frame._panelLayoutKind)
         frame._deferPanelBaseAnchor = nil
         if compact then
             frame._layoutDirty = true
@@ -1029,13 +1040,12 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
         return
     end
 
-    local style = group.style or {}
-
     for visibleIndex = 1, entries.count do
         local entry = entries[visibleIndex]
         local button = frame.buttons[visibleIndex]
         if button.UpdateStyle then
-            local effective = effect == "appearance" and PreserveFittedBarGeometry(group, button, entry.style) or entry.style
+            local effective = effect == "appearance"
+                and PreserveFittedBarGeometry(group, button, entry.style, frame._panelLayoutKind) or entry.style
             button:UpdateStyle(effective)
         end
         if ST.IsIndicatorGroup(group) then
@@ -1044,8 +1054,7 @@ function GF.UpdateGroupStyleRuntime(self, groupId, effect, scope)
         end
     end
 
-    local buttonSizingOptions = GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    ApplyActiveButtonLayout(self, groupId, frame, group, buttonSizingOptions)
+    ApplyActiveButtonLayout(self, groupId, frame, group, buttonUsabilityOptions)
     FinishGroupButtonRefresh(self, groupId, frame, group)
 
     -- The frame has its final size now, so the container unlock preview's

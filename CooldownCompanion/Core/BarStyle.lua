@@ -16,7 +16,6 @@ defaults.barSegmentedSmoothing = "on"
 defaults.barClassTextureBrightness = 1.3
 defaults.barBorderStyle = "pixel"
 ST.ATTACHED_BAR_DEFAULTS.barBorderStyle = "pixel"
-table.insert(ST.OVERRIDE_SECTIONS.borderSettings.keys, "barBorderStyle")
 for _, suffix in ipairs({ "Font", "FontSize", "FontOutline", "FontColor" }) do
     defaults["barDuration" .. suffix] = defaults["cooldown" .. suffix]
     defaults["barValue" .. suffix] = defaults["charge" .. suffix]
@@ -31,14 +30,6 @@ for id, section in pairs(sections) do
         ST.ATTACHED_BAR_DEFAULTS[key] = type(defaults[key]) == "table" and CopyTable(defaults[key]) or defaults[key]
     end
     ST.OVERRIDE_SECTIONS[id] = section
-end
--- Give every value one override owner. The migration below transfers old
--- section ownership before any subsequent promote/revert operation.
-for _, id in ipairs({ "barShape", "barNameText", "barIcon" }) do
-    local keys = ST.OVERRIDE_SECTIONS[id].keys
-    for i = #keys, 1, -1 do
-        if keySections[keys[i]] then table.remove(keys, i) end
-    end
 end
 ST.SHARED_BAR_STYLE_SECTIONS = { "barTexture", "barBgColor", "borderSettings", "barDirection",
     "barSmoothing", "barNameTypography", "barDurationTypography", "barValueTypography", "barIconAppearance", "iconZoom" }
@@ -182,14 +173,20 @@ local SHARED_TYPOGRAPHY_ROLES = {
     { "barValue", "charge", true },
     { "barValue", "auraStack", true },
 }
-function ST.ApplySharedBarTypography(style)
-    for _, role in ipairs(SHARED_TYPOGRAPHY_ROLES) do
-        for _, suffix in ipairs({ "Font", "FontSize", "FontOutline", "FontColor" }) do
-            if role[3] or suffix ~= "FontColor" then
-                local key = role[2] .. suffix
-                if style[role[1] .. suffix] ~= nil then style[key] = style[role[1] .. suffix] end
-            end
+-- { source, destination } key pairs, built once. Destinations are unique and
+-- never sources, so each source is read once per call.
+local SHARED_TYPOGRAPHY_KEYS = {}
+for _, role in ipairs(SHARED_TYPOGRAPHY_ROLES) do
+    for _, suffix in ipairs(TEXT_SUFFIXES) do
+        if role[3] or suffix ~= "FontColor" then
+            SHARED_TYPOGRAPHY_KEYS[#SHARED_TYPOGRAPHY_KEYS + 1] = { role[1] .. suffix, role[2] .. suffix }
         end
+    end
+end
+function ST.ApplySharedBarTypography(style)
+    for _, pair in ipairs(SHARED_TYPOGRAPHY_KEYS) do
+        local value = style[pair[1]]
+        if value ~= nil then style[pair[2]] = value end
     end
     if style.barBorderStyle == "none" then
         style.borderSize, style.borderRenderMode = 0, ST.BORDER_RENDER_MODE_CUSTOM or "custom"

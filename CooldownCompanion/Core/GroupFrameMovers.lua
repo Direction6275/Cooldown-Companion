@@ -28,7 +28,6 @@ local UpdateCoordLabel = GF.UpdateCoordLabel
 local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
 local GetContainerState = GF.GetContainerState
-local GetGroupButtonSizingOptions = GF.GetGroupButtonSizingOptions
 local NormalizeCompactGrowthDirection = GF.NormalizeCompactGrowthDirection
 local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
@@ -370,7 +369,7 @@ local function GetPanelResizeBasis(frame, groupId, group, basis)
         basis.cols, basis.rows = CooldownCompanion:GetAuraPanelGridMetrics(
             groupId,
             group,
-            GetGroupButtonSizingOptions(CooldownCompanion, groupId, group, nil)
+            CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
         )
     elseif orientation == "horizontal" then
         basis.cols = math_max(1, math_min(numButtons, buttonsPerRow))

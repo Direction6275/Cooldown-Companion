@@ -305,11 +305,6 @@ local function RegisterSettingsLauncher(addon)
     local category = Settings.RegisterCanvasLayoutCategory(frame, SETTINGS_CATEGORY_NAME)
     if category then
         Settings.RegisterAddOnCategory(category)
-        if category.GetID then
-            addon._settingsCategoryID = category:GetID()
-        else
-            addon._settingsCategoryID = category.ID
-        end
     end
 end
 

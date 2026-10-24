@@ -140,11 +140,6 @@ function Addon:GetModuleAnchorPanelId(kind)
     return resolved.available and resolved.panelId or nil
 end
 
-function Addon:ModulesShareAnchorPanel(first, second)
-    local a, b = self:ResolveModulePanel(first), self:ResolveModulePanel(second)
-    return a.available and b.available and a.panelId == b.panelId
-end
-
 function Addon:GetModuleAnchorStatusText(result, kind)
     local reason = result.reason
     if reason == "ok" and (kind == "player" or kind == "target") and self.GetFrameAnchoringRuntimeDebugInfo then
