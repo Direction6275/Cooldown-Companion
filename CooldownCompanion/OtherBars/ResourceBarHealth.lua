@@ -809,8 +809,14 @@ function HealthBar.Update(bar, settings)
     if config == nil then
         config = HealthBar.GetConfig(settings)
     end
-    HealthBar.ApplyFillColor(bar, config)
-    HealthBar.ApplyBackgroundColor(bar, config)
+    -- Only the gradient legs follow live health; Style and the UNIT_MAXHEALTH
+    -- path paint the static ones.
+    if HealthBar.IsFillGradientEnabled(config) then
+        HealthBar.ApplyFillColor(bar, config)
+    end
+    if HealthBar.IsBackgroundGradientEnabled(config) then
+        HealthBar.ApplyBackgroundColor(bar, config)
+    end
     HealthBar.UpdateEffectBars(bar, config, maxHealth)
 
     if bar.text and bar.text:IsShown() then
