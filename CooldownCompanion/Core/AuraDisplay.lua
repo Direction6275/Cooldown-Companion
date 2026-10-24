@@ -3848,8 +3848,9 @@ end
 --
 -- Spares are also restyled only when their entry or its look may have changed.
 -- Rebinds that follow game state (RUNTIME_REBIND_REASONS: a shapeshift's
--- availability pass, CDM viewer-map churn, resource bar swaps, the roster)
--- restyle only the frame each group shows. A panel-scoped request (populate,
+-- availability pass, CDM viewer-map churn, resource bar swaps, the roster,
+-- talent swaps and their charge settle, vehicle UI entry and exit) restyle
+-- only the frame each group shows. A panel-scoped request (populate,
 -- style, config, aura-panel) bumps that panel's epoch; any other request bumps
 -- the shared one. A spare stamped with an older epoch or another entry is
 -- restyled at its next bind. A Cat/Bear swap restyled all 54 Buffs spares, most
@@ -3858,6 +3859,8 @@ local spareStyleEpoch = 0
 local panelStyleEpochs = {}
 local RUNTIME_REBIND_REASONS = {
     availability = true, ["viewer-map"] = true, resources = true, roster = true,
+    ["talent-state"] = true, ["talent-charge-settle"] = true,
+    ["vehicle-ui"] = true, ["vehicle-actionbar"] = true,
 }
 
 local function HostsToStyle(hosts, buttonData, groupId)

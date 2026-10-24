@@ -459,8 +459,12 @@ local function RegisterSettingsFinderContextPreparer(scope, prepare)
     contextPreparers[#contextPreparers + 1] = { scope = scope, prepare = prepare }
 end
 
--- The prepare walk only visits descriptors bucketed under the context's scope.
+-- The prepare walk visits only the context scope's bucket; the scope check
+-- keeps this answer right for any other caller.
 local function IsDescriptorApplicable(descriptor, context)
+    if not ScopeMatches(descriptor.scope, context.scope) then
+        return false
+    end
     local editing = context.group and context.group._settingsContext
     if editing and editing.contents and (descriptor.tab == "appearance" or descriptor.tab == "effects")
         and not editing.contents[editing.presentation] then
