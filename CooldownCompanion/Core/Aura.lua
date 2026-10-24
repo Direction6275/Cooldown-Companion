@@ -1135,31 +1135,6 @@ function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
     return "player"
 end
 
--- Aura shell (12.1 compositing): an aura entry that yields its resting
--- appearance so the native aura display renders the active visual on top.
--- Three visibility presentations, mutually exclusive in config:
---   hideWhileAuraNotActive -> hidden shell, alpha 0
---   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
---   showWhileAuraMissing    -> hidden shell, alpha 0, with NO native display:
---                             a presence tracker uncovers a still picture of
---                             the entry only while the aura is missing
---                             (AuraDisplay.lua, IsMissingPictureEntry);
---                             showWhileAuraPandemic adds the entry's own
---                             active display, gated to the aura's pandemic
---                             window (BuildSlotKit, "pandemicButton")
--- The first two compose a full aura visual. Missing indicators are separate
--- effects and preserve the entry's ordinary resting presentation. Owned here
--- because four callers across Core and ButtonFrame need the same answer
--- (the pandemic option's own readers in the runtime, config and preview use
--- IsMissingPicturePandemicEntry below).
---
--- auraShellDim is 12.1-native and deliberately NOT the main-era
--- useBaselineAlphaFallback key it replaces. That key's presence was
--- ambiguous: either a live setting, or residue main left behind when its
--- partner toggle was switched back off -- and nothing in the stored shape
--- distinguishes them. Migrating onto a distinct key makes the pass
--- idempotent by construction: it converts the legacy pair, clears legacy
--- orphans, and never has cause to touch this key at all.
 -- Group scope is supplied by collectors/config. Other shell consumers already
 -- operate on ordinary icon/bar entries and only need the entry predicate.
 function CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)
@@ -1175,11 +1150,10 @@ function CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group, style)
 end
 
 -- Shared by native tracking and reminder settings; manual unit overrides win.
-function CooldownCompanion:IsAuraTrackedOnTarget(buttonData, isAuraIndicator)
+function CooldownCompanion:IsAuraTrackedOnTarget(buttonData)
     local unitOverride = GetEntryAuraUnitOverride(buttonData)
     if unitOverride then return unitOverride == "target" end
-    local first = isAuraIndicator and self:ResolveIndicatorAuraSpellID(buttonData)
-        or self:ResolveAuraSpellID(buttonData)
+    local first = self:ResolveAuraSpellID(buttonData)
     local unit = ClassifyAuraSpellUnit(first)
     if unit then return unit == "target" end
     return buttonData.auraUnit == "target"
@@ -1187,13 +1161,13 @@ end
 
 -- Where an aura entry is tracked: "target", "pet", "group" or "player".
 -- Target wins, then pet, then group (owner ruling 2026-08-21: pet scope is
--- exclusive; precedence is the backstop for drifted stored data). Without
--- group scope only target or player. The one precedence for the runtime's
--- unit tokens (AuraDisplay) and the Indicator list rules (IndicatorPanels).
-function CooldownCompanion:GetAuraEntryUnitKind(buttonData, allowGroupScope)
-    if self:IsAuraTrackedOnTarget(buttonData, allowGroupScope == false) then return "target" end
-    if allowGroupScope ~= false and buttonData.auraTrackPet then return "pet" end
-    if allowGroupScope ~= false and buttonData.auraTrackGroup then return "group" end
+-- exclusive; precedence is the backstop for drifted stored data). The one
+-- precedence for the runtime's unit tokens (AuraDisplay) and the Indicator
+-- list rules (IndicatorPanels).
+function CooldownCompanion:GetAuraEntryUnitKind(buttonData)
+    if self:IsAuraTrackedOnTarget(buttonData) then return "target" end
+    if buttonData.auraTrackPet then return "pet" end
+    if buttonData.auraTrackGroup then return "group" end
     return "player"
 end
 
@@ -1206,6 +1180,31 @@ function CooldownCompanion:ShouldShowMissingAuraCue(style, tracksTarget, inComba
         and ((when ~= "target_combat" and when ~= "combat") or inCombat)
 end
 
+-- Aura shell (12.1 compositing): an aura entry that yields its resting
+-- appearance so the native aura display renders the active visual on top.
+-- Three visibility presentations, mutually exclusive in config:
+--   hideWhileAuraNotActive -> hidden shell, alpha 0
+--   auraShellDim           -> dimmed shell, DIM_FALLBACK_ALPHA
+--   showWhileAuraMissing    -> hidden shell, alpha 0, with NO native display:
+--                             a presence tracker uncovers a still picture of
+--                             the entry only while the aura is missing
+--                             (AuraDisplay.lua, IsMissingPictureEntry);
+--                             showWhileAuraPandemic adds the entry's own
+--                             active display, gated to the aura's pandemic
+--                             window (BuildSlotKit, "pandemicButton")
+-- The first two compose a full aura visual. Missing indicators are separate
+-- effects and preserve the entry's ordinary resting presentation. Owned here
+-- because callers across Core and ButtonFrame need the same answer
+-- (the pandemic option's own readers in the runtime, config and preview use
+-- IsMissingPicturePandemicEntry below).
+--
+-- auraShellDim is 12.1-native and deliberately NOT the main-era
+-- useBaselineAlphaFallback key it replaces. That key's presence was
+-- ambiguous: either a live setting, or residue main left behind when its
+-- partner toggle was switched back off -- and nothing in the stored shape
+-- distinguishes them. Migrating onto a distinct key makes the pass
+-- idempotent by construction: it converts the legacy pair, clears legacy
+-- orphans, and never has cause to touch this key at all.
 function CooldownCompanion:IsAuraShellEntry(buttonData)
     if not buttonData then return false end
     if not (buttonData.auraTracking or buttonData.addedAs == "aura") then
@@ -1758,6 +1757,14 @@ function CooldownCompanion:BuildViewerAuraMap(allowAssociationGate)
     return true
 end
 
+-- GetBaseSpell (AllowedWhenTainted): resolve override → base, then check map.
+local function FindViewerChildViaBaseSpell(addon, spellID)
+    local base = C_Spell.GetBaseSpell(spellID)
+    if base and base ~= spellID then
+        return addon.viewerAuraFrames[base]
+    end
+end
+
 -- For each tracked button, ensure viewerAuraFrames contains an entry
 -- for buttonData.id. Handles the case where the spell was added while
 -- in one form (e.g. Solar Eclipse) but the map was rebuilt while the
@@ -1766,7 +1773,10 @@ function CooldownCompanion:MapButtonSpellsToViewers()
     self:ForEachButton(function(button, bd)
         local id = bd.id
         if id and bd.type == "spell" and not self.viewerAuraFrames[id] then
-            local child = self:FindViewerChildForSpell(id)
+            -- The map was just built from these same children and fields
+            -- (AddViewerAuraMapChildren), so a direct scan cannot find an id
+            -- it lacks; only the base-spell leg can.
+            local child = FindViewerChildViaBaseSpell(self, id)
             if child then
                 self.viewerAuraFrames[id] = child
             end
@@ -1781,13 +1791,7 @@ end
 function CooldownCompanion:FindViewerChildForSpell(spellID)
     local child = FindChildInViewers(VIEWER_NAMES, spellID)
     if child then return child end
-    -- GetBaseSpell (AllowedWhenTainted): resolve override → base, then check map.
-    local baseSpellID = C_Spell.GetBaseSpell(spellID)
-    if baseSpellID and baseSpellID ~= spellID then
-        child = self.viewerAuraFrames[baseSpellID]
-        if child then return child end
-    end
-    return nil
+    return FindViewerChildViaBaseSpell(self, spellID)
 end
 
 -- Find a cooldown viewer child (Essential/Utility only) for a spell.

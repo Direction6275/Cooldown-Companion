@@ -277,7 +277,6 @@ function ST.LayoutAttachedBars(groupId, frame, group, kind)
                         id = tostring(entry._auraKey), buttonData = entry, style = style,
                         width = width, height = height,
                         vertical = vertical, spacing = spacing,
-                        inset = style.borderSize or ST.DEFAULT_BORDER_SIZE,
                     }
                 elseif not button._visibilityHidden or button._forceVisibleByConfig then
                     button:ClearAllPoints()

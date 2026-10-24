@@ -448,8 +448,8 @@ function RB.CreateResourceBarAuraHostModule(deps)
                             button = holder,
                             buttonData = buttonData,
                             spellSet = spellSet,
-                            -- unit resolved by the rebind pass's shared
-                            -- polarity rule (want.unit left nil).
+                            -- units resolved by the rebind pass's shared
+                            -- polarity rule, like every want.
                             style = style,
                             stackBarMax = stackBarMax,
                         }
