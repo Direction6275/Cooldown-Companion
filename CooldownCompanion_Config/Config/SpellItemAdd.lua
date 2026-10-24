@@ -69,8 +69,8 @@ local function TargetPanelAcceptsAuraEntries(groupId)
     return displayMode == "icons" or displayMode == "bars" or displayMode == "indicator"
 end
 
--- An Aura Panel takes aura entries only, and only for the one unit it derived
--- from its first entry. Both answers come from Core so this surface cannot
+-- An Aura Panel takes aura entries only, and only for the one unit it derives
+-- from its entries. Both answers come from Core so this surface cannot
 -- drift from the rule the move paths and AddButtonToGroup enforce.
 local function TargetPanelIsAuraOnly(groupId)
     return CooldownCompanion:IsAuraPanel(GetTargetGroup(groupId)) == true
@@ -383,9 +383,8 @@ local function ResolveSpellAddRoute(spellId, spellName, forceAura, groupId)
             name = spellName,
             addedAs = "aura",
         }
-        probe.auraUnit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe)
         local rejectMessage = CooldownCompanion:GetPanelManualEntryRejectMessage(
-            GetTargetGroup(groupId), probe)
+            GetTargetGroup(groupId), probe, CooldownCompanion:ResolveStandaloneAuraDefaultUnit(probe))
         if rejectMessage then
             return nil, "aura-panel", rejectMessage
         end
@@ -1170,15 +1169,18 @@ local function CreateSynthesizedAuraRow(spellId, spellName, icon)
     }
 end
 
--- The polarity the row will resolve to once it is an entry, answered by the SAME
--- resolver the add door asks: OnAutocompleteSelect adds `entry.id`, and TryAddSpell
+-- The polarity the row will resolve to once it is an entry, answered exactly the
+-- way the add door asks: OnAutocompleteSelect adds `entry.id`, and TryAddSpell
 -- probes it as { type = "spell", id = entry.id, addedAs = "aura" } through
--- ResolveStandaloneAuraDefaultUnit. That resolver walks GetBaseSpell, the CDM row
--- and its linkedSpellIDs to the APPLIED aura before asking polarity, which a raw
--- IsSpellHarmful on the row id does not: CDM rows carry CAST ids while the aura
--- they apply lives in linkedSpellIDs, and the two can disagree. Asking the raw id
--- here let the filter offer a row the panel then refused (and hide one it would
--- have taken).
+-- ResolveStandaloneAuraDefaultUnit and hands that unit to the admission check.
+-- ResolveAuraEntryUnit alone would answer "unknown" (offered) where the door
+-- answers "player" (refused on a target panel) for a head the client cannot
+-- classify. The resolver walks GetBaseSpell, the CDM row
+-- and its linkedSpellIDs to the APPLIED aura before asking polarity, which a
+-- raw IsSpellHarmful on the row id does not: CDM rows carry CAST ids while the
+-- aura they apply lives in linkedSpellIDs, and the two can disagree. Asking the
+-- raw id here let the filter offer a row the panel then refused (and hide one
+-- it would have taken).
 --
 -- Memoized because that walk is far more than one API call and this runs for
 -- every cached row on every keystroke. Cost stays flat after the first pass.
@@ -1193,27 +1195,26 @@ local function ResolveAutocompleteAuraUnit(entry)
         auraUnitMemoByCache[cache] = memo
     end
 
-    -- `false` stands in for "unresolvable", so a nil answer is still a cache hit.
+    -- The answer is always "player" or "target", so every miss fills the memo.
     local unit = memo and memo[spellId]
     if unit == nil then
-        unit = CooldownCompanion:ResolveAuraEntryUnit({
+        unit = CooldownCompanion:ResolveStandaloneAuraDefaultUnit({
             type = "spell",
             id = spellId,
             addedAs = "aura",
-        }) or false
+        })
         if memo then
             memo[spellId] = unit
         end
     end
-    return unit or nil
+    return unit
 end
 
--- Would this row survive the panel's unit rule? Unknown polarity stays
--- PERMISSIVE, exactly as GetPanelManualEntryRejectMessage treats it: the
--- resolver answers nil when neither source can decide, and the add door lets
--- such an entry through rather than guessing, so the filter must not hide a row
--- the door would take. An Aura Panel with no unit yet (auraPanelUnit nil) takes
--- either polarity.
+-- Would this row survive the panel's unit rule? Asked with the add door's own
+-- stamped probe (above), so the filter, the door and the panel give the same
+-- answer. A row with no spell id has no answer and stays permissive, exactly as
+-- GetPanelManualEntryRejectMessage treats an unknown unit. An Aura Panel with
+-- no unit yet (auraPanelUnit nil) takes either polarity.
 local function AutocompleteRowFitsAuraPanel(entry, auraPanelUnit)
     if not auraPanelUnit then return true end
     local rowUnit = ResolveAutocompleteAuraUnit(entry)

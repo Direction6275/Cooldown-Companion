@@ -800,6 +800,55 @@ function CooldownCompanion:PrintInvalidAnchorTargetReason(relativeTo, options)
     self:Print(message)
 end
 
+-- An Indicator's panel frame is a 1x1 point pinned to the centre of its
+-- visible box (the anchor body, AuraTexturesDisplay.lua
+-- UpdateIndicatorAnchorBody), so outside anchors take the body instead: the
+-- cast bar, resource bars and the stable External Anchor line up with the box
+-- the player sees (owner ruling 2026-10-24). Indicator-only on purpose:
+-- ST.GetPanelAnchorBodyFrame also returns the section base for sectioned
+-- panels, which would move their external bindings from the panel's full
+-- outline to its base row.
+function CooldownCompanion:GetExternalAnchorTargetFrame(frame)
+    if frame and frame._indicatorAnchorBodyActive and frame._indicatorAnchorBody then
+        return frame._indicatorAnchorBody
+    end
+    return frame
+end
+
+-- The box of the Indicator panel `frame` appeared or went away. Re-point the
+-- stable External Anchor, and re-apply only the cast bar or resource bars
+-- whose saved anchor names this panel, so a bar placed before the box existed
+-- moves onto it and one left on a retired box moves back to the panel. Before
+-- the login settle no bar has been placed yet, so there is nothing to move.
+function CooldownCompanion:OnIndicatorAnchorBodyChanged(frame)
+    self:RefreshExternalAnchorFrame()
+    local frameName = frame and frame:GetName()
+    if not (frameName and self:IsBarsAndFramesRuntimeInitialized()) then return end
+    local cast = self:GetCastBarSettings()
+    local castAnchor = type(cast) == "table" and cast.independentAnchor
+    if type(castAnchor) == "table" and castAnchor.relativeTo == frameName then
+        self:RefreshBarsAndFramesRuntimeFeature("castBar", "indicator-anchor-body", true)
+    end
+    -- The same anchors AddResourceBarDependents names: the shared one and each
+    -- spec layout's.
+    local resources = self:GetResourceBarSettings()
+    if type(resources) ~= "table" then return end
+    local resourceAnchored = type(resources.independentAnchor) == "table"
+        and resources.independentAnchor.relativeTo == frameName
+    if not resourceAnchored and type(resources.layoutOrder) == "table" then
+        for _, layout in pairs(resources.layoutOrder) do
+            local anchor = type(layout) == "table" and layout.independentAnchor
+            if type(anchor) == "table" and anchor.relativeTo == frameName then
+                resourceAnchored = true
+                break
+            end
+        end
+    end
+    if resourceAnchored then
+        self:RefreshBarsAndFramesRuntimeFeature("resourceBars", "indicator-anchor-body", true)
+    end
+end
+
 function CooldownCompanion:GetExternalAnchorFrame(relativeTo)
     if not relativeTo or relativeTo == "" or relativeTo == "UIParent" then
         return UIParent, "ui-parent"
@@ -810,7 +859,7 @@ function CooldownCompanion:GetExternalAnchorFrame(relativeTo)
         return UIParent, reason
     end
 
-    return _G[relativeTo] or UIParent, "ok"
+    return self:GetExternalAnchorTargetFrame(_G[relativeTo]) or UIParent, "ok"
 end
 
 function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)

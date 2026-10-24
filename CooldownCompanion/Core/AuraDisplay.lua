@@ -270,9 +270,16 @@ end
 -- person — is the container refresh's job, not this one's.
 --
 -- Stamped from the CONSUMER below rather than from the pass, so the compared
--- value can never drift from the list the bind was built with. nil (no pass has
--- consumed a set yet) reads as "changed", which is the current behavior.
-local lastBoundRosterSignature
+-- value can never drift from the list the bind was built with. A nil signature
+-- means the last full pass bound nothing that tracks the group, so a roster
+-- change has nothing to rebind. `consumed` is the full pass's consumer flag:
+-- RunAuraRebind resets it when a full pass starts and clears the signature at
+-- the END of a full pass that never reached the consumer. Clearing at the end,
+-- never the top, means a pass that errors partway keeps the previous stamp and
+-- roster changes keep rebinding. Scoped passes can only stamp, so removing the
+-- last group-tracked entry through one (Disable, a presentation switch) allows
+-- one more rebuild on the next real set change before the gate closes.
+local rosterBinding = { signature = nil, consumed = false }
 
 local function RosterTokenSignature(tokens)
     return table.concat(tokens, "\031")
@@ -280,12 +287,13 @@ end
 
 local function GroupAuraTokens()
     local tokens = BuildGroupAuraTokens()
-    lastBoundRosterSignature = RosterTokenSignature(tokens)
+    rosterBinding.signature = RosterTokenSignature(tokens)
+    rosterBinding.consumed = true
     return tokens
 end
 
 local function RosterTokenSetChanged()
-    return RosterTokenSignature(BuildGroupAuraTokens()) ~= lastBoundRosterSignature
+    return RosterTokenSignature(BuildGroupAuraTokens()) ~= rosterBinding.signature
 end
 
 -- Container-level refresh for records whose token may now resolve to a different
@@ -461,10 +469,11 @@ local function EnsureGroupWatcher()
         -- combat-deferred and cannot cover a mid-fight reshuffle.
         RefreshRecordsForToken(IsRosterAllyToken)
         -- The rebind exists only to re-derive the token SET (GroupAuraTokens),
-        -- so a reshuffle that leaves the set element-wise identical has nothing
-        -- for it to bind differently. Not "config"/"style", so this never
-        -- prints a combat-defer note.
-        if RosterTokenSetChanged() then
+        -- so a reshuffle that leaves the set element-wise identical, or a
+        -- roster change while nothing bound tracks the group, has nothing for
+        -- it to bind differently. Not "config"/"style", so this never prints a
+        -- combat-defer note.
+        if rosterBinding.signature and RosterTokenSetChanged() then
             CooldownCompanion:RequestAuraRebind("roster")
         end
     end)
@@ -4150,8 +4159,8 @@ end
 -- CC's own GetAuraPanelCellSlot walks. Get that mapping wrong and the unlock
 -- placeholders sit somewhere the real auras never appear.
 --
--- One container per (PANEL, unit). The unit is derived from the panel's first
--- resolvable aura entry (GetAuraPanelUnit) and the creation surfaces refuse
+-- One container per (PANEL, unit). The unit is derived from the panel's aura
+-- entries (GetAuraPanelUnit: most entries win) and the creation surfaces refuse
 -- entries of the other polarity, so in practice a panel has exactly one — but
 -- imported config can still carry a stray, and those entries are counted and
 -- skipped rather than bound onto the wrong unit's container.
@@ -4806,9 +4815,9 @@ end
 -- Bind one panel's container. Returns nothing; every refusal leaves the
 -- container parked from the pass's park-all phase, which is the safe state.
 local function BindAuraPanel(self, groupId, group, frame)
-    -- One unit for the whole panel, derived from its first resolvable aura
-    -- entry. No entry, or no resolvable polarity, means there is nothing to
-    -- mount a container for yet.
+    -- One unit for the whole panel, derived from its aura entries
+    -- (GetAuraPanelUnit). No entry, or no resolvable polarity, means there is
+    -- nothing to mount a container for yet.
     local unit = self:GetAuraPanelUnit(group)
     if not unit then return end
 
@@ -4996,9 +5005,9 @@ end
 -- BindAuraPanel: every one leaves the container parked from the park-all phase,
 -- which is the safe state.
 local function BindAuraSection(self, groupId, group, frame, anchor, info)
-    -- One unit per SECTION, derived from its first resolvable member. A section
-    -- with no resolvable polarity has nothing to mount a container for yet, the
-    -- same way an entry-less Aura Panel does not.
+    -- One unit per SECTION, derived from its members (GetAuraSectionUnit). A
+    -- section with no resolvable polarity has nothing to mount a container for
+    -- yet, the same way an entry-less Aura Panel does not.
     local unit = self:GetAuraSectionUnit(group, anchor)
     if not unit then return end
 
@@ -5252,6 +5261,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
     deferNoteShown = false
     rebindPassCount = rebindPassCount + 1
     lastRebindPassAt = GetTime()
+    if not panelIds then rosterBinding.consumed = false end
 
     -- Opens the pass-scoped candidate memo (Core/Aura.lua) for everything this
     -- pass resolves: the slot walk below, the resource collectors it calls,
@@ -5536,6 +5546,11 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- the cast bar is the only trailing frame with anything to re-anchor.
     if self.UpdateCastBarStackAnchor then
         self:UpdateCastBarStackAnchor()
+    end
+
+    -- A full pass that bound nothing group-tracked closes the roster gate.
+    if not panelIds and not rosterBinding.consumed then
+        rosterBinding.signature = nil
     end
 
     ST.EndAuraCandidatePass()

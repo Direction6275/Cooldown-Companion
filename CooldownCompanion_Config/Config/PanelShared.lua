@@ -694,7 +694,7 @@ local function MoveEntrySelection(snapshot, targetGroupId)
 end
 
 -- An Aura Panel judges the ENTRY, not just the panel: it takes aura entries
--- only, and only for the one unit it derived from its first entry.
+-- only, and only for the one unit it derives from its entries.
 -- CanPanelAcceptManualEntry is entry-blind, so without this every Aura Panel
 -- listed as a destination for every entry and only refused after the click.
 -- Scoped to Aura Panel destinations alone - the other panel types' menu

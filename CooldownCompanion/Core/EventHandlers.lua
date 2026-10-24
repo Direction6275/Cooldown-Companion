@@ -22,6 +22,25 @@ local pendingSpellAvailabilityRefreshToken = 0
 local pendingSlotChangeRefresh = false
 local pendingSlotChangedSlots = {}
 
+-- A talent save, hero-tree swap or spec swap fires several events in the same
+-- instant (a spec swap: ACTIVE_TALENT_GROUP_CHANGED plus TRAIT_CONFIG_UPDATED
+-- twice; a hero swap: TRAIT_SUB_TREE_CHANGED four times). Out of combat they
+-- merge into ONE availability refresh next frame (owner sign-off 2026-10-24
+-- for the one-frame delay, out of combat only). Nothing runs on the first
+-- fire: the TRAIT_* events are synchronous and arrive mid-change. A
+-- SPELLS_CHANGED landing while the merge is pending folds in too, so no frame
+-- draws the new hero tree against the old talent nodes. The merged pass is
+-- never weaker than any single fire's: flags are ORed, it skips the settling
+-- pass only if every merged fire did, and a talent fire queues the charge
+-- settle after it. A talent save's third report (about 0.45 s later) is
+-- another instant and gets its own refresh. If an out-of-combat SPELLS_CHANGED
+-- pass already ran earlier in the same frame, it read the old talent nodes, so
+-- that burst's fires run at once as they always did: the frame then draws the
+-- final talent state, never the half-updated one.
+local TALENT_FAMILY_FLAGS = { "applyResourceBars", "evaluateResourceBars", "refreshAllChargeTypes", "rebuildViewerMap" }
+local talentFamilyRefresh = { pending = false, opts = {}, settle = false, chargeRefresh = false,
+    spellsChangedAt = nil }
+
 local function IsPlayerInVehicleUI()
     return UnitInVehicle("player")
         or UnitHasVehicleUI("player")
@@ -56,6 +75,43 @@ local function QueueTalentChargeRefresh(addon)
         addon:RefreshConfigPanel()
         addon:EndPanelAttachmentRefresh(operation)
     end)
+end
+
+local function RunTalentFamilyRefresh(addon)
+    local merge = talentFamilyRefresh
+    -- Already run by combat start (FlushPendingTalentFamilyRefresh).
+    if not merge.pending then return end
+    merge.pending = false
+    local opts, settle, chargeRefresh = merge.opts, merge.settle, merge.chargeRefresh
+    merge.opts, merge.settle, merge.chargeRefresh = {}, false, false
+    opts.skipSettlingRefresh = not settle or nil
+    addon:RefreshSpellAvailabilityState(opts)
+    if chargeRefresh then QueueTalentChargeRefresh(addon) end
+end
+
+local function QueueTalentFamilyRefresh(addon, opts, chargeRefresh)
+    -- GetTime() holds one value for the whole frame.
+    if InCombatLockdown() or talentFamilyRefresh.spellsChangedAt == GetTime() then
+        addon:RefreshSpellAvailabilityState(opts)
+        if chargeRefresh then QueueTalentChargeRefresh(addon) end
+        return
+    end
+    local merge = talentFamilyRefresh
+    for _, flag in ipairs(TALENT_FAMILY_FLAGS) do
+        if opts[flag] then merge.opts[flag] = true end
+    end
+    if not opts.skipSettlingRefresh then merge.settle = true end
+    if chargeRefresh then merge.chargeRefresh = true end
+    if merge.pending then return end
+    merge.pending = true
+    C_Timer.After(0, function() RunTalentFamilyRefresh(addon) end)
+end
+
+-- Combat start runs a pending merge at once: PLAYER_REGEN_DISABLED arrives just
+-- before the lockdown begins, so the out-of-combat refresh never lands in
+-- combat. The queued next-frame call then finds nothing pending.
+function CooldownCompanion:FlushPendingTalentFamilyRefresh()
+    RunTalentFamilyRefresh(self)
 end
 
 -- The settle exists for late-resolving charge data and entry usability. It
@@ -245,6 +301,13 @@ end
 -- to a rebuild of every panel in the profile.
 function CooldownCompanion:OnSpellsChanged()
     self:OnSpellUpdateIcon()
+    -- Folded into a pending talent-family refresh (see talentFamilyRefresh),
+    -- which rebuilds everything this pass would and keeps its settle.
+    if talentFamilyRefresh.pending and not InCombatLockdown() then
+        talentFamilyRefresh.settle = true
+        return
+    end
+    talentFamilyRefresh.spellsChangedAt = GetTime()
     self:RefreshSpellAvailabilityState({
         skipTalentCache = true,
         perGroupRebuild = true,
@@ -380,11 +443,10 @@ function CooldownCompanion:OnBagChanged()
 end
 
 function CooldownCompanion:OnTalentsChanged()
-    self:RefreshSpellAvailabilityState({
+    QueueTalentFamilyRefresh(self, {
         applyResourceBars = true,
         skipSettlingRefresh = true,
-    })
-    QueueTalentChargeRefresh(self)
+    }, true)
 end
 
 function CooldownCompanion:OnPetChanged()
@@ -566,7 +628,7 @@ function CooldownCompanion:CacheCurrentSpec()
 end
 
 function CooldownCompanion:OnSpecChanged()
-    self:RefreshSpellAvailabilityState({
+    QueueTalentFamilyRefresh(self, {
         evaluateResourceBars = true,
         refreshAllChargeTypes = true,
         rebuildViewerMap = true,
@@ -595,8 +657,20 @@ function CooldownCompanion:CachePlayerState()
     self._inVehicleUI = IsPlayerInVehicleUI()
 end
 
+-- A zone only changes the instance type the load conditions read
+-- (CachePlayerState). Talents, keybinds and which panels exist for the
+-- character do not move with it, so the pass checks location only: no talent
+-- cache walk (a spec mismatch still forces one), no keybind rebuild, and no
+-- escalation past the per-panel visibility pass. After a loading screen that
+-- changes zone, keybind text relies on action bar events, as it already does
+-- after one that does not.
 function CooldownCompanion:OnZoneChanged()
-    self:RefreshSpellAvailabilityState({ evaluateResourceBars = true })
+    self:RefreshSpellAvailabilityState({
+        evaluateResourceBars = true,
+        skipTalentCache = true,
+        skipKeybindRefresh = true,
+        perGroupRebuild = true,
+    })
 end
 
 -- PLAYER_UPDATE_RESTING also fires on login and loading screens without the

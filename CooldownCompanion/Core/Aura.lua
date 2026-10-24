@@ -1008,131 +1008,43 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
     return inferredAuraSpellID
 end
 
-function CooldownCompanion:ResolveStandaloneAuraDefaultSpellID(buttonData)
-    if not (buttonData and buttonData.type == "spell") then
-        return nil
+-- The one unit rule for every aura display (owner ruling R12, 2026-10-24):
+-- slots, Indicators, attached blocks, Aura Panels and aura sections all ask
+-- this, so the same entry watches the same unit wherever it is placed. The
+-- user's unit override wins; then the entry's aura head is classified; then
+-- the stored auraUnit, which is only the fallback for a head the client cannot
+-- classify (an uncached spell at login). Returns nil when none of them can
+-- answer, which reads as "unknown" rather than a unit, so admission callers
+-- stay permissive instead of guessing.
+--
+-- A primary aura entry's head is its ordered candidate head, read directly:
+-- that is what ResolveAuraSpellID and ResolveIndicatorAuraSpellID both return
+-- for it (the ID override leads the list), and it needs no auraTracking, which
+-- the add doors' and autocomplete's synthetic probes never set. Spell entries
+-- keep ResolveAuraSpellID, so a legacy spell entry carrying a texture-display
+-- flag without auraTracking still answers from its stored unit rather than
+-- from its own cast ID.
+function CooldownCompanion:ResolveAuraEntryUnit(buttonData)
+    if not buttonData then return nil end
+    local unitOverride = GetEntryAuraUnitOverride(buttonData)
+    if unitOverride then return unitOverride end
+    local head
+    if buttonData.addedAs == "aura" then
+        head = ResolveOrderedAuraCandidateIDs(buttonData)[1]
+    else
+        head = self:ResolveAuraSpellID(buttonData)
     end
-
-    local numericSpellID = tonumber(buttonData.id)
-    local baseId = numericSpellID and (C_Spell.GetBaseSpell(numericSpellID) or numericSpellID) or nil
-
-    local function ResolveSingleSpellID(rawIDs)
-        if not rawIDs then
-            return nil
-        end
-
-        local resolvedID
-        for id in tostring(rawIDs):gmatch("%d+") do
-            local numericID = tonumber(id)
-            if numericID and numericID ~= 0 then
-                if resolvedID and resolvedID ~= numericID then
-                    return nil
-                end
-                resolvedID = numericID
-            end
-        end
-
-        return resolvedID
-    end
-
-    local idOverride = GetEntryAuraIDOverride(buttonData)
-    if idOverride then
-        return idOverride
-    end
-
-    local explicitAuraID = buttonData.addedAs ~= "aura" and ResolveSingleSpellID(buttonData.auraSpellID) or nil
-    if explicitAuraID then
-        return explicitAuraID
-    end
-
-    if not numericSpellID then
-        return nil
-    end
-
-    -- Use the same exact-linked identity rule as the candidate builder. This
-    -- keeps config-time unit classification from borrowing a sibling stage.
-    if IsExactStandaloneAuraIdentity(buttonData) then
-        return numericSpellID
-    end
-
-    -- Curated corrections outrank every probe below, matching the candidate
-    -- builder's order — otherwise config-time classification could borrow
-    -- the wrong identity from a frame or metadata scan.
-    local curatedAuraID = GetCuratedAppliedAuraSpellID(baseId)
-        or GetCuratedAppliedAuraSpellID(numericSpellID)
-    if curatedAuraID then
-        return curatedAuraID
-    end
-
-    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
-        return directAuraID
-    end
-
-    -- Frame-free twin of the direct resolution above.
-    local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
-    if linkedAppliedID then
-        return linkedAppliedID
-    end
-
-    local resolvedAuraID = NormalizeResolvedAuraSpellID(baseId, C_UnitAuras.GetCooldownAuraBySpellID(baseId))
-    if resolvedAuraID and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraID) then
-        return resolvedAuraID
-    end
-
-    local buffViewerFrame = self:ResolveBuffViewerFrameForSpell(baseId)
-        or (baseId ~= buttonData.id and self:ResolveBuffViewerFrameForSpell(buttonData.id))
-    if not (buffViewerFrame and type(buffViewerFrame.cooldownInfo) == "table") then
-        return nil
-    end
-
-    local info = buffViewerFrame.cooldownInfo
-    local metadataCandidate
-    for _, spellID in ipairs({info.spellID, info.overrideSpellID, info.overrideTooltipSpellID}) do
-        local numericID = tonumber(spellID)
-        if numericID
-            and numericID ~= 0
-            and numericID ~= buttonData.id
-            and numericID ~= baseId
-            and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-            if metadataCandidate and metadataCandidate ~= numericID then
-                return nil
-            end
-            metadataCandidate = numericID
-        end
-    end
-    if info.linkedSpellIDs then
-        for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-            local numericID = tonumber(linkedSpellID)
-            if numericID
-                and numericID ~= 0
-                and numericID ~= buttonData.id
-                and numericID ~= baseId
-                and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-                if metadataCandidate and metadataCandidate ~= numericID then
-                    return nil
-                end
-                metadataCandidate = numericID
-            end
-        end
-    end
-
-    return metadataCandidate
+    local unit = ClassifyAuraSpellUnit(head)
+    if unit then return unit end
+    local stored = buttonData.auraUnit
+    if stored == "player" or stored == "target" then return stored end
+    return nil
 end
 
+-- The same rule for callers that need an answer (stored-unit writers, add
+-- probes, the Indicator's Automatic label): unknown becomes "player".
 function CooldownCompanion:ResolveStandaloneAuraDefaultUnit(buttonData)
-    local unitOverride = GetEntryAuraUnitOverride(buttonData)
-    if unitOverride then
-        return unitOverride
-    end
-    local resolvedSpellID = self:ResolveStandaloneAuraDefaultSpellID(buttonData)
-    if resolvedSpellID then
-        return ClassifyAuraSpellUnit(resolvedSpellID) or "player"
-    end
-    if buttonData and buttonData.id then
-        return ClassifyAuraSpellUnit(buttonData.id) or "player"
-    end
-    return "player"
+    return self:ResolveAuraEntryUnit(buttonData) or "player"
 end
 
 -- Group scope is supplied by collectors/config. Other shell consumers already
@@ -1151,12 +1063,7 @@ end
 
 -- Shared by native tracking and reminder settings; manual unit overrides win.
 function CooldownCompanion:IsAuraTrackedOnTarget(buttonData)
-    local unitOverride = GetEntryAuraUnitOverride(buttonData)
-    if unitOverride then return unitOverride == "target" end
-    local first = self:ResolveAuraSpellID(buttonData)
-    local unit = ClassifyAuraSpellUnit(first)
-    if unit then return unit == "target" end
-    return buttonData.auraUnit == "target"
+    return self:ResolveAuraEntryUnit(buttonData) == "target"
 end
 
 -- Where an aura entry is tracked: "target", "pet", "group" or "player".

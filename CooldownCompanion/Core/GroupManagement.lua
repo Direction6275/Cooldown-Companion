@@ -1718,11 +1718,12 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             name = name,
             addedAs = "spell",
         }
+        local probeUnit
         if buttonType == "spell" and (forceAura == true or (isPassive and forceAura ~= false)) then
             probe.addedAs = "aura"
-            probe.auraUnit = self:ResolveStandaloneAuraDefaultUnit(probe)
+            probeUnit = self:ResolveStandaloneAuraDefaultUnit(probe)
         end
-        local auraRejectMessage = self:GetPanelManualEntryRejectMessage(group, probe)
+        local auraRejectMessage = self:GetPanelManualEntryRejectMessage(group, probe, probeUnit)
         if auraRejectMessage then
             self:Print(auraRejectMessage)
             return nil

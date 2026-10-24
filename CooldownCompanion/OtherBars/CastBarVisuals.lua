@@ -124,8 +124,11 @@ local function IsInlineIcon(s)
     return s.showIcon ~= false and not s.iconOffset
 end
 
-local function Layout(frame, s, width, height)
-    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s) end
+-- host (Layout and Style): the runtime's already resolved geometry panel, or
+-- false for none, so an apply resolves its panel once. The canvas omits it and
+-- the style resolver looks the panel up itself.
+local function Layout(frame, s, width, height, host)
+    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s, host) end
     if not frame then return end
 
     local inlineIcon = IsInlineIcon(s)
@@ -197,8 +200,8 @@ local function Layout(frame, s, width, height)
     castTimeText:SetJustifyH("RIGHT")
 end
 
-local function Style(frame, s)
-    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s) end
+local function Style(frame, s, host)
+    if ST.ResolveCastBarStyle then s = ST.ResolveCastBarStyle(s, host) end
     if not frame then return end
 
     frame.sparkEnabled = s.showSpark ~= false

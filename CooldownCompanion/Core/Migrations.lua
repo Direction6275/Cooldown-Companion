@@ -1731,8 +1731,8 @@ end
 --     above every numeric key already in use.
 --
 -- POLARITY IS NEVER REPAIRED HERE, and never deletes an entry. An entry's unit
--- comes from ResolveAuraEntryUnit, which resolves the APPLIED aura through
--- spec-dependent Cooldown Manager / buff-viewer data, so the same stored entry
+-- comes from ResolveAuraEntryUnit, which classifies the entry's aura head as
+-- resolved through spec-dependent Cooldown Manager data, so the same stored entry
 -- can answer "player" on one spec and "target" on another. A pass that dropped
 -- entries on that answer would silently delete a working panel's entries the
 -- next time the owner imported anything on the wrong spec -- and this pass

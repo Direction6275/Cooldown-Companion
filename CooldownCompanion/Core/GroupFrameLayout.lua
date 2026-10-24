@@ -796,7 +796,16 @@ function CooldownCompanion:UpdateGroupLayout(groupId, forceResize)
             ClearButtonCompactSlotCache(button)
         end
         frame._layoutDirty = false
-        self:RefreshPanelAttachmentGeometry(groupId, geometryKind)
+        -- Attached bars are the only attachment geometry that follows icon
+        -- visibility on a non-compact panel (hidden fixed bars close up), so
+        -- only a panel laying them out needs this pass on a flip. Resources,
+        -- the cast bar and frame anchors re-place where their geometry changes
+        -- (frame resize, resource relayout, panel show/hide, aura rebinds). Any
+        -- future attachment that follows icon visibility on a non-compact panel
+        -- must widen this gate.
+        if ST.PanelUsesAttachedBarLayout(owner, geometryKind) then
+            self:RefreshPanelAttachmentGeometry(groupId, geometryKind)
+        end
         return
     end
 

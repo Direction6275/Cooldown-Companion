@@ -611,6 +611,7 @@ local function FinishTextureHostDrag(host)
     local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(host, not cancelSave)
     if snapDX ~= nil or snapDY ~= nil then
         host:AdjustPointsOffset(snapDX or 0, snapDY or 0)
+        ST.InvalidateCursorPlacement(host)
     end
     StopGroupedIndicatorWrapperTracking(host)
     if cancelSave then
@@ -671,6 +672,7 @@ local function EnsureAuraTextureNudger(host)
             end
         end
         host:AdjustPointsOffset(dx, dy)
+        ST.InvalidateCursorPlacement(host)
         local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
@@ -1253,8 +1255,12 @@ end
 function CooldownCompanion:RenderIndicatorDisplay(host, driverButton, group, settings, displayType, effectsActive)
     host._indicatorTeardownFor = nil
     host._ccPresenceMode = nil
-    host:SetFrameStrata(driverButton:GetFrameStrata())
-    host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
+    -- Written only on change: this sits on the per-update path.
+    local strata, hostLevel = driverButton:GetFrameStrata(), (driverButton:GetFrameLevel() or 1) + 20
+    if host:GetFrameStrata() ~= strata or host:GetFrameLevel() ~= hostLevel then
+        host:SetFrameStrata(strata)
+        host:SetFrameLevel(hostLevel)
+    end
     return ST.Indicator.Render(host, driverButton, group, false, nil, effectsActive,
         displayType == "icon" and settings or nil)
 end
@@ -1280,9 +1286,14 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
     -- Anything that repaints the host invalidates the teardown latch.
     host._indicatorTeardownFor = nil
     host._ccPresenceMode = nil
-    host:SetFrameStrata(driverButton:GetFrameStrata())
-    host:SetFrameLevel((driverButton:GetFrameLevel() or 1) + 20)
-    SyncAuraTextureControlLevels(host, false)
+    -- Written only on change: this sits on the per-update path. Chrome levels
+    -- follow the host; every chrome show path syncs them again first.
+    local strata, hostLevel = driverButton:GetFrameStrata(), (driverButton:GetFrameLevel() or 1) + 20
+    if host:GetFrameStrata() ~= strata or host:GetFrameLevel() ~= hostLevel then
+        host:SetFrameStrata(strata)
+        host:SetFrameLevel(hostLevel)
+        SyncAuraTextureControlLevels(host, false)
+    end
     StopAllTextureIndicatorEffects(host)
     CooldownCompanion.HideIndicatorDisplayVisuals(host)
     host:SetSize(geometry.boundsWidth, geometry.boundsHeight)
@@ -1308,6 +1319,7 @@ local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId,
         else
             local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
+            ST.InvalidateCursorPlacement(host)
             local anchorTargetFrame = GetIndicatorResolvedAnchorFrame(group, sharedSettings, groupId)
             if anchorTargetFrame then
                 host:SetPoint(
@@ -1360,6 +1372,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         body.groupId = frame.groupId
         frame._indicatorAnchorBody = body
     end
+    local bodyAppeared = not frame._indicatorAnchorBodyActive
     frame._indicatorAnchorBodyActive = true
     local settings = self:GetIndicatorTextureSettings(group)
     local display = ST.Indicator.Settings(group)
@@ -1377,12 +1390,15 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         -- Temporary positional following only; no visibility/alpha inheritance.
         body:ClearAllPoints()
         body:SetPoint("CENTER", dragHost, "CENTER", 0, 0)
+        ST.InvalidateCursorPlacement(body)
     else
         local previewFrame = GetGroupedPreviewContainerFrame(group, frame.groupId)
         body._wrapperManaged = previewFrame ~= nil
         PlaceIndicatorDisplay(self, body, group, settings, frame.groupId, previewFrame)
     end
     self:RefreshIndicatorAnchorAlpha(frame, group)
+    -- Outside anchors follow the box from now on (GetExternalAnchorTargetFrame).
+    if bodyAppeared then self:OnIndicatorAnchorBodyChanged(frame) end
     return body
 end
 
@@ -1468,6 +1484,8 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
             -- or nudge writes back to the anchor.
             local anchor = group and group.anchor
             UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
+            -- The cursor ticker repaints a staged offset.
+            ST.InvalidateCursorPlacement(host)
         elseif visibilityState.isGroupedPreview and not HasIndicatorAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
@@ -1491,8 +1509,13 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
         else
             UpdateTextureHostCoordLabel(host, sharedSettings.x, sharedSettings.y)
         end
-        SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
-        SetAuraTextureDragControlsShown(host, showHeader, frame and frame._unlockGhost)
+        -- Mover chrome that is hidden and stays hidden needs no level or
+        -- shown writes. The title and coordinates above stay outside this:
+        -- the mover show paths below reveal the chrome without rewriting them.
+        if showHeader or host.dragHandle:IsShown() then
+            SyncAuraTextureControlLevels(host, visibilityState.isGroupedPreview and isGroupedPreviewSelected)
+            SetAuraTextureDragControlsShown(host, showHeader, frame and frame._unlockGhost)
+        end
     end
     if driverButton:GetAlpha() ~= 0 then
         driverButton:SetAlpha(0)
@@ -1530,6 +1553,9 @@ function CooldownCompanion:RefreshCursorAnchoredHostControls(host, groupId, grou
         SyncAuraTextureControlLevels(host, false)
         local anchor = group and group.anchor
         UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
+        -- The label now shows the saved offset; the cursor ticker repaints a
+        -- staged one.
+        ST.InvalidateCursorPlacement(host)
     end
     if host.dragHandle then
         SetAuraTextureDragControlsShown(host, showControls, nil)

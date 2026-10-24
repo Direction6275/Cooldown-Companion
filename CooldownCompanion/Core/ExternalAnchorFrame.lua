@@ -110,10 +110,12 @@ local function ResolveTargetFrame(self)
     if not frame and self._dormantFrames then
         frame = self._dormantFrames[groupId]
     end
-    return frame
+    -- An Indicator hands out its visible box, the same frame the bars use.
+    return self:GetExternalAnchorTargetFrame(frame)
 end
 
---- Point the stable frame at the marked panel's current frame object.
+--- Point the stable frame at the marked panel's current frame object (an
+--- Indicator's visible box).
 --- Idempotent and cheap: nothing happens unless the target object changed.
 function CooldownCompanion:RefreshExternalAnchorFrame()
     local target = ResolveTargetFrame(self)

@@ -81,13 +81,47 @@ local function GetFallbackCursorPosition(self)
     return 0, 0
 end
 
-local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY)
+-- fromTicker: the per-frame ticker, which skips the placement while its every
+-- input matches the stamp the last full placement left (owner sign-off
+-- 2026-10-24 for this remembered placement). The stamp is the FINAL placement:
+-- point, cursor position, offset (also the label's x/y) and the section base
+-- correction dx/dy, recomputed every tick, so a reflow that shifts the base
+-- row under a still mouse still re-places. Every other writer calls
+-- ST.InvalidateCursorPlacement (PanelSections.lua): ST.SetPanelBasePoint and
+-- ST.UpdatePanelBaseAnchor's AdjustPointsOffset, the Indicator host's raw point
+-- writers and the cursor label writers that show the saved rather than the
+-- staged offset (AuraTexturesDisplay.lua and
+-- SetCursorAnchorLayoutPreviewGroupState), and the ticker itself while a panel
+-- is being dragged. A raw SetPoint or ClearAllPoints added anywhere else on a
+-- cursor frame must call it too, or the panel stays put until the mouse (or,
+-- while parked, the dummy cursor) moves. Every other caller places
+-- unconditionally.
+local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, fromTicker)
     if not (frame and anchor) then
         return false
     end
     if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
         frame._anchorDirty = true
         return false
+    end
+
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
+    end
+    if not (cursorX and cursorY) then
+        cursorX, cursorY = GetFallbackCursorPosition(self)
+    end
+
+    local point = anchor.point or CURSOR_ANCHOR_POINT
+    local x = anchor.x or CURSOR_ANCHOR_X
+    local y = anchor.y or CURSOR_ANCHOR_Y
+    local dx, dy = ST.GetPanelBasePointCorrection(frame, point)
+    if fromTicker and not frame._anchorDirty
+        and frame._cursorPlacedPoint == point
+        and frame._cursorPlacedX == cursorX and frame._cursorPlacedY == cursorY
+        and frame._cursorPlacedOffX == x and frame._cursorPlacedOffY == y
+        and frame._cursorPlacedDX == dx and frame._cursorPlacedDY == dy then
+        return true
     end
 
     frame._anchorDirty = nil
@@ -98,18 +132,13 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY)
     SetExternalAnchorAlphaSyncActive(frame, false)
     frame.anchoredToParent = nil
 
-    if not (cursorX and cursorY) then
-        cursorX, cursorY = GetCursorPositionInUIParentSpace(self)
-    end
-    if not (cursorX and cursorY) then
-        cursorX, cursorY = GetFallbackCursorPosition(self)
-    end
-
-    local x = anchor.x or CURSOR_ANCHOR_X
-    local y = anchor.y or CURSOR_ANCHOR_Y
     frame:ClearAllPoints()
-    ST.SetPanelBasePoint(frame, anchor.point or CURSOR_ANCHOR_POINT, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
+    ST.SetPanelBasePoint(frame, point, UIParent, "BOTTOMLEFT", cursorX + x, cursorY + y)
     UpdateCoordLabel(frame, x, y)
+    frame._cursorPlacedPoint = point
+    frame._cursorPlacedX, frame._cursorPlacedY = cursorX, cursorY
+    frame._cursorPlacedOffX, frame._cursorPlacedOffY = x, y
+    frame._cursorPlacedDX, frame._cursorPlacedDY = dx, dy
     return true
 end
 
@@ -234,6 +263,8 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
         end
     elseif selected then
         UpdateCoordLabel(frame, group.anchor.x or CURSOR_ANCHOR_X, group.anchor.y or CURSOR_ANCHOR_Y)
+        -- The label now shows the saved offset; the ticker repaints a staged one.
+        ST.InvalidateCursorPlacement(frame)
     end
     self:UpdateGroupClickthrough(groupId)
 end
@@ -1023,15 +1054,23 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
             and IsCursorAnchor(group.anchor)
             and self:CanGroupUseCursorAnchor(group) then
             local frame = self.groupFrames and self.groupFrames[groupId] or nil
-            if frame and frame:IsShown() and not GroupIdsEqual(draggedGroupId, groupId) then
+            if frame and GroupIdsEqual(draggedGroupId, groupId) then
+                -- The engine moves a dragged panel without any placement call,
+                -- so its stamp is cleared while the drag lasts: however the
+                -- drag ends (drop, cancel, combat lock), the first tick after
+                -- it places the panel again.
+                ST.InvalidateCursorPlacement(frame)
+                local host = GetCursorAnchoredIndicatorHost(frame, group)
+                if host then ST.InvalidateCursorPlacement(host) end
+            elseif frame and frame:IsShown() then
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
                 local anchorX = previewX or cursorX
                 local anchorY = previewY or cursorY
                 local anchor = GetCursorAnchorLayoutPreviewAnchor(self, groupId, group.anchor)
-                ApplyCursorAnchorPosition(self, frame, anchor, anchorX, anchorY)
+                ApplyCursorAnchorPosition(self, frame, anchor, anchorX, anchorY, useCandidateList)
                 local host = GetCursorAnchoredIndicatorHost(frame, group)
                 if host and host:IsShown() then
-                    ApplyCursorAnchorPosition(self, host, anchor, anchorX, anchorY)
+                    ApplyCursorAnchorPosition(self, host, anchor, anchorX, anchorY, useCandidateList)
                 end
             end
         end

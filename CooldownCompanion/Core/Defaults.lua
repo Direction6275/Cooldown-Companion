@@ -276,6 +276,12 @@ local defaults = {
             barAuraMissingColor = {0.6, 0.15, 0.15, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
+            -- Legacy starting values from the retired border effects, kept as
+            -- shipped (owner ruling R10, 2026-10-24; not retuned to the newer
+            -- glow numbers). They still reach the screen: new panels copy them
+            -- into attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS falls back to them
+            -- for any key a panel's attachedBarStyle lacks (EntryPresentation),
+            -- and converted Bar Panels carried size 8 into their stored style.
             barAuraEffectSize = 8,
             barAuraEffectThickness = 4,
             barAuraEffectSpeed = 50,
@@ -672,63 +678,84 @@ function CooldownCompanion:EnforceAuraPanelInvariants(group)
     group.masqueEnabled = false
 end
 
--- Polarity is derived from the spell the same way the aura display derives it;
--- the stored auraUnit is the fallback for a spell the client cannot resolve.
--- Returns nil when neither source can answer, which reads as "unknown" rather
--- than a unit, so callers stay permissive instead of guessing.
-function CooldownCompanion:ResolveAuraEntryUnit(buttonData)
-    if not buttonData then return nil end
-    local spellID = tonumber(buttonData.id)
-    if spellID and C_Spell.DoesSpellExist(spellID) then
-        return self:ResolveStandaloneAuraDefaultUnit(buttonData)
-    end
-    if buttonData.auraUnit == "player" or buttonData.auraUnit == "target" then
-        return buttonData.auraUnit
-    end
-    return nil
-end
-
--- One unit per Aura Panel, DERIVED and never stored: the panel tracks whatever
--- its first aura entry resolves to. An empty panel has no unit yet and accepts
--- either polarity. Entries whose polarity cannot be resolved right now are
--- skipped rather than treated as an answer.
-function CooldownCompanion:GetAuraPanelUnit(group)
-    if not ST.IsAuraPanelGroup(group) then return nil end
-    for _, buttonData in ipairs(group.buttons or {}) do
-        if buttonData and buttonData.addedAs == "aura" then
-            local unit = self:ResolveAuraEntryUnit(buttonData)
-            if unit then
-                return unit
+-- One unit per aura surface (an Aura Panel, or one aura section of a mixed
+-- panel), DERIVED and never stored (owner ruling R12, 2026-10-24): whichever
+-- unit most of its turned-on aura entries resolve to (ResolveAuraEntryUnit).
+-- A tie goes to the unit those entries were saved with, which is what the
+-- surface watched before, then to the first entry that resolves. So one odd
+-- entry, an aura whose spell data answers the other polarity, parks only
+-- itself instead of moving the whole surface, even in a two-entry panel. Only
+-- when no turned-on entry resolves do turned-off ones count. A surface with no
+-- resolvable entry has no unit yet and accepts either polarity; entries whose
+-- polarity cannot be resolved right now are skipped rather than treated as an
+-- answer. `anchor` limits the count to one section; `exclude` leaves one entry
+-- out, for callers asking what the OTHER members say.
+local function VoteAuraSurfaceUnit(self, voters)
+    local remaining = #voters
+    local firstUnit
+    local playerCount, targetCount, savedPlayer, savedTarget = 0, 0, 0, 0
+    for _, buttonData in ipairs(voters) do
+        remaining = remaining - 1
+        local unit = self:ResolveAuraEntryUnit(buttonData)
+        if unit then
+            firstUnit = firstUnit or unit
+            if unit == "target" then targetCount = targetCount + 1 else playerCount = playerCount + 1 end
+            if buttonData.auraUnit == "target" then
+                savedTarget = savedTarget + 1
+            elseif buttonData.auraUnit == "player" then
+                savedPlayer = savedPlayer + 1
             end
+            -- Decided once the entries left can neither catch nor tie the
+            -- leader, so a uniform surface resolves only about half its entries.
+            if playerCount > targetCount + remaining then return "player" end
+            if targetCount > playerCount + remaining then return "target" end
         end
     end
-    return nil
+    if not firstUnit then return nil end
+    if playerCount ~= targetCount then return playerCount > targetCount and "player" or "target" end
+    if savedPlayer ~= savedTarget then return savedPlayer > savedTarget and "player" or "target" end
+    return firstUnit
+end
+
+-- Scratch voter lists, refilled on every call: the vote never re-enters itself.
+local auraSurfaceEnabled, auraSurfaceDisabled = {}, {}
+
+local function ResolveAuraSurfaceUnit(self, group, anchor, exclude)
+    local enabled, disabled = auraSurfaceEnabled, auraSurfaceDisabled
+    wipe(enabled)
+    wipe(disabled)
+    for _, buttonData in ipairs(group.buttons or {}) do
+        if buttonData and buttonData ~= exclude and buttonData.addedAs == "aura"
+            and (not anchor or ST.GetPanelSectionForEntry(group, buttonData) == anchor) then
+            local voters = self:IsButtonEnabled(buttonData, group) and enabled or disabled
+            voters[#voters + 1] = buttonData
+        end
+    end
+    -- Turned-on entries that resolved nothing already contributed nothing, so
+    -- the fallback asks only the turned-off ones.
+    return VoteAuraSurfaceUnit(self, enabled) or VoteAuraSurfaceUnit(self, disabled)
+end
+
+function CooldownCompanion:GetAuraPanelUnit(group, exclude)
+    if not ST.IsAuraPanelGroup(group) then return nil end
+    return ResolveAuraSurfaceUnit(self, group, nil, exclude)
 end
 
 -- The same one-unit rule, one section at a time. An aura section is its own
 -- aura surface inside a mixed panel, so it adopts a unit exactly the way a whole
--- Aura Panel does: from its first member that resolves to one, DERIVED and never
--- stored, so an emptied section forgets it and accepts either polarity again.
+-- Aura Panel does, and an emptied section forgets it and accepts either
+-- polarity again.
 --
 -- Deliberately NOT gated on the section being aura-only. The toggle's own
 -- refusal check has to ask this question BEFORE the flag flips -- that is the
 -- moment a section holding two polarities has to be caught -- and answering for
 -- a plain section costs nothing, since nothing but the aura paths asks.
-function CooldownCompanion:GetAuraSectionUnit(group, anchor)
+function CooldownCompanion:GetAuraSectionUnit(group, anchor, exclude)
     if type(group) ~= "table" then return nil end
     if not (anchor and ST.PANEL_SECTION_ANCHOR_SET[anchor]) then return nil end
     local sections = group.sections
     if type(sections) ~= "table" or type(sections[anchor]) ~= "table" then return nil end
-    for _, buttonData in ipairs(group.buttons or {}) do
-        if buttonData and buttonData.addedAs == "aura"
-            and ST.GetPanelSectionForEntry(group, buttonData) == anchor then
-            local unit = self:ResolveAuraEntryUnit(buttonData)
-            if unit then
-                return unit
-            end
-        end
-    end
-    return nil
+    return ResolveAuraSurfaceUnit(self, group, anchor, exclude)
 end
 
 -- Whether one entry may live in one aura section: nil to admit it, a short
@@ -761,7 +788,10 @@ function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entry
     return nil
 end
 
-function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
+-- knownUnit: the unit of a single probe whose caller already resolved it (the
+-- aura add doors, through ResolveStandaloneAuraDefaultUnit), so it is not
+-- resolved a second time here.
+function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData, knownUnit)
     local indicatorReason = ST.Indicator.AddRestriction(group, entryData)
     if indicatorReason then return indicatorReason end
     if ST.IsTotemPanelGroup(group) then
@@ -777,9 +807,10 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
         end
     end
     -- Aura Panels hold ONLY aura entries, and only for a single unit: the
-    -- panel's unit is derived from its first aura entry, so an entry of the
-    -- other polarity has nowhere to render. With no entryData (the add box
-    -- arming itself) there is nothing to judge yet, so the panel stays armed.
+    -- panel's unit is derived from its aura entries (GetAuraPanelUnit), so an
+    -- entry of the other polarity has nowhere to render. With no entryData
+    -- (the add box arming itself) there is nothing to judge yet, so the panel
+    -- stays armed.
     if entryData and ST.IsAuraPanelGroup(group) then
         local panelUnit = self:GetAuraPanelUnit(group)
         local entries = entryData[1] and entryData or { entryData }
@@ -787,7 +818,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData)
             if not (bd and bd.type == "spell" and bd.addedAs == "aura") then
                 return "Aura Panels hold only Aura entries."
             end
-            local entryUnit = self:ResolveAuraEntryUnit(bd)
+            local entryUnit = (bd == entryData and knownUnit) or self:ResolveAuraEntryUnit(bd)
             if panelUnit and entryUnit and entryUnit ~= panelUnit then
                 if panelUnit == "player" then
                     return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."

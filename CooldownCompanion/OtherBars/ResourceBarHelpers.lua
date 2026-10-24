@@ -180,11 +180,6 @@ local function GetVerticalSideFallback(horizontalSide)
     return horizontalSide == "above" and "left" or "right"
 end
 
-local function GetEffectiveAnchorGroupId(settings)
-    if not settings then return nil end
-    return CooldownCompanion:GetModuleAnchorPanelId("resources")
-end
-
 -- Attached horizontal stacks have two possible bodies on each side. Keep
 -- their identity separate from direction: aura containers, cast predecessors
 -- and the preview must all partition the same way. Old side keys remain the
@@ -1563,7 +1558,6 @@ RB.GetResourcePrimaryLength = GetResourcePrimaryLength
 RB.GetResourceGlobalThickness = GetResourceGlobalThickness
 RB.GetResourceAnchorGap = GetResourceAnchorGap
 RB.GetVerticalSideFallback = GetVerticalSideFallback
-RB.GetEffectiveAnchorGroupId = GetEffectiveAnchorGroupId
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.BuildResourcesSetupSection = BuildResourcesSetupSection

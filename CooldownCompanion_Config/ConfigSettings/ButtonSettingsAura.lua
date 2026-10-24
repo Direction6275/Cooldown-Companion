@@ -115,8 +115,8 @@ end
 -- move time, and an override edit is the one path that can flip an ALREADY
 -- ADMITTED entry's effective unit afterward — the bind pass answers such a
 -- mismatch by parking entries. The surface unit is derived from the OTHER
--- members, because the edited entry may be the very donor the normal
--- derivation reads first. Wording matches the admission doors.
+-- members, because the edited entry may be the very one tipping the normal
+-- derivation. Wording matches the admission doors.
 local function GetOverrideSurfaceRejectMessage(group, buttonData)
     local isPanel = ST.IsAuraPanelGroup(group)
     local isSection = not isPanel and ST.IsAuraSectionEntry
@@ -128,13 +128,10 @@ local function GetOverrideSurfaceRejectMessage(group, buttonData)
         and ST.GetPanelSectionForEntry(group, buttonData) or nil
     if isSection and not anchor then return nil end
     local surfaceUnit
-    for _, sibling in ipairs(group.buttons or {}) do
-        if sibling ~= buttonData and type(sibling) == "table"
-            and sibling.addedAs == "aura"
-            and (isPanel or ST.GetPanelSectionForEntry(group, sibling) == anchor) then
-            surfaceUnit = CooldownCompanion:ResolveAuraEntryUnit(sibling)
-            if surfaceUnit then break end
-        end
+    if isPanel then
+        surfaceUnit = CooldownCompanion:GetAuraPanelUnit(group, buttonData)
+    else
+        surfaceUnit = CooldownCompanion:GetAuraSectionUnit(group, anchor, buttonData)
     end
     if not surfaceUnit or surfaceUnit == entryUnit then return nil end
     if isPanel then
