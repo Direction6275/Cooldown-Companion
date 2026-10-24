@@ -144,6 +144,15 @@ local featureMethods = {
     frameAnchoring = { evaluate = "EvaluateFrameAnchoring", apply = "ApplyFrameAnchoring" },
 }
 
+-- Completion kinds, in run order, before and after the module phase.
+local COMPLETION_KINDS_BEFORE_MODULES = { "preview", "wrappers" }
+local COMPLETION_KINDS_AFTER_MODULES = { "preview", "wrappers", "cursor", "alpha" }
+
+-- Shared by every module call in the attachment pass. Read-only: callees must
+-- never write to it (the ResourceBar, CastBar, FrameAnchoring and
+-- ResourceBarLifecycle feature methods only read it).
+local MODULE_PASS_OPTS = { skipRuntimeGate = true, skipCompactSuppression = true }
+
 function CooldownCompanion:BeginPanelAttachmentRefresh()
     if attachmentRefresh then return nil end
     attachmentRefresh = abandonedRefresh or { panels = {} }
@@ -177,7 +186,7 @@ local function FinishPanelRefreshCompletion(refresh, beforeModules)
     local completion = refresh.completion or {}
     refresh.completion = completion
     refresh.completing = refresh.completing or {}
-    local kinds = beforeModules and { "preview", "wrappers" } or { "preview", "wrappers", "cursor", "alpha" }
+    local kinds = beforeModules and COMPLETION_KINDS_BEFORE_MODULES or COMPLETION_KINDS_AFTER_MODULES
     for _, kind in ipairs(kinds) do
         local requested = completion[kind]
         completion[kind] = nil
@@ -255,7 +264,7 @@ function CooldownCompanion:EndPanelAttachmentRefresh(operation, changed, reason)
     -- shares one anchor search per question (GroupOperations.lua
     -- BeginModuleAnchorPass).
     ST.BeginModuleAnchorPass()
-    local opts = { skipRuntimeGate = true, skipCompactSuppression = true }
+    local opts = MODULE_PASS_OPTS
     local resourceMethod = evaluate and (refresh.full and "evaluate" or refresh.resourceBars)
     if resourceMethod and flags.resourceBars then
         CallIfAvailable(featureMethods.resourceBars[resourceMethod], opts)

@@ -3,6 +3,8 @@
 local ADDON_NAME, ST = ...
 local Addon = ST.Addon
 local SIDES = { "above", "below", "left", "right" }
+local REGIONS = { "main", "outer" }
+local RESOURCE_SLOTS = { "before", "after" }
 local FLOW = {
     above = { point = "BOTTOM", far = "TOP", dx = 0, dy = 1 },
     below = { point = "TOP", far = "BOTTOM", dx = 0, dy = -1 },
@@ -15,8 +17,8 @@ local FLOW = {
 function ST.BuildAttachedBarAreas(group, layoutKind)
     local areas, order = {}, {}
     for _, side in ipairs(SIDES) do
-        for _, region in ipairs({ "main", "outer" }) do
-            for _, resources in ipairs({ "before", "after" }) do
+        for _, region in ipairs(REGIONS) do
+            for _, resources in ipairs(RESOURCE_SLOTS) do
                 local key = side .. ":" .. region .. ":" .. resources
                 local area = { key = key, side = side, region = region,
                     resources = resources, entries = {} }
@@ -203,95 +205,107 @@ function ST.LayoutAttachedBars(groupId, frame, group, kind)
     local placeholders = frame._auraPanelChromeSuppressed == true
     for _, area in ipairs(ST.BuildAttachedBarAreas(group, kind)) do
         local state = EnsureArea(frame, groupId, area)
-        state.entries = {}
         state.side, state.spacing = area.side, spacing
         local flow = FLOW[area.side]
         state.point, state.far, state.dx, state.dy = flow.point, flow.far, flow.dx, flow.dy
-        local anchorBody = area.region == "main" and body or frame
-        local lane = area.side .. ":" .. area.region
-        local predecessor = previous[lane]
-        -- Each module supplies its own live block. The coordinator only moves
-        -- that block; it never enables, updates, or destroys module frames.
-        if area.resources == "after" then
-            local block = resourceBlocks[lane]
-            if block then
-                block.frame:ClearAllPoints()
-                local distance = predecessor and spacing or gap
-                block.frame:SetPoint(flow.point, predecessor or anchorBody, flow.far,
-                    flow.dx * distance, flow.dy * distance)
-                predecessor = block.tail or block.frame
+        -- An empty spot with no resource block to place holds nothing: its
+        -- lane result stays the predecessor and its mount keeps its last
+        -- anchor, since mounts are read only by bound records and a want with
+        -- no entries never binds. Edge: if a config edit in combat empties a
+        -- spot, the aura bar still bound there stays on that old anchor until
+        -- the after-combat rebind.
+        if #area.entries == 0 and (area.resources ~= "after"
+            or not resourceBlocks[area.side .. ":" .. area.region]) then
+            if not state.entries or #state.entries > 0 then state.entries = {} end
+            state.tail = nil
+        else
+            state.entries = {}
+            local anchorBody = area.region == "main" and body or frame
+            local lane = area.side .. ":" .. area.region
+            local predecessor = previous[lane]
+            -- Each module supplies its own live block. The coordinator only moves
+            -- that block; it never enables, updates, or destroys module frames.
+            if area.resources == "after" then
+                local block = resourceBlocks[lane]
+                if block then
+                    block.frame:ClearAllPoints()
+                    local distance = predecessor and spacing or gap
+                    block.frame:SetPoint(flow.point, predecessor or anchorBody, flow.far,
+                        flow.dx * distance, flow.dy * distance)
+                    predecessor = block.tail or block.frame
+                end
             end
-        end
-        local ref = predecessor or anchorBody
-        local regionWidth, regionHeight = anchorBody:GetWidth(), anchorBody:GetHeight()
-        if configured then
-            regionWidth = area.region == "main" and configured.baseWidth or configured.footprintWidth
-            regionHeight = area.region == "main" and configured.baseHeight or configured.footprintHeight
-        end
-        local offset = gap
-        if predecessor then offset = spacing end
-        local last = nil
-        local entries = placeholders and ST.GetAttachedBarAreaOrder(group, area.entries, kind) or area.entries
-        for _, item in ipairs(entries) do
-            local entry, button = item.entry, byEntry[item.entry]
-            if button then
-                local effective = Addon:GetEffectiveStyle(base, entry, group)
-                local width, height, vertical, length = ST.ResolveAttachedBarDimensions(
-                    group, effective, area.side, regionWidth, regionHeight, kind)
-                -- A positioning pass must not reset the charge renderer or
-                -- cooldown visuals. Normal style refreshes already apply all
-                -- appearance changes; only a changed fitted geometry needs
-                -- another style application here.
-                local current = button.style
-                local restyle = not current or current.barLength ~= length
-                    or (current.barFillVertical == true) ~= vertical
-                local collapsing = ST.IsCollapsingAttachedBar(group, entry, kind)
-                local style
-                if restyle or collapsing then
-                    -- Only a restyle or native binding needs an owned style
-                    -- snapshot. Geometry never mutates saved customizations.
-                    style = {}
-                    for key, value in pairs(base) do style[key] = value end
-                    for key, value in pairs(effective) do style[key] = value end
-                    style.barLength, style.barFillVertical = length, vertical
-                end
-                if restyle then
-                    button:UpdateStyle(style)
-                    -- Fitting can follow the panel cooldown pass. Restore
-                    -- runtime visuals before choosing visibility and order.
-                    if not collapsing then button:UpdateCooldown() end
-                end
-                if collapsing then
-                    Addon:StampAuraSectionEntryKey(group, entry)
-                    if placeholders then
+            local ref = predecessor or anchorBody
+            local regionWidth, regionHeight = anchorBody:GetWidth(), anchorBody:GetHeight()
+            if configured then
+                regionWidth = area.region == "main" and configured.baseWidth or configured.footprintWidth
+                regionHeight = area.region == "main" and configured.baseHeight or configured.footprintHeight
+            end
+            local offset = gap
+            if predecessor then offset = spacing end
+            local last = nil
+            local entries = placeholders and ST.GetAttachedBarAreaOrder(group, area.entries, kind) or area.entries
+            for _, item in ipairs(entries) do
+                local entry, button = item.entry, byEntry[item.entry]
+                if button then
+                    local effective = Addon:GetEffectiveStyle(base, entry, group)
+                    local width, height, vertical, length = ST.ResolveAttachedBarDimensions(
+                        group, effective, area.side, regionWidth, regionHeight, kind)
+                    -- A positioning pass must not reset the charge renderer or
+                    -- cooldown visuals. Normal style refreshes already apply all
+                    -- appearance changes; only a changed fitted geometry needs
+                    -- another style application here.
+                    local current = button.style
+                    local restyle = not current or current.barLength ~= length
+                        or (current.barFillVertical == true) ~= vertical
+                    local collapsing = ST.IsCollapsingAttachedBar(group, entry, kind)
+                    local style
+                    if restyle or collapsing then
+                        -- Only a restyle or native binding needs an owned style
+                        -- snapshot. Geometry never mutates saved customizations.
+                        style = {}
+                        for key, value in pairs(base) do style[key] = value end
+                        for key, value in pairs(effective) do style[key] = value end
+                        style.barLength, style.barFillVertical = length, vertical
+                    end
+                    if restyle then
+                        button:UpdateStyle(style)
+                        -- Fitting can follow the panel cooldown pass. Restore
+                        -- runtime visuals before choosing visibility and order.
+                        if not collapsing then button:UpdateCooldown() end
+                    end
+                    if collapsing then
+                        Addon:StampAuraSectionEntryKey(group, entry)
+                        if placeholders then
+                            button:ClearAllPoints()
+                            button:SetPoint(flow.point, last or ref, flow.far,
+                                flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
+                            ST._ApplyBarAuraShellVisuals(button, entry)
+                            button:Show()
+                            last = button
+                        else
+                            button:Hide()
+                        end
+                        state.entries[#state.entries + 1] = {
+                            id = tostring(entry._auraKey), buttonData = entry, style = style,
+                            width = width, height = height,
+                            vertical = vertical, spacing = spacing,
+                        }
+                    elseif not button._visibilityHidden or button._forceVisibleByConfig then
                         button:ClearAllPoints()
                         button:SetPoint(flow.point, last or ref, flow.far,
                             flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
-                        ST._ApplyBarAuraShellVisuals(button, entry)
                         button:Show()
                         last = button
-                    else
-                        button:Hide()
                     end
-                    state.entries[#state.entries + 1] = {
-                        id = tostring(entry._auraKey), buttonData = entry, style = style,
-                        width = width, height = height,
-                        vertical = vertical, spacing = spacing,
-                    }
-                elseif not button._visibilityHidden or button._forceVisibleByConfig then
-                    button:ClearAllPoints()
-                    button:SetPoint(flow.point, last or ref, flow.far,
-                        flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
-                    button:Show()
-                    last = button
                 end
             end
+            state.mount:ClearAllPoints()
+            state.mount:SetPoint(flow.point, last or ref, flow.far,
+                flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
+            if #state.entries == 0 then state.tail = nil end
+            previous[lane] = (not placeholders and state.tail) or last or predecessor
         end
-        state.mount:ClearAllPoints()
-        state.mount:SetPoint(flow.point, last or ref, flow.far,
-            flow.dx * (last and spacing or offset), flow.dy * (last and spacing or offset))
-        if #state.entries == 0 then state.tail = nil end
-        previous[lane] = (not placeholders and state.tail) or last or predecessor
     end
     frame._attachmentTails = previous
 end
