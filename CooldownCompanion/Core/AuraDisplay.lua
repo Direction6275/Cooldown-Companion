@@ -270,9 +270,16 @@ end
 -- person — is the container refresh's job, not this one's.
 --
 -- Stamped from the CONSUMER below rather than from the pass, so the compared
--- value can never drift from the list the bind was built with. nil (no pass has
--- consumed a set yet) reads as "changed", which is the current behavior.
-local lastBoundRosterSignature
+-- value can never drift from the list the bind was built with. A nil signature
+-- means the last full pass bound nothing that tracks the group, so a roster
+-- change has nothing to rebind. `consumed` is the full pass's consumer flag:
+-- RunAuraRebind resets it when a full pass starts and clears the signature at
+-- the END of a full pass that never reached the consumer. Clearing at the end,
+-- never the top, means a pass that errors partway keeps the previous stamp and
+-- roster changes keep rebinding. Scoped passes can only stamp, so removing the
+-- last group-tracked entry through one (Disable, a presentation switch) allows
+-- one more rebuild on the next real set change before the gate closes.
+local rosterBinding = { signature = nil, consumed = false }
 
 local function RosterTokenSignature(tokens)
     return table.concat(tokens, "\031")
@@ -280,12 +287,13 @@ end
 
 local function GroupAuraTokens()
     local tokens = BuildGroupAuraTokens()
-    lastBoundRosterSignature = RosterTokenSignature(tokens)
+    rosterBinding.signature = RosterTokenSignature(tokens)
+    rosterBinding.consumed = true
     return tokens
 end
 
 local function RosterTokenSetChanged()
-    return RosterTokenSignature(BuildGroupAuraTokens()) ~= lastBoundRosterSignature
+    return RosterTokenSignature(BuildGroupAuraTokens()) ~= rosterBinding.signature
 end
 
 -- Container-level refresh for records whose token may now resolve to a different
@@ -461,10 +469,11 @@ local function EnsureGroupWatcher()
         -- combat-deferred and cannot cover a mid-fight reshuffle.
         RefreshRecordsForToken(IsRosterAllyToken)
         -- The rebind exists only to re-derive the token SET (GroupAuraTokens),
-        -- so a reshuffle that leaves the set element-wise identical has nothing
-        -- for it to bind differently. Not "config"/"style", so this never
-        -- prints a combat-defer note.
-        if RosterTokenSetChanged() then
+        -- so a reshuffle that leaves the set element-wise identical, or a
+        -- roster change while nothing bound tracks the group, has nothing for
+        -- it to bind differently. Not "config"/"style", so this never prints a
+        -- combat-defer note.
+        if rosterBinding.signature and RosterTokenSetChanged() then
             CooldownCompanion:RequestAuraRebind("roster")
         end
     end)
@@ -5252,6 +5261,7 @@ function RunAuraRebind(configEdit, panelIds, resources)
     deferNoteShown = false
     rebindPassCount = rebindPassCount + 1
     lastRebindPassAt = GetTime()
+    if not panelIds then rosterBinding.consumed = false end
 
     -- Opens the pass-scoped candidate memo (Core/Aura.lua) for everything this
     -- pass resolves: the slot walk below, the resource collectors it calls,
@@ -5536,6 +5546,11 @@ function RunAuraRebind(configEdit, panelIds, resources)
     -- the cast bar is the only trailing frame with anything to re-anchor.
     if self.UpdateCastBarStackAnchor then
         self:UpdateCastBarStackAnchor()
+    end
+
+    -- A full pass that bound nothing group-tracked closes the roster gate.
+    if not panelIds and not rosterBinding.consumed then
+        rosterBinding.signature = nil
     end
 
     ST.EndAuraCandidatePass()
