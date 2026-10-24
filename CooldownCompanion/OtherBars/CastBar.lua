@@ -99,15 +99,10 @@ function CooldownCompanion:SetIndependentCastBarLocked(locked)
     end
 end
 
-local function GetEffectiveAnchorGroupId(settings)
-    if not settings then return nil end
-    return CooldownCompanion:GetModuleAnchorPanelId("castbar")
-end
-
-local function GetAnchorGroupFrame(settings)
-    local groupId = GetEffectiveAnchorGroupId(settings)
-    if not groupId then return nil end
-    return CooldownCompanion.groupFrames[groupId]
+-- One runtime resolution per apply (ResolveModulePanel("castbar")), passed
+-- down so every geometry read agrees on the panel.
+local function GetAnchorGroupFrame(target)
+    return target and target.available and target.frame or nil
 end
 
 local function GetAttachedCastBarPanelYOffset(settings)
@@ -865,21 +860,21 @@ end
 -- Geometry
 ------------------------------------------------------------------------
 
-local function GetCastBarHeight(s)
-    return ST.ResolveCastBarGeometry(s, ST.GetModuleGeometryHost("castbar")).thickness
+local function GetCastBarHeight(s, target)
+    return ST.ResolveCastBarGeometry(s, ST.GetModuleGeometryHost("castbar", nil, target)).thickness
 end
 
-local function ResolveCastBarWidth(s)
+local function ResolveCastBarWidth(s, target)
     if CooldownCompanion:IsModuleAnchorIndependent("castbar") then
         return ClampCastBarDimension(s.independentWidth, 200)
     end
-    local groupFrame = GetAnchorGroupFrame(s)
+    local groupFrame = GetAnchorGroupFrame(target)
     if not groupFrame then return nil end
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     local slot = layout and layout.castBar or {}
-    local lane = RB.ResolveBarLane(CooldownCompanion:ResolveModulePanel("castbar").group, slot.position or "below", slot.anchorRegion)
+    local group = target.group
+    local lane = RB.ResolveBarLane(group, slot.position or "below", slot.anchorRegion)
     local region = (lane == "aboveMain" or lane == "belowMain") and "main" or "outer"
-    local group = CooldownCompanion:ResolveModulePanel("castbar").group
     local width = ST.GetPanelAttachmentDimensions(groupFrame, group, region)
     if not width or width <= 0 then return nil end
     return width
@@ -904,7 +899,7 @@ local function AnchorBySide(frame, side, relative, spacing, yOffset)
 end
 
 --- Position + size the bar.  Returns false when the anchor is unavailable.
-local function ApplyCastBarPosition(s, width, height)
+local function ApplyCastBarPosition(s, width, height, target)
     local frame = castBarFrame
     if not frame then return false end
 
@@ -917,7 +912,7 @@ local function ApplyCastBarPosition(s, width, height)
         return true
     end
 
-    local groupFrame = GetAnchorGroupFrame(s)
+    local groupFrame = GetAnchorGroupFrame(target)
     if not groupFrame then return false end
 
     local specLayout = CooldownCompanion:GetSpecLayoutOrder()
@@ -930,14 +925,14 @@ local function ApplyCastBarPosition(s, width, height)
     -- orientation. Under a vertical stack the left/right-keyed predecessor
     -- and block lookups simply miss, and the bar anchors to the panel.
     local side = cbPosition
-    local lane = RB.ResolveBarLane(CooldownCompanion:ResolveModulePanel("castbar").group, side, cbLayout and cbLayout.anchorRegion)
+    local lane = RB.ResolveBarLane(target.group, side, cbLayout and cbLayout.anchorRegion)
 
     local gap = RB.GetResourceAnchorGap(rbSettings or {}, specLayout, "horizontal")
     local barSpacing = specLayout and specLayout.barSpacing
         or (rbSettings and rbSettings.barSpacing)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
-    local geometryPanel = ST.GetModuleGeometryPanel("castbar")
+    local geometryPanel = ST.GetModuleGeometryPanel("castbar", nil, target)
     if geometryPanel then
         local geometry = ST.ResolveBarGeometry(geometryPanel)
         gap, barSpacing = geometry.distance, geometry.spacing
@@ -953,7 +948,8 @@ local function ApplyCastBarPosition(s, width, height)
         return true
     end
 
-    if not stackDetached and CooldownCompanion:ModulesShareAnchorPanel("resources", "castbar") then
+    local resources = not stackDetached and CooldownCompanion:ResolveModulePanel("resources")
+    if resources and resources.available and resources.panelId == target.panelId then
         -- The cast bar is ALWAYS the last element of its side (owner ruling
         -- 2026-08-09): the stack reserves no space for an interleaved cast
         -- bar, so a stored order between two bars double-books the next
@@ -1568,6 +1564,7 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
     SuppressBlizzardCastBar()
 
     local isIndependent = CooldownCompanion:IsModuleAnchorIndependent("castbar")
+    local target = self:ResolveModulePanel("castbar")
 
     if isIndependent then
         -- Independent mode: no group needed, set up mover frame
@@ -1580,12 +1577,12 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         end
         independentMoverFrame:ClearAllPoints()
         independentMoverFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)
-        independentMoverFrame:SetSize(settings.independentWidth, GetCastBarHeight(settings))
+        independentMoverFrame:SetSize(settings.independentWidth, GetCastBarHeight(settings, target))
         independentMoverFrame:Show()
         UpdateIndependentCastBarDragState(settings)
         UpdateIndependentCastBarCoordLabel(independentMoverFrame, anchor.x, anchor.y)
     else
-        local groupId = GetEffectiveAnchorGroupId(settings)
+        local groupId = target.available and target.panelId or nil
         if not groupId then
             SuspendCastBar()
             return
@@ -1612,15 +1609,15 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         HideIndependentCastBarMover()
     end
 
-    local width = ResolveCastBarWidth(settings)
+    local width = ResolveCastBarWidth(settings, target)
     if not width then
         SuspendCastBar()
         return
     end
-    local height = GetCastBarHeight(settings)
+    local height = GetCastBarHeight(settings, target)
 
     EnsureCastBarFrame()
-    if not ApplyCastBarPosition(settings, width, height) then
+    if not ApplyCastBarPosition(settings, width, height, target) then
         SuspendCastBar()
         return
     end
@@ -1650,17 +1647,19 @@ end
 -- Reposition: anchor/width recalculation for stack and group changes
 ------------------------------------------------------------------------
 
-function CooldownCompanion:RepositionCastBar()
+-- target: RefreshCastBarAttachment's own resolution; other callers pass none.
+function CooldownCompanion:RepositionCastBar(target)
     if not isApplied then return end
     local settings = GetCastBarSettings()
     if not settings or not settings.enabled then return end
     if not castBarFrame then return end
+    target = target or self:ResolveModulePanel("castbar")
 
-    local width = ResolveCastBarWidth(settings)
+    local width = ResolveCastBarWidth(settings, target)
     if not width then return end
-    local height = GetCastBarHeight(settings)
+    local height = GetCastBarHeight(settings, target)
 
-    if not ApplyCastBarPosition(settings, width, height) then return end
+    if not ApplyCastBarPosition(settings, width, height, target) then return end
     ApplyCastBarLayout(settings, width, height)
     -- The pip offsets are absolute against the fill width that just changed.
     if cast.state == "empower" and cast.numStages > 0 then
@@ -1673,20 +1672,21 @@ end
 
 -- Resource-only edits and native aura tails change attachment geometry, not
 -- cast styling. Retain full lifecycle convergence for suspended bars and
--- independent movers, whose setup belongs to ApplyCastBarSettings. One anchor
--- pass: the check here and every layout step under it resolve the same panel
+-- independent movers, whose setup belongs to ApplyCastBarSettings. The panel
+-- is resolved once here and passed down; the anchor pass still covers the
+-- resources resolve and the EvaluateCastBar fallback
 -- (GroupOperations.lua BeginModuleAnchorPass).
 function CooldownCompanion:RefreshCastBarAttachment()
     ST.BeginModuleAnchorPass()
     local settings = GetCastBarSettings()
-    local groupId = settings and GetEffectiveAnchorGroupId(settings)
-    local group = groupId and self.db.profile.groups[groupId]
-    local frame = groupId and self.groupFrames[groupId]
+    local target = settings and self:ResolveModulePanel("castbar")
+    local group = target and target.available and target.group
+    local frame = target and target.available and target.frame
     if isApplied and settings and settings.enabled
         and not self:IsModuleAnchorIndependent("castbar")
         and not (independentMoverFrame and independentMoverFrame:IsShown())
         and group and self:IsIconLikeDisplayMode(group.displayMode)
-        and frame and frame:IsShown() and self:RepositionCastBar() then
+        and frame and frame:IsShown() and self:RepositionCastBar(target) then
         if isUnlockAssistActive then
             ApplyCastBarUnlockPreview()
         elseif not cast.state and not cast.fadeMode then

@@ -44,14 +44,18 @@ function ST.GetConfiguredModuleBarSettings(kind)
     return profile.castBarByChar and profile.castBarByChar[char]
 end
 
-function ST.GetModuleGeometryHost(kind, spec)
-    if not Addon.ResolveModulePanel then return nil end
-    local target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
+-- target: an already resolved runtime ResolveModulePanel(kind) result, so a
+-- caller that resolved once per apply reuses it.
+function ST.GetModuleGeometryHost(kind, spec, target)
+    if not target then
+        if not Addon.ResolveModulePanel then return nil end
+        target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
+    end
     return target and target.mode ~= "independent" and target.group or nil
 end
 
-function ST.GetModuleGeometryPanel(kind, spec)
-    local group = ST.GetModuleGeometryHost(kind, spec)
+function ST.GetModuleGeometryPanel(kind, spec, target)
+    local group = ST.GetModuleGeometryHost(kind, spec, target)
     return ST.PanelSupportsAttachedBars(group) and group or nil
 end
 
