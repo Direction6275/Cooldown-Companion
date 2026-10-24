@@ -9,7 +9,6 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
-local select = select
 local wipe = wipe
 
 -- Some talent swaps briefly report pre-final spell charge state. Coalesce a
@@ -18,9 +17,9 @@ local pendingTalentChargeRefreshToken = 0
 local pendingSpellAvailabilityRefreshToken = 0
 
 -- Coalesce rapid-fire ACTIONBAR_SLOT_CHANGED events (e.g. modifier-reactive
--- macros changing many slots simultaneously) into a single rebuild pass.
--- Same token pattern as QueueTalentChargeRefresh.
-local pendingSlotChangeToken = 0
+-- macros changing many slots simultaneously) into a single rebuild pass,
+-- armed once per burst (pending flag, like UpdateCastBarStackAnchor).
+local pendingSlotChangeRefresh = false
 local pendingSlotChangedSlots = {}
 
 local function IsPlayerInVehicleUI()
@@ -90,10 +89,10 @@ local function QueueKeybindStateRefresh(addon, slot)
     else
         pendingSlotChangedSlots._fullRebuild = true
     end
-    pendingSlotChangeToken = pendingSlotChangeToken + 1
-    local token = pendingSlotChangeToken
+    if pendingSlotChangeRefresh then return end
+    pendingSlotChangeRefresh = true
     C_Timer.After(0, function()
-        if pendingSlotChangeToken ~= token then return end
+        pendingSlotChangeRefresh = false
         if pendingSlotChangedSlots._fullRebuild then
             wipe(pendingSlotChangedSlots)
             addon:RefreshKeybindState()
@@ -121,12 +120,28 @@ local function GroupHasEquipmentSlotEntries(group)
     return false
 end
 
-function CooldownCompanion:RefreshEquipmentSlotEntries(reason, itemID)
+-- Pet and trinket changes refresh only panels this character can load: the
+-- same predicate RefreshAllGroups uses. A live frame always refreshes, so an
+-- Arrange preview showing the panel cannot go stale.
+local function ShouldRefreshPanelForEntryChange(addon, groupId, group)
+    if addon.groupFrames[groupId] then
+        return true
+    end
+    return addon:IsGroupVisibleToCurrentChar(groupId)
+        and addon:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = false,
+            checkLoadConditions = true,
+            requireButtons = false,
+        })
+end
+
+function CooldownCompanion:RefreshEquipmentSlotEntries()
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     self:MarkCooldownsDirty("equipment-slots")
     if self.db and self.db.profile and self.db.profile.groups then
         for groupId, group in pairs(self.db.profile.groups) do
-            if GroupHasEquipmentSlotEntries(group) then
+            if GroupHasEquipmentSlotEntries(group) and ShouldRefreshPanelForEntryChange(self, groupId, group) then
                 self:RefreshGroupFrame(groupId)
             end
         end
@@ -139,7 +154,7 @@ function CooldownCompanion:OnEquipmentChanged(event, equipmentSlot)
     local trinket1 = self.TRINKET_SLOT_1 or 13
     local trinket2 = self.TRINKET_SLOT_2 or 14
     if equipmentSlot == trinket1 or equipmentSlot == trinket2 then
-        self:RefreshEquipmentSlotEntries("equipment", nil)
+        self:RefreshEquipmentSlotEntries()
     else
         self:MarkCooldownsDirty("equipment-changed")
     end
@@ -162,7 +177,7 @@ function CooldownCompanion:EnsureEquipmentSlotItemLoadFrame()
             pendingLoads[itemID] = nil
         end
         CooldownCompanion._pendingEquipmentSlotLocationLoad = nil
-        CooldownCompanion:RefreshEquipmentSlotEntries("item-data", itemID)
+        CooldownCompanion:RefreshEquipmentSlotEntries()
     end)
 end
 
@@ -171,7 +186,6 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     self:CachePlayerState()
     self:CacheCurrentSpec()
-    self._currentHeroSpecId = C_ClassTalents.GetActiveHeroTalentSpec()
     -- Talent and spec events rebuild the node cache themselves; a caller
     -- that knows no talent moved (SPELLS_CHANGED, the settling pass) skips
     -- the per-node C_Traits walk. A cache built for another spec is never
@@ -206,7 +220,7 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
 
     if opts.rebuildViewerMap then
         C_Timer.After(1, function()
-            self:BuildViewerAuraMap()
+            self:QueueBuildViewerAuraMap()
         end)
     end
 
@@ -240,14 +254,14 @@ end
 -- Coalesce icon passes to one per frame. A shapeshift delivers SPELLS_CHANGED,
 -- SPELL_UPDATE_ICON and one COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED per
 -- transforming spell in the same frame, and every one resolves every entry's
--- icon. Same token pattern as QueueTalentChargeRefresh.
-local pendingIconRefreshToken = 0
+-- icon. Armed once per burst (pending flag, like UpdateCastBarStackAnchor).
+local pendingIconRefresh = false
 
 function CooldownCompanion:OnSpellUpdateIcon()
-    pendingIconRefreshToken = pendingIconRefreshToken + 1
-    local token = pendingIconRefreshToken
+    if pendingIconRefresh then return end
+    pendingIconRefresh = true
     C_Timer.After(0, function()
-        if pendingIconRefreshToken ~= token then return end
+        pendingIconRefresh = false
         self:RunSpellUpdateIconPass()
     end)
 end
@@ -322,15 +336,18 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
         outOfRange = not isInRange
     end
     local changed = false
-    self:ForEachButton(function(button, bd)
-        local spellID = GetRangeCheckSpellID(bd)
-        if bd.type == "spell" and spellID == spellIdentifier then
-            if button._spellOutOfRange ~= outOfRange then
-                button._spellOutOfRange = outOfRange
-                changed = true
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local bd = button.buttonData
+                if bd and bd.type == "spell" and GetRangeCheckSpellID(bd) == spellIdentifier
+                        and button._spellOutOfRange ~= outOfRange then
+                    button._spellOutOfRange = outOfRange
+                    changed = true
+                end
             end
         end
-    end)
+    end
     if changed then
         self:MarkCooldownsDirty("range-check")
     end
@@ -375,11 +392,13 @@ function CooldownCompanion:OnTalentsChanged()
 end
 
 function CooldownCompanion:OnPetChanged()
-    for groupId, _ in pairs(self.db.profile.groups) do
-        if self:GroupHasPetSpells(groupId) then
+    local attachmentOperation = self:BeginPanelAttachmentRefresh()
+    for groupId, group in pairs(self.db.profile.groups) do
+        if self:GroupHasPetSpells(groupId) and ShouldRefreshPanelForEntryChange(self, groupId, group) then
             self:RefreshGroupFrame(groupId)
         end
     end
+    self:EndPanelAttachmentRefresh(attachmentOperation, false, "pet-changed")
     self:RefreshConfigPanel()
 end
 
@@ -624,14 +643,6 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
     self:RequestAuraRebind("vehicle-ui")
     self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "vehicle-ui-changed" })
     self:RefreshConfigPanel()
-end
-
-function CooldownCompanion:OnHeroTalentChanged()
-    self:RefreshSpellAvailabilityState({
-        applyResourceBars = true,
-        skipSettlingRefresh = true,
-    })
-    QueueTalentChargeRefresh(self)
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReloadingUi)

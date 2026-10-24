@@ -26,7 +26,7 @@ local IsDistinctCDMAuraIdentity = ST.IsDistinctCDMAuraIdentity
 local IsConcreteSpellID = ST.IsConcreteSpellID
 local ResolveCDMAppliedAuraSpellID = ST.ResolveCDMAppliedAuraSpellID
 local GetCuratedAppliedAuraSpellID = ST.GetCuratedAppliedAuraSpellID
-local pendingViewerAuraMapToken = 0
+local pendingViewerAuraMapRebuild = false
 local pendingViewerAuraMapAllowGate = true
 local FindChildInViewers
 
@@ -1659,10 +1659,10 @@ function CooldownCompanion:QueueBuildViewerAuraMap(allowAssociationGate)
     if not allowAssociationGate then
         pendingViewerAuraMapAllowGate = false
     end
-    pendingViewerAuraMapToken = pendingViewerAuraMapToken + 1
-    local token = pendingViewerAuraMapToken
+    if pendingViewerAuraMapRebuild then return end
+    pendingViewerAuraMapRebuild = true
     C_Timer.After(0, function()
-        if pendingViewerAuraMapToken ~= token then return end
+        pendingViewerAuraMapRebuild = false
         local gated = pendingViewerAuraMapAllowGate
         pendingViewerAuraMapAllowGate = true
         -- The config panel reads the same derived associations the tail feeds,

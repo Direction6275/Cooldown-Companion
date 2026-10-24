@@ -264,7 +264,7 @@ function CooldownCompanion:OnEnable()
     -- Specialization change events — show/hide groups based on spec filter
     self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "OnPlayerSpecializationChanged")
-    self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnHeroTalentChanged")
+    self:RegisterEvent("TRAIT_SUB_TREE_CHANGED", "OnTalentsChanged")
 
     -- Zone/instance change events — load condition evaluation
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnZoneChanged")
@@ -531,22 +531,46 @@ end
 
 function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
     if unit == "player" then
-        self:ForEachButton(function(button, buttonData)
-            if buttonData.type == "spell"
-                and not buttonData.isPassive then
-                local displaySpellID = button._displaySpellId or buttonData.id
-                if spellID == buttonData.id or spellID == displaySpellID then
-                    if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
-                        -- Track charge consumption for restricted-mode color heuristic.
-                        -- _chargeRecharging at event time reflects the PRE-cast state:
-                        --   false = casting from full charges → reset to 1
-                        --   true  = already recharging → increment
-                        EntryRuntime.RecordChargeSpent(button)
+        for _, frame in pairs(self.groupFrames) do
+            if frame and frame.buttons then
+                for _, button in ipairs(frame.buttons) do
+                    local buttonData = button.buttonData
+                    if buttonData and buttonData.type == "spell"
+                        and not buttonData.isPassive then
+                        local displaySpellID = button._displaySpellId or buttonData.id
+                        if spellID == buttonData.id or spellID == displaySpellID then
+                            if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
+                                -- Track charge consumption for restricted-mode color heuristic.
+                                -- _chargeRecharging at event time reflects the PRE-cast state:
+                                --   false = casting from full charges → reset to 1
+                                --   true  = already recharging → increment
+                                EntryRuntime.RecordChargeSpent(button)
+                            end
+                        end
                     end
                 end
             end
-        end)
+        end
         self:QueueCooldownRefresh("cast-event")
+    end
+end
+
+local function TryCooldownPressFlash(addon, button, buttonData, spellID, inCombat, playFlash)
+    if buttonData.type ~= "spell" or buttonData.isPassive then return end
+    if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
+    if button._isBar or not button.keyPressHighlight then return end
+    local style = button.style
+    if not (style and style.cooldownPressFlashEnabled == true) then return end
+    if style.cooldownPressFlashCombatOnly and not inCombat then return end
+    if button._visibilityHidden or not button:IsShown() then return end
+    local onRealCooldown
+    if addon.UsesChargeBehavior(buttonData) then
+        onRealCooldown = button._chargeState == CHARGE_STATE_ZERO
+    else
+        onRealCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    end
+    if onRealCooldown then
+        playFlash(button, style)
     end
 end
 
@@ -566,24 +590,16 @@ function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
     local playFlash = ST._PlayCooldownPressFlash
     if not playFlash then return end
     local inCombat = InCombatLockdown()
-    self:ForEachButton(function(button, buttonData)
-        if buttonData.type ~= "spell" or buttonData.isPassive then return end
-        if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
-        if button._isBar or not button.keyPressHighlight then return end
-        local style = button.style
-        if not (style and style.cooldownPressFlashEnabled == true) then return end
-        if style.cooldownPressFlashCombatOnly and not inCombat then return end
-        if button._visibilityHidden or not button:IsShown() then return end
-        local onRealCooldown
-        if self.UsesChargeBehavior(buttonData) then
-            onRealCooldown = button._chargeState == CHARGE_STATE_ZERO
-        else
-            onRealCooldown = button._cooldownState == COOLDOWN_STATE_COOLDOWN
+    for _, frame in pairs(self.groupFrames) do
+        if frame and frame.buttons then
+            for _, button in ipairs(frame.buttons) do
+                local buttonData = button.buttonData
+                if buttonData then
+                    TryCooldownPressFlash(self, button, buttonData, spellID, inCombat, playFlash)
+                end
+            end
         end
-        if onRealCooldown then
-            playFlash(button, style)
-        end
-    end)
+    end
 end
 
 
