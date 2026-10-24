@@ -648,10 +648,10 @@ end
 -- opts.perGroupRebuild: never escalate to RefreshAllGroups. The visibility
 -- pass already repopulates each panel whose entry set moved and re-finalizes
 -- anchors afterwards, so a caller that cannot have changed container
--- visibility (SPELLS_CHANGED on a shapeshift, the settling pass) gets the
--- changed panels rebuilt without a from-scratch refresh of every panel in
--- the profile. Spec and talent callers keep the escalation: they can flip
--- which containers exist for the character.
+-- visibility (SPELLS_CHANGED on a shapeshift, a zone crossing, the settling
+-- pass) gets the changed panels rebuilt without a from-scratch refresh of
+-- every panel in the profile. Spec and talent callers keep the escalation:
+-- they can flip which containers exist for the character.
 function CooldownCompanion:RefreshAllGroupsForSpellAvailability(opts)
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local needsFullRefresh = not (opts and opts.perGroupRebuild)
