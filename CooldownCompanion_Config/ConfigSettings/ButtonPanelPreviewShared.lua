@@ -914,6 +914,7 @@ local function ApplySelectionVisuals(slot, index, isSelected)
     -- The glow setters describe what this mirror slot actually renders.
     -- Yield only the outline; the selection wash remains visible underneath.
     local borderPreviewActive = slot._procGlowActive or slot._auraGlowActive
+        or slot._ccPandemicRigLit
         or slot._readyGlowActive or slot._barAuraEffectActive
         or (slot._keyPressHighlightActive and slot._kphStyle ~= "overlay")
     if borderPreviewActive then
