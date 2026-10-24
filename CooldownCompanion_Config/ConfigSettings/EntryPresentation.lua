@@ -82,17 +82,16 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
     group = group._settingsOwner or group
     if not ST.PanelSupportsAttachedBars(group) then return false end
     local contents = ST._GetPanelSettingsContents(group)
-    local presentations = contents.icons and { "icons" } or contents.bars and { "bars" } or {}
-    for _, presentation in ipairs(presentations) do
+    local presentation = contents.icons and "icons" or contents.bars and "bars" or nil
+    if presentation then
         local context = ST._CreatePanelSettingsContext(group, presentation)
         local host = ST._NewPanelSettingsSectionHost(container, context)
         local _, collapsed = ST._BuildCollapsibleSection(host,
             presentation == "icons" and "Icon Arrangement" or "Bar-only Arrangement",
             "layout_arrangement", nil, nil, { leftAligned = true })
         if not collapsed then
-            if presentation == "icons" then buildGrid(host, context.group, #(group.buttons or {}))
-            else
-                buildGrid(host, context.group, #(group.buttons or {}))
+            buildGrid(host, context.group, #(group.buttons or {}))
+            if presentation == "bars" then
                 ST._AddSliderRow(host, { setting = panelSettings.gridSpacing,
                     value = context.writeStyle.buttonSpacing or ST.BUTTON_SPACING, min = -10, max = 100, step = 0.1,
                     onChange = function(value)

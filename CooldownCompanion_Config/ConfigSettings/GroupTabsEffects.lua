@@ -2,10 +2,9 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local CS = ST._configState
 
--- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
--- only on an Aura Panel, for the sections that read spell cooldown, castability,
--- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+-- Core's per-panel rule ("Can this PANEL ever use this override section?"),
+-- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
@@ -49,9 +48,8 @@ local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescrip
 -- Imports from BarModeTabs.lua
 local BuildBarEffectsTab = ST._BuildBarEffectsTab
 
--- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry. Shared helper
--- (Helpers.lua) so BarModeTabs can gate its aura section too.
+-- Whether the aura style sections apply; StyleLens.lua states the rule.
+-- Shared so BarModeTabs can gate its aura section too.
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
@@ -60,7 +58,7 @@ local ROW_SECTION = { leftAligned = true }
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock / opts.advancedUnlock (resolved only at
--- panel-build time by ST._ResolveAdvancedUnlock, Helpers.lua). File-local
+-- panel-build time by ST._ResolveAdvancedUnlock, StyleLens.lua). File-local
 -- constants so a tab rebuild allocates none of them.
 local TURNON_PROC_GLOW = {
     label = "Enable Proc Glow",
@@ -108,7 +106,6 @@ local TURNON_SHOW_UNUSABLE = { label = "Enable Unusable Visual", key = "showUnus
 local TURNON_SHOW_TOOLTIPS = { label = "Enable Tooltips", key = "showTooltips" }
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 
 -- Populated at module load near the exports. Exact maps are passed through the
 -- shared effects builders because many advanced panels intentionally reuse
@@ -162,27 +159,11 @@ local function PrimeReadyGlowNormalTransitions(groupId, onlyButtonData)
     end
 end
 
-local function ClearEffectsTabWidgets()
-    for _, btn in ipairs(tabInfoButtons) do
-        btn:ClearAllPoints()
-        btn:Hide()
-        btn:SetParent(nil)
-    end
-    wipe(tabInfoButtons)
-    for _, elem in ipairs(appearanceTabElements) do
-        elem:ClearAllPoints()
-        elem:Hide()
-        elem:SetParent(nil)
-    end
-    wipe(appearanceTabElements)
-end
-
 -- The four glow sections below are icons-mode only and are each called exactly
 -- once, from BuildEffectsTab's icons path, so they were converted to the row
--- grammar outright rather than growing an opts.row mode. `container` is the
--- grid column the row belongs to.
+-- grammar outright. `container` is the grid column the row belongs to.
 --
--- STYLE LENS (Helpers.lua): each takes the tab's lens, resolved ONCE in
+-- STYLE LENS (StyleLens.lua): each takes the tab's lens, resolved ONCE in
 -- BuildEffectsTab and handed down, and resolves its OWN section against it -
 -- the same shape the bars twins use. With an entry selected the rows read that
 -- entry's effective values and write only where the entry owns the section; a
@@ -211,7 +192,7 @@ local function BuildProcGlowSection(container, group, style, lens)
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
-    -- the shared glow builder runs in row mode with NO rightColumn - its row
+    -- the shared glow builder runs with NO rightColumn - its row
     -- path puts the extras in `container` when none is given.
     --
     -- The panel captures the section's resolved table (sec.tbl): the write
@@ -229,7 +210,6 @@ local function BuildProcGlowSection(container, group, style, lens)
         })
 
         BuildProcGlowControls(panel, procSec.tbl, refreshStyle, {
-            row = true,
             settings = EFFECTS_FINDER.advanced.proc,
         })
 
@@ -283,12 +263,11 @@ local function BuildAuraGlowSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
     -- panel captures the section's resolved table (sec.tbl), read-only behind
     -- the unlock strip while the section is inherited or the glow is off.
     local function BuildAuraGlowAdvanced(panel)
         BuildAuraGlowControls(panel, auraSec.tbl, refreshStyle, {
-            row = true,
             settings = EFFECTS_FINDER.advanced.auraGlow,
         })
     end
@@ -313,7 +292,7 @@ local function BuildAuraGlowSection(container, group, style, lens)
     auraSec:Finish()
 end
 
--- Pandemic effect (PTR 8): a second kit glow the game reveals only while the
+-- Pandemic effect: a second kit glow the game reveals only while the
 -- tracked aura sits inside its refresh window. It shares the Pandemic
 -- subheading, and the "pandemic" OVERRIDE section, with the marker below — one
 -- feature, two rows.
@@ -344,16 +323,12 @@ local function BuildPandemicGlowSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
-    -- The panel captures the section's WRITE table with the panel style
-    -- behind it: this glow family resolves its enable from an explicit-true
-    -- key, so an override store that has not stored one yet reads the
-    -- panel's. The section's enable toggle lives on the row above, never in
-    -- the shared builder.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
+    -- The panel captures the section's resolved table (sec.tbl). The
+    -- section's enable toggle lives on the row above, never in the shared
+    -- builder.
     local function BuildPandemicAdvanced(panel)
         BuildPandemicGlowControls(panel, pandemicSec.tbl, refreshStyle, {
-            row = true,
-            fallbackStyle = pandemicSec.fallbackStyle,
             settings = EFFECTS_FINDER.advanced.pandemicGlow,
         })
     end
@@ -387,9 +362,6 @@ local function BuildPandemicMarkerSection(container, group, style, lens)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ settingKey = "pandemicMarker" })
-        end
         return
     end
     if not container or not GroupHasAuraTrackingEntry(group) then
@@ -454,7 +426,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- every row goes straight onto the panel scroll and the shared glow builder
-    -- runs in row mode with NO rightColumn.
+    -- runs with NO rightColumn.
     --
     -- The panel captures the section's WRITE table, which is the group style or
     -- the selected entry's override store depending on scope; the whole
@@ -554,7 +526,6 @@ local function BuildReadyGlowSection(container, group, style, lens)
         end
 
         BuildReadyGlowControls(panel, readySec.tbl, refreshStyle, {
-            row = true,
             settings = EFFECTS_FINDER.advanced.ready,
         })
 
@@ -596,7 +567,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
     -- panel captures the section's resolved table (sec.tbl), read-only behind
     -- the unlock strip while the section is inherited or the highlight is off.
     local function BuildKeyPressHighlightAdvanced(panel)
@@ -611,7 +582,6 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
         })
 
         BuildKeyPressHighlightControls(panel, kphSec.tbl, refreshStyle, {
-            row = true,
             settings = EFFECTS_FINDER.advanced.keyPress,
         })
 
@@ -653,7 +623,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail, row mode, like the key press highlight panel above it.
+    -- Single rail, like the key press highlight panel above it.
     local function BuildCooldownPressFlashAdvanced(panel)
         local settings = EFFECTS_FINDER.advanced.pressFlash
 
@@ -783,13 +753,13 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
 -- text maps (ST._APPEARANCE_SECTION_BY_ADVANCED_KEY and friends) - never feed
 -- one map's values to the other's consumer.
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
--- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
--- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a
+-- section's gear. Stale-panel cleanup no longer iterates it: the gear-stamp
+-- sweep in AdvancedSettingsPanel.lua closes unrebuilt gear panels by key,
+-- mapless.
 --
 -- It lists every icons-mode gear on the tab. Bars-only gears (barActiveAura,
--- barPandemicMarker) are NOT here - BarModeTabs owns its own map - and
--- neither are the textures gears, which have no override sections at all.
+-- barPandemicMarker) are NOT here - BarModeTabs owns its own map.
 --
 -- A gear added to any section on this tab belongs here the same day.
 ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
@@ -818,8 +788,6 @@ ST._INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY = {
 -- land on the dispatch-level gear build pass's sweep
 -- (RunAdvancedGearBuildPass, AdvancedSettingsPanel.lua).
 local function BuildEffectsTab(container, settingsGroup)
-    if not settingsGroup then ClearEffectsTabWidgets() end
-
     if not CS.selectedGroup then return end
     local group = settingsGroup or CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -864,7 +832,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- move off a wide control.
     -- ================================================================
 
-    -- STYLE LENS (Helpers.lua). With an entry selected these sections stop
+    -- STYLE LENS (StyleLens.lua). With an entry selected these sections stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
     -- ones, with per-section scope deciding where - or whether - they write.
     -- Resolved ONCE here and handed to every section below, so one tab cannot
@@ -873,9 +841,9 @@ local function BuildEffectsTab(container, settingsGroup)
 
     -- Under a multi selection these sections edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
-    -- No-op in every other lens mode. The trigger, texture and
-    -- bar-mode paths returned above, so only the standard icons path carries
-    -- it; the modes with their own builders add their own.
+    -- No-op in every other lens mode. Only the bar-mode path returned above,
+    -- so only the standard icons path carries it here; the bar builder adds
+    -- its own.
     AddLensPanelScopeNote(container, lens)
 
     -- Named once here: the Aura Indicators section below is gated on it
@@ -963,7 +931,7 @@ local function BuildEffectsTab(container, settingsGroup)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn - the
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn - the
     -- builder's row path falls back to `container` for its right-hand rows. The
     -- panel captures the section's resolved table (sec.tbl), read-only behind
     -- the unlock strip while the section is inherited or the highlight is off.
@@ -978,7 +946,7 @@ local function BuildEffectsTab(container, settingsGroup)
             end,
         })
 
-        BuildAssistedHighlightControls(panel, assistedSec.tbl, refreshStyle, { row = true, settings = EFFECTS_FINDER.advanced.assisted })
+        BuildAssistedHighlightControls(panel, assistedSec.tbl, refreshStyle, { settings = EFFECTS_FINDER.advanced.assisted })
     end
 
     if assistedSec.scope ~= "denied" then
@@ -1037,25 +1005,22 @@ local function BuildEffectsTab(container, settingsGroup)
 
     iconFillTimerActive = fillSec.read.iconFillEnabled == true and group.masqueEnabled ~= true
     local iconFillCb = BuildIconFillTimerControls(timerLeft, fillSec.tbl, refreshStyle, {
-        row = true,
         setting = EFFECTS_FINDER.icons.spell.iconFill,
         settings = EFFECTS_FINDER.advanced.iconFill,
         masqueEnabled = group.masqueEnabled == true,
         showAdvancedControlsInline = false,
-        fallbackStyle = fillSec.fallbackStyle,
         onEnabled = function()
             if CS.QueueAdvancedSettingsPanelOpen then
                 CS.QueueAdvancedSettingsPanelOpen(ST._SettingsContextKey(group._settingsContext, "iconFillTimer"))
             end
         end,
     })
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
     -- panel captures the section's resolved table (sec.tbl), read-only behind
     -- the unlock strip while the section is inherited or the timer is off.
     local function BuildIconFillAdvanced(panel)
         if BuildIconFillTimerAdvancedControls then
             BuildIconFillTimerAdvancedControls(panel, fillSec.tbl, refreshStyle, {
-                row = true,
                 indent = false,
                 -- The builder's own enabled gate is an inline-children rule;
                 -- this panel shows the rows greyed while the timer is off.
@@ -1197,13 +1162,11 @@ local function BuildEffectsTab(container, settingsGroup)
     if CanGroupUseOverrideSection(group, "unusableDimming") then
     local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
     local unusableCb = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, function(operation) return refreshStyle(operation or "style-settings") end, {
-        row = true,
         advanced = unusableSec.scope ~= "denied",
         advancedUnlock = { sec = unusableSec,
             enable = unusableSec.read.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
         setting = EFFECTS_FINDER.icons.spell.unusable,
         settings = EFFECTS_FINDER.advanced.unusable,
-        fallbackStyle = unusableSec.fallbackStyle,
     })
     unusableSec:Chrome(unusableCb)
     unusableSec:Finish()
@@ -1288,18 +1251,17 @@ local function BuildEffectsTab(container, settingsGroup)
         local auraSwipeSec = BeginLensSection(lens, group, "auraDurationSwipe", { column = auraLeft })
 
         local auraDurationCb = BuildAuraDurationSwipeControls(auraLeft, auraSwipeSec.tbl, refreshStyle, {
-            row = true,
             setting = EFFECTS_FINDER.icons.aura.auraSwipe,
             settings = EFFECTS_FINDER.advanced.auraSwipe,
             showAdvancedControlsInline = false,
             fallbackStyle = auraSwipeSec.fallbackStyle,
         })
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
         -- panel captures the section's resolved table (sec.tbl), read-only
         -- behind the unlock strip while the section is inherited or the swipe
         -- is off.
         local function BuildAuraDurationSwipeAdvanced(panel)
-            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.tbl, refreshStyle, { row = true, settings = EFFECTS_FINDER.advanced.auraSwipe })
+            BuildAuraDurationSwipeAdvancedControls(panel, auraSwipeSec.tbl, refreshStyle, { settings = EFFECTS_FINDER.advanced.auraSwipe })
         end
         if auraSwipeSec.scope ~= "denied" then
             AddAdvancedToggle(auraDurationCb, "auraDurationSwipe", tabInfoButtons, true, {
@@ -1411,14 +1373,12 @@ local function BuildEffectsTab(container, settingsGroup)
     -- when the toggle is off - see the Unusable Visual note in States above.
     local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })
     local tooltipCb = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function(operation) return refreshStyle(operation or "style-settings", "interaction") end, {
-        row = true,
         advanced = tooltipSec.scope ~= "denied",
         advancedUnlock = { sec = tooltipSec,
             enable = tooltipSec.read.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
         setting = EFFECTS_FINDER.icons.interaction.tooltips,
         settings = EFFECTS_FINDER.advanced.tooltip,
         infoButtons = tabInfoButtons,
-        fallbackStyle = tooltipSec.fallbackStyle,
     })
     tooltipSec:Chrome(tooltipCb)
     tooltipSec:Finish()
@@ -1439,7 +1399,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- rather than CanGroupUseOverrideSection.
     if not CooldownCompanion:IsAuraPanel(group) then
     local pingsSec = BeginLensSection(lens, group, nil, { column = interactionRight })
-    BuildAllowPingsControls(interactionRight, style, function(operation) return refreshStyle(operation or "style", "interaction") end, { row = true, setting = EFFECTS_FINDER.icons.interaction.pings })
+    BuildAllowPingsControls(interactionRight, style, function(operation) return refreshStyle(operation or "style", "interaction") end, { setting = EFFECTS_FINDER.icons.interaction.pings })
     pingsSec:Finish()
     end
     end -- not interactionCollapsed

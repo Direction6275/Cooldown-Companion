@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/SpellActivationOverlayData.lua
+    CooldownCompanion_Config - Config/SpellActivationOverlayData.lua
     Generated from Wago DB2 SpellActivationOverlay data.
     Source build: 12.0.1.66709
     The generator script is not kept in this repository.

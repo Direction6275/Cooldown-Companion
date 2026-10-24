@@ -27,7 +27,6 @@ local function SelectNewButton(panelId, buttonIndex)
         and CooldownCompanion.db.profile.groups[panelId]
     if ST.IsIndicatorGroup(group) then
         SelectConfigPanel(panelId, { containerId = group.parentContainerId })
-        CS.addingToPanelId = nil
         return
     end
     if not buttonIndex then
@@ -42,7 +41,7 @@ local function SelectNewButton(panelId, buttonIndex)
 end
 
 local function GetTargetGroup(groupId)
-    groupId = groupId or CS.addingToPanelId or CS.selectedGroup
+    groupId = groupId or CS.selectedGroup
     return groupId and CooldownCompanion.db
         and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups
@@ -63,7 +62,6 @@ end
 
 
 local function TargetPanelAcceptsAuraEntries(groupId)
-    groupId = groupId or CS.addingToPanelId or CS.selectedGroup
     local group = GetTargetGroup(groupId)
     local displayMode = group and (group.displayMode or "icons")
     -- An Indicator takes auras at any time: the first is the display, later
@@ -216,9 +214,8 @@ local function CreateAddBoxInfoButton(parentFrame, anchorFrame, cleanup)
             GameTooltip:SetMinimumWidth(0)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:AddLine(ADD_BOX_TRACKABILITY_TOOLTIP[1])
-            -- The workspace add box always targets the SELECTED panel (its
-            -- submit path clears any stale inline-add target), so the panel
-            -- rule is asked of that panel and no other.
+            -- The add box always targets the selected panel, so the panel
+            -- rule is asked of that panel.
             local auraLines = TargetPanelIsAuraOnly(CS.selectedGroup)
                 and ADD_BOX_AURA_PANEL_TOOLTIP or nil
             for _, line in ipairs(auraLines or {}) do
@@ -1254,7 +1251,7 @@ end
 
 local function SearchAutocomplete(query, allowTalentSearch)
     local cache = CS.autocompleteCache or BuildAutocompleteCache()
-    local groupId = CS.addingToPanelId or CS.selectedGroup
+    local groupId = CS.selectedGroup
     local targetAcceptsAuraEntries = TargetPanelAcceptsAuraEntries(groupId)
     local isAuraOnlyTarget = TargetPanelIsAuraOnly(groupId)
     -- nil while the panel is empty, which is when it accepts either polarity.
@@ -1483,7 +1480,7 @@ local function UpdateAutocompleteGhost()
     local dropdown = autocompleteDropdown
     local host = dropdown and dropdown._ghostHost
     if not host then return end
-    local groupId = dropdown._addTargetPanelId or CS.addingToPanelId or CS.selectedGroup
+    local groupId = dropdown._addTargetPanelId or CS.selectedGroup
     local idx = dropdown._highlightIndex or 0
     local row = dropdown:IsShown() and idx > 0 and dropdown.rows[idx] or nil
     local entry = row and row.entry
@@ -1538,7 +1535,7 @@ local function OnAutocompleteSelect(entry)
     local widget = autocompleteDropdown and autocompleteDropdown._anchorWidget
     local originalInput = widget and widget:GetText()
     HideAutocomplete()
-    local addTargetGroupId = CS.addingToPanelId or CS.selectedGroup
+    local addTargetGroupId = CS.selectedGroup
     if not addTargetGroupId then return end
 
     local opts = { groupId = addTargetGroupId, tutorialInput = entry.name, clearInput = originalInput }
@@ -1551,12 +1548,10 @@ local function OnAutocompleteSelect(entry)
         added = TryAddSpell(tostring(entry.id), entry.isPetSpell, entry.forceAura, opts)
     end
     if added then
-        CS.newInput = ""
         CS.pendingEditBoxFocus = true
         CooldownCompanion:RefreshConfigPanel()
     end
-    -- Callers with persistent edit boxes (the wide add box) clear their
-    -- widget on success; the workspace inline box rebuilds from CS.newInput.
+    -- The caller (the panel add box) clears its own widget on success.
     return added and true or false
 end
 

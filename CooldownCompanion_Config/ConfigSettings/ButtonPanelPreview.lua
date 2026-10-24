@@ -102,6 +102,8 @@ local function RenderPreviewEntry(preview, group, binding, context)
             barPreviewState = GetStoredBarPreviewState(panelId, index)
         end
         ResetBarSlotConditionalVisuals(slot)
+    else
+        effectiveStyle = CooldownCompanion:GetEffectiveStyle(group.style or {}, buttonData, group)
     end
     styleFn(slot, buttonData, group, effectiveStyle)
     if not readOnly then
@@ -123,11 +125,7 @@ local function RenderPreviewEntry(preview, group, binding, context)
         -- No conditional pass runs on a read-only mirror, so nothing else
         -- would write the configured icon tint (same resolution the
         -- focused mirror uses, base tint only - saved settings, no state).
-        local tintStyle = effectiveStyle or group.style or {}
-        if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-            tintStyle = CooldownCompanion:GetEffectiveStyle(tintStyle, buttonData) or tintStyle
-        end
-        local baseTint = tintStyle.iconTintColor
+        local baseTint = effectiveStyle.iconTintColor
         slot.icon:SetVertexColor(baseTint and baseTint[1] or 1,
             baseTint and baseTint[2] or 1,
             baseTint and baseTint[3] or 1,
@@ -207,8 +205,7 @@ local function ResetPreviewLayout(preview)
     -- build inputs are, when the model waits for first use); every other
     -- build path leaves both nil, which is how the drop overlay knows this
     -- preview offers no landings. The open gesture, whichever it was, read
-    -- a model this build replaces, so its record goes with them (and hands
-    -- the attached bar lanes back).
+    -- a model this build replaces, so its record goes with them.
     preview.cursorPadModel = nil
     preview.cursorPadInputs = nil
     SectionDrag.EndGesture(preview)
@@ -233,10 +230,6 @@ local function ResetPreviewLayout(preview)
     -- Same reasoning for the section handle: it points at a lane in the model
     -- this build is about to replace.
     SectionDrag.HideHandle(preview)
-    -- Belt and braces on the bar lanes: the CancelDrag above already restored
-    -- them through onCancel, and a rebuild with no drag in flight never faded
-    -- them, but a mirror must never hand its host back a faded set of lanes.
-    SectionDrag.SetLaneChromeFaded(preview, false)
 end
 
 local function LayoutPreviewEntries(preview, host, panelId, group, options, reuseSlots, updateModules)
@@ -261,9 +254,6 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
                 "Add your first entry")
         end
         -- The drop ghost may stand in for the first entry here (DropGhost).
-        -- The unified composition included: it holds the message's box at a
-        -- readable minimum (UnifiedAnchorPreview's ShrinkMirrorHostToContent),
-        -- and the ghost hides the message rather than sharing that box.
         if not readOnly then
             preview.dropGhostMode = isBarMode and "barSlots"
                 or "iconSlots"
@@ -279,9 +269,9 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     -- Never on Bar panels: their mirror is a saved-design projection that
     -- deliberately keeps live usability and enabled state out
     -- (CollectBarEntryStatus), so there is no unavailable/disabled state there
-    -- for the toggle to hide. Read-only mirrors stay unfiltered except the
-    -- unified cast duplicate, which opts in so both copies of the anchor panel
-    -- show the same filtered set.
+    -- for the toggle to hide. Read-only mirrors stay unfiltered unless they
+    -- opt in with applySessionFilter (the drop ghost's layout-transition copy
+    -- does).
     local visibleIndices
     if (not readOnly or (options and options.applySessionFilter == true))
         and not isBarMode
@@ -341,13 +331,10 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     -- The same model for a spell or item on the CURSOR (the drop-to-add
     -- overlay in ButtonsWideColumn asks for it). One entry is enough here:
     -- there is nothing to move, only something to add, so a lone entry's
-    -- free anchors are as much a destination as a crowd's. The unified
-    -- composition included: its landings can sit on the strip the attached
-    -- bar lanes occupy, and the gesture quiets them (SetLaneChromeFaded),
-    -- exactly as the entry drag does. Not under the session filter, for the
-    -- entry drag's own reason: a section whose members are filtered out
-    -- reads as a free anchor and would offer a section where one already
-    -- sits.
+    -- free anchors are as much a destination as a crowd's. Not under the
+    -- session filter, for the entry drag's own reason: a section whose
+    -- members are filtered out reads as a free anchor and would offer a
+    -- section where one already sits.
     local wantCursorModel = not readOnly and not visibleIndices
         and ST.PanelSupportsSections(group)
     local sectionLayout, sectionPlacement, cellIndex, cellOfIndex
@@ -499,8 +486,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
 
     local poolName = isBarMode and "barSlots" or "iconSlots"
     -- The drop ghost (DropGhost) draws on this build's grid; read-only
-    -- mirrors take no drop. The unified composition is in: the ghost claims
-    -- no strip the bar lanes sit on, only the base row's next cell.
+    -- mirrors take no drop.
     preview.dropGhostMode = (not readOnly) and poolName or nil
 
     local layoutDrag = readOnly and { slots = {} } or CreatePreviewLayoutDrag(preview, panelId)
@@ -697,9 +683,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     preview.groupOverview = readOnly and options and options.groupOverview == true or false
     -- Copy-customization banner surface; nil means the preview's own root.
     preview.copyBannerHost = options and options.bannerHost or nil
-    -- The Live Preview host whose attached bar lanes wrap this mirror; nil for
-    -- every mirror that is not inside the unified anchor composition.
-    preview.laneChromeHost = options and options.laneHost or nil
     if not readOnly and panelId == CS.selectedGroup then
         -- A full build reconciles the cleared stores by construction; do not
         -- make the next selection-only pass repeat that work.
@@ -833,6 +816,26 @@ local function GetPreviewUpdateGroup(preview, panelId)
     return group, modules
 end
 
+-- Repaint every bound slot in place through the shared visual pass. The
+-- caller has already checked the bindings (GetPreviewUpdateGroup).
+local function RepaintBoundEntries(preview, group)
+    preview.updateReady = nil
+    for _, binding in ipairs(preview.entryBindings) do
+        if binding.slot then
+            -- An unrelated paint must not unhide the lifted entry or undo
+            -- the lane fading that belongs to an active drag.
+            local dragging = preview.ghostActive
+            local alpha = dragging and binding.slot:GetAlpha()
+            RenderPreviewEntry(preview, group, binding, preview.renderContext)
+            if dragging then binding.slot:SetAlpha(alpha) end
+        end
+    end
+    ReconcileConditionalTicker(preview)
+    FinalizePreviewState(preview)
+    preview.updateReady = true
+    CS.panelPreviewVisualsNeedReconcile = nil
+end
+
 function ST._UpdateButtonPanelPreview(host, panelId, outcome)
     if outcome ~= "appearance" and outcome ~= "geometry" then return false end
     local preview = host and host._cdcPanelPreview
@@ -850,29 +853,16 @@ function ST._UpdateButtonPanelPreview(host, panelId, outcome)
         ResetPreviewLayout(preview)
         LayoutPreviewEntries(preview, host, panelId, group, preview.renderContext.options, true, modules)
     else
-        local context = preview.renderContext
-        for _, binding in ipairs(preview.entryBindings) do
-            if binding.slot then
-                -- An unrelated paint must not unhide the lifted entry or undo
-                -- the lane fading that belongs to an active drag.
-                local dragging = preview.ghostActive
-                local alpha = dragging and binding.slot:GetAlpha()
-                RenderPreviewEntry(preview, group, binding, context)
-                if dragging then binding.slot:SetAlpha(alpha) end
-            end
-        end
-        ReconcileConditionalTicker(preview)
-        FinalizePreviewState(preview)
-        preview.updateReady = true
+        RepaintBoundEntries(preview, group)
     end
     CS.panelPreviewVisualsNeedReconcile = nil
     return true
 end
 
 -- Entry selection normally does not change saved panel geometry or mirrored
--- visuals. Filtering and bar preview state can change the presentation, so
--- those paths fall back to a full mirror rebuild. Otherwise update selection
--- rings and reconcile any migrated icon/text previews in place.
+-- visuals. A pending visuals reconcile (a preview started, stopped or moved)
+-- repaints in place through the shared visual pass; a binding change falls
+-- back to a full rebuild. Otherwise only the selection rings update.
 function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     local preview = host and host._cdcPanelPreview
     if not (preview and preview.panelId == panelId and preview.readOnly ~= true
@@ -900,52 +890,18 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
         return false
     end
 
-    -- Bar previews also change visibility, badges, and tooltip state. Let
-    -- the build recompute that presentation when a running preview moves.
-    local layoutKind = ST.GetPanelGeometryKind(group)
-    if (layoutKind == "bars" or layoutKind == "mixed") and CS.panelPreviewVisualsNeedReconcile then
-        return false
+    if CS.panelPreviewVisualsNeedReconcile then
+        local layoutGroup = GetPreviewUpdateGroup(preview, panelId)
+        if not layoutGroup then return false end
+        RepaintBoundEntries(preview, layoutGroup)
+        return true
     end
-
-    -- Only the visible mirror may consume this ticket. The plain host can
-    -- retain a released mirror while the unified host owns the visible slots.
-    local reconcileVisuals = CS.panelPreviewVisualsNeedReconcile == true
-
-
-
-    local isGridPanel = IsIconModePanel(group)
-    CS.panelPreviewVisualsNeedReconcile = nil
-    if reconcileVisuals then
-        StopConditionalTicker(preview)
-    end
-    local anyAnimated = false
     for index, slot in pairs(slots) do
-        local buttonData = group.buttons and group.buttons[index]
-        if reconcileVisuals and isGridPanel and buttonData then
-            local status = CollectEntryStatus(buttonData, group)
-            if slot.icon then
-                slot.icon:SetDesaturated(not status.usable)
-            end
-            -- A preview starting or stopping shows or hides the corner marks.
-            -- Bar slots repaint theirs below, from their own status.
-            if not slot._cdcBarPreviewVisibility then
-                ApplySlotBadges(slot, status, preview.layoutDrag.scale)
-            end
-            ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, false)
-            ApplySlotConditionalPreview(slot, buttonData, group, panelId, index)
-        elseif reconcileVisuals and buttonData and not slot._cdcBarPreviewVisibility then
-            -- Selection strips carry no state previews, only the corner marks.
-            ApplySlotBadges(slot, CollectEntryStatus(buttonData, group), preview.layoutDrag.scale)
-        end
-        anyAnimated = anyAnimated or slot._cdcCondAnim ~= nil
         if slot._cdcBarPreviewVisibility then
             RefreshBarSlotWorkspacePresentation(slot)
         end
         ApplySelectionVisuals(slot, index)
-        CopyMode.ApplyTargetVisuals(slot, panelId, buttonData)
-    end
-    if reconcileVisuals and anyAnimated then
-        EnsureConditionalTicker(preview)
+        CopyMode.ApplyTargetVisuals(slot, panelId, group.buttons and group.buttons[index])
     end
     return true
 end
@@ -958,15 +914,10 @@ function ST._GetReadOnlyPanelPreviewNaturalSize(panelId, includeSections, module
 end
 
 function ST._BuildReadOnlyPanelPreview(host, panelId, options)
-    if not host then return nil, 220, 90 end
-    local naturalWidth, naturalHeight =
-        ST._GetReadOnlyPanelPreviewNaturalSize(panelId, options and options.includeSections,
-            options and options.previewModules)
+    if not host then return end
     ST._BuildButtonPanelPreview(host, panelId, { readOnly = true,
         groupOverview = options and options.groupOverview,
         previewModules = options and options.previewModules })
-    local preview = host._cdcPanelPreview
-    return preview and preview.root or nil, naturalWidth, naturalHeight
 end
 
 -- Detached-data variants for import mode's incoming-panel tiles: the panel
@@ -976,11 +927,8 @@ function ST._GetReadOnlyPanelPreviewNaturalSizeFromData(groupData)
 end
 
 function ST._BuildReadOnlyPanelPreviewFromData(host, groupData)
-    if not host then return nil, 220, 90 end
-    local naturalWidth, naturalHeight = GetPanelPreviewNaturalSize(groupData)
+    if not host then return end
     ST._BuildButtonPanelPreview(host, nil, { readOnly = true, groupData = groupData })
-    local preview = host._cdcPanelPreview
-    return preview and preview.root or nil, naturalWidth, naturalHeight
 end
 
 function ST._ReleaseReadOnlyPanelPreview(host)
@@ -1021,11 +969,13 @@ ST._HidePreviewDropGhost = DropGhost.Hide
 -- contains any unavailable or disabled entry the filter can act on. Filtering
 -- reuses IsButtonUsable; selected entries are preserved by the build pass.
 -- Bar panels are nil on purpose: their mirror is a saved-design projection
--- the filter never applies to, so the badge must not offer it there.
+-- the filter never applies to, so the badge must not offer it there. That
+-- includes ordinary panels whose entries are all bars (the build swaps in
+-- their bars layout view).
 function ST._PanelPreviewUnavailableEntryState(group)
     if not group then return nil end
     if ST.IsTotemPanelGroup(group) then return nil end
-    if not IsIconModePanel(group) then
+    if not IsIconModePanel(ST.GetPanelLayoutGroup(group)) then
         return nil
     end
     for _, buttonData in ipairs(group.buttons or {}) do
@@ -1053,8 +1003,8 @@ function ST._ReleaseButtonPanelPreview(host)
             local slot = barPool[index]
             if slot then ResetBarSlotWorkspaceState(slot) end
         end
-        -- The banner can live on an external host (unified composition), so
-        -- hiding the root does not necessarily take it along.
+        -- The banner can live on a caller's outer host (the bars workspace
+        -- passes one), so hiding the root does not necessarily take it along.
         if preview.copyBanner then
             preview.copyBanner:Hide()
         end

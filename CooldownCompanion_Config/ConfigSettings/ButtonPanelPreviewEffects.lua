@@ -31,8 +31,7 @@ local StyleSlotCooldownText = PP.StyleSlotCooldownText
 -- Effect previews on the mirror: while a preview toggle is active for an
 -- entry (or its whole panel), render the configured glow through the shared
 -- Glows.lua setters. Mirror slots carry their own containers and `style` field.
--- Icons support proc/aura/ready/key-press, bars support bar aura effects, and
--- text slots support none.
+-- Icons support proc/aura/ready/key-press, and bars support bar aura effects.
 ------------------------------------------------------------------------
 local EFFECT_PREVIEWS = {
     { flag = "_procGlowPreview", containerKey = "procGlow", setter = ST._SetProcGlow },
@@ -106,10 +105,8 @@ end
 
 local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, isBarMode,
         effectiveStyle, barPreviewState)
-    local style = effectiveStyle or group.style or {}
-    if not effectiveStyle and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
-    end
+    -- RenderPreviewEntry, the only caller, always resolves the style first.
+    local style = effectiveStyle
     slot.style = style
 
     local canQuery = CooldownCompanion.IsPreviewFlagActive ~= nil
@@ -123,12 +120,12 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
         -- because both auraGlow-container defs consult it.
         local pandemicWillRender = canQuery
             and CooldownCompanion:IsPreviewFlagActive(panelId, index, "_pandemicPreview")
-            and IsPandemicPreviewEnabled(style, buttonData) or false
+            and IsPandemicPreviewEnabled(style) or false
         slot._cdcAuraPandemicActive = pandemicWillRender
         local conditional = ST._GetStoredConditionalPreviewState
             and ST._GetStoredConditionalPreviewState(panelId, index)
         local useRig = conditional ~= nil and conditional.kind == "aura_active"
-            and IsPandemicPreviewEnabled(style, buttonData) and PicksPandemicEffect(style)
+            and IsPandemicPreviewEnabled(style) and PicksPandemicEffect(style)
         for _, def in ipairs(EFFECT_PREVIEWS) do
             if def.setter then
                 local active
@@ -209,10 +206,10 @@ end
 local function UpdateCombinedIconAuraEffects(slot, state, now)
     local _, duration, remaining = GetConditionalPreviewTiming(state, now)
     local pandemicActive = ST._ConfigPreview.IsPandemicWindow(remaining, duration)
-        and IsPandemicPreviewEnabled(slot.style, slot.buttonData) or false
+        and IsPandemicPreviewEnabled(slot.style) or false
     if slot._cdcAuraPandemicActive == pandemicActive then return end
     slot._cdcAuraPandemicActive = pandemicActive
-    local useRig = IsPandemicPreviewEnabled(slot.style, slot.buttonData) and PicksPandemicEffect(slot.style)
+    local useRig = IsPandemicPreviewEnabled(slot.style) and PicksPandemicEffect(slot.style)
     if slot.auraGlow and ST._SetAuraGlow then
         if useRig then
             ST._SetAuraGlow(slot, not pandemicActive, false)
@@ -300,7 +297,7 @@ local function EnsureConditionalTicker(preview)
                                 and style.showAuraText ~= false)
                             or ((state.kind == "cooldown" or state.kind == "cooldown_text" or state.kind == "cooldown_active")
                                 and style.showCooldownText)
-                        if showText and CooldownCompanion.FormatTime then
+                        if showText then
                             if IsAuraDurationTextKind(state.kind) then
                                 slot.timeText:SetText(FormatAuraDurationPreviewText(
                                     remaining, state.kind, style, slot.buttonData,

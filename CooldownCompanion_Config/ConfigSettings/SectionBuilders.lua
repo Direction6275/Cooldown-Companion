@@ -133,7 +133,8 @@ end
 -- label text (the row's label is a FontString, so the icon rides an inline
 -- texture escape) and a Remove link owned by the row's control column. The
 -- pre-redesign 22px Flow row broke the 30px rhythm inside a grid column and had
--- no call sites left after the conversion packets.
+-- no call sites left after the conversion packets. opts.indent = false draws
+-- the row flush.
 local function AddAuraCandidateRow(container, spellID, onRemove, opts)
     local info = C_Spell.GetSpellInfo(spellID)
     local name = info and info.name or ("Spell " .. spellID)
@@ -141,7 +142,7 @@ local function AddAuraCandidateRow(container, spellID, onRemove, opts)
 
     local row = AddLabelRow(container, {
         label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(icon, name, spellID),
-        indent = true,
+        indent = not (opts and opts.indent == false),
     })
 
     -- Right-justified so the word lands on the control column's right edge
@@ -186,7 +187,7 @@ end
 -- whether it is there or not. It always indents, because it is always a child
 -- of the stacks toggle it explains, and row labels never wrap, so the sentence
 -- also says its piece on hover.
-local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
+local function AddAuraStackMaxStatusLabel(container, maxStacks)
     local statusText = GetAuraStackMaxStatusText(maxStacks)
 
     return AddLabelRow(container, {
@@ -196,11 +197,6 @@ local function AddAuraStackMaxStatusLabel(container, maxStacks, opts)
     })
 end
 
--- Block-style bars only: the gap is baked into the bundled fill atlas
--- (the Blizzard-driven fill reveals whole blocks by cropping that
--- artwork), so the choice is a preset picking which atlas set the bind
--- uses — never the free pixel slider painted-divider bars get. The store is
--- whatever the Core/Aura.lua accessors read (entry buttonData).
 local STACK_THRESHOLD_TOOLTIP = {
     "Stack Text Threshold Color",
     {"Recolors the stack count text when it reaches the chosen number of stacks.", 1, 1, 1, true},
@@ -709,11 +705,10 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
     end
 
     local function BuildDetails(panel)
-        local container, secondary = panel, panel
         local infoButtons = CS.advancedSettingsInfoButtons
         -- Disabled features expose their defaults behind the Turn On action.
         local threshold = active and threshold or LOW_TIME_DEFAULT_THRESHOLD
-        AddSliderRow(container, {
+        AddSliderRow(panel, {
             label = "Start Warning Below",
             setting = opts.settings and opts.settings.warningThreshold,
             indent = false,
@@ -741,7 +736,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
 
         -- No enable toggle on the colors (owner ruling): the pickers are the
         -- setting. Stock checkbox rows stay the only toggles here.
-        AddColorRow(container, {
+        AddColorRow(panel, {
             label = "Warning Color",
             setting = opts.settings and opts.settings.warningColor,
             indent = false,
@@ -757,7 +752,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         -- aura is the one optional extension. Aura-only surfaces state their scope
         -- in the summary and draw no redundant toggle.
         if opts.auraToggle then
-            local auraRow = AddCheckboxRow(secondary, {
+            local auraRow = AddCheckboxRow(panel, {
                 label = "Also Apply to Aura Text",
                 setting = opts.settings and opts.settings.auras,
                 indent = false,
@@ -784,7 +779,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
         local threshold2 = tonumber(settings.durationLowTimeThreshold2) or 0
         local secondActive = threshold2 > 0 and threshold2 < threshold
         local urgentAvailable = threshold > 1
-        local secondToggle = AddCheckboxRow(secondary, {
+        local secondToggle = AddCheckboxRow(panel, {
             label = "Add Critical Styling",
             setting = opts.settings and opts.settings.critical,
             indent = false,
@@ -811,7 +806,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
             }, infoButtons or secondToggle))
 
         if secondActive then
-            AddSliderRow(secondary, {
+            AddSliderRow(panel, {
                 label = "Start Critical Below",
                 setting = opts.settings and opts.settings.criticalThreshold,
                 indent = false,
@@ -829,7 +824,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
                     rebuild()
                 end,
             })
-            AddColorRow(secondary, {
+            AddColorRow(panel, {
                 label = "Critical Color",
                 setting = opts.settings and opts.settings.criticalColor,
                 indent = false,
@@ -844,7 +839,7 @@ local function AddDurationLowTimeRows(container, settings, refreshCallback, opts
 
         local decimalMode = CooldownCompanion.NormalizeDurationLowTimeDecimals(
             settings.durationLowTimeDecimals) or "off"
-        local decimalRow = AddDropdownRow(container, {
+        local decimalRow = AddDropdownRow(panel, {
             label = "Show Decimals Near Expiry",
             setting = opts.settings and opts.settings.decimals,
             indent = false,
@@ -983,12 +978,6 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
     return enableRow
 end
 
--- Row grammar only: LEFT column (the container the caller hands over) the
--- toggle and the font trio, RIGHT column (opts.rightColumn) the color, anchor
--- and offsets. opts.label / opts.tooltip let callers name this
--- "Show Keybind Text" - it has no custom-text form.
-
-
 -- Row grammar only: Border Color, Border Thickness Mode and (unless
 -- one-pixel) Border Thickness, inline in one column like the icon and bar
 -- tabs' border rows. The Totem Panel is the caller.
@@ -1008,7 +997,6 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     local renderMode = AddBorderRenderModeDropdown(container, styleTable, "borderRenderMode", function()
         RefreshStructuralControls(container, refreshCallback)
     end, nil, {
-        row = true,
         setting = settings.thickness,
     })
     if renderMode ~= ST.BORDER_RENDER_MODE_CRISP then
@@ -1317,12 +1305,6 @@ local function BuildAllowPingsControls(container, styleTable, refreshCallback, o
 end
 
 local BuildIconFillTimerAdvancedControls
-
--- Row grammar only. The three follow-on toggles keep the indent rule (children
--- of the first one in override mode, siblings otherwise); the two conditional
--- controls always indent under the toggle that reveals them. One parent chain,
--- so it stays in a single column.
-
 
 -- Aura duration swipe (12.1 compositing): the swipe is a slot-kit region that
 -- Blizzard drives directly; these keys are consumed at bind time by

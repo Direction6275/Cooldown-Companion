@@ -16,6 +16,7 @@ local BuildContainerExportData = ST._BuildContainerExportData
 local EncodeExportData = ST._EncodeExportData
 local BuildSetupExportPayload = ST._BuildSetupExportPayload
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
+local SortExportContainerItems = ST._SortExportContainerItems
 
 ------------------------------------------------------------------------
 -- Mode lifecycle. CS.exportMode is nil when inactive; while active it
@@ -140,17 +141,10 @@ local function BuildCheckedContainerEntries(selection)
     for cid in pairs(selection.containers) do
         local container = db.groupContainers and db.groupContainers[cid]
         if container then
-            ordered[#ordered + 1] = {
-                cid = cid,
-                container = container,
-                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
-            }
+            ordered[#ordered + 1] = { cid = cid, container = container }
         end
     end
-    table.sort(ordered, function(a, b)
-        if a.order == b.order then return a.cid < b.cid end
-        return a.order < b.order
-    end)
+    SortExportContainerItems(ordered)
 
     local entries = {}
     for _, item in ipairs(ordered) do
@@ -532,17 +526,10 @@ local function RenderExportModeSummary(col3)
     for cid in pairs(selection.containers) do
         local container = db.groupContainers and db.groupContainers[cid]
         if container then
-            orderedCids[#orderedCids + 1] = {
-                cid = cid,
-                container = container,
-                order = CooldownCompanion:GetOrderForSpec(container, CooldownCompanion._currentSpecId, cid),
-            }
+            orderedCids[#orderedCids + 1] = { cid = cid, container = container }
         end
     end
-    table.sort(orderedCids, function(a, b)
-        if a.order == b.order then return a.cid < b.cid end
-        return a.order < b.order
-    end)
+    SortExportContainerItems(orderedCids)
 
     if #orderedCids > 0 then
         local tileIndex = 0

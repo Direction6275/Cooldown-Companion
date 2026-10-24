@@ -399,6 +399,16 @@ local function ChainHeadingBadges(heading, widget)
     return widget
 end
 
+-- Helper: build a class-colored collapsible section Heading wired to a
+-- collapse-state store. store defaults to CS.collapsedSections (the config
+-- columns' store); resource-bar panels pass their own. refreshFn defaults to
+-- completing the settings edit inside a settings context, otherwise a full
+-- config-panel refresh. Returns the heading, its collapsed state, and the
+-- collapse button (for callers that anchor extra controls to it).
+--
+-- opts.leftAligned opts into the row-grammar header shape (caret, then a
+-- left-aligned label, then a rule fading right). Without it the heading keeps
+-- the stock centered shape.
 local function BuildCollapsibleSection(container, title, key, store, refreshFn, opts)
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(container)
     if context then key = ST._SettingsContextKey(context, key) end
@@ -494,8 +504,9 @@ end
 -- The "Editing:" breadcrumb's kind string, replicated rather than shared:
 -- its owner (UpdateEditingContext in Config/ButtonsWideColumn.lua) keeps it
 -- in local scope. Same addedAs fallback the entry name decorations use.
--- Change the two together. Only spell entries carry a kind; items and
--- trigger entries show icon and name alone, exactly as the breadcrumb does.
+-- Change the two together. Only spell entries carry a kind; items,
+-- equipment slots and totems show icon and name alone, exactly as the
+-- breadcrumb does.
 local function GetEntryIdentityKindText(buttonData)
     if buttonData.type ~= "spell" then return nil end
     local addedAs = buttonData.addedAs
@@ -760,7 +771,7 @@ local function MeasureInfoTooltipLineWidth(text, isHeader)
 end
 
 -- Creates a (?) info button anchored to a frame. Replaces the repeated
--- CreateFrameâ†’SetSizeâ†’SetPointâ†’CreateTextureâ†’SetAtlasâ†’tooltip pattern.
+-- CreateFrame->SetSize->SetPoint->CreateTexture->SetAtlas->tooltip pattern.
 --
 -- tooltipLines: array of entries. Strings become title lines (AddLine).
 --   Tables {text, r, g, b, wrap} become body lines with color/wrapping.
@@ -1049,7 +1060,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll and their (?) badges chain off
     -- the end of each row's label. The row builders are read at CALL time, for
-    -- the load-order reason stated at AddFontControls' row branch below.
+    -- the load-order reason stated above AddFontControls below.
     local function BuildCompactAdvanced(panel)
         -- A centered Growth Direction on the Layout tab already answers the
         -- alignment question per line (owner ruling 2026-08-16), so the
@@ -1215,12 +1226,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     -- off the end of the row's label instead, like every other row badge.
     -- AnchorRowBadge does the SetParent and ClearAllPoints itself.
     btn:Show()
-    if enableCb.badgeAnchor then
-        ST._AnchorRowBadge(enableCb, btn)
-    else
-        btn:ClearAllPoints()
-        btn:SetPoint("LEFT", enableCb.checkbg, "RIGHT", enableCb.text:GetStringWidth() + 4, 0)
-    end
+    ST._AnchorRowBadge(enableCb, btn)
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1228,13 +1234,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         local tooltipDetails = CHARACTER_COPY_TOOLTIP_DETAILS[systemKey]
         if tooltipDetails then
             for _, line in ipairs(tooltipDetails) do
-                if line == "" then
-                    GameTooltip:AddLine(" ")
-                elseif line == "What is copied:" or line == "What is not copied:" then
-                    GameTooltip:AddLine(line, 1, 0.82, 0, true)
-                else
-                    GameTooltip:AddLine(line, 1, 1, 1, true)
-                end
+                GameTooltip:AddLine(line, 1, 1, 1, true)
             end
         else
             GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
@@ -1290,10 +1290,10 @@ end
 
 -- The modern ColorPickerFrame never delivers AceGUI's OnValueConfirmed:
 -- the OK button runs swatchFunc/opacityFunc BEFORE Hide(), so the widget's
--- "picker still open" test routes them to OnValueChanged â€” and its no-change
+-- "picker still open" test routes them to OnValueChanged - and its no-change
 -- guard swallows them anyway, because the last drag tick already carried the
 -- same values. Commit is therefore detected by picker CLOSE. Every close
--- path (OK, Cancel, Esc, any click outside the picker â€” including on
+-- path (OK, Cancel, Esc, any click outside the picker - including on
 -- another swatch, which cancels via GLOBAL_MOUSE_DOWN before its own click
 -- lands) runs through OnHide. Cancel delivers the original swatch through
 -- OnValueChanged first; its preview repaints without changing saved storage,
@@ -1367,7 +1367,7 @@ end
 -- conversion packets.
 --
 -- The row builder is read at CALL time rather than hoisted to file scope:
--- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddDropdownRow
+-- Helpers.lua loads BEFORE RowWidgets.lua, so ST._AddDropdownRow
 -- does not exist yet while this file is being read.
 local function AddAnchorDropdown(container, tbl, key, default, refreshFn, label, opts)
     return ST._AddDropdownRow(container, {
@@ -1457,7 +1457,6 @@ local function AddTextPositionControls(container, tbl, anchorKey, xKey, yKey, re
     return anchorRow, xRow, yRow
 end
 ST._AddTextPositionControls = AddTextPositionControls
-ST._AddBarTextPositionControls = AddTextPositionControls
 
 -- LibSharedMedia font names run well past the 140px control column, and a
 -- dropdown sizes its menu from the control it hangs under.
@@ -1465,14 +1464,14 @@ local FONT_ROW_PULLOUT_WIDTH = 300
 
 -- Create Font Size slider + Font dropdown + Font Outline dropdown.
 -- prefix: key prefix (e.g. "cooldown" reads cooldownFont, cooldownFontSize, cooldownFontOutline).
--- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} â€” all optional with sane fallbacks.
+-- defaults: {size, sizeMin, sizeMax, sizeStep, font, outline} - all optional with sane fallbacks.
 --
 -- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. The
 -- pre-redesign full-width stock trio had no call sites left after the
 -- conversion packets.
 --
 -- The row builders are read at CALL time rather than hoisted to file scope:
--- Helpers.lua loads BEFORE RowWidgets.lua (TOC 46 vs 47), so ST._AddSliderRow
+-- Helpers.lua loads BEFORE RowWidgets.lua, so ST._AddSliderRow
 -- does not exist yet while this file is being read. Same rule the alpha and
 -- anchor-target builders above follow.
 local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts)
@@ -1707,9 +1706,7 @@ ST._SetupColorCallbacks = SetupColorCallbacks
 -- leadingRows = fn(leftTarget, rightTarget), settings = finder descriptor map }
 --
 -- Row grammar only (RowWidgets.lua): a collapsible left-aligned section header
--- and a two-column grid of fixed-height rows. Every caller opts in, so there is
--- no stock shape left to draw; opts.row is accepted and ignored for callers
--- that still state it.
+-- and a two-column grid of fixed-height rows.
 local function BuildAlphaControls(container, config, refreshFn, collapseKey, opts)
     opts = opts or {}
     local finderSettings = opts.settings or {}

@@ -169,67 +169,28 @@ CooldownCompanion.INDICATOR_EFFECT_DEFAULTS = {
     },
 }
 
-local TRIGGER_CONDITION_LABELS = {
-    cooldownActive = "Cooldown",
-    auraActive = "Aura",
-    procActive = "Proc",
-    rangeActive = "Range",
-    usable = "Usable",
-    chargesRecharging = "Charge Recharge",
-    chargeState = "Charge State",
-    countTextActive = "Count Text",
-    countState = "Display Count",
+-- Clauses for these keys hold `expected`. auraActive stays so saved aura
+-- clauses still normalize (see RETIRED_TRIGGER_CONDITION_OFFERS). The display
+-- labels live in the config's IndicatorTabs RULE_LABELS.
+local BOOLEAN_TRIGGER_CONDITIONS = {
+    cooldownActive = true,
+    auraActive = true,
+    procActive = true,
+    rangeActive = true,
+    usable = true,
+    chargesRecharging = true,
+    countTextActive = true,
 }
 
-local TRIGGER_EXPECTED_LABELS = {
-    cooldownActive = {
-        ["true"] = "On Cooldown",
-        ["false"] = "Off Cooldown",
-    },
-    auraActive = {
-        ["true"] = "Active",
-        ["false"] = "Inactive",
-    },
-    procActive = {
-        ["true"] = "Active",
-        ["false"] = "Inactive",
-    },
-    rangeActive = {
-        ["true"] = "In Range",
-        ["false"] = "Out of Range",
-    },
-    usable = {
-        ["true"] = "Usable",
-        ["false"] = "Unusable",
-    },
-    chargesRecharging = {
-        ["true"] = "Recharging",
-        ["false"] = "Not Recharging",
-    },
-    countTextActive = {
-        ["true"] = "Shown",
-        ["false"] = "Hidden",
-    },
+-- Clauses for these keys hold `state`, one of TRIGGER_STATE_VALUES.
+local STATE_TRIGGER_CONDITIONS = {
+    chargeState = true,
+    countState = true,
 }
+local TRIGGER_STATE_VALUES = { "full", "missing", "zero" }
+local TRIGGER_EXPECTED_VALUES = { "true", "false" }
 
-local TRIGGER_STATE_LABELS = {
-    chargeState = {
-        full = "Full",
-        missing = "Missing",
-        zero = "Zero",
-    },
-    countState = {
-        full = "Full",
-        missing = "Missing",
-        zero = "Zero",
-    },
-}
-
-local TRIGGER_CONDITION_ORDERS = {
-    spell = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" },
-    passiveSpell = { "auraActive", "procActive" },
-    item = { "cooldownActive", "rangeActive", "usable" },
-}
+local DEFAULT_TRIGGER_CONDITION_ORDER = { "cooldownActive", "auraActive", "procActive", "rangeActive", "usable" }
 
 local function CopyColor(color)
     if type(color) ~= "table" then
@@ -344,7 +305,7 @@ end
 
 local function GetTriggerConditionOrderForButtonData(buttonData)
     if type(buttonData) ~= "table" then
-        return TRIGGER_CONDITION_ORDERS.spell
+        return DEFAULT_TRIGGER_CONDITION_ORDER
     end
 
     if IsRuntimeItemLike(buttonData) then
@@ -398,11 +359,11 @@ local function NormalizeTriggerConditionKey(buttonData, conditionKey)
 end
 
 local function NormalizeTriggerStateKey(conditionKey, stateKey)
-    if not TRIGGER_STATE_LABELS[conditionKey] then
+    if not STATE_TRIGGER_CONDITIONS[conditionKey] then
         return nil
     end
 
-    for _, validKey in ipairs({ "full", "missing", "zero" }) do
+    for _, validKey in ipairs(TRIGGER_STATE_VALUES) do
         if stateKey == validKey then
             return validKey
         end
@@ -544,8 +505,6 @@ function AT.ShrinkScaleAtPhase(phase)
     local t = 0.5 - (0.5 * math.cos(phase * 2 * math.pi))
     return 1 - ((1 - DEFAULT_TEXTURE_SHRINK_SCALE) * t)
 end
-AT.TRIGGER_EXPECTED_LABELS = TRIGGER_EXPECTED_LABELS
-AT.BUILTIN_LIBRARY = AT.BUILTIN_LIBRARY or {}
 AT.CopyColor = CopyColor
 AT.Clamp = Clamp
 AT.NormalizeBlendMode = NormalizeBlendMode
@@ -823,7 +782,7 @@ function CooldownCompanion:BuildLegacyTriggerConditionClause(buttonData)
     end
 
     local clause = { key = conditionKey }
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+    if BOOLEAN_TRIGGER_CONDITIONS[conditionKey] then
         clause.expected = buttonData.triggerExpected ~= false
     else
         clause.state = NormalizeTriggerStateKey(conditionKey, buttonData.triggerState)
@@ -846,7 +805,7 @@ function CooldownCompanion:NormalizeTriggerConditionClause(buttonData, clause, u
     end
 
     local normalized = { key = conditionKey }
-    if TRIGGER_EXPECTED_LABELS[conditionKey] ~= nil then
+    if BOOLEAN_TRIGGER_CONDITIONS[conditionKey] then
         normalized.expected = clause.expected ~= false and clause.expected ~= "false"
     else
         normalized.state = NormalizeTriggerStateKey(conditionKey, clause.state or clause.triggerState)
@@ -894,7 +853,7 @@ function CooldownCompanion:GetTriggerConditionClauses(buttonData)
     if #normalizedClauses == 0 then
         local fallbackKey = NormalizeTriggerConditionKey(buttonData, nil)
         if fallbackKey then
-            if TRIGGER_EXPECTED_LABELS[fallbackKey] ~= nil then
+            if BOOLEAN_TRIGGER_CONDITIONS[fallbackKey] then
                 normalizedClauses[1] = {
                     key = fallbackKey,
                     expected = true,
@@ -920,7 +879,7 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
     local primaryClause = clauses[1]
     if primaryClause then
         buttonData.triggerCondition = primaryClause.key
-        if TRIGGER_EXPECTED_LABELS[primaryClause.key] ~= nil then
+        if BOOLEAN_TRIGGER_CONDITIONS[primaryClause.key] then
             buttonData.triggerExpected = primaryClause.expected ~= false
             buttonData.triggerState = nil
         else
@@ -981,38 +940,22 @@ local RETIRED_TRIGGER_CONDITION_OFFERS = {
     auraActive = true,
 }
 
-function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData, excludedKeys)
-    local order = GetTriggerConditionOrderForButtonData(buttonData)
-    local excluded = {}
-    if type(excludedKeys) == "table" then
-        for _, key in ipairs(excludedKeys) do
-            if type(key) == "string" then
-                excluded[key] = true
-            end
-        end
-        for key, value in pairs(excludedKeys) do
-            if value == true and type(key) == "string" then
-                excluded[key] = true
-            end
-        end
-    end
-
-    local options = {}
+-- The condition keys this entry offers for new clauses, in order.
+function CooldownCompanion:GetTriggerConditionTypeOptions(buttonData)
     local filteredOrder = {}
-    for _, key in ipairs(order) do
-        if not excluded[key] and not RETIRED_TRIGGER_CONDITION_OFFERS[key] then
-            options[key] = TRIGGER_CONDITION_LABELS[key]
+    for _, key in ipairs(GetTriggerConditionOrderForButtonData(buttonData)) do
+        if not RETIRED_TRIGGER_CONDITION_OFFERS[key] then
             filteredOrder[#filteredOrder + 1] = key
         end
     end
-    return options, filteredOrder
+    return filteredOrder
 end
 
+-- The values a clause of this key can hold. The returned list is shared:
+-- read it, never modify it.
 function CooldownCompanion:GetTriggerConditionExpectedOptions(conditionKey)
-    if TRIGGER_STATE_LABELS[conditionKey] then
-        return TRIGGER_STATE_LABELS[conditionKey], { "full", "missing", "zero" }
+    if STATE_TRIGGER_CONDITIONS[conditionKey] then
+        return TRIGGER_STATE_VALUES
     end
-
-    local options = TRIGGER_EXPECTED_LABELS[conditionKey] or TRIGGER_EXPECTED_LABELS.cooldownActive
-    return options, { "true", "false" }
+    return TRIGGER_EXPECTED_VALUES
 end

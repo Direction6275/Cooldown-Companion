@@ -91,6 +91,8 @@ function ST._PreparePanelSettingsNavigation(owner, tab)
     end
 end
 
+local CONTENT_KEYS = { "icons", "bars", "modules" }
+
 function ST._CreatePanelSettingsContext(owner, presentation)
     local entry, mode, buttonIndex = Selection(owner)
     presentation = presentation or (entry and ST.GetEntryPresentation(owner, entry)) or "shared"
@@ -104,7 +106,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         local selected, scope = Selection(self.owner)
         if not selected and self.contents then
             local current = ST._GetPanelSettingsContents(self.owner, self.panelId)
-            for _, key in ipairs({ "icons", "bars", "modules" }) do
+            for _, key in ipairs(CONTENT_KEYS) do
                 if current[key] ~= self.contents[key] then return false end
             end
         end

@@ -6,6 +6,7 @@ local CS = ST._configState
 -- Imports from Helpers.lua
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
+local AddAnchorDropdown = ST._AddAnchorDropdown
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
 -- section follows are stated once, in the recipe comment at the top of
@@ -28,14 +29,6 @@ local UNIT_FRAME_PULLOUT_WIDTH = 300
 ------------------------------------------------------------------------
 -- Frame Anchoring panels
 ------------------------------------------------------------------------
-
-local ANCHOR_POINTS = {
-    "TOPLEFT", "TOP", "TOPRIGHT",
-    "LEFT", "CENTER", "RIGHT",
-    "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
-}
-local ANCHOR_POINT_LABELS = {}
-for _, p in ipairs(ANCHOR_POINTS) do ANCHOR_POINT_LABELS[p] = p end
 
 local UNIT_FRAME_OPTIONS = {
     [""]         = "Auto-detect",
@@ -227,29 +220,11 @@ end
 -- opens with: mine first, then the target's.
 local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefault, relativeDefault,
         onChanged, finderSettings)
-    AddDropdownRow(posLeft, {
-        label = "Anchor Point",
-        setting = finderSettings and finderSettings.anchorPoint,
-        list = ANCHOR_POINT_LABELS,
-        order = ANCHOR_POINTS,
-        value = frameSettings.anchorPoint or anchorDefault,
-        onChange = function(val)
-            frameSettings.anchorPoint = val
-            onChanged()
-        end,
-    })
+    AddAnchorDropdown(posLeft, frameSettings, "anchorPoint", anchorDefault, onChanged, "Anchor Point",
+        { setting = finderSettings and finderSettings.anchorPoint })
 
-    AddDropdownRow(posLeft, {
-        label = "Relative Anchor Point",
-        setting = finderSettings and finderSettings.relativePoint,
-        list = ANCHOR_POINT_LABELS,
-        order = ANCHOR_POINTS,
-        value = frameSettings.relativePoint or relativeDefault,
-        onChange = function(val)
-            frameSettings.relativePoint = val
-            onChanged()
-        end,
-    })
+    AddAnchorDropdown(posLeft, frameSettings, "relativePoint", relativeDefault, onChanged, "Relative Anchor Point",
+        { setting = finderSettings and finderSettings.relativePoint })
 
     AddSliderRow(posRight, {
         label = "X Offset",

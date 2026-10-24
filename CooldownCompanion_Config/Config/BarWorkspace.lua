@@ -41,7 +41,7 @@ local function OpenWorkspace(kind, opts)
         local switchingFrames = (kind == "player" or kind == "target")
             and (CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target")
         if not CS.barsEntrySelected or (CS.barWorkspaceKind ~= kind and not switchingFrames) then
-            ST._SelectConfigBarsEntry({ standalone = true, kind = kind,
+            ST._SelectConfigBarsEntry({ kind = kind,
                 previewSession = opts and opts.previewSession })
             CS.standalonePanelsCollapsed = false
         else

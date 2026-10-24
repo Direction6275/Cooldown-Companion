@@ -1,8 +1,7 @@
 local ADDON_NAME, ST = ...
--- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
--- only on an Aura Panel, for the sections that read spell cooldown, castability,
--- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+-- Core's per-panel rule ("Can this PANEL ever use this override section?"),
+-- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
@@ -55,7 +54,6 @@ local BuildBarAppearanceTab = ST._BuildBarAppearanceTab
 local ROW_SECTION = { leftAligned = true }
 
 local tabInfoButtons = CS.tabInfoButtons
-local appearanceTabElements = CS.appearanceTabElements
 local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
 local KEYBIND_CUSTOM_TOOLTIP = {
     "Show Keybind/Custom Text",
@@ -66,7 +64,7 @@ local KEYBIND_CUSTOM_TOOLTIP = {
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a tab
 -- rebuild allocates none of them.
 local TURNON_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
 local TURNON_CHARGE_TEXT = { label = "Enable Count Text", key = "showChargeText" }
@@ -120,9 +118,8 @@ local function WhileAuraFlagOn(sec, key)
     return (src and src[key]) == true
 end
 
--- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry. Shared helper
--- (Helpers.lua) so BarModeTabs can gate its aura section too.
+-- Whether the aura style sections apply; StyleLens.lua states the rule.
+-- Shared so BarModeTabs can gate its aura section too.
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 
 -- The icons Appearance tab's advanced gears, by the OVERRIDE SECTION each one
@@ -131,7 +128,7 @@ local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 -- section is this gear inside", this one answers "which OVERRIDE section owns
 -- this gear's values". Keep them apart - they are read for different reasons.
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a section's gear.
 -- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
 -- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
@@ -159,21 +156,21 @@ local function IconsGroupTracksAura(group)
 end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildAppearanceTab's
--- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
+-- `if not usesOnlyAura`): nothing there has a cooldown, so the toggle is dead and
 -- its two live children move under the aura duration text. The section itself
 -- stays usable - those children still read and write its keys - so this is an
 -- `available` predicate rather than a denial in
 -- ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the Customizations index
 -- would offer a name link onto a row that is no longer drawn.
 local function GroupDrawsCooldownTextRow(group)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
 end
 
 -- Low Time Threshold is drawn once beside a duration surface that can consume
 -- it: cooldown-side when effective cooldown text is visible, otherwise
 -- aura-side while the group tracks an aura and effective aura text is visible.
 local function IconsDrawCooldownDurationLowTimeRows(group, style)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
         and style and style.showCooldownText == true
 end
 
@@ -202,9 +199,9 @@ end
 -- Keyed by DISPLAY MODE first. The same section id is drawn in different
 -- places depending on the mode - borderSettings sits under "Border" on the
 -- icons Appearance tab and somewhere else entirely on a bar panel - so a flat
--- map could only ever describe one mode. Later packets add the `bars` and
--- `text` axes beside this one; a lookup that misses its mode has no home yet
--- rather than the wrong one.
+-- map could only ever describe one mode. The `bars` axis lives in
+-- BarModeTabs.lua; a lookup that misses its mode has no home yet rather than
+-- the wrong one.
 --
 -- The optional `available` / `gearEnabled` predicates are contracted at the
 -- FIRST registration (ST._SECTION_HOME.bars, BarModeTabs.lua) - read that note
@@ -233,8 +230,9 @@ ST._SECTION_HOME.icons = {
     chargeText = {
         tab = "appearance", collapseKey = "appearance_text",
     },
-    -- The aura text sections are drawn only while the GROUP tracks an aura
-    -- (BuildAppearanceTab's `if groupHasAuraEntry then`).
+    -- The aura text sections are drawn only where the aura style sections
+    -- apply (BuildAppearanceTab's `if groupHasAuraEntry then`; StyleLens.lua
+    -- states the rule).
     auraText = {
         tab = "appearance", collapseKey = "appearance_text",
         available = IconsGroupTracksAura,
@@ -368,9 +366,9 @@ local function AppearanceFinderStateFlag(key)
 end
 
 -- Resolve the structural facts used by Appearance routes without constructing
--- the Appearance page. The action row runs this once per edited object before
--- freezing descriptor applicability; page builders reuse it so both paths
--- share the same gates.
+-- the Appearance page. Only the Finder preparer below calls this, once per
+-- edited object before freezing descriptor applicability. The page builder
+-- evaluates the same predicates inline, so keep the two in step.
 local function RefreshAppearanceFinderState(context)
     local group = context and context.group
         or (CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup])
@@ -408,7 +406,7 @@ local function RefreshAppearanceFinderState(context)
         local entryIsAuraOnly = (lens and lens.mode == "entry") and lens.buttonData
             and ST.IsAuraSectionEntry(group, lens.buttonData)
         local hasAura = GroupHasAuraTrackingEntry(group)
-        local isAuraPanel = (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+        local usesOnlyAura = ST._SettingsUsesOnlyAura(group)
 
         state.iconsSquare = style.maintainAspectRatio == true
         state.iconsRectangular = style.maintainAspectRatio ~= true
@@ -423,7 +421,7 @@ local function RefreshAppearanceFinderState(context)
         state.cooldownTintColor = CanGroupUseOverrideSection(group, "desaturation")
             and tintRead.iconCooldownTintEnabled == true
         state.auraTintColor = hasAura and tintRead.iconAuraTintEnabled == true
-        state.cooldownAvailable = not isAuraPanel
+        state.cooldownAvailable = not usesOnlyAura
         state.cooldownVisibility = state.cooldownAvailable
             and cooldownRead.showCooldownText == true
         state.countAvailable = CanGroupUseOverrideSection(group, "chargeText")
@@ -655,10 +653,10 @@ if ST._DefineSettingRoute then
     })
     APPEARANCE_FINDER.whileAura = whileAura:Settings({
         cooldown = { label = "Cooldown", aliases = { "cooldown while aura active" }, applies = function(context)
-            return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group)
+            return not ST._SettingsUsesOnlyAura(context.group)
         end },
         auraIcon = { label = "Show Aura Icon", applies = function(context)
-            return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group)
+            return not ST._SettingsUsesOnlyAura(context.group)
                 and not (context.buttonData and CooldownCompanion:IsAuraIconForcedEntry(context.buttonData))
         end },
         desaturate = { label = "Desaturate Icon" },
@@ -720,16 +718,6 @@ if ST._DefineSettingRoute then
 end
 
 local function BuildAppearanceTab(container, settingsGroup)
-    -- Clean up elements from previous build
-    if not settingsGroup then
-    for _, elem in ipairs(appearanceTabElements) do
-        elem:ClearAllPoints()
-        elem:Hide()
-        elem:SetParent(nil)
-    end
-    wipe(appearanceTabElements)
-    end
-
     if not CS.selectedGroup then return end
     local group = settingsGroup or CooldownCompanion.db.profile.groups[CS.selectedGroup]
     if not group then return end
@@ -808,9 +796,9 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- the Text section drops that toggle. Duration Format remains a shared row
     -- in the duration options, while the shared-position keys move under the aura
     -- duration text they actually drive (owner ruling 2026-08-15).
-    local isAuraPanel = (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    local usesOnlyAura = ST._SettingsUsesOnlyAura(group)
 
-    -- STYLE LENS (Helpers.lua). With an entry selected these sections stop
+    -- STYLE LENS (StyleLens.lua). With an entry selected these sections stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
     -- ones, with per-section scope deciding where - or whether - they write.
     -- Resolved ONCE here and handed to every section below, so one tab cannot
@@ -818,9 +806,9 @@ local function BuildAppearanceTab(container, settingsGroup)
     local lens = ST._ResolveStyleLens(group)
     -- Under a multi selection these tabs edit the PANEL, and only this line
     -- says so - the per-section scope chrome speaks under an entry lens alone.
-    -- No-op in every other lens mode. The trigger, texture and
-    -- other-mode paths returned above, so only the standard icons path carries
-    -- it; the modes with their own builders add their own.
+    -- No-op in every other lens mode. Only the bar-mode path returned above,
+    -- so only the standard icons path carries it here; the bar builder adds
+    -- its own.
     AddLensPanelScopeNote(container, lens)
 
     -- Sections with NO override identity of their own (the panel's layout, its
@@ -875,11 +863,23 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- little past the control column's left edge - harmless here because the
     -- control is a 24px checkbox pinned to the cell's far right. Do not copy
     -- this onto a slider row, whose track starts at that same edge.
+    -- Row-owned: the note lives on the row's frame and hides when the row is
+    -- released, so a recycled row never carries it onto another checkbox.
     if group.masqueEnabled then
-        local masqueLabel = squareRow.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local masqueLabel = squareRow.frame._cdcMasqueNote
+        if not masqueLabel then
+            masqueLabel = squareRow.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            masqueLabel:SetText("|cff00ff00(Masque skinning is active)|r")
+            squareRow.frame._cdcMasqueNote = masqueLabel
+        end
+        masqueLabel:ClearAllPoints()
         masqueLabel:SetPoint("LEFT", squareRow.badgeAnchor, "RIGHT", 8, 0)
-        masqueLabel:SetText("|cff00ff00(Masque skinning is active)|r")
-        table.insert(appearanceTabElements, masqueLabel)
+        masqueLabel:Show()
+        local prevOnRelease = squareRow.events and squareRow.events.OnRelease
+        squareRow:SetCallback("OnRelease", function(widget, event, ...)
+            if prevOnRelease then prevOnRelease(widget, event, ...) end
+            masqueLabel:Hide()
+        end)
     end
 
     -- Size sliders — always visible
@@ -1070,7 +1070,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- On an Aura Panel every possible Text row is aura-gated (Cooldown Text is
     -- left out, Count and Keybind are denied), so with no entries yet the
     -- heading would stand over an empty grid. Same guard shape as Glows.
-    if not isAuraPanel or groupHasAuraEntry then
+    if not usesOnlyAura or groupHasAuraEntry then
     local textHeading, textCollapsed = BuildCollapsibleSection(container, "Text", "appearance_text", nil, nil, ROW_SECTION)
 
     if not textCollapsed then
@@ -1091,7 +1091,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- both columns of this grid.
     local sharedLeft, sharedRight
     if drawsCooldownFormat or drawsAuraFormat or drawsCooldownLowTime or drawsAuraLowTime then
-        if isAuraPanel then
+        if usesOnlyAura then
             sharedLeft = BeginRowGrid(container)
             sharedRight = sharedLeft
         else
@@ -1099,18 +1099,18 @@ local function BuildAppearanceTab(container, settingsGroup)
         end
     end
     local durationLeft, durationRight
-    if isAuraPanel then
+    if usesOnlyAura then
         durationLeft = BeginRowGrid(container)
         durationRight = durationLeft
     else
         durationLeft, durationRight = BeginRowGrid(container)
     end
     -- Column captions, drawn only where both families really appear. LEFT is
-    -- the Show Cooldown Text block, whose only gate is `not isAuraPanel`; RIGHT
+    -- the Show Cooldown Text block, whose only gate is `not usesOnlyAura`; RIGHT
     -- is the aura duration text block, gated on an aura-tracking entry. An Aura
     -- Panel uses the left half (durationLeft == durationRight), which the helper
     -- also refuses on its own.
-    if not isAuraPanel and groupHasAuraEntry then
+    if not usesOnlyAura and groupHasAuraEntry then
         AddFamilyColumnCaptions(durationLeft, durationRight)
     end
     local lowTimeLeft, lowTimeRight
@@ -1120,7 +1120,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
     AddSettingsSubheading(container, "Other Text")
     local otherLeft, otherRight
-    if isAuraPanel then
+    if usesOnlyAura then
         otherLeft = BeginRowGrid(container)
         otherRight = otherLeft
     else
@@ -1138,7 +1138,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- Ordinary icon panels give cooldown and aura parallel columns. Aura
     -- Panels have no cooldown consumer, so their duration and other-text rows
     -- share the left half, leaving the right column empty.
-    local auraTextHost = isAuraPanel and durationLeft or durationRight
+    local auraTextHost = usesOnlyAura and durationLeft or durationRight
 
     local durationFormatAdded = false
     local function AddDurationFormatRow()
@@ -1208,7 +1208,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- hung off it (Duration Format, and the cooldownText* position keys that
     -- place the aura duration text while the aura hides the cooldown) move
     -- into the aura duration text section on the right.
-    if not isAuraPanel then
+    if not usesOnlyAura then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = durationLeft })
 
     local cdTextRow = AddCheckboxRow(durationLeft, {
@@ -1266,7 +1266,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     if drawsCooldownLowTime then
         AddDurationLowTimeSection()
     end
-    end -- not isAuraPanel
+    end -- not usesOnlyAura
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
     -- Panel never counts anything here (ST.CanGroupUseOverrideSection); the
@@ -1287,7 +1287,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     })
 
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
-    -- every builder runs with { row = true } and no rightColumn.
+    -- every builder runs with no rightColumn.
     --
     -- The three count colors are the panel's longest labels. They end in a 19px
     -- swatch, which is the narrow control the row grammar reserves long labels
@@ -1300,7 +1300,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- read-only inherited view the unlock strip fronts.
     local function BuildChargeTextAdvanced(panel)
         AddFontControls(panel, chargeSec.tbl, "charge", { size = 12 }, refreshStyle, {
-            row = true,
             settings = {
                 size = APPEARANCE_FINDER.count.fontSize,
                 font = APPEARANCE_FINDER.count.font,
@@ -1343,7 +1342,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     chargeSec:Finish()
     end -- CanGroupUseOverrideSection chargeText
 
-    -- Aura text sections (shown only while the group has an aura-tracking entry)
+    -- Aura text sections (shown where the aura style sections apply)
     if groupHasAuraEntry then
         -- Show Aura Duration Text toggle
         local auraTextSec = BeginLensSection(lens, group, "auraText", { column = auraTextHost })
@@ -1373,7 +1372,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         })
 
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
-        -- { row = true } and no rightColumn.
+        -- no rightColumn.
         local function BuildAuraDurationTextAdvanced(panel)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
@@ -1388,7 +1387,6 @@ local function BuildAppearanceTab(container, settingsGroup)
                     completeEdit = refreshStyleSettings,
                 })
             AddFontControls(panel, auraTextSec.tbl, "auraText", { size = 12 }, refreshStyle, {
-                row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraText.fontSize,
                     font = APPEARANCE_FINDER.auraText.font,
@@ -1426,7 +1424,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                     defaults = {anchor = "TOPLEFT", x = 2, y = -2, range = 20},
                     settings = APPEARANCE_FINDER.auraText,
                 })
-            elseif isAuraPanel then
+            elseif usesOnlyAura then
                 -- The re-homed shared-position rows. Same STORAGE KEYS as before
                 -- (the engine reads cooldownTextAnchor/XOffset/YOffset for this
                 -- text whenever separateTextPositions is off), so nothing is
@@ -1438,6 +1436,10 @@ local function BuildAppearanceTab(container, settingsGroup)
                 -- cannot clear (the never-share-a-key rule the bar name offsets
                 -- and Duration Format both follow). So they are openly
                 -- PANEL-OWNED and wear the grey "Panel setting" label.
+                -- Under a panel settings context (group._settingsContext) they
+                -- instead open the cooldownText lens section itself, so they
+                -- read, write and wear that section's scope; the grey panel
+                -- label is the no-context path.
                 local sharedPosition = group._settingsContext and BeginLensSection(lens, group, "cooldownText", { column = panel })
                 local positionStyle = sharedPosition and sharedPosition.tbl or group.style
                 local anchorRow, offsetXRow, offsetYRow = AddTextPositionControls(panel, positionStyle,
@@ -1474,7 +1476,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         -- Nothing to explain on an Aura Panel: there is no cooldown text to
         -- share a position with, and the advanced panel there draws the position
         -- rows directly rather than behind a choice.
-        if not isAuraPanel then
+        if not usesOnlyAura then
             local auraPosInfo = AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, {
                 "Shared Position",
                 {"Position is shared with Cooldown Text by default. Set Cooldown under While Aura Active to Show Text for an independent position, set in advanced settings.", 1, 1, 1, true},
@@ -1517,10 +1519,9 @@ local function BuildAppearanceTab(container, settingsGroup)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildAuraStackTextAdvanced(panel)
             AddFontControls(panel, auraStackSec.tbl, "auraStack", { size = 12 }, refreshStyle, {
-                row = true,
                 settings = {
                     size = APPEARANCE_FINDER.auraStacks.fontSize,
                     font = APPEARANCE_FINDER.auraStacks.font,
@@ -1574,7 +1575,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     local function BuildKeybindTextAdvanced(panel)
         AddTextPositionControls(panel, kbSec.tbl, "keybindAnchor", "keybindXOffset", "keybindYOffset", refreshStyle, {
             defaults = {anchor = "TOPRIGHT", x = -2, y = -2, range = 20},
@@ -1582,7 +1583,6 @@ local function BuildAppearanceTab(container, settingsGroup)
             settings = APPEARANCE_FINDER.keybind,
         })
         AddFontControls(panel, kbSec.tbl, "keybind", { size = 10, sizeMin = 6, sizeMax = 24 }, refreshStyle, {
-            row = true,
             settings = {
                 size = APPEARANCE_FINDER.keybind.fontSize,
                 font = APPEARANCE_FINDER.keybind.font,
@@ -1664,7 +1664,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- with the row it is gating (see that helper's note on write-before-read).
     local whileAuraStyle = whileAuraSec.write or whileAuraSec.read or {}
 
-    if not isAuraPanel then
+    if not usesOnlyAura then
     -- ENTRY SCOPE ONLY: which of the three states this selection can actually
     -- reach. Keep-swipe carries entry-shape terms the panel cannot see
     -- (IsKeepSpellCooldownSwipeEntry: aura-tracking, not standalone, not
@@ -1748,7 +1748,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         end,
     })
     end -- aura icon not forced for this entry
-    end -- not isAuraPanel (Cooldown dropdown + Show Aura Icon)
+    end -- not usesOnlyAura (Cooldown dropdown + Show Aura Icon)
 
     -- Desaturate Icon grays the AURA LAYER's icon regions, and a keep-swipe
     -- entry with the icon swap off hides both of them: StyleSlotKit drops the
@@ -1816,7 +1816,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     local renderMode = AddBorderRenderModeDropdown(borderLeft, borderSec.tbl, "borderRenderMode", function()
         refreshStyleSettings()
     end, group.masqueEnabled or borderSec.disabled, {
-        row = true,
         setting = APPEARANCE_FINDER.border.thickness,
     })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()

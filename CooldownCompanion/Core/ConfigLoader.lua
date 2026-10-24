@@ -18,11 +18,6 @@ local function SetConfigPrimaryModeWrapper(mode, opts)
     if ST._SetConfigPrimaryModeImpl then
         return ST._SetConfigPrimaryModeImpl(mode, opts)
     end
-
-    local CS = ST._configState
-    if CS then
-        CS.resourceBarPanelActive = (mode == "bars")
-    end
 end
 
 -- Keep the wrapper stable so early hooksecurefunc callers continue to observe

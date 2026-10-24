@@ -27,7 +27,7 @@ local DRUID_BALANCE_SPEC_ID = 102
 local ResolveSpecOverrideKey = ST._ResolveSpecOverrideKey
 
 ------------------------------------------------------------------------
--- Aura bar autocomplete cache (spell/aura entries only)
+-- Spell/aura autocomplete slices
 ------------------------------------------------------------------------
 local auraBarAutocompleteCache = nil
 local auraBarAutocompleteSource = nil
@@ -103,34 +103,6 @@ local function BuildTrackedAuraAutocompleteCache()
     return cache
 end
 
-local function FindAuraBarAutocompleteEntryByID(spellID)
-    if not spellID then
-        return nil
-    end
-    local cache = BuildAuraBarAutocompleteCache()
-    for _, entry in ipairs(cache) do
-        if entry.id == spellID then
-            return entry
-        end
-    end
-    return nil
-end
-
-local function GetAuraBarAutocompleteDisplayName(spellID)
-    local entry = FindAuraBarAutocompleteEntryByID(spellID)
-    if entry and entry.name then
-        return entry.name
-    end
-    return spellID and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellID) or nil
-end
-
-local function GetAuraBarAutocompleteEntryName(entry)
-    if type(entry) ~= "table" then
-        return nil
-    end
-    return type(entry.name) == "string" and entry.name ~= "" and entry.name or nil
-end
-
 local function ResolveAuraBarAutocompleteEntry(text)
     if not text then return nil end
     local cleaned = text:gsub("^%s+", ""):gsub("%s+$", "")
@@ -149,20 +121,6 @@ local function ResolveAuraBarAutocompleteEntry(text)
     end
 
     return nil
-end
-
-local function SearchAuraBarAutocomplete(text)
-    local cache = BuildAuraBarAutocompleteCache()
-    return CS.SearchAutocompleteInCache(text, cache)
-end
-
-local function ShowAuraBarAutocompleteResults(text, widget, onAuraSelect)
-    if text and #text >= 1 then
-        local results = SearchAuraBarAutocomplete(text)
-        CS.ShowAutocompleteResults(results, widget, onAuraSelect)
-    else
-        CS.HideAutocomplete()
-    end
 end
 
 local function AddHealthResourceConfig(resources)
@@ -248,11 +206,6 @@ local function ResourceListContains(resourceList, powerType)
     return false
 end
 
-local function IsResourceConfigEnabled(settings, powerType)
-    local resource = settings and settings.resources and settings.resources[powerType]
-    return not (type(resource) == "table" and resource.enabled == false)
-end
-
 local function GetPlayerClassAndSpecsConfig()
     local _, _, classID = UnitClass("player")
     local specIDs = {}
@@ -266,7 +219,7 @@ local function GetPlayerClassAndSpecsConfig()
     return classID, specIDs
 end
 
-local function GetConfigEditableResources(settings, includeDisabled)
+local function GetConfigEditableResources(settings)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if not (type(settings) == "table" and settings.enabled == true) then
         return {}
@@ -280,16 +233,12 @@ local function GetConfigEditableResources(settings, includeDisabled)
     local result = {}
     local seen = {}
     for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[classID] or {}) do
-        if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
-            AddUniqueResource(result, seen, powerType)
-        end
+        AddUniqueResource(result, seen, powerType)
     end
 
     for _, specID in ipairs(specIDs) do
         for _, powerType in ipairs(SPEC_RESOURCES_CONFIG[specID] or {}) do
-            if includeDisabled or IsResourceConfigEnabled(settings, powerType) then
-                AddUniqueResource(result, seen, powerType)
-            end
+            AddUniqueResource(result, seen, powerType)
         end
     end
 
@@ -323,15 +272,12 @@ local function GetResourceApplicableSpecIDs(powerType)
     return applicable
 end
 
-local function IsResourceEditableInColumn4(powerType, settings, includeDisabled)
+local function IsResourceEditable(powerType, settings)
     settings = settings or CooldownCompanion:GetResourceBarSettings()
     if powerType == nil or powerType == RESOURCE_HEALTH then
         return false
     end
     if not (type(settings) == "table" and settings.enabled == true) then
-        return false
-    end
-    if not includeDisabled and not IsResourceConfigEnabled(settings, powerType) then
         return false
     end
     return #GetResourceApplicableSpecIDs(powerType) > 0
@@ -539,8 +485,8 @@ end
 -- slice re-identifies CDM rows to the applied-aura spellID, while a plain
 -- name lookup resolves to the castable spell (Rake -> 1822, never bleed
 -- 155722). Numeric input is honored verbatim. Tracked-aura LIST fields
--- resolve through here; bar/entry IDENTITY fields keep the resolver above,
--- whose row identity their standalone candidate build expands.
+-- resolve through here; the plain-name resolver above is this function's
+-- fallback for names the tracked slice does not hold.
 local function ResolveTrackedAuraSpellIDFromText(text)
     if not text then return nil, false end
     local cleaned = text:gsub("^%s+", ""):gsub("%s+$", "")
@@ -777,7 +723,7 @@ ST._RBP = {
     GetConfigActiveResources = GetConfigActiveResources,
     GetConfigEditableResources = GetConfigEditableResources,
     GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,
-    IsResourceEditableInColumn4 = IsResourceEditableInColumn4,
+    IsResourceEditable = IsResourceEditable,
     GetDefaultResourceSettingsSpecID = GetDefaultResourceSettingsSpecID,
     GetCurrentConfigSpecID = GetCurrentConfigSpecID,
     ReadSpecOverrideKey = ReadSpecOverrideKey,
@@ -791,10 +737,7 @@ ST._RBP = {
     GetContinuousTickModeConfig = GetContinuousTickModeConfig,
     GetContinuousTickPercentConfig = GetContinuousTickPercentConfig,
     GetContinuousTickAbsoluteConfig = GetContinuousTickAbsoluteConfig,
-    GetAuraBarAutocompleteDisplayName = GetAuraBarAutocompleteDisplayName,
-    GetAuraBarAutocompleteEntryName = GetAuraBarAutocompleteEntryName,
     ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
-    ShowAuraBarAutocompleteResults = ShowAuraBarAutocompleteResults,
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
     BuildTrackedAuraAutocompleteCache = BuildTrackedAuraAutocompleteCache,
     IsResourceBarVerticalConfig = IsResourceBarVerticalConfig,

@@ -489,17 +489,6 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         container._cdcPanelSettingsTabsMode = tabsMode
     end
 
-    -- Migrate stale tab keys from previous layout
-    -- The retired Tracking tab's rules now lead an Indicator's Visibility.
-    if CS.selectedTab == "tracking" then
-        CS.selectedTab = ST.IsIndicatorGroup(group) and "loadconditions" or "appearance"
-    end
-    if CS.selectedTab == "extras" then CS.selectedTab = "effects" end
-    if CS.selectedTab == "positioning" then CS.selectedTab = "layout" end
-    -- Retired Format destinations now land on Appearance.
-    if CS.selectedTab == "format" then
-        CS.selectedTab = "appearance"
-    end
     if isSingleEntry and CS.selectedTab == "layout" and not (availableTabs and availableTabs.layout) then
         CS.selectedTab = "appearance"
     end

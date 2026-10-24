@@ -1,7 +1,8 @@
 --[[
-    CooldownCompanion - Config/WorkspaceRouter
-    Routes the workspace to button, Resources / Cast Bar & Unit Frames,
-    or Other Class browsing surfaces.
+    CooldownCompanion - Config/Column3
+    Routes the workspace column to its surface: export/import, the buttons
+    workspace (including Other Class browsing), or the bars workspace
+    (Resources, Cast Bar & Unit Frames).
 ]]
 
 local _, ST = ...
@@ -63,8 +64,8 @@ local function RefreshColumn3(selectionOnly, edit)
         return ST._RefreshResourcesWideColumn(col3, edit)
     end
 
-    -- Other Class browsing (and any residual state) uses the same merged wide
-    -- column and pinned preview as the normal buttons workspace.
+    -- Reached only while the talent picker is open: Other Class browsing
+    -- returns above, since the buttons wide view is active while browsing.
     return ST._RefreshButtonsWideColumn(selectionOnly, edit)
 end
 

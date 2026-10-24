@@ -46,10 +46,7 @@ Core\IndicatorPanels.lua
 Core\EntryPresentation.lua
 Core\BarStyle.lua
 Core\PanelSections.lua
-Core\SpellActivationOverlayData.lua
 Core\AuraTextures.lua
-Core\AuraTexturesBuiltins.lua
-Core\AuraTexturesPicker.lua
 Core\AuraTexturesEffects.lua
 Core\AuraTexturesDisplay.lua
 Core\IndicatorDisplay.lua

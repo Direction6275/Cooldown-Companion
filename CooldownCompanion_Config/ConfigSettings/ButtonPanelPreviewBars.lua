@@ -105,7 +105,7 @@ end
 -- entry that customized the Pandemic section answers with its own stored value
 -- — the same resolution the live bind gate performs (AuraDisplay.lua
 -- StyleSlotKit).
-local function IsPandemicPreviewEnabled(style, buttonData)
+local function IsPandemicPreviewEnabled(style)
     return style and style.pandemicEffectEnabled == true
 end
 
@@ -388,7 +388,7 @@ local function UpdateCombinedBarAuraEffects(slot, state, now)
     local _, duration, remaining = GetConditionalPreviewTiming(state, now)
     local style = slot.style or {}
     local pandemicActive = ST._ConfigPreview.IsPandemicWindow(remaining, duration)
-        and IsPandemicPreviewEnabled(style, slot.buttonData) or false
+        and IsPandemicPreviewEnabled(style) or false
     if slot._cdcAuraPandemicActive == pandemicActive then return end
     slot._cdcAuraPandemicActive = pandemicActive
     StopBarSlotFillEffects(slot)
@@ -502,14 +502,14 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         if startTime then
             -- The Active Aura Indicator preview's fill effects ride the
             -- mirror's aura drain.
-            -- Pandemic recolor (PTR 8): live parity is the kit's clone
+            -- Pandemic recolor: live parity is the kit's clone
             -- occluding the fill — including its color shift — while still
             -- inheriting the fill pulse. So with the pandemic preview on,
             -- the fill effects run pulse-only (shift suppressed: a playing
             -- VertexColor animation owns the color channel and the recolor
             -- would never show) and the base color is the pandemic color.
             local pandemicActive = effectFlags and effectFlags._pandemicPreview == true
-                and IsPandemicPreviewEnabled(style, buttonData)
+                and IsPandemicPreviewEnabled(style)
             local fxActive = effectFlags
                 and (effectFlags._barAuraEffectPreview == true or pandemicActive)
                 and ST.IsBarAuraIndicatorEnabled
@@ -699,7 +699,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             slot.icon:SetDesaturated(true)
         end
     end
-    PP.ApplyMissingReminderPreview(slot, buttonData, group, previewState)
+    PP.ApplyMissingReminderPreview(slot, buttonData, group, state)
 end
 
 -- Static mirror of BarMode.lua CreateBarFrame: same saved settings, same

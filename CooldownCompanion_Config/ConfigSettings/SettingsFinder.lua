@@ -14,15 +14,15 @@ local DEFAULT_RESULT_LIMIT = 8
 local MAX_RESULT_LIMIT = 8
 
 local registry = {}
+-- The same descriptors bucketed by scope name, in registration order.
+local registryByScope = {}
 local descriptorsById = {}
 local contextPreparers = {}
 local presentationDescriptors = {}
 
 local TAB_LABELS = {
-    tracking = "Tracking",
     general = "General",
     settings = "Settings",
-    format = "Format",
     appearance = "Appearance",
     layout = "Layout",
     effects = "Indicators",
@@ -49,7 +49,7 @@ local VALID_ROW_SCOPES = {
 local ROUTE_FIELDS = {
     "scope", "tab", "tabLabel", "section", "sectionId", "sectionLabel",
     "collapseKeys", "collapseStore", "rowScope", "tabStateKey",
-    "advancedKey", "navigate",
+    "advancedKey",
 }
 
 local function Trim(text)
@@ -98,19 +98,16 @@ local function NormalizeAliases(aliases)
 end
 
 local function BuildBreadcrumb(descriptor)
-    local tabLabel = descriptor.tabLabel or TAB_LABELS[descriptor.tab] or descriptor.tab
-    local sectionLabel = descriptor.sectionLabel or descriptor.section
-    if tabLabel and sectionLabel and sectionLabel ~= tabLabel then
-        return tabLabel .. " \226\128\186 " .. sectionLabel
+    if descriptor.sectionLabel ~= descriptor.tabLabel then
+        return descriptor.tabLabel .. " \226\128\186 " .. descriptor.sectionLabel
     end
-    return tabLabel or sectionLabel or "Settings"
+    return descriptor.tabLabel
 end
 
 local function PresentationDescriptor(descriptor, context)
     if not context or context.presentation == "shared" or context.kind then return descriptor end
     local styled = descriptor.tab == "appearance" or descriptor.tab == "effects"
-        or descriptor.section == "arrangement" or descriptor.section == "compact"
-        or descriptor.id:match("^panel%.layout%.bars%.")
+        or descriptor.section == "arrangement"
     if not styled then return descriptor end
     local id = ST._SettingsContextKey(context, descriptor.id)
     if not presentationDescriptors[id] then
@@ -123,12 +120,10 @@ local function PresentationDescriptor(descriptor, context)
     return presentationDescriptors[id]
 end
 
+-- A valid scope string, or a non-empty array of them.
 local function ScopeDefinitionIsValid(scope)
     if type(scope) == "string" then
         return VALID_SCOPES[scope] == true
-    end
-    if type(scope) == "function" then
-        return true
     end
     if type(scope) ~= "table" then
         return false
@@ -136,14 +131,8 @@ local function ScopeDefinitionIsValid(scope)
 
     local found = false
     for key, value in pairs(scope) do
-        if type(key) == "number" then
-            if type(value) ~= "string" or not VALID_SCOPES[value] then
-                return false
-            end
-        else
-            if not VALID_SCOPES[key] or type(value) ~= "boolean" then
-                return false
-            end
+        if type(key) ~= "number" or type(value) ~= "string" or not VALID_SCOPES[value] then
+            return false
         end
         found = true
     end
@@ -168,11 +157,8 @@ local function ValidateDescriptorShape(descriptor)
     if not ScopeDefinitionIsValid(descriptor.scope) then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid scope")
     end
-    if descriptor.tab == nil and type(descriptor.navigate) ~= "function" then
-        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " requires a tab or navigate callback")
-    end
-    if descriptor.tab ~= nil and not TAB_LABELS[descriptor.tab] then
-        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid tab")
+    if not TAB_LABELS[descriptor.tab] then
+        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " requires a valid tab")
     end
     if descriptor.rowScope ~= nil and not VALID_ROW_SCOPES[descriptor.rowScope] then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid row scope")
@@ -191,14 +177,13 @@ local function ValidateDescriptorShape(descriptor)
         and type(descriptor.collapseKeys) ~= "string"
         and type(descriptor.collapseKeys) ~= "table"
         and type(descriptor.collapseKeys) ~= "function"
+        -- A table must be an array of keys.
+        or type(descriptor.collapseKeys) == "table"
+            and next(descriptor.collapseKeys) ~= nil and #descriptor.collapseKeys == 0
     then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has invalid collapse keys")
     end
-    if descriptor.collapseStore ~= nil
-        and descriptor.collapseStore ~= "resource"
-        and type(descriptor.collapseStore) ~= "table"
-        and type(descriptor.collapseStore) ~= "function"
-    then
+    if descriptor.collapseStore ~= nil and descriptor.collapseStore ~= "resource" then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid collapse store")
     end
     if descriptor.advancedKey ~= nil
@@ -206,9 +191,6 @@ local function ValidateDescriptorShape(descriptor)
         and type(descriptor.advancedKey) ~= "function"
     then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid advanced destination")
-    end
-    if descriptor.navigate ~= nil and type(descriptor.navigate) ~= "function" then
-        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid navigator")
     end
     if descriptor._routeApplies ~= nil and type(descriptor._routeApplies) ~= "function" then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid route predicate")
@@ -247,7 +229,7 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     end
     ValidateDescriptorShape(descriptor)
 
-    descriptor.tabLabel = descriptor.tabLabel or TAB_LABELS[descriptor.tab] or descriptor.tab
+    descriptor.tabLabel = descriptor.tabLabel or TAB_LABELS[descriptor.tab]
     descriptor.breadcrumb = BuildBreadcrumb(descriptor)
     descriptor._normalizedLabel = NormalizeSearchText(descriptor.label)
     descriptor._normalizedAliases = NormalizeAliases(descriptor.aliases)
@@ -255,6 +237,14 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
 
     descriptorsById[descriptor.id] = descriptor
     registry[#registry + 1] = descriptor
+    -- The last-item guard skips a scope name repeated within one descriptor.
+    for _, name in ipairs(type(descriptor.scope) == "string" and { descriptor.scope } or descriptor.scope) do
+        local bucket = registryByScope[name] or {}
+        registryByScope[name] = bucket
+        if bucket[#bucket] ~= descriptor then
+            bucket[#bucket + 1] = descriptor
+        end
+    end
 
     return descriptor
 end
@@ -347,7 +337,6 @@ local function GetSettingsFinderContext()
         resourcePowerType = CS.selectedResourcePowerType,
         resourceSpecID = CS.resourceSettingsSpecID,
         castFramesItem = CS.castFramesSelectedItem,
-        rowScope = CS.unifiedRowScope,
     }
     context.container = context.containerId and db.groupContainers
         and db.groupContainers[context.containerId] or nil
@@ -355,10 +344,9 @@ local function GetSettingsFinderContext()
     context.displayMode = context.group and (context.group.displayMode or "icons") or nil
     context.buttonData = context.group and context.buttonIndex and context.group.buttons
         and context.group.buttons[context.buttonIndex] or nil
-    context.button = context.buttonData
     if context.group and ST.PanelSupportsAttachedBars(context.group) and ST._GetPanelSettingsSelection then
         local entry = ST._GetPanelSettingsSelection(context.group)
-        context.buttonData, context.button = entry, entry
+        context.buttonData = entry
         if not entry then context.buttonIndex = nil end
         context.displayMode = entry and ST.GetEntryPresentation(context.group, entry) or "icons"
     end
@@ -399,11 +387,9 @@ local function GetSettingsFinderContext()
             context.scope = "entry"
         else
             context.scope = "panel"
-            context.rowScope = "primary"
         end
     elseif context.container then
         context.scope = "group"
-        context.rowScope = "primary"
     else
         return nil
     end
@@ -455,15 +441,6 @@ local function ScopeMatches(scope, contextScope)
     if type(scope) == "string" then
         return scope == contextScope
     end
-    if type(scope) == "function" then
-        return scope(contextScope) and true or false
-    end
-    if type(scope) ~= "table" then
-        return false
-    end
-    if scope[contextScope] ~= nil then
-        return scope[contextScope] == true
-    end
     for _, value in ipairs(scope) do
         if value == contextScope then
             return true
@@ -482,11 +459,10 @@ local function RegisterSettingsFinderContextPreparer(scope, prepare)
     contextPreparers[#contextPreparers + 1] = { scope = scope, prepare = prepare }
 end
 
+-- The prepare walk visits only the context scope's bucket; the scope check
+-- keeps this answer right for any other caller.
 local function IsDescriptorApplicable(descriptor, context)
-    if type(descriptor) == "string" then
-        descriptor = descriptorsById[descriptor]
-    end
-    if not (descriptor and context and ScopeMatches(descriptor.scope, context.scope)) then
+    if not ScopeMatches(descriptor.scope, context.scope) then
         return false
     end
     local editing = context.group and context.group._settingsContext
@@ -582,7 +558,7 @@ local function PrepareSettingsFinderContext(context, validationErrors)
     -- Applicability may consult spell-derived facts. Resolve every descriptor
     -- once while the settings surface is rebuilt, then keep the keystroke path
     -- to table reads and normalized string matching only.
-    for _, descriptor in ipairs(registry) do
+    for _, descriptor in ipairs(registryByScope[context.scope] or {}) do
         local applies = IsDescriptorApplicable(descriptor, context) == true
         cached[descriptor.id] = applies
         if applies then
@@ -745,31 +721,15 @@ local function ResolveCollapseKeys(descriptor, context)
         return {}
     end
     local result = {}
-    if #keys > 0 then
-        for _, key in ipairs(keys) do
-            result[#result + 1] = key
-        end
-    else
-        for key, enabled in pairs(keys) do
-            if enabled then
-                result[#result + 1] = key
-            end
-        end
-        table.sort(result)
+    for _, key in ipairs(keys) do
+        result[#result + 1] = key
     end
     return result
 end
 
-local function ResolveCollapseStore(descriptor, context)
-    local store = descriptor.collapseStore
-    if type(store) == "function" then
-        return store(context, descriptor)
-    end
-    if store == "resource" then
+local function ResolveCollapseStore(descriptor)
+    if descriptor.collapseStore == "resource" then
         return ST._RBP and ST._RBP.collapsedSections or nil
-    end
-    if type(store) == "table" then
-        return store
     end
     return CS.collapsedSections
 end
@@ -810,7 +770,7 @@ end
 
 local function OpenFinderCollapseTargets(descriptor, context, pending)
     local keys = ResolveCollapseKeys(descriptor, context)
-    local store = ResolveCollapseStore(descriptor, context)
+    local store = ResolveCollapseStore(descriptor)
     local lens
     if context.group and ST._ResolveStyleLens then
         lens = ST._ResolveStyleLens(context.group)
@@ -870,15 +830,7 @@ local function NavigateToFinderSetting(descriptor, expectedContext)
     end
 
     SetUnifiedRowScope(descriptor.rowScope)
-    if descriptor.navigate then
-        -- A custom navigator owns only destination-state writes. It must not
-        -- refresh; the engine performs the one rebuild below.
-        if descriptor.navigate(context, descriptor) == false then
-            return false
-        end
-    else
-        ApplyDefaultTabRoute(descriptor, context)
-    end
+    ApplyDefaultTabRoute(descriptor, context)
 
     local advancedKey = ResolveAdvancedKey(descriptor, context)
     local editing = context.group and context.group._settingsContext
@@ -930,17 +882,9 @@ end
 
 local function ValidateRegistry(context)
     local errors = {}
-    local seen = {}
     for _, descriptor in ipairs(registry) do
-        if seen[descriptor.id] then
-            errors[#errors + 1] = "duplicate id: " .. descriptor.id
-        end
-        seen[descriptor.id] = true
         if descriptor._normalizedLabel == "" then
             errors[#errors + 1] = "missing searchable label: " .. descriptor.id
-        end
-        if not descriptor.tabLabel and not descriptor.navigate then
-            errors[#errors + 1] = "missing tab route: " .. descriptor.id
         end
     end
 

@@ -31,6 +31,24 @@ local function CanAllPanelsMoveToContainer(panelIds, containerId)
     return true
 end
 
+-- The selected panels in Navigator order (ST.ComparePanelOrder), skipping any
+-- id whose panel no longer exists.
+local function PanelIdsInDisplayOrder(db, panelIds)
+    local records = {}
+    for _, pid in ipairs(panelIds) do
+        local panel = db.groups[pid]
+        if panel then
+            records[#records + 1] = { groupId = pid, group = panel }
+        end
+    end
+    table.sort(records, ST.ComparePanelOrder)
+    local ordered = {}
+    for index, record in ipairs(records) do
+        ordered[index] = record.groupId
+    end
+    return ordered
+end
+
 
 -- Row-grammar action strips: compact buttons on grammar-height lines. Flow
 -- insets its single row by 3px top and bottom, so 3 + 24 + 3 centres inside
@@ -343,7 +361,8 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
-                    for _, pid in ipairs(multiPanelIds) do
+                    -- Move in display order (multiPanelIds carries hash order).
+                    for _, pid in ipairs(PanelIdsInDisplayOrder(db, multiPanelIds)) do
                         CooldownCompanion:MovePanel(pid, container.id)
                     end
                     ClearConfigPanelMultiSelection({ selectContainerId = container.id })
@@ -361,7 +380,8 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
     -- one or two wide.
     local copyActions = {
         { text = "Duplicate Selected", onClick = function()
-            for _, pid in ipairs(multiPanelIds) do
+            -- Duplicate in display order (multiPanelIds carries hash order).
+            for _, pid in ipairs(PanelIdsInDisplayOrder(db, multiPanelIds)) do
                 CooldownCompanion:DuplicatePanel(containerId, pid)
             end
             ClearConfigPanelMultiSelection()

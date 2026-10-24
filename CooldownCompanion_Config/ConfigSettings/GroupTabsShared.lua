@@ -24,9 +24,11 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
     local context = ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(slider)
     local target = ST._CaptureConfigEditTarget(CS.selectedGroup, context)
 
+    -- The target carries this same context, so its check covers both.
     slider:SetCallback("OnValueChanged", function(_, _, value)
-        if (context and not context:IsCurrent())
-            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
+        if target then
+            if not ST._IsConfigEditTargetCurrent(target) then return end
+        elseif context and not context:IsCurrent() then return end
         ST._WithSettingsPreview(stateOwner, stateKeys, function() applyValue(value) end, function(outcome)
             if previewFn == false then
                 -- Some sliders change screen-space placement, which the pinned
@@ -39,8 +41,9 @@ local function WireMirrorFirstSlider(slider, applyValue, commitFn, previewFn, st
         end)
     end)
     slider:SetCallback("OnMouseUp", function(_, _, value)
-        if (context and not context:IsCurrent())
-            or (target and not ST._IsConfigEditTargetCurrent(target)) then return end
+        if target then
+            if not ST._IsConfigEditTargetCurrent(target) then return end
+        elseif context and not context:IsCurrent() then return end
         applyValue(value)
         if commitFn then
             commitFn()
@@ -106,10 +109,9 @@ local function MakeCooldownTextAdvancedDescriptor(styleTable, finderSettings)
             end
 
             -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
-            -- column, so every builder is called with { row = true } and no
-            -- rightColumn, and each falls back to `container` for its extras.
+            -- column, so every builder is called with no rightColumn, and
+            -- each falls back to `container` for its extras.
             AddFontControls(panel, style, "cooldown", { size = 12 }, RefreshSelectedGroupStyle, {
-                row = true,
                 settings = finderSettings and {
                     size = finderSettings.fontSize,
                     font = finderSettings.font,

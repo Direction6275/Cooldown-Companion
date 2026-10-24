@@ -54,18 +54,8 @@ local PROFILE_WIDE_FONT_WINDOW_FALLBACK_WIDTH = 330
 local PROFILE_WIDE_FONT_WINDOW_HEIGHT = 168
 local PROFILE_WIDE_BAR_TEXTURE_WINDOW_HEIGHT = 106
 
-local function GetAddonVersionText()
-    if ST._GetAddonVersion then
-        return ST._GetAddonVersion()
-    end
-    return "unknown"
-end
-
 local function GetVersionFooterText()
-    local version = GetAddonVersionText()
-    if ST._Changelog and ST._Changelog.GetDisplayAddonVersion then
-        version = ST._Changelog.GetDisplayAddonVersion()
-    end
+    local version = ST._Changelog.GetDisplayAddonVersion()
     version = tostring(version or "unknown")
     if version ~= "" and version ~= "unknown" and version ~= "dev" and not version:match("^[Vv]") then
         version = "v" .. version
@@ -453,8 +443,8 @@ local function GetColumn3HeaderMode(selection)
         if resourceBarSettings and resourceBarSettings.enabled == true then
             if CS.selectedResourcePowerType
                 and ST._RBP
-                and ST._RBP.IsResourceEditableInColumn4
-                and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, resourceBarSettings, true)
+                and ST._RBP.IsResourceEditable
+                and ST._RBP.IsResourceEditable(CS.selectedResourcePowerType, resourceBarSettings)
             then
                 return "resource_settings"
             end
@@ -771,20 +761,6 @@ function CooldownCompanion:DoesCurrentConfigSelectionReferenceSpell(pendingSpell
         return DoesSelectedPanelReferencePendingOverrideSpell(pendingSpellIds)
     end
 
-    local panels = self:GetPanels(CS.selectedContainer)
-    for _, panelInfo in ipairs(panels or {}) do
-        local panelId = panelInfo.groupId
-        local panel = panelInfo.group
-        local entriesVisible = not CS.collapsedPanels[panelId]
-        if entriesVisible and panel and panel.buttons then
-            for _, buttonData in ipairs(panel.buttons) do
-                if DoesButtonReferencePendingOverrideSpell(buttonData, pendingSpellIds) then
-                    return true
-                end
-            end
-        end
-    end
-
     return false
 end
 
@@ -878,7 +854,6 @@ local function ResetConfigForProfileChange()
         ST._HideProfileScopedPopups()
     end
     ResetConfigSelection(true)
-    wipe(CS.collapsedPanels)
     if ClearConfigFinderText then
         ClearConfigFinderText()
     end
@@ -1625,7 +1600,7 @@ local function CreateConfigPanel()
             info6.func = function()
                 CloseDropDownMenus()
                 if StartFirstIconPanelTutorial then
-                    StartFirstIconPanelTutorial(true)
+                    StartFirstIconPanelTutorial()
                 end
             end
             UIDropDownMenu_AddButton(info6, level)
@@ -2160,8 +2135,7 @@ local function CreateConfigPanel()
     CS.col1Scroll = scroll1
 
     -- Button Settings TabGroup. The tab list is refreshed later from the
-    -- selected entry: one Settings tab (labelled "Condition" on trigger
-    -- panels), or the single appended multi-select tab.
+    -- selected entry: one Settings tab, or the single appended multi-select tab.
     local bsTabGroup = AceGUI:Create("TabGroup")
     bsTabGroup:SetTabs({
         { value = "settings", text = "Settings" },
@@ -2288,10 +2262,6 @@ local function CreateConfigPanel()
     CS.buttonSettingsScroll = bsScroll
 
     -- Per-panel drop highlight system
-    local function IsCursorDropPayload(cursorType)
-        return cursorType == "spell" or cursorType == "item" or cursorType == "petaction"
-    end
-
     CS._panelDropTargets = {}
 
     -- Throttled OnUpdate scanner: shows/hides per-panel overlays based on cursor position
@@ -2336,11 +2306,21 @@ local function CreateConfigPanel()
     local function UpdatePanelDropScan()
         local cursorType = GetCursorInfo()
         local targets = CS._panelDropTargets
-        if IsCursorDropPayload(cursorType)
+        if ST._IsPanelCursorDropPayload(cursorType)
             and targets and #targets > 0
             and col1.frame:IsShown()
             and not (IsConfigFinderActive and IsConfigFinderActive())
             and not CS.otherClassLibraryActive then
+            -- Each row lights up only if its panel would take this payload
+            -- (the preview overlay's rule). A refused row keeps a near-clear
+            -- overlay, so the drop still reaches it and prints the refusal.
+            local groups = CooldownCompanion.db.profile.groups
+            for _, target in ipairs(targets) do
+                local group = groups[target.panelId]
+                target.showHighlight = group ~= nil
+                    and ST._IsPanelCursorDropPayload(cursorType, group)
+                    and CooldownCompanion:CanPanelAcceptManualEntry(group)
+            end
             dropScanElapsed = DROP_SCAN_INTERVAL  -- scan immediately on first tick
             dropScanFrame:Show()
         else

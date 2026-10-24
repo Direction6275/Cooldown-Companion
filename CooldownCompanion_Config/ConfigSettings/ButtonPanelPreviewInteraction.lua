@@ -232,8 +232,6 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
 
     if buttonData._geometryContext then buttonData._geometryContext:Refresh()
     else CooldownCompanion:UpdateGroupStyle(panelId) end
-    -- The format is re-parsed on the way through PopulateGroupButtons, which
-    -- only the frame refresh reaches. Paid only when a format actually copied.
     local name = GetConfigEntryDisplayName(buttonData) or buttonData.name or "entry"
     if skipped > 0 then
         state.lastAppliedText = ("Applied to %s (%d of %d)"):format(name, applied, applied + skipped)
@@ -245,11 +243,11 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
 end
 
 local function EnsureCopyCustomizationBanner(preview)
-    -- The unified anchor composition builds the mirror into an inner host
-    -- shrunk to the panel content, where a banner would sit on the entries
-    -- themselves; it passes the outer Live Preview host so the strip reads
-    -- at the top of the whole preview instead. Re-anchored on every ensure:
-    -- the same preview state can build under either composition.
+    -- A caller that builds the mirror into an inner host (the bars
+    -- workspace's Layout & Order preview) passes its outer host, so the strip
+    -- reads at the top of the whole preview instead of over the entries.
+    -- Re-anchored on every ensure: the same preview state can build with or
+    -- without an outer host.
     local bannerHost = preview.copyBannerHost or preview.root
     local banner = preview.copyBanner
     if banner then
@@ -788,8 +786,7 @@ local function CreatePreviewLayoutDrag(preview, panelId)
         SectionDrag.HideHandle(preview)
         ResetGridDragPreview(preview, layoutDrag)
         -- The gesture is over however it ended -- drop, Escape, release into
-        -- nothing -- so the record goes and the attached bar lanes come back
-        -- here and only here.
+        -- nothing -- so the record goes here and only here.
         SectionDrag.EndGesture(preview)
         ClearPreviewGhost(preview)
         -- Keep ticking so the return-to-rest tween plays out
@@ -1254,22 +1251,14 @@ local GHOST_LEVEL_OFFSET = PANEL_PREVIEW_HIGHLIGHT_LEVEL_OFFSET + 3
 -- preview state: the bar at rest.
 local GHOST_BAR_STATE = { effectFlags = {} }
 
---- The mirror the Live Preview host is showing. With attached bars up it
---- is the unified composition's inner mirror (UnifiedAnchorPreview builds it
---- in _cdcUnifiedMirrorHost and releases the host's own); otherwise the
---- host's own. The drop overlay only ever knows the outer host.
+--- The mirror the Live Preview host is showing.
 function DropGhost.Mirror(host)
-    local inner = host and host._cdcUnifiedMirrorHost
-    local preview = inner and inner:IsShown() and inner._cdcPanelPreview or nil
-    if preview and preview.root:IsVisible() then
-        return preview
-    end
     return host and host._cdcPanelPreview
 end
 
 --- The preview behind `host`, its slot kind and its panel, or nothing when
 --- this host takes no ghost: a released or hidden mirror, a build that was
---- not an icon, bar or text mirror open to a drop (ST._BuildButtonPanelPreview
+--- not an icon or bar mirror open to a drop (ST._BuildButtonPanelPreview
 --- records the kind as dropGhostMode on exactly those builds), or a mirror
 --- of some panel other than the one an add would land in.
 function DropGhost.Preview(host)
@@ -1537,7 +1526,7 @@ end
 function DropGhost.Show(host, spec, target, owner)
     local preview, mode, group = DropGhost.Preview(host)
     if not preview then return false end
-    local saved = group._unifiedPanelOwner or group
+    local saved = group
     if ST.PanelSupportsAttachedBars(saved) then
         mode = ST.GetEntryPresentation(saved, spec) == "bars" and "barSlots" or "iconSlots"
     end

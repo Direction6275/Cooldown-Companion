@@ -1660,6 +1660,25 @@ local function StyleKitFlipbook(tex, anchorFrame, pct, r, g, b, a)
     tex:SetVertexColor(r, g, b, a)
 end
 
+-- Every animation a glow kit can run, stopped with the regions left as
+-- styled. Also used on pooled aura frames Blizzard never shows
+-- (AuraDisplay.lua HoldPooledSpareStill).
+local function StopKitGlowAnimations(glowKit)
+    glowKit.pulseAG:Stop()
+    glowKit.flipAG:Stop()
+    glowKit.antsAG:Stop()
+    for i = 1, 4 do
+        glowKit.csAGs[i]:Stop()
+    end
+    for _, spark in ipairs(glowKit.sparks) do
+        spark.ag:Stop()
+    end
+    glowKit.dashes.ag:Stop()
+    if glowKit.cdm then
+        glowKit.cdm.ag:Stop()
+    end
+end
+
 -- Shared styling core: full reset, then light the requested branch. The
 -- per-surface key resolution lives in the thin resolvers below
 -- (StyleKitGlowRegions for the icon auraGlow* keys, StyleKitBarGlowRegions
@@ -1669,13 +1688,10 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
 
     -- Full reset: stop every animation and blank every sub-visual, then the
     -- active branch lights only its own. The VertexColor anims leave a
-    -- residual vertex tint on the edges, so restore white here (before the
-    -- SetAlpha, per the Phase 2 gotcha).
-    glowKit.pulseAG:Stop()
-    glowKit.flipAG:Stop()
-    glowKit.antsAG:Stop()
+    -- residual vertex tint on the edges, so restore white here (after the
+    -- stop and before the SetAlpha, per the Phase 2 gotcha).
+    StopKitGlowAnimations(glowKit)
     for i = 1, 4 do
-        glowKit.csAGs[i]:Stop()
         glowKit.edges[i]:SetVertexColor(1, 1, 1, 1)
         glowKit.edges[i]:SetAlpha(0)
     end
@@ -1683,10 +1699,8 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     glowKit.ants:SetAlpha(0)
     glowKit.overlay:SetAlpha(0)
     for _, spark in ipairs(glowKit.sparks) do
-        spark.ag:Stop()
         spark.tex:SetAlpha(0)
     end
-    glowKit.dashes.ag:Stop()
     for _, d in ipairs(glowKit.dashes) do
         for _, piece in ipairs(d.pieces) do
             piece.tex:SetAlpha(0)
@@ -1694,7 +1708,6 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     end
     local cdm = glowKit.cdm
     if cdm then
-        cdm.ag:Stop()
         cdm.border:SetAlpha(0)
         cdm.fx[1]:SetAlpha(0)
         cdm.fx[2]:SetAlpha(0)
@@ -2087,6 +2100,7 @@ ST.IsBarAuraIndicatorEnabled = IsBarAuraIndicatorEnabled
 ST._SetBarAuraEffect = SetBarAuraEffect
 ST._BuildKitGlowRegions = BuildKitGlowRegions
 ST._StyleKitGlowRegions = StyleKitGlowRegions
+ST._StopKitGlowAnimations = StopKitGlowAnimations
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
 ST._BuildPandemicWindowRig = BuildPandemicWindowRig

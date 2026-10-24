@@ -7,10 +7,9 @@ local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
--- Core/Defaults.lua. "Can this PANEL ever use this override section?" - false
--- only on an Aura Panel, for the sections that read spell cooldown, castability,
--- proc, charge, cast or GCD state its pure-aura entries do not have.
-local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection or ST.CanGroupUseOverrideSection
+-- Core's per-panel rule ("Can this PANEL ever use this override section?"),
+-- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
+local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 local function ShowChargeGap(group)
     local entry = ST._GetPanelSettingsSelection(group)
     return CanGroupUseOverrideSection(group, "barCharges")
@@ -23,14 +22,13 @@ local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
 local AddTextPositionControls = ST._AddTextPositionControls
-local AddBarTextPositionControls = ST._AddBarTextPositionControls
 local AddFontControls = ST._AddFontControls
 local GroupHasAuraTrackingEntry = ST._GroupHasAuraTrackingEntry
 local BuildBarActiveAuraControls = ST._BuildBarActiveAuraControls
 
--- Style lens (Helpers.lua). Selecting an entry turns these tabs into a view of
+-- Style lens (StyleLens.lua). Selecting an entry turns these tabs into a view of
 -- that entry's effective values, with per-section scope deciding where - or
--- whether - each section writes. Helpers.lua loads first (the .toc), so these
+-- whether - each section writes. StyleLens.lua loads first (the .toc), so these
 -- resolve at load like every other import above.
 -- ResolveLensSection is kept for the finder predicates below, which only ask
 -- a section's scope; every section that draws rows goes through the host
@@ -65,7 +63,7 @@ local tabInfoButtons = CS.tabInfoButtons
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a tab
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a tab
 -- rebuild allocates none of them.
 local TURNON_BAR_NAME_TEXT = { label = "Enable Name Text", key = "showBarNameText" }
 local TURNON_BAR_COOLDOWN_TEXT = { label = "Enable Cooldown Text", key = "showCooldownText" }
@@ -144,7 +142,7 @@ local EFFECTS_INTERACTION_SECTION = "effects_interaction"
 -- beside it: that map answers "which COLLAPSE section is this gear inside",
 -- this one answers "which OVERRIDE section owns this gear's values".
 --
--- Read by the Customizations list (Helpers.lua) to resolve a section's gear.
+-- Read by the Customizations list (EntryCustomizations.lua) to resolve a section's gear.
 -- Stale-panel cleanup no longer iterates it: the gear-stamp sweep in
 -- AdvancedSettingsPanel.lua closes unrebuilt gear panels by key, mapless.
 --
@@ -226,14 +224,14 @@ local function BarsLensHasMissingPicture(lens, group)
 end
 
 -- The Cooldown Text ROW is left out on an Aura Panel (BuildBarAppearanceTab's
--- `if not isAuraPanel`): nothing there has a cooldown, so the toggle is dead and
+-- `if not usesOnlyAura`): nothing there has a cooldown, so the toggle is dead and
 -- Duration Format remains a shared row in the duration options; time placement
 -- and the two time-text offsets move under the aura duration text they place. The
 -- section itself stays usable, so this is an `available` predicate rather than a
 -- denial in ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS. Without it the
 -- Customizations index would offer a name link onto a row that is not drawn.
 local function GroupDrawsCooldownTextRow(group)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
 end
 
 -- Low Time Threshold is drawn once beside a duration surface that can consume
@@ -242,7 +240,7 @@ end
 -- Keep these predicates in step with the icon-mode twins in
 -- GroupTabsAppearance.lua: both modes edit the same durationLowTime policy.
 local function BarsDrawCooldownDurationRows(group, style)
-    return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    return not ST._SettingsUsesOnlyAura(group)
         and style and style.showCooldownText == true
 end
 
@@ -286,7 +284,7 @@ end
 -- them for a consumer that cannot see the tab, and each is a one-liner copied
 -- from the gate it cites so drift shows up in a diff.
 --
--- The consumer is the entry Settings pane's Customizations list (Helpers.lua):
+-- The consumer is the entry Settings pane's Customizations list (EntryCustomizations.lua):
 -- it gates a row's name LINK on `available`, because a click landing on a tab
 -- that never draws the section goes nowhere, and its advanced gear on both,
 -- because a gear queues a panel that a gear which was never built can never
@@ -354,9 +352,6 @@ ST._SECTION_HOME.bars = {
         tab = "appearance", collapseKey = "barappearance_textIcon",
         available = BarsGroupTracksAura,
     },
-    -- Icon Zoom is edited inside the Show Icon gear's advanced panel in bar
-    -- mode, so its home is that gear's section.
-    iconZoom = { tab = "appearance", collapseKey = "barappearance_textIcon" },
     -- The bar-host slice of While Aura Active (aura icon swap + active-state
     -- desaturate; the keep-swipe/keep-text keys are icons-only in effect).
     -- Both rows render on the icon square, so the section is drawn only while
@@ -480,7 +475,7 @@ local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
 
             local refreshStyle = ST._MakeConfigEditRefresh({ _settingsContext = ST._GetSettingsWidgetContext(panel) })
 
-            local anchorRow = AddBarTextPositionControls(panel, style,
+            local anchorRow = AddTextPositionControls(panel, style,
                 "barTimeTextAnchor", "barCdTextOffsetX", "barCdTextOffsetY", refreshStyle, {
                     automatic = true, settings = finderSettings,
                 })
@@ -495,7 +490,7 @@ end
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
-    -- STYLE LENS (Helpers.lua). With an entry selected the sections below stop
+    -- STYLE LENS (StyleLens.lua). With an entry selected the sections below stop
     -- being the panel's settings and become a view of that entry's EFFECTIVE
     -- ones, with per-section scope deciding where - or whether - they write.
     -- Resolved ONCE here and handed to every section, so one tab cannot
@@ -514,7 +509,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- it that DO still work - Duration Format, Time text positioning and the two
     -- time-text offsets - under the aura duration text they actually place
     -- (owner ruling 2026-08-15).
-    local isAuraPanel = (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(group)
+    local usesOnlyAura = ST._SettingsUsesOnlyAura(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
     -- so - the per-section scope chrome speaks under an entry lens alone. No-op
@@ -653,13 +648,9 @@ local function BuildBarAppearanceTab(container, group, style)
         and ((group.buttons and #group.buttons > 1) or group._settingsContext) then
         AddSliderRow(barRight, {
             label = "Bar Spacing",
-            setting = BAR_FINDER.appearance.barSettings
-                and BAR_FINDER.appearance.barSettings[group._attachedBarOwner and "gridSpacing" or "spacing"],
-            tooltip = group._attachedBarOwner and { "Grid Spacing",
-                { "Space between bars when the panel contains only bars and uses Grid arrangement.", 1, 1, 1, true } } or nil,
+            setting = BAR_FINDER.appearance.barSettings and BAR_FINDER.appearance.barSettings.spacing,
             min = -10, max = 100, step = 0.1,
             value = style.buttonSpacing or ST.BUTTON_SPACING,
-            disabled = lens.mode == "entry",
             onChange = function(val)
                 ST._PreviewScalarSetting(style, "buttonSpacing", val, ST._RefreshSelectedButtonsPreview)
             end,
@@ -852,7 +843,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- near-expiry policy) lead, as on the Icons tab.
     local sharedLeft, sharedRight
     if drawsCooldownFormat or drawsAuraFormat or drawsCooldownLowTime or drawsAuraLowTime then
-        if isAuraPanel then
+        if usesOnlyAura then
             sharedLeft = BeginRowGrid(container)
             sharedRight = sharedLeft
         else
@@ -891,7 +882,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- scope, and wears the section's chrome itself when Bar Settings has no
     -- rows on screen.
     local function AddBarDurationFormat(column, textSec)
-        local formatOpts = { row = true, sharedHelp = true, infoButtons = tabInfoButtons,
+        local formatOpts = { sharedHelp = true, infoButtons = tabInfoButtons,
             setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat }
         if not group._attachedBarOwner then
             local row = AddDurationFormatDropdown(column, group.style, refreshStyle, formatOpts)
@@ -970,9 +961,9 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     local function BuildBarNameTextAdvanced(panel)
-        AddBarTextPositionControls(panel, nameSec.tbl,
+        AddTextPositionControls(panel, nameSec.tbl,
             "barNameTextAnchor", "barNameTextOffsetX", "barNameTextOffsetY", refreshStyle, {
                 automatic = true, settings = BAR_FINDER.advanced.name, disabled = nameSec.disabled,
             })
@@ -994,7 +985,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- down, so the toggle itself is dead there and is left out; everything live
     -- that hung off it (Duration Format, time text positioning, the two time-text
     -- offsets) moves into the aura duration text section on the right.
-    if not isAuraPanel then
+    if not usesOnlyAura then
     local cdTextSec = BeginLensSection(lens, group, "cooldownText", { column = durationLeft })
 
     local showTimeRow = AddCheckboxRow(durationLeft, {
@@ -1046,7 +1037,7 @@ local function BuildBarAppearanceTab(container, group, style)
     if drawsCooldownLowTime then
         AddDurationLowTimeSection()
     end
-    end -- not isAuraPanel
+    end -- not usesOnlyAura
 
     -- Show Charge Text toggle. Charges and uses are spell mechanics, so an Aura
     -- Panel never counts anything here; the aura's own stack count is the Show
@@ -1066,7 +1057,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
     --
     -- The three count colors are the panel's longest labels. They end in a 19px
     -- swatch, the narrow control the row grammar reserves long labels for, and
@@ -1125,7 +1116,7 @@ local function BuildBarAppearanceTab(container, group, style)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn. The
+    -- Single rail (AdvancedSettingsPanel.lua): no rightColumn. The
     -- CDC-EditBoxRow embeds a stock EditBox, so the raw frame the Instructions
     -- text hangs on is still reachable through row.editbox.
     local function BuildBarReadyTextAdvanced(panel)
@@ -1152,7 +1143,6 @@ local function BuildBarAppearanceTab(container, group, style)
             onConfirm = refreshStyle,
         })
         AddFontControls(panel, readySec.tbl, "barReady", {sizeMin = 6, sizeMax = 24}, refreshStyle, {
-            row = true,
             settings = BAR_FINDER.advanced.ready and {
                 size = BAR_FINDER.advanced.ready.fontSize,
                 font = BAR_FINDER.advanced.ready.font,
@@ -1174,12 +1164,10 @@ local function BuildBarAppearanceTab(container, group, style)
     readySec:Finish()
     end -- CanGroupUseOverrideSection barReadyText
 
-    -- Bar aura block: the aura text toggles. Shown only while the GROUP has an
-    -- aura-tracking entry (same gate as the icon-side aura sections, and as the
-    -- Bar Aura Timer Color row up with the other bar colors). The gate stays on
-    -- the group: with an entry selected that tracks no aura, the rows are still
-    -- drawn and the lens resolves them "not available" for that entry, which is
-    -- what states the reason rather than hiding it. Style edits route through
+    -- Bar aura block: the aura text toggles. Shown where the aura style
+    -- sections apply (GroupHasAuraTrackingEntry, StyleLens.lua; the same gate as
+    -- the icon-side aura sections, and as the Bar Aura Timer Color row up with
+    -- the other bar colors). Style edits route through
     -- refreshStyle -> UpdateGroupStyle -> RequestAuraRebind, which defers to
     -- combat end with the one-time note when needed.
     if GroupHasAuraTrackingEntry(group) then
@@ -1199,7 +1187,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildBarAuraTextAdvanced(panel)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
@@ -1222,7 +1210,7 @@ local function BuildBarAppearanceTab(container, group, style)
                 disabled = auraTextSec.disabled,
                 onConfirm = refreshStyle,
             })
-            if not isAuraPanel then
+            if not usesOnlyAura then
                 AddCheckboxRow(panel, {
                     label = "Independent Position",
                     setting = BAR_FINDER.advanced.auraText.independent,
@@ -1236,8 +1224,8 @@ local function BuildBarAppearanceTab(container, group, style)
                     end,
                 })
             end
-            if isAuraPanel or auraTextSec.read.barAuraTextIndependent == true then
-                AddBarTextPositionControls(panel, auraTextSec.tbl,
+            if usesOnlyAura or auraTextSec.read.barAuraTextIndependent == true then
+                AddTextPositionControls(panel, auraTextSec.tbl,
                     "barAuraTextAnchor", "barAuraTextOffsetX", "barAuraTextOffsetY", refreshStyle, {
                         settings = BAR_FINDER.advanced.auraText,
                         disabled = auraTextSec.disabled,
@@ -1269,7 +1257,7 @@ local function BuildBarAppearanceTab(container, group, style)
         -- On an Aura Panel the anchor and offset rows live in this section's own
         -- gear, so the pointer to the Cooldown Text section would send the user
         -- to a row that is not drawn.
-        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, isAuraPanel and {
+        AnchorRowBadge(auraTextRow, CreateInfoButton(auraTextRow.frame, auraTextRow.frame, "LEFT", "LEFT", 0, 0, usesOnlyAura and {
             "Aura Duration Text",
             {"Shows the remaining aura time while the aura is active. Set its Anchor and offsets in this section.", 1, 1, 1, true},
         } or {
@@ -1303,7 +1291,7 @@ local function BuildBarAppearanceTab(container, group, style)
             end,
         })
 
-        -- Single rail (AdvancedSettingsPanel.lua): row mode, no rightColumn.
+        -- Single rail (AdvancedSettingsPanel.lua): no rightColumn.
         local function BuildBarAuraStackTextAdvanced(panel)
             AddTextPositionControls(panel, auraStackSec.tbl, "auraStackAnchor", "auraStackXOffset", "auraStackYOffset", refreshStyle, {
                 defaults = {anchor = "BOTTOMLEFT", x = 2, y = 2, range = 20},
@@ -1462,16 +1450,13 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- opts.singleRail suppresses it and rails the border effect and the two
     -- fill effects onto the panel scroll in order.
     --
-    -- The panel captures the section's WRITE table with the panel style
-    -- behind it in opts - the styleTable + fallbackStyle pair a customized
-    -- section passes. The section's enable toggle lives on the row above,
-    -- never in the shared builder.
+    -- The panel captures the section's resolved table (sec.tbl). The
+    -- section's enable toggle lives on the row above, never in the shared
+    -- builder.
     local function BuildBarActiveAuraAdvanced(panel)
         BuildBarActiveAuraControls(panel, auraSec.tbl, refreshStyle, {
-            row = true,
             singleRail = true,
             infoButtons = tabInfoButtons,
-            fallbackStyle = auraSec.fallbackStyle,
             settings = BAR_FINDER.advanced.activeAura,
         })
     end
@@ -1496,7 +1481,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     auraSec:Finish()
 end
 
--- Pandemic color (PTR 8): the aura kit reveals a pandemic-colored clone of
+-- Pandemic color: the aura kit reveals a pandemic-colored clone of
 -- the duration fill while the tracked aura sits inside its refresh window.
 -- Enable + color only; the window itself is game-computed.
 --
@@ -1566,9 +1551,6 @@ local function BuildBarPandemicMarkerSection(container, group, style, lens)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
     local effectiveStyle = (lens and lens.effective) or style
     if effectiveStyle and effectiveStyle.showAuraText == false then
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ settingKey = "barPandemicMarker" })
-        end
         return
     end
     if not container or not GroupHasAuraTrackingEntry(group) then
@@ -1623,7 +1605,7 @@ end
 local function BuildBarEffectsTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
-    -- STYLE LENS (Helpers.lua), resolved ONCE for the whole tab and handed to
+    -- STYLE LENS (StyleLens.lua), resolved ONCE for the whole tab and handed to
     -- every section below - see the note at the top of BuildBarAppearanceTab
     -- for what the scopes mean and why the write table is the only gate.
     local lens = ResolveStyleLens(group)
@@ -1866,11 +1848,9 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "unusableDimming") then
         local unusableSec = BeginLensSection(lens, group, "unusableDimming", { column = stateLeft })
         local unusableRow = BuildUnusableDimmingControls(stateLeft, unusableSec.tbl, refreshStyle, {
-            row = true,
             advanced = unusableSec.scope ~= "denied",
             advancedUnlock = { sec = unusableSec,
                 enable = unusableSec.read.showUnusable ~= true and TURNON_SHOW_UNUSABLE or nil },
-            fallbackStyle = unusableSec.fallbackStyle,
             setting = BAR_FINDER.effects.spell.unusable,
             settings = BAR_FINDER.advanced.unusable,
         })
@@ -1903,7 +1883,6 @@ local function BuildBarEffectsTab(container, group, style)
         if barIconShown and CanGroupUseOverrideSection(group, "lossOfControl") then
         local locSec = BeginLensSection(lens, group, "lossOfControl")
         local locRow = BuildLossOfControlControls(stateRight, locSec.tbl, refreshStyle, {
-            row = true,
             setting = BAR_FINDER.effects.spell.lossOfControl,
         })
         locRow:SetDisabled(locSec.disabled)
@@ -1936,12 +1915,10 @@ local function BuildBarEffectsTab(container, group, style)
         local tooltipRow = BuildShowTooltipsControls(interactionLeft, tooltipSec.tbl, function(operation)
             return refreshStyle(operation or "style-settings", "interaction")
         end, {
-            row = true,
             advanced = tooltipSec.scope ~= "denied",
             advancedUnlock = { sec = tooltipSec,
                 enable = tooltipSec.read.showTooltips ~= true and TURNON_SHOW_TOOLTIPS or nil },
             infoButtons = tabInfoButtons,
-            fallbackStyle = tooltipSec.fallbackStyle,
             setting = BAR_FINDER.effects.interaction.tooltips,
             settings = BAR_FINDER.advanced.tooltip,
         })
@@ -1961,7 +1938,6 @@ local function BuildBarEffectsTab(container, group, style)
         BuildAllowPingsControls(interactionRight, style, function(operation)
             return refreshStyle(operation or "style", "interaction")
         end, {
-            row = true,
             setting = BAR_FINDER.effects.interaction.pings,
         })
         pingsSec:Finish()
@@ -2019,7 +1995,7 @@ local function BarFinderSectionState(context, sectionId)
 end
 
 local function BarFinderAuraPositionVisible(context)
-    if (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group) then return true end
+    if ST._SettingsUsesOnlyAura(context.group) then return true end
     local read = BarFinderSectionState(context, "auraText")
     return read and read.barAuraTextIndependent == true or false
 end
@@ -2109,7 +2085,7 @@ local function BarFinderEffectRoute(prefix, section, sectionLabel, applies,
 end
 
 local function BarFinderCooldownText(context)
-    return context and context.group and not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group)
+    return context and context.group and not ST._SettingsUsesOnlyAura(context.group)
 end
 
 local function BarFinderCooldownTextVisible(context)
@@ -2390,7 +2366,7 @@ if ST._DefineSettingRoute then
         color = { label = "Aura Text Color", aliases = { "aura timer color", "aura duration color" } },
         independent = {
             label = "Independent Position", aliases = { "separate aura position", "aura anchor", "center aura text", "aura offset" },
-            applies = function(context) return not (ST._SettingsUsesOnlyAura or ST.IsAuraPanelGroup)(context.group) end,
+            applies = function(context) return not ST._SettingsUsesOnlyAura(context.group) end,
         },
         anchor = { label = "Anchor", aliases = { "position", "center" }, applies = BarFinderAuraPositionVisible },
         xOffset = { label = "X Offset", applies = BarFinderAuraPositionVisible },

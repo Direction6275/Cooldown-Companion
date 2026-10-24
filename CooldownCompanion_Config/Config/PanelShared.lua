@@ -1,7 +1,8 @@
 --[[
     CooldownCompanion - Config/PanelShared
-    Shared panel creation, entry-row presentation, inline-add, and context
-    menu services used by the consolidated Navigator and workspace.
+    Shared panel creation (including Cooldown Manager panels and templates),
+    entry actions (duplicate, delete, move) and the entry context menu, used
+    by the consolidated Navigator and workspace.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -234,14 +235,7 @@ local function FinalizeCreatedPanel(newPanelId, displayMode, opts)
     SelectConfigPanel(newPanelId, {
         containerId = opts and opts.containerId or nil,
     })
-    local acceptsManualEntries = CooldownCompanion:CanPanelAcceptManualEntry(group)
-    if acceptsManualEntries then
-        CS.addingToPanelId = newPanelId
-        CS.pendingEditBoxFocus = true
-    else
-        CS.addingToPanelId = nil
-        CS.pendingEditBoxFocus = false
-    end
+    CS.pendingEditBoxFocus = CooldownCompanion:CanPanelAcceptManualEntry(group)
     CooldownCompanion:RefreshConfigPanel()
 
     if opts and opts.notifyTutorial and NotifyTutorialAction then
@@ -447,7 +441,6 @@ local function CreateMissingCDMPanelsInSelectedContainer(containerId)
     local selectPanelId = createdBySource.essential or createdPanelIds[1]
     if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     SelectConfigPanel(selectPanelId, { containerId = containerId })
-    CS.addingToPanelId = nil
     CS.pendingEditBoxFocus = false
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:Print(("Created %d Cooldown Manager panel%s with %d entr%s."):format(
@@ -482,9 +475,6 @@ local function DeleteEmptyCDMPanel(data)
         end
         if CS.selectedPanels then
             CS.selectedPanels[panelId] = nil
-        end
-        if CS.addingToPanelId == panelId then
-            CS.addingToPanelId = nil
         end
         CooldownCompanion:RefreshConfigPanel()
         CooldownCompanion:Print("Deleted " .. panelName .. ": Cooldown Manager section is empty.")

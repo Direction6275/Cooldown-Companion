@@ -26,7 +26,7 @@ local ROW_SECTION = { leftAligned = true }
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
 -- gears store in options.unlock (resolved only at panel-build time by
--- ST._ResolveAdvancedUnlock, Helpers.lua). File-local constants so a rebuild
+-- ST._ResolveAdvancedUnlock, StyleLens.lua). File-local constants so a rebuild
 -- allocates none of them; the channel-tick spec stays inline at its site
 -- because its checkbox sequence also repaints the canvas, so it rides `run`.
 local TURNON_SHOW_ICON = { label = "Enable Spell Icon", key = "showIcon" }
@@ -387,7 +387,6 @@ local function BuildAttachedCastBarOffsetControls(container, layout)
 end
 
 local function BuildCastBarAnchoringPanel(container)
-    local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetCastBarSettings()
 
     -- ================================================================
@@ -514,7 +513,6 @@ local function BuildCastBarPositioningPanel(container)
     -- the 16px gutter.
     local targetLeft, targetRight = BeginRowGrid(container)
     BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshCastBarAnchor, {
-        row = true,
         pickContainer = targetRight,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorFrame,
     })
@@ -538,11 +536,9 @@ local function BuildCastBarPositioningPanel(container)
     })
 
     AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", {
-        row = true,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorPoint,
     })
     AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", {
-        row = true,
         setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.relativePoint,
     })
 
@@ -771,7 +767,6 @@ local function BuildCastBarStylingPanel(container)
                 CS.RefreshAdvancedSettingsPanel()
             end
         end, nil, {
-            row = true,
             indent = true,
             setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderThickness,
         })

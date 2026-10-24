@@ -1,5 +1,5 @@
 --[[
-    CooldownCompanion - Core/AuraTexturesPicker.lua
+    CooldownCompanion_Config - Config/AuraTexturesPicker.lua
     Aura texture library storage, picker entries, and selection helpers.
 ]]
 

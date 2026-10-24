@@ -69,6 +69,7 @@ local STEP_DATA = {
         text = "Click New Group.",
         anchor = "new_group_button",
         placement = "above",
+        gate = "createdGroup",
     },
     panels_column_intro = {
         title = "Panels in the Navigator",
@@ -81,12 +82,14 @@ local STEP_DATA = {
         text = "Click Panel to create your first panel.",
         anchor = "empty_state_icon_button",
         placement = "above",
+        gate = "createdPanel",
     },
     add_one_spell = {
         title = "Add Your First Ability",
         text = "This is an empty icon panel. Let's add something to track.\n\nType the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter.",
         anchor = "selected_panel_add_input",
         placement = "right",
+        gate = "addedEntry",
     },
     entry_settings_intro = {
         title = "Entry Settings",
@@ -277,13 +280,10 @@ local function EnsureTutorialFrame()
     end
 
     local leftButton = CreateActionButton(110)
-    local middleButton = CreateActionButton(110)
     local rightButton = CreateActionButton(110)
     leftButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, 10)
-    middleButton:SetPoint("BOTTOM", frame, "BOTTOM", 0, 10)
     rightButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 10)
     frame.leftButton = leftButton
-    frame.middleButton = middleButton
     frame.rightButton = rightButton
 
     local closeButton = CreateFrame("Button", nil, frame)
@@ -322,15 +322,11 @@ local function EnsureTutorialFrame()
         end
     end)
 
-    if closeButton then
-        closeButton:SetScript("OnClick", function()
-            if ST._CancelFirstIconPanelTutorial then
-                ST._CancelFirstIconPanelTutorial("close_button")
-            else
-                frame:Hide()
-            end
-        end)
-    end
+    -- ST._ form: the local cancel function is declared further down this
+    -- file, and its ST field is assigned at load, before any click.
+    closeButton:SetScript("OnClick", function()
+        ST._CancelFirstIconPanelTutorial("close_button")
+    end)
 
     CS.tutorialFrame = frame
     return frame
@@ -449,7 +445,6 @@ local function NormalizeTutorialContext()
     end
 
     ResetConfigSelection(true)
-    CS.newInput = ""
     CS.pendingEditBoxFocus = false
 
     if ST._SetConfigPrimaryMode then
@@ -461,65 +456,28 @@ end
 
 local function ConfigureButtonsForStep(frame, step)
     ResetTutorialButton(frame.leftButton)
-    ResetTutorialButton(frame.middleButton)
     ResetTutorialButton(frame.rightButton)
 
-    if step == "welcome" then
+    -- Buttons follow STEP_ORDER. A step with a gate offers Next only once its
+    -- runtime flag is set; an unknown step offers Previous alone.
+    local index = STEP_INDEX[step]
+    if index == 1 then
         SetTutorialButton(frame.leftButton, "Skip", DismissTutorial)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("groups_column_intro")
-        end)
-    elseif step == "groups_column_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("create_group")
-        end)
-    elseif step == "create_group" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        if GetRuntime() and GetRuntime().createdGroup then
-            SetTutorialButton(frame.rightButton, "Next", function()
-                AdvanceStep("panels_column_intro")
-            end)
-        end
-    elseif step == "panels_column_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("create_panel")
-        end)
-    elseif step == "create_panel" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        if GetRuntime() and GetRuntime().createdPanel then
-            SetTutorialButton(frame.rightButton, "Next", function()
-                AdvanceStep("add_one_spell")
-            end)
-        end
-    elseif step == "add_one_spell" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        if GetRuntime() and GetRuntime().addedEntry then
-            SetTutorialButton(frame.rightButton, "Next", function()
-                AdvanceStep("entry_settings_intro")
-            end)
-        end
-    elseif step == "entry_settings_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("panel_settings_intro")
-        end)
-    elseif step == "panel_settings_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("view_modes_intro")
-        end)
-    elseif step == "view_modes_intro" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Next", function()
-            AdvanceStep("finish")
-        end)
-    elseif step == "finish" then
-        SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
-        SetTutorialButton(frame.rightButton, "Finish", CompleteTutorial)
     else
         SetTutorialButton(frame.leftButton, "Previous", GoToPreviousStep)
+    end
+    if not index then return end
+    if index == #STEP_ORDER then
+        SetTutorialButton(frame.rightButton, "Finish", CompleteTutorial)
+        return
+    end
+    local gate = STEP_DATA[step].gate
+    local runtime = GetRuntime()
+    if not gate or (runtime and runtime[gate]) then
+        local nextStep = STEP_ORDER[index + 1]
+        SetTutorialButton(frame.rightButton, "Next", function()
+            AdvanceStep(nextStep)
+        end)
     end
 end
 
@@ -610,13 +568,6 @@ local function PositionFrame(frame, anchor, placement)
     UpdateHighlight(anchor)
 end
 
-local function ValidateRuntimeState()
-    local runtime = GetRuntime()
-    if not runtime then
-        return
-    end
-end
-
 local function RefreshTutorialPlacement()
     local runtime = GetRuntime()
     if not (runtime and runtime.active and IsConfigVisible()) then
@@ -624,12 +575,6 @@ local function RefreshTutorialPlacement()
             CS.tutorialFrame:Hide()
         end
         HideHighlight()
-        return
-    end
-
-    ValidateRuntimeState()
-    runtime = GetRuntime()
-    if not runtime then
         return
     end
 
@@ -692,11 +637,10 @@ local function RebuildTutorialAnchors()
         anchors.gear_button = CS.gearButton
     end
 
-    if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
-        anchors.groups_column_area = CS.configFrame.col1.frame
-    end
-    if CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame then
-        anchors.panels_column_area = CS.configFrame.col1.frame
+    local col1Frame = CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame
+    if col1Frame then
+        anchors.groups_column_area = col1Frame
+        anchors.panels_column_area = col1Frame
     end
 
     -- Named handle, not a bar position: Browse Other Classes swaps the New
@@ -740,7 +684,7 @@ local function RebuildTutorialAnchors()
     end
 end
 
-local function StartFirstIconPanelTutorial(isReplay)
+local function StartFirstIconPanelTutorial()
     if not IsConfigVisible() then
         return false
     end
@@ -749,7 +693,6 @@ local function StartFirstIconPanelTutorial(isReplay)
 
     CS.tutorialRuntime = {
         active = true,
-        isReplay = isReplay == true,
         step = "welcome",
         createdGroup = false,
         createdPanel = false,
@@ -778,7 +721,7 @@ local function MaybeAutoStartFirstIconPanelTutorial()
     end
 
     state.lastVersionSeen = GetAddonVersion()
-    return StartFirstIconPanelTutorial(false)
+    return StartFirstIconPanelTutorial()
 end
 
 local function NotifyTutorialAction(action, payload)

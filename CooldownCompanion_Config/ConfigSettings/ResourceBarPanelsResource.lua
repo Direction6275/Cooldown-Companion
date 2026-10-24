@@ -54,7 +54,7 @@ local ROW_SECTION = { leftAligned = true }
 -- (SectionBuilders GLOW_SLIDER_SPEC): the border styles draw the same
 -- sliders everywhere, only the store differs.
 local AddGlowSliderRows = ST._AddGlowSliderRows
-local CleanRecycledEntry = ST._CleanRecycledEntry
+local AddAuraCandidateRow = ST._AddAuraCandidateRow
 local AURA_BORDER_SLIDER_KEYS = {
     size = "auraBorderSize",
     thickness = "auraBorderThickness",
@@ -225,8 +225,6 @@ local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
 end
 
 CS._GetCurrentConfigSpecID = GetCurrentConfigSpecID
-CS._GetSpecResourceDisplayProfile = RB.GetSpecResourceDisplayProfile
-CS._ResourceTextDisplayKeys = RB.RESOURCE_TEXT_DISPLAY_KEYS
 
 local HealthResource = { ID = RB.RESOURCE_HEALTH }
 
@@ -388,9 +386,6 @@ function HealthResource.AddEffectStyleControls(container, checkbox, health, opti
             },
         } or nil,
     })
-    if not (enabled and expanded) then
-        return expanded, advBtn
-    end
 
     return expanded, advBtn
 end
@@ -425,7 +420,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
         EnsureResourceSettings(settings, capturedPt)
     end
     local baseSettings = settings.resources[capturedPt]
-    SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, CS._ResourceTextDisplayKeys)
+    SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, RB.RESOURCE_TEXT_DISPLAY_KEYS)
     local resSettings = displaySpecID and ST._ResourceSpecFields(container, settings, capturedPt, displaySpecID) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
     local finderText = isHealthResource
@@ -694,7 +689,7 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     end
     local health = HealthResource.EnsureDisplaySettings(settings, specID)
     ST._BuildModuleBarStyle(container, "resources", HealthResource.ID, specID, "appearance")
-    if specID then health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID) end
+    health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID)
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
         fillGradientEnabled = DEFAULT_HEALTH_BAR_GRADIENT
@@ -811,7 +806,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
         enabledKey = "showAbsorbs",
-        toggleLabel = "Show Absorbs",
         enableLabel = "Enable Absorbs",
         advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor",
@@ -835,7 +829,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
         enabledKey = "showHealAbsorbs",
-        toggleLabel = "Show Healing Absorbs",
         enableLabel = "Enable Healing Absorbs",
         advancedKey = "healthHealAbsorbs",
         colorKey = "healthHealAbsorbColor",
@@ -859,7 +852,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
         enabledKey = "showIncomingHeals",
-        toggleLabel = "Show Incoming Heals",
         enableLabel = "Enable Incoming Heals",
         advancedKey = "healthIncomingHeals",
         colorKey = "healthIncomingHealColor",
@@ -883,7 +875,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     })
     HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
         enabledKey = "showLowHealthAlert",
-        toggleLabel = "Show Low Health Alert",
         enableLabel = "Enable Low Health Alert",
         advancedKey = "healthLowHealthAlert",
         colorKey = "healthLowHealthAlertColor",
@@ -916,8 +907,6 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     }, lowHealthAlertCb))
 end
 
-CS.healthResourceUI = HealthResource
-
 local function AddResourceSpecCopyButton(enableCb)
     local _, initialSpecOrder, currentSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
     if not currentSpecID or #initialSpecOrder == 0 then
@@ -936,6 +925,61 @@ local function AddResourceSpecCopyButton(enableCb)
         icon:SetDesaturated(true)
         icon:SetVertexColor(0.2, 0.45, 1.0)
         btn.icon = icon
+
+        -- Wired once: the scripts use only the button and file-level state,
+        -- and OnClick re-reads the copy options on every click.
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Copy From Another Spec")
+            GameTooltip:AddLine("Copies shared resource bar settings from another spec into your current spec.", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("What is copied:", 1, 0.82, 0, true)
+            GameTooltip:AddLine("- Appearance tab", 1, 1, 1, true)
+            GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
+            GameTooltip:AddLine("- Resource colors", 1, 1, 1, true)
+            GameTooltip:AddLine("- Resource Settings", 1, 1, 1, true)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
+            GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
+            GameTooltip:AddLine("- Aura Tracking", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        btn:SetScript("OnClick", function()
+            if not resourceSpecCopyMenu then
+                resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
+            end
+
+            local specValues, specOrder, refreshedSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
+            if not refreshedSpecID or #specOrder == 0 then
+                return
+            end
+
+            UIDropDownMenu_Initialize(resourceSpecCopyMenu, function(self, level)
+                for _, sourceSpecID in ipairs(specOrder) do
+                    local sourceSpecName = specValues[sourceSpecID]
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = sourceSpecName
+                    info.notCheckable = true
+                    info.func = function()
+                        CloseDropDownMenus()
+                        if not ShowPopupAboveConfig then
+                            CooldownCompanion:Print("Copy confirmation is unavailable.")
+                            return
+                        end
+                        ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName, {
+                            sourceSpecID = sourceSpecID,
+                        })
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end, "MENU")
+
+            resourceSpecCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+            ToggleDropDownMenu(1, nil, resourceSpecCopyMenu, "cursor", 0, 0)
+        end)
 
         resourceSpecCopyButton = btn
     else
@@ -961,68 +1005,6 @@ local function AddResourceSpecCopyButton(enableCb)
         btn:Hide()
         btn:SetParent(nil)
     end)
-
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Copy From Another Spec")
-        GameTooltip:AddLine("Copies shared resource bar settings from another spec into your current spec.", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("What is copied:", 1, 0.82, 0, true)
-        GameTooltip:AddLine("- Appearance tab", 1, 1, 1, true)
-        GameTooltip:AddLine("- Layout tab", 1, 1, 1, true)
-        GameTooltip:AddLine("- Resource colors", 1, 1, 1, true)
-        GameTooltip:AddLine("- Resource Settings", 1, 1, 1, true)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("What is not copied:", 1, 0.82, 0, true)
-        GameTooltip:AddLine("- Health settings", 1, 1, 1, true)
-        GameTooltip:AddLine("- Aura Tracking", 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    btn:SetScript("OnClick", function()
-        if not resourceSpecCopyMenu then
-            resourceSpecCopyMenu = CreateFrame("Frame", "CDCResourceSpecCopyMenu", UIParent, "UIDropDownMenuTemplate")
-        end
-
-        local specValues, specOrder, refreshedSpecID = CooldownCompanion:GetResourceBarSpecCopyOptions()
-        if not refreshedSpecID or #specOrder == 0 then
-            return
-        end
-
-        UIDropDownMenu_Initialize(resourceSpecCopyMenu, function(self, level)
-            for _, sourceSpecID in ipairs(specOrder) do
-                local sourceSpecName = specValues[sourceSpecID]
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = sourceSpecName
-                info.notCheckable = true
-                info.func = function()
-                    CloseDropDownMenus()
-                    if not ShowPopupAboveConfig then
-                        CooldownCompanion:Print("Copy confirmation is unavailable.")
-                        return
-                    end
-                    ShowPopupAboveConfig("CDC_CONFIRM_RESOURCE_SPEC_COPY", sourceSpecName, {
-                        sourceSpecID = sourceSpecID,
-                    })
-                end
-                UIDropDownMenu_AddButton(info, level)
-            end
-        end, "MENU")
-
-        resourceSpecCopyMenu:SetFrameStrata("FULLSCREEN_DIALOG")
-        ToggleDropDownMenu(1, nil, resourceSpecCopyMenu, "cursor", 0, 0)
-    end)
-
-    local prevOnRelease = enableCb.events and enableCb.events["OnRelease"]
-    enableCb:SetCallback("OnRelease", function()
-        if prevOnRelease then
-            prevOnRelease(enableCb, "OnRelease")
-        end
-        btn:ClearAllPoints()
-        btn:Hide()
-    end)
 end
 
 -- The conflict-gate early return lands on the dispatch-level gear build
@@ -1038,7 +1020,6 @@ local function BuildResourceBarAnchoringPanel(container)
     local db = CooldownCompanion.db.profile
     local settings = CooldownCompanion:GetResourceBarSettings()
     local layout = CooldownCompanion:GetSpecLayoutOrder()
-    local thicknessField, thicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
 
     -- ============================================================
     -- Resource Toggles (the module switch, and which resources show)
@@ -1154,7 +1135,6 @@ local function BuildResourceBarAnchoringPanel(container)
     BuildAlphaControls(container, settings, function()
         applyBars("style-settings")
     end, "rb_alpha", {
-        row = true,
         isGlobal = group and group.isGlobal,
         disabled = inheritsPanelAlpha,
         -- Attached resources follow the panel's alpha until customized, so the
@@ -1326,7 +1306,6 @@ local function BuildResourceBarPositioningPanel(container)
             -- column, immediately across the 16px gutter.
             local targetLeft, targetRight = BeginRowGrid(container)
             BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
-                row = true,
                 pickContainer = targetRight,
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                     and RESOURCE_FINDER.primary.anchor.frame,
@@ -1354,13 +1333,11 @@ local function BuildResourceBarPositioningPanel(container)
 
             AddAnchorDropdown(stackLeft, anchor, "point", "CENTER",
                 refreshResourceBarAnchor, "Anchor Point", {
-                    row = true,
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                         and RESOURCE_FINDER.primary.anchor.point,
                 })
             AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER",
                 refreshResourceBarAnchor, "Relative Point", {
-                    row = true,
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                         and RESOURCE_FINDER.primary.anchor.relativePoint,
                 })
@@ -1720,11 +1697,11 @@ local function BuildResourceColorControls(container, settings, powerType, specID
     -- the right, in the order the descriptors declare.
     local colorLeft, colorRight = BeginRowGrid(container)
     local leftCount = math.ceil(#descriptors / 2)
+    local fields = ST._ResourceSpecFields(container, settings, powerType, specID)
 
     for index, descriptor in ipairs(descriptors) do
         local capturedKey = descriptor.key
         local capturedDefault = descriptor.defaultColor
-        local fields = ST._ResourceSpecFields(container, settings, powerType, specID)
         AddColorRow(index <= leftCount and colorLeft or colorRight, {
             label = descriptor.label,
             setting = RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[powerType]
@@ -2265,37 +2242,9 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 return
             end
 
-            -- The tracked aura presents an ITEM, not a setting: a CDC-LabelRow with
-            -- the spell's icon inlined into the label text (the row's label is a
-            -- FontString, so the icon rides an inline texture escape) and a Remove
-            -- link owned by the row's control column. This draws the same shape the
-            -- shared AddAuraCandidateRow now draws; it stays inline because the
-            -- overlay tracks ONE spell on auraColorSpellID rather than a candidate
-            -- list, so only what Remove clears differs. Worth folding into the shared
-            -- helper (it takes the remove action as a callback) if this file is opened
-            -- for other reasons.
-            local spellInfo = C_Spell.GetSpellInfo(spellID)
-            local spellName = spellInfo and spellInfo.name or ("Spell " .. spellID)
-            local spellIcon = C_Spell.GetSpellTexture(spellID) or 134400
-            local auraRow = AddLabelRow(panel, {
-                label = ("|T%d:16:16:0:0|t %s |cff999999(%d)|r"):format(spellIcon, spellName, spellID),
-                indent = false,
-            })
-
-            -- Right-justified so the word lands on the control column's right edge
-            -- like every other row's control. SetJustifyH is public API and the stock
-            -- Label resets it to LEFT in OnAcquire, so the pool stays clean.
-            local removeLabel = AceGUI:Create("InteractiveLabel")
-            -- The shared InteractiveLabel pool also serves the Navigator, whose rows
-            -- hang plain-child badges off the label FRAME (expand button, warning
-            -- meta, rename badge). Nothing hides those on release, so a reacquired
-            -- frame arrives wearing its previous tenant's badges — the badge-leak
-            -- class. Same clean-on-acquire call every Navigator site makes.
-            CleanRecycledEntry(removeLabel)
-            removeLabel:SetText("|cffff5555Remove|r")
-            removeLabel:SetWidth(60)
-            removeLabel:SetJustifyH("RIGHT")
-            removeLabel:SetCallback("OnClick", function()
+            -- The tracked aura, flush, as the shared item row; Remove clears the
+            -- overlay's one tracked spell.
+            AddAuraCandidateRow(panel, spellID, function()
                 local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
                 if target then
                     target.auraColorSpellID = nil
@@ -2303,8 +2252,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                     target.auraUnitExplicit = nil
                 end
                 refresh()
-            end)
-            auraRow:SetControlWidget(removeLabel)
+            end, { indent = false })
 
             local unit = ClassifyAuraSpellUnit(spellID) or "player"
             AddLabelRow(panel, {
@@ -2661,11 +2609,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         return
     end
 
-    local mode = sectionMode or "all"
+    local mode = sectionMode
     local resourceSettingsPowerType = opts and tonumber(opts.powerType) or nil
     local showResourceSettings = mode == "resource_settings" and resourceSettingsPowerType ~= nil
-    local showBarText = (mode == "all" or mode == "bar_text" or showResourceSettings)
-    local showHealthColors = (mode == "all" or mode == "health")
+    local showBarText = mode == "bar_text" or showResourceSettings
+    local showHealthColors = mode == "health"
     local showResourceText = showResourceSettings
     local showThresholdsTicks = false
 
@@ -2692,8 +2640,8 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         showThresholdsTicks = isSegmented
             or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
-    local displaySpecID = opts and tonumber(opts.specID) or CS._GetCurrentConfigSpecID()
-    local displayProfile = displaySpecID and CS._GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
+    local displaySpecID = opts and tonumber(opts.specID) or GetCurrentConfigSpecID()
+    local displayProfile = displaySpecID and RB.GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
     if not displaySpecID or not displayProfile then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
@@ -2706,11 +2654,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         and ST.ResolveModuleBarStyle("resources", settings, resourceSettingsPowerType, displaySpecID).barTexture
         or displayProfile.barTexture or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
-    local _colorSpecID = displaySpecID
 
     if showResourceSettings then
-        BuildResourceColorControls(container, settings, resourceSettingsPowerType, _colorSpecID, effectiveBarTextureName, applyBars)
-        RBP.BuildResourceSoundRows(container, settings, resourceSettingsPowerType, _colorSpecID)
+        BuildResourceColorControls(container, settings, resourceSettingsPowerType, displaySpecID, effectiveBarTextureName, applyBars)
+        RBP.BuildResourceSoundRows(container, settings, resourceSettingsPowerType, displaySpecID)
     end
 
     -- Maelstrom Weapon stack shape. Only this resource has a choice: its
@@ -2738,9 +2685,9 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     continuous = "Continuous",
                 },
                 order = { "overlay", "segments", "continuous" },
-                value = ReadSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle", "overlay"),
+                value = ReadSpecOverrideKey(settings, 100, displaySpecID, "mwDisplayStyle", "overlay"),
                 onChange = function(val)
-                    WriteSpecOverrideKey(settings, 100, _colorSpecID, "mwDisplayStyle",
+                    WriteSpecOverrideKey(settings, 100, displaySpecID, "mwDisplayStyle",
                         val ~= "overlay" and val or nil)
                     applyBars()
                 end,
@@ -2771,15 +2718,14 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             -- first touch, and the write, which clears the stored key when
             -- the pick lands back on the member's default.
             --
-            -- Read AND written on the CANONICAL half throughout (inline
-            -- rather than via a local: this function is near Lua 5.1's
-            -- 200-local ceiling). A mutually exclusive pair is one bar in one
-            -- slot, so its shape is one setting: both halves' panels stay
-            -- reachable and show identical state, and an edit from either
-            -- lands in the one store the runtime reads. Every other member is
-            -- its own canonical half, so this is identity for them.
-            local stackDefaultStyle = RB.AURA_STACK_RESOURCES[
-                RB.GetCanonicalPowerType(resourceSettingsPowerType)].defaultStyle or "segments"
+            -- Read AND written on the CANONICAL half throughout. A mutually
+            -- exclusive pair is one bar in one slot, so its shape is one
+            -- setting: both halves' panels stay reachable and show identical
+            -- state, and an edit from either lands in the one store the
+            -- runtime reads. Every other member is its own canonical half, so
+            -- this is identity for them.
+            local canonicalPowerType = RB.GetCanonicalPowerType(resourceSettingsPowerType)
+            local stackDefaultStyle = RB.AURA_STACK_RESOURCES[canonicalPowerType].defaultStyle or "segments"
 
             AddDropdownRow(stackLeft, {
                 label = "Stack Display",
@@ -2793,11 +2739,11 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     continuous = "Continuous",
                 },
                 order = { "segments", "continuous" },
-                value = ReadSpecOverrideKey(settings, RB.GetCanonicalPowerType(resourceSettingsPowerType),
-                    _colorSpecID, "stackDisplayStyle", stackDefaultStyle),
+                value = ReadSpecOverrideKey(settings, canonicalPowerType,
+                    displaySpecID, "stackDisplayStyle", stackDefaultStyle),
                 onChange = function(val)
-                    WriteSpecOverrideKey(settings, RB.GetCanonicalPowerType(resourceSettingsPowerType),
-                        _colorSpecID, "stackDisplayStyle",
+                    WriteSpecOverrideKey(settings, canonicalPowerType,
+                        displaySpecID, "stackDisplayStyle",
                         val ~= stackDefaultStyle and val or nil)
                     applyBars()
                 end,
@@ -2827,47 +2773,47 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showBarText then
-    if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
-    -- The same Bar Appearance rows as every other bar surface. Here they edit
-    -- the defaults every resource starts from.
-    ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
-        leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
-            and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
+        if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
+            -- The same Bar Appearance rows as every other bar surface. Here they edit
+            -- the defaults every resource starts from.
+            ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
+                leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+                    and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
 
-    local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
-        ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide"), resourceBarCollapsedSections, nil, ROW_SECTION)
-    if not segmentsCollapsed then
-        local gapColumn, smoothingColumn = BeginRowGrid(container)
-        local layout = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
-        -- Segment Gap
-        AddMirrorFirstSliderRow(gapColumn, {
-            label = "Segment Gap",
-            setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.segmentGap,
-            min = 0, max = 20, step = 0.1,
-            value = layout.segmentGap or settings.segmentGap or 4,
-            set = function(val) layout.segmentGap = val end,
-            apply = function()
-                applyBars()
-            end,
-            stateOwner = layout,
-            stateKeys = "segmentGap",
-        })
-        ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
-    end
-    end
+            local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
+                ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide"), resourceBarCollapsedSections, nil, ROW_SECTION)
+            if not segmentsCollapsed then
+                local gapColumn, smoothingColumn = BeginRowGrid(container)
+                local layout = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
+                -- Segment Gap
+                AddMirrorFirstSliderRow(gapColumn, {
+                    label = "Segment Gap",
+                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
+                        and RESOURCE_FINDER.primary.size.segmentGap,
+                    min = 0, max = 20, step = 0.1,
+                    value = layout.segmentGap or settings.segmentGap or 4,
+                    set = function(val) layout.segmentGap = val end,
+                    apply = function()
+                        applyBars()
+                    end,
+                    stateOwner = layout,
+                    stateKeys = "segmentGap",
+                })
+                ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
+            end
+        end
 
-    if showResourceText then
-        BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars,
-            ST._SharedBarStyleCollapseKey("barValueTypography", "resource"))
-    end
+        if showResourceText then
+            BuildResourceTextControls(container, settings, resourceSettingsPowerType, displaySpecID, applyBars,
+                ST._SharedBarStyleCollapseKey("barValueTypography", "resource"))
+        end
     end
 
     if showHealthColors then
         local health = settings.resources and settings.resources[healthResourceID]
         if health and health.enabled == true then
-            CS.healthResourceUI.BuildColorControls(container, settings, applyBars)
-        elseif mode == "health" then
+            HealthResource.BuildColorControls(container, settings, applyBars)
+        else
             local label = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(label)
             label:SetText("Enable Health to configure health colors.")
@@ -2877,41 +2823,37 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showThresholdsTicks then
-    -- ============ Thresholds & Ticks Section ============
-    local thresholdKey = "rb_thresholds_ticks"
-    local thresholdHeading, thresholdCollapsed = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections, nil, ROW_SECTION)
+        -- ============ Thresholds & Ticks Section ============
+        local thresholdKey = "rb_thresholds_ticks"
+        local thresholdHeading, thresholdCollapsed = BuildCollapsibleSection(container, "Thresholds & Ticks", thresholdKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
-    local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdHeading.label, "LEFT", "RIGHT", 4, 0, {
-        "Thresholds & Ticks",
-        {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
-        " ",
-        {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
-    }, thresholdHeading)
-    AnchorLeftAlignedHeadingRule(thresholdHeading, thresholdInfoBtn)
+        local thresholdInfoBtn = CreateInfoButton(thresholdHeading.frame, thresholdHeading.label, "LEFT", "RIGHT", 4, 0, {
+            "Thresholds & Ticks",
+            {"Segmented resources: recolor when the current value is at/above configured thresholds. The highest crossed threshold wins.", 1, 1, 1, true},
+            " ",
+            {"Continuous resources: draw up to three static markers by percent or absolute value. Each marker can have its own color.", 1, 1, 1, true},
+        }, thresholdHeading)
+        AnchorLeftAlignedHeadingRule(thresholdHeading, thresholdInfoBtn)
 
-    if not thresholdCollapsed then
-        -- One toggle for the one resource this page is about - the values it
-        -- gates all live behind its gear - so the left column carries it alone.
-        local thresholdLeft = BeginRowGrid(container)
-        local rbThresholdTickAdvBtns = {}
-        local resources = { resourceSettingsPowerType }
-        for _, pt in ipairs(resources) do
-            if not settings.resources[pt] then
-                settings.resources[pt] = {}
-            end
-            if settings.resources[pt].enabled ~= false then
-                local resourceName = POWER_NAMES[pt] or ("Power " .. pt)
-                local capturedPt = pt
+        if not thresholdCollapsed then
+            -- One toggle for the one resource this page is about - the values it
+            -- gates all live behind its gear - so the left column carries it alone.
+            local thresholdLeft = BeginRowGrid(container)
+            local rbThresholdTickAdvBtns = {}
+            local capturedPt = resourceSettingsPowerType
+            local resourceEntry = settings.resources[capturedPt]
+            if not (resourceEntry and resourceEntry.enabled == false) then
+                local resourceName = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
                 local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
                     or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
 
                 if isSegmented then
-                    local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(_colorSpecID)
+                    local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(displaySpecID)
                     local thresholdEnableCb, _segEnabled, thresholdTurnOn = AddThresholdTickEnableCheckbox(
                         thresholdLeft,
                         settings,
                         capturedPt,
-                        _colorSpecID,
+                        displaySpecID,
                         "segThresholdEnabled",
                         "Enable " .. resourceName .. " Threshold Colors",
                         RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
@@ -2923,7 +2865,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         AddThresholdTickEntryEditor(panel, {
                             heading = "Threshold Colors",
                             readEntries = function()
-                                return GetConfigSegmentedThresholdEntries(settings, capturedPt, _colorSpecID)
+                                return GetConfigSegmentedThresholdEntries(settings, capturedPt, displaySpecID)
                             end,
                             draftKey = thresholdAdvKey,
                             errorPrefix = thresholdAdvKey,
@@ -2946,7 +2888,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             duplicateText = "A threshold color already uses that value.",
                             clampValue = ClampSegmentedThresholdValue,
                             writeEntries = function(updated)
-                                WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, "segThresholdEntries", "segThresholdEntriesCleared", updated)
+                                WriteThresholdTickEntries(settings, capturedPt, displaySpecID, "segThresholdEntries", "segThresholdEntriesCleared", updated)
                             end,
                             applyBars = applyBars,
                         })
@@ -2962,7 +2904,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             build = BuildSegmentedThresholdAdvanced,
                             context = {
                                 selectedResourcePowerType = capturedPt,
-                                resourceSettingsSpecID = _colorSpecID,
+                                resourceSettingsSpecID = displaySpecID,
                             },
                             -- Non-lens lazy spec (ST._ResolveAdvancedUnlock):
                             -- the checkbox's sequence queues this panel open
@@ -2979,12 +2921,12 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     )
                 elseif capturedPt ~= 101 and capturedPt ~= healthResourceID then
                     -- Stagger (101) and Health have dedicated coloring; tick markers not applicable
-                    local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(_colorSpecID)
+                    local tickAdvKey = "rbTickMarker_" .. capturedPt .. "_" .. tostring(displaySpecID)
                     local tickEnableCb, _tickEnabled, tickTurnOn = AddThresholdTickEnableCheckbox(
                         thresholdLeft,
                         settings,
                         capturedPt,
-                        _colorSpecID,
+                        displaySpecID,
                         "continuousTickEnabled",
                         "Enable " .. resourceName .. " Tick Markers",
                         RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
@@ -3006,15 +2948,15 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 and RESOURCE_FINDER.detail[capturedPt]
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds.combat,
-                            value = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", false),
+                            value = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickCombatOnly", false),
                             onChange = function(val)
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickCombatOnly", val == true)
+                                WriteSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickCombatOnly", val == true)
                                 applyBars()
                             end,
                         })
 
                         local tickMode = GetContinuousTickModeConfig({
-                            continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", nil),
+                            continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", nil),
                         })
                         AddDropdownRow(panel, {
                             label = "Tick Mode",
@@ -3032,7 +2974,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 if val ~= "percent" and val ~= "absolute" then
                                     val = DEFAULT_CONTINUOUS_TICK_MODE
                                 end
-                                WriteSpecOverrideKey(settings, capturedPt, _colorSpecID, "continuousTickMode", val)
+                                WriteSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", val)
                                 applyBars("style-advanced-soon")
                             end,
                         })
@@ -3042,7 +2984,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         AddThresholdTickEntryEditor(panel, {
                             heading = "Tick Markers",
                             readEntries = function()
-                                return GetConfigContinuousTickEntries(settings, capturedPt, _colorSpecID, tickMode)
+                                return GetConfigContinuousTickEntries(settings, capturedPt, displaySpecID, tickMode)
                             end,
                             draftKey = tickAdvKey .. "_" .. tickMode,
                             errorPrefix = tickAdvKey .. "_" .. tickMode,
@@ -3069,16 +3011,16 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             duplicateText = "A tick marker already uses that value.",
                             clampValue = tickMode == "absolute" and ClampContinuousTickAbsoluteValue or ClampContinuousTickPercentValue,
                             writeEntries = function(updated)
-                                WriteThresholdTickEntries(settings, capturedPt, _colorSpecID, tickEntriesKey, tickClearedKey, updated)
+                                WriteThresholdTickEntries(settings, capturedPt, displaySpecID, tickEntriesKey, tickClearedKey, updated)
                             end,
                             applyBars = applyBars,
                             previewEntries = function(updated)
-                                PreviewThresholdTickEntries(settings, capturedPt, _colorSpecID,
+                                PreviewThresholdTickEntries(settings, capturedPt, displaySpecID,
                                     tickEntriesKey, tickClearedKey, updated, previewOnly)
                             end,
                         })
 
-                        local tickFields = ST._ResourceSpecFields(panel, settings, capturedPt, _colorSpecID)
+                        local tickFields = ST._ResourceSpecFields(panel, settings, capturedPt, displaySpecID)
                         local _tickWidthVal = tickFields.continuousTickWidth
                         local tickWidthLabel = resourceName .. " Tick Width"
                         AddMirrorFirstSliderRow(panel, {
@@ -3109,7 +3051,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             build = BuildTickMarkerAdvanced,
                             context = {
                                 selectedResourcePowerType = capturedPt,
-                                resourceSettingsSpecID = _colorSpecID,
+                                resourceSettingsSpecID = displaySpecID,
                             },
                             -- Non-lens lazy spec (ST._ResolveAdvancedUnlock):
                             -- the checkbox's sequence queues this panel open
@@ -3127,7 +3069,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                 end
             end
         end
-    end
 
     end
 
@@ -3348,8 +3289,12 @@ if ST._RegisterSettingsFinderContextPreparer then
         local settings = RESOURCE_FINDER.Settings(context)
         local specID = tonumber(context and context.resourceSpecID)
             or GetCurrentConfigSpecID()
-        context._settingsFinderResourceLayout = RB.GetSpecLayoutOrder
-            and RB.GetSpecLayoutOrder(CopyTable(settings or {}), specID) or settings
+        -- A raw read: every reader falls back to the settings table for a
+        -- key the spec layout does not hold (RESOURCE_FINDER.Layout).
+        local layoutOrder = type(settings) == "table" and settings.layoutOrder
+        local entry = specID and type(layoutOrder) == "table"
+            and (layoutOrder[specID] or layoutOrder[tostring(specID)]) or nil
+        context._settingsFinderResourceLayout = type(entry) == "table" and entry or nil
 
         if context.scope == "resources" then
             local active = {}
@@ -3597,7 +3542,8 @@ if ST._DefineSettingRoute then
             -- the toggle is on - off just opens its panel read-only behind
             -- the Turn On footer, so the rows stay findable.
             local function CustomSizeApplies(context, vertical)
-                if ST.UsesSharedModuleGeometry("resources") then return false end                local layout = RESOURCE_FINDER.Layout(context)
+                if ST.UsesSharedModuleGeometry("resources") then return false end
+                local layout = RESOURCE_FINDER.Layout(context)
                 local settings = RESOURCE_FINDER.Settings(context)
                 local orientation = layout and layout.orientation
                     or settings and settings.orientation
@@ -3831,10 +3777,7 @@ if ST._DefineSettingRoute then
             -- Turn On footer).
             applies = healthApplies,
             advancedKey = function(context)
-                local specID = context and context.resourceSpecID
-                if not specID and CS._GetCurrentConfigSpecID then
-                    specID = CS._GetCurrentConfigSpecID()
-                end
+                local specID = context and context.resourceSpecID or GetCurrentConfigSpecID()
                 return "rbText_" .. tostring(RESOURCE_HEALTH) .. "_" .. tostring(specID)
             end,
         }):Settings({

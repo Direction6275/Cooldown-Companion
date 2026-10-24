@@ -172,7 +172,7 @@ local function BuildRows(column, group, id)
                 onRelease=function(value) set(key,value) end })
         elseif widget == "border" then
             local _, modeRow = ST._AddBorderRenderModeDropdown(column,sec.tbl,key,refresh,sec.disabled,
-                {row=true,setting=setting,label=label})
+                {setting=setting,label=label})
             row = modeRow
         elseif widget == "zoom" then
             row = ST._BuildIconZoomControls(column,sec.tbl,refresh,{setting=setting,
@@ -204,7 +204,7 @@ local function BuildRows(column, group, id)
             if widget == "font" then
                 local prefix = key:sub(1,-5)
                 ST._AddFontControls(column,sec.tbl,prefix,{size=10,sizeMin=6,sizeMax=32},refresh,{
-                    row=true,settings={font=setting,size=finder[scope][prefix.."FontSize"],outline=finder[scope][prefix.."FontOutline"]}})
+                    settings={font=setting,size=finder[scope][prefix.."FontSize"],outline=finder[scope][prefix.."FontOutline"]}})
             end
         end
     end
@@ -337,9 +337,9 @@ if ST._DefineSettingRoute then
                 local route = ST._DefineSettingRoute({idPrefix=(scope == "health" and "resources.health"
                         or scope == "resourceWide" and "resources" or scope)..".sharedBar."..id,
                     scope=scope == "panel" and {"panel","entry"} or scope == "castbar" and "castBar" or primary and "resources" or scope,
-                    tab=scope == "resource" and "settings" or scope == "health" and "health" or "appearance",tabLabel=scope == "health" and "Health" or "Appearance",
-                    tabStateKey=scope == "castbar" and "castBarHomeTab" or scope == "resource" and "resourcesSettingsTab" or nil,
-                    rowScope=primary and "primary" or scope ~= "panel" and "detail" or nil,
+                    tab=scope == "resource" and "settings" or scope == "health" and "health" or "appearance",
+                    tabStateKey=scope == "castbar" and "castBarHomeTab" or nil,
+                    rowScope=(primary or scope == "panel") and "primary" or "detail",
                     -- Breadcrumbs name the heading the row sits under.
                     section=id,sectionId=id,sectionLabel=IsTextSection(id) and ST.OVERRIDE_SECTIONS[id].label
                         or id == "barSmoothing" and "Segments"

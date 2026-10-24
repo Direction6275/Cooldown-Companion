@@ -28,6 +28,7 @@ local AddDropdownRow = ST._AddDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
+local BeginRowGrid = ST._BeginRowGrid
 
 -- Row-grammar section headers: caret far left, label, then a class-colored
 -- rule fading right.
@@ -212,7 +213,7 @@ local function AddCandidateRow(container, buttonData, spellID)
         if RemoveAuraCandidate(buttonData, removedID, OnCandidateListChanged) then
             RefreshAuraConfig()
         end
-    end, { row = true })
+    end)
 end
 
 local AURA_TRACKING_TOOLTIP = {
@@ -414,8 +415,6 @@ local auraSettings = ST._DefineSettingRoute({
 })
 
 local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
-    local BeginRowGrid = ST._BeginRowGrid
-
     local isStandalone = buttonData.addedAs == "aura"
     -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
     -- passes groupScoped, so the group-scope rows below have nothing to act on
@@ -449,8 +448,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
     -- LEFT column: which aura is tracked, and on whom. RIGHT column: how the
     -- entry draws it. Both halves are gated on the toggle at the head of the
-    -- left one, so the right side is empty until tracking is on. On text
-    -- panels it stays empty for good: the format's tokens are the drawing.
+    -- left one, so the right side is empty until tracking is on.
     local auraLeft, auraRight = BeginRowGrid(scroll)
 
     if not isStandalone then
@@ -797,13 +795,13 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
                 end
 
-                AddAuraStackMaxStatusLabel(panel, maxStacks, { row = true })
+                AddAuraStackMaxStatusLabel(panel, maxStacks)
             end,
         })
     end
 
-    -- Effective style for the text-visibility gates below and the
-    -- pandemic-effect default: the same resolution the display renders
+    -- Effective style for the stack-text gate below: the same resolution the
+    -- display renders
     -- with — the panel style, or this entry's customized section when one
     -- is promoted (owner ruling 2026-08-16: settings for a hidden text
     -- hide with it, following whichever scope currently applies).

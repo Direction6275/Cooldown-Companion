@@ -227,13 +227,10 @@ ST._configState = {
     -- "primary" (a panel or module tab was opened without dropping that
     -- selection).
     unifiedRowScope = "detail",
-    newInput = "",
     tutorialAnchors = {},
     tutorialFrame = nil,
     tutorialHighlight = nil,
-    tutorialArrow = nil,
     tutorialRuntime = nil,
-    tutorialButton = nil,
 
     -- Main frame reference
     configFrame = nil,
@@ -260,7 +257,6 @@ ST._configState = {
 
     buttonSettingsScroll = nil,
     columnInfoButtons = {},
-    moveMenuFrame = nil,
     groupContextMenu = nil,
     buttonContextMenu = nil,
     gearDropdownFrame = nil,
@@ -286,16 +282,15 @@ ST._configState = {
     -- One-shot navigated-setting highlight request: written by the gear /
     -- Customizations navigation writers (PreviewCommandCenter), matched by
     -- the section and advanced-gear builders during the rebuild, consumed by
-    -- the deferred scroll-and-pulse fire (ConfigSettings/Helpers.lua).
+    -- the deferred scroll-and-pulse fire (ConfigSettings/SettingsNavigation.lua).
     pendingSettingHighlight = nil,
     -- One-shot semantic scroll handoff between the Panel and Entry lenses.
-    -- Helpers.lua owns both the active heading registry and the pending anchor.
+    -- SettingsNavigation.lua owns both the active heading registry and the pending anchor.
     lensAnchorRegistry = nil,
     pendingLensAnchor = nil,
 
     -- Collapsed sections state
     collapsedSections = {},
-    collapsedPanels = {},
     expandedContainer = nil,
     peekedContainers = {},
     springOpenContainer = nil,
@@ -306,8 +301,6 @@ ST._configState = {
     otherClassLibraryActive = false,
     otherClassLibraryClassKey = nil,
     otherClassLibrarySnapshot = nil,
-    panelClickTimes = {},
-    addingToPanelId = nil,
     _panelDropTargets = {},
 
     -- Talent picker mode
@@ -328,7 +321,6 @@ ST._configState = {
 
     -- Tab UI state (populated by ConfigSettings, cleaned by both files)
     tabInfoButtons = {},
-    appearanceTabElements = {},
     -- A standalone bar destination in the panel inventory
     barsEntrySelected = false,
     barWorkspaceKind = nil,
@@ -348,7 +340,6 @@ ST._configState = {
     copyPanelSettingsBanner = nil,
 
     -- Static lookup tables
-    fontOptions = GetFontOptions,
     SetupFontDropdown = SetupFontDropdown,
     SetFontDropdownCallback = SetFontDropdownCallback,
     SetupFontOutlineDropdown = SetupFontOutlineDropdown,
@@ -633,8 +624,6 @@ local function SnapshotOtherClassLibraryState()
         barWorkspaceKind = CS.barWorkspaceKind,
         castFramesSelectedItem = CS.castFramesSelectedItem,
         unifiedBarKind = CS.unifiedBarKind,
-        addingToPanelId = CS.addingToPanelId,
-        newInput = CS.newInput,
         expandedContainer = CS.expandedContainer,
         peekedContainers = CopyConfigStateMap(CS.peekedContainers),
         selectedTab = CS.selectedTab,
@@ -666,8 +655,6 @@ local function RestoreOtherClassLibrarySnapshot()
     CS.barWorkspaceKind = snapshot.barWorkspaceKind
     CS.castFramesSelectedItem = snapshot.castFramesSelectedItem
     CS.unifiedBarKind = snapshot.unifiedBarKind
-    CS.addingToPanelId = snapshot.addingToPanelId
-    CS.newInput = snapshot.newInput
     CS.expandedContainer = snapshot.expandedContainer
     wipe(CS.peekedContainers)
     for id, expanded in pairs(snapshot.peekedContainers or {}) do CS.peekedContainers[id] = expanded end
@@ -1057,7 +1044,7 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     if selectedScope and selectedScope.isOtherClass then
         EnterOtherClassLibraryState(selectedScope.ownerClassKey)
     else
-        ResetOtherClassLibraryState({ skipRefresh = true })
+        ResetOtherClassLibraryState()
     end
     wipe(CS.selectedGroups)
     wipe(CS.selectedPanels)
@@ -1074,7 +1061,6 @@ local function SelectConfigFinderResult(containerId, panelId, buttonIndex)
     CS.barsEntrySelected = false
     CS.castFramesSelectedItem = nil
     CS.unifiedBarKind = nil
-    CS.addingToPanelId = nil
     CS.configFinderNavigated = true
     CS.pendingConfigFinderEntryScrollReset = buttonIndex ~= nil
     RestoreOtherClassLibraryForScope(selectedScope)
@@ -2238,9 +2224,10 @@ local function ConfigureResourceAttachmentBadge(frame, index, description)
     return badge
 end
 
-local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
-    local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-    if placement ~= "attached" or anchorPanelId ~= panelId then return 0 end
+-- resourcePanelId: the panel Resource Bars attach to, resolved once per
+-- Navigator paint by the caller (nil when none).
+local function SetupPanelResourceIndicator(entry, panelId, rightReserve, resourcePanelId)
+    if resourcePanelId ~= panelId then return 0 end
     local badge = ConfigureResourceAttachmentBadge(entry.frame, 1,
         "Your resource bars are attached to this panel. Select Resources below the preview to edit shared settings and bar order.")
     badge:SetSize(16, 16)
@@ -2249,7 +2236,7 @@ local function SetupPanelResourceIndicator(entry, panelId, rightReserve)
     return badge:GetWidth() + BADGE_SPACING
 end
 
-local function SetupGroupRowIndicators(entry, group, isEmpty)
+local function SetupGroupRowIndicators(entry, group, isEmpty, resourcePanelId)
     local frame = entry.frame
     if frame._cdcBadges then
         for _, b in ipairs(frame._cdcBadges) do b:Hide() end
@@ -2286,20 +2273,16 @@ local function SetupGroupRowIndicators(entry, group, isEmpty)
     -- Mouse is enabled for the tooltip with clicks propagating to the row;
     -- SetPropagateMouseClicks is protected in combat, so the tooltip is
     -- skipped when refreshed mid-combat.
-    -- ST._ lookup: GetResourcesEntryPlacement is declared later in this file.
-    if ST._GetResourcesEntryPlacement then
-        local placement, anchorPanelId = ST._GetResourcesEntryPlacement()
-        if placement == "attached" and anchorPanelId then
-            local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
-            local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[anchorPanelId]
-            local anchorContainer = anchorGroup and dbProfile.groupContainers
-                and dbProfile.groupContainers[anchorGroup.parentContainerId]
-            if anchorContainer ~= nil and anchorContainer == group then
-                local anchorPanelName = anchorGroup.name or "a panel"
-                badgeIndex = badgeIndex + 1
-                ConfigureResourceAttachmentBadge(frame, badgeIndex,
-                    "Your resource bars are anchored to " .. anchorPanelName .. " in this group.")
-            end
+    if resourcePanelId then
+        local dbProfile = CooldownCompanion.db and CooldownCompanion.db.profile
+        local anchorGroup = dbProfile and dbProfile.groups and dbProfile.groups[resourcePanelId]
+        local anchorContainer = anchorGroup and dbProfile.groupContainers
+            and dbProfile.groupContainers[anchorGroup.parentContainerId]
+        if anchorContainer ~= nil and anchorContainer == group then
+            local anchorPanelName = anchorGroup.name or "a panel"
+            badgeIndex = badgeIndex + 1
+            ConfigureResourceAttachmentBadge(frame, badgeIndex,
+                "Your resource bars are anchored to " .. anchorPanelName .. " in this group.")
         end
     end
     -- Spec filter badges
@@ -2575,7 +2558,6 @@ local function ToggleConfigPanelMultiSelect(panelId)
     CS.castFramesSelectedItem = nil
     ClearSelectedButton()
     wipe(CS.selectedGroups)
-    CS.addingToPanelId = nil
 end
 
 -- Selecting an entry makes that entry the editing target. A panel tab that is
@@ -2782,13 +2764,10 @@ local function SelectUnifiedAnchorBar(slot, opts)
     return true
 end
 
--- Route legacy Resources-home callers to the actual stack destination.
--- Only the workspace router requests a standalone inventory destination.
+-- Selects a standalone bar destination in the Navigator inventory; only
+-- BarWorkspace's OpenWorkspace calls this.
 local function SelectConfigBarsEntry(opts)
     if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
-    if not (opts and opts.standalone) and ST._OpenBarWorkspace then
-        return ST._OpenBarWorkspace("resources")
-    end
     local kind = opts and opts.kind or "resources"
     CS.barWorkspaceKind = kind
     CooldownCompanion:ClearAllConfigPreviews(opts and opts.previewSession)
@@ -2823,23 +2802,6 @@ local function SelectConfigCastFramesItem(item, opts)
     return changed
 end
 
--- Where the "Resource Bars" entry lives in the panel list right now.
--- Returns "disabled" | "independent" | "attached", anchorPanelId (nil when
--- enabled+dependent but no eligible anchor panel exists).
-local function GetResourcesEntryPlacement()
-    local settings = CooldownCompanion.GetResourceBarSettings
-        and CooldownCompanion:GetResourceBarSettings()
-        or nil
-    if not settings or settings.enabled ~= true then
-        return "disabled"
-    end
-    if CooldownCompanion.IsResourceBarAnchorIndependent
-        and CooldownCompanion:IsResourceBarAnchorIndependent() then
-        return "independent"
-    end
-    local target = CooldownCompanion:ResolveModulePanel("resources")
-    return "attached", target.group and target.panelId
-end
 
 -- A disabled standalone feature introduces itself before exposing its editor.
 -- The resource conflict gate must remain reachable instead of being covered.
@@ -2887,7 +2849,6 @@ local function ResetConfigSelection(full)
         CS.barsEntrySelected = false
         CS.castFramesSelectedItem = nil
         wipe(CS.selectedGroups)
-        CS.addingToPanelId = nil
         ResetOtherClassLibraryState({ discardSelectionSnapshot = true })
     end
 end
@@ -3237,7 +3198,6 @@ ST._SetConfigResourceSettingsSpecID = SetConfigResourceSettingsSpecID
 ST._PruneConfigResourceSelection = PruneConfigResourceSelection
 ST._SelectConfigBarsEntry = SelectConfigBarsEntry
 ST._SelectConfigCastFramesItem = SelectConfigCastFramesItem
-ST._GetResourcesEntryPlacement = GetResourcesEntryPlacement
 ST._GetBarWorkspaceIntroKind = GetBarWorkspaceIntroKind
 ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection
@@ -3260,15 +3220,13 @@ ST._ApplyConfigRoute = function(route)
         CS.selectedContainerTab = "general"
         CS.collapsedSections.container_layout = false
     elseif route.kind == "resource" then
-        SetConfigPrimaryMode("bars")
-        SelectConfigBarsEntry()
+        if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
+        ST._OpenBarWorkspace("resources")
         CS.resourcesSettingsTab = "layout"
         if ST._RBP and ST._RBP.collapsedSections then
             ST._RBP.collapsedSections.rb_stack_position = false
         end
     elseif route.kind == "cast" then
-        SetConfigPrimaryMode("bars")
-        SelectConfigBarsEntry()
         SelectConfigCastFramesItem("castbar")
         CS.unifiedRowScope = "detail"
         CS.castBarHomeTab = "layout"

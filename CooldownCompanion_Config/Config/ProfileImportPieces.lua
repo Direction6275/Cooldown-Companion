@@ -1007,7 +1007,6 @@ local function ApplyCustomBarsPayload(profile, payload)
         return false
     end
     return ApplyCustomBarsImportData(AddCheckpoint(payload, profile), {
-        silentSuccess = true,
         deferMigrations = true,
     }) == true
 end

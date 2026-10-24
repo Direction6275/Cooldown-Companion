@@ -89,12 +89,6 @@ local function ConditionalPreview(kind)
     return { owner = "panel", conditional = kind }
 end
 
-local function TextureIndicatorPreview(key)
-    return { owner = "panel", groupScoped = true, textureIndicator = key,
-        flag = "_texture" .. key:gsub("^%l", string.upper) .. "Preview" }
-end
-
-local IndicatorEffectsPreview = { owner = "panel", groupScoped = true, triggerEffects = true }
 local function HealthEffectPreview(key)
     return { owner = "health", groupScoped = true, healthEffect = key }
 end
@@ -249,9 +243,9 @@ local function BarAuraIndicatorEnabled(group, buttonIndex)
     return ST.IsBarAuraIndicatorEnabled(ResolveTargetStyle(group, buttonIndex)) == true
 end
 
--- Effective pandemic enable (PTR 8 visuals): the effective style's
+-- Effective pandemic enable: the effective style's
 -- explicit-true key, which at entry scope is that entry's own value whenever it
--- customized the Pandemic section â€” the same resolution the live bind gate and
+-- customized the Pandemic section, the same resolution the live bind gate and
 -- the config mirror perform, so the control is never offered where the preview
 -- renders nothing nor hidden at entry scope where the live rig actually renders.
 local function PandemicEffectEnabled(group, buttonIndex)
@@ -281,8 +275,8 @@ end
 
 -- Effective marker enable, the same resolution the live bind gate performs
 -- (AuraDisplay's IsPandemicMarkerWanted): the style's mode, and for "auto" the
--- tracked-unit default. Deliberately separate from PandemicEffectEnabled above
--- â€” the marker and the effect are independent settings, and the effect is off
+-- tracked-unit default. Deliberately separate from PandemicEffectEnabled above:
+-- the marker and the effect are independent settings, and the effect is off
 -- by default, so sharing that gate would hide the marker preview on almost
 -- every panel.
 local function PandemicMarkerEnabled(group, buttonIndex)
@@ -300,47 +294,6 @@ local function PandemicMarkerEnabled(group, buttonIndex)
         return true
     end
     return (buttonData.auraUnit or "player") == "target"
-end
-
--- Any effect an aura Indicator will play (Color Shift has nothing to tint on
--- Text Only). Read-only: a mere preview refresh must not write effect tables
--- into the profile, so this reads through the pure effect reader.
-local function AuraIndicatorEffectEnabled(group)
-    local effects = ST.Indicator.IsAura(group) and ST.Indicator.ReadEffects(group)
-    if type(effects) ~= "table" then
-        return false
-    end
-    local textOnly = group.indicatorSettings.displayType == "text"
-    for key, config in pairs(effects) do
-        if type(config) == "table" and config.enabled == true and not (textOnly and key == "colorShift") then
-            return true
-        end
-    end
-    return false
-end
-
-local function TextureAuraDisplayEnabled(group)
-    local buttonData = group and group.buttons and group.buttons[1] or nil
-    return CooldownCompanion.IsIndicatorAuraDisplayEnabled
-        and CooldownCompanion:IsIndicatorAuraDisplayEnabled(group, buttonData)
-        or false
-end
-
-local function AnyIndicatorEffectEnabled(group)
-    -- Everything CC draws, While Missing included; native auras use textureAura.
-    -- Read-only like AuraIndicatorEffectEnabled: an availability check must
-    -- never write effect tables into the profile.
-    if not ST.IsIndicatorGroup(group) or ST.Indicator.IsNativeAura(group) then return false end
-    local effects = ST.Indicator.ReadEffects(group)
-    if type(effects) ~= "table" then
-        return false
-    end
-    for _, config in pairs(effects) do
-        if type(config) == "table" and config.enabled then
-            return true
-        end
-    end
-    return false
 end
 
 ------------------------------------------------------------------------
@@ -549,40 +502,13 @@ local CONTROLS = {
         requiresPandemicEffect = true,
         -- No advanced key exists for the bars pandemic FILL rows (enable +
         -- color only), so the gear lands on the Effects tab with the Aura
-        -- Indicators section forced open by name â€” the Pandemic rows are a
+        -- Indicators section forced open by name: the Pandemic rows are a
         -- subheading inside it, and a subheading owns no collapse state of its
         -- own. The section constant is GroupTabs' (EFFECTS_AURA_SECTION); bars
         -- shares it.
         settings = { tab = "effects", uncollapse = "effects_aura" },
         preview = FlagPreview("_pandemicPreview", "aura_duration_bar"),
     },
-    {
-        id = "textureAura",
-        label = "Preview Aura Effects",
-        group = GROUP_AURAS,
-        menuOrder = 10,
-        modes = { indicator = true },
-        requiresAuraIndicatorEffect = true,
-        requiresTextureAuraDisplay = true,
-        -- No key: every enabled effect plays at once, each with its own
-        -- advanced panel, inside the tab's one Visual Effects section.
-        settings = { tab = "effects", uncollapse = "effects_triggerEffects" },
-        preview = TextureIndicatorPreview("aura"),
-    },
-    {
-        id = "triggerEffects",
-        label = "Preview Effects",
-        group = GROUP_FEEDBACK_STATES,
-        menuOrder = 30,
-        modes = { indicator = true },
-        requiresIndicatorEffect = true,
-        -- No key: the preview plays every enabled trigger effect at once, and
-        -- each has its own advanced panel. The tab draws them inside one
-        -- collapsible section, so the gear opens that on the way past.
-        settings = { tab = "effects", uncollapse = "effects_triggerEffects" },
-        preview = IndicatorEffectsPreview,
-    },
-
     {
         id = "unusable",
         label = "Preview Unusable State",
@@ -795,15 +721,6 @@ local function ControlApplies(control, group, displayMode, buttonIndex)
     if control.requiresPandemicMarker and not PandemicMarkerEnabled(group, buttonIndex) then
         return false
     end
-    if control.requiresAuraIndicatorEffect and not AuraIndicatorEffectEnabled(group) then
-        return false
-    end
-    if control.requiresTextureAuraDisplay and not TextureAuraDisplayEnabled(group) then
-        return false
-    end
-    if control.requiresIndicatorEffect and not AnyIndicatorEffectEnabled(group) then
-        return false
-    end
     if control.requiresChargeEntry and not ChargeEntryApplies(group, displayMode, buttonIndex) then
         return false
     end
@@ -999,8 +916,8 @@ local OBJECT_CONTROLS = {
 }
 
 -- Which objects a surface hosts. The homes list the objects that
--- workspace configures; the buttons workspace lists the bars its unified
--- anchor preview actually draws as lanes, which is also exactly when a
+-- workspace configures; the buttons workspace lists the bars its panel
+-- mirror actually draws attached, which is also exactly when a
 -- bar's settings can be open in the Settings column there.
 local function CollectObjectControls(objects)
     local applicable = {}
@@ -1080,7 +997,7 @@ local function ResolveContext(presentation)
 end
 
 -- The style section this preview is showing, or nil for previews that are not
--- a section's look (the object previews, the texture indicators). Most controls
+-- a section's look (the object previews). Most controls
 -- name it statically; Cooldown Swipe resolves it from the same live ownership
 -- rule as its advanced-settings key.
 local function ControlSectionId(control)
@@ -1295,7 +1212,7 @@ end
 -- Force one collapsible open, on BOTH sides of the style lens.
 --
 -- Which key a collapsible actually uses is ST._ResolveLensCollapseKey's call
--- (Helpers.lua): a section the selected entry cannot edit gets its OWN
+-- (StyleLens.lua): a section the selected entry cannot edit gets its OWN
 -- lens-scoped key and opens collapsed the first time that key is seen. Which
 -- side a given collapse key landed on is a per-tab fact - the same key names a
 -- whole mixed section on one panel and one lens section on another - so this
@@ -1344,13 +1261,12 @@ local function NavigateToSectionHome(sectionId, opts)
         CS.CancelPickAuraTexture()
     end
 
-    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- One-shot navigated-setting highlight request (fired and cleared by SettingsNavigation.lua):
     -- ForceSectionOpen below records the section keys on it, the rebuild
     -- records the destination widgets, and the scheduled fire after the
     -- refresh scrolls to and pulses the most specific one - the row wearing
     -- the advanced key, else the section's own anchor row, else the section
-    -- heading. The format row names a whole tab rather than a setting, so it
-    -- makes no request.
+    -- heading.
     if sectionId or home or (opts and opts.advancedKey) then
         CS.pendingSettingHighlight = {
             presentation = editing and editing.presentation,
@@ -1545,7 +1461,7 @@ local function NavigateToPreviewSettings(bar)
         CS.CancelPickAuraTexture()
     end
 
-    -- One-shot navigated-setting highlight request (consumed by Helpers.lua):
+    -- One-shot navigated-setting highlight request (fired and cleared by SettingsNavigation.lua):
     -- ApplyGearRoute's section opens record their keys on it, the rebuild
     -- records the destination widgets, and the scheduled fire after the
     -- refresh scrolls to and pulses the most specific one - the row wearing
@@ -1765,7 +1681,7 @@ local function OpenPreviewMenu(bar)
     UIDropDownMenu_Initialize(menu, function(_, level)
         local applicable = BuildMenuControls(bar._applicable or {}, surface)
         -- Headers only earn their space once the menu actually spans more
-        -- than one group (Indicators often offer only one).
+        -- than one group.
         local showHeaders = false
         local firstGroup = applicable[1] and applicable[1].group
         for _, control in ipairs(applicable) do
@@ -1856,21 +1772,6 @@ local function ApplySpellbookTint(bar)
         toggle._icon:SetDesaturated(false)
         toggle._icon:SetVertexColor(1, 1, 1, 1)
     end
-end
-
-local function PanelAcceptsNewEntries(group)
-    if not group then
-        return false
-    end
-
-    return true
-end
-
-local function ShouldShowSpellbookToggle(group)
-    -- The dock has no close button, so retain its toggle when the last
-    -- available slot is filled while browsing.
-    return PanelAcceptsNewEntries(group)
-        or IsSpellbookWindowShown()
 end
 
 local function EnsureBar(host, surface)
@@ -2090,7 +1991,7 @@ local function EnsureBar(host, surface)
     return bar
 end
 
-local function ApplyBarState(bar, control, running, gearRoute, group)
+local function ApplyBarState(bar, control, running, gearRoute)
     bar._selected = control
     bar._gearRoute = gearRoute
     bar._customizeSectionId = nil
@@ -2114,10 +2015,8 @@ local function ApplyBarState(bar, control, running, gearRoute, group)
     bar.chooser._refreshColors()
 
     -- The buttons workspace only: the Resources / Cast home configures bar
-    -- objects, and there is nothing there to drop a spell on. Within the
-    -- workspace, panels that can take an entry or still need a dock exit.
-    bar.spellbook:SetShown(not totemOnly and bar._surface == BUTTONS_SURFACE
-        and ShouldShowSpellbookToggle(group))
+    -- objects, and there is nothing there to drop a spell on.
+    bar.spellbook:SetShown(not totemOnly and bar._surface == BUTTONS_SURFACE)
     ApplySpellbookTint(bar)
 
     if running then
@@ -2203,7 +2102,7 @@ local function RefreshPreviewCommandCenterSpellbook()
     local bar = activeBar
     if bar and bar:IsShown() and bar.spellbook and bar.spellbook:IsShown() then
         local _, group = ResolveContext()
-        if bar._surface == BUTTONS_SURFACE and not ShouldShowSpellbookToggle(group) then
+        if bar._surface == BUTTONS_SURFACE and not group and not IsSpellbookWindowShown() then
             -- Closing a dock-only toggle can remove the entire band. Rebuild
             -- the preview as well so it reclaims the reserved bottom space.
             CooldownCompanion:RefreshConfigSelection()
@@ -2219,7 +2118,7 @@ end
 -- decided what they can offer.
 ------------------------------------------------------------------------
 
-local function UpdateBar(host, surface, applicable, group, displayMode)
+local function UpdateBar(host, surface, applicable, displayMode)
     if #applicable == 0 then
         HideBar(host)
         return nil, false
@@ -2244,7 +2143,7 @@ local function UpdateBar(host, surface, applicable, group, displayMode)
     local bar = EnsureBar(host, surface)
     bar._applicable = applicable
     ApplyBarState(bar, selected, running,
-        ResolveGearRoute(selected, displayMode), group)
+        ResolveGearRoute(selected, displayMode))
 
     host._cdcPreviewReserveBottom = BAR_RESERVE
     bar:Show()
@@ -2277,7 +2176,7 @@ local function UpdatePreviewCommandCenter(host)
 
     local displayMode = group.displayMode or "icons"
     if ST.IsTotemPanelGroup(group) then
-        UpdateBar(host, BUTTONS_SURFACE, {TOTEM_ACTIVE_CONTROL}, group, displayMode)
+        UpdateBar(host, BUTTONS_SURFACE, {TOTEM_ACTIVE_CONTROL}, displayMode)
         return
     end
     local applicable = CollectPanelControls(group, buttonIndex)
@@ -2302,17 +2201,13 @@ local function UpdatePreviewCommandCenter(host)
     end
 
     if #applicable == 0 then
-        -- Keep the spellbook-only band for adding an entry or closing the
-        -- dock after filling the panel; otherwise reclaim its space.
-        if ShouldShowSpellbookToggle(group) then
-            ShowSpellbookOnlyBar(host)
-        else
-            HideBar(host)
-        end
+        -- The spellbook-only band stays so the dock can add an entry or be
+        -- closed.
+        ShowSpellbookOnlyBar(host)
         return
     end
 
-    UpdateBar(host, BUTTONS_SURFACE, applicable, group, displayMode)
+    UpdateBar(host, BUTTONS_SURFACE, applicable, displayMode)
 end
 
 ------------------------------------------------------------------------

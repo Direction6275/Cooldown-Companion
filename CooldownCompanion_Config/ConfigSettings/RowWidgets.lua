@@ -4,15 +4,15 @@
     Every setting in the redesigned config is a fixed-height row: label on the
     LEFT, its control right-aligned into a fixed-width (140px) control column
     on the RIGHT, and its gear/info/scope badges chained left-to-right off
-    the end of the label text. Rows live in two-column grids built by
-    BeginRowGrid, so a cell is roughly 400px wide and the badge scatter stays
-    bounded inside the label's own cell. This file registers the custom AceGUI
-    widget types for those rows, the grid container types and top-aligned
-    layout they sit in, and the thin builders that replace the AceGUI
-    boilerplate at each call site.
+    the end of the label text. Rows live in grids built by BeginRowGrid, whose
+    two columns stack into one lane the width of the settings column (see the
+    grid layout below), so the badge scatter stays bounded inside each row.
+    This file registers the custom AceGUI widget types for those rows, the
+    grid container types and top-aligned layout they sit in, and the thin
+    builders that replace the AceGUI boilerplate at each call site.
 
-    BuildAppearanceTab's icons path is the proving ground; the other tabs are
-    converted by later packets.
+    BuildAppearanceTab's icons path (GroupTabsAppearance.lua) carries the
+    recipe comment every row-grammar section follows.
 
     AceGUI recycles widgets from pools that are SHARED WITH EVERY OTHER ADDON,
     so these are new widget types with their own pools rather than mutations of
@@ -55,8 +55,7 @@ local floor, min, max = math.floor, math.min, math.max
 -- ROW GRAMMAR CONSTANTS
 -- One block so the proving-ground packet can tune the whole grammar here.
 ------------------------------------------------------------------------
--- The control column is deliberately compact: rows sit in half-width grid
--- cells (~360px at the default window size), so every pixel the column does
+-- The control column is deliberately compact: every pixel the column does
 -- not take is label room.
 local ROW_HEIGHT             = 30    -- every row is exactly this tall
 local CONTROL_COLUMN_WIDTH   = 140   -- fixed control column pinned to the row's right edge
@@ -280,7 +279,7 @@ local function AddRowTooltipLines(lines)
 end
 
 -- One tooltip per row, three sources: the row's own lines, a slider's range,
--- and the style-lens scope explanation (Helpers.lua's grey-row chrome). The
+-- and the style-lens scope explanation (StyleLens.lua's grey-row chrome). The
 -- scope lines are a SEPARATE channel rather than an append to tooltipLines
 -- because their owners are different - the call site describes the setting,
 -- the lens describes whose values it is showing - and because they are shown
@@ -337,7 +336,7 @@ end
 -- belongs to the control the owner cannot use, not to the whole line. It is
 -- delivered by a transparent overlay pinned over the row's CONTROL region,
 -- created lazily on the row and shown only while the row carries scope lines
--- (Helpers' AttachRowScopeChrome sets them, and clears them on release).
+-- (StyleLens.lua's AttachRowScopeChrome sets them, and clears them on release).
 --
 -- The region is "leftmost control -> the control column's right edge, full row
 -- height": every control is pinned to that right edge, so each row type only
@@ -1731,7 +1730,10 @@ local function AddSoundPreviewDropdownRow(container, opts)
         return originalOpen(widget, ...)
     end
     pullout.Open = OpenSoundMenu
-    row:SetCallback("OnRelease", function()
+    -- Chained, so the common row cleanup still drops the settings context.
+    local prevOnRelease = row.events and row.events.OnRelease
+    row:SetCallback("OnRelease", function(widget, event, ...)
+        if prevOnRelease then prevOnRelease(widget, event, ...) end
         -- An unopened menu must also return to AceGUI's pool unmodified.
         if pullout.Open == OpenSoundMenu then pullout.Open = originalOpen end
     end)
@@ -2143,7 +2145,8 @@ local function CreateInlineSettingsGroup(row)
     return group
 end
 
--- Open a top-aligned two-column grid; either column can be left empty.
+-- Open a top-aligned grid of two columns that stack, first above second;
+-- either column can be left empty.
 local function BeginRowGrid(container)
     local grid = AceGUI:Create(ROW_GRID_TYPE)
     grid:SetFullWidth(true)
@@ -2173,7 +2176,7 @@ local function BeginFullWidthRowGroup(container)
 end
 
 ------------------------------------------------------------------------
--- Expose for the conversion packets
+-- Exports
 ------------------------------------------------------------------------
 ST._RowGrammar = {
     ROW_HEIGHT = ROW_HEIGHT,

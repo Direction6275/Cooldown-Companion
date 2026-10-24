@@ -251,41 +251,38 @@ local function RequestAuraIndicatorRestyle(group, groupId)
     end
 end
 
--- The only restyle seam for the Aura-controlled Texture kit is a full aura
--- rebind, which parks and re-binds EVERY slot in the profile and releases then
--- re-registers every native aura sound. RequestAuraRebind coalesces to one
--- frame, which is right for a discrete commit but not for the indicator's
--- colour picker and duration slider - those fire per drag tick, so the frame
--- coalesce still buys a whole-profile rebuild every frame. Trailing-throttle
--- them instead: the last edit always gets a flush within the window, and the
--- kit is invisible behind the config's force-visible render the whole time, so
--- nothing on screen waits on it. A throttle rather than a release callback
--- because a wheel step on an AceGUI slider commits through OnValueChanged with
--- no OnMouseUp, and would otherwise never restyle at all.
+-- The Aura-controlled Texture kit restyles only through
+-- RequestAuraRebind("style", groupId), which is panel-scoped: it re-binds that
+-- panel's aura slots and their native aura sounds, and already coalesces to one
+-- frame. Effect edits commit on release, on a typed value, on picker close and
+-- on every slider wheel tick, so this trailing throttle folds a burst of them
+-- into one rebind per panel per window. The last edit always flushes within the
+-- window, and the kit is invisible behind the config's force-visible render the
+-- whole time, so nothing on screen waits on it.
 local TEXTURE_AURA_RESTYLE_THROTTLE = 0.25
-local pendingTextureAuraRestyleGroupId
+local pendingAuraRestyleIds = {}
+local auraRestyleArmed = false
 
 local function FlushAuraIndicatorRestyle()
-    local groupId = pendingTextureAuraRestyleGroupId
-    pendingTextureAuraRestyleGroupId = nil
-    if not groupId then
-        return
-    end
+    auraRestyleArmed = false
+    -- Consume this batch; an edit during the flush starts the next one.
+    local ids = pendingAuraRestyleIds
+    pendingAuraRestyleIds = {}
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = profile and profile.groups and profile.groups[groupId] or nil
-    RequestAuraIndicatorRestyle(group, groupId)
+    local groups = profile and profile.groups
+    for groupId in pairs(ids) do
+        RequestAuraIndicatorRestyle(groups and groups[groupId] or nil, groupId)
+    end
 end
 
--- The rebind is profile-wide, so a second panel edited inside the window
--- overwriting the pending id costs nothing: either id flushes both.
 local function ThrottleAuraIndicatorRestyle(group, groupId)
     local buttonData = group and group.buttons and group.buttons[1] or nil
     if not (groupId and NeedsAuraRestyle(group, buttonData)) then
         return
     end
-    local alreadyArmed = pendingTextureAuraRestyleGroupId ~= nil
-    pendingTextureAuraRestyleGroupId = groupId
-    if not alreadyArmed then
+    pendingAuraRestyleIds[groupId] = true
+    if not auraRestyleArmed then
+        auraRestyleArmed = true
         C_Timer.After(TEXTURE_AURA_RESTYLE_THROTTLE, FlushAuraIndicatorRestyle)
     end
 end
@@ -362,16 +359,9 @@ local function RefreshIndicatorDisplay(groupId)
     end
 end
 
--- Repaint the pinned Live Preview after a trigger display setting changes.
--- Prefers the display-only repaint: these callbacks fire on every tick of a
--- slider drag, and a full mirror rebuild would re-run per-entry usability and
--- load-condition queries and re-wire every selection-strip slot each frame.
--- Falls back to the full rebuild when there is no live mirror yet (the first
--- build of a tab, or a preview that is not showing).
+-- Rebuild the pinned Live Preview mirror after an Indicator display setting
+-- changes.
 local function RefreshIndicatorPreviewMirror(groupId)
-    if ST._RefreshIndicatorDisplayVisual and ST._RefreshIndicatorDisplayVisual(groupId) then
-        return
-    end
     if ST._RefreshButtonsPreviewMirror then
         ST._RefreshButtonsPreviewMirror(groupId)
     end
@@ -491,7 +481,6 @@ local function BuildIndicatorIconAppearance(container, group)
         RefreshIconPreview()
         CooldownCompanion:RefreshConfigPanel()
     end, nil, {
-        row = true,
         setting = SPECIAL_FINDER.trigger.icon and SPECIAL_FINDER.trigger.icon.borderThickness,
     })
     local borderThicknessLocked = ST.IsBorderThicknessLocked()
@@ -583,8 +572,8 @@ end
 
 -- Row grammar (RowWidgets.lua): one CDC-CheckBoxRow per effect, its advanced
 -- gear chained off the label. Called exactly once per effect from the
--- Indicator Effects tab below, so it was converted outright rather than
--- growing an opts.row mode. `container` is the grid column the row belongs to.
+-- Indicator Effects tab below, so it was converted outright. `container` is
+-- the grid column the row belongs to.
 --
 -- Native aura sources draw the same rows without Animate When and Only In
 -- Combat: their effects always run while Blizzard shows the aura, since
@@ -716,19 +705,10 @@ local function BuildIndicatorEffectsTab(container, group)
         return
     end
 
-    local anyEnabled = false
     local effectOrder = GetIndicatorEffectOrderForDisplayType(group)
-    for _, effectKey in ipairs(effectOrder) do
-        if effects[effectKey] and effects[effectKey].enabled then
-            anyEnabled = true
-            break
-        end
-    end
 
     -- One row-grammar section. The gears inside it are safe behind a collapse:
-    -- the preview command center's trigger route is tab-only (it plays every
-    -- enabled effect at once, so it names no single advanced key), and the
-    -- finder's structural trigger-effect routes DO queue `triggerEffect_*`
+    -- the finder's structural trigger-effect routes queue `triggerEffect_*`
     -- keys but always force this section open first (collapseKeys names
     -- "effects_triggerEffects"), so the gear builds and consumes the queue.
     -- Any future entrance that queues one of these keys must do the same.
@@ -743,11 +723,6 @@ local function BuildIndicatorEffectsTab(container, group)
         for index, effectKey in ipairs(effectOrder) do
             BuildIndicatorEffectSection(index <= splitAt and effectLeft or effectRight, group, effects, effectKey)
         end
-    end
-
-    if not anyEnabled and CS.selectedGroup then
-        ST._ConfigPreview.StopCommand("triggerEffects", CS.selectedGroup)
-        ST._ConfigPreview.StopCommand("textureAura", CS.selectedGroup)
     end
 end
 
@@ -804,11 +779,7 @@ local function BuildIndicatorTextureAppearance(container, group)
             groupId = groupId,
             settings = previewSettings,
         }
-        if isConditionsIndicator then
-            RefreshIndicatorPreviewMirror(groupId)
-        elseif ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror(groupId)
-        end
+        RefreshIndicatorPreviewMirror(groupId)
     end
 
     local function RefreshTextureRuntime(requestAuraRestyle)
@@ -826,14 +797,8 @@ local function BuildIndicatorTextureAppearance(container, group)
 
     local function RefreshTextureVisual(requestAuraRestyle)
         ClearTextureConfigPreviewStage()
-        -- Both tracking kinds repaint the pinned mirror after the saved value
-        -- has been committed. Conditions Indicators can reuse their
-        -- display-only repaint; aura Indicators rebuild the mirror outright.
-        if isConditionsIndicator then
-            RefreshIndicatorPreviewMirror(groupId)
-        elseif ST._RefreshButtonsPreviewMirror then
-            ST._RefreshButtonsPreviewMirror(groupId)
-        end
+        -- Repaint the pinned mirror after the saved value has been committed.
+        RefreshIndicatorPreviewMirror(groupId)
         RefreshTextureRuntime(requestAuraRestyle ~= false)
     end
 
@@ -1206,8 +1171,9 @@ if ST._DefineSettingRoute then
         SPECIAL_FINDER.triggerEffects[key] = finder
     end
 
-    -- Stable IDs keep saved finder destinations valid; each control now reveals
-    -- its own section, and paired spacing no longer opens a separate editor.
+    -- Finder ids are session-only navigation keys (nothing saves them). Each
+    -- control reveals its own section, and paired spacing no longer opens a
+    -- separate editor.
     local textureShape = ST._DefineSettingRoute({
         idPrefix = "panel.texture.appearance",
         scope = SPECIAL_FINDER_SCOPE,

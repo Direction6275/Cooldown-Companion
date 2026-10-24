@@ -18,6 +18,9 @@ Libs\LibDeflate\lib.xml
 Bootstrap.lua
 Config\ChangelogData.lua
 Config\Changelog.lua
+Config\SpellActivationOverlayData.lua
+Config\AuraTexturesBuiltins.lua
+Config\AuraTexturesPicker.lua
 Config\State.lua
 Config\BarWorkspace.lua
 Config\Tutorial.lua
@@ -84,8 +87,6 @@ ConfigSettings\ButtonPanelPreview.lua
 ConfigSettings\GroupPanelOverviewPreview.lua
 ConfigSettings\UnifiedAnchorPreview.lua
 ConfigSettings\ResourceBarPanelsResource.lua
-ConfigSettings\ResourceBarPanelsLayoutOrder.lua
-ConfigSettings\ResourceBarPanels.lua
 ConfigSettings\FrameAnchoringPanels.lua
 ConfigSettings\AuraTexturePicker.lua
 ConfigSettings\ButtonSettingsMultiSelect.lua

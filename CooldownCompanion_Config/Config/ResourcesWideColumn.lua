@@ -153,7 +153,7 @@ local function CollectBarsOffCanvasChipItems(rendered)
     local powerNames = RB and RB.POWER_NAMES or {}
 
     for _, powerType in ipairs(RBP and RBP.GetConfigEditableResources
-        and RBP.GetConfigEditableResources(settings, true) or {}) do
+        and RBP.GetConfigEditableResources(settings) or {}) do
         local capturedPowerType = powerType
         local key = "resource:" .. tostring(powerType)
         if not rendered[key] then
@@ -200,9 +200,6 @@ local function SetBarsOffCanvasChips(col3)
     if visibilityChanged and content and content:IsVisible() then
         ST._AnchorButtonsContentFrame(col3, content)
     end
-end
-
-local function PrepareResourcesEditingChrome(col3)
 end
 
 ------------------------------------------------------------------------
@@ -343,10 +340,7 @@ local function ShowStrip(col3, tabGroup, tabs, activeTab, scrollKey, stripOnly)
     end
 end
 
--- One Settings tab, panel-entry parity: the bar's icon rides the label the
--- same way an entry's does (DecorateEntryTabs, read at call time -
--- ButtonSettings.lua loads after this file). Bars without a tracked spell
--- get the accent-only label, same as today's iconless tabs.
+-- Scroll-restore key for a resource's settings page: one per resource and spec tab.
 local function GetResourceSettingsDetailScrollKey()
     if not CS.selectedResourcePowerType or not CS.resourceSettingsSpecID then return nil end
     return tostring(CS.selectedResourcePowerType) .. ":" .. tostring(CS.resourceSettingsSpecID)
@@ -608,9 +602,7 @@ local function UpdateResourcesPreviewHost(col3, edit, preservePreview)
     host:SetPoint("TOPRIGHT", col3.content, "TOPRIGHT", 0, 0)
     if ST._SetActiveWidePreview then
         ST._SetActiveWidePreview(col3, host, function(hostFrame)
-            if ST._BuildLayoutOrderPanel then
-                BuildResourcesLayoutPreview(hostFrame)
-            end
+            BuildResourcesLayoutPreview(hostFrame)
         end)
     end
     if ST._ComputeWidePreviewHostHeight then
@@ -637,14 +629,14 @@ local function RefreshResourcesLayoutPreview(mirrorReuse)
     if CS.barsEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         local host = col3 and col3._resourcesPreviewHost
-        if host and host:IsShown() and ST._BuildLayoutOrderPanel then
+        if host and host:IsShown() then
             BuildResourcesLayoutPreview(host, mirrorReuse)
             return true
         end
         return false
     end
-    -- Buttons view: the lanes live inside the unified anchor preview on
-    -- the buttons preview host; the mirror refresh self-gates.
+    -- Buttons view: the attached bars render inside the panel mirror on the
+    -- buttons preview host; the mirror refresh self-gates.
     if ST._RefreshButtonsPreviewMirror then
         return ST._RefreshButtonsPreviewMirror(CS.selectedGroup, mirrorReuse == true)
     end
@@ -970,19 +962,14 @@ local function RefreshBarsWideColumn(col3, edit)
     if PruneConfigResourceSelection then
         local RBP = ST._RBP
         PruneConfigResourceSelection(function(powerType)
-            if not (RBP and RBP.IsResourceEditableInColumn4) then
+            if not (RBP and RBP.IsResourceEditable) then
                 return false
             end
-            return RBP.IsResourceEditableInColumn4(powerType, settings, true)
+            return RBP.IsResourceEditable(powerType, settings)
         end)
     end
 
     UpdateResourcesPreviewHost(col3, edit, preservePreview)
-
-    -- Import and export actions belong to the enabled Resources home.
-    if item == nil and settings and settings.enabled == true then
-        PrepareResourcesEditingChrome(col3)
-    end
 
     if item == "castbar" then
         ShowCastBarSettings(col3)

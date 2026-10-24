@@ -48,9 +48,10 @@ local function GetSelectedRuntimeButton(buttonData)
     return nil
 end
 
--- Owner ruling (aura rebuild plan): group-level aura style sections are shown
--- only while the group actually has an aura-tracking entry. Shared by
--- GroupTabs and BarModeTabs (load order: Helpers loads first).
+-- Whether the aura style sections apply. With a settings context: always at
+-- panel and multi scope, and under an entry lens only when that entry tracks
+-- an aura. Without a context: when any of the panel's entries tracks an aura.
+-- Shared by GroupTabs and BarModeTabs.
 local function GroupHasAuraTrackingEntry(group)
     local context = group and group._settingsContext
     if context then
@@ -344,21 +345,7 @@ local function MakeWidgetTreeInert(widget, hideReverts)
         end
     end
 
-    -- A row inside a locked advanced panel whose OWN nested lens section is
-    -- independently writable (bar mode's Icon Zoom, customized while Bar Icon
-    -- itself is inherited) opts out of the lock: greying it would leave an
-    -- override the user just created with no live control. The flag is set
-    -- only while a read-only build is underway and consumed here in the same
-    -- BuildEditorContents call, so it can never ride a pooled widget into a
-    -- later build. It exempts exactly the widget's OWN disable: the revert
-    -- above still hides, and children are still walked, so a future flag on
-    -- a container row cannot silently unlock a whole subtree.
-    local exempt = widget._cdcReadOnlyExempt
-    if exempt then
-        widget._cdcReadOnlyExempt = nil
-    end
-
-    if not exempt and widget.SetDisabled then
+    if widget.SetDisabled then
         widget:SetDisabled(true)
     end
 
@@ -518,11 +505,7 @@ local SCOPE_GLYPH_ICON_SIZE = 12
 -- column) off the line, so the NAME is cut rather than the sentence round it.
 local SCOPE_ENTRY_NAME_MAX_CHARS = 18
 
--- _cdcScopeRevert is the heading's RETIRED glyph. The heading reverts through
--- _cdcScopeRevertText now, but a Heading frame that already carries the glyph
--- from an earlier build must still have it hidden, so the field stays on the
--- cleanup list. Rows keep the glyph and use their own field.
-local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevert", "_cdcScopeRevertText" }
+local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevertText" }
 local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert", "_cdcScopeRowPanel" }
 
 -- A grey row has no affordance to explain itself, so the explanation is a
@@ -625,10 +608,6 @@ end
 -- "denied" - a denied section structurally cannot exist for the entry, so it
 -- keeps no gear at all.
 local ADVANCED_UNLOCK_REFRESH = {
-    -- The styling tabs' standard write-then-rebuild pair.
-    groupStyle = function(target)
-        ST._CompleteConfigEdit(target, "style-settings")
-    end,
     -- Resource settings: apply the module, then rebuild.
     resourceBars = function(target)
         ST._CompleteConfigEdit(target, "style-settings")
@@ -675,7 +654,7 @@ local function ResolveAdvancedUnlock(spec, widgetContext)
         return {
             label = enable.label,
             onClick = function()
-                if (context or spec.refreshKind == "groupStyle") and not ST._IsConfigEditTargetCurrent(target) then return end
+                if context and not ST._IsConfigEditTargetCurrent(target) then return end
                 ApplyAdvancedUnlockEnable(enable, spec.target)
                 ADVANCED_UNLOCK_REFRESH[spec.refreshKind](target)
             end,
@@ -870,12 +849,11 @@ end
 
 -- Read-only gate for a locked advanced panel, applied AFTER the build so the
 -- panel can never drift from its live twin - the same built-like-live rule the
--- main column's inert ranges follow. Runs before the unlock strip is appended,
--- so the sweep covers exactly the build's own rows. One traversal: the
--- hideReverts flag folds the revert-glyph hiding (owner ruling 2026-08-31,
--- see MakeWidgetTreeInert) into the same walk, and embedded rows with their
--- OWN lens sections (bar mode's Icon Zoom inside Bar Icon Advanced) keep
--- their scope chrome live - Customize is the escape hatch into the section.
+-- main column's inert ranges follow. The unlock strip is built into the editor
+-- above this body (AdvancedSettingsPanel.lua BuildEditorContents), so the
+-- sweep covers exactly the build's own rows. One traversal: the hideReverts
+-- flag folds the revert-glyph hiding (owner ruling 2026-08-31, see
+-- MakeWidgetTreeInert) into the same walk.
 local function MakeAdvancedPanelReadOnly(scroll)
     local children = scroll and scroll.children
     if not children then
@@ -1041,14 +1019,16 @@ end
 
 -- Scope chrome for a section HEADING: the note says whose values the section
 -- is showing, and the affordance after it is the only way to change that.
--- Returns the resolved scope for callers that also gate the section's body.
-local function AttachHeadingScopeChrome(heading, lens, group, sectionId)
+-- Returns the section's scope (resolved once at BeginLensSection) for callers
+-- that also gate the section's body.
+local function AttachHeadingScopeChrome(heading, sec)
     local frame = heading and heading.frame
     if not frame then
         return nil
     end
 
-    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    local lens, group, sectionId = sec.lens, sec.group, sec.sectionId
+    local scope, deniedReason = sec.scope, sec.deniedReason
     if ST._MarkSettingsScope then ST._MarkSettingsScope(heading, scope, group) end
     HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
 
@@ -1120,13 +1100,14 @@ end
 --
 -- Call this AFTER the row's disabled state is set: a row greyed out by its own
 -- dependency keeps that grey, and the revert glyph still shows ownership.
-local function AttachRowScopeChrome(rowWidget, lens, group, sectionId)
+local function AttachRowScopeChrome(rowWidget, sec)
     local frame = rowWidget and rowWidget.frame
     if not (frame and rowWidget.badgeAnchor) then
         return nil
     end
 
-    local scope, _, _, deniedReason = ResolveLensSection(lens, group, sectionId)
+    local lens, group, sectionId = sec.lens, sec.group, sec.sectionId
+    local scope, deniedReason = sec.scope, sec.deniedReason
     if ST._MarkSettingsScope then ST._MarkSettingsScope(rowWidget, scope, group) end
     HideScopeChrome(frame, ROW_SCOPE_FIELDS)
     SetRowScopeTooltip(rowWidget, nil)
@@ -1227,6 +1208,10 @@ end
 --   sec:Chrome(row)   -- row-level scope chrome, AFTER the row's disabled state is final
 --   sec:Finish()      -- applies the inert bracket when the section is read-only
 --
+-- Chrome and HeadingChrome wear sec.scope and sec.deniedReason as resolved at
+-- Begin and never re-resolve, so the chrome always matches the table the rows
+-- were bound to.
+--
 -- Field contract, all derived once at Begin:
 --   scope         "panel" | "multi" | "panelOnly" | "denied" | "customized" | "inherited"
 --   read / write  ResolveLensSection's tables; write == nil is the inert marker
@@ -1289,7 +1274,7 @@ function LensSection:Chrome(row)
         and not pendingHighlight.sectionRowWidget then
         pendingHighlight.sectionRowWidget = row
     end
-    return AttachRowScopeChrome(row, self.lens, self.group, self.sectionId)
+    return AttachRowScopeChrome(row, self)
 end
 
 -- Make an inherited color swatch direct-manipulable without enabling the
@@ -1367,7 +1352,7 @@ function LensSection:DirectColorControl(row, key, externallyDisabled)
 end
 
 function LensSection:HeadingChrome(heading)
-    return AttachHeadingScopeChrome(heading, self.lens, self.group, self.sectionId)
+    return AttachHeadingScopeChrome(heading, self)
 end
 
 -- Chrome for a panel-owned row inside this section (see

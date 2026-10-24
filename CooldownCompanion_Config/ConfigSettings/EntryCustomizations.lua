@@ -73,7 +73,7 @@ local CUSTOMIZATIONS_TOOLTIP = {
 }
 
 -- This list's framing around the single-sourced denial clause (see
--- SECTION_DENIAL_CLAUSES above - never word a denial here directly).
+-- SECTION_DENIAL_CLAUSES in StyleLens.lua - never word a denial here directly).
 local function GetInactiveCustomizationReason(reason)
     return "Saved for this entry, but inactive: " .. GetSectionDenialClause(reason) .. "."
 end
@@ -140,9 +140,8 @@ end
 -- this list can never offer a gear the mode does not draw. Icons builds both
 -- the Appearance and Indicators tabs off both maps; bars builds
 -- its two tabs off the one bars map (its pandemic, unusable and tooltip gears
--- are listed there, so the indicators map is not a bars source); text's map is
--- deliberately empty today. Textures has no override sections at all, so it has
--- no entry and no row here ever resolves a gear.
+-- are listed there, so the indicators map is not a bars source). A mode with
+-- no map here never resolves a gear.
 local CUSTOMIZATIONS_GEAR_MAPS_BY_MODE = {
     icons = { "_APPEARANCE_SECTION_BY_ADVANCED_KEY", "_INDICATORS_OVERRIDE_SECTION_BY_ADVANCED_KEY" },
     bars = { "_BARMODE_SECTION_BY_ADVANCED_KEY" },
@@ -372,8 +371,8 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     -- Row-grammar label rows in the grid's left column, so the list keeps the
     -- config's half-width cell instead of stretching across the pane. The
     -- revert glyph rides the label's badge chain; the reason is the row's
-    -- hover tooltip. Read at call time, not load time: RowWidgets and Helpers
-    -- have no load-order contract between them.
+    -- hover tooltip. Read at call time, not load time: RowWidgets.lua loads
+    -- after this file (TOC order).
     local AddLabelRow = ST._AddLabelRow
     local AnchorRowBadge = ST._AnchorRowBadge
     local listLeft = ST._BeginRowGrid(scroll)
@@ -410,11 +409,10 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         -- advanced panel carries the gear too, so the list is one click from the
         -- deep settings rather than a stop on the way to them.
         --
-        -- ACTIVE rows only, and never the Text Format row. An inactive section
-        -- is not drawn anywhere in this mode, so the tab it would land on builds
-        -- no gear to consume the queue and the panel would never open; the
-        -- format row is a flat field with no section and no advanced panel at
-        -- all. Both fall out of the gates below rather than being special-cased.
+        -- ACTIVE rows only. An inactive section is not drawn anywhere in this
+        -- mode, so the tab it would land on builds no gear to consume the queue
+        -- and the panel would never open. That falls out of the gates below
+        -- rather than being special-cased.
         --
         -- The gear ALSO has to exist at the destination: a structural gate
         -- (Masque, the fill-timer interlock) can leave a drawn section with no
@@ -469,8 +467,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
             -- row still explains itself under the pointer.
             WireScopeTextHover(nav, reasonText)
             -- The route resolves the destination itself, from the same
-            -- registry consulted above; the format row has no section and
-            -- names its tab instead.
+            -- registry consulted above.
             local sectionId = item.sectionId
             nav:SetScript("OnClick", function()
                 if moduleContext then

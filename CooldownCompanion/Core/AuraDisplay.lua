@@ -448,8 +448,8 @@ end
 -- Armed from the ENTRY'S OPT-IN, not from ally record creation: while solo a
 -- group-scoped entry resolves to { "player" } only, so waiting for a party/raid
 -- record meant the watcher never existed and joining a group did nothing until
--- some unrelated rebind happened. GROUP_ROSTER_UPDATE has no other handler in
--- the addon.
+-- some unrelated rebind happened. GROUP_ROSTER_UPDATE has no other aura handler
+-- in the addon.
 local function EnsureGroupWatcher()
     if groupWatcher then return end
     groupWatcher = CreateFrame("Frame")
@@ -3836,6 +3836,71 @@ local function BarCellInset(style)
         style.borderSize or ST.DEFAULT_BORDER_SIZE, style)
 end
 
+-- A group's pooled frames are handed out last-in, first-out: AcquireFrame
+-- takes the newest available frame and ReleaseFrame puts it back on top
+-- (Blizzard_AuraContainerFrameProviders.lua). With maxFrameCount 1 a group
+-- never holds two, so it only ever shows the LAST frame its batch created and
+-- the other nine stay hidden. Hidden AnimationGroups keep running (2026-10-22:
+-- six "dashes" glow entries cost ~0.3 ms and ~1.5 ms of frame time through
+-- their spares), so binds style the spares in full, then stop every animation
+-- CC started on them. Blizzard's own pandemic animations are left alone. If
+-- the hand-out order ever changes, a spare shows with its effects frozen.
+--
+-- Spares are also restyled only when their entry or its look may have changed.
+-- Rebinds that follow game state (RUNTIME_REBIND_REASONS: a shapeshift's
+-- availability pass, CDM viewer-map churn, resource bar swaps, the roster,
+-- talent swaps and their charge settle, vehicle UI entry and exit) restyle
+-- only the frame each group shows. A panel-scoped request (populate,
+-- style, config, aura-panel) bumps that panel's epoch; any other request bumps
+-- the shared one. A spare stamped with an older epoch or another entry is
+-- restyled at its next bind. A Cat/Bear swap restyled all 54 Buffs spares, most
+-- of CC's share of that hitch (2026-10-22 trace).
+local spareStyleEpoch = 0
+local panelStyleEpochs = {}
+local RUNTIME_REBIND_REASONS = {
+    availability = true, ["viewer-map"] = true, resources = true, roster = true,
+    ["talent-state"] = true, ["talent-charge-settle"] = true,
+    ["vehicle-ui"] = true, ["vehicle-actionbar"] = true,
+}
+
+local function HostsToStyle(hosts, buttonData, groupId)
+    local panelEpoch = panelStyleEpochs[groupId] or 0
+    local index = 0
+    return function()
+        repeat
+            index = index + 1
+            local host = hosts[index]
+            if host and (index == #hosts or host.styledEntry ~= buttonData
+                or host.styledEpoch ~= spareStyleEpoch or host.styledPanelEpoch ~= panelEpoch) then
+                return index, host
+            end
+        until not host
+    end
+end
+
+local function HoldPooledSpareStill(host, buttonData, groupId)
+    local kit = host.kit
+    host.styledEntry, host.styledEpoch = buttonData, spareStyleEpoch
+    host.styledPanelEpoch = panelStyleEpochs[groupId] or 0
+    ST._StopKitGlowAnimations(kit.glow)
+    if kit.pandemicGlow then
+        ST._StopKitGlowAnimations(kit.pandemicGlow)
+    end
+    if kit.barFillPulseAG then
+        kit.barFillPulseAG:Stop()
+        kit.barFillCsAG:Stop()
+    end
+    if kit.stackFillPulseAG then
+        kit.stackFillPulseAG:Stop()
+        kit.stackFillCsAG:Stop()
+    end
+    if kit.stackBlockFill then
+        for _, tex in ipairs(kit.stackBlockFill.fills) do
+            tex.shift:Stop()
+        end
+    end
+end
+
 -- SetAuraGroupLayout REPLACES the whole options table, so every field the
 -- group needs is written every time. elementSpacing must stay 0: the flow
 -- layout advances the cursor by elementSpacing after an element AND adds
@@ -3921,10 +3986,13 @@ local function BindBlockGroup(group, entry)
     container:SetAuraGroupCandidateFilters(group.key,
         BuildCandidateFilters(group.unit, entry.spellSet))
     group.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the assigned one: initializeFrame
-    -- ran once per pooled frame at group creation, and which frame the group
-    -- hands out next is Blizzard's business.
-    for _, host in ipairs(group.hosts) do
+    -- Style every owned frame the group could hand out, not just the one shown:
+    -- initializeFrame ran once per pooled frame at group creation, and each
+    -- stays a complete fallback. Only the last one animates, and spares are
+    -- restyled only on a change (HoldPooledSpareStill).
+    local owner = group.record.owner
+    local ownerId = owner and owner.groupId
+    for index, host in HostsToStyle(group.hosts, entry.buttonData, ownerId) do
         ApplyPanelHostGeometry(group, host)
         host.proxy._ccWholeAuraPanel = false
         ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
@@ -3936,6 +4004,9 @@ local function BindBlockGroup(group, entry)
             unit = group.unit,
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
+        if index < #group.hosts then
+            HoldPooledSpareStill(host, entry.buttonData, ownerId)
+        end
         -- Attached entries honor panel tooltip settings. Converge reused
         -- frames every bind.
         host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
@@ -4693,10 +4764,12 @@ local function BindPanelGroup(pgroup, entry)
     container:SetAuraGroupCandidateFilters(pgroup.key,
         BuildCandidateFilters(pgroup.unit, entry.spellSet))
     pgroup.boundStackMax = entry.stackBarMax
-    -- Re-style every owned frame, not just the assigned one: initializeFrame
-    -- ran once per pooled frame at group creation, and which frame the group
-    -- hands out next is Blizzard's business.
-    for _, host in ipairs(pgroup.hosts) do
+    -- Style every owned frame the group could hand out, not just the one shown:
+    -- initializeFrame ran once per pooled frame at group creation, and each
+    -- stays a complete fallback. Only the last one animates, and spares are
+    -- restyled only on a change (HoldPooledSpareStill).
+    local panelId = pgroup.record.groupId
+    for index, host in HostsToStyle(pgroup.hosts, entry.buttonData, panelId) do
         ApplyPanelHostGeometry(pgroup, host)
         -- Both whole Aura Panels and ordinary-panel aura sections use the
         -- auraPanel host kit. Preserve the distinction explicitly: only the
@@ -4713,6 +4786,9 @@ local function BindPanelGroup(pgroup, entry)
             unit = pgroup.unit,
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
+        if index < #pgroup.hosts then
+            HoldPooledSpareStill(host, entry.buttonData, panelId)
+        end
         -- Tooltips: an Aura Panel cell has no CC button under it, so this frame
         -- is the ONLY surface a tooltip could hang off — panels therefore honor
         -- the panel's own Show Tooltips setting rather than forcing motion off
@@ -5585,8 +5661,14 @@ end
 function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     if not self.db then return end
     rebindRequestCount = rebindRequestCount + 1
-    if groupId and (reason == "populate" or reason == "style"
-        or reason == "config" or reason == "aura-panel") then
+    local panelScoped = groupId and (reason == "populate" or reason == "style"
+        or reason == "config" or reason == "aura-panel")
+    if panelScoped then
+        panelStyleEpochs[groupId] = (panelStyleEpochs[groupId] or 0) + 1
+    elseif not RUNTIME_REBIND_REASONS[reason] then
+        spareStyleEpoch = spareStyleEpoch + 1
+    end
+    if panelScoped then
         if not fullRebindRequested then panelRebindIds[groupId] = true end
     elseif reason == "resources" then
         if not fullRebindRequested then

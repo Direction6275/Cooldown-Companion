@@ -140,28 +140,11 @@ local function EnsureEditingSurface(col3)
 end
 
 local function GetActiveEditingAddBox(col3)
-    local alternate = col3._cdcAlternateEditingAddBox
-    if alternate and alternate.frame and alternate.frame:IsShown() then
-        return alternate
-    end
     local panelAddBox = col3.buttonsAddBox
     if panelAddBox and panelAddBox.frame and panelAddBox.frame:IsShown() then
         return panelAddBox
     end
     return nil
-end
-
-
-local function SetWideEditingAddBox(col3, widget)
-    local previous = col3._cdcAlternateEditingAddBox
-    if previous and previous ~= widget and previous.frame then
-        previous.frame:Hide()
-    end
-    col3._cdcAlternateEditingAddBox = widget
-    if widget and widget.frame then
-        widget.frame._cdcEditingHeight = widget.frame._cdcEditingHeight or ADD_BOX_HEIGHT
-        widget.frame:Show()
-    end
 end
 
 ------------------------------------------------------------------------
@@ -267,8 +250,7 @@ local function HideSettingsFinderResults()
     end
 end
 
--- Resolve at use time rather than storing an anchor on pooled Add widgets.
--- The active input may be the persistent panel box or a rebuilt Add box.
+-- Resolved at use time against the action row's add box (row._cdcAddBox).
 ST._GetEditingAddResultsAnchor = function(input)
     local col3 = CS.configFrame and CS.configFrame.col3
     local row = col3 and col3._cdcEditingActionRow
@@ -291,9 +273,9 @@ local function ApplyEditingActionPopupHandoff(owner)
     end
 end
 
--- Spell/item autocomplete calls this before showing its own popup. Keeping
--- that mutual exclusion at the popup boundary also covers alternate Add
--- widgets.
+-- Spell/item autocomplete calls this before showing its own popup
+-- (ShowAutocompleteResults, for every field that opens it), so the mutual
+-- exclusion sits at the popup boundary.
 CS.HideSettingsFinderResults = function()
     ApplyEditingActionPopupHandoff("add")
 end
@@ -702,8 +684,8 @@ local function LayoutEditingActionRow(col3)
 
     local height = ADD_BOX_HEIGHT
     if hasAdd then
-        -- Anchors alone do not inherit the settings column's visibility.
-        -- Both the normal and alternate add fields belong to this action row.
+        -- Anchors alone do not inherit the settings column's visibility, so
+        -- the add field is reparented to this action row.
         addBox.frame:SetParent(row)
         height = math.max(height, addBox.frame._cdcEditingHeight or ADD_BOX_HEIGHT)
     end
@@ -1054,11 +1036,6 @@ local function SetWideEditingChips(col3, prefix, items)
 end
 
 local function ClearWideEditingExtras(col3, preserveFinderState)
-    local alternate = col3._cdcAlternateEditingAddBox
-    if alternate and alternate.frame then
-        alternate.frame:Hide()
-    end
-    col3._cdcAlternateEditingAddBox = nil
     if col3._cdcEditingChips then
         col3._cdcEditingChips:Hide()
     end
@@ -1108,8 +1085,8 @@ local function GetEditingHeaderPath()
         local settings = CooldownCompanion.GetResourceBarSettings
             and CooldownCompanion:GetResourceBarSettings()
         if CS.selectedResourcePowerType and ST._RBP
-            and ST._RBP.IsResourceEditableInColumn4
-            and ST._RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true) then
+            and ST._RBP.IsResourceEditable
+            and ST._RBP.IsResourceEditable(CS.selectedResourcePowerType, settings) then
             local powerNames = ST._RB and ST._RB.POWER_NAMES
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
             return BARS_HOME_LABEL, resourceName or "Resource"
@@ -1544,6 +1521,8 @@ local function IsCursorDropPayload(cursorType, group)
     end
     return true
 end
+-- The Navigator's panel-row drop highlights ask the same question (Panel.lua).
+ST._IsPanelCursorDropPayload = IsCursorDropPayload
 
 -- Drop-to-add overlay over the preview: shown while a spell/item is on the
 -- cursor, mirroring the Navigator panel drop overlays. TryReceiveCursorDrop
@@ -1874,8 +1853,8 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         local activePanelId = CS.selectedGroup
         if activePanelId then
             SetButtonsPreviewRenderer(hostFrame, "panel")
-            -- Anchor-aware build: the unified preview (real mirror + attached
-            -- bar lanes) on the anchor panel, the plain mirror elsewhere.
+            -- Anchor-aware build: the mirror (attached bars render inside it)
+            -- plus its quick-toggle badges.
             if ST._BuildAnchorAwarePanelPreview then
                 ST._BuildAnchorAwarePanelPreview(hostFrame, activePanelId, outcome)
             elseif ST._BuildButtonPanelPreview then
@@ -1903,18 +1882,10 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
         if ST._UpdatePreviewCommandCenter then
             ST._UpdatePreviewCommandCenter(host)
         end
-        if previousReserve == (host._cdcPreviewReserveBottom or 0) then
-            local selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(host, panelId)
-            if not selectionRefreshed and host._cdcUnifiedMirrorHost then
-                selectionRefreshed = ST._RefreshButtonPanelPreviewSelection(
-                    host._cdcUnifiedMirrorHost,
-                    panelId
-                )
-            end
-            if selectionRefreshed then
-                UpdatePreviewDropOverlay()
-                return
-            end
+        if previousReserve == (host._cdcPreviewReserveBottom or 0)
+            and ST._RefreshButtonPanelPreviewSelection(host, panelId) then
+            UpdatePreviewDropOverlay()
+            return
         end
     end
 
@@ -1932,8 +1903,7 @@ local function UpdatePanelPreview(col3, selectionOnly, edit)
 end
 
 -- Add-entry box inside the editing surface (under its header), scoped to
--- the selected panel. Reuses the same TryAdd/autocomplete plumbing as the
--- shared inline add.
+-- the selected panel.
 local function EnsureAddBox(col3)
     local addBox = col3.buttonsAddBox
     if addBox then return addBox end
@@ -1963,9 +1933,6 @@ local function EnsureAddBox(col3)
         if not ShouldSubmitRawAddOnEnter(text) then return end
         CS.HideAutocomplete()
         if text == "" or not CS.selectedGroup then return end
-        -- The workspace box always targets the selected panel; a stale
-        -- inline-add target left over from browse mode must not win.
-        CS.addingToPanelId = nil
         local targetGroupId = CS.selectedGroup
         if not ST._TryAdd(text, { groupId = targetGroupId, tutorialInput = text, clearInput = text }) then return end
         widget:SetText("")
@@ -1974,17 +1941,12 @@ local function EnsureAddBox(col3)
     end)
     addBox:SetCallback("OnTextChanged", function(widget, event, text)
         instructions:SetShown((text or "") == "")
-        CS.addingToPanelId = nil
         HideSettingsFinderResults()
         if text and #text >= 1 then
             local results = ST._SearchAutocomplete(text)
-            -- This box is persistent (not rebuilt from CS.newInput like the
-            -- inline box), so a successful pick must clear it here
+            -- This box is persistent, so a successful pick must clear it here
             -- or the stale text re-adds on the next Enter press.
             CS.ShowAutocompleteResults(results, widget, function(entry)
-                -- Explicit target: the shared select handler prefers
-                -- CS.addingToPanelId, which never belongs to this box.
-                CS.addingToPanelId = nil
                 if ST._OnAutocompleteSelect(entry) then
                     widget:SetText("")
                     instructions:Show()
@@ -2048,8 +2010,8 @@ local function UpdateAddBox(col3)
     addBox.frame:Show()
     UpdateEditingActionRow(col3)
 
-    -- Also consume the shared focus flag (a new panel sets it). This box is
-    -- the only consumer, so a new panel's add target does not block it.
+    -- Also consume the shared focus flag (set by a new panel or an
+    -- autocomplete add); this box is its only consumer.
     local wantFocus = CS.pendingWideAddFocus
     if not wantFocus and CS.pendingEditBoxFocus then
         CS.pendingEditBoxFocus = false
@@ -2198,8 +2160,8 @@ local function GetValidatedUnifiedBarKind()
     if kind == "resource" then
         local settings = CooldownCompanion:GetResourceBarSettings()
         local RBP = ST._RBP
-        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditableInColumn4
-            and RBP.IsResourceEditableInColumn4(CS.selectedResourcePowerType, settings, true)) then
+        if not (CS.selectedResourcePowerType and RBP and RBP.IsResourceEditable
+            and RBP.IsResourceEditable(CS.selectedResourcePowerType, settings)) then
             CS.unifiedBarKind = nil
             return nil
         end
@@ -2481,7 +2443,6 @@ ST._RefreshButtonsPreviewMirror = RefreshButtonsPreviewMirror
 ST._RefitWidePreviewHost = RefitWidePreviewHost
 ST._StampWidePreviewLayout = StampWidePreviewLayout
 ST._ClearWideAddBoxAfterAdd = ClearWideAddBoxAfterAdd
-ST._SetWideEditingAddBox = SetWideEditingAddBox
 ST._SetWideEditingChips = SetWideEditingChips
 ST._ClearWideEditingExtras = ClearWideEditingExtras
 -- Editing-surface hide for view branches that release the preview/editing

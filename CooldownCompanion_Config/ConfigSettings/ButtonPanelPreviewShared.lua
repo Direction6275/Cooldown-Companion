@@ -133,23 +133,6 @@ local BAR_PREVIEW_REASON_DEFS = {
             return StateRule("At Zero Charges", buttonData, "useBaselineAlphaFallbackZeroCharges")
         end,
         fallback = "useBaselineAlphaFallbackZeroCharges" },
-    -- Items with use-count fallbacks title this row "With No Uses Available"
-    -- in the config (ButtonConditions), so the tooltip must name the row the
-    -- way that entry's own tab does.
-    { key = "zero-stacks", label = "Zero stacks",
-        rule = function(buttonData)
-            local row = type(CooldownCompanion.HasItemFallbacks) == "function"
-                and CooldownCompanion.HasItemFallbacks(buttonData) == true
-                and "With No Uses Available"
-                or "At Zero Stacks"
-            return StateRule(row, buttonData, "useBaselineAlphaFallbackZeroStacks")
-        end,
-        fallback = "useBaselineAlphaFallbackZeroStacks" },
-    { key = "not-equipped", label = "Not equipped",
-        rule = function(buttonData)
-            return StateRule("While Not Equipped", buttonData, "useBaselineAlphaFallbackNotEquipped")
-        end,
-        fallback = "useBaselineAlphaFallbackNotEquipped" },
     { key = "unusable", label = "Unusable",
         rule = function(buttonData)
             return StateRule("While Unusable", buttonData, "useBaselineAlphaFallbackUnusable")
@@ -210,10 +193,9 @@ ST._UsesConfigOnlyBarChargeBehavior = UsesConfigOnlyBarChargeBehavior
 -- Pure Bar-mirror visibility projection. Inputs are saved entry/group data and
 -- a stored config-preview snapshot only. It deliberately does not accept live
 -- status, button frames, aura state, item counts, usability, or equipment data.
-local function IsMissingReminderPreview(buttonData, group, previewState)
+local function IsMissingReminderPreview(buttonData, group, conditional)
     return CooldownCompanion:IsMissingAuraIndicatorEntry(buttonData, group)
-        and previewState and previewState.conditional
-        and previewState.conditional.kind == "aura_missing"
+        and conditional and conditional.kind == "aura_missing"
 end
 
 local function RestoreMissingReminderPreview(slot)
@@ -221,8 +203,8 @@ local function RestoreMissingReminderPreview(slot)
 end
 
 -- Add the cue over the existing mirror icon so its normal color rules remain.
-local function ApplyMissingReminderPreview(slot, buttonData, group, previewState)
-    if not IsMissingReminderPreview(buttonData, group, previewState) then return end
+local function ApplyMissingReminderPreview(slot, buttonData, group, conditional)
+    if not IsMissingReminderPreview(buttonData, group, conditional) then return end
     if not slot.missingReminder then
         slot.missingReminder = CreateFrame("Frame", nil, slot)
         slot.missingReminder:SetFrameLevel(slot:GetFrameLevel() + 10)
@@ -249,12 +231,9 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     -- Stable baseline: aura/proc inactive, ready, full charges, and otherwise
     -- available/usable/equipped. Only a stored preview may replace those facts.
     local auraActive = IsBarPreviewAuraActive(conditional, effectFlags)
-    local procActive = conditional and conditional.procActive == true or false
-    if effectFlags and effectFlags._procGlowPreview then
-        procActive = true
-    end
+    local procActive = effectFlags ~= nil and effectFlags._procGlowPreview == true
 
-    local chargeState = conditional and conditional.chargeState or "full"
+    local chargeState = "full"
     if kind == "charge_full" then
         chargeState = "full"
     elseif kind == "charge_missing" then
@@ -271,15 +250,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         onCooldown = true
     end
 
-    local itemQuantityKind = conditional and conditional.itemQuantityKind or nil
-    local itemAvailableQuantity = conditional and conditional.itemAvailableQuantity or nil
-    if kind == "charge_zero" and itemQuantityKind == "stacks" then
-        itemAvailableQuantity = 0
-    end
-    local isEquippableNotEquipped = conditional
-        and conditional.isEquippableNotEquipped == true or false
-    local unusable = conditional
-        and (conditional.unusable == true or kind == "unusable") or false
+    local unusable = kind == "unusable"
 
     local activeReasons = {}
     if buttonData.enabled == false then
@@ -308,17 +279,13 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     end
 
     local usesChargeBehavior = UsesConfigOnlyBarChargeBehavior(buttonData)
-    local itemUsesResolvedCooldownState = buttonData.type == "item"
-        and itemQuantityKind == "stacks"
     local needsNoCooldownCheck = buttonData.hideWhileOnCooldown
         or buttonData.hideWhileNotOnCooldown
     local noCooldown = needsNoCooldownCheck and IsBarPreviewNoCooldownSpell(buttonData) or false
     local zeroOnlyChargeSpellHide = false
 
     if buttonData.hideWhileOnCooldown and not noCooldown then
-        if itemUsesResolvedCooldownState then
-            if onCooldown then activeReasons["on-cooldown"] = true end
-        elseif usesChargeBehavior then
+        if usesChargeBehavior then
             if chargeState == "zero" or chargeState == "missing" then
                 activeReasons["on-cooldown"] = true
             end
@@ -328,9 +295,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     end
 
     if buttonData.hideWhileNotOnCooldown and not noCooldown then
-        if itemUsesResolvedCooldownState then
-            if not onCooldown then activeReasons["not-on-cooldown"] = true end
-        elseif usesChargeBehavior then
+        if usesChargeBehavior then
             if buttonData.type == "spell"
                 and buttonData.hasCharges == true
                 and buttonData.showOnlyAtZeroCharges then
@@ -362,15 +327,6 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         and not hasItemFallbacks
         and chargeState == "zero" then
         activeReasons["zero-charges"] = true
-    end
-    if buttonData.type == "item"
-        and buttonData.hideWhileZeroStacks
-        and itemQuantityKind == "stacks"
-        and (tonumber(itemAvailableQuantity) or 0) == 0 then
-        activeReasons["zero-stacks"] = true
-    end
-    if buttonData.hideWhileNotEquipped and isEquippableNotEquipped then
-        activeReasons["not-equipped"] = true
     end
     if buttonData.hideWhileUnusable
         and not buttonData.isPassive
@@ -409,18 +365,11 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         underlyingAlpha = PANEL_PREVIEW_GHOST_ALPHA
     end
 
-    local mode = exactPreview and "visible" or underlyingMode
-    local visibilityAlpha = exactPreview and 1 or underlyingAlpha
     return {
-        mode = mode,
-        effectiveMode = mode,
-        visibilityAlpha = visibilityAlpha,
-        visualAlpha = visibilityAlpha,
         exactPreview = exactPreview,
-        forcedPreview = exactPreview and underlyingMode ~= "visible",
         underlyingMode = underlyingMode,
+        visualAlpha = exactPreview and 1 or underlyingAlpha,
         reasons = reasons,
-        underlyingReasons = reasons,
     }
 end
 
@@ -665,17 +614,8 @@ end
 -- any of the focused preview's entry interaction or preview-state machinery.
 -- Focused builds explicitly re-enable mouse input when wiring a recycled slot.
 local function DisableReadOnlySlotInteraction(slot)
-    if slot._cdcShiftTooltipAdapter and ST._ClearConfigShiftTooltipHover then
-        ST._ClearConfigShiftTooltipHover(slot._cdcShiftTooltipAdapter)
-    end
-    if ResetBarSlotWorkspaceState then
-        ResetBarSlotWorkspaceState(slot)
-    end
-    slot:EnableMouse(false)
+    ResetBarSlotWorkspaceState(slot)
     ClearSlotInteraction(slot)
-    slot._cdcDraggable = false
-    slot._cdcEntryIndex = nil
-    slot._cdcEntryStatus = nil
     slot._cdcCondAnim = nil
     slot:SetAlpha(1)
     if slot.hoverHighlight then slot.hoverHighlight:Hide() end
@@ -717,10 +657,12 @@ end
 
 -- Saved-design identity and visibility stay here; the body recipe is shared
 -- with live icons. Only this preview slot's dimensions are read.
-local function StylePreviewIcon(slot, buttonData, group)
-    local style = group and group.style or {}
-    if buttonData and CooldownCompanion.GetEffectiveStyle then
-        style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+local function StylePreviewIcon(slot, buttonData, group, style)
+    if not style then
+        style = group and group.style or {}
+        if buttonData and CooldownCompanion.GetEffectiveStyle then
+            style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
+        end
     end
     IconVisuals.Layout(slot, style)
     local width, height = slot:GetSize()
@@ -886,7 +828,7 @@ local function SetPreviewMessage(preview, message, title, note)
 
     -- A title opts this message into the focused empty-panel treatment. The
     -- plain-message path remains for read-only and filtered states, and for the
-    -- compact bands beneath Texture and Trigger mirrors.
+    -- compact guidance band beneath an entry-less mirror.
     if title then
         local titleLabel = preview.messageTitle
         if not titleLabel then
@@ -1606,7 +1548,8 @@ local STRIP_ICON_SIZE = 36
 local STRIP_SPACING = 4
 local STRIP_PER_ROW = 8
 
--- Bottom band reserved for compact entry guidance beneath a specialized mirror.
+-- Bottom band reserved for compact entry guidance beneath a mirror that shows
+-- attached bars but no entries.
 local EMPTY_ENTRY_GUIDANCE_BAND = 44
 
 local function GetPanelPreviewNaturalSize(group, includeSections, modules)
