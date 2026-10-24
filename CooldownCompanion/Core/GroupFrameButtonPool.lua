@@ -82,8 +82,10 @@ local function ClearButtonCompactSlotCache(button)
     button._compactSlotY = nil
 end
 
-local function GetButtonPoolKey(group, buttonData, style)
-    if ST.IsAttachedBarEntry(group, buttonData) then return "attachedBars" end
+-- layoutKind: the frame's stamped _panelLayoutKind (callers run in the
+-- populate or a guarded style pass); nil falls back to a fresh walk.
+local function GetButtonPoolKey(group, buttonData, layoutKind)
+    if ST.IsAttachedBarEntry(group, buttonData, layoutKind) then return "attachedBars" end
     local displayMode = ST.GetEntryPresentation(group, buttonData)
     if displayMode == "bars" then
         return "bars"

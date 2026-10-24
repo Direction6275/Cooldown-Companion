@@ -742,7 +742,11 @@ function CooldownCompanion:FinalizePanelAnchors(sizedFrames)
             local previousCount = frame.layoutButtonCount
             -- Totem surfaces own their live or three-slot editing footprint.
             if not ST.IsTotemPanelGroup(group) and not self:IsGroupCompactLayoutActive(groupId, group) then
-                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group)
+                -- Same usability options as the layout pass's writer
+                -- (ApplyActiveButtonLayout), so an unlock preview counts alike.
+                frame.layoutButtonCount = self:GetGroupLayoutButtonCount(groupId, group, {
+                    buttonUsabilityOptions = self:GetGroupButtonUsabilityOptions(groupId, group),
+                })
             else
                 frame.layoutButtonCount = nil
             end

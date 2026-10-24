@@ -368,10 +368,12 @@ function ST.GetAttachedBarStyle(group, forEditing)
     return style
 end
 
-function ST.GetEntryBaseStyle(group, entry)
+-- barStyle: an already resolved GetAttachedBarStyle(owner) for a caller
+-- walking many entries in one pass.
+function ST.GetEntryBaseStyle(group, entry, barStyle)
     if entry and entry._geometryContext then return entry._geometryContext:ReadStyle() end
     group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    if ST.IsPanelBarEntry(group, entry) then return ST.GetAttachedBarStyle(group) end
+    if ST.IsPanelBarEntry(group, entry) then return barStyle or ST.GetAttachedBarStyle(group) end
     return group and group.style or {}
 end
 
@@ -416,18 +418,32 @@ function Addon:GetEntryEffectiveStyle(group, entry)
     return self:GetEffectiveStyle(ST.GetEntryBaseStyle(group, entry), entry, group)
 end
 
+local function WidenBarCell(width, height, group, entry, barStyle)
+    local effective = Addon:GetEffectiveStyle(ST.GetEntryBaseStyle(group, entry, barStyle), entry, group)
+    local w, h = effective.barLength or 180, effective.barHeight or 12
+    if effective.barFillVertical then w, h = h, w end
+    return math.max(width, w), math.max(height, h)
+end
+
 function ST.GetBarGridCellDimensions(group)
     local style = group.style or {}
     local width, height = style.barLength or 180, style.barHeight or 20
     if style.barFillVertical then width, height = height, width end
-    if group._unifiedPanelOwner then
-        local includeInactive = ST.GetPanelLayoutKind(group._unifiedPanelOwner) == "empty"
+    local owner = group._unifiedPanelOwner
+    if owner then
+        local barStyle = ST.GetAttachedBarStyle(owner)
+        local anyEligible = false
         for _, entry in ipairs(group.buttons or {}) do
-            if includeInactive or ST.IsPanelLayoutEntryEligible(group, entry) then
-                local effective = Addon:GetEntryEffectiveStyle(group, entry)
-                local w, h = effective.barLength or 180, effective.barHeight or 12
-                if effective.barFillVertical then w, h = h, w end
-                width, height = math.max(width, w), math.max(height, h)
+            if ST.IsPanelLayoutEntryEligible(group, entry) then
+                anyEligible = true
+                width, height = WidenBarCell(width, height, group, entry, barStyle)
+            end
+        end
+        -- Nothing eligible (GetPanelLayoutKind "empty"): the configured entries
+        -- size the inactive ghosts.
+        if not anyEligible and ST.PanelSupportsAttachedBars(owner) then
+            for _, entry in ipairs(group.buttons or {}) do
+                width, height = WidenBarCell(width, height, group, entry, barStyle)
             end
         end
     end
@@ -489,8 +505,11 @@ function ST.DetachEntryBarPlacement(entry)
     if entry then entry.barPlacement = nil end
 end
 
+-- Its only caller, ApplyActiveButtonLayout, runs after the populate stamp or
+-- the style pass's stamp check, so the stamped kind is current; a nil stamp
+-- falls back to a fresh walk.
 function ST.GetPanelIconButtons(frame, group, buttons)
-    if not ST.PanelUsesAttachedBarLayout(group) then return buttons end
+    if not ST.PanelUsesAttachedBarLayout(group, frame._panelLayoutKind) then return buttons end
     local icons = frame._iconLayoutButtons or {}
     frame._iconLayoutButtons = icons
     wipe(icons)

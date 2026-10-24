@@ -647,9 +647,20 @@ function CooldownCompanion:GetGroupLayoutButtonCount(groupId, group, opts)
 
     local buttonUsabilityOptions = opts.buttonUsabilityOptions
 
+    -- Resolved on the first bar entry only, so icon-only panels never pay
+    -- for the layout walk. opts.layoutKind is the frame's stamped kind when
+    -- the caller runs inside a populate or style pass.
+    local attachedLayout
     local count = 0
     for _, buttonData in ipairs(group.buttons) do
-        if not ST.IsAttachedBarEntry(group, buttonData)
+        local attached = false
+        if ST.IsPanelBarEntry(group, buttonData) then
+            if attachedLayout == nil then
+                attachedLayout = ST.PanelUsesAttachedBarLayout(group, opts.layoutKind)
+            end
+            attached = attachedLayout
+        end
+        if not attached
             and self:IsButtonUsable(buttonData, group, buttonUsabilityOptions) then
             count = count + 1
         end
@@ -741,10 +752,6 @@ function CooldownCompanion:GetGroupButtonUsabilityOptions(groupId, group)
     end
 
     return nil
-end
-
-function CooldownCompanion:GetGroupLayoutButtonUsabilityOptions(groupId, group)
-    return self:GetGroupButtonUsabilityOptions(groupId, group)
 end
 
 function CooldownCompanion:IsGroupActive(groupId, opts)

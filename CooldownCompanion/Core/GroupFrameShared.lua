@@ -243,16 +243,6 @@ local function GetAnchorInheritedAlpha(parentFrame)
     return 1
 end
 
-local function GetGroupButtonSizingOptions(self, groupId, group, buttonUsabilityOptions)
-    if buttonUsabilityOptions then
-        return buttonUsabilityOptions
-    end
-    if self.GetGroupLayoutButtonUsabilityOptions then
-        return self:GetGroupLayoutButtonUsabilityOptions(groupId, group)
-    end
-    return nil
-end
-
 local function GetContainerPreviewSelectionState(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
     local group = profile and profile.groups and profile.groups[groupId]
@@ -855,7 +845,6 @@ GF.IsCursorAnchorLayoutPreviewSelected = IsCursorAnchorLayoutPreviewSelected
 GF.UpdateCoordLabel = UpdateCoordLabel
 GF.CURSOR_ANCHOR_X = CURSOR_ANCHOR_X
 GF.CURSOR_ANCHOR_Y = CURSOR_ANCHOR_Y
-GF.GetGroupButtonSizingOptions = GetGroupButtonSizingOptions
 GF.NormalizeCompactGrowthDirection = NormalizeCompactGrowthDirection
 GF.GetCompactAnchorFixedPoint = GetCompactAnchorFixedPoint
 GF.GetContainerPreviewSelectionState = GetContainerPreviewSelectionState
