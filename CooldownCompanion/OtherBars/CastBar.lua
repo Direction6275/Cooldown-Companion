@@ -965,13 +965,20 @@ local function ApplyCastBarPosition(s, width, height, target)
     return true
 end
 
---- Position the bar's contents inside the applied footprint.
-local function ApplyCastBarLayout(s, width, height)
-    CastBarVisuals.Layout(castBarFrame, s, width, height)
+--- Position the bar's contents inside the applied footprint. host: the
+--- apply's own geometry panel (CastBarStyleHost), so the look settings reuse
+--- the panel resolution the size and position already used.
+local function ApplyCastBarLayout(s, width, height, host)
+    CastBarVisuals.Layout(castBarFrame, s, width, height, host)
 end
 
-local function ApplyCastBarStyle(s)
-    CastBarVisuals.Style(castBarFrame, s)
+local function ApplyCastBarStyle(s, host)
+    CastBarVisuals.Style(castBarFrame, s, host)
+end
+
+-- false (not nil) tells the style resolver "no panel" without resolving.
+local function CastBarStyleHost(target)
+    return ST.GetModuleGeometryPanel("castbar", nil, target) or false
 end
 
 ------------------------------------------------------------------------
@@ -1621,8 +1628,9 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
         SuspendCastBar()
         return
     end
-    ApplyCastBarLayout(settings, width, height)
-    ApplyCastBarStyle(settings)
+    local styleHost = CastBarStyleHost(target)
+    ApplyCastBarLayout(settings, width, height, styleHost)
+    ApplyCastBarStyle(settings, styleHost)
     -- The pip offsets are absolute against the fill width that just changed.
     if cast.state == "empower" and cast.numStages > 0 then
         BuildStagePips(cast.numStages)
@@ -1660,7 +1668,7 @@ function CooldownCompanion:RepositionCastBar(target)
     local height = GetCastBarHeight(settings, target)
 
     if not ApplyCastBarPosition(settings, width, height, target) then return end
-    ApplyCastBarLayout(settings, width, height)
+    ApplyCastBarLayout(settings, width, height, CastBarStyleHost(target))
     -- The pip offsets are absolute against the fill width that just changed.
     if cast.state == "empower" and cast.numStages > 0 then
         BuildStagePips(cast.numStages)

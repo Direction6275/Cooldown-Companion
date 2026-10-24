@@ -58,7 +58,6 @@ local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourcePrimaryLength = RB.GetResourcePrimaryLength
 local GetResourceAnchorGap = RB.GetResourceAnchorGap
 local GetVerticalSideFallback = RB.GetVerticalSideFallback
-local GetEffectiveAnchorGroupId = RB.GetEffectiveAnchorGroupId
 local GetPlayerClassID = RB.GetPlayerClassID
 local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
@@ -2246,6 +2245,11 @@ function CooldownCompanion:ApplyResourceBars(opts)
     end
 
     local isIndependentStack = CooldownCompanion:IsResourceBarAnchorIndependent()
+    -- The panel is resolved once per apply. The anchor id, the geometry host,
+    -- the placement group and every bar's appearance below read this answer,
+    -- and nothing between those reads shows or hides a panel or edits an
+    -- attachment record.
+    local target = not isIndependentStack and self:ResolveModulePanel("resources") or nil
     local groupId, groupFrame
 
     if isIndependentStack then
@@ -2253,7 +2257,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         groupId = nil
         groupFrame = nil
     else
-        groupId = GetEffectiveAnchorGroupId(settings)
+        groupId = target.available and target.panelId or nil
         if not groupId then
             self:RevertResourceBars()
             return
@@ -2317,7 +2321,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
     end
 
     -- Resolve shared geometry before materializing the active resource owners
-    local geometryHost = not isIndependentStack and ST.GetModuleGeometryHost("resources") or nil
+    local geometryHost = target and ST.GetModuleGeometryHost("resources", nil, target) or nil
+    -- false (not nil) tells the style resolver "no panel" without resolving.
+    local styleHost = ST.PanelSupportsAttachedBars(geometryHost) and geometryHost or false
     local sharedGeometry = ST.ResolveResourceBarGeometry(settings, layout, nil, geometryHost)
     local globalBarThickness = sharedGeometry.thickness
     local barSpacing = sharedGeometry.spacing
@@ -2340,7 +2346,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     local sideList = {}
     local orderList = {}
     local regionRanks = {}
-    local placementGroup = RB.GetBarAnchorGroup()
+    local placementGroup = target and target.group or nil
     local fallbackOrder = 900
     for idx, powerType in ipairs(filtered) do
         local side, order, region
@@ -2394,7 +2400,8 @@ function CooldownCompanion:ApplyResourceBars(opts)
         local height = isVerticalLayout and primaryLength or effectiveThickness
         -- Resolve the shared appearance once and hand it to every painter.
         -- Health keeps its own vertical-only fill direction.
-        local sharedStyle, sharedPanel, sharedObject = ST.ResolveModuleBarStyle("resources", settings, powerType)
+        local sharedStyle, sharedPanel, sharedObject = ST.ResolveModuleBarStyle("resources", settings, powerType,
+            nil, styleHost)
         local appearance = { style = sharedStyle, panel = sharedPanel, object = sharedObject }
         local reverseFill = reverseVerticalFill
         if powerType ~= RESOURCE_HEALTH then reverseFill = sharedStyle.barReverseFill == true end
@@ -2864,7 +2871,6 @@ RB.CreateResourceBarPreviewModule({
 lifecycleModule = RB.CreateResourceBarLifecycleModule({
     GetResourceBarSettings = GetResourceBarSettings,
     GetSpecLayoutOrder = GetSpecLayoutOrder,
-    GetEffectiveAnchorGroupId = GetEffectiveAnchorGroupId,
     GetResourcePrimaryLength = GetResourcePrimaryLength,
     GetLastAppliedPrimaryLength = function()
         return lastAppliedPrimaryLength

@@ -13,7 +13,6 @@ local RB = ST._RB
 function RB.CreateResourceBarLifecycleModule(deps)
     local GetResourceBarSettings = deps.GetResourceBarSettings or RB.GetResourceBarSettings
     local GetSpecLayoutOrder = deps.GetSpecLayoutOrder or RB.GetSpecLayoutOrder
-    local GetEffectiveAnchorGroupId = deps.GetEffectiveAnchorGroupId or RB.GetEffectiveAnchorGroupId
     local GetResourcePrimaryLength = deps.GetResourcePrimaryLength or RB.GetResourcePrimaryLength
     local GetLastAppliedPrimaryLength = deps.GetLastAppliedPrimaryLength
     local UpdateMWMaxStacks = deps.UpdateMWMaxStacks
@@ -168,13 +167,15 @@ function RB.CreateResourceBarLifecycleModule(deps)
         if not s or not s.enabled then return end
         local layout = GetSpecLayoutOrder(s)
         if layout and CooldownCompanion:IsResourceBarAnchorIndependent() then return end  -- independent stack: width not tied to group
-        local anchorGroupId = GetEffectiveAnchorGroupId(s)
+        -- One panel resolution for both reads below.
+        local target = CooldownCompanion:ResolveModulePanel("resources")
+        local anchorGroupId = target.available and target.panelId or nil
         if anchorGroupId ~= groupId then return end
         local groupFrame = CooldownCompanion.groupFrames[groupId]
         local lastLength = GetLastAppliedPrimaryLength()
         if not groupFrame or not lastLength then return end
         local newLength = GetResourcePrimaryLength(groupFrame, s)
-        local geometry = RB.GetBarAnchorGeometry(groupFrame, RB.GetBarAnchorGroup())
+        local geometry = RB.GetBarAnchorGeometry(groupFrame, target.group)
         if math_abs(newLength - lastLength) < 0.1
             and geometry == RB._lastAppliedAnchorGeometry then
             return
