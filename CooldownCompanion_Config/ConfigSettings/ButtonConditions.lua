@@ -38,7 +38,6 @@ local tabInfoButtons = CS.tabInfoButtons
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
 local ResolvePanelAlphaAnchorSourceMode
-local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
 -- AceGUI sizes a dropdown's pullout from the dropdown frame itself
 -- (AceGUIWidget-DropDown.lua:381), and the row grammar's control column is
 -- 140px. Eligibility entries carry a spec/hero icon and can read
@@ -178,87 +177,6 @@ local panelAlphaSettings = ST._DefineSettingRoute({
         applies = PanelAlphaApplies(function(state) return state.group.customFade == true end),
     },
 })
-
-if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
-    local function Badge_OnClick(frame, button)
-        frame.obj:Fire("OnClick", button)
-        AceGUI:ClearFocus()
-    end
-
-    local function Badge_OnEnter(frame)
-        frame.obj:Fire("OnEnter")
-    end
-
-    local function Badge_OnLeave(frame)
-        frame.obj:Fire("OnLeave")
-    end
-
-    local badgeMethods = {
-        OnAcquire = function(self)
-            self:SetWidth(19)
-            self:SetHeight(19)
-            self:SetDisabled(false)
-            if self.icon then
-                self.icon:SetAtlas("common-icon-redx", false)
-                self.icon:ClearAllPoints()
-                self.icon:SetSize(19, 19)
-                self.icon:SetPoint("CENTER")
-            end
-            if self.frame.SetHighlightAtlas then
-                self.frame:SetHighlightAtlas("common-icon-redx")
-                if self.frame.GetHighlightTexture and self.frame:GetHighlightTexture() then
-                    self.frame:GetHighlightTexture():SetAlpha(0.3)
-                end
-            end
-        end,
-
-        SetDisabled = function(self, disabled)
-            if disabled then
-                self.frame:Disable()
-                if self.icon then self.icon:SetVertexColor(0.5, 0.5, 0.5, 0.5) end
-            else
-                self.frame:Enable()
-                if self.icon then self.icon:SetVertexColor(1, 1, 1, 1) end
-            end
-        end,
-    }
-
-    local function BadgeConstructor()
-        local frame = CreateFrame("Button", nil, UIParent)
-        frame:Hide()
-        frame:SetSize(19, 19)
-        frame:EnableMouse(true)
-        frame:RegisterForClicks("AnyUp")
-        frame:SetScript("OnClick", Badge_OnClick)
-        frame:SetScript("OnEnter", Badge_OnEnter)
-        frame:SetScript("OnLeave", Badge_OnLeave)
-
-        local icon = frame:CreateTexture(nil, "ARTWORK")
-        icon:SetAtlas("common-icon-redx", false)
-        icon:SetSize(19, 19)
-        icon:SetPoint("CENTER")
-
-        if frame.SetHighlightAtlas then
-            frame:SetHighlightAtlas("common-icon-redx")
-            if frame.GetHighlightTexture and frame:GetHighlightTexture() then
-                frame:GetHighlightTexture():SetAlpha(0.3)
-            end
-        end
-
-        local widget = {
-            frame = frame,
-            icon = icon,
-            type = REMOVE_BADGE_WIDGET_TYPE,
-        }
-        for method, func in pairs(badgeMethods) do
-            widget[method] = func
-        end
-
-        return AceGUI:RegisterAsWidget(widget)
-    end
-
-    AceGUI:RegisterWidgetType(REMOVE_BADGE_WIDGET_TYPE, BadgeConstructor, 1)
-end
 
 local function GetLoadConditionValue(loadConditions, key, defaults, optionDefault)
     if type(loadConditions) ~= "table" then return false end
@@ -868,10 +786,10 @@ local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerC
     return choices
 end
 
+-- The shared small remove X (RowWidgets CDC-RowIconBadge), as the row's
+-- control widget; the label row releases it.
 local function CreateEligibilityRemoveBadge(onRemove)
-    local removeBadge = AceGUI:Create(REMOVE_BADGE_WIDGET_TYPE)
-    removeBadge:SetWidth(19)
-    removeBadge:SetHeight(19)
+    local removeBadge = AceGUI:Create("CDC-RowIconBadge")
     removeBadge:SetCallback("OnClick", function(widget, event, button)
         if button == "LeftButton" and onRemove then
             onRemove()
@@ -2889,10 +2807,14 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         talentStatusText = "|cff888888No talent conditions set.|r"
     end
 
+    -- A batch whose entries all hold the same list edits that list (the
+    -- representative's copy; the picker copies it again). A mixed batch
+    -- starts from nothing and offers Clear, as its status line says.
+    local sharedList = not isBatch or hasTalent == true
     local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
+    pickBtn:SetText(condCount > 0 and sharedList and "Edit" or "Pick Talents")
     pickBtn:SetCallback("OnClick", function()
-        local initialConditions = not isBatch and buttonData.talentConditions or nil
+        local initialConditions = sharedList and buttonData.talentConditions or nil
         -- The picker's Accept already hands back normalized conditions.
         CooldownCompanion:OpenTalentPicker(function(results)
             if not IsCurrentSource() then return end
@@ -2903,7 +2825,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     end)
 
     local talentActionButtons = { pickBtn }
-    if hasTalent then
+    if (not isBatch and hasTalent) or (isBatch and hasTalent ~= false) then
         -- Edit and Clear split the control column. Clear is destructive, so
         -- it shares the row with the picker that owns what it clears.
         local clearBtn = AceGUI:Create("Button")

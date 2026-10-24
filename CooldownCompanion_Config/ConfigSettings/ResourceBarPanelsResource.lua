@@ -1347,7 +1347,7 @@ local function BuildResourceBarPositioningPanel(container)
                 label = "Bar Width",
                 setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
                     and RESOURCE_FINDER.primary.anchor.width,
-                min = 20, max = 600, step = 1,
+                min = 20, max = 600, step = 0.1,
                 value = layout.independentWidth or settings.independentWidth or 200,
                 set = function(val) layout.independentWidth = val end,
                 apply = function()
@@ -2240,8 +2240,8 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 return
             end
 
-            -- The tracked aura, flush, as the shared item row; Remove clears the
-            -- overlay's one tracked spell.
+            -- The tracked aura, flush, as the shared item row; its remove X
+            -- clears the overlay's one tracked spell.
             AddAuraCandidateRow(panel, spellID, function()
                 local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
                 if target then

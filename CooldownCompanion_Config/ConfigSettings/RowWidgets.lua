@@ -1852,13 +1852,15 @@ end
 ------------------------------------------------------------------------
 -- CDC-RowIconBadge
 --
--- A small flat icon action hung after a row's label with AnchorRowBadge. It
+-- A small flat icon action, either hung after a row's label with
+-- AnchorRowBadge or set as a CDC-LabelRow's control widget (SetControlWidget,
+-- the right edge of the control column). It
 -- wears the config window's titlebar buttons (Panel.lua): a desaturated
 -- uitools icon in the titlebar's muted tone, tinted on hover. It starts as
 -- the remove X (red on hover); SetIcon picks another icon, hover color and
 -- rotation (the family has no up arrow: promote turns chevron-down over), and
--- SetActive keeps it lit while its action is under way. Pooled, so the caller
--- releases it with the row that carries it.
+-- SetActive keeps it lit while its action is under way. Pooled: the row that
+-- carries it releases it (a label row releases its control widget).
 ------------------------------------------------------------------------
 do
     local ICON_BADGE_TYPE = "CDC-RowIconBadge"

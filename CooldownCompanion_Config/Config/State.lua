@@ -452,35 +452,6 @@ local function GetButtonIcon(buttonData)
     return 134400
 end
 
-local function GetCooldownInfoDisplaySpellID(cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return nil
-    end
-
-    local tooltipID = cooldownInfo.overrideTooltipSpellID
-    if type(tooltipID) == "number" and tooltipID > 0
-        and not (issecretvalue and issecretvalue(tooltipID))
-    then
-        return tooltipID
-    end
-
-    local overrideID = cooldownInfo.overrideSpellID
-    if type(overrideID) == "number" and overrideID > 0
-        and not (issecretvalue and issecretvalue(overrideID))
-    then
-        return overrideID
-    end
-
-    local spellID = cooldownInfo.spellID
-    if type(spellID) == "number" and spellID > 0
-        and not (issecretvalue and issecretvalue(spellID))
-    then
-        return spellID
-    end
-
-    return nil
-end
-
 local function GetConfigEntryDisplayName(buttonData, opts)
     if buttonData and buttonData.rotationAssistant then return buttonData.customName or ST.ROTATION_ASSISTANT_NAME end
     if not buttonData then
@@ -502,7 +473,11 @@ local function GetConfigEntryDisplayName(buttonData, opts)
         local child = ResolveViewerChildForSpellDisplay(CooldownCompanion, buttonData)
 
         if not buttonData.customName then
-            local displayId = GetCooldownInfoDisplaySpellID(child and child.cooldownInfo)
+            -- The row name falls back to the CDM child's own spellID before the
+            -- raw override; the Shift tooltip (PanelShared
+            -- ResolveEntryTooltipSpellId) and the live button never read that
+            -- tier, on purpose (owner ruling 2026-10-24).
+            local displayId = ST.ResolveCDMDisplaySpellID(child and child.cooldownInfo)
             if not displayId then
                 local raw = C_Spell.GetOverrideSpell(buttonData.id)
                 displayId = (raw and raw ~= 0) and raw or buttonData.id

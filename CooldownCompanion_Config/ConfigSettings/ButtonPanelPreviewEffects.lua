@@ -188,8 +188,9 @@ local function ApplySlotEffectPreviews(slot, buttonData, group, panelId, index, 
     end
 end
 
--- Strip slots recycle from the icon pool; a glow left by a grid render
--- must not survive into a picker strip.
+-- Pooled slots reused by the read-only mirror (ButtonPanelPreview.lua) and by
+-- drop-ghost cells (ButtonPanelPreviewInteraction.lua) must not carry an
+-- earlier render's effect previews.
 local function ClearSlotEffectPreviews(slot)
     slot._cdcAuraPandemicActive = nil
     StylePandemicPreviewRig(slot, nil, false)

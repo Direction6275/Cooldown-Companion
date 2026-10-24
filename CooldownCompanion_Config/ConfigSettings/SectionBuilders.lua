@@ -25,7 +25,6 @@ local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
 local AddLabelRow = ST._AddLabelRow
 local AnchorRowBadge = ST._AnchorRowBadge
-local CleanRecycledEntry = ST._CleanRecycledEntry
 
 -- Dropdown items past ~16 characters need a menu wider than the 140px control
 -- column can size ("Color the Whole Text", the override section labels).
@@ -127,10 +126,10 @@ end
 -- Row grammar only (RowWidgets.lua). A tracked aura presents an ITEM, not a
 -- setting, so it draws as a CDC-LabelRow: the spell's icon inlined into the
 -- label text (the row's label is a FontString, so the icon rides an inline
--- texture escape) and a Remove link owned by the row's control column. The
--- pre-redesign 22px Flow row broke the 30px rhythm inside a grid column and had
--- no call sites left after the conversion packets. opts.indent = false draws
--- the row flush.
+-- texture escape) and the shared small remove X (CDC-RowIconBadge) in the
+-- row's control column, which the row releases. The pre-redesign 22px Flow row
+-- broke the 30px rhythm inside a grid column and had no call sites left after
+-- the conversion packets. opts.indent = false draws the row flush.
 local function AddAuraCandidateRow(container, spellID, onRemove, opts)
     local info = C_Spell.GetSpellInfo(spellID)
     local name = info and info.name or ("Spell " .. spellID)
@@ -141,22 +140,11 @@ local function AddAuraCandidateRow(container, spellID, onRemove, opts)
         indent = not (opts and opts.indent == false),
     })
 
-    -- Right-justified so the word lands on the control column's right edge
-    -- like every other row's control. SetJustifyH is public API and the
-    -- stock Label resets it to LEFT in OnAcquire, so the pool stays clean.
-    local removeLabel = AceGUI:Create("InteractiveLabel")
-    -- The shared InteractiveLabel pool also serves the Navigator, whose rows
-    -- hang plain-child badges off the label FRAME; nothing hides those on
-    -- release, so a reacquired frame arrives wearing its previous tenant's
-    -- badges. Same clean-on-acquire call every Navigator site makes.
-    CleanRecycledEntry(removeLabel)
-    removeLabel:SetText("|cffff5555Remove|r")
-    removeLabel:SetWidth(60)
-    removeLabel:SetJustifyH("RIGHT")
-    removeLabel:SetCallback("OnClick", function()
+    local removeBadge = AceGUI:Create("CDC-RowIconBadge")
+    removeBadge:SetCallback("OnClick", function()
         onRemove(spellID)
     end)
-    row:SetControlWidget(removeLabel)
+    row:SetControlWidget(removeBadge)
     return row
 end
 
