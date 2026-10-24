@@ -276,6 +276,12 @@ local defaults = {
             barAuraMissingColor = {0.6, 0.15, 0.15, 1.0},
             barAuraEffect = "color",
             barAuraEffectColor = {1, 0.84, 0, 0.9},
+            -- Legacy starting values from the retired border effects, kept as
+            -- shipped (owner ruling R10, 2026-10-24; not retuned to the newer
+            -- glow numbers). They still reach the screen: new panels copy them
+            -- into attachedBarStyle, ST.ATTACHED_BAR_DEFAULTS falls back to them
+            -- for any key a panel's attachedBarStyle lacks (EntryPresentation),
+            -- and converted Bar Panels carried size 8 into their stored style.
             barAuraEffectSize = 8,
             barAuraEffectThickness = 4,
             barAuraEffectSpeed = 50,
