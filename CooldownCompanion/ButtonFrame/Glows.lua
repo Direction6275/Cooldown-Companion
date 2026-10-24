@@ -1568,6 +1568,11 @@ local function BuildKitGlowRegions(parent, withCdm, auraOwned, template, level)
     host:EnableMouse(false)
     host:SetAlpha(0)
 
+    -- `blank` is left nil here: the edges below are born without an alpha
+    -- write, so a fresh kit is not proven blank. Only StyleKitGlowCore sets or
+    -- clears it, and only StyleKitGlowCore may light kit regions or play kit
+    -- AnimationGroups; a lighting write anywhere else would leave a lit piece
+    -- on a kit marked blank.
     local glowKit = { host = host, edges = {
         _cdcAuraOwned = auraOwned,
         _cdcBorderScaleSource = auraOwned and UIParent or nil,
@@ -1689,7 +1694,8 @@ local function StopKitGlowAnimations(glowKit)
     end
 end
 
--- Shared styling core: full reset, then light the requested branch. The
+-- Shared styling core: full reset (skipped while the kit is already blank),
+-- then light the requested branch. The
 -- per-surface key resolution lives in the thin resolvers below
 -- (StyleKitGlowRegions for the icon auraGlow* keys, StyleKitBarGlowRegions
 -- for the bar barAura* keys, StyleKitPandemicGlowRegions for pandemicGlow*).
@@ -1712,35 +1718,44 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
     -- Full reset: stop every animation and blank every sub-visual, then the
     -- active branch lights only its own. The VertexColor anims leave a
     -- residual vertex tint on the edges, so restore white here (after the
-    -- stop and before the SetAlpha, per the Phase 2 gotcha).
-    StopKitGlowAnimations(glowKit)
-    for i = 1, 4 do
-        glowKit.edges[i]:SetVertexColor(1, 1, 1, 1)
-        glowKit.edges[i]:SetAlpha(0)
-    end
-    glowKit.flip:SetAlpha(0)
-    glowKit.ants:SetAlpha(0)
-    glowKit.overlay:SetAlpha(0)
-    for _, spark in ipairs(glowKit.sparks) do
-        spark.tex:SetAlpha(0)
-    end
-    for _, d in ipairs(glowKit.dashes) do
-        for _, piece in ipairs(d.pieces) do
-            piece.tex:SetAlpha(0)
-        end
-    end
+    -- stop and before the SetAlpha, per the Phase 2 gotcha). Skipped while
+    -- the kit is `blank` (the last restyle was "none" after a full reset):
+    -- every animation is already stopped, the edges are white at alpha 0 and
+    -- every piece is at alpha 0, and each branch below writes its own regions.
     local cdm = glowKit.cdm
-    if cdm then
-        cdm.border:SetAlpha(0)
-        cdm.fx[1]:SetAlpha(0)
-        cdm.fx[2]:SetAlpha(0)
-        cdm.fx[3]:SetAlpha(0)
+    if not glowKit.blank then
+        StopKitGlowAnimations(glowKit)
+        for i = 1, 4 do
+            glowKit.edges[i]:SetVertexColor(1, 1, 1, 1)
+            glowKit.edges[i]:SetAlpha(0)
+        end
+        glowKit.flip:SetAlpha(0)
+        glowKit.ants:SetAlpha(0)
+        glowKit.overlay:SetAlpha(0)
+        for _, spark in ipairs(glowKit.sparks) do
+            spark.tex:SetAlpha(0)
+        end
+        for _, d in ipairs(glowKit.dashes) do
+            for _, piece in ipairs(d.pieces) do
+                piece.tex:SetAlpha(0)
+            end
+        end
+        if cdm then
+            cdm.border:SetAlpha(0)
+            cdm.fx[1]:SetAlpha(0)
+            cdm.fx[2]:SetAlpha(0)
+            cdm.fx[3]:SetAlpha(0)
+        end
     end
 
     if kitStyle == "none" then
+        glowKit.blank = true
         host:SetAlpha(0)
         return
     end
+    -- Cleared BEFORE lighting, so an error partway through leaves the kit
+    -- unproven and the next restyle runs the full reset.
+    glowKit.blank = nil
 
     host:ClearAllPoints()
     host:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
