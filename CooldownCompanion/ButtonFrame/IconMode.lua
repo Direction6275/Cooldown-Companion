@@ -319,7 +319,7 @@ local function SetIconFillFromCooldownWidget(button)
         return false
     end
 
-    if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN and button._auraActive ~= true then
+    if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
         return false
     end
 
@@ -338,7 +338,7 @@ local function SetIconFillFromCooldownWidget(button)
     local value = ResolveIconFillTimerValue(button, elapsed / durMs)
 
     -- F2 canary: cooldown-widget icon fill draws remaining this walk (covered by
-    -- the _cooldownState == COOLDOWN / _auraActive classifier terms, guarded above).
+    -- the _cooldownState == COOLDOWN classifier term, guarded above).
     -- Under the combat ticker floor this fill self-animates (its own OnUpdate,
     -- usesOnUpdate), so the walk-time render is redundant -- do not count it, or it
     -- would falsely trip falseIdleTotal against the now-skippable icon.
@@ -1094,7 +1094,7 @@ end
 -- button; every field it can read must be reassigned before each call.
 local GLOW_INTENT_OPTIONS = { inCombat = false }
 
--- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, aura glow.
+-- Update icon-mode glow effects: loss of control, assisted highlight, proc glow, ready glow.
 local function UpdateIconModeGlows(button, buttonData, style, procOverlayActive)
     local inCombat = InCombatLockdown()
 

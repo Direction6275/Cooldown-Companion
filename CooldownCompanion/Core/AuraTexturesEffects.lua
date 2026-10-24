@@ -5,7 +5,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local EntryRuntime = ST.EntryRuntime
 local AT = ST._AT
 
 local C_Item_IsItemInRange = C_Item.IsItemInRange
@@ -14,7 +13,6 @@ local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local UnitCanAttack = UnitCanAttack
-local UnitExists = UnitExists
 local ipairs = ipairs
 local issecretvalue = issecretvalue
 local math_abs = math.abs
@@ -44,11 +42,9 @@ local MIN_TEXTURE_INDICATOR_SPEED = AT.MIN_TEXTURE_INDICATOR_SPEED
 local MAX_TEXTURE_INDICATOR_SPEED = AT.MAX_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_INDICATOR_SPEED = AT.DEFAULT_TEXTURE_INDICATOR_SPEED
 local DEFAULT_TEXTURE_PULSE_ALPHA = AT.DEFAULT_TEXTURE_PULSE_ALPHA
-local DEFAULT_TEXTURE_SHRINK_SCALE = AT.DEFAULT_TEXTURE_SHRINK_SCALE
 local DEFAULT_TEXTURE_BOUNCE_PIXELS = AT.DEFAULT_TEXTURE_BOUNCE_PIXELS
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
-local NormalizeTextureIndicatorEffect = AT.NormalizeTextureIndicatorEffect
 local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
 local ResolveGroup = AT.ResolveGroup
@@ -254,26 +250,6 @@ local function SetTextureIndicatorBaseVisuals(host)
     end
 end
 
-local function ResetTextureIndicatorTransformState(host)
-    if not host then
-        return
-    end
-
-    local target = CooldownCompanion:GetTextureIndicatorTransformTarget(host)
-    if not target then
-        return
-    end
-
-    local relativeFrame = target == host.visualRoot and host or target:GetParent() or host.visualRoot
-    if not relativeFrame then
-        return
-    end
-
-    target:SetScale(1)
-    target:ClearAllPoints()
-    target:SetPoint("CENTER", relativeFrame, "CENTER", 0, 0)
-end
-
 local function GetTextureIndicatorLoopPhase(now, duration)
     duration = Clamp(tonumber(duration) or DEFAULT_TEXTURE_INDICATOR_SPEED, MIN_TEXTURE_INDICATOR_SPEED, MAX_TEXTURE_INDICATOR_SPEED)
     local progress = now / duration
@@ -302,7 +278,7 @@ local function RefreshTextureIndicatorUpdater(host)
 
     if not wantsManualUpdate or not hasDisplayVisual then
         host:SetScript("OnUpdate", nil)
-        ResetTextureIndicatorTransformState(host)
+        CooldownCompanion:ResetTextureIndicatorRootState(host)
         SetTextureIndicatorBaseVisuals(host)
         return
     end
@@ -317,11 +293,7 @@ TextureIndicatorOnUpdate = function(self)
         return
     end
 
-    local transformTarget = CooldownCompanion:GetTextureIndicatorTransformTarget(self)
-    if not transformTarget then
-        RefreshTextureIndicatorUpdater(self)
-        return
-    end
+    local transformTarget = self.visualRoot
 
     local now = GetTime()
     if not self._indicatorBaseVisualsReady then
@@ -397,7 +369,7 @@ TextureIndicatorOnUpdate = function(self)
     end
 
     transformTarget:ClearAllPoints()
-    transformTarget:SetPoint("CENTER", transformTarget == self.visualRoot and self or transformTarget:GetParent() or self.visualRoot, "CENTER", 0, bounceOffsetY)
+    transformTarget:SetPoint("CENTER", self, "CENTER", 0, bounceOffsetY)
 end
 
 local function StopTextureIndicatorAnimation(host, effectType)
@@ -434,12 +406,6 @@ local function EnsureTextureIndicatorAnimation(host, effectType)
         alphaAnim:SetFromAlpha(1)
         alphaAnim:SetToAlpha(DEFAULT_TEXTURE_PULSE_ALPHA)
         animData.alpha = alphaAnim
-    elseif effectType == TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND then
-        local scaleAnim = group:CreateAnimation("Scale")
-        scaleAnim:SetScaleFrom(1, 1)
-        scaleAnim:SetScaleTo(DEFAULT_TEXTURE_SHRINK_SCALE, DEFAULT_TEXTURE_SHRINK_SCALE)
-        scaleAnim:SetOrigin("CENTER", 0, 0)
-        animData.scale = scaleAnim
     elseif effectType == TEXTURE_INDICATOR_EFFECT_BOUNCE then
         -- Rise then fall in one repeating group, Blizzard's pattern for
         -- back-and-forth moves (sequential Translations add up, so the loop
@@ -570,6 +536,7 @@ local function SetTextureIndicatorAnimation(host, effectType, active, speed, amp
         return
     end
 
+    -- Only Pulse reaches here; Shrink / Expand and Bounce returned above.
     if not active then
         StopTextureIndicatorAnimation(host, effectType)
         if effectType == TEXTURE_INDICATOR_EFFECT_PULSE then
@@ -641,115 +608,48 @@ local function StopAllTextureIndicatorEffects(host)
     host._textureColorShiftColor = nil
     host._textureColorShiftSpeed = nil
     host.visualRoot:SetAlpha(1)
-    ResetTextureIndicatorTransformState(host)
+    CooldownCompanion:ResetTextureIndicatorRootState(host)
     host:SetScript("OnUpdate", nil)
     SetTextureIndicatorBaseVisuals(host)
 end
 
-local function FinishTextureIndicatorSectionState(target, active, reason, preview, effectType)
-    if target then
-        target.active = active == true
-        target.reason = reason
-        if preview ~= nil then
-            target.preview = preview == true
-        end
-    end
-    return active == true, effectType, target
-end
-
-local function ResolveTextureIndicatorSectionState(button, sectionKey, config, target)
-    local hasTarget = type(target) == "table"
-    local hasConfig = type(config) == "table"
-    local effectType = hasConfig and NormalizeTextureIndicatorEffect(config.effectType) or nil
-    if hasTarget then
-        target.enabled = hasConfig and config.enabled == true
-        target.effectType = hasConfig and config.effectType or nil
-        target.combatOnly = hasConfig and config.combatOnly == true
-        target.invert = hasConfig and config.invert == true
-        target.preview = false
-        target.active = false
-        target.reason = nil
-    end
-
-    if not button then
-        return FinishTextureIndicatorSectionState(target, false, "missing-button", nil, effectType)
-    end
-    if not hasConfig then
-        return FinishTextureIndicatorSectionState(target, false, "missing-config", nil, effectType)
-    end
+local function IsIndicatorActivationActive(button, activation, config)
     if config.enabled ~= true then
-        return FinishTextureIndicatorSectionState(target, false, "disabled", nil, effectType)
+        return false
     end
-
-    local previewActive = (sectionKey == "proc" and button._textureProcPreview)
-        or (sectionKey == "aura" and button._textureAuraPreview)
-        or (sectionKey == "ready" and button._textureReadyPreview)
-        or (sectionKey == "unusable" and button._textureUnusablePreview)
-    if previewActive then
-        return FinishTextureIndicatorSectionState(target, true, "preview", true, effectType)
-    end
-
     if config.combatOnly and not InCombatLockdown() then
-        return FinishTextureIndicatorSectionState(target, false, "out-of-combat", nil, effectType)
+        return false
     end
 
-    if sectionKey == "proc" then
-        local active = button._procOverlayActive == true
-        return FinishTextureIndicatorSectionState(target, active, active and "proc-active" or "proc-inactive", nil, effectType)
+    if activation == "proc" then
+        return button._procOverlayActive == true
     end
 
-    if sectionKey == "aura" then
-        if button._auraTrackingReady ~= true or not button._auraSpellID then
-            return FinishTextureIndicatorSectionState(target, false, "aura-missing", nil, effectType)
-        end
-        if config.invert then
-            if button._auraUnit == "target" and not UnitExists("target") then
-                return FinishTextureIndicatorSectionState(target, false, "missing-target", nil, effectType)
-            end
-            local active = button._auraActive ~= true
-            return FinishTextureIndicatorSectionState(target, active, active and "aura-inactive" or "aura-active", nil, effectType)
-        end
-        local active = button._auraActive == true
-        return FinishTextureIndicatorSectionState(target, active, active and "aura-active" or "aura-inactive", nil, effectType)
-    end
-
-    if sectionKey == "ready" then
-        local buttonData = button.buttonData
+    local buttonData = button.buttonData
+    if activation == "ready" then
         if not buttonData or buttonData.isPassive or button._noCooldown then
-            local reason = not buttonData and "missing-button-data"
-                or buttonData.isPassive and "passive"
-                or "no-cooldown"
-            return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
+            return false
         end
-        local active = button._desatCooldownActive == false
-        return FinishTextureIndicatorSectionState(target, active, active and "ready" or "not-ready", nil, effectType)
+        return button._desatCooldownActive == false
     end
 
-    if sectionKey == "unusable" then
-        local buttonData = button.buttonData
+    if activation == "unusable" then
         if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
-            local reason = not buttonData and "missing-button-data"
-                or buttonData.isPassiveCooldown and "passive-cooldown"
-                or "passive"
-            return FinishTextureIndicatorSectionState(target, false, reason, nil, effectType)
+            return false
         end
         if buttonData.type == "spell" then
-            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
-                return FinishTextureIndicatorSectionState(target, false, "aura-active", nil, effectType)
-            end
-            local spellID = button._displaySpellId or buttonData.id
-            local active = not C_Spell_IsSpellUsable(spellID)
-            return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
+            return not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
         end
         if IsRuntimeItemLike(buttonData) then
             local itemID = button._resolvedItemId or buttonData.id
-            local active = not itemID or not C_Item_IsUsableItem(itemID)
-            return FinishTextureIndicatorSectionState(target, active, active and "unusable" or "usable", nil, effectType)
+            return not itemID or not C_Item_IsUsableItem(itemID)
         end
-        return FinishTextureIndicatorSectionState(target, false, "unsupported-type", nil, effectType)
+        return false
     end
 
-    return FinishTextureIndicatorSectionState(target, false, "unknown-section", nil, effectType)
+    -- "aura" is a retired value legacy conversion still writes (config shows
+    -- it as 'Aura (Unavailable)'); it never activates.
+    return false
 end
 
 local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
@@ -774,9 +674,6 @@ local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
         end
 
         if buttonData.type == "spell" then
-            if EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData) then
-                return nil
-            end
             if button._spellOutOfRange == nil then
                 return nil
             end
@@ -806,9 +703,6 @@ local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
             return false
         end
         if buttonData.type == "spell" then
-            if EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData) then
-                return nil
-            end
             local spellID = button._displaySpellId or buttonData.id
             return C_Spell_IsSpellUsable(spellID)
         end
@@ -906,7 +800,7 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
                 local activation = config.activation or "always"
                 active = activation == "always" and (not config.combatOnly or InCombatLockdown())
                 if activation ~= "always" then
-                    active = ResolveTextureIndicatorSectionState(button, activation, config)
+                    active = IsIndicatorActivationActive(button, activation, config)
                 end
             end
             if active then activeEffects[key] = config end

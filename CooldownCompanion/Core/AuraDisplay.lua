@@ -2697,7 +2697,7 @@ end
 -- bound trackers' (allocation-free: UNIT_FACTION reaches here).
 function Presence.MatchesToken(record, isMatch)
     if isMatch(record.unit) then return true end
-    for _, tracker in ipairs(record.trackers or {}) do
+    for _, tracker in ipairs(record.trackers) do
         if tracker.bound and isMatch(tracker.unit) then return true end
     end
     return false

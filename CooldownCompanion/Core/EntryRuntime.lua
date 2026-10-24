@@ -11,11 +11,8 @@ local IsNoCooldownSpell = ST.IsNoCooldownSpell
 local HasPositiveResourceGateCost = ST.HasPositiveResourceGateCost
 
 local ipairs = ipairs
-local tonumber = tonumber
-local tostring = tostring
 local wipe = wipe
 local issecretvalue = issecretvalue
-local GetTime = GetTime
 
 local COOLDOWN_STATE_READY = CooldownLogic.STATE_READY
 local COOLDOWN_STATE_GCD = CooldownLogic.STATE_GCD
@@ -30,22 +27,6 @@ local buttonSpellCooldownLaneOpts = {}
 
 local EntryRuntime = ST.EntryRuntime or {}
 ST.EntryRuntime = EntryRuntime
-
-function EntryRuntime.ShouldSuppressSpellRangeVisual(button, buttonData)
-    return type(buttonData) == "table"
-        and buttonData.type == "spell"
-        and buttonData.auraTracking == true
-        and button
-        and button._auraActive == true
-end
-
-function EntryRuntime.ShouldSuppressSpellUnusableVisual(button, buttonData)
-    return type(buttonData) == "table"
-        and buttonData.type == "spell"
-        and buttonData.auraTracking == true
-        and button
-        and button._auraActive == true
-end
 
 -- Hidden scratch CooldownFrame for probing DurationObject activity.
 -- DurationObject:IsZero() returns a secret boolean in tainted contexts;

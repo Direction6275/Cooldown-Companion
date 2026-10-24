@@ -137,14 +137,10 @@ local function SetGlowIntent(section, active, reason, snapshots)
     section.durationWindow = false
     if snapshots then
         section.reason = reason
-        section.preview = false
         section.combatSuppressed = false
         section.procOverlayActive = false
         section.suppressedByProc = false
-        section.invert = false
-        section.pandemic = false
         section.maxCharges = false
-        section.auraSuppressed = false
     end
     return section
 end
@@ -216,7 +212,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
     style = style or {}
 
     local proc = EnsureGlowSection(target, "proc")
-    local aura = EnsureGlowSection(target, "aura")
     local ready = EnsureGlowSection(target, "ready")
     local inCombat = GetResolverCombatState(options)
     local snapshots = AreButtonVisualStateSnapshotsEnabled()
@@ -227,7 +222,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
 
     if type(button) ~= "table" or type(buttonData) ~= "table" then
         SetGlowIntent(proc, false, "invalid", snapshots)
-        SetGlowIntent(aura, false, "invalid", snapshots)
         SetGlowIntent(ready, false, "invalid", snapshots)
         return target
     end
@@ -240,8 +234,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         SetGlowIntent(proc, false, "not-spell", snapshots)
     elseif isPassive then
         SetGlowIntent(proc, false, "passive", snapshots)
-    elseif button._auraTrackingReady == true then
-        SetGlowIntent(proc, false, "aura-tracking", snapshots)
     elseif style.procGlowCombatOnly and not inCombat then
         SetGlowIntent(proc, false, "combat-only", snapshots)
         if snapshots then
@@ -259,12 +251,7 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         proc.procOverlayActive = procOverlayShown
     end
 
-    -- Live aura and pandemic glows are owned by the aura slot kit. The config
-    -- mirror renders its own replicas, so live buttons have no CC aura intent.
-    SetGlowIntent(aura, false, "no-container", snapshots)
-
     local procSuppressesReady = procOverlayShown and style.procGlowStyle ~= "none"
-    local auraSuppressesReady = button._auraTrackingReady == true and button._auraActive == true
     if not button.readyGlow then
         SetGlowIntent(ready, false, "missing-widget", snapshots)
     elseif not style.readyGlowStyle or style.readyGlowStyle == "none" then
@@ -280,11 +267,6 @@ local function ResolveIconGlowIntent(button, buttonData, style, procOverlayActiv
         end
     elseif button._desatCooldownActive ~= false or button._cooldownState == STATE_COOLDOWN then
         SetGlowIntent(ready, false, "cooldown", snapshots)
-    elseif auraSuppressesReady then
-        SetGlowIntent(ready, false, "aura-active", snapshots)
-        if snapshots then
-            ready.auraSuppressed = true
-        end
     elseif procSuppressesReady then
         SetGlowIntent(ready, false, "proc", snapshots)
         if snapshots then
@@ -509,51 +491,29 @@ local function RefreshButtonVisualState(button, context)
         local procIntent = iconGlowIntent.proc or {}
         glows.procIntentActive = procIntent.active == true
         glows.procReason = procIntent.reason
-        glows.procPreview = procIntent.preview == true
         glows.procCombatSuppressed = procIntent.combatSuppressed == true
         glows.procOverlayActive = procIntent.procOverlayActive == true
-
-        local auraIntent = iconGlowIntent.aura or {}
-        glows.auraIntentActive = auraIntent.active == true
-        glows.auraReason = auraIntent.reason
-        glows.auraPreview = auraIntent.preview == true
-        glows.auraCombatSuppressed = auraIntent.combatSuppressed == true
-        glows.auraPandemicIntent = auraIntent.pandemic == true
-        glows.auraInvert = auraIntent.invert == true
 
         local readyIntent = iconGlowIntent.ready or {}
         glows.readyIntentActive = readyIntent.active == true
         glows.readyReason = readyIntent.reason
-        glows.readyPreview = readyIntent.preview == true
         glows.readyCombatSuppressed = readyIntent.combatSuppressed == true
         glows.readySuppressedByProc = readyIntent.suppressedByProc == true
-        glows.readyAuraSuppressed = readyIntent.auraSuppressed == true
         glows.readyMaxCharges = readyIntent.maxCharges == true
         glows.readyDurationWindow = readyIntent.durationWindow == true
     else
         glows.procIntentActive = nil
         glows.procReason = nil
-        glows.procPreview = nil
         glows.procCombatSuppressed = nil
         glows.procOverlayActive = nil
-        glows.auraIntentActive = nil
-        glows.auraReason = nil
-        glows.auraPreview = nil
-        glows.auraCombatSuppressed = nil
-        glows.auraPandemicIntent = nil
-        glows.auraInvert = nil
         glows.readyIntentActive = nil
         glows.readyReason = nil
-        glows.readyPreview = nil
         glows.readyCombatSuppressed = nil
         glows.readySuppressedByProc = nil
-        glows.readyAuraSuppressed = nil
         glows.readyMaxCharges = nil
         glows.readyDurationWindow = nil
     end
     glows.procActive = IsTrue(button._procGlowActive)
-    glows.auraActive = IsTrue(button._auraGlowActive)
-    glows.auraPandemic = IsTrue(button._auraGlowPandemic)
     glows.readyActive = IsTrue(button._readyGlowActive)
 
     local bar = EnsureSection(state, "bar")

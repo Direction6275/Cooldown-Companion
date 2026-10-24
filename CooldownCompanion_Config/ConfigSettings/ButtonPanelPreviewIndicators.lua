@@ -354,7 +354,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     end
     if not readOnly then
         candidate.locked = true
-        local sample = {buttonData=I.Primary(candidate), _textureAuraPreview=true}
+        local sample = {buttonData=I.Primary(candidate)}
         -- A native display plays only what its slot can (no Color Shift on
         -- Text; the window's twin also no Only In Combat): the runtime's own
         -- lists decide, so the sample matches the game.

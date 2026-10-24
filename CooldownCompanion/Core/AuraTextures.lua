@@ -687,23 +687,6 @@ function CooldownCompanion:GetIndicatorEffectSettings(groupOrId)
         CooldownCompanion.NormalizeIndicatorEffectStore(ST.Indicator.Settings(group)))
 end
 
-function CooldownCompanion:GetTextureIndicatorTransformTarget(host)
-    if not host then
-        return nil
-    end
-    if host.indicatorReadouts then return host.visualRoot end
-
-    if host._activeDisplayType == "icon" and host.iconFrame then
-        return host.iconFrame
-    end
-
-    if host._activeDisplayType == "text" and host.textFrame then
-        return host.textFrame
-    end
-
-    return host.visualRoot
-end
-
 function CooldownCompanion:ResetTextureIndicatorRootState(host)
     if not host or not host.visualRoot then
         return
