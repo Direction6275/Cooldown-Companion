@@ -473,27 +473,6 @@ function CooldownCompanion:IsArrangeModeActive()
     return self._arrangeModeActive == true
 end
 
-function CooldownCompanion:IsAnyFrameUnlocked()
-    for _, container in pairs(self.db.profile.groupContainers or {}) do
-        if container.locked == false then
-            return true
-        end
-    end
-
-    for _, group in pairs(self.db.profile.groups or {}) do
-        if group.locked == false then
-            return true
-        end
-    end
-
-    if self:IsSpecialMoverUnlockEligible("cast")
-        or self:IsSpecialMoverUnlockEligible("resource") then
-        return true
-    end
-
-    return false
-end
-
 function CooldownCompanion:IsUnlockToolbarPanelEligible(groupId, group)
     group = group or (self.db.profile.groups and self.db.profile.groups[groupId])
     if group and self:IsGroupCursorAnchored(group) then
@@ -606,7 +585,9 @@ function CooldownCompanion:CheckConfigReExpandAfterLock()
     if InCombatLockdown() or self._combatForcedLock then
         return
     end
-    if self:IsAnyFrameUnlocked() then
+    -- Same rule as the unlock bar: the window comes back once nothing on this
+    -- character is left to move and Arrange has ended.
+    if self:IsUnlockToolbarActive() then
         return
     end
     if ST.ExpandConfigAfterLock then
