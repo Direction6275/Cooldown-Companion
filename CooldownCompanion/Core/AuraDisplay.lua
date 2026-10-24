@@ -4159,8 +4159,8 @@ end
 -- CC's own GetAuraPanelCellSlot walks. Get that mapping wrong and the unlock
 -- placeholders sit somewhere the real auras never appear.
 --
--- One container per (PANEL, unit). The unit is derived from the panel's first
--- resolvable aura entry (GetAuraPanelUnit) and the creation surfaces refuse
+-- One container per (PANEL, unit). The unit is derived from the panel's aura
+-- entries (GetAuraPanelUnit: most entries win) and the creation surfaces refuse
 -- entries of the other polarity, so in practice a panel has exactly one — but
 -- imported config can still carry a stray, and those entries are counted and
 -- skipped rather than bound onto the wrong unit's container.
@@ -4815,9 +4815,9 @@ end
 -- Bind one panel's container. Returns nothing; every refusal leaves the
 -- container parked from the pass's park-all phase, which is the safe state.
 local function BindAuraPanel(self, groupId, group, frame)
-    -- One unit for the whole panel, derived from its first resolvable aura
-    -- entry. No entry, or no resolvable polarity, means there is nothing to
-    -- mount a container for yet.
+    -- One unit for the whole panel, derived from its aura entries
+    -- (GetAuraPanelUnit). No entry, or no resolvable polarity, means there is
+    -- nothing to mount a container for yet.
     local unit = self:GetAuraPanelUnit(group)
     if not unit then return end
 
@@ -5005,9 +5005,9 @@ end
 -- BindAuraPanel: every one leaves the container parked from the park-all phase,
 -- which is the safe state.
 local function BindAuraSection(self, groupId, group, frame, anchor, info)
-    -- One unit per SECTION, derived from its first resolvable member. A section
-    -- with no resolvable polarity has nothing to mount a container for yet, the
-    -- same way an entry-less Aura Panel does not.
+    -- One unit per SECTION, derived from its members (GetAuraSectionUnit). A
+    -- section with no resolvable polarity has nothing to mount a container for
+    -- yet, the same way an entry-less Aura Panel does not.
     local unit = self:GetAuraSectionUnit(group, anchor)
     if not unit then return end
 
