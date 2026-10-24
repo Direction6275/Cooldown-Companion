@@ -731,8 +731,7 @@ local function BuildSlotKit(slotButton, pandemicGated, noPandemicRig)
     -- which hides it while the pandemic glow is showing (Glows.lua
     -- BuildAuraGlowReplace).
     kit.auraGlowGate, kit.auraGlowReplace = ST._BuildAuraGlowReplace(parent, slotButton)
-    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true)
-    kit.glow.host:SetFrameLevel(kit.swipe:GetFrameLevel() + 1)
+    kit.glow = ST._BuildKitGlowRegions(kit.auraGlowGate, false, true, nil, kit.swipe:GetFrameLevel() + 1)
 
     -- Pandemic glow: a second glow kit that Blizzard shows only while the
     -- aura sits inside its refresh window, through the 12.1.5 window rig
@@ -743,8 +742,8 @@ local function BuildSlotKit(slotButton, pandemicGated, noPandemicRig)
     -- is a permanent bar host whose pandemic glow StyleSlotKit never lights,
     -- so it skips the rig and StyleSlotKit's `if kit.pandemicGlow` block.
     -- Same level as the aura glow, created after it, so the pandemic effect
-    -- draws above. The rig pins its CDM frame there too: left at its default
-    -- level it would TIE kit.textOverlay at swipe+2.
+    -- draws above. The kit builder pins the rig's CDM frame there too: left at
+    -- its default level it would TIE kit.textOverlay at swipe+2.
     if slotButton.AddPandemicRegion and not noPandemicRig then
         kit.pandemicWindow = ST._BuildPandemicWindowRig(parent, slotButton, slotButton,
             kit.swipe:GetFrameLevel() + 1)
@@ -2060,9 +2059,8 @@ local function StyleSlotKit(slot, button, buttonData, style)
     -- an entry that customized the Pandemic section carries in its own
     -- styleOverrides since the entry checkbox dissolved into that section
     -- (owner ruling 2026-08-16). Resource overlays carry no pandemic story
-    -- at all. Blizzard flips the rig's secret
-    -- Shown state regardless; this gate only decides whether the rig has
-    -- anything visible to show.
+    -- at all. Blizzard's Pandemic animations drive the window rig regardless;
+    -- this gate only decides whether the rig has anything visible to show.
     local pandemicOn = false
     if not isResourceHost then
         pandemicOn = style.pandemicEffectEnabled == true

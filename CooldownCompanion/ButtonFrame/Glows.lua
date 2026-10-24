@@ -221,6 +221,16 @@ local function StartColorShift(container, colorA, colorB, speed)
     end
 end
 
+-- The rect a kit region fits around. Blizzard-owned panel cells have secret
+-- geometry and measuring them throws, and freshly anchored holders and
+-- segment bounds report last frame's rect, so both stamp _ccKitRectW/H. CC
+-- buttons stamp neither and measure their own explicit size.
+local function KitRectSize(anchor)
+    local w, h = anchor._ccKitRectW, anchor._ccKitRectH
+    if w and h then return w, h end
+    return anchor:GetSize()
+end
+
 -- Dashes share one AnimationGroup and one linear translation per texture.
 -- Every translation covers a full perimeter in one lap, with no timed
 -- detours or per-edge loop boundaries. Copies one perimeter apart exchange
@@ -230,14 +240,8 @@ end
 -- every unit disappearing from an edge appears on the next at the same time.
 -- Shared by the live kit and preview; all regions/targets are built before
 -- aura ownership. AnimationGroups then run without scripts or combat writes.
-local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thickness, lap, count, r, g, b, a, width, height)
-    -- Explicit dims when the anchor is a freshly-anchored frame (aura-host
-    -- holders, per-segment bounds): its own GetSize would report last
-    -- frame's geometry. CC buttons carry explicit sizes and pass nothing.
-    local w, h = width or anchorFrame._ccKitRectW, height or anchorFrame._ccKitRectH
-    if not w or not h then
-        w, h = anchorFrame:GetSize()
-    end
+local function StyleDashPerimeter(dashList, masks, anchorFrame, length, thickness, lap, count, r, g, b, a)
+    local w, h = KitRectSize(anchorFrame)
     dashList.ag:Stop()
     if w <= 0 or h <= 0 then
         for _, dash in ipairs(dashList) do
@@ -497,10 +501,7 @@ local function CreateSparkRegions(parent, sparkList)
 end
 
 local function StyleAutocastPerimeter(sparkList, anchorFrame, scale, speed, r, g, b, a)
-    local w, h = anchorFrame._ccKitRectW, anchorFrame._ccKitRectH
-    if not (w and h) then
-        w, h = anchorFrame:GetSize()
-    end
+    local w, h = KitRectSize(anchorFrame)
     local P = 2 * (w + h)
     -- Perimeter path from the bottom-left corner, relative to the anchor
     -- TOPLEFT: left edge up, top edge right, right edge down, bottom edge
@@ -1263,6 +1264,8 @@ local SetReadyGlow = MakeGlowSetter({
 
 -- Normalize key press highlight style: only "solid" and "overlay" are valid.
 -- Legacy profiles with pixel/glow/lcgButton/lcgAutoCast fall back to "solid".
+-- KPH containers are built without the spell-alert frame (noProc), so a
+-- proc-frame style here would need that flag dropped.
 local function NormalizeKPHStyle(style)
     if style == "solid" or style == "overlay" then return style end
     return "solid"
@@ -1366,8 +1369,9 @@ end
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
 -- withOverlay: if true, also create a full-button overlay texture (only KPH needs this)
--- Returns table {solidFrame, solidTextures, procFrame[, overlayTexture]}
-local function CreateGlowContainer(parent, overhang, withOverlay)
+-- noProc: if true, skip the proc glow frame (KPH styles never show it)
+-- Returns table {solidFrame, solidTextures, procFrame unless noProc[, overlayTexture]}
+local function CreateGlowContainer(parent, overhang, withOverlay, noProc)
     local container = {}
 
     -- Solid border: 4 edge textures
@@ -1382,15 +1386,17 @@ local function CreateGlowContainer(parent, overhang, withOverlay)
     end
 
     -- Proc-style animated glow
-    local procFrame = CreateFrame("Frame", nil, parent, "ActionButtonSpellAlertTemplate")
-    FitHighlightFrame(procFrame, parent, overhang or 32)
-    SetFrameClickThroughRecursive(procFrame, true, true)
-    -- Clear the template's OnHide which explicitly Stop()s ProcLoop.  Without it,
-    -- WoW's frame system will auto-pause/resume the AnimationGroup across parent
-    -- hide/show cycles.  CC already stops ProcLoop in HideGlowStyles when needed.
-    procFrame:SetScript("OnHide", nil)
-    procFrame:Hide()
-    container.procFrame = procFrame
+    if not noProc then
+        local procFrame = CreateFrame("Frame", nil, parent, "ActionButtonSpellAlertTemplate")
+        FitHighlightFrame(procFrame, parent, overhang or 32)
+        SetFrameClickThroughRecursive(procFrame, true, true)
+        -- Clear the template's OnHide which explicitly Stop()s ProcLoop.  Without it,
+        -- WoW's frame system will auto-pause/resume the AnimationGroup across parent
+        -- hide/show cycles.  CC already stops ProcLoop in HideGlowStyles when needed.
+        procFrame:SetScript("OnHide", nil)
+        procFrame:Hide()
+        container.procFrame = procFrame
+    end
 
     -- Full-button overlay texture (only needed by key press highlight)
     if withOverlay then
@@ -1516,10 +1522,17 @@ end
 -- route ShowGlowStyle at a kit: its containers are CC-button frames, and
 -- creating or reparenting frames into the target is forbidden (V9b).
 --
--- These builders are pure: no stored refs, no CC-button coupling.
--- AuraDisplay.lua owns live kit binds. Its missing-aura reminder also uses
--- this renderer on ordinary CC frames, including the matching config mirror.
--- Other config glows use the CC-side renderers above.
+-- Users. Live, aura-owned: AuraDisplay slot kits (aura glow and pandemic
+-- window rig) and native aura Indicator pandemic glows
+-- (IndicatorDisplay.CreatePandemicGlow). AuraDisplay also stops animations
+-- on spare pooled copies via StopKitGlowAnimations. Live, on CC frames: the
+-- missing-aura reminder (AuraDisplay), the totem glow (TotemPanel) and the
+-- resource max-stack border (ResourceBar). Config: the resource bar preview
+-- (ResourceBarPreview), the pandemic preview rig (ButtonPanelPreviewEffects)
+-- and the Indicator preview (ButtonPanelPreviewIndicators). Other config
+-- glows use the CC-side renderers above. The resolvers read CC anchor fields
+-- (_barBounds, _ccKitRectW/H), and the window rig registers its animations on
+-- the slot button.
 ------------------------------------------------------------------------
 
 -- Proc-swirl flipbook parameters from ActionButtonSpellAlertTemplate
@@ -1548,7 +1561,10 @@ end
 
 -- `template` lets a presence window (AuraDisplay.lua) build the host with
 -- DisableUntrustedLayoutScriptsTemplate; the kit's other parts are regions.
-local function BuildKitGlowRegions(parent, withCdm, auraOwned, template)
+-- `level` pins the host and any CDM rig frame: a CDM frame left at its
+-- default level would tie a caller's text overlay (AuraDisplay kit.textOverlay
+-- at swipe+2).
+local function BuildKitGlowRegions(parent, withCdm, auraOwned, template, level)
     local host = CreateFrame("Frame", nil, parent, template)
     host:EnableMouse(false)
     host:SetAlpha(0)
@@ -1635,25 +1651,20 @@ local function BuildKitGlowRegions(parent, withCdm, auraOwned, template)
     if withCdm then
         glowKit.cdm = BuildCdmPandemicRig(host, host)
     end
+    if level then
+        host:SetFrameLevel(level)
+        if glowKit.cdm then glowKit.cdm.frame:SetFrameLevel(level) end
+    end
 
     return glowKit
 end
 
--- Style a kit glow from the effective style. anchorFrame is the CC host
--- button: anchoring kit regions TO an outside frame is the validated
--- direction (kit.bg precedent). Live kits call this at OOC bind time only.
 -- Position and size a flipbook texture over the anchor with a percentage
 -- overhang, then tint it. 4-arg SetVertexColor overwrites region alpha, so
 -- it must come after any SetAlpha and carry the color's own alpha (Phase 2
 -- gotcha).
 local function StyleKitFlipbook(tex, anchorFrame, pct, r, g, b, a)
-    -- Panel hosts stamp _ccKitRectW/H because their cell geometry is
-    -- Blizzard-owned and secret; measuring them throws. CC buttons carry
-    -- neither and measure their own rect (same rule as the dashes leg).
-    local w, h = anchorFrame._ccKitRectW, anchorFrame._ccKitRectH
-    if not (w and h) then
-        w, h = anchorFrame:GetSize()
-    end
+    local w, h = KitRectSize(anchorFrame)
     tex:ClearAllPoints()
     tex:SetPoint("CENTER", anchorFrame, "CENTER", 0, 0)
     tex:SetSize(w + w * pct * 2, h + h * pct * 2)
@@ -1682,9 +1693,22 @@ end
 -- Shared styling core: full reset, then light the requested branch. The
 -- per-surface key resolution lives in the thin resolvers below
 -- (StyleKitGlowRegions for the icon auraGlow* keys, StyleKitBarGlowRegions
--- for the bar barAura* keys).
+-- for the bar barAura* keys, StyleKitPandemicGlowRegions for pandemicGlow*).
+-- anchorFrame is the CC host button: anchoring kit regions TO an outside
+-- frame is the validated direction (kit.bg precedent). Aura-owned kits are
+-- styled at OOC bind only (spare pooled Aura Panel copies only when their
+-- entry or look epoch changes, then held still); kits on CC frames restyle
+-- when their owner changes, which can be in combat (the resource max-stack
+-- border restyles on stack ticks).
 local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, size, speed, count, thickness)
     local host = glowKit.host
+    -- Pulse, colorShift and dashes take seconds in (0, 3]. Unset, <= 0 or
+    -- legacy pixel-scale values (the dormant pandemicGlowSpeed shipped as 50
+    -- on the retired LCG scale) fall back to the style default; autocast
+    -- takes the 10..200 frequency directly.
+    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
+        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
+    end
 
     -- Full reset: stop every animation and blank every sub-visual, then the
     -- active branch lights only its own. The VertexColor anims leave a
@@ -1765,18 +1789,11 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
 
     if kitStyle == "dashes" then
         count = math_min(math_max(count or 5, 1), MAX_AURA_GLOW_DASHES)
-        if not speed or speed <= 0 or speed > 3 then
-            speed = AURA_GLOW_SPEED_DEFAULTS.dashes
-        end
-        -- _ccKitRectW/H: rect dims stamped by the aura-host anchor pass for
-        -- holder-anchored kits (fresh anchors report stale sizes); nil on CC
-        -- buttons, which fall back to their own explicit size.
         StyleDashPerimeter(glowKit.dashes, glowKit.dashMasks, anchorFrame,
             size or BAR_AURA_GLOW_SIZES.dashes,
             thickness or DEFAULT_AURA_GLOW_DASH_THICKNESS,
-            speed or AURA_GLOW_SPEED_DEFAULTS.dashes,
-            count, r, g, b, a,
-            anchorFrame._ccKitRectW, anchorFrame._ccKitRectH)
+            speed,
+            count, r, g, b, a)
         return
     end
 
@@ -1794,7 +1811,7 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
         tex:Show()
     end
     if kitStyle == "pulse" then
-        glowKit.pulseAnim:SetDuration(speed or AURA_GLOW_SPEED_DEFAULTS.pulse)
+        glowKit.pulseAnim:SetDuration(speed)
         glowKit.pulseAG:Play()
     elseif kitStyle == "colorShift" then
         local startColor = CreateColor(r, g, b, a)
@@ -1803,7 +1820,7 @@ local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, s
             local anim = glowKit.csAnims[i]
             anim:SetStartColor(startColor)
             anim:SetEndColor(endColor)
-            anim:SetDuration(speed or AURA_GLOW_SPEED_DEFAULTS.colorShift)
+            anim:SetDuration(speed)
             glowKit.csAGs[i]:Play()
         end
     end
@@ -1816,24 +1833,21 @@ local function StyleKitGlowRegions(glowKit, styleTable, anchorFrame, enabled, ke
     local kitStyle = enabled
         and NormalizeKitGlowStyle((styleTable and styleTable[keyPrefix .. "Style"]) or "pulse")
         or "none"
-    local speed = styleTable and styleTable[keyPrefix .. "Speed"]
-    -- Duration styles reject legacy pixel-scale speeds; autocast uses
-    -- the 10..200 frequency scale directly.
-    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
-        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
-    end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
         (styleTable and styleTable[keyPrefix .. "Color"]) or defaultColor or DEFAULT_AURA_GLOW_COLOR,
         (styleTable and styleTable[keyPrefix .. "Color2"]) or DEFAULT_AURA_GLOW_COLOR2,
         styleTable and styleTable[keyPrefix .. "Size"],
-        speed,
+        styleTable and styleTable[keyPrefix .. "Speed"],
         styleTable and styleTable[keyPrefix .. "DashCount"],
         styleTable and styleTable[keyPrefix .. "DashThickness"])
 end
 
 -- Map a stored bar aura effect to a kit-renderable style. "color" is the
 -- fill-tint-only mode (no border effect). Bars offer border styles only
--- (owner ruling): legacy "pixel" renders as its dashes lookalike; the
+-- (owner ruling). "pixel" is the live Pixel Glow vocabulary of the resource
+-- aura border and the max-stack border (ResourceBarAuraHost
+-- GetResourceOverlayBorderStyle, ResourceBar, config ResourceBarPanelsResource)
+-- and renders as dashes, so a legacy sweep must keep that leg. The
 -- flipbook/fill styles (glow/proc/ants/overlay), retired LibCustomGlow
 -- values, and anything unknown render as the pulse border.
 local function NormalizeKitBarEffectStyle(style)
@@ -1857,23 +1871,19 @@ local function StyleKitBarGlowRegions(glowKit, styleTable, anchorFrame, enabled)
     if enabled and IsBarAuraIndicatorEnabled(styleTable) then
         kitStyle = NormalizeKitBarEffectStyle(styleTable and styleTable.barAuraEffect)
     end
-    local speed = styleTable and styleTable.barAuraEffectSpeed
-    -- Same legacy pixel-scale speed guard as the icon resolver.
-    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
-        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
-    end
     StyleKitGlowCore(glowKit, anchorFrame._barBounds or anchorFrame, kitStyle,
         (styleTable and styleTable.barAuraEffectColor) or DEFAULT_AURA_GLOW_COLOR,
         (styleTable and styleTable.barAuraColorShiftColor) or DEFAULT_WHITE,
         styleTable and styleTable.barAuraEffectSize,
-        speed,
+        styleTable and styleTable.barAuraEffectSpeed,
         styleTable and styleTable.barAuraEffectLines,
         styleTable and styleTable.barAuraEffectThickness)
 end
 
 -- Resolve the pandemicGlow* keys and style the kit (the icon-mode pandemic
--- display; Blizzard owns the rig's secret Shown state, this styler only
--- decides what it looks like whenever Blizzard reveals it). The enable
+-- display; the window rig, whose alpha Blizzard's Pandemic animations drive,
+-- decides when it shows, and this styler only decides what it looks like).
+-- The enable
 -- arrives resolved from the caller — the keys carry no gate of their own,
 -- and the entry/panel resolution lives with the other bind policy in
 -- AuraDisplay.lua. Dash count/thickness ride the dormant-era key names
@@ -1883,25 +1893,18 @@ local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, ena
     if enabled then
         local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
         if rawStyle == "cdm" and glowKit.cdm then
-            -- Pandemic-only style; rig-less kits (no withCdm at build) fall
-            -- through to the normalizer's unknown-value default instead.
+            -- Pandemic-only style. Every pandemic kit is built withCdm, so
+            -- the glowKit.cdm guard is defensive only.
             kitStyle = "cdm"
         else
             kitStyle = NormalizeKitGlowStyle(rawStyle)
         end
     end
-    local speed = styleTable and styleTable.pandemicGlowSpeed
-    -- Same legacy pixel-scale speed guard as the icon resolver: the dormant
-    -- pandemicGlowSpeed shipped as 50 in the retired LCG scale, so stored
-    -- values that large fall back to seconds defaults except for autocast.
-    if not speed or speed <= 0 or (kitStyle ~= "autocast" and speed > 3) then
-        speed = AURA_GLOW_SPEED_DEFAULTS[kitStyle]
-    end
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
         (styleTable and styleTable.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR,
         (styleTable and styleTable.pandemicGlowColor2) or DEFAULT_PANDEMIC_COLOR2,
         styleTable and styleTable.pandemicGlowSize,
-        speed,
+        styleTable and styleTable.pandemicGlowSpeed,
         styleTable and styleTable.pandemicGlowLines,
         styleTable and styleTable.pandemicGlowThickness)
 end
@@ -1936,8 +1939,8 @@ local function AlphaGroup(target, looping)
 end
 
 -- A flash animates its own frame's alpha, so the texture color stays an
--- ordinary bind-time write.
-local function BuildPandemicFlash(parent, anchor, level, register)
+-- ordinary bind-time write. Returns the flash and the group to register.
+local function BuildPandemicFlash(parent, anchor, level)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(anchor)
     frame:EnableMouse(false)
@@ -1948,8 +1951,7 @@ local function BuildPandemicFlash(parent, anchor, level, register)
     local group, anim = AlphaGroup(frame)
     anim:SetFromAlpha(0)
     anim:SetToAlpha(0)
-    register(group)
-    return { texture = texture, anim = anim }
+    return { texture = texture, anim = anim }, group
 end
 
 -- `anchor` is the rect the rig covers; every frame sits at `level`. Returns
@@ -1961,9 +1963,7 @@ local function BuildPandemicWindowRig(parent, anchor, slotButton, level, ccOwned
     window:SetAllPoints(anchor)
     window:EnableMouse(false)
     window:SetFrameLevel(level)
-    local glow = BuildKitGlowRegions(window, true, not ccOwned)
-    glow.host:SetFrameLevel(level)
-    glow.cdm.frame:SetFrameLevel(level)
+    local glow = BuildKitGlowRegions(window, true, not ccOwned, nil, level)
     local rig = { window = window, glow = glow }
     window:SetAlpha(0)
     local active, hold = AlphaGroup(window, true)
@@ -1984,12 +1984,11 @@ local function BuildPandemicWindowRig(parent, anchor, slotButton, level, ccOwned
     rig.fade:SetToAlpha(0)
     slotButton:AddPandemicLeaveAnimation(fade)
 
-    rig.startFlash = BuildPandemicFlash(parent, anchor, level, function(group)
-        slotButton:AddPandemicEnterAnimation(group)
-    end)
-    rig.refreshFlash = BuildPandemicFlash(parent, anchor, level, function(group)
-        slotButton:AddPandemicLeaveAnimation(group)
-    end)
+    local startGroup, refreshGroup
+    rig.startFlash, startGroup = BuildPandemicFlash(parent, anchor, level)
+    slotButton:AddPandemicEnterAnimation(startGroup)
+    rig.refreshFlash, refreshGroup = BuildPandemicFlash(parent, anchor, level)
+    slotButton:AddPandemicLeaveAnimation(refreshGroup)
     return rig
 end
 

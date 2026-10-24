@@ -706,7 +706,7 @@ function CooldownCompanion:CreateButtonFrame(parent, index, buttonData, style)
     button.readyGlow = CreateGlowContainer(button, 32)
 
     -- Key press highlight elements (glow while keybind is held)
-    button.keyPressHighlight = CreateGlowContainer(button, 32, true)
+    button.keyPressHighlight = CreateGlowContainer(button, nil, true, true)
 
     -- Ready glow frame levels are managed by ApplyStrataOrder (called below).
 
@@ -1211,9 +1211,6 @@ function CooldownCompanion:UpdateButtonInteraction(button, style)
     if button.keyPressHighlight then
         if button.keyPressHighlight.solidFrame then
             SetFrameClickThroughRecursive(button.keyPressHighlight.solidFrame, true, true)
-        end
-        if button.keyPressHighlight.procFrame then
-            SetFrameClickThroughRecursive(button.keyPressHighlight.procFrame, true, true)
         end
     end
     if button._cooldownPressFlash then
