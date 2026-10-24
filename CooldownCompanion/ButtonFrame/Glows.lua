@@ -688,7 +688,7 @@ local function ShowGlowStyle(container, style, button, color, params)
         CreateSparkRegions(container.solidFrame, container.sparks)
         StyleAutocastPerimeter(container.sparks, button, params.scale or 2, params.speed,
             color[1], color[2], color[3], color[4] or defaultAlpha)
-    elseif style == "glow" then
+    elseif style == "glow" and container.procFrame then
         FitHighlightFrame(container.procFrame, button, size or 32)
         PrepareProcGlowLoop(container.procFrame, color, true)
         container.procFrame:Show()

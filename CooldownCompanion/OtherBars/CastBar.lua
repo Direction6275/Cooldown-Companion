@@ -1679,13 +1679,15 @@ end
 function CooldownCompanion:RefreshCastBarAttachment()
     ST.BeginModuleAnchorPass()
     local settings = GetCastBarSettings()
-    local target = settings and self:ResolveModulePanel("castbar")
-    local group = target and target.available and target.group
-    local frame = target and target.available and target.frame
-    if isApplied and settings and settings.enabled
+    -- Cheap checks first: a cast bar that is off, Independent or mid-drag goes
+    -- straight to the EvaluateCastBar fallback without a resolve.
+    local target = isApplied and settings and settings.enabled
         and not self:IsModuleAnchorIndependent("castbar")
         and not (independentMoverFrame and independentMoverFrame:IsShown())
-        and group and self:IsIconLikeDisplayMode(group.displayMode)
+        and self:ResolveModulePanel("castbar")
+    local group = target and target.available and target.group
+    local frame = target and target.available and target.frame
+    if group and self:IsIconLikeDisplayMode(group.displayMode)
         and frame and frame:IsShown() and self:RepositionCastBar(target) then
         if isUnlockAssistActive then
             ApplyCastBarUnlockPreview()

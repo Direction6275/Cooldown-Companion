@@ -445,9 +445,8 @@ function ST.GetBarGridCellDimensions(group)
                 width, height = WidenBarCell(width, height, group, entry, barStyle)
             end
         end
-        -- Nothing eligible (GetPanelLayoutKind "empty"): the configured entries
-        -- size the inactive ghosts.
-        if not anyEligible and ST.PanelSupportsAttachedBars(owner) then
+        -- Nothing eligible: the configured entries size the inactive ghosts.
+        if not anyEligible and ST.GetPanelLayoutKind(owner) == "empty" then
             for _, entry in ipairs(group.buttons or {}) do
                 width, height = WidenBarCell(width, height, group, entry, barStyle)
             end
