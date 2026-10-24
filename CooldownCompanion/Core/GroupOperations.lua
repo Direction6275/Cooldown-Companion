@@ -1325,12 +1325,3 @@ function CooldownCompanion:UpdateAllGroupLayouts()
         self:EndPanelAttachmentRefresh(attachmentOperation)
     end
 end
-
--- Utility functions
-function CooldownCompanion:GetSpellInfo(spellId)
-    local spellInfo = C_Spell.GetSpellInfo(spellId)
-    if spellInfo then
-        return spellInfo.name, spellInfo.iconID, spellInfo.castTime
-    end
-    return nil
-end

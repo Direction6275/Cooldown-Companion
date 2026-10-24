@@ -16,7 +16,6 @@ defaults.barSegmentedSmoothing = "on"
 defaults.barClassTextureBrightness = 1.3
 defaults.barBorderStyle = "pixel"
 ST.ATTACHED_BAR_DEFAULTS.barBorderStyle = "pixel"
-table.insert(ST.OVERRIDE_SECTIONS.borderSettings.keys, "barBorderStyle")
 for _, suffix in ipairs({ "Font", "FontSize", "FontOutline", "FontColor" }) do
     defaults["barDuration" .. suffix] = defaults["cooldown" .. suffix]
     defaults["barValue" .. suffix] = defaults["charge" .. suffix]
@@ -31,14 +30,6 @@ for id, section in pairs(sections) do
         ST.ATTACHED_BAR_DEFAULTS[key] = type(defaults[key]) == "table" and CopyTable(defaults[key]) or defaults[key]
     end
     ST.OVERRIDE_SECTIONS[id] = section
-end
--- Give every value one override owner. The migration below transfers old
--- section ownership before any subsequent promote/revert operation.
-for _, id in ipairs({ "barShape", "barNameText", "barIcon" }) do
-    local keys = ST.OVERRIDE_SECTIONS[id].keys
-    for i = #keys, 1, -1 do
-        if keySections[keys[i]] then table.remove(keys, i) end
-    end
 end
 ST.SHARED_BAR_STYLE_SECTIONS = { "barTexture", "barBgColor", "borderSettings", "barDirection",
     "barSmoothing", "barNameTypography", "barDurationTypography", "barValueTypography", "barIconAppearance", "iconZoom" }

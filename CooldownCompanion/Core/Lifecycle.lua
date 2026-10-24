@@ -249,7 +249,8 @@ function CooldownCompanion:OnEnable()
     -- Event-driven range checking (replaces per-tick IsSpellInRange polling)
     self:RegisterEvent("SPELL_RANGE_CHECK_UPDATE", "OnSpellRangeCheckUpdate")
 
-    -- Inventory changes — refresh config panel (!) indicators for items
+    -- Inventory changes — mark cooldowns dirty, refresh item charge flags and
+    -- the config panel
     self:RegisterEvent("BAG_UPDATE_DELAYED", "OnBagChanged")
 
     -- Talent change events — refresh group frames and config panel
@@ -276,8 +277,8 @@ function CooldownCompanion:OnEnable()
     self:RegisterEvent("PET_BATTLE_OVER", "OnPetBattleEnd")
 
     -- Vehicle / override UI events — hide groups when normal bars are replaced.
-    -- UPDATE_OVERRIDE_ACTIONBAR and UPDATE_VEHICLE_ACTIONBAR are already
-    -- registered above for keybind rebuilds; OnActionBarLayoutChanged piggybacks
+    -- UPDATE_OVERRIDE_ACTIONBAR and UPDATE_VEHICLE_ACTIONBAR are registered
+    -- below with the keybind text events; OnActionBarLayoutChanged piggybacks
     -- the vehicle state check to avoid duplicate AceEvent registrations.
     self:RegisterEvent("UNIT_ENTERED_VEHICLE", "OnVehicleUIChanged")
     self:RegisterEvent("UNIT_EXITED_VEHICLE", "OnVehicleUIChanged")

@@ -306,8 +306,8 @@ end
 
 --- Return every section member to the base grid and drop the sections.
 --- Entries keep their place in the master list, which is exactly where the base
---- grid reads its order from, so flattening only ever subtracts. Leaving icon
---- mode calls this: placements are not remembered across a display-mode switch.
+--- grid reads its order from, so flattening only ever subtracts. A Cooldown
+--- Manager source rebuild calls this before it replaces the entry list.
 --- Returns true when anything changed.
 function ST.FlattenPanelSections(group)
     if type(group) ~= "table" then return false end

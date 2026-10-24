@@ -7,7 +7,6 @@ local ADDON_NAME, ST = ...
 
 local InCombatLockdown = InCombatLockdown
 local ipairs = ipairs
-local wipe = wipe
 local pairs = pairs
 local tonumber = tonumber
 local type = type

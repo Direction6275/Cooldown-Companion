@@ -523,28 +523,6 @@ local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
     return flattened
 end
 
--- The one tail every "Switch to <mode>" path runs, so the menu row and the
--- flatten confirmation below it cannot land the panel in different states.
---
--- flattenSections belongs INSIDE the success test, not before the call:
--- ChangePanelDisplayMode judges the request itself (CanChangePanelDisplayMode)
--- and can still refuse it at Accept time, and a flatten that ran first would
--- have destroyed every placement for a switch that never happened. Flattening
--- after is safe -- sections are inert in every non-icon mode -- and it lands
--- before the config refresh below, so one pass shows the finished state.
-local function ApplyPanelDisplayModeChange(panelId, containerId, targetMode, flattenSections)
-    if CooldownCompanion:ChangePanelDisplayMode(panelId, targetMode) then
-        if flattenSections then
-            local panel = CooldownCompanion.db.profile.groups[panelId]
-            if panel then
-                ST.FlattenPanelSections(panel)
-            end
-        end
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
-ST._ApplyPanelDisplayModeChange = ApplyPanelDisplayModeChange
-
 local function TogglePanelAnchorLock(panelId)
     local panel = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[panelId]
     if not panel then
@@ -809,19 +787,9 @@ local function ShowPanelContextMenu(panelId, containerId)
                     local targetMode = modeInfo.mode
                     info.func = function()
                         CloseDropDownMenus()
-                        -- Sections exist only in icon mode, and leaving it
-                        -- flattens them for good (placements are not
-                        -- remembered), so a panel that actually has some
-                        -- says so before the switch instead of after.
-                        if targetMode ~= "icons" and ST.GetSectionsForLayout(panel) then
-                            ShowPopupAboveConfig("CDC_FLATTEN_PANEL_SECTIONS", panel.name or "Panel", {
-                                panelId = panelId,
-                                containerId = containerId,
-                                targetMode = targetMode,
-                            })
-                            return
+                        if CooldownCompanion:ChangePanelDisplayMode(panelId, targetMode) then
+                            CooldownCompanion:RefreshConfigPanel()
                         end
-                        ApplyPanelDisplayModeChange(panelId, containerId, targetMode)
                     end
                     UIDropDownMenu_AddButton(info, level)
                 end
