@@ -431,16 +431,20 @@ end
 
 -- Iterate every button across all groups, calling callback(button, buttonData) for each.
 -- Skips buttons without buttonData.
-function CooldownCompanion:ForEachButton(callback)
+-- Extra arguments are forwarded to the callback, so a file-level callback
+-- needs no per-call closure. Returns how many callbacks returned true.
+function CooldownCompanion:ForEachButton(callback, ...)
+    local hits = 0
     for _, frame in pairs(self.groupFrames) do
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
-                if button.buttonData then
-                    callback(button, button.buttonData)
+                if button.buttonData and callback(button, button.buttonData, ...) then
+                    hits = hits + 1
                 end
             end
         end
     end
+    return hits
 end
 
 function CooldownCompanion:OnDisable()
@@ -529,33 +533,30 @@ function CooldownCompanion:OnProcGlowHide(event, spellID)
     self:QueueCooldownRefresh("proc-event")
 end
 
-function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
-    if unit == "player" then
-        for _, frame in pairs(self.groupFrames) do
-            if frame and frame.buttons then
-                for _, button in ipairs(frame.buttons) do
-                    local buttonData = button.buttonData
-                    if buttonData and buttonData.type == "spell"
-                        and not buttonData.isPassive then
-                        local displaySpellID = button._displaySpellId or buttonData.id
-                        if spellID == buttonData.id or spellID == displaySpellID then
-                            if self.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
-                                -- Track charge consumption for restricted-mode color heuristic.
-                                -- _chargeRecharging at event time reflects the PRE-cast state:
-                                --   false = casting from full charges → reset to 1
-                                --   true  = already recharging → increment
-                                EntryRuntime.RecordChargeSpent(button)
-                            end
-                        end
-                    end
-                end
+local function RecordCastChargeSpent(button, buttonData, addon, spellID)
+    if buttonData.type == "spell"
+        and not buttonData.isPassive then
+        local displaySpellID = button._displaySpellId or buttonData.id
+        if spellID == buttonData.id or spellID == displaySpellID then
+            if addon.UsesChargeBehavior(buttonData) and buttonData.hasCharges then
+                -- Track charge consumption for restricted-mode color heuristic.
+                -- _chargeRecharging at event time reflects the PRE-cast state:
+                --   false = casting from full charges → reset to 1
+                --   true  = already recharging → increment
+                EntryRuntime.RecordChargeSpent(button)
             end
         end
+    end
+end
+
+function CooldownCompanion:OnSpellCast(event, unit, castGUID, spellID)
+    if unit == "player" then
+        self:ForEachButton(RecordCastChargeSpent, self, spellID)
         self:QueueCooldownRefresh("cast-event")
     end
 end
 
-local function TryCooldownPressFlash(addon, button, buttonData, spellID, inCombat, playFlash)
+local function TryCooldownPressFlash(button, buttonData, addon, spellID, inCombat, playFlash)
     if buttonData.type ~= "spell" or buttonData.isPassive then return end
     if spellID ~= buttonData.id and spellID ~= (button._displaySpellId or buttonData.id) then return end
     if button._isBar or not button.keyPressHighlight then return end
@@ -589,17 +590,7 @@ function CooldownCompanion:OnSpellCastFailed(event, unit, castGUID, spellID)
     end
     local playFlash = ST._PlayCooldownPressFlash
     if not playFlash then return end
-    local inCombat = InCombatLockdown()
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                local buttonData = button.buttonData
-                if buttonData then
-                    TryCooldownPressFlash(self, button, buttonData, spellID, inCombat, playFlash)
-                end
-            end
-        end
-    end
+    self:ForEachButton(TryCooldownPressFlash, self, spellID, InCombatLockdown(), playFlash)
 end
 
 

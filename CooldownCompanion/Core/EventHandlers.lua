@@ -295,6 +295,15 @@ local function GetRangeCheckSpellID(buttonData)
     return buttonData.id
 end
 
+-- ForEachButton callback for range events: true when this button's state changed.
+local function ApplySpellRangeState(button, bd, spellIdentifier, outOfRange)
+    if bd.type == "spell" and GetRangeCheckSpellID(bd) == spellIdentifier
+            and button._spellOutOfRange ~= outOfRange then
+        button._spellOutOfRange = outOfRange
+        return true
+    end
+end
+
 -- No persisted interest cache: nested panel edits reconcile the final live
 -- set once, before the outer operation returns. Standalone identity changes
 -- (including Rotation Assistant) retain immediate reconciliation.
@@ -335,20 +344,7 @@ function CooldownCompanion:OnSpellRangeCheckUpdate(event, spellIdentifier, isInR
     if checksRange then
         outOfRange = not isInRange
     end
-    local changed = false
-    for _, frame in pairs(self.groupFrames) do
-        if frame and frame.buttons then
-            for _, button in ipairs(frame.buttons) do
-                local bd = button.buttonData
-                if bd and bd.type == "spell" and GetRangeCheckSpellID(bd) == spellIdentifier
-                        and button._spellOutOfRange ~= outOfRange then
-                    button._spellOutOfRange = outOfRange
-                    changed = true
-                end
-            end
-        end
-    end
-    if changed then
+    if self:ForEachButton(ApplySpellRangeState, spellIdentifier, outOfRange) > 0 then
         self:MarkCooldownsDirty("range-check")
     end
 end

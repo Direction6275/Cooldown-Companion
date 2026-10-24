@@ -897,14 +897,15 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         button._chargeDurationObj = nil
         button._chargesSpent = nil
         button._chargeText = nil
-        -- Shared count-text lane for non-charge spells: cast-count stacks
-        -- (e.g. Mana Tea) reuse the charge-text font/toggle without driving
-        -- charge-specific cooldown logic.
+        -- Shared count-text lane for non-charge spells: Blizzard display/use
+        -- counts and cast-count stacks (e.g. Mana Tea) reuse the charge-text
+        -- font/toggle without driving charge-specific cooldown logic.
         if buttonData.type == "spell" then
             button.count:SetText("")
             if ST._ShouldShowChargeText(button) then
-                -- Secret after the clear only while the FontString keeps the
-                -- sticky Text secret aspect (CC never calls ClearText).
+                -- A display count already on the FontString wins over cast-count
+                -- text. It reads secret after the clear only while the FontString
+                -- keeps the sticky Text secret aspect (CC never calls ClearText).
                 local displayCountShown = (buttonData._hasDisplayCount or buttonData._displayCountFamily)
                     and issecretvalue(button.count:GetText()) or false
                 if not displayCountShown then

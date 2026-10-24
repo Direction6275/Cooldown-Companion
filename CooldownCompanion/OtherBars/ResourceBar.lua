@@ -568,8 +568,12 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         CooldownCompanion:StopResourceBarUnlockAssist()
         -- The lock edge re-anchors the wrapper to its saved anchor and
         -- relativeTo: a drag saves offsets only, and a cancelled drag is not
-        -- saved. The runtime gate drops this call when nested inside an apply.
-        CooldownCompanion:ApplyResourceBars()
+        -- saved. Only a live stack needs it: RevertResourceBars clears
+        -- isApplied before hiding the wrapper, so a teardown cannot bring the
+        -- bars back. The runtime gate drops this call when nested inside an apply.
+        if isApplied then
+            CooldownCompanion:ApplyResourceBars()
+        end
     end
 end
 
