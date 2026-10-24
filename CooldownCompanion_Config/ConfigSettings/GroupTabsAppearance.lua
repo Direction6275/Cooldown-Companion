@@ -1390,7 +1390,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
         -- no rightColumn.
-        local function BuildAuraDurationTextAdvanced(panel)
+        local function BuildAuraDurationTextAdvanced(panel, descriptor)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
                     indent = false,
@@ -1420,8 +1420,8 @@ local function BuildAppearanceTab(container, settingsGroup)
                 onConfirm = refreshStyle,
             })
 
-            -- WHICH position keys this text uses is decided by Keep Cooldown
-            -- Text, a row in the While Aura Active section. This panel
+            -- WHICH position keys this text uses is decided by the While Aura
+            -- Active section's Cooldown row (Show Text). This panel
             -- only draws the keys that are actually live, which is the same
             -- answer GetAuraDurationTextPlacement gives at runtime: the aura
             -- keys once the flag is on, the shared cooldown-text keys while it
@@ -1470,6 +1470,21 @@ local function BuildAppearanceTab(container, settingsGroup)
                     sharedPosition:Chrome(offsetXRow)
                     sharedPosition:Chrome(offsetYRow)
                     sharedPosition:Finish()
+                    -- Customized position rows stay editable when this panel is
+                    -- locked only because the entry does not customize Aura
+                    -- Duration Text, and only while that text is shown. The
+                    -- Enable Aura Duration Text lock and a panel whose text is
+                    -- off keep them grey (2026-08-31: no live rows with no
+                    -- visible effect). The locked sweep in this same build
+                    -- consumes the flags; undo is the entry's Customizations list.
+                    if descriptor and descriptor._resolvedUnlock
+                        and auraTextSec.scope == "inherited"
+                        and auraTextSec.read.showAuraText ~= false
+                        and sharedPosition.scope == "customized" then
+                        anchorRow._cdcReadOnlyExempt = true
+                        offsetXRow._cdcReadOnlyExempt = true
+                        offsetYRow._cdcReadOnlyExempt = true
+                    end
                 else
                     auraTextSec:PanelRowChrome(anchorRow)
                     auraTextSec:PanelRowChrome(offsetXRow)
