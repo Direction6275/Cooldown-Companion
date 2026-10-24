@@ -1404,8 +1404,7 @@ local function AnchorBarCountText(button, showIcon, anchor, xOff, yOff)
     end
 end
 
--- Returns true if the given item ID is equippable (trinkets, weapons, armor, etc.)
--- Caches result on buttonData to avoid repeated API calls.
+-- True for equippable items (trinkets, weapons, armor, etc.) and trinket-slot entries.
 local function IsItemEquippable(buttonData)
     if IsEquipmentSlotEntry(buttonData) then
         return true
@@ -1724,14 +1723,7 @@ function ST.ResetButtonFullStyleState(button)
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
-    button._noCooldown = nil
-    button._noCooldownSpellId = nil
-    button._baseNoCooldown = nil
-    button._baseNoCooldownSpellId = nil
-    button._resourceGateCost = nil
-    button._resourceGateCostSpellId = nil
-    button._baseResourceGateCost = nil
-    button._baseResourceGateCostSpellId = nil
+    ST.EntryRuntime.ClearSpellTraitCaches(button)
     button._vertexR = nil
     button._vertexG = nil
     button._vertexB = nil

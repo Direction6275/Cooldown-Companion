@@ -13,7 +13,7 @@
       - anything the router cannot fully classify, or any state that makes the
         index untrustworthy, falls back to today's broad path unchanged (fail
         open; accuracy is inviolable): secret/unreadable arg, nil (broadcast-
-        form) arg, a matched button in a panel group (cross-button aggregate,
+        form) arg, a matched Indicator source (cross-button aggregate,
         D4 inventory A4/A5), a structural index rebuild pending or landed
         between enqueue and flush, or any rotation-assistant virtual button
         loaded (those are excluded from the index by design, so a drop could
@@ -48,19 +48,19 @@ local pendingBatch = { buttons = {}, order = {}, count = 0 }
 local spareBatch = { buttons = {}, order = {}, count = 0 }
 
 -- Per-fire scratch: one fire's matched buttons (union of the spellID bucket and
--- the distinct-baseID bucket), plus a panel-membership flag. A button in both
+-- the distinct-baseID bucket), plus an Indicator-source flag. A button in both
 -- buckets is listed twice; the pending batch deduplicates those matches, the
--- fireCount == 0 drop check only needs "any match", and a duplicate panel check
--- is harmless. Reset at the top of every RouteCooldownEventFire.
+-- fireCount == 0 drop check only needs "any match", and a duplicate Indicator
+-- check is harmless. Reset at the top of every RouteCooldownEventFire.
 local fireList = {}
 local fireCount = 0
-local firePanel = false
+local fireIndicator = false
 
--- A panel group is a cross-button aggregate (D4 inventory A4/A5): its visual
--- ANDs cached per-row state, so updating only the matched row can leave the
--- panel reading stale inputs. One matched panel member makes the whole fire
--- broad -- fail open (panel-as-routing-unit is a later refinement).
-local function IsPanelButton(button)
+-- An Indicator is a cross-button aggregate (D4 inventory A4/A5): its visual
+-- ANDs cached per-source state, so updating only the matched source can leave
+-- the Indicator reading stale inputs. One matched Indicator source makes the
+-- whole fire broad -- fail open (Indicator-as-routing-unit is a later refinement).
+local function IsIndicatorSourceButton(button)
     local groupId = button._groupId
     if not groupId then
         return false
@@ -71,12 +71,12 @@ local function IsPanelButton(button)
 end
 
 -- ForEachIndexedSpellButton callback: collect this fire's matched buttons and
--- note whether any belongs to a panel group.
+-- note whether any is an Indicator source.
 local function CollectFireButton(button)
     fireCount = fireCount + 1
     fireList[fireCount] = button
-    if IsPanelButton(button) then
-        firePanel = true
+    if IsIndicatorSourceButton(button) then
+        fireIndicator = true
     end
 end
 
@@ -138,7 +138,7 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
     end
 
     fireCount = 0
-    firePanel = false
+    fireIndicator = false
     self:ForEachIndexedSpellButton(spellID, CollectFireButton)
     if baseNum then
         self:ForEachIndexedSpellButton(baseNum, CollectFireButton)
@@ -150,8 +150,8 @@ function CooldownCompanion:RouteCooldownEventFire(spellID, baseSpellID)
         self:CountRoutedDrop()
         return true
     end
-    if firePanel then
-        -- A matched button is a panel aggregate member -> fail open to broad.
+    if fireIndicator then
+        -- A matched button is an Indicator source -> fail open to broad.
         return false
     end
 

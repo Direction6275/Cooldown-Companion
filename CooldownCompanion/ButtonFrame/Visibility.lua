@@ -125,36 +125,24 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     local itemUsesResolvedCooldownState = IsEntryItemLike(buttonData)
         and button._resolvedItemQuantityKind == "stacks"
     local noCooldownForVisibility = IsNoCooldownForVisibility(button)
+    local useChargeState = (buttonData.hideWhileOnCooldown or buttonData.hideWhileNotOnCooldown)
+        and not itemUsesResolvedCooldownState and UsesChargeBehavior(buttonData)
 
     -- Check hideWhileOnCooldown (skip for no-CD spells — always "not on CD")
     if buttonData.hideWhileOnCooldown and not noCooldownForVisibility then
-        if itemUsesResolvedCooldownState then
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
-            end
-        elseif UsesChargeBehavior(buttonData) then
+        if useChargeState then
             if button._chargeState == CHARGE_STATE_ZERO
                     or button._chargeState == CHARGE_STATE_MISSING then
                 hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
             end
-        elseif IsEntryItemLike(buttonData) then
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
-            end
-        else
-            if button._cooldownState == COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
-            end
+        elseif button._cooldownState == COOLDOWN_STATE_COOLDOWN then
+            hideReasons = bit_bor(hideReasons, HIDE_ON_COOLDOWN)
         end
     end
 
     -- Check hideWhileNotOnCooldown (skip for no-CD spells — would permanently hide)
     if buttonData.hideWhileNotOnCooldown and not noCooldownForVisibility then
-        if itemUsesResolvedCooldownState then
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
-            end
-        elseif UsesChargeBehavior(buttonData) then
+        if useChargeState then
             if buttonData.type == "spell"
                     and buttonData.hasCharges == true
                     and buttonData.showOnlyAtZeroCharges then
@@ -166,14 +154,8 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
             elseif button._chargeState == CHARGE_STATE_FULL then
                 hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
             end
-        elseif IsEntryItemLike(buttonData) then
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
-            end
-        else
-            if button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
-                hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
-            end
+        elseif button._cooldownState ~= COOLDOWN_STATE_COOLDOWN then
+            hideReasons = bit_bor(hideReasons, HIDE_NOT_ON_COOLDOWN)
         end
     end
 
@@ -188,15 +170,17 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         end
     end
 
+    local hasItemFallbacks = CooldownCompanion.HasItemFallbacks(buttonData)
+
     -- Check hideWhileZeroCharges (charge-based spells and items)
     if buttonData.hideWhileZeroCharges
-            and not CooldownCompanion.HasItemFallbacks(buttonData)
+            and not hasItemFallbacks
             and button._chargeState == CHARGE_STATE_ZERO then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end
 
     -- Check hideWhileZeroStacks (stack-based items)
-    local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
+    local itemUseCount = hasItemFallbacks
         and button._resolvedItemAvailableQuantity
         or button._itemCount
     if buttonData.type == "item" and buttonData.hideWhileZeroStacks and (itemUseCount or 0) == 0 then
@@ -257,8 +241,7 @@ end
 
 -- Update loss-of-control cooldown on a button.
 -- DurationObject path handles secret values. If no DurationObject is available
--- (no LoC active), clear the cooldown. The legacy GetSpellLossOfControlCooldown
--- returns secret start/duration that SetCooldown will reject after the 12.0.1 hotfix.
+-- (no LoC active), clear the cooldown.
 local function UpdateLossOfControl(button)
     if not button.locCooldown then return end
 

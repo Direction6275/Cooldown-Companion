@@ -630,14 +630,7 @@ function CooldownCompanion:ResetSpellAvailabilityButtonRuntime()
         for _, button in ipairs(frame.buttons) do
             local buttonData = button.buttonData
             if buttonData and buttonData.type == "spell" then
-                button._noCooldown = nil
-                button._noCooldownSpellId = nil
-                button._baseNoCooldown = nil
-                button._baseNoCooldownSpellId = nil
-                button._resourceGateCost = nil
-                button._resourceGateCostSpellId = nil
-                button._baseResourceGateCost = nil
-                button._baseResourceGateCostSpellId = nil
+                ST.EntryRuntime.ClearSpellTraitCaches(button)
                 button._displaySpellId = nil
                 button._liveOverrideSpellId = nil
                 button._lastSpellTexture = nil

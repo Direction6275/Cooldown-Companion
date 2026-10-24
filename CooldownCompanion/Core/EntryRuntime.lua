@@ -326,15 +326,7 @@ local function EvaluateButtonSpellCooldown(buttonData, cooldownSpellId, noCooldo
 end
 EntryRuntime.EvaluateButtonSpellCooldown = EvaluateButtonSpellCooldown
 
-local function ResolveCachedSpellBooleanState(owner, spellID, hasCharges, valueKey, spellKey, resolver)
-    if hasCharges then
-        if owner then
-            owner[valueKey] = false
-            owner[spellKey] = nil
-        end
-        return false
-    end
-
+local function ResolveCachedSpellBooleanState(owner, spellID, valueKey, spellKey, resolver)
     -- No early-out on a nil spellID: the resolvers tolerate nil, and caching
     -- the answer (keyed on nil) keeps the owner fields fresh instead of
     -- silently retaining the previous spell's classification.
@@ -350,53 +342,31 @@ local function ResolveCachedSpellBooleanState(owner, spellID, hasCharges, valueK
     return value
 end
 
-local function ResolveNoCooldownState(owner, spellID, hasCharges)
-    return ResolveCachedSpellBooleanState(
-        owner,
-        spellID,
-        hasCharges,
-        "_noCooldown",
-        "_noCooldownSpellId",
-        IsNoCooldownSpell
-    )
+-- No-cooldown and resource-gate traits for the base spell and the live
+-- (override) spell, each cached against the spell it was read for.
+function EntryRuntime.ResolveSpellTraits(owner, baseSpellID, spellID)
+    ResolveCachedSpellBooleanState(owner, baseSpellID,
+        "_baseNoCooldown", "_baseNoCooldownSpellId", IsNoCooldownSpell)
+    ResolveCachedSpellBooleanState(owner, baseSpellID,
+        "_baseResourceGateCost", "_baseResourceGateCostSpellId", HasPositiveResourceGateCost)
+    ResolveCachedSpellBooleanState(owner, spellID,
+        "_noCooldown", "_noCooldownSpellId", IsNoCooldownSpell)
+    ResolveCachedSpellBooleanState(owner, spellID,
+        "_resourceGateCost", "_resourceGateCostSpellId", HasPositiveResourceGateCost)
 end
 
-local function ResolveBaseNoCooldownState(owner, spellID, hasCharges)
-    return ResolveCachedSpellBooleanState(
-        owner,
-        spellID,
-        hasCharges,
-        "_baseNoCooldown",
-        "_baseNoCooldownSpellId",
-        IsNoCooldownSpell
-    )
+-- notApplicable: what the walk stores for entries the traits do not apply to
+-- (false); resets pass nothing and leave nil.
+function EntryRuntime.ClearSpellTraitCaches(owner, notApplicable)
+    owner._noCooldown = notApplicable
+    owner._noCooldownSpellId = nil
+    owner._baseNoCooldown = nil
+    owner._baseNoCooldownSpellId = nil
+    owner._resourceGateCost = notApplicable
+    owner._resourceGateCostSpellId = nil
+    owner._baseResourceGateCost = nil
+    owner._baseResourceGateCostSpellId = nil
 end
-
-local function ResolveResourceGateCostState(owner, spellID, hasCharges)
-    return ResolveCachedSpellBooleanState(
-        owner,
-        spellID,
-        hasCharges,
-        "_resourceGateCost",
-        "_resourceGateCostSpellId",
-        HasPositiveResourceGateCost
-    )
-end
-
-local function ResolveBaseResourceGateCostState(owner, spellID, hasCharges)
-    return ResolveCachedSpellBooleanState(
-        owner,
-        spellID,
-        hasCharges,
-        "_baseResourceGateCost",
-        "_baseResourceGateCostSpellId",
-        HasPositiveResourceGateCost
-    )
-end
-EntryRuntime.ResolveNoCooldownState = ResolveNoCooldownState
-EntryRuntime.ResolveBaseNoCooldownState = ResolveBaseNoCooldownState
-EntryRuntime.ResolveResourceGateCostState = ResolveResourceGateCostState
-EntryRuntime.ResolveBaseResourceGateCostState = ResolveBaseResourceGateCostState
 
 function EntryRuntime.RecordChargeSpent(owner)
     if not owner then return end

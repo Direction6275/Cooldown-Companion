@@ -407,7 +407,7 @@ end
 function CooldownCompanion:OnCooldownStateChanged(event, ...)
     -- F1 3b: readable-identity SPELL fires route to their index-matched buttons
     -- (mini-pass) or drop (no tracked button). Anything the router cannot fully
-    -- classify -- secret/nil arg, panel-matched button, generation churn --
+    -- classify -- secret/nil arg, Indicator-source button, generation churn --
     -- returns false and falls through to the broad path below unchanged.
     if event == "SPELL_UPDATE_COOLDOWN" then
         if self:RouteCooldownEventFire(...) then
