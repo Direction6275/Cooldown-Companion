@@ -1405,25 +1405,17 @@ end
 
 function CooldownCompanion:MovePanel(groupId, targetContainerId)
     local db = self.db.profile
-    local group
-    if self.CanMovePanelToContainer then
-        local ok, reason = self:CanMovePanelToContainer(groupId, targetContainerId)
-        if not ok then
-            if self.Print
-                and (reason == "invalid-class-scope"
-                    or reason == "scope-mismatch"
-                    or reason == "mixed-class-panel") then
-                self:Print("Panels cannot be moved into groups owned by another class.")
-            end
-            return false
+    local ok, reason = self:CanMovePanelToContainer(groupId, targetContainerId)
+    if not ok then
+        if self.Print
+            and (reason == "invalid-class-scope"
+                or reason == "scope-mismatch"
+                or reason == "mixed-class-panel") then
+            self:Print("Panels cannot be moved into groups owned by another class.")
         end
-        group = db.groups[groupId]
-    else
-        group = db.groups[groupId]
-        if not group or not group.parentContainerId then return false end
-        if not db.groupContainers[targetContainerId] then return false end
-        if group.parentContainerId == targetContainerId then return false end
+        return false
     end
+    local group = db.groups[groupId]
 
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     local sourceContainerId = group.parentContainerId

@@ -21,6 +21,9 @@ local PANEL_ANCHOR_DOMAINS = {
     ["panel-target"] = true,
     ["panel-import"] = true,
 }
+-- Shared read-only option table: nothing may write into it
+-- (ValidateAddonFrameAnchorTarget only reads its options).
+local EXTERNAL_ANCHOR_VALIDATION = { domain = "external" }
 
 local EXTERNAL_ANCHOR_STORES = {
     castBar = {
@@ -647,9 +650,11 @@ end
 
 -- An Aura Panel is never an anchor target, manual or automatic (owner ruling
 -- 2026-08-15). Its height is whatever the active auras happen to need right
--- now, so anything hung off its edge would chase the aura churn. Stated on the
--- two shared predicates because every picker and every validation path already
--- asks them: IsGroupAvailableForAnchoring and
+-- now, so anything hung off its edge would chase the aura churn. Structural on
+-- purpose, not a stored anchorEligible = false: an imported or hand-edited
+-- profile can undo a data write. Stated on the two shared predicates because
+-- every picker and every validation path already asks them:
+-- IsGroupAvailableForAnchoring and
 -- IsGroupAvailableForPanelAnchorTarget delegate here (GroupOperations.lua), the
 -- "Anchor to Panel" dropdown is populated from the latter, and every typed or
 -- picked frame name reaches ValidateAddonFrameAnchorTarget below.
@@ -662,7 +667,7 @@ function CooldownCompanion:CanGroupBePanelAnchorTarget(targetGroupId, sourceGrou
     local group = GetGroup(self, targetGroupId)
     if not group then return false, "missing" end
     if not group.parentContainerId then return false, "not-panel" end
-    if AnchorTargetsCursorRoot(profile, "CooldownCompanionGroup" .. tostring(targetGroupId)) then
+    if AddonAnchorFrameReachesCursorRoot(profile, "group", tonumber(targetGroupId)) then
         return false, "cursor-root-target"
     end
     if IsAuraPanelAnchorTarget(group) then
@@ -678,7 +683,7 @@ function CooldownCompanion:CanGroupBeExternalAnchorTarget(targetGroupId)
     local profile = GetProfile(self)
     local group = GetGroup(self, targetGroupId)
     if not group then return false, "missing" end
-    if AnchorTargetsCursorRoot(profile, "CooldownCompanionGroup" .. tostring(targetGroupId)) then
+    if AddonAnchorFrameReachesCursorRoot(profile, "group", tonumber(targetGroupId)) then
         return false, "cursor-root-target"
     end
     if IsAuraPanelAnchorTarget(group) then
@@ -800,9 +805,7 @@ function CooldownCompanion:GetExternalAnchorFrame(relativeTo)
         return UIParent, "ui-parent"
     end
 
-    local ok, reason = self:ValidateAddonFrameAnchorTarget(relativeTo, {
-        domain = "external",
-    })
+    local ok, reason = self:ValidateAddonFrameAnchorTarget(relativeTo, EXTERNAL_ANCHOR_VALIDATION)
     if not ok then
         return UIParent, reason
     end

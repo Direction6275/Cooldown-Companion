@@ -184,23 +184,9 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    if self.CanGroupBeExternalAnchorTarget then
-        if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
-    elseif self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
-        return false
-    end
+    -- Refuses cursor-rooted panels and Aura Panels (see AnchorPolicy).
+    if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
     if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
-    -- An Aura Panel is never an anchor target (owner ruling 2026-08-15). Its
-    -- height is whatever the active auras happen to need right now, so anything
-    -- stacked off its edge would chase the aura churn. Structural, not a stored
-    -- anchorEligible = false: an imported or hand-edited profile can undo a data
-    -- write, and this predicate is what every consumer asks.
-    --
-    -- The rule now also lives on CanGroupBeExternalAnchorTarget (AnchorPolicy),
-    -- which the branch above prefers and which covers MANUAL targets too. Kept
-    -- here as well because the `elseif` fallback runs when that predicate is
-    -- missing, and this list may not lose the rule with it.
-    if ST.IsAuraPanelGroup(group) then return false end
     if group.anchorEligible == false then return false end
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
@@ -221,12 +207,7 @@ end
 function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
-    if self.CanGroupBePanelAnchorTarget then
-        if not self:CanGroupBePanelAnchorTarget(groupId) then return false end
-    else
-        if not group.parentContainerId then return false end
-        if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then return false end
-    end
+    if not self:CanGroupBePanelAnchorTarget(groupId) then return false end
 
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
