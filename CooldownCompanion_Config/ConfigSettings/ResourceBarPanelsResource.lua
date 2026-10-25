@@ -1203,11 +1203,8 @@ local function BuildResourceBarPositioningPanel(container)
     if not placementCollapsed then
         -- LEFT column: the anchoring choice and the two orientation settings
         -- that read together - the fill direction only means anything for the
-        -- orientation above it, and is disabled otherwise. RIGHT column: the
-        -- one setting that belongs to the choice of anchoring rather than to
-        -- the stack itself - where its alpha comes from. Independent stacks
-        -- have no panel to inherit from, so that column stays empty.
-        local placementLeft, placementRight = BeginRowGrid(container)
+        -- orientation above it, and is disabled otherwise.
+        local placementLeft = BeginRowGrid(container)
 
         local placementFinder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.placement or {}
         ST._BuildModuleAnchoringControls(placementLeft, "resources", {

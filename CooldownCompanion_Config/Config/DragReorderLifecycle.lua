@@ -107,15 +107,7 @@ local function UpdateCol1DragAutoscroll(scrollWidget, cursorX, cursorY, elapsed)
     end
 end
 
-local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
-    if not targetSection or sourceSection == targetSection then
-        return true
-    end
-    if targetSection == "global" and sourceSection ~= "global" then
-        return true
-    end
-    return sourceSection == "global" and targetSection == "char"
-end
+local IsCol1OwnershipMoveAllowed = DR.IsCol1OwnershipMoveAllowed
 
 local function GetContainerSection(container)
     if not container then return nil end

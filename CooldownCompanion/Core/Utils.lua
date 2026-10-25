@@ -1,6 +1,7 @@
 --[[
     CooldownCompanion - Utils
-    Shared constants, border helpers, color utilities, and layout preview helpers
+    Shared constants, border helpers, color utilities, layout preview helpers,
+    and the small table, anchor, clamp and allowlist helpers both addons share
 ]]
 
 local ADDON_NAME, ST = ...
@@ -884,7 +885,7 @@ function ST.IsRuntimeLayoutPreviewButtonForceVisible(button)
 end
 
 --------------------------------------------------------------------------------
--- Shared rounding + allowlist identity
+-- Shared rounding, anchor geometry and value clamps
 --------------------------------------------------------------------------------
 
 local math_floor = math.floor
@@ -894,6 +895,81 @@ local function RoundToTenths(value)
     return math_floor((tonumber(value) or 0) * 10 + 0.5) / 10
 end
 ST.RoundToTenths = RoundToTenths
+
+-- Offset of a frame's anchor point from its center, for a frame of the given
+-- size (a missing size counts as 0). The one copy for panels, sections,
+-- Indicators, resource and cast bar movers, and the settings preview.
+function ST._GetPanelAnchorOffset(point, width, height)
+    local halfW = (width or 0) / 2
+    local halfH = (height or 0) / 2
+    if point == "TOPLEFT" then return -halfW, halfH end
+    if point == "TOP" then return 0, halfH end
+    if point == "TOPRIGHT" then return halfW, halfH end
+    if point == "LEFT" then return -halfW, 0 end
+    if point == "CENTER" then return 0, 0 end
+    if point == "RIGHT" then return halfW, 0 end
+    if point == "BOTTOMLEFT" then return -halfW, -halfH end
+    if point == "BOTTOM" then return 0, -halfH end
+    if point == "BOTTOMRIGHT" then return halfW, -halfH end
+    return 0, 0
+end
+
+-- Fold a saved compactGrowthDirection (old left/right/top/bottom values
+-- included) to start / center / end. One rule for CC's compact layout, the
+-- Aura Panel display and the settings dropdown.
+function ST.NormalizeCompactGrowthDirection(growthDirection)
+    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
+        return "start"
+    end
+    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
+        return "end"
+    end
+    return "center"
+end
+
+-- Resource threshold and tick value clamps, shared by live resource bars
+-- (ResourceBarHelpers) and the saved-settings normalizer (ScopedSettings).
+function ST.ClampSegmentedThresholdValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    value = math_floor(value)
+    if value < 1 then
+        value = 1
+    elseif value > 99 then
+        value = 99
+    end
+    return value
+end
+
+function ST.ClampContinuousTickPercentValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    elseif value > 100 then
+        value = 100
+    end
+    return value
+end
+
+function ST.ClampContinuousTickAbsoluteValue(value, fallback)
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+    if value < 0 then
+        value = 0
+    end
+    return value
+end
+
+--------------------------------------------------------------------------------
+-- Allowlist identity
+--------------------------------------------------------------------------------
 
 -- Canonical allowlist key identity (class / spec / character), shared by the
 -- config surfaces: eligibility tabs, export codec, and import/copy popups.
@@ -923,4 +999,81 @@ function ST.CopyAllowlistMap(map, kind)
         end
     end
     return next(copy) and copy or nil
+end
+
+-- The keys truthy in both maps, as a new set. Used to narrow inherited
+-- class / spec / character allowlists.
+function ST.IntersectTruthyMaps(left, right)
+    local intersection = {}
+    for key in pairs(left or {}) do
+        if right and right[key] then
+            intersection[key] = true
+        end
+    end
+    return intersection
+end
+
+--------------------------------------------------------------------------------
+-- Shared table and runtime helpers
+--------------------------------------------------------------------------------
+
+-- Utils loads before Init, so these read ST.Addon and ST._configState when
+-- called, never at load.
+function ST.RefreshConfigPanelIfShown()
+    local configState = ST._configState
+    local configFrame = configState and configState.configFrame
+    local frame = configFrame and configFrame.frame
+    if frame and frame:IsShown() then
+        ST.Addon:RefreshConfigPanel()
+    end
+end
+
+-- 0.4 for a panel the unlock preview shows although it would otherwise be
+-- hidden (frame._unlockGhost, set in GroupFrame.lua), else 1.
+function ST.GetUnlockedPanelAlpha(frame)
+    return frame and frame._unlockGhost and 0.4 or 1
+end
+
+function ST.IsSecretValue(value)
+    if issecretvalue and issecretvalue(value) then
+        return true
+    end
+    return false
+end
+
+-- A panel table, or its id looked up in the current profile.
+function ST.ResolveGroup(groupOrId)
+    if type(groupOrId) == "table" then
+        return groupOrId
+    end
+    local addon = ST.Addon
+    local profile = addon and addon.db and addon.db.profile
+    return profile and profile.groups and profile.groups[groupOrId] or nil
+end
+
+-- How many keys a table holds (0 for a non-table).
+function ST.CountPairs(tbl)
+    local count = 0
+    if type(tbl) == "table" then
+        for _ in pairs(tbl) do
+            count = count + 1
+        end
+    end
+    return count
+end
+
+-- A selection set's selected keys as sorted, comma-joined text.
+function ST.SortedSelectionString(selection)
+    if type(selection) ~= "table" then
+        return ""
+    end
+
+    local keys = {}
+    for key, selected in pairs(selection) do
+        if selected then
+            keys[#keys + 1] = tostring(key)
+        end
+    end
+    table.sort(keys)
+    return table.concat(keys, ",")
 end

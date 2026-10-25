@@ -116,14 +116,7 @@ local function AddCooldownIDForSpell(spellToCooldownIDs, spellID, cooldownID)
     entry[cooldownID] = true
 end
 
-local function ResolveGroup(groupOrId)
-    if type(groupOrId) == "table" then
-        return groupOrId
-    end
-
-    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    return profile and profile.groups and profile.groups[groupOrId] or nil
-end
+local ResolveGroup = ST.ResolveGroup
 
 function CooldownCompanion:RebuildSoundAlertSpellMap()
     local spellToCooldownIDs = {}

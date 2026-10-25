@@ -46,17 +46,9 @@ local function RejectUnsupportedImportPayload(data, dataLabel)
     end
     return false
 end
+ST._RejectUnsupportedImportPayload = RejectUnsupportedImportPayload
 
-local function CountTableEntries(value)
-    local count = 0
-    if type(value) ~= "table" then
-        return count
-    end
-    for _ in pairs(value) do
-        count = count + 1
-    end
-    return count
-end
+local CountPairs = ST.CountPairs
 
 local function ResourceBarCandidateDetail(settings)
     if type(settings) ~= "table" then
@@ -66,14 +58,14 @@ local function ResourceBarCandidateDetail(settings)
     local customBarCount = 0
     if type(customBars) == "table" then
         if type(customBars.entries) == "table" then
-            customBarCount = CountTableEntries(customBars.entries)
+            customBarCount = CountPairs(customBars.entries)
         else
             for _, specBars in pairs(customBars) do
-                customBarCount = customBarCount + CountTableEntries(specBars)
+                customBarCount = customBarCount + CountPairs(specBars)
             end
         end
     end
-    return ("%d resources, %d custom bars"):format(CountTableEntries(settings.resources), customBarCount)
+    return ("%d resources, %d custom bars"):format(CountPairs(settings.resources), customBarCount)
 end
 
 local function AddResourceBarConflictSpacer(chooser, height)
@@ -1021,27 +1013,8 @@ ST._BuildContainerExportData = BuildContainerExportData
 ST._EncodeExportData = EncodeExportData
 ST._BuildSetupExportPayload = BuildSetupExportPayload
 
-local function BuildImportedRootAnchor(relativeTo)
-    return {
-        point = "CENTER",
-        relativeTo = relativeTo or "UIParent",
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
-end
-
-local function ResetImportedIndicatorAnchor(panel)
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
-    if type(settings) ~= "table" then
-        return
-    end
-    settings.point = "CENTER"
-    settings.relativeTo = "UIParent"
-    settings.relativePoint = "CENTER"
-    settings.x = 0
-    settings.y = 0
-end
+local BuildRootAnchor = ST._BuildRootAnchor
+local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
 
 local function BuildDefaultImportedPanel(containerId)
     return {
@@ -1050,7 +1023,7 @@ local function BuildDefaultImportedPanel(containerId)
         parentContainerId = containerId,
         displayMode = "icons",
         buttons = {},
-        anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId),
+        anchor = BuildRootAnchor("CooldownCompanionContainer" .. containerId),
     }
 end
 
@@ -1111,7 +1084,7 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
         ST._NormalizeAuraSectionEntries(panel)
     end
     if not panel.anchor then
-        panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. containerId)
+        panel.anchor = BuildRootAnchor("CooldownCompanionContainer" .. containerId)
     end
 
     db.groups[groupId] = panel
@@ -1238,7 +1211,7 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
             local rt = container.anchor.relativeTo
             if rt then
                 if CooldownCompanion:IsCursorAnchor(rt) then
-                    container.anchor = BuildImportedRootAnchor()
+                    container.anchor = BuildRootAnchor()
                     AnchorImportedContainerFrame(newId, container.anchor)
                 else
                     local refOldId = tonumber(rt:match("^CooldownCompanionContainer(%d+)$"))
@@ -1247,7 +1220,7 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
                         if remappedId then
                             container.anchor.relativeTo = "CooldownCompanionContainer" .. remappedId
                         else
-                            container.anchor = BuildImportedRootAnchor()
+                            container.anchor = BuildRootAnchor()
                         end
                         AnchorImportedContainerFrame(newId, container.anchor)
                     else
@@ -1259,7 +1232,7 @@ local function RemapImportedContainerAnchors(db, importState, preserveContainerR
                             if targetFrameName then
                                 container.anchor.relativeTo = targetFrameName
                             else
-                                container.anchor = BuildImportedRootAnchor()
+                                container.anchor = BuildRootAnchor()
                             end
                             AnchorImportedContainerFrame(newId, container.anchor)
                         end
@@ -1292,7 +1265,7 @@ local function RemapImportedIndicatorAnchor(panel, newGroupId, importState)
         return
     end
     if type(relativeTo) ~= "string" then
-        ResetImportedIndicatorAnchor(panel)
+        ResetIndicatorPanelAnchor(panel)
         return
     end
     local groupRef = tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
@@ -1305,7 +1278,7 @@ local function RemapImportedIndicatorAnchor(panel, newGroupId, importState)
         if targetFrameName then
             settings.relativeTo = targetFrameName
         else
-            ResetImportedIndicatorAnchor(panel)
+            ResetIndicatorPanelAnchor(panel)
         end
         return
     end
@@ -1314,12 +1287,12 @@ local function RemapImportedIndicatorAnchor(panel, newGroupId, importState)
         if targetContainerId then
             settings.relativeTo = "CooldownCompanionContainer" .. tostring(targetContainerId)
         else
-            ResetImportedIndicatorAnchor(panel)
+            ResetIndicatorPanelAnchor(panel)
         end
         return
     end
     if relativeTo:find("^CooldownCompanion") then
-        ResetImportedIndicatorAnchor(panel)
+        ResetIndicatorPanelAnchor(panel)
         return
     end
 end
@@ -1337,7 +1310,7 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
                     elseif preserveOwnContainerRefs then
                         panel.anchor.relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId
                     else
-                        panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. panel.parentContainerId)
+                        panel.anchor = BuildRootAnchor("CooldownCompanionContainer" .. panel.parentContainerId)
                     end
                 else
                     local groupRef = tonumber(rt:match("^CooldownCompanionGroup(%d+)$"))
@@ -1349,7 +1322,7 @@ local function RemapImportedPanelAnchors(db, importState, preserveOwnContainerRe
                         if targetFrameName then
                             panel.anchor.relativeTo = targetFrameName
                         else
-                            panel.anchor = BuildImportedRootAnchor("CooldownCompanionContainer" .. panel.parentContainerId)
+                            panel.anchor = BuildRootAnchor("CooldownCompanionContainer" .. panel.parentContainerId)
                         end
                     end
                 end
@@ -1670,6 +1643,8 @@ local function ApplyCustomBarsImportData(data, options)
     return ApplyGroupImportData(ST._FilterConvertedPanelImport(converted), options)
 end
 
+-- Class identity of any class-tagged payload or setup section (setup
+-- sections, and legacy standalone Custom Bars payloads, tagged the same way).
 local function GetSetupSectionClassKey(section)
     if type(section) ~= "table" then
         return nil
@@ -1684,6 +1659,7 @@ local function GetSetupSectionClassKey(section)
     end
     return nil
 end
+ST._GetSetupSectionClassKey = GetSetupSectionClassKey
 
 -- Applies a `setup` payload: groups additively, then the Resources section as
 -- a whole-bucket replace for its class. Legacy Custom Bars sections were

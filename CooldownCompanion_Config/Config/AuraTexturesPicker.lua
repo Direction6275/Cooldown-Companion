@@ -235,7 +235,6 @@ local function BuildFavoriteAuraTextureEntry(value)
             or string_lower(record.label .. " " .. tostring(record.sourceValue) .. " " .. subtitle .. " favorite"),
         canFavorite = false,
         canRemoveFavorite = true,
-        isFavoriteRecord = true,
         isMissingSharedMedia = isMissingSharedMedia,
     }
 end
@@ -324,7 +323,6 @@ local function ApplyFavoriteStateToEntry(entry, favorites)
     local isFavorited = favoriteKey ~= nil and type(favorites) == "table" and favorites[favoriteKey] ~= nil
     entry.canFavorite = not isFavorited
     entry.canRemoveFavorite = isFavorited
-    entry.isFavoriteRecord = nil
 
     if entry.sourceType == SHARED_MEDIA_SOURCE_TYPE then
         local typeLabel = SHARED_MEDIA_TYPE_LABELS[entry.mediaType] or entry.mediaType

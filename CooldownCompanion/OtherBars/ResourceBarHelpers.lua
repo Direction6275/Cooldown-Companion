@@ -922,28 +922,7 @@ local function GetResourceSpecOverrideTable(settings, powerType, specID, create)
     return resource.specOverrides[specID]
 end
 
-local function GetAnchorOffset(point, width, height)
-    if point == "TOPLEFT" then
-        return -width / 2, height / 2
-    elseif point == "TOP" then
-        return 0, height / 2
-    elseif point == "TOPRIGHT" then
-        return width / 2, height / 2
-    elseif point == "LEFT" then
-        return -width / 2, 0
-    elseif point == "CENTER" then
-        return 0, 0
-    elseif point == "RIGHT" then
-        return width / 2, 0
-    elseif point == "BOTTOMLEFT" then
-        return -width / 2, -height / 2
-    elseif point == "BOTTOM" then
-        return 0, -height / 2
-    elseif point == "BOTTOMRIGHT" then
-        return width / 2, -height / 2
-    end
-    return 0, 0
-end
+local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 ------------------------------------------------------------------------
 -- Independent Anchor Validation Helpers
@@ -960,6 +939,69 @@ local function ClampIndependentDimension(value, fallback, minVal)
         dim = 1200
     end
     return dim
+end
+
+------------------------------------------------------------------------
+-- Independent Drag Coordinates (cast bar and resource stack movers)
+------------------------------------------------------------------------
+
+function RB.UpdateIndependentCoordLabel(frame, x, y)
+    if frame and frame._coordLabel then
+        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
+    end
+end
+
+function RB.ComputeIndependentCoordinates(frame, anchor)
+    local cx, cy = frame:GetCenter()
+    local fw, fh = frame:GetSize()
+    local relFrame = UIParent
+    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+    end
+    local tcx, tcy = relFrame:GetCenter()
+    local tw, th = relFrame:GetSize()
+    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return nil, nil end
+
+    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
+    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
+    return RoundToTenths((cx + fax) - (tcx + tax)), RoundToTenths((cy + fay) - (tcy + tay))
+end
+
+function RB.StopIndependentCoordUpdates(frame)
+    frame._coordDragElapsed = nil
+    frame._coordDragAnchor = nil
+    frame:SetScript("OnUpdate", nil)
+    if CooldownCompanion.EndDragSnapSession then
+        CooldownCompanion:EndDragSnapSession(frame, false)
+    end
+end
+
+local function IndependentCoordOnUpdate(self, elapsed)
+    if not self._dragInProgress then
+        RB.StopIndependentCoordUpdates(self)
+        return
+    end
+
+    self._coordDragElapsed = (self._coordDragElapsed or 0) + elapsed
+    if self._coordDragElapsed < 0.05 then
+        return
+    end
+
+    self._coordDragElapsed = 0
+    local anchor = self._coordDragAnchor
+    if anchor then
+        local x, y = RB.ComputeIndependentCoordinates(self, anchor)
+        if x ~= nil and y ~= nil then
+            RB.UpdateIndependentCoordLabel(self, x, y)
+        end
+    end
+    -- Snapping runs every frame from the drag-snap session's own tracker.
+end
+
+function RB.StartIndependentCoordUpdates(frame, anchor)
+    frame._coordDragElapsed = 0
+    frame._coordDragAnchor = anchor
+    frame:SetScript("OnUpdate", IndependentCoordOnUpdate)
 end
 
 ------------------------------------------------------------------------
@@ -1149,43 +1191,9 @@ end
 -- Identical to GetSafeRGBColor; alias kept for call-site clarity (RGB vs RGBA intent)
 local GetSafeRGBAColor = GetSafeRGBColor
 
-local function ClampSegmentedThresholdValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    value = math_floor(value)
-    if value < 1 then
-        value = 1
-    elseif value > 99 then
-        value = 99
-    end
-    return value
-end
-
-local function ClampContinuousTickPercentValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    if value < 0 then
-        value = 0
-    elseif value > 100 then
-        value = 100
-    end
-    return value
-end
-
-local function ClampContinuousTickAbsoluteValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    if value < 0 then
-        value = 0
-    end
-    return value
-end
+local ClampSegmentedThresholdValue = ST.ClampSegmentedThresholdValue
+local ClampContinuousTickPercentValue = ST.ClampContinuousTickPercentValue
+local ClampContinuousTickAbsoluteValue = ST.ClampContinuousTickAbsoluteValue
 
 local function CollectNumericKeys(tbl)
     local keys = {}
@@ -1578,12 +1586,12 @@ RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
 RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS
 RB.RESOURCE_HEALTH_DISPLAY_KEYS = RESOURCE_HEALTH_DISPLAY_KEYS
-RB.GetAnchorOffset = GetAnchorOffset
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources
+RB.AddHealthResource = AddHealthResource
 RB.GetResourceColors = GetResourceColors
 RB.IsUnitPowerSecret = IsUnitPowerSecret
 RB.IsUnitPowerMaxSecret = IsUnitPowerMaxSecret

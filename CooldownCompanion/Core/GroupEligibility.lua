@@ -108,15 +108,7 @@ local function CopyTruthyMap(map)
     return copy
 end
 
-local function IntersectTruthyMaps(left, right)
-    local intersection = {}
-    for key in pairs(left or {}) do
-        if right and right[key] then
-            intersection[key] = true
-        end
-    end
-    return intersection
-end
+local IntersectTruthyMaps = ST.IntersectTruthyMaps
 
 local function AddEffectiveSource(sources, map, inherited, normalizer)
     local normalized, malformed, hasRestriction = NormalizeTruthyMap(map, normalizer, true)

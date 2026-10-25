@@ -26,10 +26,7 @@ local math_sin = math.sin
 local tonumber = tonumber
 local type = type
 
-local function IsRuntimeItemLike(buttonData)
-    return buttonData
-        and (buttonData.type == "item" or buttonData.type == "equipmentSlot")
-end
+local IsRuntimeItemLike = AT.IsRuntimeItemLike
 
 local LOCATION_CENTER = AT.LOCATION_CENTER
 local LOCATION_DIMENSIONS = AT.LOCATION_DIMENSIONS
@@ -47,7 +44,7 @@ local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
 local GetStretchMultiplier = AT.GetStretchMultiplier
 local RotateOffset = AT.RotateOffset
-local ResolveGroup = AT.ResolveGroup
+local ResolveGroup = ST.ResolveGroup
 
 local function ApplyTextureSource(texture, settings)
     local resolvedSourceType, resolvedSourceValue = CooldownCompanion:ResolveAuraTextureAsset(

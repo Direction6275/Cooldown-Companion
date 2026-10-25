@@ -1209,20 +1209,17 @@ local function ShowRailPanelDropIndicator(state)
     ShowDragIndicator(shown.anchorFrame, shown.anchorAbove, state.scrollWidget)
 end
 
-DR.GetDragIndicator = GetDragIndicator
 DR.HideDragIndicator = HideDragIndicator
 DR.GetScaledCursorCoordinates = GetScaledCursorCoordinates
 DR.GetScaledCursorPosition = GetScaledCursorPosition
 DR.GetRawCursorCoordinates = GetRawCursorCoordinates
 DR.ShowCol1DropIndicator = ShowCol1DropIndicator
 DR.ShowRailPanelDropIndicator = ShowRailPanelDropIndicator
-DR.SetDragIndicatorColor = SetDragIndicatorColor
-DR.GetCol1SectionColor = GetCol1SectionColor
 DR.GetCol1DropTarget = GetCol1DropTarget
+DR.IsCol1OwnershipMoveAllowed = IsCol1OwnershipMoveAllowed
 DR.IsCol1GroupDropNoOp = IsCol1GroupDropNoOp
 DR.IsUnloadedTopLevelDrop = IsUnloadedTopLevelDrop
 DR.ShouldIncludeCol1TopLevelOrderRow = ShouldIncludeCol1TopLevelOrderRow
-DR.FindCol1SectionDividerTarget = FindCol1SectionDividerTarget
 DR.IsCol1MixedDragSource = IsCol1MixedDragSource
 DR.FindCol1TopLevelInsertPos = FindCol1TopLevelInsertPos
 DR.AssignCol1TopLevelOrders = AssignCol1TopLevelOrders

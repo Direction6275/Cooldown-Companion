@@ -209,9 +209,6 @@ local DURATION_FORMAT_SET = {
 }
 
 CooldownCompanion.DURATION_FORMAT_CLOCK = DURATION_FORMAT_CLOCK
-CooldownCompanion.DURATION_FORMAT_UNITS = DURATION_FORMAT_UNITS
-CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_10 = DURATION_FORMAT_DECIMAL_UNDER_10
-CooldownCompanion.DURATION_FORMAT_DECIMAL_UNDER_60 = DURATION_FORMAT_DECIMAL_UNDER_60
 
 local secondsFormatterCache = {}
 local durationTextFormatterCache = {}
@@ -832,7 +829,6 @@ local function IsDurationTextBindingSupported()
         and type(C_StringUtil.CreateNumericRuleFormatter) == "function"
         or false
 end
-CooldownCompanion.IsDurationTextBindingSupported = IsDurationTextBindingSupported
 
 local function UnbindDurationText(fontString, clearText)
     if not fontString then return end
@@ -1093,7 +1089,6 @@ CooldownCompanion.HasCastCountText = HasCastCountText
 local function HasConditionalCastCountText(buttonData)
     return GetConditionalCastCountFamily(buttonData) ~= nil
 end
-CooldownCompanion.HasConditionalCastCountText = HasConditionalCastCountText
 
 local function GetCastCountSpellID(buttonData, currentSpellID)
     local family = GetCastCountFamily(buttonData)
@@ -1184,7 +1179,6 @@ local function GetItemAvailableQuantity(itemID, forceChargeCount)
     end
     return stackCount, "stacks"
 end
-CooldownCompanion.GetItemAvailableQuantity = GetItemAvailableQuantity
 
 local function HasItemFallbacks(buttonData)
     return buttonData
@@ -1285,7 +1279,6 @@ local function NormalizeItemFallbackVisibilitySettings(buttonData, hasFallbacks,
 
     return changed
 end
-CooldownCompanion.NormalizeItemFallbackVisibilitySettings = NormalizeItemFallbackVisibilitySettings
 
 local function NormalizeItemFallbacks(buttonData)
     if not (buttonData and type(buttonData.itemFallbacks) == "table") then

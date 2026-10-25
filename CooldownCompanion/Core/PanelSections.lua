@@ -1245,14 +1245,7 @@ local function ResolveOverlaySection(overlay)
     return groupId, group, section
 end
 
-local function RefreshConfigPanelIfShown()
-    local configState = ST._configState
-    local configFrame = configState and configState.configFrame
-    local shownFrame = configFrame and configFrame.frame
-    if shownFrame and shownFrame:IsShown() then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
+local RefreshConfigPanelIfShown = ST.RefreshConfigPanelIfShown
 
 local function EndSectionGripGesture(grip, applyFinal)
     if not grip._resizeActive then
@@ -1530,7 +1523,6 @@ function ST.UpdateSectionMoverOverlays(addon, frame, group)
             -- What the selected-section grabber reads: the placement, the
             -- resolved cell, and the block's cell counts per axis (its drag
             -- divides the travel by these).
-            overlay._axis = info.axis
             overlay._side = info.side
             overlay._cellWidth = info.width
             overlay._cellHeight = info.height

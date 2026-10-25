@@ -53,12 +53,7 @@ local SetStatusBarElapsedDuration = ST.SetStatusBarElapsedDuration
 
 local BAR_TEXT_UPDATE_INTERVAL = 0.1
 
-local function IsCursorAnchoredButton(button)
-    return button
-        and CooldownCompanion.IsGroupCursorAnchored
-        and CooldownCompanion:IsGroupCursorAnchored(button._groupId)
-        or false
-end
+local IsCursorAnchoredButton = ST._IsCursorAnchoredButton
 
 -- Shared helpers from ButtonFrame/Helpers.lua
 local IsItemEquippable = CooldownCompanion.IsItemEquippable

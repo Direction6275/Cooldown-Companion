@@ -219,8 +219,6 @@ local function ConvertPanels(profile, report, context)
     end
 end
 
-Migration.ConvertPanels = ConvertPanels
-
 local function Allows(map, key, emptyMeansAll)
     if map == nil then return true end
     if type(map) ~= "table" then return false end
@@ -1079,7 +1077,6 @@ local function NormalizeGeometry(profile, context, report)
     end
     return true
 end
-Migration.NormalizeGeometry = NormalizeGeometry
 
 -- Persist the new ownership on each exported resource setup. Matching gaps
 -- inherit; differing/ambiguous hosts preserve the old gap as a customization.
@@ -1159,7 +1156,6 @@ local function NormalizeSegmentGaps(profile, context, report)
     end
     -- Unscoped seeds normalize when adopted by a class, as for thickness.
 end
-Migration.NormalizeSegmentGaps = NormalizeSegmentGaps
 
 local function BuildConversion(source, context)
     local valid, errorText = Validate(source)

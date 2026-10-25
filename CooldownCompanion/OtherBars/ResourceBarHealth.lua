@@ -920,5 +920,4 @@ function HealthBar.Style(bar, settings, appearance)
 end
 
 RB.HealthBar = HealthBar
-RB.HealthEffects = HEALTH_EFFECTS
 RB.StyleHealthBar = HealthBar.Style

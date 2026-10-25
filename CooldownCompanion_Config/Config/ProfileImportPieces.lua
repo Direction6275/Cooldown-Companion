@@ -46,15 +46,7 @@ local function TableOrEmpty(value)
     return type(value) == "table" and value or EMPTY_TABLE
 end
 
-local function CountPairs(tbl)
-    local count = 0
-    if type(tbl) == "table" then
-        for _ in pairs(tbl) do
-            count = count + 1
-        end
-    end
-    return count
-end
+local CountPairs = ST.CountPairs
 
 local function NormalizeKey(value)
     if value == nil then

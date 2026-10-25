@@ -29,20 +29,7 @@ local function ShouldClearCDMPanelSourceForDisplayMode(group, displayMode)
     return expectedMode == nil or expectedMode ~= displayMode
 end
 
-local function GetAnchorOffset(point, width, height)
-    local halfW = (width or 0) / 2
-    local halfH = (height or 0) / 2
-    if point == "TOPLEFT" then return -halfW, halfH end
-    if point == "TOP" then return 0, halfH end
-    if point == "TOPRIGHT" then return halfW, halfH end
-    if point == "LEFT" then return -halfW, 0 end
-    if point == "CENTER" then return 0, 0 end
-    if point == "RIGHT" then return halfW, 0 end
-    if point == "BOTTOMLEFT" then return -halfW, -halfH end
-    if point == "BOTTOM" then return 0, -halfH end
-    if point == "BOTTOMRIGHT" then return halfW, -halfH end
-    return 0, 0
-end
+local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 local function RoundAnchorOffset(value)
     return math_floor(((value or 0) * 10) + 0.5) / 10
@@ -1043,6 +1030,7 @@ local function ResetIndicatorPanelAnchor(panel)
     settings.x = 0
     settings.y = 0
 end
+ST._ResetIndicatorPanelAnchor = ResetIndicatorPanelAnchor
 
 ResetIndicatorAnchorsTargeting = function(groups, deletedGroupIds, deletedContainerIds)
     if type(groups) ~= "table" then

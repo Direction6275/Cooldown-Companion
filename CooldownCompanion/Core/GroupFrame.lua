@@ -18,6 +18,9 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
 
+-- Utils.lua
+local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
+
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
@@ -31,7 +34,6 @@ local StopCoordinateDragUpdates = GF.StopCoordinateDragUpdates
 local ApplyCurrentAlphaIfPresent = GF.ApplyCurrentAlphaIfPresent
 local IsCursorAnchorLayoutPreviewSelected = GF.IsCursorAnchorLayoutPreviewSelected
 local IsCursorAnchorLayoutPreviewGroupActive = GF.IsCursorAnchorLayoutPreviewGroupActive
-local GetUnlockedPanelAlpha = GF.GetUnlockedPanelAlpha
 
 -- GroupFrameMovers.lua
 local CreateNudger = GF.CreateNudger

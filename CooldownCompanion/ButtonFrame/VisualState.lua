@@ -528,4 +528,6 @@ ST._ClearButtonVisualState = ClearButtonVisualState
 ST._SetButtonVisualStateSnapshotsEnabled = SetButtonVisualStateSnapshotsEnabled
 ST._AreButtonVisualStateSnapshotsEnabled = AreButtonVisualStateSnapshotsEnabled
 ST._ResolveIconFillIntent = ResolveIconFillIntent
+ST._ResolveVisibilityMode = ResolveVisibilityMode
+ST._IsReadyGlowMaxChargeEligible = IsReadyGlowMaxChargeEligible
 ST._ResolveIconGlowIntent = ResolveIconGlowIntent

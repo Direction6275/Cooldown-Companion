@@ -17,15 +17,7 @@ local function IsFrameShown(frame)
     return frame ~= nil
 end
 
-local function ResolveVisibilityMode(hidden, alphaOverride)
-    if IsTrue(hidden) then
-        return "hidden"
-    end
-    if alphaOverride ~= nil and alphaOverride ~= 1 then
-        return "dimmed"
-    end
-    return "visible"
-end
+local ResolveVisibilityMode = ST._ResolveVisibilityMode
 
 local function AddMismatch(row, key)
     local mismatches = row.mismatches

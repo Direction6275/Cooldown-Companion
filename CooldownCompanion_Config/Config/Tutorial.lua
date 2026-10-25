@@ -14,7 +14,6 @@ local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 local ClearConfigPanelMultiSelection = ST._ClearConfigPanelMultiSelection
 local ClearConfigContainerMultiSelection = ST._ClearConfigContainerMultiSelection
 
-local pairs = pairs
 local next = next
 local wipe = wipe
 local tonumber = tonumber

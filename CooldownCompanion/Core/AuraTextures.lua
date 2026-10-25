@@ -14,7 +14,6 @@ local ipairs = ipairs
 local math_cos = math.cos
 local math_max = math.max
 local math_sin = math.sin
-local pairs = pairs
 
 local function IsRuntimeItemLike(buttonData)
     return buttonData
@@ -486,7 +485,6 @@ AT.MIN_TEXTURE_ROTATION = MIN_TEXTURE_ROTATION
 AT.MAX_TEXTURE_ROTATION = MAX_TEXTURE_ROTATION
 AT.MIN_TEXTURE_STRETCH = MIN_TEXTURE_STRETCH
 AT.MAX_TEXTURE_STRETCH = MAX_TEXTURE_STRETCH
-AT.TEXTURE_INDICATOR_EFFECT_NONE = TEXTURE_INDICATOR_EFFECT_NONE
 AT.TEXTURE_INDICATOR_EFFECT_PULSE = TEXTURE_INDICATOR_EFFECT_PULSE
 AT.TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT = TEXTURE_INDICATOR_EFFECT_COLOR_SHIFT
 AT.TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND = TEXTURE_INDICATOR_EFFECT_SHRINK_EXPAND
@@ -495,7 +493,6 @@ AT.MIN_TEXTURE_INDICATOR_SPEED = MIN_TEXTURE_INDICATOR_SPEED
 AT.MAX_TEXTURE_INDICATOR_SPEED = MAX_TEXTURE_INDICATOR_SPEED
 AT.DEFAULT_TEXTURE_INDICATOR_SPEED = DEFAULT_TEXTURE_INDICATOR_SPEED
 AT.DEFAULT_TEXTURE_PULSE_ALPHA = DEFAULT_TEXTURE_PULSE_ALPHA
-AT.DEFAULT_TEXTURE_SHRINK_SCALE = DEFAULT_TEXTURE_SHRINK_SCALE
 AT.DEFAULT_TEXTURE_BOUNCE_PIXELS = DEFAULT_TEXTURE_BOUNCE_PIXELS
 
 -- Shrink / Expand's scale at `phase` (0-1) through one loop. The one curve
@@ -508,9 +505,8 @@ end
 AT.CopyColor = CopyColor
 AT.Clamp = Clamp
 AT.NormalizeBlendMode = NormalizeBlendMode
+AT.IsRuntimeItemLike = IsRuntimeItemLike
 AT.NormalizeTextureIndicatorEffect = NormalizeTextureIndicatorEffect
-AT.NormalizeTriggerConditionKey = NormalizeTriggerConditionKey
-AT.NormalizeTriggerStateKey = NormalizeTriggerStateKey
 AT.NormalizeAnchorPoint = NormalizeAnchorPoint
 AT.NormalizeTextureLayout = NormalizeTextureLayout
 AT.GetStretchMultiplier = GetStretchMultiplier
@@ -662,16 +658,9 @@ function CooldownCompanion:GetIndicatorTextureLayoutValue(locationType)
     return LOCATION_CENTER
 end
 
-local function ResolveGroup(groupOrId)
-    if type(groupOrId) == "table" then
-        return groupOrId
-    end
-    local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    return profile and profile.groups and profile.groups[groupOrId] or nil
-end
+local ResolveGroup = ST.ResolveGroup
 
 AT.NormalizeAuraTextureSettings = NormalizeAuraTextureSettings
-AT.ResolveGroup = ResolveGroup
 
 function CooldownCompanion:GetIndicatorTextureSettings(groupOrId)
     local group = ResolveGroup(groupOrId)

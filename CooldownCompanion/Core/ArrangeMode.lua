@@ -14,9 +14,7 @@ local next = next
 local type = type
 local InCombatLockdown = InCombatLockdown
 
-local function GetUnlockedPanelAlpha(frame)
-    return frame and frame._unlockGhost and 0.4 or 1
-end
+local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 
 function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId)
     local container = containerOrContainerId
@@ -1413,6 +1411,3 @@ function CooldownCompanion:CancelArrangeMode()
     end
     self:Print("Unlock cancelled. Unsaved changes reverted.")
 end
-
--- Private helpers consumed by later GroupOperations files.
-ST._GetUnlockedPanelAlpha = GetUnlockedPanelAlpha

@@ -395,7 +395,6 @@ local function CreateContinuousBar(parent)
     -- Tick markers are created lazily on bar.tickLayer, above the aura kit
     -- (EnsureContinuousTickMarker) — never on the bar itself.
 
-    bar._barType = "continuous"
     return bar
 end
 
@@ -463,7 +462,6 @@ local function CreateSegmentedBar(parent, numSegments)
     holder.rechargeTexts = {}
     EnsureSegmentCount(holder, numSegments)
 
-    holder._barType = "segmented"
     return holder
 end
 
@@ -726,7 +724,6 @@ RB.GetResourceAuraTrackingMode = GetResourceAuraTrackingMode
 RB.IsResourceAuraOverlayEnabled = IsResourceAuraOverlayEnabled
 RB.UpdateContinuousTickMarker = UpdateContinuousTickMarker
 RB.ApplyContinuousFillColor = ApplyContinuousFillColor
-RB.CreatePixelBorders = CreatePixelBorders
 RB.ApplyPixelBorders = ApplyPixelBorders
 RB.HidePixelBorders = HidePixelBorders
 RB.CreateContinuousBar = CreateContinuousBar

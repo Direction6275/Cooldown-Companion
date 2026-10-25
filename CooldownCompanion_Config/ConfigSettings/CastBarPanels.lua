@@ -908,7 +908,7 @@ local function BuildCastBarStylingPanel(container)
         } or nil,
     })
 
-    local nameRow = AddCheckboxRow(nameLeft, {
+    AddCheckboxRow(nameLeft, {
         label = "Show Spell Name",
         setting = CASTBAR_FINDER.contents and CASTBAR_FINDER.contents.name,
         value = settings.showNameText ~= false,

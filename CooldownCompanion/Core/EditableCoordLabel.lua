@@ -291,14 +291,7 @@ local function GetMoverResizeCursorPosition()
     return cursorX / scale, cursorY / scale
 end
 
-local function RefreshConfigPanelIfShown()
-    local configState = ST._configState
-    local configFrame = configState and configState.configFrame
-    local frame = configFrame and configFrame.frame
-    if frame and frame:IsShown() then
-        ST.Addon:RefreshConfigPanel()
-    end
-end
+local RefreshConfigPanelIfShown = ST.RefreshConfigPanelIfShown
 
 local function IsMoverChromeRegionOver(region)
     -- 4px of grace bridges the small gaps between chrome pieces, matching

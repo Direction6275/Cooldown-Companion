@@ -384,15 +384,7 @@ local function CopyAllowlist(map, kind)
     return nil, (type(map) == "table" and next(map) ~= nil) or false
 end
 
-local function IntersectAllowlists(left, right)
-    local intersection = {}
-    for key in pairs(left or {}) do
-        if right and right[key] then
-            intersection[key] = true
-        end
-    end
-    return intersection
-end
+local IntersectTruthyMaps = ST.IntersectTruthyMaps
 
 local function GetInheritedAllowlist(sources, field, kind)
     local inherited
@@ -404,7 +396,7 @@ local function GetInheritedAllowlist(sources, field, kind)
             if inherited == nil then
                 inherited = copied or {}
             else
-                inherited = IntersectAllowlists(inherited, copied or {})
+                inherited = IntersectTruthyMaps(inherited, copied or {})
             end
         end
     end

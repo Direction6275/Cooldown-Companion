@@ -1022,6 +1022,12 @@ local function UpdateGhostPosition(ghost)
     ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX - offsetX, cursorY + offsetY)
 end
 
+-- The panel preview (ButtonPanelPreviewShared) shares the tween curve and
+-- the drag ghost.
+ST._PreviewEaseInOut = EaseInOut
+ST._PreviewInterpolate = Interpolate
+ST._UpdatePreviewGhostPosition = UpdateGhostPosition
+
 local function TickPreview(preview)
     local activeTween = false
     local now = GetTime()

@@ -63,72 +63,17 @@ local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
-local GetAnchorOffset = RB.GetAnchorOffset
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
 local UpdateIndependentStackDragState
 
-local function UpdateIndependentStackCoordLabel(frame, x, y)
-    if frame and frame._coordLabel then
-        frame._coordLabel.text:SetText(("x:%.1f, y:%.1f"):format(x or 0, y or 0))
-    end
-end
-
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
 
-local function ComputeIndependentStackCoordinates(frame, anchor)
-    local cx, cy = frame:GetCenter()
-    local fw, fh = frame:GetSize()
-    local relFrame = UIParent
-    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
-    end
-    local tcx, tcy = relFrame:GetCenter()
-    local tw, th = relFrame:GetSize()
-    if not (cx and cy and fw and fh and tcx and tcy and tw and th) then return nil, nil end
-
-    local fax, fay = GetAnchorOffset(anchor.point, fw, fh)
-    local tax, tay = GetAnchorOffset(anchor.relativePoint, tw, th)
-    return RoundToTenths((cx + fax) - (tcx + tax)), RoundToTenths((cy + fay) - (tcy + tay))
-end
-
-local function StopIndependentStackCoordUpdates(frame)
-    frame._coordDragElapsed = nil
-    frame._coordDragAnchor = nil
-    frame:SetScript("OnUpdate", nil)
-    if CooldownCompanion.EndDragSnapSession then
-        CooldownCompanion:EndDragSnapSession(frame, false)
-    end
-end
-
-local function IndependentStackCoordOnUpdate(self, elapsed)
-    if not self._dragInProgress then
-        StopIndependentStackCoordUpdates(self)
-        return
-    end
-
-    self._coordDragElapsed = (self._coordDragElapsed or 0) + elapsed
-    if self._coordDragElapsed < 0.05 then
-        return
-    end
-
-    self._coordDragElapsed = 0
-    local anchor = self._coordDragAnchor
-    if anchor then
-        local x, y = ComputeIndependentStackCoordinates(self, anchor)
-        if x ~= nil and y ~= nil then
-            UpdateIndependentStackCoordLabel(self, x, y)
-        end
-    end
-    -- Snapping runs every frame from the drag-snap session's own tracker.
-end
-
-local function StartIndependentStackCoordUpdates(frame, anchor)
-    frame._coordDragElapsed = 0
-    frame._coordDragAnchor = anchor
-    frame:SetScript("OnUpdate", IndependentStackCoordOnUpdate)
-end
+local UpdateIndependentCoordLabel = RB.UpdateIndependentCoordLabel
+local ComputeIndependentCoordinates = RB.ComputeIndependentCoordinates
+local StopIndependentCoordUpdates = RB.StopIndependentCoordUpdates
+local StartIndependentCoordUpdates = RB.StartIndependentCoordUpdates
 
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
@@ -220,7 +165,7 @@ function CooldownCompanion:CancelIndependentResourceStackDrag()
         frame._dragCancelPending = true
         frame:StopMovingOrSizing()
         frame._dragInProgress = nil
-        StopIndependentStackCoordUpdates(frame)
+        StopIndependentCoordUpdates(frame)
         self:EndMoverChromeFade(frame)
     end
     local settings = GetResourceBarSettings()
@@ -282,11 +227,11 @@ local function SaveIndependentStackAnchor(refreshConfig)
     local frame = independentWrapperFrame
     local anchor = placementSettings.independentAnchor
 
-    local x, y = ComputeIndependentStackCoordinates(frame, anchor)
+    local x, y = ComputeIndependentCoordinates(frame, anchor)
     if x == nil or y == nil then return end
     anchor.x = x
     anchor.y = y
-    UpdateIndependentStackCoordLabel(frame, x, y)
+    UpdateIndependentCoordLabel(frame, x, y)
 
     if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
         CooldownCompanion:RefreshConfigPanel()
@@ -309,7 +254,7 @@ local function ApplyIndependentStackCoordinates(frame, x, y)
     end
     frame:ClearAllPoints()
     frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
-    UpdateIndependentStackCoordLabel(frame, x, y)
+    UpdateIndependentCoordLabel(frame, x, y)
     SaveIndependentStackAnchor(true)
 end
 
@@ -328,7 +273,7 @@ function ST.LockIndependentResourceStackFromMover(frame)
     end
     placementSettings.independentAnchorLocked = true
     frame._dragInProgress = nil
-    StopIndependentStackCoordUpdates(frame)
+    StopIndependentCoordUpdates(frame)
     frame:StopMovingOrSizing()
     SaveIndependentStackAnchor(true)
     CooldownCompanion:EndMoverChromeFade(frame)
@@ -387,7 +332,7 @@ local function EnsureIndependentStackMoverChrome(frame)
             EnsureIndependentStackConfig(settings, placementSettings)
             placementSettings.independentAnchor.x = RoundToTenths(x)
             placementSettings.independentAnchor.y = RoundToTenths(y)
-            UpdateIndependentStackCoordLabel(frame, x, y)
+            UpdateIndependentCoordLabel(frame, x, y)
         end
     end, function() SaveIndependentStackAnchor(true) end)
     nudger:EnableMouse(false)
@@ -503,7 +448,7 @@ local function EnsureIndependentStackMoverChrome(frame)
         CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
             return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
         end)
-        StartIndependentStackCoordUpdates(frame, placementSettings.independentAnchor)
+        StartIndependentCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
         local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
@@ -517,7 +462,7 @@ local function EnsureIndependentStackMoverChrome(frame)
         if snapDX ~= nil or snapDY ~= nil then
             frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
         end
-        StopIndependentStackCoordUpdates(frame)
+        StopIndependentCoordUpdates(frame)
         if cancelSave then
             CooldownCompanion:EndMoverChromeFade(frame)
             return
@@ -536,7 +481,7 @@ local function EnsureIndependentStackMoverChrome(frame)
     local settings = GetResourceBarSettings()
     local layout = settings and GetSpecLayoutOrder(settings)
     local anchor = layout and layout.independentAnchor
-    UpdateIndependentStackCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
+    UpdateIndependentCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
 end
 
@@ -586,7 +531,7 @@ local function HideIndependentWrapperFrame()
     if not independentWrapperFrame then return end
     CooldownCompanion:CancelIndependentResourceStackDrag()
     independentWrapperFrame._dragInProgress = nil
-    StopIndependentStackCoordUpdates(independentWrapperFrame)
+    StopIndependentCoordUpdates(independentWrapperFrame)
     independentWrapperFrame:Hide()
     if independentWrapperFrame._dragHandle then
         independentWrapperFrame._dragHandle:Hide()
@@ -658,7 +603,7 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings,
         local settings = GetResourceBarSettings()
         placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
         if placementSettings and placementSettings.independentAnchor then
-            UpdateIndependentStackCoordLabel(
+            UpdateIndependentCoordLabel(
                 frame,
                 placementSettings.independentAnchor.x,
                 placementSettings.independentAnchor.y

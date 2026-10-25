@@ -954,7 +954,7 @@ local function AddPandemicMarkerControls(container, styleTable, refreshCallback,
         indent = not opts.childrenOnly,
         tbl = styleTable,
         key = "pandemicMarkerColor",
-        default = {1, 0.5, 0, 1},
+        default = CopyTable(ST.DEFAULT_PANDEMIC_COLOR),
         onConfirm = refreshCallback,
     })
 
@@ -2120,7 +2120,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
         color2Key = "pandemicGlowColor2", color2Label = "Second Color", defaultColor2 = {1, 1, 1, 0.9},
         sizeKey = "pandemicGlowSize", speedKey = "pandemicGlowSpeed", linesKey = "pandemicGlowLines",
         thicknessKey = "pandemicGlowThickness",
-        defaultStyle = "solid", defaultColor = {1, 0.5, 0, 1},
+        defaultStyle = "solid", defaultColor = CopyTable(ST.DEFAULT_PANDEMIC_COLOR),
         enableKey = "pandemicEffectEnabled",
         styleOptions = PANDEMIC_GLOW_STYLE_OPTIONS,
         styleOrder = PANDEMIC_GLOW_STYLE_ORDER,
@@ -2187,7 +2187,7 @@ local function BuildPandemicGlowControls(container, styleTable, refreshCallback,
     end
     AddEffectRows("Pandemic Start", "Start", "start", "pandemicStartEffect",
         { none = "None", flash = "Flash", swell = "Swell" }, {"none", "flash", "swell"}, "none",
-        "pandemicStartColor", {1, 0.5, 0, 1}, "pandemicStartLength")
+        "pandemicStartColor", CopyTable(ST.DEFAULT_PANDEMIC_COLOR), "pandemicStartLength")
     AddEffectRows("Pandemic Refresh", "Refresh", "refresh", "pandemicRefreshEffect",
         { vanish = "Vanish", fade = "Fade", flash = "Flash" }, {"vanish", "fade", "flash"}, "vanish",
         "pandemicRefreshColor", {1, 1, 1, 1}, "pandemicRefreshLength")
