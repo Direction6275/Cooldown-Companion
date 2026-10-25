@@ -169,7 +169,7 @@ local function GetCursorAnchorLayoutPreviewAnchor(self, groupId, fallbackAnchor)
     return fallbackAnchor
 end
 
-local function IsCursorAnchorLayoutPreviewEligible(self, groupId, group)
+local function IsCursorAnchorLayoutPreviewEligible(self, groupId, group, ignoreArrangeHidden)
     return group ~= nil
         and not self._combatForcedLock
         and not InCombatLockdown()
@@ -183,7 +183,15 @@ local function IsCursorAnchorLayoutPreviewEligible(self, groupId, group)
             checkCharVisibility = true,
             checkLoadConditions = true,
             requireButtons = true,
+            ignoreArrangeHidden = ignoreArrangeHidden,
         })
+end
+
+-- Whether the panel would park on the dummy cursor. ignoreArrangeHidden asks
+-- as if its group's toolbar eye were open: the toolbar keeps those rows.
+function CooldownCompanion:IsCursorAnchorLayoutPreviewEligible(groupId, group, ignoreArrangeHidden)
+    return IsCursorAnchorLayoutPreviewEligible(self, groupId,
+        group or self.db.profile.groups[groupId], ignoreArrangeHidden) or false
 end
 
 local function BuildCursorAnchorLayoutPreviewGroupMap(self)

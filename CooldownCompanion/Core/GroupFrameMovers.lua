@@ -1003,7 +1003,8 @@ function CooldownCompanion:RefreshIndependentPanelMoverChrome(groupId)
         return
     end
 
-    local shown = self:IsUnlockToolbarPanelEligible(groupId, group)
+    local shown = not self:IsArrangePanelHidden(groupId)
+        and self:IsUnlockToolbarPanelEligible(groupId, group)
         and (self._arrangeSoloContainerId == nil
             or self._arrangeSelectedPanelId == groupId)
         or false

@@ -92,10 +92,15 @@ local function ResolvePanel(self, panelId, specId, configured)
     if not ok then result.reason = reason; return result end
     if not self:IsGroupVisibleToCurrentChar(result.panelId) then result.reason = "inaccessible"; return result end
     result.group = self.db.profile.groups[result.panelId]
+    -- A panel hidden by its unlock-toolbar eye stays the eligible host, just
+    -- off screen: what is attached to it hides with it (no fallback below).
     if not self:IsGroupActive(result.panelId, { group = result.group, specId = specId,
-        checkCharVisibility = true, checkLoadConditions = true, configurationOnly = configured }) then
+        checkCharVisibility = true, checkLoadConditions = true, configurationOnly = configured,
+        ignoreArrangeHidden = true }) then
         result.reason = "inactive"; return result
     end
+    result.arrangeHidden = not configured
+        and self:IsArrangePanelDisplayHidden(result.panelId, result.group) or nil
     result.eligible = true
     result.frame = self.groupFrames and self.groupFrames[result.panelId]
     result.available = not configured and result.frame ~= nil and result.frame:IsShown() == true
@@ -119,7 +124,8 @@ function Addon:ResolveModulePanel(kind, specId, options)
         or (selection.mode == "auto" and self:GetFirstAvailableAnchorGroup(specId, options) or nil), specId, configured)
     if selection.mode == "panel" then
         local selectedReason, selectedEligible = result.reason, result.eligible
-        if (configured and not result.eligible) or (not configured and not result.available) then
+        if not result.arrangeHidden
+            and ((configured and not result.eligible) or (not configured and not result.available)) then
             -- Keep the preference untouched. All consumers use panelId as the
             -- effective destination, so stacking, navigation and previews agree.
             local fallbackId = self:GetFirstAvailableAnchorGroup(specId, { requireShown = not configured, configured = configured })

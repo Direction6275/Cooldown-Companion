@@ -402,20 +402,18 @@ end
 -- container rests as outline + header only; its nudger and coordinate label
 -- show while the container is hovered or focused. An individually unlocked
 -- container keeps full chrome until the user makes a toolbar selection.
--- The session-only per-container filter can tuck a
--- container's whole mover away mid-arrange (wrapper, header, overlays, hover
--- reveal) while its real displays stay on screen. Never touches
--- container.locked; wiped on entering and leaving arrange mode.
+-- A group hidden by its toolbar eye (ArrangeMode.lua) loses its whole mover
+-- (wrapper, header, overlays, hover reveal) along with its displays. Never
+-- touches container.locked.
 function CooldownCompanion:IsContainerArrangeChromeHidden(containerId)
     if not self:IsUnlockToolbarActive() then
         return false
     end
-    local hiddenSet = self._arrangeChromeHidden
-    if hiddenSet ~= nil and hiddenSet[containerId] == true then
+    if self:IsArrangeContainerHidden(containerId) then
         return true
     end
     -- Solo layer: while one group is soloed from the pill list, every other
-    -- group's chrome hides without touching the manual checkbox flags.
+    -- group's chrome hides without touching the eye flags.
     local solo = self._arrangeSoloContainerId
     return solo ~= nil and solo ~= containerId
 end
@@ -448,41 +446,6 @@ function CooldownCompanion:SetArrangeSoloContainer(containerId)
     self:RefreshArrangeSpecialMoverChrome("resource")
     if self.RefreshArrangePillList then
         self:RefreshArrangePillList()
-    end
-end
-
-function CooldownCompanion:SetContainerArrangeChromeHidden(containerId, hidden)
-    if not self:IsUnlockToolbarActive() then
-        return
-    end
-    -- "cast"/"resource" ride the same map and solo slot as container ids.
-    local isSpecialMover = self:IsArrangeSpecialMoverId(containerId)
-    local container = not isSpecialMover and self.db.profile.groupContainers[containerId] or nil
-    if not isSpecialMover and not container then
-        return
-    end
-
-    hidden = hidden and true or nil
-    self._arrangeChromeHidden = self._arrangeChromeHidden or {}
-    if self._arrangeChromeHidden[containerId] == hidden then
-        return
-    end
-    -- Manually hiding the soloed group would leave every group hidden with no
-    -- visible way back; release the solo (restoring the others) first.
-    if hidden and self._arrangeSoloContainerId == containerId then
-        self:SetArrangeSoloContainer(nil)
-    end
-    self._arrangeChromeHidden[containerId] = hidden
-    if hidden and self._arrangeFocusContainerId == containerId then
-        self._arrangeFocusContainerId = nil
-    end
-
-    -- Mirror the lock presentation without writing the profile: hiding takes
-    -- the suppressed-chrome path, showing rebuilds the unlock preview.
-    if isSpecialMover then
-        self:RefreshArrangeSpecialMoverChrome(containerId)
-    else
-        self:UpdateContainerDragHandle(containerId, hidden ~= nil or container.locked ~= false)
     end
 end
 
@@ -684,7 +647,8 @@ function CooldownCompanion:ActivateArrangePanel(containerId, groupId, toggle)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (group and group.parentContainerId == containerId) then return false end
     if self:IsArrangePanelSuppressed(groupId)
-        or self:IsArrangeContainerSuppressed(containerId) then
+        or self:IsArrangeContainerSuppressed(containerId)
+        or self:IsArrangePanelDisplayHidden(groupId, group) then
         return false
     end
 
@@ -1127,6 +1091,7 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local rect = GetContainerMemberDisplayRect(self, frame, panelInfo.groupId, panelInfo.group)
         if rect then
             rect.panelSuppressed = self:IsArrangePanelSuppressed(rect.groupId)
+                or self:IsArrangePanelHidden(rect.groupId)
             previewRects[#previewRects + 1] = rect
             if not rect.panelSuppressed then
                 previewedGroupIds[rect.groupId] = true

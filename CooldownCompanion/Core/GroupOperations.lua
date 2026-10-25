@@ -191,12 +191,16 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options
     local container = self:GetParentContainer(group)
     if container and container.isGlobal and not container.anchorEligible then return false end
     if container and not container.isGlobal and container.anchorEligible == false then return false end
+    -- Automatic keeps a panel hidden by its unlock-toolbar eye as its pick,
+    -- so the modules on it hide too instead of moving (ModuleAnchoring.lua).
+    -- requireShown callers still pass it over: its frame is unloaded.
     if not self:IsGroupActive(groupId, {
         group = group,
         specId = specId,
         configurationOnly = options and options.configured,
         checkCharVisibility = true,
         checkLoadConditions = true,
+        ignoreArrangeHidden = true,
     }) then
         return false
     end

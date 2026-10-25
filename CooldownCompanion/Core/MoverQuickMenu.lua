@@ -360,8 +360,12 @@ local function ArrangeTreePanelVisible(addon, panelInfo, panelUnlocked)
     else
         visibilityOpts.assumeContainerUnlocked = true
     end
+    -- A hidden group's cursor panels leave the parked preview; keep their
+    -- rows, dimmed, like the rest of the group's.
     return addon:IsGroupVisibleInUnlockPreview(groupId, visibilityOpts) and (
         not addon:IsGroupCursorAnchored(group)
+        or (addon:IsArrangePanelDisplayHidden(groupId, group)
+            and addon:IsCursorAnchorLayoutPreviewEligible(groupId, group, true))
         or addon._cursorAnchorLayoutPreview
             and addon._cursorAnchorLayoutPreview.activeGroupIds
             and addon._cursorAnchorLayoutPreview.activeGroupIds[groupId] == true
@@ -574,6 +578,43 @@ local function ActivateArrangeTreeEntry(entry)
     CooldownCompanion:RefreshArrangePillList()
 end
 
+-- Group and panel rows carry an eye that hides them for the session
+-- (ArrangeMode.lua). Cursor-anchored panels (always parked on the dummy
+-- cursor) and the bar movers (the cast bar is Blizzard's own frame) have none.
+local function IsArrangeTreeEyeShown(entry)
+    if entry.kind == "root" then
+        return entry.wrapperAvailable == true
+    end
+    return entry.kind == "panel" and not entry.cursor
+end
+
+-- The raid manager's eye pair. The eye fills two thirds of its square art,
+-- so a 21px square draws it ~14px wide.
+local function PaintArrangeTreeEye(button)
+    local entry = button:GetParent().entry
+    local atlas = entry and entry.eyeHidden and "GM-icon-visibleDis" or "GM-icon-visible"
+    if button._hovered then
+        atlas = atlas .. "-hover"
+    end
+    button.icon:SetAtlas(atlas)
+end
+
+local function ShowArrangeTreeEyeTooltip(button)
+    local entry = button:GetParent().entry
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip:AddLine(entry and entry.eyeHidden and "Show" or "Hide")
+    GameTooltip:Show()
+end
+
+local function ToggleArrangeTreeEntryHidden(entry)
+    if not entry then return end
+    if entry.kind == "root" then
+        CooldownCompanion:SetArrangeContainerHidden(entry.id, not entry.eyeHidden)
+    elseif entry.kind == "panel" then
+        CooldownCompanion:SetArrangePanelHidden(entry.id, not entry.eyeHidden)
+    end
+end
+
 local function EnsureArrangeTreeRow(pill, index)
     pill._treeRows = pill._treeRows or {}
     local row = pill._treeRows[index]
@@ -587,22 +628,6 @@ local function EnsureArrangeTreeRow(pill, index)
     row.bg:SetColorTexture(1, 0.82, 0, 0.12)
     row.bg:Hide()
 
-    row.check = CreateFrame("Button", nil, row, "BackdropTemplate")
-    row.check:SetSize(12, 12)
-    row.check:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-    row.check:SetBackdropColor(0.16, 0.16, 0.16, 1)
-    ST.CreatePixelBorders(row.check)
-    row.check.fill = row.check:CreateTexture(nil, "OVERLAY")
-    row.check.fill:SetSize(6, 6)
-    row.check.fill:SetPoint("CENTER")
-    row.check.fill:SetColorTexture(1, 0.82, 0, 0.9)
-    row.check:SetScript("OnClick", function()
-        local entry = row.entry
-        if not (entry and entry.wrapperAvailable) then return end
-        CooldownCompanion:SetContainerArrangeChromeHidden(entry.id, not entry.manuallyHidden)
-        CooldownCompanion:RefreshArrangePillList()
-    end)
-
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.name:SetJustifyH("LEFT")
     row.name:SetWordWrap(false)
@@ -615,20 +640,53 @@ local function EnsureArrangeTreeRow(pill, index)
     row.lockButton:HookScript("OnEnter", function(self) self:SetAlpha(1) end)
     row.lockButton:HookScript("OnLeave", function(self) self:SetAlpha(0.82) end)
 
+    -- The eye keeps its slot on rows without one, so the menu column lines up.
+    row.eyeButton = CreateFrame("Button", nil, row)
+    row.eyeButton:SetSize(14, 12)
+    row.eyeButton:RegisterForClicks("LeftButtonUp")
+    row.eyeButton:SetPoint("RIGHT", row.lockButton, "LEFT", -2, 0)
+    row.eyeButton.icon = row.eyeButton:CreateTexture(nil, "OVERLAY")
+    row.eyeButton.icon:SetSize(21, 21)
+    row.eyeButton.icon:SetPoint("CENTER")
+    row.eyeButton:SetScript("OnEnter", function(self)
+        self._hovered = true
+        PaintArrangeTreeEye(self)
+        ShowArrangeTreeEyeTooltip(self)
+    end)
+    row.eyeButton:SetScript("OnLeave", function(self)
+        self._hovered = nil
+        PaintArrangeTreeEye(self)
+        GameTooltip:Hide()
+    end)
+    row.eyeButton:SetScript("OnClick", function(self)
+        local entry = row.entry
+        ToggleArrangeTreeEntryHidden(entry)
+        -- The toggle rebuilt the list. If this row still holds the same item,
+        -- keep the tooltip saying what the next click does; rows may have
+        -- shifted under the cursor otherwise.
+        local now = row.entry
+        if now and entry and now.kind == entry.kind and now.id == entry.id
+            and self:IsShown() and self:IsMouseOver() then
+            ShowArrangeTreeEyeTooltip(self)
+        else
+            GameTooltip:Hide()
+        end
+    end)
+
     row.menuButton = ST.CreateMoverQuickMenuButton(
         row,
         12,
         function() return GetArrangeTreeEntryDescriptor(row.entry) end,
         row
     )
-    row.menuButton:SetPoint("RIGHT", row.lockButton, "LEFT", -2, 0)
+    row.menuButton:SetPoint("RIGHT", row.eyeButton, "LEFT", -2, 0)
 
     row:SetScript("OnClick", function() ActivateArrangeTreeEntry(row.entry) end)
     row:SetScript("OnEnter", function(self)
         self._hovered = true
         local entry = self.entry
         if entry and (entry.kind == "panel" or entry.kind == "section")
-            and not entry.cursor then
+            and not entry.cursor and not entry.manuallyHidden then
             CooldownCompanion:SetArrangeTreePanelHover(entry.containerId,
                 entry.groupId or entry.id, true)
         end
@@ -749,31 +807,37 @@ end
 local function UpdateArrangeTreeRow(addon, row, entry)
     row.entry = entry
     local rootId = entry.containerId or entry.id
-    local hiddenSet = addon._arrangeChromeHidden
-    entry.manuallyHidden = hiddenSet and hiddenSet[rootId] == true or false
+    -- eyeHidden is the row's own eye; manuallyHidden also covers a panel
+    -- hidden by its group's eye.
+    if entry.kind == "root" then
+        entry.eyeHidden = addon:IsArrangeContainerHidden(entry.id)
+        entry.manuallyHidden = entry.eyeHidden
+    elseif entry.kind == "panel" then
+        entry.eyeHidden = addon:IsArrangePanelHidden(entry.id)
+        entry.manuallyHidden = addon:IsArrangePanelDisplayHidden(entry.id)
+    else
+        entry.eyeHidden = false
+        entry.manuallyHidden = false
+    end
     entry.soloHidden = addon._arrangeSoloContainerId ~= nil
         and addon._arrangeSoloContainerId ~= rootId
 
     local isRoot = entry.kind == "root"
-    local isSpecial = entry.kind == "special"
     local actionsShown = IsArrangeTreeEntryActionable(entry)
 
-    row.check:SetShown((isRoot or isSpecial) and entry.wrapperAvailable)
-    if row.check:IsShown() then
-        row.check:ClearAllPoints()
-        row.check:SetPoint("LEFT", row, "LEFT", 2, 0)
-        row.check.fill:SetShown(not entry.manuallyHidden)
-    end
     row.lockButton:SetShown(actionsShown)
     row.menuButton:SetShown(actionsShown)
+    local eyeShown = IsArrangeTreeEyeShown(entry)
+    row.eyeButton:SetShown(eyeShown)
+    if eyeShown then
+        PaintArrangeTreeEye(row.eyeButton)
+    end
 
     row.name:ClearAllPoints()
     if entry.kind == "section" then
-        row.name:SetPoint("LEFT", row, "LEFT", 34, 0)
+        row.name:SetPoint("LEFT", row, "LEFT", 26, 0)
     elseif entry.kind == "panel" then
-        row.name:SetPoint("LEFT", row, "LEFT", 22, 0)
-    elseif entry.wrapperAvailable then
-        row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
+        row.name:SetPoint("LEFT", row, "LEFT", 14, 0)
     else
         row.name:SetPoint("LEFT", row, "LEFT", 2, 0)
     end
@@ -837,15 +901,14 @@ function ST.RefreshArrangeTreePill(self)
         pill._treeMeasure:SetText(entry.name)
         local leftInset
         if entry.kind == "section" then
-            leftInset = 34
+            leftInset = 26
         elseif entry.kind == "panel" then
-            leftInset = 22
-        elseif entry.wrapperAvailable then
-            leftInset = 20
+            leftInset = 14
         else
             leftInset = 2
         end
-        local rightInset = IsArrangeTreeEntryActionable(entry) and 32 or 2
+        -- Menu, eye slot and lock badge with their gaps.
+        local rightInset = IsArrangeTreeEntryActionable(entry) and 48 or 2
         maxContentWidth = math.max(
             maxContentWidth,
             leftInset + (pill._treeMeasure:GetStringWidth() or 0) + rightInset
