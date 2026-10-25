@@ -4,7 +4,6 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Core's per-panel rule ("Can this PANEL ever use this override section?"),
@@ -1471,7 +1470,7 @@ local function BuildBarPandemicSection(container, group, style, lens)
                 indent = false,
                 tbl = pandemicSec.tbl,
                 key = "barPandemicColor",
-                default = {1, 0.5, 0, 1},
+                default = CopyTable(ST.DEFAULT_PANDEMIC_COLOR),
                 hasAlpha = false,
                 disabled = pandemicSec.disabled,
                 onConfirm = refreshStyle,

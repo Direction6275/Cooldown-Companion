@@ -340,8 +340,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._currentReadableCharges = nil
     button._desatCooldownActive = false
     button._spellOutOfRange = nil
-    button._isUnusable = false
-    button._isOutOfRange = false
     button._procOverlayActive = false
     button._auraActive = false
     button._visibilityHidden = false
@@ -389,12 +387,7 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     DispatchIndicatorVisual(button)
 end
 
-local function IsReadyGlowMaxChargeEligible(buttonData)
-    return buttonData
-        and buttonData.type == "spell"
-        and buttonData.hasCharges == true
-        and not buttonData._hasDisplayCount
-end
+local IsReadyGlowMaxChargeEligible = ST._IsReadyGlowMaxChargeEligible
 
 local function IsReadyGlowAtMaxCharges(button, buttonData)
     if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
@@ -1185,8 +1178,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local visible, group, shouldCaptureVisualState, visualStateContext = ApplyButtonVisibility(
         button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, procOverlayActive)
     if not visible then return end
-
-    button._isUnusable, button._isOutOfRange = false, false
 
     -- Mode-specific visual dispatch
     if button._isBar then

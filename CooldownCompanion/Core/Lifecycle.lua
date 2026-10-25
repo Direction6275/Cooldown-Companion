@@ -89,7 +89,6 @@ function CooldownCompanion:OnInitialize()
     -- Initialize storage tables
     self.groupFrames = {}
     self.containerFrames = {}
-    self.buttonFrames = {}
 
     -- Register minimap icon
     LDBIcon:Register(ADDON_NAME, minimapButton, self.db.profile.minimap)

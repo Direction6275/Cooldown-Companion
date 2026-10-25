@@ -964,15 +964,7 @@ end
 ------------------------------------------------------------------------
 -- COMPACT MODE CONTROLS
 ------------------------------------------------------------------------
-local function NormalizeCompactGrowthDirection(growthDirection)
-    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
-        return "start"
-    end
-    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
-        return "end"
-    end
-    return "center"
-end
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
 
 -- orientationOverride exists for the Aura Panel row: an Aura BAR Panel is one
 -- vertical column no matter what style.barOrientation still says (the aura
@@ -1682,9 +1674,9 @@ ST._BuildCompactModeControls = BuildCompactModeControls
 -- The compact vocabulary outlives the compact section: an Aura Panel's
 -- Collapse Direction row (GroupTabsLayout.lua, Arrangement) asks the same
 -- start/center/end question against the same compactGrowthDirection key, so it
--- reads and writes through these two rather than restating the mapping.
+-- takes its labels from here and folds values with
+-- ST.NormalizeCompactGrowthDirection (Utils.lua) rather than restating the mapping.
 ST._GetCompactGrowthDirectionLabels = GetCompactGrowthDirectionLabels
-ST._NormalizeCompactGrowthDirection = NormalizeCompactGrowthDirection
 ST._CreateCharacterCopyButton = CreateCharacterCopyButton
 ST._AddAnchorDropdown = AddAnchorDropdown
 ST._RefreshSelectedButtonsPreview = RefreshSelectedButtonsPreview

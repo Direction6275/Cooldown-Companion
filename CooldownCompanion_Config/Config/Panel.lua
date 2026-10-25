@@ -312,11 +312,7 @@ end
 -- (destructive buttons pass their own hover color).
 local TITLEBAR_ICON_R, TITLEBAR_ICON_G, TITLEBAR_ICON_B = 0.82, 0.78, 0.70
 
-local function GetTitlebarHoverColor()
-    local _, classKey = UnitClass("player")
-    local color = classKey and C_ClassColor.GetClassColor(classKey)
-    return color and color.r or 0.40, color and color.g or 0.67, color and color.b or 1.0
-end
+local GetPlayerClassColorRGB = ST._GetPlayerClassColorRGB
 
 local function UpdateTitlebarButtonTint(button)
     local icon = button._cdcTitlebarIcon
@@ -325,7 +321,7 @@ local function UpdateTitlebarButtonTint(button)
         if button._cdcTitlebarHoverR then
             icon:SetVertexColor(button._cdcTitlebarHoverR, button._cdcTitlebarHoverG, button._cdcTitlebarHoverB, 1)
         else
-            local r, g, b = GetTitlebarHoverColor()
+            local r, g, b = GetPlayerClassColorRGB()
             icon:SetVertexColor(r, g, b, 1)
         end
     else
@@ -1419,8 +1415,6 @@ local function CreateConfigPanel()
     exportClusterBtn:HookScript("OnLeave", UpdateExportModeTitleButton)
     UpdateExportModeTitleButton()
 
-    local changelogOverlay
-
     -- Gear button — left of Collapse
     local gearBtn = CreateFrame("Button", nil, content)
     gearBtn:SetSize(18, 18)
@@ -1895,7 +1889,7 @@ local function CreateConfigPanel()
     colParent:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", 0, 11)
 
     -- Bundled changelog overlay (kept separate from column refreshes).
-    changelogOverlay = SetupChangelogOverlay(frame, colParent)
+    SetupChangelogOverlay(frame, colParent)
 
     -- Navigator rail (AceGUI InlineGroup)
     local col1 = AceGUI:Create("InlineGroup")
@@ -2515,8 +2509,6 @@ local function CreateConfigPanel()
     -- Store references
     frame.profileBar = profileBar
     frame.versionText = versionText
-    frame.profileGear = profileGear
-    frame.changelogOverlay = changelogOverlay
     frame.col1 = col1
     frame.col3 = col3
     frame.settingsColumn = settingsColumn

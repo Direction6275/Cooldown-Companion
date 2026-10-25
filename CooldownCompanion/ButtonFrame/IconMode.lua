@@ -1364,6 +1364,7 @@ ST._RefreshKeyPressHighlightEnrollment = RefreshKeyPressHighlightEnrollment
 ST._UnregisterKeyPressHighlightButton = UnregisterKeyPressHighlightButton
 ST._UpdateIconModeVisuals = UpdateIconModeVisuals
 ST._UpdateIconModeGlows = UpdateIconModeGlows
+ST._IsCursorAnchoredButton = IsCursorAnchoredButton
 ST._ApplyIconCountTextStyle = ApplyCountTextStyle
 ST._ApplyAuraShellVisuals = ApplyAuraShellVisuals
 ST._ClearIconFillVisualState = ClearIconFillVisualState

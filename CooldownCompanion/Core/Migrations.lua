@@ -87,15 +87,7 @@ local function CopyRestrictionValues(values)
     return copy
 end
 
-local function IntersectRestrictionValues(left, right)
-    local intersection = {}
-    for key in pairs(left or {}) do
-        if right and right[key] then
-            intersection[key] = true
-        end
-    end
-    return intersection
-end
+local IntersectTruthyMaps = ST.IntersectTruthyMaps
 
 local function EncodeRestrictionMap(values)
     if next(values or {}) then
@@ -171,7 +163,7 @@ local function MergeFolderInheritanceIntoEntity(entity, folder)
     if hasFolderSpecs then
         local entitySpecs, hasEntitySpecs = GetEntitySpecRestriction(entity)
         local mergedSpecs = hasEntitySpecs
-            and IntersectRestrictionValues(folderSpecs, entitySpecs)
+            and IntersectTruthyMaps(folderSpecs, entitySpecs)
             or folderSpecs
         entity.specs = EncodeRestrictionMap(mergedSpecs)
         if type(entity.loadConditions) == "table" then
@@ -189,7 +181,7 @@ local function MergeFolderInheritanceIntoEntity(entity, folder)
             NormalizeNumericRestrictionKey
         )
         local mergedHeroTalents = hasEntityHeroTalents
-            and IntersectRestrictionValues(folderHeroTalents, entityHeroTalents)
+            and IntersectTruthyMaps(folderHeroTalents, entityHeroTalents)
             or folderHeroTalents
         entity.heroTalents = EncodeRestrictionMap(mergedHeroTalents)
     end
@@ -220,7 +212,7 @@ local function MergeFolderInheritanceIntoEntity(entity, folder)
                 NormalizeClassRestrictionKey
             )
             if hasEntityClasses then
-                mergedClasses = IntersectRestrictionValues(folderClasses, entityClasses)
+                mergedClasses = IntersectTruthyMaps(folderClasses, entityClasses)
             end
             entityLoadConditions.classAllowlist = EncodeRestrictionMap(mergedClasses)
         end
@@ -238,7 +230,7 @@ local function MergeFolderInheritanceIntoEntity(entity, folder)
             NormalizeCharacterRestrictionKey
         )
         if hasEntityCharacters then
-            mergedCharacters = IntersectRestrictionValues(folderCharacters, entityCharacters)
+            mergedCharacters = IntersectTruthyMaps(folderCharacters, entityCharacters)
         end
         entityLoadConditions.characterAllowlist = EncodeRestrictionMap(mergedCharacters)
     end

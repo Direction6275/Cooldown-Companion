@@ -13,16 +13,14 @@ local UIParent = UIParent
 local ipairs = ipairs
 local math_floor = math.floor
 local pairs = pairs
-local tostring = tostring
 local tonumber = tonumber
 local type = type
-local issecretvalue = issecretvalue
 
 local UI_PARENT_NAME = AT.UI_PARENT_NAME
 local CopyColor = AT.CopyColor
 local Clamp = AT.Clamp
 local NormalizeAnchorPoint = AT.NormalizeAnchorPoint
-local ResolveGroup = AT.ResolveGroup
+local ResolveGroup = ST.ResolveGroup
 local StopAllTextureIndicatorEffects = AT.StopAllTextureIndicatorEffects
 local DoesIndicatorMatch = AT.DoesIndicatorMatch
 
@@ -81,18 +79,7 @@ end
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
 
-local function GetAnchorOffset(point, width, height)
-    if point == "TOPLEFT" then return -(width or 0) / 2, (height or 0) / 2 end
-    if point == "TOP" then return 0, (height or 0) / 2 end
-    if point == "TOPRIGHT" then return (width or 0) / 2, (height or 0) / 2 end
-    if point == "LEFT" then return -(width or 0) / 2, 0 end
-    if point == "CENTER" then return 0, 0 end
-    if point == "RIGHT" then return (width or 0) / 2, 0 end
-    if point == "BOTTOMLEFT" then return -(width or 0) / 2, -(height or 0) / 2 end
-    if point == "BOTTOM" then return 0, -(height or 0) / 2 end
-    if point == "BOTTOMRIGHT" then return (width or 0) / 2, -(height or 0) / 2 end
-    return 0, 0
-end
+local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 local function GetGroupedPreviewContainerFrame(group, groupId)
     if not (group and group.parentContainerId) then
@@ -251,12 +238,7 @@ local function StopIndicatorAlphaSync(host)
     end
 end
 
-local function IsSecretValue(value)
-    if issecretvalue and issecretvalue(value) then
-        return true
-    end
-    return false
-end
+local IsSecretValue = ST.IsSecretValue
 
 local function GetInheritedFrameAlpha(frame)
     if not frame then
@@ -1417,7 +1399,7 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
     host:Show()
 
     host._unlockGhost = frame and frame._unlockGhost or nil
-    local bypassAlpha = host._unlockGhost and 0.4 or 1
+    local bypassAlpha = ST.GetUnlockedPanelAlpha(host)
     local honorSourceVisibility = ST.Indicator.Settings(group).sourceVisibility ~= false
     local visibilityAlpha = honorSourceVisibility and Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1) or 1
     if visibilityState.bypassModuleAlpha then

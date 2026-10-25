@@ -4336,17 +4336,8 @@ end
 -- ("which end does the packed block hold?") answered by a different engine.
 -- CC's compact layout never runs on an Aura Panel (compactLayout is forced
 -- false at birth), so the key is this display's alone in practice.
--- GroupFrameShared exports the same fold (GF.NormalizeCompactGrowthDirection);
--- this local twin repeats it, and the two must stay the same three-way.
-local function NormalizePanelGrowthDirection(growthDirection)
-    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
-        return "start"
-    end
-    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
-        return "end"
-    end
-    return "center"
-end
+-- The fold is the one compact layout uses (Utils.lua).
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
 
 -- ONE point (owner ruling 2026-08-15): the container's extent becomes secret
 -- with its first group (Blizzard resizes it from its own layout pass), so a
@@ -4854,7 +4845,7 @@ local function BindAuraPanel(self, groupId, group, frame)
     -- contract each pass costs nothing and removes the fragile invariant that a
     -- style edit remembered to touch the right one.
     local flow, axis, maximumLineSize = PanelFlowSpec(group, cellWidth, cellHeight, spacing)
-    ApplyPanelMount(record, flow, axis, NormalizePanelGrowthDirection(group.compactGrowthDirection))
+    ApplyPanelMount(record, flow, axis, NormalizeCompactGrowthDirection(group.compactGrowthDirection))
     record.container:SetFlowLayoutAxis(AnchorUtil.FlowLayoutAxis[axis])
     record.container:SetFlowLayoutAnchorPoint(flow.anchor)
     record.container:SetFlowLayoutGrowthDirection(

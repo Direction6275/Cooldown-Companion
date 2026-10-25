@@ -18,6 +18,14 @@ function ST._GetPlayerClassColor()
     return C_ClassColor.GetClassColor((select(2, UnitClass("player"))))
 end
 
+-- The same color as r, g, b, with the config blue when no class is known
+-- (Navigator rail and title bar hover).
+function ST._GetPlayerClassColorRGB()
+    local _, classKey = UnitClass("player")
+    local color = classKey and C_ClassColor.GetClassColor(classKey)
+    return color and color.r or 0.40, color and color.g or 0.67, color and color.b or 1.0
+end
+
 if AceGUI and not ST._aceguiCheckboxCreatePatched then
     ST._aceguiCheckboxCreatePatched = true
     local aceguiCreate = AceGUI.Create

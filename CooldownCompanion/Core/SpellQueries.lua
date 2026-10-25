@@ -35,21 +35,9 @@ function ST.ResolveCDMDisplaySpellID(cooldownInfo)
     return nil
 end
 
-function ST.ResolveCDMAuraSpellID(cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return nil
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideTooltipSpellID) then
-        return cooldownInfo.overrideTooltipSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.overrideSpellID) then
-        return cooldownInfo.overrideSpellID
-    end
-    if IsConcreteSpellID(cooldownInfo.spellID) then
-        return cooldownInfo.spellID
-    end
-    return nil
-end
+-- Aura lookups resolve a CDM child the same way today; the separate name
+-- keeps the two callers' intent apart if the rules ever diverge.
+ST.ResolveCDMAuraSpellID = ST.ResolveCDMDisplaySpellID
 
 -- Curated applied-aura corrections, keyed by the CAST (base) spellID. The
 -- linked-list rule below trusts Blizzard's CDM data, and that data can be

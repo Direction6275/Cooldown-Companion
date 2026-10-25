@@ -56,11 +56,7 @@ local TREE = {
     ICON_GAP = 6,
 }
 
-local function GetNavigatorClassColor()
-    local _, classKey = UnitClass("player")
-    local color = classKey and C_ClassColor.GetClassColor(classKey)
-    return color and color.r or 0.40, color and color.g or 0.67, color and color.b or 1.0
-end
+local GetPlayerClassColorRGB = ST._GetPlayerClassColorRGB
 
 local function EnsureRailDestinationButton(host, key)
     host._cdcDestinationButtons = host._cdcDestinationButtons or {}
@@ -117,7 +113,7 @@ local function EnsureRailDestinationButton(host, key)
 end
 
 local function ConfigureRailDestinationButton(button, opts)
-    local r, g, b = GetNavigatorClassColor()
+    local r, g, b = GetPlayerClassColorRGB()
     button.label:SetText(opts.label)
     button.icon:SetAtlas(opts.atlas, false)
     button.icon:SetVertexColor(0.82, 0.78, 0.70, 1)
@@ -143,7 +139,7 @@ local function UpdateRailDestinations()
         return
     end
 
-    local r, g, b = GetNavigatorClassColor()
+    local r, g, b = GetPlayerClassColorRGB()
     if not host._cdcDivider then
         host._cdcDivider = host:CreateTexture(nil, "ARTWORK")
         host._cdcDivider:SetHeight(1)
@@ -1304,7 +1300,6 @@ local function ClearColumn1ButtonBar()
     CS.col1CreateButton = nil
     CS.col1ArrangeButton = nil
     if CS.col1ButtonBar then
-        CS.col1ButtonBar._topRowBtns = nil
         CS.col1ButtonBar:SetScript("OnSizeChanged", nil)
     end
 end
@@ -1327,7 +1322,6 @@ local function MountFooterButtonPair(leftBtn, rightBtn)
         leftBtn.frame:SetWidth(half)
         rightBtn.frame:SetWidth(half)
     end
-    bar._topRowBtns = { leftBtn.frame, rightBtn.frame }
     bar:SetScript("OnSizeChanged", function(_, w)
         SizeFooterButtons(w)
     end)

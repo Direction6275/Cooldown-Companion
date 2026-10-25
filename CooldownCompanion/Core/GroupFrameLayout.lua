@@ -20,13 +20,15 @@ local issecretvalue = issecretvalue
 local select = select
 local wipe = wipe
 
+-- Utils.lua
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
+
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local GetGrowthMultipliers = GF.GetGrowthMultipliers
 local PropagateFrameStrata = GF.PropagateFrameStrata
-local NormalizeCompactGrowthDirection = GF.NormalizeCompactGrowthDirection
 local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
 local UpdateCoordLabel = GF.UpdateCoordLabel
 local GetCompactSlotForIndex = GF.GetCompactSlotForIndex

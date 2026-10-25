@@ -94,7 +94,6 @@ local function DisplayStyle(group)
 end
 
 local function ClearSlot(button)
-    button._totemSlotActive = false
     -- Clearing is not an expiry notification. A genuine completion during
     -- a refresh still queues another snapshot so an edge cannot be lost.
     button.cooldown._totemClearing = true
@@ -273,7 +272,6 @@ RefreshSurface = function(surface)
         if preview and slot > PREVIEW_SLOT_COUNT then active = false end
         if active then
             if button._totemGlow then button._totemGlow.host:SetShown(not preview or playing) end
-            button._totemSlotActive = true
             if preview then
                 RenderSample(surface, button, slot, playing)
             else

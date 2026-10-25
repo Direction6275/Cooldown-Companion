@@ -1298,25 +1298,9 @@ local function QueuePreviewSlotTween(preview, slot, anchor, x, y)
     }
 end
 
-local function EaseInOut(t)
-    return t < 0.5 and (2 * t * t) or (1 - (((-2 * t + 2) ^ 2) / 2))
-end
-
-local function Interpolate(a, b, t)
-    return a + ((b - a) * t)
-end
-
-local function UpdateGhostPosition(ghost)
-    if not (ghost and ghost:IsShown()) then return end
-    local uiScale = UIParent:GetEffectiveScale()
-    local cursorX, cursorY = GetCursorPosition()
-    cursorX = cursorX / uiScale
-    cursorY = cursorY / uiScale
-    local offsetX = math_floor((ghost:GetWidth() or 0) / 2)
-    local offsetY = math_floor((ghost:GetHeight() or 0) / 2)
-    ghost:ClearAllPoints()
-    ghost:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", cursorX - offsetX, cursorY + offsetY)
-end
+local EaseInOut = ST._PreviewEaseInOut
+local Interpolate = ST._PreviewInterpolate
+local UpdateGhostPosition = ST._UpdatePreviewGhostPosition
 
 local function TickPanelPreview(preview)
     local active = false
@@ -1672,7 +1656,6 @@ PP.IsIconModePanel = IsIconModePanel
 PP.IsEntrySelected = IsEntrySelected
 PP.CollectBarEntryStatus = CollectBarEntryStatus
 PP.ResolveBarPreviewVisibility = ResolveBarPreviewVisibility
-PP.IsMissingReminderPreview = IsMissingReminderPreview
 PP.RestoreMissingReminderPreview = RestoreMissingReminderPreview
 PP.ApplyMissingReminderPreview = ApplyMissingReminderPreview
 PP.ApplyBarSlotPreviewVisibility = ApplyBarSlotPreviewVisibility

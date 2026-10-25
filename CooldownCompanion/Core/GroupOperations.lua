@@ -17,8 +17,8 @@ local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
 local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
--- ArrangeMode.lua
-local GetUnlockedPanelAlpha = ST._GetUnlockedPanelAlpha
+-- Utils.lua
+local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 
 local function ClearButtonVisualState(button)
     local clear = ST._ClearButtonVisualState

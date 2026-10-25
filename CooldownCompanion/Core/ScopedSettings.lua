@@ -241,43 +241,9 @@ local function CopyColorSetting(color, includeAlpha)
     return copied
 end
 
-local function ClampLegacySegmentedThresholdValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    value = math.floor(value)
-    if value < 1 then
-        value = 1
-    elseif value > 99 then
-        value = 99
-    end
-    return value
-end
-
-local function ClampLegacyTickPercentValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    if value < 0 then
-        value = 0
-    elseif value > 100 then
-        value = 100
-    end
-    return value
-end
-
-local function ClampLegacyTickAbsoluteValue(value, fallback)
-    value = tonumber(value)
-    if not value then
-        return fallback
-    end
-    if value < 0 then
-        value = 0
-    end
-    return value
-end
+local ClampSegmentedThresholdValue = ST.ClampSegmentedThresholdValue
+local ClampContinuousTickPercentValue = ST.ClampContinuousTickPercentValue
+local ClampContinuousTickAbsoluteValue = ST.ClampContinuousTickAbsoluteValue
 
 local function NormalizeSavedEntryList(entries, clampValue, includeAlpha)
     local normalized = {}
@@ -332,13 +298,13 @@ local function NormalizeThresholdEntriesOnTarget(resource, specID, target)
         return
     end
 
-    local normalized = NormalizeSavedEntryList(target.segThresholdEntries, ClampLegacySegmentedThresholdValue, false)
+    local normalized = NormalizeSavedEntryList(target.segThresholdEntries, ClampSegmentedThresholdValue, false)
     if #normalized == 0
         and target.segThresholdEntriesCleared ~= true
         and ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled") == true
         and (target.segThresholdEnabled ~= nil or target.segThresholdValue ~= nil or target.segThresholdColor ~= nil) then
         normalized[1] = {
-            value = ClampLegacySegmentedThresholdValue(
+            value = ClampSegmentedThresholdValue(
                 target.segThresholdValue ~= nil and target.segThresholdValue or ResolveSpecOverrideKey(resource, specID, "segThresholdValue"),
                 1
             ),
@@ -361,8 +327,8 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
         return
     end
 
-    local percentEntries = NormalizeSavedEntryList(target.continuousTickPercentEntries, ClampLegacyTickPercentValue, true)
-    local absoluteEntries = NormalizeSavedEntryList(target.continuousTickAbsoluteEntries, ClampLegacyTickAbsoluteValue, true)
+    local percentEntries = NormalizeSavedEntryList(target.continuousTickPercentEntries, ClampContinuousTickPercentValue, true)
+    local absoluteEntries = NormalizeSavedEntryList(target.continuousTickAbsoluteEntries, ClampContinuousTickAbsoluteValue, true)
     local tickEnabled = ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled") == true
     local mode = GetResolvedTickMode(resource, specID, target)
     local hasLegacyTickData = target.continuousTickEnabled ~= nil
@@ -374,7 +340,7 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
     if tickEnabled and hasLegacyTickData then
         if mode == "absolute" and #absoluteEntries == 0 and target.continuousTickAbsoluteEntriesCleared ~= true then
             absoluteEntries[1] = {
-                value = ClampLegacyTickAbsoluteValue(
+                value = ClampContinuousTickAbsoluteValue(
                     target.continuousTickAbsolute ~= nil and target.continuousTickAbsolute or ResolveSpecOverrideKey(resource, specID, "continuousTickAbsolute"),
                     50
                 ),
@@ -382,7 +348,7 @@ local function NormalizeTickEntriesOnTarget(resource, specID, target)
             }
         elseif mode == "percent" and #percentEntries == 0 and target.continuousTickPercentEntriesCleared ~= true then
             percentEntries[1] = {
-                value = ClampLegacyTickPercentValue(
+                value = ClampContinuousTickPercentValue(
                     target.continuousTickPercent ~= nil and target.continuousTickPercent or ResolveSpecOverrideKey(resource, specID, "continuousTickPercent"),
                     50
                 ),

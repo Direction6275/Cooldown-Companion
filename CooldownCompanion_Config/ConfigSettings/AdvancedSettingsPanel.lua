@@ -19,20 +19,7 @@ local function BoolValue(value)
     return value == true
 end
 
-local function SortedKeyString(selection)
-    if type(selection) ~= "table" then
-        return ""
-    end
-
-    local keys = {}
-    for key, selected in pairs(selection) do
-        if selected then
-            keys[#keys + 1] = tostring(key)
-        end
-    end
-    table.sort(keys)
-    return table.concat(keys, ",")
-end
+local SortedSelectionString = ST.SortedSelectionString
 
 local function BuildContext(extra)
     local group = CS.selectedGroup
@@ -47,7 +34,7 @@ local function BuildContext(extra)
         selectedGroupDisplayMode = group and (group.displayMode or "icons") or "",
         selectedGroupIndicatorDisplayType = group and ST.IsIndicatorGroup(group) and CooldownCompanion.GetIndicatorDisplayType and CooldownCompanion:GetIndicatorDisplayType(group) or "",
         selectedButton = CS.selectedButton,
-        selectedButtons = SortedKeyString(CS.selectedButtons),
+        selectedButtons = SortedSelectionString(CS.selectedButtons),
         -- Which strip owns the settings surface (UnifiedTabRow.lua). Pinned
         -- even on lens-agnostic descriptors: growing a multi-select (or moving
         -- to the entry cluster's own tabs) swaps the surface WITHOUT running
@@ -56,8 +43,8 @@ local function BuildContext(extra)
         -- own accessor so this snapshot can never normalize differently from
         -- the strip's readers.
         unifiedRowScope = ST._UnifiedRowGetScope(),
-        selectedPanels = SortedKeyString(CS.selectedPanels),
-        selectedGroups = SortedKeyString(CS.selectedGroups),
+        selectedPanels = SortedSelectionString(CS.selectedPanels),
+        selectedGroups = SortedSelectionString(CS.selectedGroups),
         currentSpecId = CooldownCompanion._currentSpecId,
         currentHeroSpecId = CooldownCompanion._currentHeroSpecId,
         selectedTab = CS.selectedTab,
@@ -602,6 +589,5 @@ CS.RunAdvancedGearBuildPass = RunAdvancedGearBuildPass
 CS.RefreshAdvancedSettingsPanel = RefreshAdvancedSettingsPanel
 CS.RefreshAdvancedSettingsPanelSoon = RefreshAdvancedSettingsPanelSoon
 CS.QueueAdvancedSettingsPanelOpen = QueueAdvancedSettingsPanelOpen
-CS.ConsumeQueuedAdvancedSettingsPanelOpen = ConsumeQueuedAdvancedSettingsPanelOpen
 CS.IsAdvancedSettingsPanelOpen = IsAdvancedSettingsPanelOpen
 CS.IsAdvancedSettingsEditorShown = IsAdvancedSettingsEditorShown

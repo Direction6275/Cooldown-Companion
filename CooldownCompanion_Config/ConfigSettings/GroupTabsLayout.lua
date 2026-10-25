@@ -10,7 +10,7 @@ local CreateInfoButton = ST._CreateInfoButton
 local AddAnchorDropdown = ST._AddAnchorDropdown
 local AddOffsetSliders = ST._AddOffsetSliders
 local GetCompactGrowthDirectionLabels = ST._GetCompactGrowthDirectionLabels
-local NormalizeCompactGrowthDirection = ST._NormalizeCompactGrowthDirection
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
 local BuildCompactModeControls = ST._BuildCompactModeControls
 
 -- Imports from RowWidgets.lua (the row grammar)

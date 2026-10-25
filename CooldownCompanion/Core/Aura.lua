@@ -334,7 +334,6 @@ local function GetEntryAuraIDOverride(buttonData)
     local numericID = buttonData and tonumber(buttonData.auraIDOverride)
     return numericID and numericID ~= 0 and numericID or nil
 end
-ST.GetEntryAuraIDOverride = GetEntryAuraIDOverride
 
 -- Explicit candidate lists own the slot polarity for ordinary spell entries.
 -- The migration and config writer keep those lists single-polarity; the stored
@@ -821,7 +820,7 @@ end
 
 -- Slim (12.1 demolition): kept because FrameAnchoring.lua hooksecurefunc's this
 -- method (inheritAlpha resync rides the hook); the dirty mark keeps
--- target-dependent kept visuals (range tint, {oor} text) repainting promptly.
+-- target-dependent kept visuals (range tint) repainting promptly.
 function CooldownCompanion:OnTargetChanged()
     self:MarkCooldownsDirty("target-changed")
     -- Target-existence and target-hostility force conditions are read fresh by

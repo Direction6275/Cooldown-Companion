@@ -3,7 +3,6 @@ local ADDON_NAME, ST = ...
 -- narrowed to the selected entry under an entry lens (PanelSettingsContext.lua).
 local CanGroupUseOverrideSection = ST._CanSettingsGroupUseOverrideSection
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
@@ -1060,7 +1059,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- left out, Count and Keybind are denied), so with no entries yet the
     -- heading would stand over an empty grid. Same guard shape as Glows.
     if not usesOnlyAura or groupHasAuraEntry then
-    local textHeading, textCollapsed = BuildCollapsibleSection(container, "Text", "appearance_text", nil, nil, ROW_SECTION)
+    local _, textCollapsed = BuildCollapsibleSection(container, "Text", "appearance_text", nil, nil, ROW_SECTION)
 
     if not textCollapsed then
     local durationLowTimeStyle = (lens and lens.effective) or group.style

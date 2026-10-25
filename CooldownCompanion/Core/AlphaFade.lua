@@ -281,9 +281,7 @@ local function GetFrameAlphaWithContainerMultiplier(frame, alpha)
     return alpha
 end
 
-local function GetUnlockedPanelAlpha(frame)
-    return frame and frame._unlockGhost and 0.4 or 1
-end
+local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 
 -- A panel outside container alpha reads unlocked through its container's
 -- unlock or its own, as ContainerAlphaEntryIsUnlocked does for members; the

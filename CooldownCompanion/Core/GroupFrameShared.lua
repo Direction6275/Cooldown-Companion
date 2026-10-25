@@ -10,7 +10,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local math_floor = math.floor
 local math_min = math.min
-local issecretvalue = issecretvalue
 local select = select
 
 local GF = {}
@@ -91,12 +90,7 @@ local function GetContainerState(groupId)
     return group.locked ~= false, group.baselineAlpha or 1
 end
 
-local function IsSecretValue(value)
-    if issecretvalue and issecretvalue(value) then
-        return true
-    end
-    return false
-end
+local IsSecretValue = ST.IsSecretValue
 
 local function ReadSafeAlphaValue(value)
     if IsSecretValue(value) then
@@ -182,10 +176,6 @@ local function ApplyCurrentAlphaIfPresent(owner, frame, groupId, group)
     if hasRuntimeAlpha then
         frame:SetAlpha(alpha)
     end
-end
-
-local function GetUnlockedPanelAlpha(frame)
-    return frame and frame._unlockGhost and 0.4 or 1
 end
 
 local function GetAnchorInheritedAlpha(parentFrame)
@@ -491,22 +481,7 @@ local function IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
 end
 
-local function GetAnchorOffset(point, width, height)
-    if point == "TOPLEFT" then return -width / 2, height / 2 end
-    if point == "TOP" then return 0, height / 2 end
-    if point == "TOPRIGHT" then return width / 2, height / 2 end
-    if point == "LEFT" then return -width / 2, 0 end
-    if point == "CENTER" then return 0, 0 end
-    if point == "RIGHT" then return width / 2, 0 end
-    if point == "BOTTOMLEFT" then return -width / 2, -height / 2 end
-    if point == "BOTTOM" then return 0, -height / 2 end
-    if point == "BOTTOMRIGHT" then return width / 2, -height / 2 end
-    return 0, 0
-end
-
--- Shared with Core/PanelSections.lua so a sectioned panel's anchor-drift
--- compensation measures its hold point with the exact same arithmetic.
-ST._GetPanelAnchorOffset = GetAnchorOffset
+local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 local function GetFrameSizeInUIParentSpace(frame)
     if not (frame and frame.GetSize) then
@@ -638,16 +613,6 @@ end
 function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
     local _, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
     return anchorState
-end
-
-local function NormalizeCompactGrowthDirection(growthDirection)
-    if growthDirection == "start" or growthDirection == "left" or growthDirection == "top" then
-        return "start"
-    end
-    if growthDirection == "end" or growthDirection == "right" or growthDirection == "bottom" then
-        return "end"
-    end
-    return "center"
 end
 
 local function GetGrowthMultipliers(growthOrigin)
@@ -845,7 +810,6 @@ GF.IsCursorAnchorLayoutPreviewSelected = IsCursorAnchorLayoutPreviewSelected
 GF.UpdateCoordLabel = UpdateCoordLabel
 GF.CURSOR_ANCHOR_X = CURSOR_ANCHOR_X
 GF.CURSOR_ANCHOR_Y = CURSOR_ANCHOR_Y
-GF.NormalizeCompactGrowthDirection = NormalizeCompactGrowthDirection
 GF.GetCompactAnchorFixedPoint = GetCompactAnchorFixedPoint
 GF.GetContainerPreviewSelectionState = GetContainerPreviewSelectionState
 GF.ApplySectionSelectionTint = ApplySectionSelectionTint
@@ -881,4 +845,3 @@ GF.GetCompactSlotForIndex = GetCompactSlotForIndex
 GF.RoundPreviewOffset = RoundPreviewOffset
 GF.ComputeContainerFrameCoordinates = ComputeContainerFrameCoordinates
 GF.ApplyUnsafeAnchorVisualFallback = ApplyUnsafeAnchorVisualFallback
-GF.GetUnlockedPanelAlpha = GetUnlockedPanelAlpha

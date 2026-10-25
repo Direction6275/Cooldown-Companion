@@ -25,15 +25,7 @@ local ApplyProfileImportPieces = ST._ApplyProfileImportPieces
 local MAX_IMPORT_LENGTH = 500000
 local DIAGNOSTIC_PREFIX = "CDCdiag:"
 
-local function CountPairs(tbl)
-    local count = 0
-    if type(tbl) == "table" then
-        for _ in pairs(tbl) do
-            count = count + 1
-        end
-    end
-    return count
-end
+local CountPairs = ST.CountPairs
 
 local function AddLine(lines, text)
     if text and text ~= "" then
@@ -276,22 +268,7 @@ local function DefaultProfileImportMode(pieces)
     return "restore"
 end
 
--- Class identity of any class-tagged payload or setup section (setup
--- sections, and legacy standalone Custom Bars payloads, tagged the same way).
-local function GetSetupSectionClassKey(section)
-    if type(section) ~= "table" then
-        return nil
-    end
-    local normalize = ST._NormalizeResourceBarClassKey
-    local classKey = normalize and normalize(section.classFilename) or nil
-    if classKey then
-        return classKey
-    end
-    if section.classID and ST._GetResourceBarClassKeyFromClassID then
-        return ST._GetResourceBarClassKeyFromClassID(section.classID)
-    end
-    return nil
-end
+local GetSetupSectionClassKey = ST._GetSetupSectionClassKey
 
 local function GetPlayerClassKey()
     local normalize = ST._NormalizeResourceBarClassKey

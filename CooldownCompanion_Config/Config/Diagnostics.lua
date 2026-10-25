@@ -16,37 +16,11 @@ local PrepareSharedImportText = ST._PrepareSharedImportText
 local diagnosticDecodeFrame = nil
 local DIAGNOSTIC_REPORT_BUG_REPORT = "bugReport"
 
-local function RejectUnsupportedImportPayload(data, dataLabel)
-    if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
-        CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
-        return true
-    end
-    return false
-end
+local RejectUnsupportedImportPayload = ST._RejectUnsupportedImportPayload
 
-local function CountTableEntries(t)
-    if type(t) ~= "table" then return 0 end
-    local count = 0
-    for _ in pairs(t) do
-        count = count + 1
-    end
-    return count
-end
+local CountPairs = ST.CountPairs
 
-local function SortedSelectionString(selection)
-    if type(selection) ~= "table" then
-        return ""
-    end
-
-    local keys = {}
-    for key, selected in pairs(selection) do
-        if selected then
-            keys[#keys + 1] = tostring(key)
-        end
-    end
-    table.sort(keys)
-    return table.concat(keys, ",")
-end
+local SortedSelectionString = ST.SortedSelectionString
 
 local function SummarizeButton(button)
     if type(button) ~= "table" then return nil end
@@ -61,8 +35,8 @@ local function SummarizeButton(button)
         auraTrackPet = button.auraTrackPet == true,
         hideWhenInactive = button.hideWhenInactive == true,
         auraVisibility = CooldownCompanion:GetAuraVisibilityMode(button),
-        loadConditionCount = CountTableEntries(button.loadConditions),
-        overrideCount = CountTableEntries(button.styleOverrides),
+        loadConditionCount = CountPairs(button.loadConditions),
+        overrideCount = CountPairs(button.styleOverrides),
     }
 end
 
@@ -89,9 +63,9 @@ local function SummarizePanel(panelId, panel)
         displayMode = panel.displayMode or "icons",
         parentContainerId = panel.parentContainerId,
         buttonCount = type(panel.buttons) == "table" and #panel.buttons or 0,
-        specCount = CountTableEntries(panel.specs),
-        heroTalentCount = CountTableEntries(panel.heroTalents),
-        loadConditionCount = CountTableEntries(panel.loadConditions),
+        specCount = CountPairs(panel.specs),
+        heroTalentCount = CountPairs(panel.heroTalents),
+        loadConditionCount = CountPairs(panel.loadConditions),
         masqueEnabled = panel.masqueEnabled == true,
         compactLayout = panel.compactLayout == true,
         compactLayoutEffective = compactLayoutEffective,
@@ -108,9 +82,9 @@ local function SummarizeContainer(containerId, container)
         name = container.name,
         enabled = container.enabled ~= false,
         locked = container.locked ~= false,
-        specCount = CountTableEntries(container.specs),
-        heroTalentCount = CountTableEntries(container.heroTalents),
-        loadConditionCount = CountTableEntries(container.loadConditions),
+        specCount = CountPairs(container.specs),
+        heroTalentCount = CountPairs(container.heroTalents),
+        loadConditionCount = CountPairs(container.loadConditions),
     }
 end
 

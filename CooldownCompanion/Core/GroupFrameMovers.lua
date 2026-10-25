@@ -18,6 +18,9 @@ local InCombatLockdown = InCombatLockdown
 local GetCursorPosition = GetCursorPosition
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 
+-- Utils.lua
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
+
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
@@ -28,7 +31,6 @@ local UpdateCoordLabel = GF.UpdateCoordLabel
 local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
 local GetContainerState = GF.GetContainerState
-local NormalizeCompactGrowthDirection = GF.NormalizeCompactGrowthDirection
 local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local ApplySectionSelectionTint = GF.ApplySectionSelectionTint
@@ -520,14 +522,7 @@ local function ApplyPanelResizeFromCursor(grip)
     return changed
 end
 
-local function RefreshConfigPanelIfShown()
-    local configState = ST._configState
-    local configFrame = configState and configState.configFrame
-    local frame = configFrame and configFrame.frame
-    if frame and frame:IsShown() then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
+local RefreshConfigPanelIfShown = ST.RefreshConfigPanelIfShown
 
 local function UpdateResizedPanelContainerWrapper(groupId)
     local group = groupId and CooldownCompanion.db.profile.groups[groupId]

@@ -292,6 +292,7 @@ local function BuildRootAnchor(relativeTo)
         y = 0,
     }
 end
+ST._BuildRootAnchor = BuildRootAnchor
 
 local function AnchorTargetsCursorRoot(profile, relativeTo)
     if relativeTo == CURSOR_ANCHOR_TARGET then

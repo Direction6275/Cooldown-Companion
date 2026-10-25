@@ -41,7 +41,6 @@ local pairs = pairs
 local tonumber = tonumber
 
 local EXTERNAL_ANCHOR_FRAME_NAME = "CooldownCompanionExternalAnchor"
-ST.EXTERNAL_ANCHOR_FRAME_NAME = EXTERNAL_ANCHOR_FRAME_NAME
 
 local function GetStore(self, create)
     local profile = self.db and self.db.profile

@@ -123,20 +123,7 @@ local function ResolveAuraBarAutocompleteEntry(text)
     return nil
 end
 
-local function AddHealthResourceConfig(resources)
-    local result = { RESOURCE_HEALTH }
-    if type(resources) ~= "table" then
-        return result
-    end
-
-    for _, powerType in ipairs(resources) do
-        if powerType ~= RESOURCE_HEALTH then
-            result[#result + 1] = powerType
-        end
-    end
-
-    return result
-end
+local AddHealthResource = RB.AddHealthResource
 
 local function GetConfigActiveResources()
     local _, _, classID = UnitClass("player")
@@ -151,7 +138,7 @@ local function GetConfigActiveResources()
     -- For Druid, only expose Astral Power while currently in Balance spec.
     if classID == 11 then
         if IsAstralPowerAvailableForCurrentDruidSpec() then
-            return AddHealthResourceConfig(CLASS_RESOURCES_CONFIG[11])
+            return AddHealthResource(CLASS_RESOURCES_CONFIG[11])
         end
         local resources = {}
         for _, powerType in ipairs(CLASS_RESOURCES_CONFIG[11] or {}) do
@@ -159,14 +146,14 @@ local function GetConfigActiveResources()
                 resources[#resources + 1] = powerType
             end
         end
-        return AddHealthResourceConfig(resources)
+        return AddHealthResource(resources)
     end
 
     if specID and SPEC_RESOURCES_CONFIG[specID] then
-        return AddHealthResourceConfig(SPEC_RESOURCES_CONFIG[specID])
+        return AddHealthResource(SPEC_RESOURCES_CONFIG[specID])
     end
 
-    return AddHealthResourceConfig(CLASS_RESOURCES_CONFIG[classID] or {})
+    return AddHealthResource(CLASS_RESOURCES_CONFIG[classID] or {})
 end
 
 ------------------------------------------------------------------------

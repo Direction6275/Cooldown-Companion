@@ -28,5 +28,3 @@ setmetatable(ConfigST, {
     __index = MainST,
     __newindex = MainST,
 })
-
-MainST.ConfigAddonName = CONFIG_ADDON_NAME
