@@ -79,8 +79,8 @@ local function GetPandemicPreviewRig(slot)
     local leave = triggers.leave[1]
     if leave then
         leave:HookScript("OnFinished", function()
-            if slot._ccPandemicRigLit ~= "leaving" then return end
-            slot._ccPandemicRigLit = nil
+            if not slot._ccPandemicRigLeaving then return end
+            slot._ccPandemicRigLeaving = nil
             if slot._cdcEntryIndex then
                 ApplySelectionVisuals(slot, slot._cdcEntryIndex)
             end
@@ -96,14 +96,14 @@ end
 -- across redraws that change nothing it reads.
 local function StylePandemicPreviewRig(slot, style, on, inWindow, flip)
     -- Read by the selection outline (ApplySelectionVisuals): the look shows
-    -- inside the window, and while a Refresh effect plays it out as the
-    -- window closes ("leaving", cleared by the leave group's OnFinished).
-    if on and inWindow then
-        slot._ccPandemicRigLit = true
-    elseif on and flip and style and (style.pandemicRefreshEffect or "vanish") ~= "vanish" then
-        slot._ccPandemicRigLit = "leaving"
-    else
-        slot._ccPandemicRigLit = nil
+    -- inside the window, and while a Refresh effect plays it out after the
+    -- window closes. That leave state is cleared by the leave group's
+    -- OnFinished; a rebuild during it (no flip) keeps it.
+    slot._ccPandemicRigLit = on and inWindow or nil
+    if not on or inWindow then
+        slot._ccPandemicRigLeaving = nil
+    elseif flip then
+        slot._ccPandemicRigLeaving = style and (style.pandemicRefreshEffect or "vanish") ~= "vanish" or nil
     end
     local rig = slot._ccPandemicRig or on and GetPandemicPreviewRig(slot)
     if not rig then return end
@@ -115,7 +115,14 @@ local function StylePandemicPreviewRig(slot, style, on, inWindow, flip)
         PlayGroups(triggers.active, "Play")
     else
         PlayGroups(triggers.active, "Stop")
-        if on and flip then PlayGroups(triggers.leave, "Play") end
+        if not on then
+            -- Off, including a slot cleared for reuse: no Start or Refresh
+            -- effect may keep playing on it.
+            PlayGroups(triggers.enter, "Stop")
+            PlayGroups(triggers.leave, "Stop")
+        elseif flip then
+            PlayGroups(triggers.leave, "Play")
+        end
     end
 end
 
