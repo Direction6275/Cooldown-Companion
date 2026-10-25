@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.11",
         "2.10",
         "2.9",
         "2.8",
@@ -48,6 +49,46 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.11"] = {
+            markdown = [[
+**Restart the game after updating.** A /reload is not enough for this version.
+
+## New Features
+
+- **Hide while arranging:** Groups and panels in the "Panels unlocked" window have an eye next to the padlock. Click it to hide that group or panel, and the bars attached to it, while you arrange the rest. Done, Cancel, or the padlock brings it back, and nothing is saved.
+- **Compact Mode on bar panels:** Panels made only of bars now collapse hidden cooldown bars like icon panels, using the panel's one Compact Mode. Collapsing Stack is gone: panels that used it become a one-line Grid with Compact Mode on. To collapse auras, use an Aura Panel.
+
+## Polish | QoL
+
+- **Bars anchored to Indicators:** A cast bar or resource bar anchored to an Indicator now lines up with the Indicator's visible box instead of its center. Bars already anchored this way shift once.
+- **Unlock polish:** Aura entries show their Override Icon on unlock tiles, and cast bar and resource stack grips use the same corner bracket as panels. Unnamed panels read "Panel N" in anchor menus.
+- **Talent Conditions for several entries:** Shows "Multiple" when the selected entries' lists differ, and Edit opens with the shared list when they match.
+- **Pandemic preview:** The settings preview draws the pandemic look with the game's own glow, and animated styles no longer restart on unrelated redraws.
+- **Settings polish:** Rows remove with the same small X, Resources Bar Width moves in 0.1 steps, and aura entries on icon panels get the Low Time row. A new panel's add box gets the cursor right away, and Navigator rows that would refuse a drop no longer light up.
+
+## Bug Fixes
+
+- **Fading while unlocked:** A panel unlocked by itself inside a locked group no longer stays faded, and a group left unlocked when combat starts now fades by its combat settings.
+- **Shadowform keybinds on ElvUI:** Spells on the Shadowform action bar now show their keybinds.
+- **Aura Panel bars:** Bar fills, text, and stack segments stay inside the border.
+- **Aura Panel units:** Aura Panels and aura sections choose between your buff and the target's debuff the same way as other aura displays, so an aura watches the same unit wherever you place it.
+- **Reversed resource bars:** Bars that fill from the far end fill their aura stack overlay from the same end.
+- **Resource Bars turning off:** Turning Resource Bars off or switching profiles with the resource stack unlocked no longer brings the bars back partway through.
+- **Switch to Bars:** Works again on Aura and Totem Panels, and no longer appears on ordinary panels, where it did nothing.
+- **Arrange Mode:** Cancel returns a padlocked Indicator along with its moved Group, and hovering a nudge arrow no longer saves anything.
+- **Popups and profiles:** Switching, copying, or resetting a profile closes open popups and the docked spellbook, so they can't act on the wrong profile. A Delete Group popup left open after its Group is gone no longer deletes an unrelated panel, and new profiles no longer show the attached bars message at login.
+- **Import and export:** Classes whose Resources were never set up no longer ask to replace them on import or appear in Export, and Export keeps panels that share a position in order.
+- **Moving aura entries:** A Show While Inactive entry moved into an Indicator, or back, keeps showing while the aura is missing.
+- **Settings window:** Settings reopen when you padlock the last thing you can move, and recover on your next click after an internal error instead of freezing until /reload. Duplicating another class's panel while browsing keeps its hero talent limits.
+
+## Performance
+
+- **Lower idle CPU:** Panels set to show with a focus, panels resting at a partial fade, and Aura Panels with animated glows no longer keep the addon busy while nothing changes. With animated Aura Panel glows, your frame rate now matches having them off.
+- **Lighter form swaps:** Cat and Bear form swaps cost the addon about half as much.
+- **Less background work:** Talent, hero talent, and spec swaps refresh once, and zone, roster, pet, and trinket changes skip work they don't need. Mouse-following panels stop re-placing themselves while the mouse is still, and logging in with media packs rebuilds panels once.
+- **Smoother settings resize:** Dragging the config window's resize grip with a panel selected no longer stutters.
+]],
+        },
         ["2.10"] = {
             markdown = [[
 ## New Features
