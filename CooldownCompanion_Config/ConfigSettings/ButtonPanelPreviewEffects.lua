@@ -20,6 +20,7 @@ local UpdateCombinedBarAuraEffects = PP.UpdateCombinedBarAuraEffects
 
 -- ButtonPanelPreviewShared.lua
 local GetStoredBarPreviewState = PP.GetStoredBarPreviewState
+local ApplySelectionVisuals = PP.ApplySelectionVisuals
 local PANEL_PREVIEW_COND_TICK = PP.PANEL_PREVIEW_COND_TICK
 
 -- ButtonPanelPreviewIcons.lua
@@ -77,68 +78,17 @@ local function GetPandemicPreviewRig(slot)
     return rig
 end
 
--- What StyleKitPandemicGlowRegions reads, plus the rect the kit fits around.
-local PANDEMIC_LOOK_KEYS = { "pandemicGlowStyle", "pandemicGlowSize", "pandemicGlowSpeed",
-    "pandemicGlowLines", "pandemicGlowThickness" }
-local PANDEMIC_LOOK_COLORS = { "pandemicGlowColor", "pandemicGlowColor2" }
-
--- Colors compare by component: the color picker edits its table in place.
-local function MatchesPandemicLook(stamp, style, w, h)
-    if stamp.w ~= w or stamp.h ~= h then return false end
-    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
-        if stamp[key] ~= (style and style[key]) then return false end
-    end
-    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
-        local color, saved = style and style[key], stamp[key]
-        if color then
-            if not (saved and saved[1] == color[1] and saved[2] == color[2]
-                and saved[3] == color[3] and saved[4] == color[4]) then
-                return false
-            end
-        elseif saved then
-            return false
-        end
-    end
-    return true
-end
-
-local function StampPandemicLook(style, w, h)
-    local stamp = { w = w, h = h }
-    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
-        stamp[key] = style and style[key]
-    end
-    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
-        local color = style and style[key]
-        stamp[key] = color and { color[1], color[2], color[3], color[4] } or nil
-    end
-    return stamp
-end
-
 -- `on`: the rig draws this slot's pandemic look. `flip`: the window just
 -- opened or closed, so the effects play; a rebuild only restores the steady
--- state.
---
--- Styling the kit restarts its animations, so a redraw that changes nothing
--- the look reads keeps the running glow and only re-snaps its edges (owner
--- ruling 2026-10-24). Editing the look's own keys still restyles it.
+-- state. The kit styles through the preview entry, which keeps a running glow
+-- across redraws that change nothing it reads.
 local function StylePandemicPreviewRig(slot, style, on, inWindow, flip)
-    -- Read by the selection outline (ApplySelectionVisuals).
-    slot._ccPandemicRigLit = on or nil
+    -- Read by the selection outline (ApplySelectionVisuals): the look shows
+    -- only inside the window.
+    slot._ccPandemicRigLit = on and inWindow or nil
     local rig = slot._ccPandemicRig or on and GetPandemicPreviewRig(slot)
     if not rig then return end
-    if on then
-        local w, h = slot._ccKitRectW, slot._ccKitRectH
-        if not (w and h) then w, h = slot:GetSize() end
-        if rig.lookStamp and MatchesPandemicLook(rig.lookStamp, style, w, h) then
-            ST.RefreshBorderTextureScale(rig.glow.edges)
-        else
-            ST._StyleKitPandemicGlowRegions(rig.glow, style, slot, true)
-            rig.lookStamp = StampPandemicLook(style, w, h)
-        end
-    else
-        rig.lookStamp = nil
-        ST._StyleKitPandemicGlowRegions(rig.glow, style, slot, false)
-    end
+    ST._StyleKitPandemicPreviewGlow(rig.glow, style, slot, on)
     ST._StylePandemicWindowRig(rig, style, on)
     local triggers = rig.triggers
     if on and inWindow then
@@ -237,6 +187,11 @@ local function UpdateCombinedIconAuraEffects(slot, state, now)
         ST.RefreshBorderTextureScale(slot.auraGlow.solidTextures)
     end
     StylePandemicPreviewRig(slot, slot.style, IsPandemicPreviewEnabled(slot.style), pandemicActive, true)
+    -- The glow that shows just changed, so the selection outline follows it
+    -- now rather than at the next rebuild.
+    if slot._cdcEntryIndex and ApplySelectionVisuals then
+        ApplySelectionVisuals(slot, slot._cdcEntryIndex)
+    end
 end
 
 local function StopConditionalTicker(preview)

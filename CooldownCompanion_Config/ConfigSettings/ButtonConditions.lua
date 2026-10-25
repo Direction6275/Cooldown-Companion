@@ -2236,10 +2236,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- collected first, then written into the grid in order. Every family is
     -- one row now: a state dropdown, or one of the two plain toggles that
     -- survived.
-    local families, totalRows = {}, 0
-    local function AddFamily(rows, build)
-        families[#families + 1] = { build = build }
-        totalRows = totalRows + rows
+    local families = {}
+    local function AddFamily(build)
+        families[#families + 1] = build
     end
 
     -- One hide/dim state family: its list, reader and writer are built from
@@ -2248,7 +2247,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- extra clearing (the zero-charges row's cross-link) after the shared
     -- write and before the rebuild.
     local function AddStateFamily(spec)
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             local list, order = BuildStateList(spec.desaturateKey ~= nil)
             AddVisibilityDropdown(column, {
                 setting = spec.setting,
@@ -2307,7 +2306,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             missing = "Show While Inactive" }
         local auraOrder = { "show", "dim", "hide", "missing" }
         -- Visibility is independent of missing-aura effects.
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             AddVisibilityDropdown(column, {
                 setting = entryVisibilitySettings.auraInactive,
                 filter = FilterAuraEntry,
@@ -2417,7 +2416,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         cooldownOrder[#cooldownOrder + 1] = "zero_only"
     end
 
-    AddFamily(1, function(column)
+    AddFamily(function(column)
         AddVisibilityDropdown(column, {
             setting = entryVisibilitySettings.cooldownVisibility,
             list = cooldownList,
@@ -2538,7 +2537,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         })
 
         -- Hide Cooldown While Charges Remain
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             AddVisibilityRow(column, "Hide Cooldown While Charges Remain", "hideCooldownWithCharges", {
                 setting = entryVisibilitySettings.chargeCooldown,
                 filter = FilterChargeCapable,
@@ -2600,15 +2599,15 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- Section, for example), and both the
     -- heading and an empty grid are still widgets - so the section only builds
     -- when there is something to pour into it.
-    if totalRows > 0 then
+    if #families > 0 then
         local visKey = isBatch
             and (CS.selectedGroup .. "_batch_visibility")
             or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
         local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
         if not visCollapsed then
             local visColumn = BeginRowGrid(scroll)
-            for _, family in ipairs(families) do
-                family.build(visColumn)
+            for _, buildFamily in ipairs(families) do
+                buildFamily(visColumn)
             end
         end
     end

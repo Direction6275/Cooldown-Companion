@@ -1635,6 +1635,9 @@ end
 -- border restyles on stack ticks).
 local function StyleKitGlowCore(glowKit, anchorFrame, kitStyle, color, color2, size, speed, count, thickness)
     local host = glowKit.host
+    -- Whatever styles the kit next, the preview's remembered look no longer
+    -- describes it (StyleKitPandemicPreviewGlow sets it again after this).
+    glowKit.previewLook = nil
     -- Pulse, colorShift and dashes take seconds in (0, 3]. Unset, <= 0 or
     -- legacy pixel-scale values (the dormant pandemicGlowSpeed shipped as 50
     -- on the retired LCG scale) fall back to the style default; autocast
@@ -1830,18 +1833,19 @@ end
 -- and the entry/panel resolution lives with the other bind policy in
 -- AuraDisplay.lua. Dash count/thickness ride the dormant-era key names
 -- (pandemicGlowLines/pandemicGlowThickness).
-local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
-    local kitStyle = "none"
-    if enabled then
-        local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
-        if rawStyle == "cdm" and glowKit.cdm then
-            -- Pandemic-only style. Every pandemic kit is built withCdm, so
-            -- the glowKit.cdm guard is defensive only.
-            kitStyle = "cdm"
-        else
-            kitStyle = NormalizeKitGlowStyle(rawStyle)
-        end
+local function ResolvePandemicKitStyle(glowKit, styleTable, enabled)
+    if not enabled then return "none" end
+    local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
+    if rawStyle == "cdm" and glowKit.cdm then
+        -- Pandemic-only style. Every pandemic kit is built withCdm, so
+        -- the glowKit.cdm guard is defensive only.
+        return "cdm"
     end
+    return NormalizeKitGlowStyle(rawStyle)
+end
+
+local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    local kitStyle = ResolvePandemicKitStyle(glowKit, styleTable, enabled)
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
         (styleTable and styleTable.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR,
         (styleTable and styleTable.pandemicGlowColor2) or DEFAULT_PANDEMIC_COLOR2,
@@ -1849,6 +1853,88 @@ local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, ena
         styleTable and styleTable.pandemicGlowSpeed,
         styleTable and styleTable.pandemicGlowLines,
         styleTable and styleTable.pandemicGlowThickness)
+end
+
+-- Config previews redraw on every settings edit, and StyleKitGlowCore restarts
+-- a lit kit's animations each time it runs. Preview callers style through
+-- StyleKitPandemicPreviewGlow instead (owner ruling 2026-10-24): it restyles
+-- only when something the look reads changed, the kit was last styled
+-- elsewhere, or the lit style's animation stopped; otherwise it only re-snaps
+-- the edges. Live kits never use it: they style at bind.
+local PANDEMIC_LOOK_KEYS = { "pandemicGlowStyle", "pandemicGlowSize", "pandemicGlowSpeed",
+    "pandemicGlowLines", "pandemicGlowThickness" }
+local PANDEMIC_LOOK_COLORS = { "pandemicGlowColor", "pandemicGlowColor2" }
+
+-- Colors compare by component: the color picker edits its table in place.
+local function MatchesPandemicLook(look, styleTable, w, h)
+    if look.w ~= w or look.h ~= h then return false end
+    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
+        if look[key] ~= (styleTable and styleTable[key]) then return false end
+    end
+    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
+        local color, saved = styleTable and styleTable[key], look[key]
+        if color then
+            if not (saved and saved[1] == color[1] and saved[2] == color[2]
+                and saved[3] == color[3] and saved[4] == color[4]) then
+                return false
+            end
+        elseif saved then
+            return false
+        end
+    end
+    return true
+end
+
+local function StampPandemicLook(styleTable, kitStyle, w, h)
+    local look = { kitStyle = kitStyle, w = w, h = h }
+    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
+        look[key] = styleTable and styleTable[key]
+    end
+    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
+        local color = styleTable and styleTable[key]
+        look[key] = color and { color[1], color[2], color[3], color[4] } or nil
+    end
+    return look
+end
+
+-- The AnimationGroup each lit style keeps playing (StyleKitGlowCore); solid
+-- and overlay have none. A hidden host pauses its groups, which then read as
+-- not playing, so only a visible host is judged.
+local function IsKitStyleAnimationAlive(glowKit, kitStyle)
+    local group
+    if kitStyle == "pulse" then
+        group = glowKit.pulseAG
+    elseif kitStyle == "colorShift" then
+        group = glowKit.csAGs[1]
+    elseif kitStyle == "proc" then
+        group = glowKit.flipAG
+    elseif kitStyle == "ants" then
+        group = glowKit.antsAG
+    elseif kitStyle == "dashes" then
+        group = glowKit.dashes.ag
+    elseif kitStyle == "autocast" then
+        group = glowKit.sparks[1] and glowKit.sparks[1].ag
+    elseif kitStyle == "cdm" then
+        group = glowKit.cdm and glowKit.cdm.ag
+    end
+    return not group or not glowKit.host:IsVisible() or group:IsPlaying()
+end
+
+local function StyleKitPandemicPreviewGlow(glowKit, styleTable, anchorFrame, enabled)
+    if not enabled then
+        StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, false)
+        return
+    end
+    local kitStyle = ResolvePandemicKitStyle(glowKit, styleTable, true)
+    local w, h = KitRectSize(anchorFrame)
+    local look = glowKit.previewLook
+    if look and look.kitStyle == kitStyle and MatchesPandemicLook(look, styleTable, w, h)
+        and IsKitStyleAnimationAlive(glowKit, kitStyle) then
+        ST.RefreshBorderTextureScale(glowKit.edges)
+        return
+    end
+    StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, true)
+    glowKit.previewLook = StampPandemicLook(styleTable, kitStyle, w, h)
 end
 
 ------------------------------------------------------------------------
@@ -2040,6 +2126,7 @@ ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StopKitGlowAnimations = StopKitGlowAnimations
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
+ST._StyleKitPandemicPreviewGlow = StyleKitPandemicPreviewGlow
 ST._BuildPandemicWindowRig = BuildPandemicWindowRig
 ST._StylePandemicWindowRig = StylePandemicWindowRig
 ST._BuildAuraGlowReplace = BuildAuraGlowReplace

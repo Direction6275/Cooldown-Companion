@@ -345,7 +345,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     if state == "timeless" and not inWindow then surface.indicatorReadouts.timer:SetText("") end
     -- The Pandemic effect stand-ins: the live rigs' stylers on CC-side kits.
     if not surface.indicatorPandemicGlow then I.CreatePandemicGlow(surface, false) end
-    I.StylePandemicGlow(surface, candidate, true)
+    I.StylePandemicGlow(surface, candidate, true, true)
     I.StylePandemicTint(surface, candidate, true)
     ShowPandemicStandIns(surface, I.IsPreviewPandemicWindow(fraction * I.PREVIEW_SECONDS))
     if countdown then

@@ -445,6 +445,16 @@ function ST.AttachMoverWidthResize(frame, opts)
     grip:SetSize(16, 16)
     grip:SetFrameStrata(dragHandle:GetFrameStrata())
     grip:SetFrameLevel(dragHandle:GetFrameLevel() + 4)
+    -- On a thin bar the grip reaches past it into the name bar or the
+    -- coordinate label; their controls sit above it so they still click.
+    local overGrip = grip:GetFrameLevel() + 1
+    local gripNeighbors = { dragHandle.lockButton, dragHandle.menuButton, coordLabel }
+    for i = 1, 3 do
+        local control = gripNeighbors[i]
+        if control and control:GetFrameLevel() < overGrip then
+            control:SetFrameLevel(overGrip)
+        end
+    end
 
     -- The grip lives on the MOVABLE corner: an anchored edge is fixed, so a
     -- RIGHT-anchored bar grows leftward and its left edge is the one that

@@ -863,9 +863,10 @@ local function SpecBelongsToClass(specId, classKey)
 end
 
 -- true: the hero tree is one of this class's. false: the class's trees were
--- read and it is not among them. nil: the class's trees could not be read
--- (another class's specs return nothing against the player's own config,
--- MayReturnNothing), so the caller cannot tell and keeps the limit.
+-- read and it is not among them. nil: another class's trees could not be read
+-- (its specs return nothing against the player's own config,
+-- MayReturnNothing), so the caller cannot tell and keeps the limit. The
+-- player's own class always reads, so an empty answer there is a false.
 local function HeroTalentBelongsToClass(subTreeID, classKey)
     subTreeID = tonumber(subTreeID)
     if not classKey then return true end
@@ -904,7 +905,7 @@ local function HeroTalentBelongsToClass(subTreeID, classKey)
             end
         end
     end
-    if answered then return false end
+    if answered or classKey == GetCurrentScopeClassKey(CooldownCompanion) then return false end
     return nil
 end
 
