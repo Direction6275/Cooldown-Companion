@@ -36,7 +36,6 @@ local BeginRowGrid = ST._BeginRowGrid
 
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
-local MakeCooldownTextAdvancedDescriptor = ST._MakeCooldownTextAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
 
@@ -747,18 +746,19 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- Row grammar (RowWidgets.lua): every setting below is a fixed-height row
     -- - label left, control right-aligned in a 140px control column,
     -- gear/info/scope badges chained off the end of the label. Rows sit in
-    -- curated two-column grids from BeginRowGrid, each section splitting its
-    -- rows along whatever line reads naturally for that section. Sections with
-    -- too little to split keep the left column only.
+    -- grids from BeginRowGrid, whose two columns stack at full width: the
+    -- first column's rows read above the second's, so every section is one
+    -- list of rows.
     --
-    -- Standing ruling (owner, 2026-07-27) - the two rules every row-grammar
+    -- Standing rules (owner, 2026-10-24, retiring the 2026-07-27 rule that
+    -- balanced the two columns side by side) - the two rules every row-grammar
     -- section on every tab follows:
     --
-    -- 1. Split the rows so the columns run as even as the semantics allow.
-    --    Meaning still wins where the two disagree: rows that must stay
-    --    adjacent (one disables the next) stay adjacent, and a gated row can
-    --    leave its column short, because the grid top-aligns its columns and
-    --    a short side just ends early.
+    -- 1. A section reads as one list, top to bottom. A parent row and the rows
+    --    it gates stay adjacent, a family caption (AddFamilyColumnCaptions)
+    --    heads each family as a divider, and rows that come out of a filter
+    --    (event families, a gate) keep their order - there is no column to
+    --    balance, so a filter only shortens the list.
     -- 2. Every section is collapsible (BuildCollapsibleSection with a
     --    ROW_SECTION header). A collapsed section builds none of its rows, so
     --    any gear inside one needs queue-safe uncollapse wiring: whatever
@@ -768,16 +768,6 @@ local function BuildAppearanceTab(container, settingsGroup)
     --    (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) read by the preview command
     --    center; bar mode's text section names its key on the route itself
     --    (`uncollapse`). Either shape is fine; having neither is not.
-    -- 3. When a section's row set comes out of a FILTER - event families, a
-    --    gate, anything that can delete whole groups of rows before they are
-    --    assigned - fill the LEFT column first. A populated right column
-    --    beside an empty left one is never acceptable. A semantic split that
-    --    survives the filter intact still wins (both halves populated), but
-    --    the moment the filter leaves only one of them the survivors split
-    --    themselves across the columns left-first, ceil(n/2) left. The entry
-    --    Sound Alerts section is the worked example: it splits cooldown-family
-    --    left / aura-family right when an entry has both, and an aura-only
-    --    entry's three dropdowns 2/1 instead of 0/3.
     --
     -- Section headers are left-aligned (ROW_SECTION) and own the vertical air
     -- BEFORE their section, so sections never butt together and nothing here
@@ -787,9 +777,8 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- and flush left: SetAutoWidth(true),
     -- never SetFullWidth. A page-wide button is louder than every setting it
     -- sits under, and both List and Flow anchor their children from the left,
-    -- so no alignment wrapper is needed. They go INSIDE the grid, filling the
-    -- shorter column's empty tail, rather than below it - a lopsided section
-    -- with a lone button hanging off the bottom reads as unfinished.
+    -- so no alignment wrapper is needed. They go last, still INSIDE the grid
+    -- (its last column), never straight onto the full-width container below.
     -- ================================================================
     local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
     -- An Aura Panel draws no cooldown text (nothing on it has a cooldown), so
@@ -1135,9 +1124,9 @@ local function BuildAppearanceTab(container, settingsGroup)
         AddFamilyColumnCaptions(otherLeft, otherRight)
     end
 
-    -- Ordinary icon panels give cooldown and aura parallel columns. Aura
+    -- Ordinary icon panels list the cooldown rows, then the aura rows. Aura
     -- Panels have no cooldown consumer, so their duration and other-text rows
-    -- share the left half, leaving the right column empty.
+    -- all go in the first column, leaving the second empty.
     local auraTextHost = usesOnlyAura and durationLeft or durationRight
 
     local durationFormatAdded = false
@@ -1224,32 +1213,50 @@ local function BuildAppearanceTab(container, settingsGroup)
     })
 
     if cdTextSec.scope ~= "denied" then
-        -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). A customized entry
-        -- hands its override store; an inherited one hands the effective read
-        -- table, whose panel opens read-only behind the unlock strip.
-        local cdTextAdvanced = MakeCooldownTextAdvancedDescriptor(
-            (group._settingsContext or cdTextSec.scope == "customized") and cdTextSec.tbl
-                or cdTextSec.write == nil and cdTextSec.read or nil,
-            APPEARANCE_FINDER.cooldown)
+        local function BuildCooldownTextAdvanced(panel)
+            AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
+                "cooldown", refreshStyle, {
+                    indent = false,
+                    explicitOff = cdTextSec.scope == "customized",
+                    disabled = cdTextSec.disabled,
+                    settings = {
+                        mode = APPEARANCE_FINDER.text.cooldownVisible,
+                        threshold = APPEARANCE_FINDER.text.cooldownLast,
+                    },
+                    infoButtons = CS.advancedSettingsInfoButtons,
+                    completeEdit = refreshStyleSettings,
+                })
 
-        AddAdvancedToggle(cdTextRow, cdTextAdvanced.settingKey, tabInfoButtons, true, {
-            title = cdTextAdvanced.title,
-            build = function(panel)
-                AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
-                    "cooldown", refreshStyle, {
-                        indent = false,
-                        explicitOff = cdTextSec.scope == "customized",
-                        disabled = cdTextSec.disabled,
-                        settings = {
-                            mode = APPEARANCE_FINDER.text.cooldownVisible,
-                            threshold = APPEARANCE_FINDER.text.cooldownLast,
-                        },
-                        infoButtons = CS.advancedSettingsInfoButtons,
-                        completeEdit = refreshStyleSettings,
-                    })
-                cdTextAdvanced.build(panel)
-            end,
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so every builder is called with no rightColumn, and
+            -- each falls back to `container` for its extras.
+            local finderSettings = APPEARANCE_FINDER.cooldown
+            AddFontControls(panel, cdTextSec.tbl, "cooldown", { size = 12 }, refreshStyle, {
+                settings = finderSettings and {
+                    size = finderSettings.fontSize,
+                    font = finderSettings.font,
+                    outline = finderSettings.outline,
+                },
+            })
+
+            AddColorRow(panel, {
+                label = "Font Color",
+                setting = finderSettings and finderSettings.color,
+                tbl = cdTextSec.tbl,
+                key = "cooldownFontColor",
+                default = {1, 1, 1, 1},
+                onConfirm = refreshStyle,
+            })
+
+            AddTextPositionControls(panel, cdTextSec.tbl, "cooldownTextAnchor", "cooldownTextXOffset", "cooldownTextYOffset", refreshStyle, {
+                defaults = {anchor = "CENTER", range = 20},
+                settings = finderSettings,
+            })
+        end
+
+        AddAdvancedToggle(cdTextRow, "cooldownText", tabInfoButtons, true, {
+            title = "Cooldown Text Advanced",
+            build = BuildCooldownTextAdvanced,
             unlock = { sec = cdTextSec,
                 enable = cdTextSec.read.showCooldownText ~= true and TURNON_COOLDOWN_TEXT or nil },
         })
@@ -1373,7 +1380,7 @@ local function BuildAppearanceTab(container, settingsGroup)
 
         -- Single rail (AdvancedSettingsPanel.lua): every builder runs with
         -- no rightColumn.
-        local function BuildAuraDurationTextAdvanced(panel)
+        local function BuildAuraDurationTextAdvanced(panel, descriptor)
             AddDurationTextVisibilityRows(panel, auraTextSec.read, auraTextSec.write,
                 "aura", refreshStyle, {
                     indent = false,
@@ -1403,8 +1410,8 @@ local function BuildAppearanceTab(container, settingsGroup)
                 onConfirm = refreshStyle,
             })
 
-            -- WHICH position keys this text uses is decided by Keep Cooldown
-            -- Text, a row in the While Aura Active section. This panel
+            -- WHICH position keys this text uses is decided by the While Aura
+            -- Active section's Cooldown row (Show Text). This panel
             -- only draws the keys that are actually live, which is the same
             -- answer GetAuraDurationTextPlacement gives at runtime: the aura
             -- keys once the flag is on, the shared cooldown-text keys while it
@@ -1453,6 +1460,21 @@ local function BuildAppearanceTab(container, settingsGroup)
                     sharedPosition:Chrome(offsetXRow)
                     sharedPosition:Chrome(offsetYRow)
                     sharedPosition:Finish()
+                    -- Customized position rows stay editable when this panel is
+                    -- locked only because the entry does not customize Aura
+                    -- Duration Text, and only while that text is shown. The
+                    -- Enable Aura Duration Text lock and a panel whose text is
+                    -- off keep them grey (2026-08-31: no live rows with no
+                    -- visible effect). The locked sweep in this same build
+                    -- consumes the flags; undo is the entry's Customizations list.
+                    if descriptor and descriptor._resolvedUnlock
+                        and auraTextSec.scope == "inherited"
+                        and auraTextSec.read.showAuraText ~= false
+                        and sharedPosition.scope == "customized" then
+                        anchorRow._cdcReadOnlyExempt = true
+                        offsetXRow._cdcReadOnlyExempt = true
+                        offsetYRow._cdcReadOnlyExempt = true
+                    end
                 else
                     auraTextSec:PanelRowChrome(anchorRow)
                     auraTextSec:PanelRowChrome(offsetXRow)

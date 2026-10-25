@@ -81,8 +81,8 @@ local CONTROL_GAP            = 6     -- gap between two controls inside the colu
 
 local BADGE_GAP              = 4     -- label -> badge and badge -> badge
 
--- Below this the grid cannot produce a sane two-column split, so a layout pass
--- that resolves to less than this keeps the previous geometry instead. See the
+-- Below this the grid cannot lay its rows out sanely, so a layout pass that
+-- resolves to less than this keeps the previous geometry instead. See the
 -- degenerate-width note on the layout itself.
 local ROW_GRID_MIN_WIDTH     = 64
 
@@ -255,7 +255,7 @@ local function ApplyLabelColor(self, colorOnly)
 end
 
 -- The control column is a fixed width pinned to the row's right edge, but a
--- narrow row (half-width grid column) must still leave the label room.
+-- narrow row must still leave the label room.
 local function UpdateControlColumnWidth(self, width)
     width = width or self.frame:GetWidth() or 0
     local colWidth = self.controlColumnWidthOverride or CONTROL_COLUMN_WIDTH
@@ -517,7 +517,7 @@ local sharedMethods = {
     -- Turn the row into a CAPTION: a read-only heading for the column it sits
     -- in, not a setting. Only the label's look changes - smaller and grey,
     -- matching the scope chrome's read-only voice - so the row still occupies
-    -- exactly one slot and the two columns of a grid stay in step.
+    -- exactly one slot.
     --
     -- The font object is part of the row's POOLED state, so it is set through
     -- this one method and reset by ResetRowBase on every acquire; a recycled
@@ -1852,13 +1852,15 @@ end
 ------------------------------------------------------------------------
 -- CDC-RowIconBadge
 --
--- A small flat icon action hung after a row's label with AnchorRowBadge. It
+-- A small flat icon action, either hung after a row's label with
+-- AnchorRowBadge or set as a CDC-LabelRow's control widget (SetControlWidget,
+-- the right edge of the control column). It
 -- wears the config window's titlebar buttons (Panel.lua): a desaturated
 -- uitools icon in the titlebar's muted tone, tinted on hover. It starts as
 -- the remove X (red on hover); SetIcon picks another icon, hover color and
 -- rotation (the family has no up arrow: promote turns chevron-down over), and
--- SetActive keeps it lit while its action is under way. Pooled, so the caller
--- releases it with the row that carries it.
+-- SetActive keeps it lit while its action is under way. Pooled: the row that
+-- carries it releases it (a label row releases its control widget).
 ------------------------------------------------------------------------
 do
     local ICON_BADGE_TYPE = "CDC-RowIconBadge"
@@ -2165,7 +2167,7 @@ local function BeginRowGrid(container)
 end
 
 -- One resize-safe full-width List rail. This uses the same owned container as
--- the two-column grid instead of stock SimpleGroup, whose OnWidthSet does not
+-- BeginRowGrid's columns instead of stock SimpleGroup, whose OnWidthSet does not
 -- re-run layout when the surrounding config pane changes width.
 local function BeginFullWidthRowGroup(container)
     local group = AceGUI:Create(ROW_GRID_COL_TYPE)

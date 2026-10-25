@@ -156,14 +156,17 @@ end
 -- aura Indicator showing Icon artwork with the effect enabled (Texture and
 -- Text recolor instead, StylePandemicTint);
 -- `group` nil resets a pooled slot. The glow covers the visual's bounds,
--- stamped by StyleVisual, so no frame is ever measured.
-function I.StylePandemicGlow(host, group, shown)
+-- stamped by StyleVisual, so no frame is ever measured. `preview`: the config
+-- preview, which redraws per edit and keeps a running glow across redraws
+-- that change nothing it reads (Glows.lua StyleKitPandemicPreviewGlow).
+function I.StylePandemicGlow(host, group, shown, preview)
     local glow = host.indicatorPandemicGlow
     if not glow then return end
     local settings = I.Settings(group)
     local enabled = shown and DrawsLiveAura(host, group) and settings.displayType == "icon"
         and I.PandemicEffectOn(group) or false
-    ST._StyleKitPandemicGlowRegions(glow, settings and settings.pandemic, host.visualRoot, enabled)
+    local styleGlow = preview and ST._StyleKitPandemicPreviewGlow or ST._StyleKitPandemicGlowRegions
+    styleGlow(glow, settings and settings.pandemic, host.visualRoot, enabled)
     ST._StylePandemicWindowRig(host.indicatorPandemicWindow, settings and settings.pandemic, enabled)
 end
 

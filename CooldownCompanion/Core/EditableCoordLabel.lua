@@ -221,11 +221,12 @@ function ST.CreateEditableCoordLabel(coordLabel, getCoordinates, applyCoordinate
 end
 
 ------------------------------------------------------------------------
--- Corner-bracket resize glyph, shared by the panel grips and the section
--- grabber (owner ruling 2026-08-29: one quiet bracket everywhere -- the
--- stock chat grabber reads as noise). A soft white L over a dark shadow L,
--- inset a little from the corner, mirrored to whichever corner the grip
--- occupies. The caller keeps its own Button, scripts, and gestures; this
+-- Corner-bracket resize glyph, shared by the panel grips, the section
+-- grabber and the cast bar / resource stack grips (owner ruling 2026-08-29:
+-- one quiet bracket everywhere -- the stock chat grabber reads as noise;
+-- 2026-10-24: the bar grips too, at panel size). A soft white L over a dark
+-- shadow L, inset a little from the corner, mirrored to whichever corner the
+-- grip occupies. The caller keeps its own Button, scripts, and gestures; this
 -- only draws.
 ------------------------------------------------------------------------
 
@@ -348,7 +349,7 @@ end
 -- opts:
 --   dragHandle       name-bar frame; kit parent and mouse-wheel target
 --   coordLabel       existing coordinate label; the size label anchors below it
---   gripAnchor       frame whose BOTTOMRIGHT hosts the grip (defaults to the mover)
+--   gripAnchor       frame whose movable corner hosts the grip (defaults to the mover)
 --   getWidth()       saved width (the bar's primary length)
 --   setWidth(w)      write the saved width (the kit clamps first)
 --   getHeight()      saved height/thickness; omit for a width-only mover
@@ -439,12 +440,29 @@ function ST.AttachMoverWidthResize(frame, opts)
     sizeLabel.UpdateText = UpdateSizeLabelText
 
     local grip = CreateFrame("Button", nil, dragHandle)
-    grip:SetSize(12, 12)
+    -- The panel grip size (GroupFrameMovers PANEL_RESIZE_GRIP_SIZE), so the
+    -- bracket draws as large here as on panels.
+    grip:SetSize(16, 16)
     grip:SetFrameStrata(dragHandle:GetFrameStrata())
     grip:SetFrameLevel(dragHandle:GetFrameLevel() + 4)
-    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    -- On a thin bar the grip reaches past it into the name bar or the
+    -- coordinate label; their controls sit above it so they still click.
+    -- Children already built (the label's edit boxes) are raised with them.
+    local function RaiseAboveGrip(control, level)
+        if control:GetFrameLevel() < level then
+            control:SetFrameLevel(level)
+        end
+        local children = { control:GetChildren() }
+        for i = 1, #children do
+            RaiseAboveGrip(children[i], control:GetFrameLevel() + 1)
+        end
+    end
+    local gripNeighbors = { dragHandle.lockButton, dragHandle.menuButton, coordLabel }
+    for i = 1, 3 do
+        if gripNeighbors[i] then
+            RaiseAboveGrip(gripNeighbors[i], grip:GetFrameLevel() + 1)
+        end
+    end
 
     -- The grip lives on the MOVABLE corner: an anchored edge is fixed, so a
     -- RIGHT-anchored bar grows leftward and its left edge is the one that
@@ -471,6 +489,7 @@ function ST.AttachMoverWidthResize(frame, opts)
         grip:SetPoint(corner, opts.gripAnchor or frame, corner,
             xSide == "LEFT" and 1 or -1,
             ySide == "TOP" and -1 or 1)
+        ST.ApplyCornerBracketGrip(grip, xSide, ySide)
     end
     RepositionGrip()
 
@@ -656,13 +675,16 @@ function ST.AttachMoverWidthResize(frame, opts)
         EndWidthResizeGesture(not addon._combatForcedLock and not InCombatLockdown())
     end)
     grip:SetScript("OnEnter", function(self)
+        -- White at rest, gold on hover, like the panel grips.
+        ST.SetCornerBracketGripColor(self, 1, 0.82, 0, 1)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Resize")
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Mouse wheel over the name bar also resizes.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
-    grip:SetScript("OnLeave", function()
+    grip:SetScript("OnLeave", function(self)
+        ST.SetCornerBracketGripColor(self, 1, 1, 1)
         GameTooltip:Hide()
     end)
 

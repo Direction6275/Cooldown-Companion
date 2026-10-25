@@ -406,9 +406,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             end)
 
             -- Re-run the layout with final widths: AddChild lays out on every
-            -- insertion, so half-width overrides applied after a builder
-            -- returns are invisible until something else triggers a layout
-            -- (the two-column tabs' trailing widgets mis-wrapped otherwise).
+            -- insertion, so width changes applied after a builder returns are
+            -- invisible until something else triggers a layout.
             scroll:DoLayout()
             if ST._EndLensAnchorBuild then
                 ST._EndLensAnchorBuild()

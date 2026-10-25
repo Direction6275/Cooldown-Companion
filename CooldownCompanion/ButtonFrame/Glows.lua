@@ -634,10 +634,6 @@ local function HideGlowStyles(container)
         if container.procFrame.ProcLoop then container.procFrame.ProcLoop:Stop() end
         container.procFrame:Hide()
     end
-    if container.cdm then
-        container.cdm.ag:Stop()
-        container.cdm.frame:Hide()
-    end
     if container.overlayTexture then container.overlayTexture:Hide() end
     -- Assisted highlight blizzard flipbook frame
     if container.blizzardFrame then
@@ -744,15 +740,6 @@ local function ShowGlowStyle(container, style, button, color, params)
         end
         container.overlayTexture:SetColorTexture(color[1], color[2], color[3], color[4] or defaultAlpha)
         container.overlayTexture:Show()
-    elseif style == "cdm" then
-        -- CDM pandemic parity: untinted Blizzard art, no knobs; color and
-        -- params are ignored by design. Lazily built like the ants twin.
-        if not container.cdm then
-            container.cdm = BuildCdmPandemicRig(container.solidFrame, button)
-        end
-        container.cdm.border:SetAlpha(1)
-        container.cdm.frame:Show()
-        container.cdm.ag:Play()
     elseif style == "blizzard" then
         if container.blizzardFrame then
             container.blizzardFrame:Show()
@@ -799,11 +786,6 @@ local function IsGlowAnimationAlive(container)
         local spark = container.sparks[1]
         if not spark.tex:IsVisible() then return true end
         return spark.ag:IsPlaying()
-    end
-    -- CDM pandemic rig (same visible-only rule as the proc flipbook)
-    if container.cdm and container.cdm.frame:IsShown() then
-        if not container.cdm.frame:IsVisible() then return true end
-        return container.cdm.ag:IsPlaying()
     end
     -- Overlay is static — without this check, the cache safety net would treat it
     -- as "dead" and restart ShowGlowStyle every tick.
@@ -912,16 +894,14 @@ end
 -- → cache update → HideGlowStyles → ShowGlowStyle. The factory produces a
 -- closure with all config baked in as upvalues (zero per-tick allocation).
 --
--- ~55 upvalues per closure (Lua 5.1 caps at 60 — little headroom left;
--- the next field added to this factory likely needs to fold existing
--- upvalues into a table first). Cache comparison
+-- ~45 upvalues per closure (Lua 5.1 caps at 60; fold related upvalues into
+-- a table before this nears the cap again). Cache comparison
 -- uses upvalue string keys for button[field] lookups — same cost as literal
 -- field access (both are interned-string hash lookups).
 --------------------------------------------------------------------------------
 local function MakeGlowSetter(cfg)
     -- Config → local upvalues (consumed once at load time)
     local containerKey     = cfg.containerKey
-    local hasPandemic      = cfg.hasPandemic
     local normalize        = cfg.normalizeStyle
     local noneIsOff        = cfg.noneIsOff
     local fullParams       = cfg.fullParams
@@ -959,18 +939,6 @@ local function MakeGlowSetter(cfg)
     local defStyle    = cfg.defaultStyle
     local defColor    = cfg.defaultColor
 
-    -- Style keys: pandemic path (nil when hasPandemic is false)
-    local panStyleKey  = cfg.pandemicStyleKey
-    local panColorKey  = cfg.pandemicColorKey
-    local panColor2Key = cfg.pandemicColor2Key
-    local panDefColor2 = cfg.pandemicDefaultColor2
-    local panSizeKey   = cfg.pandemicSizeKey
-    local panThKey     = cfg.pandemicThicknessKey
-    local panSpdKey    = cfg.pandemicSpeedKey
-    local panLnKey     = cfg.pandemicLinesKey
-    local panDefStyle  = cfg.pandemicDefaultStyle
-    local panDefColor  = cfg.pandemicDefaultColor
-
     -- Cache field names on button (must match existing names for Preview.lua compat)
     local cActive   = cfg.cacheActive
     local cStyle    = cfg.cacheStyle
@@ -982,7 +950,6 @@ local function MakeGlowSetter(cfg)
     local cTh       = cfg.cacheTh
     local cSpd      = cfg.cacheSpd
     local cLn       = cfg.cacheLn
-    local cPandemic = cfg.cachePandemic
 
     -- Defaults for full-params path
     local defThickness = cfg.defaultThickness or 4
@@ -993,8 +960,8 @@ local function MakeGlowSetter(cfg)
     local sizeOnlyForSolid = cfg.sizeOnlyForSolid
     local defSize          = cfg.defaultSize
 
-    -- The actual glow setter closure. Signature: (button, show [, pandemicOverride])
-    return function(button, show, pandemicOverride)
+    -- The actual glow setter closure. Signature: (button, show)
+    return function(button, show)
         local container = button[containerKey]
         if not container then return end
 
@@ -1003,20 +970,12 @@ local function MakeGlowSetter(cfg)
         if show then
             local btnStyle = button.style
 
-            -- Resolve style and color based on pandemic branching
-            if hasPandemic and pandemicOverride then
-                glowStyle = (btnStyle and btnStyle[panStyleKey]) or panDefStyle
-                color = (btnStyle and btnStyle[panColorKey]) or panDefColor
-            else
-                glowStyle = (btnStyle and btnStyle[styleKey]) or defStyle
-                color = (btnStyle and btnStyle[colorKey]) or defColor
-            end
+            glowStyle = (btnStyle and btnStyle[styleKey]) or defStyle
+            color = (btnStyle and btnStyle[colorKey]) or defColor
 
-            -- Apply normalization if configured; the pandemic flag lets
-            -- branch-aware normalizers admit pandemic-only styles ("cdm")
-            -- without a second normalizer upvalue.
+            -- Apply normalization if configured
             if normalize then
-                glowStyle = normalize(glowStyle, hasPandemic and pandemicOverride)
+                glowStyle = normalize(glowStyle)
             end
 
             -- "none" style means off
@@ -1025,20 +984,14 @@ local function MakeGlowSetter(cfg)
             end
 
             if glowStyle then
-                -- Second color (color shift only); the pandemic branch reads
-                -- its own key family, matching the live kit resolver.
-                if glowStyle == "colorShift" then
-                    if hasPandemic and pandemicOverride and panColor2Key then
-                        color2 = (btnStyle and btnStyle[panColor2Key]) or panDefColor2 or defColor2
-                    elseif color2Key then
-                        color2 = (btnStyle and btnStyle[color2Key]) or defColor2
-                    end
+                -- Second color (color shift only)
+                if glowStyle == "colorShift" and color2Key then
+                    color2 = (btnStyle and btnStyle[color2Key]) or defColor2
                 end
 
                 -- Resolve size
                 if useGetGlowSize then
-                    local sk = (hasPandemic and pandemicOverride) and panSizeKey or sizeKey
-                    sz = GetGlowSize(btnStyle, sk, glowStyle, defaultSizes)
+                    sz = GetGlowSize(btnStyle, sizeKey, glowStyle, defaultSizes)
                 elseif sizeOnlyForSolid then
                     sz = (glowStyle == "solid") and ((btnStyle and btnStyle[sizeKey]) or defSize) or 0
                 end
@@ -1046,18 +999,12 @@ local function MakeGlowSetter(cfg)
                 -- Resolve full params (thickness, speed, lines) if supported
                 if fullParams then
                     usesSpeed = UsesGlowSpeed(glowStyle)
-                    local tk, sk2, lk
-                    if hasPandemic and pandemicOverride then
-                        tk, sk2, lk = panThKey, panSpdKey, panLnKey
-                    else
-                        tk, sk2, lk = thKey, spdKey, lnKey
-                    end
                     th = (glowStyle == "pixel" or glowStyle == "dashes")
-                        and ((btnStyle and btnStyle[tk]) or defThickness) or 0
-                    spd = usesSpeed and ((btnStyle and btnStyle[sk2])
+                        and ((btnStyle and btnStyle[thKey]) or defThickness) or 0
+                    spd = usesSpeed and ((btnStyle and btnStyle[spdKey])
                         or (defSpeeds and defSpeeds[glowStyle]) or defSpeed) or 0
                     ln = (glowStyle == "pixel" or glowStyle == "dashes")
-                        and ((btnStyle and btnStyle[lk]) or defLines) or 0
+                        and ((btnStyle and btnStyle[lnKey]) or defLines) or 0
                 end
             end
         end
@@ -1095,7 +1042,6 @@ local function MakeGlowSetter(cfg)
            and (not cC2Fields or (button[cC2Fields.set] == c2set
                 and button[cC2Fields.r] == c2r and button[cC2Fields.g] == c2g
                 and button[cC2Fields.b] == c2b and button[cC2Fields.a] == c2a))
-           and (not cPandemic or button[cPandemic] == pandemicOverride)
            and IsGlowAnimationAlive(container) then
             return
         end
@@ -1138,7 +1084,6 @@ local function MakeGlowSetter(cfg)
             button[cC2Fields.r], button[cC2Fields.g] = c2r, c2g
             button[cC2Fields.b], button[cC2Fields.a] = c2b, c2a
         end
-        if cPandemic then button[cPandemic] = pandemicOverride end
 
         if updateInPlace and TryUpdateGlowStyleInPlace(container, glowStyle, effectAnchor, color, opts) then
             return
@@ -1155,7 +1100,6 @@ end
 
 local SetProcGlow = MakeGlowSetter({
     containerKey       = "procGlow",
-    hasPandemic        = false,
     normalizeStyle     = NormalizeGlowStyle,
     noneIsOff          = false,
     fullParams         = true,
@@ -1181,15 +1125,10 @@ local SetProcGlow = MakeGlowSetter({
 -- CC-side twins in ShowGlowStyle; the rest translate to the equivalent
 -- legacy renderers (dead LCG styles to the pulse border, old pixel to its
 -- dashes lookalike) so preview matches the kit.
-local function NormalizeAuraGlowPreviewStyle(style, isPandemic)
+local function NormalizeAuraGlowPreviewStyle(style)
     if style == "none" or style == "solid" or style == "overlay"
         or style == "ants" or style == "colorShift" or style == "dashes" or style == "autocast" then
         return style
-    end
-    -- "cdm" exists only in the pandemic style menu; on the aura branch it
-    -- must degrade exactly like the kit does (unknown value -> pulse).
-    if style == "cdm" and isPandemic then
-        return "cdm"
     end
     if style == "glow" or style == "proc" then
         return "glow"
@@ -1202,7 +1141,6 @@ end
 
 local SetAuraGlow = MakeGlowSetter({
     containerKey       = "auraGlow",
-    hasPandemic        = true,
     normalizeStyle     = NormalizeAuraGlowPreviewStyle,
     noneIsOff          = true,
     fullParams         = true,
@@ -1224,24 +1162,15 @@ local SetAuraGlow = MakeGlowSetter({
     speedKey           = "auraGlowSpeed",
     linesKey           = "auraGlowDashCount",
     defaultLines       = 5,
-    pandemicStyleKey     = "pandemicGlowStyle",     pandemicDefaultStyle = "solid",
-    pandemicColorKey     = "pandemicGlowColor",     pandemicDefaultColor = DEFAULT_PANDEMIC_COLOR,
-    pandemicColor2Key    = "pandemicGlowColor2",    pandemicDefaultColor2 = DEFAULT_PANDEMIC_COLOR2,
-    pandemicSizeKey      = "pandemicGlowSize",
-    pandemicThicknessKey = "pandemicGlowThickness",
-    pandemicSpeedKey     = "pandemicGlowSpeed",
-    pandemicLinesKey     = "pandemicGlowLines",
     cacheActive = "_auraGlowActive",  cacheStyle = "_auraGlowStyle",
     cacheR = "_auraGlowR",  cacheG = "_auraGlowG",
     cacheB = "_auraGlowB",  cacheA = "_auraGlowA",
     cacheSz = "_auraGlowSz", cacheTh = "_auraGlowTh",
     cacheSpd = "_auraGlowSpd", cacheLn = "_auraGlowLn",
-    cachePandemic = "_auraGlowPandemic",
 })
 
 local SetReadyGlow = MakeGlowSetter({
     containerKey       = "readyGlow",
-    hasPandemic        = false,
     normalizeStyle     = NormalizeGlowStyle,
     noneIsOff          = false,
     fullParams         = true,
@@ -1272,7 +1201,6 @@ end
 
 local SetKeyPressHighlight = MakeGlowSetter({
     containerKey       = "keyPressHighlight",
-    hasPandemic        = false,
     normalizeStyle     = NormalizeKPHStyle,
     noneIsOff          = false,
     fullParams         = false,
@@ -1902,18 +1830,23 @@ end
 -- and the entry/panel resolution lives with the other bind policy in
 -- AuraDisplay.lua. Dash count/thickness ride the dormant-era key names
 -- (pandemicGlowLines/pandemicGlowThickness).
-local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
-    local kitStyle = "none"
-    if enabled then
-        local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
-        if rawStyle == "cdm" and glowKit.cdm then
-            -- Pandemic-only style. Every pandemic kit is built withCdm, so
-            -- the glowKit.cdm guard is defensive only.
-            kitStyle = "cdm"
-        else
-            kitStyle = NormalizeKitGlowStyle(rawStyle)
-        end
+local function ResolvePandemicKitStyle(glowKit, styleTable, enabled)
+    if not enabled then return "none" end
+    local rawStyle = (styleTable and styleTable.pandemicGlowStyle) or "solid"
+    if rawStyle == "cdm" and glowKit.cdm then
+        -- Pandemic-only style. Every pandemic kit is built withCdm, so
+        -- the glowKit.cdm guard is defensive only.
+        return "cdm"
     end
+    return NormalizeKitGlowStyle(rawStyle)
+end
+
+local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, enabled)
+    -- Pandemic kits are styled only through here, so this is where the
+    -- preview's remembered look stops describing the kit
+    -- (StyleKitPandemicPreviewGlow sets it again after this).
+    glowKit.previewLook = nil
+    local kitStyle = ResolvePandemicKitStyle(glowKit, styleTable, enabled)
     StyleKitGlowCore(glowKit, anchorFrame, kitStyle,
         (styleTable and styleTable.pandemicGlowColor) or DEFAULT_PANDEMIC_COLOR,
         (styleTable and styleTable.pandemicGlowColor2) or DEFAULT_PANDEMIC_COLOR2,
@@ -1921,6 +1854,88 @@ local function StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, ena
         styleTable and styleTable.pandemicGlowSpeed,
         styleTable and styleTable.pandemicGlowLines,
         styleTable and styleTable.pandemicGlowThickness)
+end
+
+-- Config previews redraw on every settings edit, and StyleKitGlowCore restarts
+-- a lit kit's animations each time it runs. Preview callers style through
+-- StyleKitPandemicPreviewGlow instead (owner ruling 2026-10-24): it restyles
+-- only when something the look reads changed, the kit was last styled by a
+-- plain StyleKitPandemicGlowRegions call, or the lit style's animation
+-- stopped; otherwise it only re-snaps the edges. Live kits never use it: they
+-- style at bind.
+local PANDEMIC_LOOK_KEYS = { "pandemicGlowStyle", "pandemicGlowSize", "pandemicGlowSpeed",
+    "pandemicGlowLines", "pandemicGlowThickness" }
+local PANDEMIC_LOOK_COLORS = { "pandemicGlowColor", "pandemicGlowColor2" }
+
+-- Colors compare by component: the color picker edits its table in place.
+local function MatchesPandemicLook(look, styleTable, w, h)
+    if look.w ~= w or look.h ~= h then return false end
+    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
+        if look[key] ~= (styleTable and styleTable[key]) then return false end
+    end
+    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
+        local color, saved = styleTable and styleTable[key], look[key]
+        if color then
+            if not (saved and saved[1] == color[1] and saved[2] == color[2]
+                and saved[3] == color[3] and saved[4] == color[4]) then
+                return false
+            end
+        elseif saved then
+            return false
+        end
+    end
+    return true
+end
+
+local function StampPandemicLook(styleTable, w, h)
+    local look = { w = w, h = h }
+    for _, key in ipairs(PANDEMIC_LOOK_KEYS) do
+        look[key] = styleTable and styleTable[key]
+    end
+    for _, key in ipairs(PANDEMIC_LOOK_COLORS) do
+        local color = styleTable and styleTable[key]
+        look[key] = color and { color[1], color[2], color[3], color[4] } or nil
+    end
+    return look
+end
+
+-- The AnimationGroup each lit style keeps playing (StyleKitGlowCore); solid
+-- and overlay have none. A hidden host pauses its groups, which then read as
+-- not playing, so only a visible host is judged.
+local function IsKitStyleAnimationAlive(glowKit, kitStyle)
+    local group
+    if kitStyle == "pulse" then
+        group = glowKit.pulseAG
+    elseif kitStyle == "colorShift" then
+        group = glowKit.csAGs[1]
+    elseif kitStyle == "proc" then
+        group = glowKit.flipAG
+    elseif kitStyle == "ants" then
+        group = glowKit.antsAG
+    elseif kitStyle == "dashes" then
+        group = glowKit.dashes.ag
+    elseif kitStyle == "autocast" then
+        group = glowKit.sparks[1] and glowKit.sparks[1].ag
+    elseif kitStyle == "cdm" then
+        group = glowKit.cdm and glowKit.cdm.ag
+    end
+    return not group or not glowKit.host:IsVisible() or group:IsPlaying()
+end
+
+local function StyleKitPandemicPreviewGlow(glowKit, styleTable, anchorFrame, enabled)
+    if not enabled then
+        StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, false)
+        return
+    end
+    local w, h = KitRectSize(anchorFrame)
+    local look = glowKit.previewLook
+    if look and MatchesPandemicLook(look, styleTable, w, h)
+        and IsKitStyleAnimationAlive(glowKit, ResolvePandemicKitStyle(glowKit, styleTable, true)) then
+        ST.RefreshBorderTextureScale(glowKit.edges)
+        return
+    end
+    StyleKitPandemicGlowRegions(glowKit, styleTable, anchorFrame, true)
+    glowKit.previewLook = StampPandemicLook(styleTable, w, h)
 end
 
 ------------------------------------------------------------------------
@@ -2067,10 +2082,6 @@ end
 
 local SetBarAuraEffect = MakeGlowSetter({
     containerKey       = "barAuraEffect",
-    -- No pandemic branch: the bar-side pandemic display is the fill-clone
-    -- recolor (AuraDisplay kit), not a glow style. The dormant
-    -- pandemicBarEffect* key family retired with it.
-    hasPandemic        = false,
     normalizeStyle     = NormalizeBarAuraEffectStyle,
     noneIsOff          = true,
     fullParams         = true,
@@ -2116,6 +2127,7 @@ ST._StyleKitGlowRegions = StyleKitGlowRegions
 ST._StopKitGlowAnimations = StopKitGlowAnimations
 ST._StyleKitBarGlowRegions = StyleKitBarGlowRegions
 ST._StyleKitPandemicGlowRegions = StyleKitPandemicGlowRegions
+ST._StyleKitPandemicPreviewGlow = StyleKitPandemicPreviewGlow
 ST._BuildPandemicWindowRig = BuildPandemicWindowRig
 ST._StylePandemicWindowRig = StylePandemicWindowRig
 ST._BuildAuraGlowReplace = BuildAuraGlowReplace

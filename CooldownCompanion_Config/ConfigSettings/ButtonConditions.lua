@@ -38,7 +38,6 @@ local tabInfoButtons = CS.tabInfoButtons
 
 local LOAD_CONDITION_OPTIONS = ST.LOAD_CONDITION_OPTIONS
 local ResolvePanelAlphaAnchorSourceMode
-local REMOVE_BADGE_WIDGET_TYPE = "CDCEligibilityRemoveBadge"
 -- AceGUI sizes a dropdown's pullout from the dropdown frame itself
 -- (AceGUIWidget-DropDown.lua:381), and the row grammar's control column is
 -- 140px. Eligibility entries carry a spec/hero icon and can read
@@ -48,7 +47,7 @@ local ELIGIBILITY_PULLOUT_WIDTH = 300
 -- Same overhang for the same reason: "Inherit Target Frame Alpha" does not fit
 -- the 140px control column.
 local PANEL_ALPHA_PULLOUT_WIDTH = 300
-local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
+local GetSpecHeroSubTreeIDs = ST._GetSpecHeroSubTreeIDs
 
 ------------------------------------------------------------------------
 -- SETTINGS FINDER CATALOG (Visibility surfaces)
@@ -179,87 +178,6 @@ local panelAlphaSettings = ST._DefineSettingRoute({
     },
 })
 
-if AceGUI and not AceGUI:GetWidgetVersion(REMOVE_BADGE_WIDGET_TYPE) then
-    local function Badge_OnClick(frame, button)
-        frame.obj:Fire("OnClick", button)
-        AceGUI:ClearFocus()
-    end
-
-    local function Badge_OnEnter(frame)
-        frame.obj:Fire("OnEnter")
-    end
-
-    local function Badge_OnLeave(frame)
-        frame.obj:Fire("OnLeave")
-    end
-
-    local badgeMethods = {
-        OnAcquire = function(self)
-            self:SetWidth(19)
-            self:SetHeight(19)
-            self:SetDisabled(false)
-            if self.icon then
-                self.icon:SetAtlas("common-icon-redx", false)
-                self.icon:ClearAllPoints()
-                self.icon:SetSize(19, 19)
-                self.icon:SetPoint("CENTER")
-            end
-            if self.frame.SetHighlightAtlas then
-                self.frame:SetHighlightAtlas("common-icon-redx")
-                if self.frame.GetHighlightTexture and self.frame:GetHighlightTexture() then
-                    self.frame:GetHighlightTexture():SetAlpha(0.3)
-                end
-            end
-        end,
-
-        SetDisabled = function(self, disabled)
-            if disabled then
-                self.frame:Disable()
-                if self.icon then self.icon:SetVertexColor(0.5, 0.5, 0.5, 0.5) end
-            else
-                self.frame:Enable()
-                if self.icon then self.icon:SetVertexColor(1, 1, 1, 1) end
-            end
-        end,
-    }
-
-    local function BadgeConstructor()
-        local frame = CreateFrame("Button", nil, UIParent)
-        frame:Hide()
-        frame:SetSize(19, 19)
-        frame:EnableMouse(true)
-        frame:RegisterForClicks("AnyUp")
-        frame:SetScript("OnClick", Badge_OnClick)
-        frame:SetScript("OnEnter", Badge_OnEnter)
-        frame:SetScript("OnLeave", Badge_OnLeave)
-
-        local icon = frame:CreateTexture(nil, "ARTWORK")
-        icon:SetAtlas("common-icon-redx", false)
-        icon:SetSize(19, 19)
-        icon:SetPoint("CENTER")
-
-        if frame.SetHighlightAtlas then
-            frame:SetHighlightAtlas("common-icon-redx")
-            if frame.GetHighlightTexture and frame:GetHighlightTexture() then
-                frame:GetHighlightTexture():SetAlpha(0.3)
-            end
-        end
-
-        local widget = {
-            frame = frame,
-            icon = icon,
-            type = REMOVE_BADGE_WIDGET_TYPE,
-        }
-        for method, func in pairs(badgeMethods) do
-            widget[method] = func
-        end
-
-        return AceGUI:RegisterAsWidget(widget)
-    end
-
-    AceGUI:RegisterWidgetType(REMOVE_BADGE_WIDGET_TYPE, BadgeConstructor, 1)
-end
-
 local function GetLoadConditionValue(loadConditions, key, defaults, optionDefault)
     if type(loadConditions) ~= "table" then return false end
     local val = loadConditions[key]
@@ -373,9 +291,9 @@ local function GetActiveInheritedLabel(sources, key, optionDefault)
 end
 
 -- Row grammar (RowWidgets.lua): a left-aligned collapsible header and the
--- environment toggles as CDC-CheckBoxRows in a two-column grid. Returns that
--- grid's two columns so the caller can park a section action in the shorter
--- one.
+-- environment toggles as CDC-CheckBoxRows in a row grid. Returns that grid's
+-- two columns: the toggles fill the first, so a section action the caller
+-- parks in the second comes last.
 local function AddScopedLoadConditionToggles(container, opts)
     local target = opts.target
     if not target.loadConditions and not opts.preserveMissing then
@@ -418,18 +336,15 @@ local function AddScopedLoadConditionToggles(container, opts)
         if onChanged then onChanged() end
     end
 
-    -- LEFT column: the instanced content. RIGHT column: everything else,
-    -- ending with the two that ship pre-checked. Nine options split 5/4, which
-    -- is as even as an odd list gets. Locked rows keep their long "(locked by
-    -- ...)" suffix: a row label runs the full width of its cell minus the
-    -- 140px control column, which is far more room than the half-width
-    -- checkbox they replaced had.
+    -- The instanced content first, then everything else, ending with the two
+    -- that ship pre-checked. Locked rows keep their long "(locked by ...)"
+    -- suffix: a row label runs the full row width minus the 140px control
+    -- column.
     local togglesLeft, togglesRight = BeginRowGrid(container)
-    local splitAt = math.ceil(#LOAD_CONDITION_OPTIONS / 2)
 
-    for index, cond in ipairs(LOAD_CONDITION_OPTIONS) do
+    for _, cond in ipairs(LOAD_CONDITION_OPTIONS) do
         local inheritedLabel = GetActiveInheritedLabel(inheritedSources, cond.key, cond.default)
-        local row = AddCheckboxRow(index <= splitAt and togglesLeft or togglesRight, {
+        local row = AddCheckboxRow(togglesLeft, {
             label = inheritedLabel
                 and (cond.label .. " |cff888888(locked by " .. inheritedLabel .. ")|r")
                 or cond.label,
@@ -871,10 +786,10 @@ local function BuildCharacterChoices(target, inheritedMap, scopeClassKey, ownerC
     return choices
 end
 
+-- The shared small remove X (RowWidgets CDC-RowIconBadge), as the row's
+-- control widget; the label row releases it.
 local function CreateEligibilityRemoveBadge(onRemove)
-    local removeBadge = AceGUI:Create(REMOVE_BADGE_WIDGET_TYPE)
-    removeBadge:SetWidth(19)
-    removeBadge:SetHeight(19)
+    local removeBadge = AceGUI:Create("CDC-RowIconBadge")
     removeBadge:SetCallback("OnClick", function(widget, event, button)
         if button == "LeftButton" and onRemove then
             onRemove()
@@ -1133,52 +1048,6 @@ local function BuildSpecChoiceIndex(specChoices)
     return bySpecId, byClassKey
 end
 
-local function EnsureHeroTalentViewConfig(specId)
-    if not (specId
-        and C_ClassTalents
-        and C_ClassTalents.InitializeViewLoadout
-        and C_Traits
-        and C_Traits.GetConfigInfo) then
-        return nil
-    end
-
-    local playerLevel = UnitLevel and UnitLevel("player") or nil
-    if not playerLevel or playerLevel < 1 then
-        return nil
-    end
-
-    C_ClassTalents.InitializeViewLoadout(specId, playerLevel)
-    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
-        return VIEW_TRAIT_CONFIG_ID
-    end
-
-    return nil
-end
-
-local function GetHeroTalentSubTreesForSpec(specId, configID)
-    if not (specId and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
-        return nil, configID
-    end
-
-    local subTreeIDs = configID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(configID, specId) or nil
-    if subTreeIDs and #subTreeIDs > 0 then
-        return subTreeIDs, configID
-    end
-
-    subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specId)
-    if subTreeIDs and #subTreeIDs > 0 then
-        return subTreeIDs, configID
-    end
-
-    local viewConfigID = EnsureHeroTalentViewConfig(specId)
-    subTreeIDs = viewConfigID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(viewConfigID, specId) or nil
-    if subTreeIDs and #subTreeIDs > 0 then
-        return subTreeIDs, viewConfigID
-    end
-
-    return nil, configID
-end
-
 local function BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, configID)
     local choices = {}
     local bySubTreeID = {}
@@ -1186,7 +1055,7 @@ local function BuildHeroTalentChoicesForSpecs(specChoices, selectedSpecMap, conf
     for _, specInfo in ipairs(specChoices or {}) do
         local specId = specInfo.id
         if specId and selectedSpecMap and selectedSpecMap[specId] then
-            local subTreeIDs, subTreeConfigID = GetHeroTalentSubTreesForSpec(specId, configID)
+            local subTreeIDs, subTreeConfigID = GetSpecHeroSubTreeIDs(specId, configID)
             for _, subTreeID in ipairs(subTreeIDs or {}) do
                 local subTreeInfo = subTreeConfigID and C_Traits and C_Traits.GetSubTreeInfo
                     and C_Traits.GetSubTreeInfo(subTreeConfigID, subTreeID) or nil
@@ -2362,17 +2231,14 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    -- Every row here belongs to a FAMILY, the unit the grid is poured by.
-    -- Which families survive depends on the entry type, so this is a FILTERED
-    -- row set (see the fill rule in the recipe comment at the top of
-    -- BuildAppearanceTab's icons path): the families are collected first, then
-    -- poured into the grid LEFT column first until it holds half the rows.
-    -- Every family is one row now: a state dropdown, or one of the two plain
-    -- toggles that survived.
-    local families, totalRows = {}, 0
-    local function AddFamily(rows, build)
-        families[#families + 1] = { rows = rows, build = build }
-        totalRows = totalRows + rows
+    -- Every row here belongs to a FAMILY. Which families survive depends on
+    -- the entry type, so this is a FILTERED row set: the families are
+    -- collected first, then written into the grid in order. Every family is
+    -- one row now: a state dropdown, or one of the two plain toggles that
+    -- survived.
+    local families = {}
+    local function AddFamily(build)
+        families[#families + 1] = build
     end
 
     -- One hide/dim state family: its list, reader and writer are built from
@@ -2381,7 +2247,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- extra clearing (the zero-charges row's cross-link) after the shared
     -- write and before the rebuild.
     local function AddStateFamily(spec)
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             local list, order = BuildStateList(spec.desaturateKey ~= nil)
             AddVisibilityDropdown(column, {
                 setting = spec.setting,
@@ -2440,7 +2306,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             missing = "Show While Inactive" }
         local auraOrder = { "show", "dim", "hide", "missing" }
         -- Visibility is independent of missing-aura effects.
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             AddVisibilityDropdown(column, {
                 setting = entryVisibilitySettings.auraInactive,
                 filter = FilterAuraEntry,
@@ -2550,7 +2416,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         cooldownOrder[#cooldownOrder + 1] = "zero_only"
     end
 
-    AddFamily(1, function(column)
+    AddFamily(function(column)
         AddVisibilityDropdown(column, {
             setting = entryVisibilitySettings.cooldownVisibility,
             list = cooldownList,
@@ -2671,7 +2537,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         })
 
         -- Hide Cooldown While Charges Remain
-        AddFamily(1, function(column)
+        AddFamily(function(column)
             AddVisibilityRow(column, "Hide Cooldown While Charges Remain", "hideCooldownWithCharges", {
                 setting = entryVisibilitySettings.chargeCooldown,
                 filter = FilterChargeCapable,
@@ -2733,17 +2599,15 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- Section, for example), and both the
     -- heading and an empty grid are still widgets - so the section only builds
     -- when there is something to pour into it.
-    if totalRows > 0 then
+    if #families > 0 then
         local visKey = isBatch
             and (CS.selectedGroup .. "_batch_visibility")
             or  (CS.selectedGroup .. "_" .. CS.selectedButton .. "_visibility")
         local _, visCollapsed = BuildCollapsibleSection(scroll, "Show & Hide Rules", visKey, nil, nil, ROW_SECTION)
         if not visCollapsed then
-            local visLeft, visRight = BeginRowGrid(scroll)
-            local placed, half = 0, math.ceil(totalRows / 2)
-            for _, family in ipairs(families) do
-                family.build(placed < half and visLeft or visRight)
-                placed = placed + family.rows
+            local visColumn = BeginRowGrid(scroll)
+            for _, buildFamily in ipairs(families) do
+                buildFamily(visColumn)
             end
         end
     end
@@ -2896,10 +2760,14 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         talentStatusText = "|cff888888No talent conditions set.|r"
     end
 
+    -- A batch whose entries all hold the same list edits that list (the
+    -- representative's copy; the picker copies it again). A mixed batch
+    -- starts from nothing and offers Clear, as its status line says.
+    local sharedList = not isBatch or hasTalent == true
     local pickBtn = AceGUI:Create("Button")
-    pickBtn:SetText(condCount > 0 and "Edit" or "Pick Talents")
+    pickBtn:SetText(condCount > 0 and sharedList and "Edit" or "Pick Talents")
     pickBtn:SetCallback("OnClick", function()
-        local initialConditions = not isBatch and buttonData.talentConditions or nil
+        local initialConditions = sharedList and buttonData.talentConditions or nil
         -- The picker's Accept already hands back normalized conditions.
         CooldownCompanion:OpenTalentPicker(function(results)
             if not IsCurrentSource() then return end
@@ -2910,7 +2778,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     end)
 
     local talentActionButtons = { pickBtn }
-    if hasTalent then
+    if (not isBatch and hasTalent) or (isBatch and hasTalent ~= false) then
         -- Edit and Clear split the control column. Clear is destructive, so
         -- it shares the row with the picker that owns what it clears.
         local clearBtn = AceGUI:Create("Button")
@@ -3194,8 +3062,8 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, o
     })
 
     if opts.allowClear or CooldownCompanion:HasLocalLoadConditions(buttonData) then
-        -- Compact and flush left, filling the shorter (4-row) right column's
-        -- tail. With the section collapsed there is no grid to sit in, so it
+        -- Compact and flush left, last, in the grid's second column under the
+        -- toggles. With the section collapsed there is no grid to sit in, so it
         -- falls back to the tab surface - still reachable, still compact.
         local clearHost = togglesRight or container
         local clearBtn = AceGUI:Create("Button")

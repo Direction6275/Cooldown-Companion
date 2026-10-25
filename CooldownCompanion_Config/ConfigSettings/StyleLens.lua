@@ -345,7 +345,15 @@ local function MakeWidgetTreeInert(widget, hideReverts)
         end
     end
 
-    if widget.SetDisabled then
+    -- One exemption, set by the Aura Duration Text panel's Cooldown Text
+    -- position rows (GroupTabsAppearance.lua): once customized they stay
+    -- editable while the aura text is shown and its panel is locked only by
+    -- the Customize step. The sweep consumes the flag so it does not carry
+    -- into a later build of a pooled widget; a build that errors before this
+    -- sweep can still leave it set.
+    if widget._cdcReadOnlyExempt then
+        widget._cdcReadOnlyExempt = nil
+    elseif widget.SetDisabled then
         widget:SetDisabled(true)
     end
 
@@ -367,7 +375,7 @@ local function MakeWidgetTreeInert(widget, hideReverts)
     end
 end
 
-local function ApplyInertRange(column, mark)
+local function ApplyInertRange(column, mark, hideReverts)
     local children = column and column.children
     if not children then
         return
@@ -375,7 +383,7 @@ local function ApplyInertRange(column, mark)
     for i = (mark or 0) + 1, #children do
         local child = children[i]
         if child then
-            MakeWidgetTreeInert(child)
+            MakeWidgetTreeInert(child, hideReverts)
         end
     end
 end
@@ -413,17 +421,13 @@ local function GetOverrideSectionLabel(sectionId)
     return sectionDef and sectionDef.label or sectionId
 end
 
-local function GetRevertTooltipTextForLabel(label)
-    return "Revert " .. label .. " to panel settings"
-end
-
 local function GetRevertTooltipText(sectionId, buttonData)
     local context = buttonData and buttonData._geometryContext
     if context and not context.owner then
         return "Revert " .. GetOverrideSectionLabel(sectionId) .. " to "
             .. (context.kind == "resources" and "Resources defaults" or "Cast Bar defaults")
     end
-    return GetRevertTooltipTextForLabel(GetOverrideSectionLabel(sectionId))
+    return "Revert " .. GetOverrideSectionLabel(sectionId) .. " to panel settings"
 end
 
 local function PerformSectionRevert(buttonData, sectionId, target)
@@ -441,33 +445,24 @@ local function PerformSectionRevert(buttonData, sectionId, target)
     ST._CompleteConfigEdit(target, "style-settings")
 end
 
--- The revert glyph's LOOK and its HOVER/CLICK contract, split so a revert that
--- is not a style section wears exactly the same control without restating the
--- atlas, the size or the tooltip shape.
-local function ApplyRevertGlyphLook(icon)
+-- The revert glyph's look, wording and click flow. Worn by the scope chrome's
+-- ROW reverts and the Customizations list rows (EntryCustomizations.lua); the
+-- section heading uses the text affordance below. The caller owns creating and
+-- placing the button.
+local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
+    local target = ST._CaptureConfigEditTarget(CS.selectedGroup)
     icon:SetSize(REVERT_GLYPH_SIZE, REVERT_GLYPH_SIZE)
     icon:ClearAllPoints()
     icon:SetPoint("CENTER")
     icon:SetAtlas(REVERT_GLYPH_ATLAS)
-end
-
-local function BindRevertGlyph(revertBtn, tooltipText, onClick)
+    local tooltipText = GetRevertTooltipText(sectionId, buttonData)
     revertBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(tooltipText)
         GameTooltip:Show()
     end)
     revertBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    revertBtn:SetScript("OnClick", onClick)
-end
-
--- The revert glyph's look, wording and click flow. Worn by the scope chrome's
--- ROW reverts (the heading uses the text affordance below). The caller owns
--- creating and placing the button.
-local function WireRevertGlyph(revertBtn, icon, buttonData, sectionId)
-    local target = ST._CaptureConfigEditTarget(CS.selectedGroup)
-    ApplyRevertGlyphLook(icon)
-    BindRevertGlyph(revertBtn, GetRevertTooltipText(sectionId, buttonData), function()
+    revertBtn:SetScript("OnClick", function()
         PerformSectionRevert(buttonData, sectionId, target)
     end)
 end
@@ -855,16 +850,7 @@ end
 -- flag folds the revert-glyph hiding (owner ruling 2026-08-31, see
 -- MakeWidgetTreeInert) into the same walk.
 local function MakeAdvancedPanelReadOnly(scroll)
-    local children = scroll and scroll.children
-    if not children then
-        return
-    end
-    for i = 1, #children do
-        local child = children[i]
-        if child then
-            MakeWidgetTreeInert(child, true)
-        end
-    end
+    ApplyInertRange(scroll, 0, true)
 end
 
 -- One-click promotion for an inherited color control rebuilds the whole tab,
@@ -1548,7 +1534,4 @@ SH.SCOPE_CHROME_GOLD = SCOPE_CHROME_GOLD
 SH.WireScopeTextHover = WireScopeTextHover
 SH.HideScopeChrome = HideScopeChrome
 SH.EnsureScopeGlyph = EnsureScopeGlyph
-SH.ApplyRevertGlyphLook = ApplyRevertGlyphLook
-SH.BindRevertGlyph = BindRevertGlyph
-SH.GetRevertTooltipTextForLabel = GetRevertTooltipTextForLabel
 SH.WireRevertGlyph = WireRevertGlyph

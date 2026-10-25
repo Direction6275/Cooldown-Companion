@@ -52,9 +52,6 @@ local ResetBarSlotWorkspaceState = PP.ResetBarSlotWorkspaceState
 -- ButtonPanelPreviewSections.lua
 local SectionDrag = PP.SectionDrag
 
--- ButtonPanelPreviewIndicators.lua
-local BuildSelectionStrip = PP.BuildSelectionStrip
-
 -- ButtonPanelPreviewInteraction.lua
 local DropGhost = PP.DropGhost
 local CreatePreviewLayoutDrag = PP.CreatePreviewLayoutDrag
@@ -757,12 +754,8 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         return
     end
 
-    local isBarMode = group.displayMode == "bars"
     if ST.IsIndicatorGroup(group) then
         return ST._ButtonPanelPreview.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
-    end
-    if not isBarMode and not IsIconModePanel(group) then
-        return BuildSelectionStrip(preview, host, panelId, group, readOnly)
     end
 
     LayoutPreviewEntries(preview, host, panelId, group, options)

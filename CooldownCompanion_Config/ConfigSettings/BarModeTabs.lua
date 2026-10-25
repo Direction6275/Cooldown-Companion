@@ -437,56 +437,6 @@ for _, id in ipairs(ST.SHARED_BAR_STYLE_SECTIONS) do
         available = function(group) return ST._SharedBarStyleAllowed(group, id) end }
 end
 
--- Cooldown text advanced, as a descriptor.
---
--- The preview command center's gear opens the advanced panels behind the
--- preview it names without going through their gears (owner ruling
--- 2026-07-26), which for a bar-mode cooldown is this one - and its gear sits
--- inside the "Text & Icon" collapsible, so it is not always built. The tab
--- below calls the same factory, so the panel has exactly one definition.
---
--- The style table is resolved inside `build`, never captured: a panel the
--- command center opened has no gear on screen to rebind its descriptor, so a
--- wholesale style replacement that keeps the same context (an imported panel
--- can assign a fresh group.style outright) would leave a captured table
--- orphaned and every control writing into nothing.
---
--- A caller whose values do NOT live in the group style passes its own table
--- (`styleTable`): with an entry selected, the style lens hands this tab that
--- entry's override store for the sections it owns, and there is no resolver for
--- those. Only a caller that rebinds every refresh may do this - which the tab
--- builder does, and the command center's tab-less opens do not.
-local function ResolveSelectedGroupStyle()
-    local groupId = CS.selectedGroup
-    local profile = groupId and CooldownCompanion.db and CooldownCompanion.db.profile
-    local group = profile and profile.groups and profile.groups[groupId]
-    return group and group.style or nil
-end
-
-local function MakeBarCooldownTextAdvancedDescriptor(styleTable, finderSettings)
-    return {
-        settingKey = "barCooldownText",
-        title = "Cooldown Text Advanced",
-        build = function(panel)
-            local style = styleTable or ResolveSelectedGroupStyle()
-            if not style then
-                return
-            end
-
-            local refreshStyle = ST._MakeConfigEditRefresh({ _settingsContext = ST._GetSettingsWidgetContext(panel) })
-
-            local anchorRow = AddTextPositionControls(panel, style,
-                "barTimeTextAnchor", "barCdTextOffsetX", "barCdTextOffsetY", refreshStyle, {
-                    automatic = true, settings = finderSettings,
-                })
-            AnchorRowBadge(anchorRow, CreateInfoButton(anchorRow.frame, anchorRow.frame, "LEFT", "LEFT", 0, 0, {
-                "Time Text Position",
-                {"Cooldown and Ready text share this position. Aura Duration follows it unless Independent Position is enabled. Automatic keeps the bar's original placement.", 1, 1, 1, true},
-            }, anchorRow))
-        end,
-    }
-end
-
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
@@ -1001,29 +951,30 @@ local function BuildBarAppearanceTab(container, group, style)
     })
 
     if cdTextSec.scope ~= "denied" then
-        -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). A customized entry
-        -- hands its override store; an inherited one hands the effective read
-        -- table, whose panel opens read-only behind the unlock strip.
-        local barCdTextAdvanced = MakeBarCooldownTextAdvancedDescriptor(
-            (group._settingsContext or cdTextSec.scope == "customized") and cdTextSec.tbl
-                or cdTextSec.write == nil and cdTextSec.read or nil,
-            BAR_FINDER.advanced.cooldown)
+        local function BuildBarCooldownTextAdvanced(panel)
+            AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
+                "cooldown", refreshStyle, {
+                    indent = false,
+                    explicitOff = cdTextSec.scope == "customized",
+                    disabled = cdTextSec.disabled,
+                    infoButtons = CS.advancedSettingsInfoButtons,
+                    completeEdit = function() return refreshStyle("style-advanced") end,
+                    settings = BAR_FINDER.appearance.cooldownVisibility,
+                })
 
-        AddAdvancedToggle(showTimeRow, barCdTextAdvanced.settingKey, tabInfoButtons, true, {
-            title = barCdTextAdvanced.title,
-            build = function(panel)
-                AddDurationTextVisibilityRows(panel, cdTextSec.read, cdTextSec.write,
-                    "cooldown", refreshStyle, {
-                        indent = false,
-                        explicitOff = cdTextSec.scope == "customized",
-                        disabled = cdTextSec.disabled,
-                        infoButtons = CS.advancedSettingsInfoButtons,
-                        completeEdit = function() return refreshStyle("style-advanced") end,
-                        settings = BAR_FINDER.appearance.cooldownVisibility,
-                    })
-                    barCdTextAdvanced.build(panel)
-            end,
+            local anchorRow = AddTextPositionControls(panel, cdTextSec.tbl,
+                "barTimeTextAnchor", "barCdTextOffsetX", "barCdTextOffsetY", refreshStyle, {
+                    automatic = true, settings = BAR_FINDER.advanced.cooldown,
+                })
+            AnchorRowBadge(anchorRow, CreateInfoButton(anchorRow.frame, anchorRow.frame, "LEFT", "LEFT", 0, 0, {
+                "Time Text Position",
+                {"Cooldown and Ready text share this position. Aura Duration follows it unless Independent Position is enabled. Automatic keeps the bar's original placement.", 1, 1, 1, true},
+            }, anchorRow))
+        end
+
+        AddAdvancedToggle(showTimeRow, "barCooldownText", tabInfoButtons, true, {
+            title = "Cooldown Text Advanced",
+            build = BuildBarCooldownTextAdvanced,
             unlock = { sec = cdTextSec,
                 enable = cdTextSec.read.showCooldownText ~= true and TURNON_BAR_COOLDOWN_TEXT or nil },
         })
@@ -1445,17 +1396,11 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
         end,
     })
 
-    -- Single rail (AdvancedSettingsPanel.lua): this builder's row path opens
-    -- its own two-column grid, which a ~330px panel has no room for, so
-    -- opts.singleRail suppresses it and rails the border effect and the two
-    -- fill effects onto the panel scroll in order.
-    --
     -- The panel captures the section's resolved table (sec.tbl). The
     -- section's enable toggle lives on the row above, never in the shared
     -- builder.
     local function BuildBarActiveAuraAdvanced(panel)
         BuildBarActiveAuraControls(panel, auraSec.tbl, refreshStyle, {
-            singleRail = true,
             infoButtons = tabInfoButtons,
             settings = BAR_FINDER.advanced.activeAura,
         })
@@ -1613,11 +1558,9 @@ local function BuildBarEffectsTab(container, group, style)
     -- An Aura Panel keeps NONE of the States rows below (the panel predicate
     -- denies every one of them), so that section is skipped outright rather
     -- than re-columned, and the Interaction section at the foot leads with Show
-    -- Tooltips in its left column on every bar panel - the standing fill rule
-    -- (stated in full in the recipe comment at the top of BuildAppearanceTab's
-    -- icons path in GroupTabsAppearance.lua, rule 3). What this predicate still
-    -- decides is the icon-square block: an Aura Panel opens it for Show
-    -- Tooltips alone, with the bar icon hidden.
+    -- Tooltips on every bar panel. What this predicate still decides is the
+    -- icon-square block: an Aura Panel opens it for Show Tooltips alone, with
+    -- the bar icon hidden.
     local isAuraPanel = ST.IsAuraPanelGroup(group)
 
     -- Under a multi selection this tab edits the PANEL, and only this line says
@@ -1907,8 +1850,8 @@ local function BuildBarEffectsTab(container, group, style)
 
         if not interactionCollapsed then
         -- LEFT column: the hover behavior. RIGHT column: the click behavior,
-        -- which an Aura Panel does not offer - and the fill-left-first rule is
-        -- why the hover row is on the left rather than beside an empty column.
+        -- which an Aura Panel does not offer, so there the hover row is the
+        -- whole section.
         local interactionLeft, interactionRight = BeginRowGrid(container)
 
         local tooltipSec = BeginLensSection(lens, group, "showTooltips", { column = interactionLeft })

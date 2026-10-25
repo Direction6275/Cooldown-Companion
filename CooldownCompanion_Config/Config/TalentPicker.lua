@@ -38,7 +38,6 @@ local CONDITION_BORDER_SIZE = 3
 local EDGE_THICKNESS = 1.4
 
 local BTN_ROW_HEIGHT = 30
-local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
 
 -- Colors
 local COLOR_BORDER_PENDING_TAKEN   = { 0.3, 0.7, 1.0, 1 }
@@ -520,23 +519,9 @@ local HideTalentPicker
 local PopulateTree
 local RefreshPickerDropdowns
 
-local function EnsurePickerViewConfig(specID)
-    if not specID then
-        return nil
-    end
-
-    local playerLevel = UnitLevel("player")
-    if not playerLevel or playerLevel < 1 then
-        return nil
-    end
-
-    C_ClassTalents.InitializeViewLoadout(specID, playerLevel)
-    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
-        return VIEW_TRAIT_CONFIG_ID
-    end
-
-    return nil
-end
+-- The preview loadout, never the active config: the tree draws any of your
+-- specs, inactive ones included.
+local EnsurePickerViewConfig = ST._SetupTalentViewLoadout
 
 local function BuildSpecDropdownOptions(group)
     local effectiveSpecs, _, hasSpecFilter

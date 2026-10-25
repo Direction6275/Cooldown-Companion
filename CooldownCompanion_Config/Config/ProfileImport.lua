@@ -115,30 +115,10 @@ end
 -- belongs to; an entity tree whose eligibility resolves to exactly one
 -- class lands in that class's section.
 
-local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
+local GetSpecHeroSubTreeIDs = ST._GetSpecHeroSubTreeIDs
 -- Upper bound for class-ID scans, matching Core/ScopedSettings.lua
 -- (file-local there) and the literal 30 in Column1.lua's class scan.
 local CLASS_SCAN_LIMIT = 30
-
--- Foreign specs return nothing against the player's own config; the shared
--- view loadout resolves them (same pattern as TalentPicker).
-local function GetSpecHeroSubTreeIDs(specID, playerLevel)
-    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specID)
-    if subTreeIDs and #subTreeIDs > 0 then
-        return subTreeIDs
-    end
-    if not (C_ClassTalents.InitializeViewLoadout and C_Traits and C_Traits.GetConfigInfo) then
-        return subTreeIDs
-    end
-    if not playerLevel then
-        return subTreeIDs
-    end
-    C_ClassTalents.InitializeViewLoadout(specID, playerLevel)
-    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
-        subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(VIEW_TRAIT_CONFIG_ID, specID)
-    end
-    return subTreeIDs
-end
 
 -- subTreeID -> classID for every hero talent the client will report. Filled
 -- by one full sweep and never by a partial one: the sweep sees every class's
@@ -193,7 +173,7 @@ local function EnsureHeroTalentClassMap()
         local classResolved = numSpecs == 0
         for specIndex = 1, numSpecs do
             local specID = GetSpecializationInfoForClassID(classID, specIndex)
-            local subTreeIDs = specID and GetSpecHeroSubTreeIDs(specID, playerLevel)
+            local subTreeIDs = specID and GetSpecHeroSubTreeIDs(specID, nil, playerLevel)
             for _, availableSubTreeID in ipairs(subTreeIDs or {}) do
                 local numericSubTreeID = tonumber(availableSubTreeID)
                 if numericSubTreeID then

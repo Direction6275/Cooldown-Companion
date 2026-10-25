@@ -344,7 +344,7 @@ local customKeybindSettings = ST._DefineSettingRoute({
 })
 
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
--- two-column grid. Expects the tab's ScrollFrame (a "List") directly.
+-- row grid. Expects the tab's ScrollFrame (a "List") directly.
 local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     local soundHeading, soundCollapsed =
         BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey(), nil, nil, ROW_SECTION)
@@ -387,13 +387,10 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
         auraSoundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(auraSoundOptions)
     end
 
-    -- This row set is FILTERED (see the fill rule in the recipe comment): an
-    -- entry carries only the event families its type and Cooldown Manager
-    -- mapping allow. So the family split - LEFT the cooldown-side events, RIGHT
-    -- the aura-side ones (the native C_UnitAuras triggers) - only runs when
-    -- BOTH families survive. When one family is all that is left it splits
-    -- itself across the columns left-first, so the left column is never the
-    -- empty one.
+    -- This row set is FILTERED: an entry carries only the event families its
+    -- type and Cooldown Manager mapping allow. With both families the
+    -- cooldown-side events come first, then the aura-side ones (the native
+    -- C_UnitAuras triggers); a lone surviving family is simply the list.
     local cooldownEvents, auraEvents = {}, {}
     for _, eventKey in ipairs(eventOrder) do
         if validEvents[eventKey] then
@@ -445,16 +442,13 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
             AddSoundEventRow(soundRight, eventKey)
         end
     else
-        -- ceil(n/2) left, the rest right - the per-resource Colors precedent.
         local survivors = (#cooldownEvents > 0) and cooldownEvents or auraEvents
-        local splitAt = math.ceil(#survivors / 2)
-        for index, eventKey in ipairs(survivors) do
-            AddSoundEventRow(index <= splitAt and soundLeft or soundRight, eventKey)
+        for _, eventKey in ipairs(survivors) do
+            AddSoundEventRow(soundLeft, eventKey)
         end
     end
 
-    -- Minimum Gap for the aura events. The right column is always the shorter
-    -- (or the aura family's own), so it goes there.
+    -- Minimum Gap for the aura events, last, in the second column.
     if #auraEvents > 0 then
         local cfg = CooldownCompanion:GetButtonSoundAlertConfig(buttonData, false)
         AddSliderRow(soundRight, {

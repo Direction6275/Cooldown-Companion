@@ -452,35 +452,6 @@ local function GetButtonIcon(buttonData)
     return 134400
 end
 
-local function GetCooldownInfoDisplaySpellID(cooldownInfo)
-    if type(cooldownInfo) ~= "table" then
-        return nil
-    end
-
-    local tooltipID = cooldownInfo.overrideTooltipSpellID
-    if type(tooltipID) == "number" and tooltipID > 0
-        and not (issecretvalue and issecretvalue(tooltipID))
-    then
-        return tooltipID
-    end
-
-    local overrideID = cooldownInfo.overrideSpellID
-    if type(overrideID) == "number" and overrideID > 0
-        and not (issecretvalue and issecretvalue(overrideID))
-    then
-        return overrideID
-    end
-
-    local spellID = cooldownInfo.spellID
-    if type(spellID) == "number" and spellID > 0
-        and not (issecretvalue and issecretvalue(spellID))
-    then
-        return spellID
-    end
-
-    return nil
-end
-
 local function GetConfigEntryDisplayName(buttonData, opts)
     if buttonData and buttonData.rotationAssistant then return buttonData.customName or ST.ROTATION_ASSISTANT_NAME end
     if not buttonData then
@@ -502,7 +473,11 @@ local function GetConfigEntryDisplayName(buttonData, opts)
         local child = ResolveViewerChildForSpellDisplay(CooldownCompanion, buttonData)
 
         if not buttonData.customName then
-            local displayId = GetCooldownInfoDisplaySpellID(child and child.cooldownInfo)
+            -- The row name falls back to the CDM child's own spellID before the
+            -- raw override; the Shift tooltip (PanelShared
+            -- ResolveEntryTooltipSpellId) and the live button never read that
+            -- tier, on purpose (owner ruling 2026-10-24).
+            local displayId = ST.ResolveCDMDisplaySpellID(child and child.cooldownInfo)
             if not displayId then
                 local raw = C_Spell.GetOverrideSpell(buttonData.id)
                 displayId = (raw and raw ~= 0) and raw or buttonData.id
@@ -2908,6 +2883,52 @@ local function BuildPlayerHeroTalentSet(playerSpecIds)
     return playerHeroTalentIds, true
 end
 
+-- Blizzard's shared talent preview loadout, used by Who Can Use This, profile
+-- import and the talent picker's tree.
+local VIEW_TRAIT_CONFIG_ID = (Constants and Constants.TraitConsts and Constants.TraitConsts.VIEW_TRAIT_CONFIG_ID) or -3
+
+-- Rebuilds the preview loadout for specID and returns its config ID, or nil.
+-- Never the active config: the talent picker draws whole trees from it,
+-- your inactive specs included.
+local function SetupTalentViewLoadout(specID, playerLevel)
+    if not (specID
+        and C_ClassTalents
+        and C_ClassTalents.InitializeViewLoadout
+        and C_Traits
+        and C_Traits.GetConfigInfo) then
+        return nil
+    end
+    playerLevel = playerLevel or (UnitLevel and UnitLevel("player")) or nil
+    if not playerLevel or playerLevel < 1 then
+        return nil
+    end
+    C_ClassTalents.InitializeViewLoadout(specID, playerLevel)
+    if C_Traits.GetConfigInfo(VIEW_TRAIT_CONFIG_ID) then
+        return VIEW_TRAIT_CONFIG_ID
+    end
+    return nil
+end
+
+-- A spec's hero tree IDs, plus the config ID to read their names from.
+-- Foreign specs return nothing against the player's own config; the shared
+-- view loadout resolves them, and its ID is then the one to read names from.
+local function GetSpecHeroSubTreeIDs(specID, namesConfigID, playerLevel)
+    if not (specID and C_ClassTalents and C_ClassTalents.GetHeroTalentSpecsForClassSpec) then
+        return nil, namesConfigID
+    end
+    -- Never tail-return the API call: its second return is requiredPlayerLevel.
+    local subTreeIDs = C_ClassTalents.GetHeroTalentSpecsForClassSpec(nil, specID)
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, namesConfigID
+    end
+    local viewConfigID = SetupTalentViewLoadout(specID, playerLevel)
+    subTreeIDs = viewConfigID and C_ClassTalents.GetHeroTalentSpecsForClassSpec(viewConfigID, specID) or nil
+    if subTreeIDs and #subTreeIDs > 0 then
+        return subTreeIDs, viewConfigID
+    end
+    return nil, namesConfigID
+end
+
 local function HasEnabledMapValue(map)
     if type(map) ~= "table" then return false end
     for _, enabled in pairs(map) do
@@ -3143,6 +3164,8 @@ end
 -- ST._ exports (consumed by later Config/ files at load time)
 ------------------------------------------------------------------------
 ST._CompactUntitledInlineGroupConfig = CompactUntitledInlineGroupConfig
+ST._SetupTalentViewLoadout = SetupTalentViewLoadout
+ST._GetSpecHeroSubTreeIDs = GetSpecHeroSubTreeIDs
 ST._CleanRecycledEntry = CleanRecycledEntry
 ST._ApplyConfigRowIcon = ApplyConfigRowIcon
 ST._ApplyConfigTextRow = ApplyConfigTextRow

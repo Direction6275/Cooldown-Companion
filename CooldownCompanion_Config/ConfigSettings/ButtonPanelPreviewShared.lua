@@ -914,6 +914,7 @@ local function ApplySelectionVisuals(slot, index, isSelected)
     -- The glow setters describe what this mirror slot actually renders.
     -- Yield only the outline; the selection wash remains visible underneath.
     local borderPreviewActive = slot._procGlowActive or slot._auraGlowActive
+        or slot._ccPandemicRigLit or slot._ccPandemicRigLeaving
         or slot._readyGlowActive or slot._barAuraEffectActive
         or (slot._keyPressHighlightActive and slot._kphStyle ~= "overlay")
     if borderPreviewActive then
@@ -1542,12 +1543,6 @@ local function GetHostFitScale(host, contentWidth, contentHeight, readOnly, guid
     return math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight))
 end
 
--- Fallback for panels without a geometric mirror: a flat strip with entry
--- selection, badges and tooltips.
-local STRIP_ICON_SIZE = 36
-local STRIP_SPACING = 4
-local STRIP_PER_ROW = 8
-
 -- Bottom band reserved for compact entry guidance beneath a mirror that shows
 -- attached bars but no entries.
 local EMPTY_ENTRY_GUIDANCE_BAND = 44
@@ -1571,70 +1566,59 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
     end
 
     local isBarMode = group.displayMode == "bars"
-    if isBarMode or IsIconModePanel(group) then
-        local count = #(group.buttons or {})
-        if count == 0 and #modules == 0 then
-            return 220, 90
-        end
-        local hasAttachedBars = ST.PanelUsesAttachedBarLayout(group)
-        if hasAttachedBars then
-            count = 0
-            for _, entry in ipairs(group.buttons) do
-                if not ST.IsAttachedBarEntry(group, entry) then count = count + 1 end
-            end
-        end
-        local geo = GetPanelGeometry(group, isBarMode)
-        local perRow = math_max(1, geo.buttonsPerRow)
-        local cols, rows
-        if geo.orientation == "horizontal" then
-            cols = math_min(count, perRow)
-            rows = math_ceil(count / perRow)
-        else
-            rows = math_min(count, perRow)
-            cols = math_ceil(count / perRow)
-        end
-        -- Content-sized overview cards need the complete footprint, matching
-        -- the read-only renderer's section layout rather than the base grid.
-        local sections = includeSections and ST.GetSectionsForLayout(group)
-        local width = (cols - 1) * (geo.entryWidth + geo.spacing) + geo.entryWidth
-        local height = (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight
-        if hasAttachedBars and count == 0 then width, height = 1, 1 end
-        local base
-        if sections then
-            local entries = {}
-            for index, buttonData in ipairs(group.buttons) do
-                entries[index] = { buttonData = buttonData }
-            end
-            local lists = ST.PartitionPanelSectionMembers(group, entries)
-            local layout = ST.BuildPanelSectionLayout(group, sections, lists,
-                geo.entryWidth, geo.entryHeight, geo.spacing)
-            width, height = math_max(1, layout.totalWidth), math_max(1, layout.totalHeight)
-            base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
-                width = layout.baseWidth, height = layout.baseHeight }
-        end
-        if count == 0 and #modules > 0 and ST.PanelSupportsAttachedBars(group)
-            and ST.GetPanelGeometryKind(group) ~= "bars" then
-            local layout = ST.GetConfiguredPanelIconGeometry(group)
-            width, height = math_max(1, layout.footprintWidth), math_max(1, layout.footprintHeight)
-            base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
-                width = layout.baseWidth, height = layout.baseHeight }
-        end
-        if hasAttachedBars or #modules > 0 then
-            local _, _, _, attachedWidth, attachedHeight = ST.GetAttachedBarPreviewLayout(
-                group, width, height, base or { x = 0, y = 0, width = width, height = height }, nil, modules)
-            return attachedWidth, attachedHeight
-        end
-        return width, height
-    end
-
     local count = #(group.buttons or {})
-    if count == 0 then
+    if count == 0 and #modules == 0 then
         return 220, 90
     end
-    local cols = math_min(count, STRIP_PER_ROW)
-    local rows = math_ceil(count / STRIP_PER_ROW)
-    return (cols - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE,
-        (rows - 1) * (STRIP_ICON_SIZE + STRIP_SPACING) + STRIP_ICON_SIZE
+    local hasAttachedBars = ST.PanelUsesAttachedBarLayout(group)
+    if hasAttachedBars then
+        count = 0
+        for _, entry in ipairs(group.buttons) do
+            if not ST.IsAttachedBarEntry(group, entry) then count = count + 1 end
+        end
+    end
+    local geo = GetPanelGeometry(group, isBarMode)
+    local perRow = math_max(1, geo.buttonsPerRow)
+    local cols, rows
+    if geo.orientation == "horizontal" then
+        cols = math_min(count, perRow)
+        rows = math_ceil(count / perRow)
+    else
+        rows = math_min(count, perRow)
+        cols = math_ceil(count / perRow)
+    end
+    -- Content-sized overview cards need the complete footprint, matching
+    -- the read-only renderer's section layout rather than the base grid.
+    local sections = includeSections and ST.GetSectionsForLayout(group)
+    local width = (cols - 1) * (geo.entryWidth + geo.spacing) + geo.entryWidth
+    local height = (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight
+    if hasAttachedBars and count == 0 then width, height = 1, 1 end
+    local base
+    if sections then
+        local entries = {}
+        for index, buttonData in ipairs(group.buttons) do
+            entries[index] = { buttonData = buttonData }
+        end
+        local lists = ST.PartitionPanelSectionMembers(group, entries)
+        local layout = ST.BuildPanelSectionLayout(group, sections, lists,
+            geo.entryWidth, geo.entryHeight, geo.spacing)
+        width, height = math_max(1, layout.totalWidth), math_max(1, layout.totalHeight)
+        base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
+            width = layout.baseWidth, height = layout.baseHeight }
+    end
+    if count == 0 and #modules > 0 and ST.PanelSupportsAttachedBars(group)
+        and ST.GetPanelGeometryKind(group) ~= "bars" then
+        local layout = ST.GetConfiguredPanelIconGeometry(group)
+        width, height = math_max(1, layout.footprintWidth), math_max(1, layout.footprintHeight)
+        base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
+            width = layout.baseWidth, height = layout.baseHeight }
+    end
+    if hasAttachedBars or #modules > 0 then
+        local _, _, _, attachedWidth, attachedHeight = ST.GetAttachedBarPreviewLayout(
+            group, width, height, base or { x = 0, y = 0, width = width, height = height }, nil, modules)
+        return attachedWidth, attachedHeight
+    end
+    return width, height
 end
 
 ST._CollectEntryStatus = CollectEntryStatus
@@ -1675,9 +1659,6 @@ PP.HidePreviewMessage = HidePreviewMessage
 PP.ApplyPreviewSlotGeometry = ApplyPreviewSlotGeometry
 PP.SetPreviewMessage = SetPreviewMessage
 PP.FinalizePreviewState = FinalizePreviewState
-PP.STRIP_ICON_SIZE = STRIP_ICON_SIZE
-PP.STRIP_PER_ROW = STRIP_PER_ROW
-PP.STRIP_SPACING = STRIP_SPACING
 PP.AcquireSlot = AcquireSlot
 PP.PANEL_PREVIEW_DISABLED_ALPHA = PANEL_PREVIEW_DISABLED_ALPHA
 PP.ApplySlotBadges = ApplySlotBadges

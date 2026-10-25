@@ -782,9 +782,9 @@ local function BuildLayoutTab(container)
         if not anchorCollapsed then
         -- LEFT column: the target itself, and nothing else here - the one
         -- setting that used to fill the right column (where this panel's alpha
-        -- comes from) now leads the Visibility tab's Alpha section, beside the
-        -- rows it gates. The grid stays two-wide; the right column just runs
-        -- empty, as it does elsewhere on this tab.
+        -- comes from) now leads the Visibility tab's Alpha section, with the
+        -- rows it gates. The right column stays empty, as it does elsewhere on
+        -- this tab.
         local anchorLeft = BeginRowGrid(container)
 
         AddDropdownRow(anchorLeft, {
@@ -932,9 +932,8 @@ local function BuildLayoutTab(container)
 
         if not positionCollapsed then
         -- LEFT column: the points that have to be read together (mine, then
-        -- the target's). RIGHT column: the offset pair applied on top of them.
-        -- Cursor mode has no relative point, so the left side ends early - and
-        -- that is where its Reset goes, filling the shorter column's tail.
+        -- the target's). RIGHT column: the offset pair applied on top of them,
+        -- then the Reset. Cursor mode has no relative point.
         local positionLeft, positionRight = BeginRowGrid(container)
 
         if targetMode == "cursor" then
@@ -964,7 +963,7 @@ local function BuildLayoutTab(container)
             })
 
             -- Destructive, and it replaces the whole anchor - the Panel Point
-            -- above included - so it sits with what it clears.
+            -- and both offsets - so it goes last, under Y Offset.
             local resetBtn = AceGUI:Create("Button")
             resetBtn:SetText("Reset Cursor Offset")
             resetBtn:SetAutoWidth(true)
@@ -981,7 +980,7 @@ local function BuildLayoutTab(container)
                 RefreshCursorAnchor()
                 CooldownCompanion:RefreshConfigPanel()
             end)
-            positionLeft:AddChild(resetBtn)
+            positionRight:AddChild(resetBtn)
         else
             AddAnchorDropdown(positionLeft, settings, "point", "CENTER",
                 RefreshTextureVisual, anchorLabel, {
@@ -1009,8 +1008,7 @@ local function BuildLayoutTab(container)
                 },
             })
 
-            -- Both columns are two rows here, so the Reset goes with the
-            -- offsets it zeroes rather than with the points.
+            -- The Reset goes last, after the offsets it zeroes.
             local resetBtn = AceGUI:Create("Button")
             resetBtn:SetText("Reset Position")
             resetBtn:SetAutoWidth(true)
@@ -1285,7 +1283,7 @@ local function BuildLayoutTab(container)
     if not positionCollapsed then
     -- LEFT column: the two points that have to be read together (mine,
     -- then the target's). RIGHT column: the offset pair applied on top of
-    -- them. Cursor mode has no relative point, so the left side ends early.
+    -- them. Cursor mode has no relative point.
     local positionLeft, positionRight = BeginRowGrid(container)
 
     AddAnchorDropdown(positionLeft, group.anchor, "point",

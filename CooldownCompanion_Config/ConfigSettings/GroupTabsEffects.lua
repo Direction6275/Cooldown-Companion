@@ -41,7 +41,6 @@ local BeginRowGrid = ST._BeginRowGrid
 -- Imports from GroupTabsShared.lua
 local WireMirrorFirstSlider = ST._WireMirrorFirstSlider
 local RefreshActiveAdvancedSettingsPanel = ST._RefreshActiveAdvancedSettingsPanel
-local MakeCooldownSwipeAdvancedDescriptor = ST._MakeCooldownSwipeAdvancedDescriptor
 
 -- Imports from GroupTabsSpecial.lua
 
@@ -811,8 +810,8 @@ local function BuildEffectsTab(container, settingsGroup)
     -- Row grammar (RowWidgets.lua) - icons mode only; every other display
     -- mode returned above. Each setting is a fixed-height row (label left,
     -- control right-aligned in a 140px column, gear/info/scope badges
-    -- chained off the end of the label), and each section splits its rows
-    -- into a curated two-column grid from BeginRowGrid.
+    -- chained off the end of the label), and each section lists its rows in
+    -- a BeginRowGrid grid, whose two columns stack at full width.
     --
     -- THREE sections, and all three collapse like every other row-grammar
     -- section: Cooldown / Spell Indicators, Aura Indicators, Interaction (owner
@@ -1072,21 +1071,72 @@ local function BuildEffectsTab(container, settingsGroup)
     })
 
     if swipeSec.scope ~= "denied" then
-        -- Panel scope hands the descriptor NO table, so it keeps resolving the
-        -- live group style itself (see the factory's note). A customized entry
-        -- hands its override store; an inherited one hands the effective read
-        -- table, whose panel opens read-only behind the unlock strip.
-        local swipeAdvanced = MakeCooldownSwipeAdvancedDescriptor(
-            swipeSec.scope == "customized" and swipeSec.write
-                or swipeSec.write == nil and swipeSec.read or nil,
-            EFFECTS_FINDER.advanced.cooldownSwipe)
+        local function BuildCooldownSwipeAdvanced(panel)
+            -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow
+            -- column, so the rows go straight onto the panel scroll and the edge
+            -- color indents under the toggle that gates it.
+            --
+            -- Show Cooldown Swipe itself draws the fill, so its opacity is
+            -- always here. The edge toggle rebuilds this panel
+            -- (style-advanced), which is what shows and hides the edge color.
+            local finderSettings = EFFECTS_FINDER.advanced.cooldownSwipe
+
+            -- Reverse Swipe
+            AddCheckboxRow(panel, {
+                label = "Reverse Swipe",
+                setting = finderSettings and finderSettings.reverse,
+                value = swipeSec.tbl.cooldownSwipeReverse or false,
+                onChange = function(val)
+                    swipeSec.tbl.cooldownSwipeReverse = val
+                    refreshStyle()
+                end,
+            })
+
+            -- Swipe Fill Opacity. Row grammar has no percent readout, so this
+            -- reads 0 - 1 rather than the stock slider's 0% - 100%; same store,
+            -- same range. 0 leaves only the edge.
+            local opacityRow = AddSliderRow(panel, {
+                label = "Swipe Fill Opacity",
+                setting = finderSettings and finderSettings.fillOpacity,
+                min = 0, max = 1, step = 0.05,
+                value = swipeSec.tbl.cooldownSwipeAlpha or 0.8,
+            })
+            WireMirrorFirstSlider(opacityRow, function(val)
+                swipeSec.tbl.cooldownSwipeAlpha = val
+            end, refreshStyle, nil, swipeSec.tbl, "cooldownSwipeAlpha")
+
+            -- Show Swipe Edge
+            AddCheckboxRow(panel, {
+                label = "Show Swipe Edge",
+                setting = finderSettings and finderSettings.edge,
+                value = swipeSec.tbl.cooldownSwipeEdgeEnabled == true,
+                onChange = function(val)
+                    swipeSec.tbl.cooldownSwipeEdgeEnabled = val
+                    refreshStyle("style-advanced")
+                end,
+            })
+
+            -- Swipe Edge Color (only when edge is visible).
+            if swipeSec.tbl.cooldownSwipeEdgeEnabled == true then
+                AddColorRow(panel, {
+                    label = "Swipe Edge Color",
+                    setting = finderSettings and finderSettings.edgeColor,
+                    indent = true,
+                    tbl = swipeSec.tbl,
+                    key = "cooldownSwipeEdgeColor",
+                    default = {1, 1, 1, 1},
+                    hasAlpha = true,
+                    onConfirm = refreshStyle,
+                })
+            end
+        end
 
         -- The fill-timer interlock stays a structural gate on the gear: the
         -- swipe row itself is disabled under it and states why.
-        AddAdvancedToggle(swipeCb, swipeAdvanced.settingKey, tabInfoButtons,
+        AddAdvancedToggle(swipeCb, "cooldownSwipe", tabInfoButtons,
             not iconFillTimerActive, {
-                title = swipeAdvanced.title,
-                build = swipeAdvanced.build,
+                title = "Cooldown Swipe Advanced",
+                build = BuildCooldownSwipeAdvanced,
                 unlock = { sec = swipeSec,
                     enable = swipeSec.read.showCooldownSwipe == false and TURNON_COOLDOWN_SWIPE or nil },
             })
@@ -1364,8 +1414,8 @@ local function BuildEffectsTab(container, settingsGroup)
 
     if not interactionCollapsed then
     -- LEFT column: the hover behavior. RIGHT column: the click behavior, which
-    -- an Aura Panel does not offer - and the fill-left-first rule is why the
-    -- hover row is on the left rather than beside an empty column.
+    -- an Aura Panel does not offer, so there the hover row is the whole
+    -- section.
     local interactionLeft, interactionRight = BeginRowGrid(container)
 
     -- Show Tooltips. Its gear is the builder's own and always builds while
