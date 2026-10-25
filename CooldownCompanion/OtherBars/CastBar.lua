@@ -417,8 +417,8 @@ UpdateIndependentCastBarDragState = function(settings)
     end
 end
 
--- Re-present the mover chrome from current settings; the toolbar's
--- chrome-hide and solo controls call this when their session state flips.
+-- Re-present the mover chrome from current settings; the toolbar's solo
+-- control calls this when its session state flips.
 function CooldownCompanion:RefreshIndependentCastBarMoverChrome()
     UpdateIndependentCastBarDragState(GetCastBarSettings())
 end

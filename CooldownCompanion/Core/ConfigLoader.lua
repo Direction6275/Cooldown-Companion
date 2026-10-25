@@ -249,6 +249,9 @@ end
 
 function CooldownCompanion:RunProfileMigrationAndRefresh(reason)
     local addon = self
+    -- Unlock-toolbar eyes are keyed by the old profile's ids; both paths
+    -- below rebuild every panel.
+    addon:ForgetArrangeHidden()
     if not addon:RunAllMigrations() then
         addon:ClearUnsupportedProfileRuntime()
         addon:RefreshConfigPanel()

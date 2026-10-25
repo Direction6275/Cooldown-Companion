@@ -753,6 +753,13 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
     local group = opts.group or (db and db.groups and db.groups[groupId])
     if not group then return false end
 
+    -- An unlock-toolbar eye hides the panel while unlocked (ArrangeMode.lua).
+    if not opts.configurationOnly and not opts.ignoreUnlockPreview
+        and not opts.ignoreArrangeHidden
+        and self:IsArrangePanelDisplayHidden(groupId, group) then
+        return false
+    end
+
     -- If this panel has a parent container, check container-level state first
     local container = self:GetParentContainer(group)
     if container and not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then

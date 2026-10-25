@@ -552,6 +552,141 @@ function CooldownCompanion:SetArrangePanelSuppressed(groupId, suppressed)
     return true
 end
 
+-- The eye on an unlock-toolbar row hides a panel or a whole group for the rest
+-- of the unlock session: display and mover chrome together, never saved.
+-- IsGroupActive answers no for a hidden panel, so every runtime path unloads
+-- it, while the toolbar's eligibility checks never read the flag: the row
+-- stays listed and the session stays open. Locking the item, Done, Cancel and
+-- the toolbar's own teardown all bring it back; combat brings it back for the
+-- fight only.
+function CooldownCompanion:IsArrangePanelHidden(groupId)
+    return self._arrangeHiddenPanels ~= nil
+        and self._arrangeHiddenPanels[groupId] == true
+        or false
+end
+
+function CooldownCompanion:IsArrangeContainerHidden(containerId)
+    return self._arrangeHiddenContainers ~= nil
+        and self._arrangeHiddenContainers[containerId] == true
+        or false
+end
+
+-- Hidden by its own eye or by its group's. The forced lock lifts the hide, so
+-- panels fight as usual; the post-combat refresh puts them away again.
+function CooldownCompanion:IsArrangePanelDisplayHidden(groupId, group)
+    if self._combatForcedLock
+        or (self._arrangeHiddenPanels == nil and self._arrangeHiddenContainers == nil) then
+        return false
+    end
+    if self:IsArrangePanelHidden(groupId) then
+        return true
+    end
+    group = group or self.db.profile.groups[groupId]
+    return group ~= nil
+        and group.parentContainerId ~= nil
+        and self:IsArrangeContainerHidden(group.parentContainerId)
+end
+
+-- Each eye map drops away once empty, which keeps the IsGroupActive check to
+-- two nil tests outside a session.
+local function SetArrangeHiddenFlag(addon, field, key, hidden)
+    local map = addon[field]
+    if hidden then
+        map = map or {}
+        addon[field] = map
+        map[key] = true
+    elseif map then
+        map[key] = nil
+        if not next(map) then
+            addon[field] = nil
+        end
+    end
+end
+
+local function RefreshArrangeHiddenDisplays(addon, panels, containers)
+    if not (panels or containers) then return end
+    -- One attachment operation: each panel refresh would otherwise re-place
+    -- the cast bar, resource bars and unit frames on its own.
+    local attachmentOperation = addon:BeginPanelAttachmentRefresh()
+    for groupId in pairs(panels or {}) do
+        addon:RefreshGroupFrame(groupId)
+    end
+    for containerId in pairs(containers or {}) do
+        addon:RefreshContainerPanels(containerId)
+    end
+    addon:EndPanelAttachmentRefresh(attachmentOperation, true, "arrange-hidden")
+end
+
+function CooldownCompanion:SetArrangePanelHidden(groupId, hidden)
+    if not self:IsUnlockToolbarActive() then return end
+    hidden = hidden == true
+    if not self.db.profile.groups[groupId] or self:IsArrangePanelHidden(groupId) == hidden then
+        return
+    end
+    if hidden and self._arrangeSelectedPanelId == groupId then
+        self:ClearArrangeMoverSelection()
+    end
+    SetArrangeHiddenFlag(self, "_arrangeHiddenPanels", groupId, hidden)
+    self:RefreshGroupFrame(groupId)
+    self:RefreshArrangePillList()
+end
+
+function CooldownCompanion:SetArrangeContainerHidden(containerId, hidden)
+    if not self:IsUnlockToolbarActive() then return end
+    local container = self.db.profile.groupContainers[containerId]
+    hidden = hidden == true
+    if not container or self:IsArrangeContainerHidden(containerId) == hidden then
+        return
+    end
+    if hidden then
+        -- Hiding the soloed group, or the group of the selected panel, would
+        -- leave the toolbar working on something that is gone.
+        local selectedGroup = self._arrangeSelectedPanelId
+            and self.db.profile.groups[self._arrangeSelectedPanelId]
+        if self._arrangeSoloContainerId == containerId
+            or (selectedGroup and selectedGroup.parentContainerId == containerId) then
+            self:ClearArrangeMoverSelection()
+        end
+        if self._arrangeFocusContainerId == containerId then
+            self._arrangeFocusContainerId = nil
+        end
+    end
+    SetArrangeHiddenFlag(self, "_arrangeHiddenContainers", containerId, hidden)
+    -- Hiding takes the suppressed-chrome path, showing rebuilds the unlock
+    -- preview; the member refresh unloads or restores the displays.
+    self:UpdateContainerDragHandle(containerId, hidden or container.locked ~= false)
+    self:RefreshContainerPanels(containerId)
+    self:RefreshArrangePillList()
+end
+
+-- A padlock hands its group back to normal play, so nothing in it stays
+-- hidden. The caller refreshes the panels.
+local function ClearArrangeHiddenForContainer(addon, containerId)
+    SetArrangeHiddenFlag(addon, "_arrangeHiddenContainers", containerId, false)
+    if addon._arrangeHiddenPanels then
+        for groupId, group in pairs(addon.db.profile.groups or {}) do
+            if group.parentContainerId == containerId then
+                SetArrangeHiddenFlag(addon, "_arrangeHiddenPanels", groupId, false)
+            end
+        end
+    end
+end
+
+-- Drop every eye flag without a refresh, for callers that refresh every
+-- panel next (lock-all, profile change).
+function CooldownCompanion:ForgetArrangeHidden()
+    self._arrangeHiddenPanels = nil
+    self._arrangeHiddenContainers = nil
+end
+
+-- Toolbar teardown outside a bulk refresh: drop every eye flag, then bring
+-- those displays back.
+function CooldownCompanion:ClearArrangeHidden()
+    local panels, containers = self._arrangeHiddenPanels, self._arrangeHiddenContainers
+    self:ForgetArrangeHidden()
+    RefreshArrangeHiddenDisplays(self, panels, containers)
+end
+
 function CooldownCompanion:IsUnlockToolbarContainerEligible(containerId)
     return self:IsContainerUnlockPreviewActive(containerId)
         and self:ContainerHasArrangeEligiblePanel(containerId)
@@ -657,7 +792,7 @@ local function GetArrangeModePill(addon)
         tooltip:AddLine("Drag title bars to move. Hold Shift to ignore snapping.", 1, 1, 1, true)
         tooltip:AddLine("Use mover controls for precise placement.", 1, 1, 1, true)
         tooltip:AddLine("Click a group or panel row to work on it alone; click it again to show all movers.", 1, 1, 1, true)
-        tooltip:AddLine("Uncheck a group to hide its handles.", 1, 1, 1, true)
+        tooltip:AddLine("Click an eye to hide a group or panel while unlocked.", 1, 1, 1, true)
         if CooldownCompanion:IsArrangeModeActive() then
             tooltip:AddLine("Done, a padlock, or /cdc lock saves. Esc or Cancel reverts.", 1, 1, 1, true)
         else
@@ -771,7 +906,6 @@ function CooldownCompanion:RefreshUnlockToolbar()
     if not self:IsUnlockToolbarActive() then
         if not self:IsArrangeModeActive() then
             self._arrangeFocusContainerId = nil
-            self._arrangeChromeHidden = nil
             self._arrangeSoloContainerId = nil
             self._arrangeSelectedPanelId = nil
             self._arrangeTreeRevealEntry = nil
@@ -781,6 +915,12 @@ function CooldownCompanion:RefreshUnlockToolbar()
             -- the aware path (cancels its edits, repaints its chrome).
             if self.ClearArrangeSectionSelection then
                 self:ClearArrangeSectionSelection()
+            end
+            -- Last: it refreshes panels, which must see the cleared state.
+            -- Combat only pauses the session, so the eyes outlive the fight
+            -- (they are inert under the forced lock).
+            if not self._combatForcedLock then
+                self:ClearArrangeHidden()
             end
         end
         if self._arrangeModePill then
@@ -801,9 +941,9 @@ function CooldownCompanion:RefreshUnlockToolbar()
 end
 
 -- The unlock toolbar lists the independent bar movers next to the group
--- containers. They share the containers' session-only chrome-hidden map and
--- solo slot, keyed by the string ids "cast" and "resource" -- collision-free
--- beside numeric container ids.
+-- containers. They share the containers' solo and focus slots, keyed by the
+-- string ids "cast" and "resource" -- collision-free beside numeric container
+-- ids.
 function CooldownCompanion:IsArrangeSpecialMoverId(id)
     return id == "cast" or id == "resource"
 end
@@ -943,6 +1083,10 @@ function CooldownCompanion:BeginCombatForcedLock()
     if self.ClearCursorAnchorLayoutPreview then
         self:ClearCursorAnchorLayoutPreview()
     end
+    -- Eye-hidden panels fight like the rest: the forced lock above lifts the
+    -- hide, and lockdown begins only after PLAYER_REGEN_DISABLED, so they can
+    -- still be rebuilt here, before the loop below locks them down.
+    RefreshArrangeHiddenDisplays(self, self._arrangeHiddenPanels, self._arrangeHiddenContainers)
 
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
@@ -1091,6 +1235,14 @@ function CooldownCompanion:EndCombatForcedLock()
     if self.ShowCursorAnchorLayoutPreview then
         self:ShowCursorAnchorLayoutPreview(nil)
     end
+    -- A session that did not survive the fight drops its eyes without a
+    -- rebuild: with hadUnlocked set, OnCombatEnd's RefreshAllGroups brings
+    -- those panels back.
+    if (self._arrangeHiddenPanels or self._arrangeHiddenContainers)
+        and snapshot and snapshot.hadUnlocked
+        and not arrangeModeActive and not self:IsUnlockToolbarActive() then
+        self:ForgetArrangeHidden()
+    end
     self:RefreshUnlockToolbar()
 
     return snapshot
@@ -1131,6 +1283,9 @@ function CooldownCompanion:SetContainerLocked(containerId, locked, opts)
     if locked and self._arrangeSoloContainerId == containerId and self.SetArrangeSoloContainer then
         self:SetArrangeSoloContainer(nil)
     end
+    if locked then
+        ClearArrangeHiddenForContainer(self, containerId)
+    end
     container.locked = locked
     self:UpdateContainerDragHandle(containerId, locked)
     self:RefreshContainerPanels(containerId)
@@ -1157,6 +1312,8 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
     end
     if locked then
         group.locked = nil
+        -- Locked panels go back to normal play, so the eye lets go too.
+        SetArrangeHiddenFlag(self, "_arrangeHiddenPanels", panelId, false)
     else
         group.locked = false
     end
@@ -1238,6 +1395,7 @@ end
 function CooldownCompanion:LockAllFrames()
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
+    self:ForgetArrangeHidden()
     -- Lock every container, including containers hidden for this character.
     -- Write the bulk state directly: SetContainerLocked refreshes that
     -- container's panels, while the single RefreshAllGroups below reconciles
@@ -1318,7 +1476,6 @@ function CooldownCompanion:EnterArrangeMode()
     self:CaptureArrangeSnapshot()
     self._arrangeModeActive = true
     self._arrangeFocusContainerId = nil
-    self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
     self._arrangeSelectedPanelId = nil
     self._arrangeSectionGroupId = nil
@@ -1326,6 +1483,8 @@ function CooldownCompanion:EnterArrangeMode()
     self._arrangeTreeRevealEntry = nil
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
+    -- After the resets: it refreshes panels, which must see the new session.
+    self:ClearArrangeHidden()
     -- One attachment operation for the whole unlock: each panel refresh would
     -- otherwise re-place the cast bar and resource bars on its own.
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
@@ -1363,7 +1522,6 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangeSnapshot = nil
     self._arrangeModeActive = nil
     self._arrangeFocusContainerId = nil
-    self._arrangeChromeHidden = nil
     self._arrangeSoloContainerId = nil
     self._arrangeSelectedPanelId = nil
     self._arrangeSectionGroupId = nil
