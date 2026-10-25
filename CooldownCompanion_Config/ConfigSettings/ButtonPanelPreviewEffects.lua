@@ -74,6 +74,18 @@ local function GetPandemicPreviewRig(slot)
     local rig = ST._BuildPandemicWindowRig(slot, slot, recorder,
         (slot.cooldown or slot):GetFrameLevel(), true)
     rig.triggers = triggers
+    -- Every leave group runs the Refresh effect's length; when one finishes
+    -- the look is gone, so the selection outline comes back.
+    local leave = triggers.leave[1]
+    if leave then
+        leave:HookScript("OnFinished", function()
+            if slot._ccPandemicRigLit ~= "leaving" then return end
+            slot._ccPandemicRigLit = nil
+            if slot._cdcEntryIndex then
+                ApplySelectionVisuals(slot, slot._cdcEntryIndex)
+            end
+        end)
+    end
     slot._ccPandemicRig = rig
     return rig
 end
@@ -84,8 +96,15 @@ end
 -- across redraws that change nothing it reads.
 local function StylePandemicPreviewRig(slot, style, on, inWindow, flip)
     -- Read by the selection outline (ApplySelectionVisuals): the look shows
-    -- only inside the window.
-    slot._ccPandemicRigLit = on and inWindow or nil
+    -- inside the window, and while a Refresh effect plays it out as the
+    -- window closes ("leaving", cleared by the leave group's OnFinished).
+    if on and inWindow then
+        slot._ccPandemicRigLit = true
+    elseif on and flip and style and (style.pandemicRefreshEffect or "vanish") ~= "vanish" then
+        slot._ccPandemicRigLit = "leaving"
+    else
+        slot._ccPandemicRigLit = nil
+    end
     local rig = slot._ccPandemicRig or on and GetPandemicPreviewRig(slot)
     if not rig then return end
     ST._StyleKitPandemicPreviewGlow(rig.glow, style, slot, on)
@@ -189,7 +208,7 @@ local function UpdateCombinedIconAuraEffects(slot, state, now)
     StylePandemicPreviewRig(slot, slot.style, IsPandemicPreviewEnabled(slot.style), pandemicActive, true)
     -- The glow that shows just changed, so the selection outline follows it
     -- now rather than at the next rebuild.
-    if slot._cdcEntryIndex and ApplySelectionVisuals then
+    if slot._cdcEntryIndex then
         ApplySelectionVisuals(slot, slot._cdcEntryIndex)
     end
 end

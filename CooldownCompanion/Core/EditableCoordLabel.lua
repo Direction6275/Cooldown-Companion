@@ -447,12 +447,20 @@ function ST.AttachMoverWidthResize(frame, opts)
     grip:SetFrameLevel(dragHandle:GetFrameLevel() + 4)
     -- On a thin bar the grip reaches past it into the name bar or the
     -- coordinate label; their controls sit above it so they still click.
-    local overGrip = grip:GetFrameLevel() + 1
+    -- Children already built (the label's edit boxes) are raised with them.
+    local function RaiseAboveGrip(control, level)
+        if control:GetFrameLevel() < level then
+            control:SetFrameLevel(level)
+        end
+        local children = { control:GetChildren() }
+        for i = 1, #children do
+            RaiseAboveGrip(children[i], control:GetFrameLevel() + 1)
+        end
+    end
     local gripNeighbors = { dragHandle.lockButton, dragHandle.menuButton, coordLabel }
     for i = 1, 3 do
-        local control = gripNeighbors[i]
-        if control and control:GetFrameLevel() < overGrip then
-            control:SetFrameLevel(overGrip)
+        if gripNeighbors[i] then
+            RaiseAboveGrip(gripNeighbors[i], grip:GetFrameLevel() + 1)
         end
     end
 
