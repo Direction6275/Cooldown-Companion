@@ -1607,10 +1607,13 @@ end
 -- path that grows a panel's entry list calls this with the count from
 -- before the growth, after inserting.
 --
--- On a panel with sections only BASE members count: a sectioned entry lays
--- out on its own anchor, never in the base line, so an add into a section
--- must not widen the base wrap. The entries at or below the old count are
--- read as the ones already there, which every add path's append makes exact.
+-- Only the entries in the line being kept count. On an ordinary panel that
+-- is its icon grid (attached bars beside icons never sit in it), or on a
+-- bar-only panel its bar line, which lays out from the shared bar style. On a
+-- panel with sections only BASE members count: a sectioned entry lays out on
+-- its own anchor, never in the base line, so an add into a section must not
+-- widen the base wrap. The entries at or below the old count are read as the
+-- ones already there, which every add path's append makes exact.
 function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     if not group then return end
     local displayMode = group.displayMode or "icons"
@@ -1621,22 +1624,32 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     if not style then return end
     previousCount = tonumber(previousCount) or 0
     local buttons = group.buttons or {}
-    local newCount = #buttons
-    if ST.GetSectionsForLayout(group) then
-        local previousBase, newBase = 0, 0
-        for index, buttonData in ipairs(buttons) do
-            if ST.GetPanelSectionForEntry(group, buttonData) == nil then
-                newBase = newBase + 1
-                if index <= previousCount then
-                    previousBase = previousBase + 1
-                end
+    local lineIsBars
+    local perLine = tonumber(style.buttonsPerRow) or 12
+    if ST.PanelSupportsAttachedBars(group) then
+        lineIsBars = ST.GetPanelGeometryKind(group) == "bars"
+        if lineIsBars then
+            perLine = tonumber(ST.GetAttachedBarStyle(group).buttonsPerRow) or 12
+            style = group.attachedBarStyle or {}
+            group.attachedBarStyle = style
+        end
+    end
+    local sectioned = ST.GetSectionsForLayout(group)
+    local previousLine, newLine = 0, 0
+    for index, buttonData in ipairs(buttons) do
+        local inLine = lineIsBars == nil or ST.IsPanelBarEntry(group, buttonData) == lineIsBars
+        if inLine and sectioned and ST.GetPanelSectionForEntry(group, buttonData) ~= nil then
+            inLine = false
+        end
+        if inLine then
+            newLine = newLine + 1
+            if index <= previousCount then
+                previousLine = previousLine + 1
             end
         end
-        previousCount, newCount = previousBase, newBase
     end
-    local perLine = tonumber(style.buttonsPerRow) or 12
-    if perLine >= previousCount and newCount > perLine then
-        style.buttonsPerRow = newCount
+    if perLine >= previousLine and newLine > perLine then
+        style.buttonsPerRow = newLine
     end
 end
 
