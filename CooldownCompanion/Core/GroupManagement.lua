@@ -531,12 +531,16 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     end
     if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
+        -- A bar-only panel shows Bar Spacing on Appearance, so there it travels
+        -- with Appearance, as Icon Spacing does; on any other panel the value
+        -- is the latent bar-grid spacing and stays with Arrangement.
+        local spacingScope = ST.IsBarOnlyPanel(targetGroup) and "appearance" or "arrangement"
         local function CopyAttachedStyle(key)
             if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
             if key == "buttonSpacing" and not templateFields then
-                local arrangement = false
-                for _, scope in ipairs(scopes) do if scope == "arrangement" then arrangement = true end end
-                if not arrangement then return end
+                local carried = false
+                for _, scope in ipairs(scopes) do if scope == spacingScope then carried = true end end
+                if not carried then return end
             end
             targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
             local sourceStyle = templateFields and (source.attachedBarStyle or {})
@@ -1578,20 +1582,26 @@ function CooldownCompanion:CreateGroup(name)
     return containerId
 end
 
-function CooldownCompanion:ToggleGroupGlobal(containerId)
-    local db = self.db.profile
-    local container = db.groupContainers[containerId]
-    if not container then return end
-
-    local newGlobal = not container.isGlobal
-    container.isGlobal = newGlobal
-    if not newGlobal then
+-- Moves a Group into or out of Global. Leaving Global hands it to this
+-- character and strips other classes' Who Can Use This limits, so panels can
+-- start or stop loading: callers rebuild with RefreshAllGroups afterwards.
+function CooldownCompanion:SetContainerGlobalScope(containerId, isGlobal)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return false end
+    container.isGlobal = isGlobal == true
+    if not container.isGlobal then
         container.createdBy = self.db.keys.char
         if self.NormalizeContainerEligibilityForCharacterScope then
             self:NormalizeContainerEligibilityForCharacterScope(containerId)
         end
     end
+    return true
+end
 
+function CooldownCompanion:ToggleGroupGlobal(containerId)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    self:SetContainerGlobalScope(containerId, not container.isGlobal)
     self:RefreshAllGroups()
 end
 
@@ -1601,11 +1611,15 @@ end
 -- path that grows a panel's entry list calls this with the count from
 -- before the growth, after inserting.
 --
--- On a panel with sections only BASE members count: a sectioned entry lays
--- out on its own anchor, never in the base line, so an add into a section
--- must not widen the base wrap. The entries at or below the old count are
--- read as the ones already there, which every add path's append makes exact.
-function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+-- Only the entries in the line being kept count. On an ordinary panel that
+-- is its icon grid (attached bars beside icons never sit in it), or on a
+-- bar-only panel its bar line, which lays out from the shared bar style. On a
+-- panel with sections only BASE members count: a sectioned entry lays out on
+-- its own anchor, never in the base line, so an add into a section must not
+-- widen the base wrap. The entries at or below the old count are read as the
+-- ones already there, which an append makes exact; a path that inserts mid-list
+-- (Duplicate) passes the added entries instead, as a set keyed by entry.
+function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, addedEntries)
     if not group then return end
     local displayMode = group.displayMode or "icons"
     if displayMode ~= "icons" and displayMode ~= "bars" then
@@ -1615,22 +1629,41 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
     if not style then return end
     previousCount = tonumber(previousCount) or 0
     local buttons = group.buttons or {}
-    local newCount = #buttons
-    if ST.GetSectionsForLayout(group) then
-        local previousBase, newBase = 0, 0
-        for index, buttonData in ipairs(buttons) do
-            if ST.GetPanelSectionForEntry(group, buttonData) == nil then
-                newBase = newBase + 1
-                if index <= previousCount then
-                    previousBase = previousBase + 1
-                end
+    local lineIsBars
+    local perLine = tonumber(style.buttonsPerRow) or 12
+    if ST.PanelSupportsAttachedBars(group) then
+        lineIsBars = ST.IsBarOnlyPanel(group)
+        if lineIsBars then
+            perLine = tonumber(ST.GetAttachedBarStyle(group).buttonsPerRow) or 12
+        end
+    end
+    local sectioned = ST.GetSectionsForLayout(group)
+    local previousLine, newLine = 0, 0
+    for index, buttonData in ipairs(buttons) do
+        local inLine = lineIsBars == nil or ST.IsPanelBarEntry(group, buttonData) == lineIsBars
+        if inLine and sectioned and ST.GetPanelSectionForEntry(group, buttonData) ~= nil then
+            inLine = false
+        end
+        if inLine then
+            newLine = newLine + 1
+            local wasThere
+            if addedEntries then
+                wasThere = not addedEntries[buttonData]
+            else
+                wasThere = index <= previousCount
+            end
+            if wasThere then
+                previousLine = previousLine + 1
             end
         end
-        previousCount, newCount = previousBase, newBase
     end
-    local perLine = tonumber(style.buttonsPerRow) or 12
-    if perLine >= previousCount and newCount > perLine then
-        style.buttonsPerRow = newCount
+    if perLine >= previousLine and newLine > perLine then
+        if lineIsBars then
+            group.attachedBarStyle = group.attachedBarStyle or {}
+            group.attachedBarStyle.buttonsPerRow = newLine
+        else
+            style.buttonsPerRow = newLine
+        end
     end
 end
 

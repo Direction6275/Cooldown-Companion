@@ -407,7 +407,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
     local isAuraPanel = ST.IsAuraPanelGroup(group)
     slot._cdcAuraLowTime = CooldownCompanion.AllowAuraDurationLowTime(
         style, isAuraPanel
-            or ST.IsAuraSectionEntry(group, buttonData))
+            or ST.IsNativeFlowAuraEntry(group, buttonData))
     -- Bars run the same icon tint pipeline live (UpdateIconTint on the
     -- bar icon); baseline restored every rebuild like the icon slots.
     local baseTint = style.iconTintColor

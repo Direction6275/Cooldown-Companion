@@ -247,9 +247,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
                     for _, containerId in ipairs(multiGroupIds) do
                         ids[#ids + 1] = containerId
                     end
-                    CS.ShowPopupAboveConfig("CDC_DELETE_SELECTED_GROUPS", multiCount, {
-                        groupIds = ids,
-                    })
+                    ST._ShowDeleteSelectedGroupsPopup(ids)
                 end,
             },
         },

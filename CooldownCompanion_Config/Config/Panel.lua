@@ -19,7 +19,6 @@ local RefreshColumn3 = ST._RefreshColumn3
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
-local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
@@ -370,57 +369,10 @@ local function GetConfigProfile()
     return CooldownCompanion.db and CooldownCompanion.db.profile
 end
 
-local function NormalizeHeaderName(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-    local trimmed = name:match("^%s*(.-)%s*$")
-    if not trimmed or trimmed == "" then
-        return nil
-    end
-    return trimmed
-end
-
-local function GetSelectedEntryHeaderName()
-    if not (CS.selectedGroup and CS.selectedButton) then
-        return nil
-    end
-    if next(CS.selectedButtons) then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
-    local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
-    return buttonData and NormalizeHeaderName(GetConfigEntryDisplayName(buttonData))
-end
-
-local function GetSelectedPanelHeaderName(selection)
-    if not selection or selection.panelMultiCount >= 2 or not CS.selectedGroup then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
-    return group and NormalizeHeaderName(group.name)
-end
-
-local function GetSelectedGroupHeaderName(selection)
-    if not selection or selection.groupMultiCount >= 2 or not CS.selectedContainer or CS.selectedGroup then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local container = profile and profile.groupContainers and profile.groupContainers[CS.selectedContainer]
-    return container and NormalizeHeaderName(container.name)
-end
-
 local function GetConfigSelectionSummary()
     return {
         panelMultiCount = CountSelections(CS.selectedPanels),
         groupMultiCount = CountSelections(CS.selectedGroups),
-        hasSelectedPanel = CS.selectedGroup ~= nil,
-        hasSelectedGroup = CS.selectedContainer ~= nil,
     }
 end
 
@@ -456,32 +408,6 @@ local function GetColumn3HeaderMode(selection)
     return "button"
 end
 
--- Group-side titles (panel / group): used for the workspace
--- header during Other Class browsing, where it hosts both entry and
--- group-side settings.
-local function GetGroupSideHeaderMode(selection)
-    if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
-        return "panel"
-    end
-    return "group"
-end
-
-local function GetGroupSideHeaderTitle(selection)
-    local mode = GetGroupSideHeaderMode(selection)
-    if mode == "panel" then
-        local panelName = GetSelectedPanelHeaderName(selection)
-        if panelName then
-            return "Panel: " .. panelName
-        end
-        return "Panel Settings"
-    end
-    local groupName = GetSelectedGroupHeaderName(selection)
-    if groupName then
-        return "Group: " .. groupName
-    end
-    return "Group Settings"
-end
-
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
     if mode == "bar_intro" then
@@ -500,18 +426,10 @@ local function GetColumn3HeaderTitle(selection)
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
-    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
-        -- Merged wide column: the identity strip under the preview names
-        -- the selection, so the header stays static instead of tracking it.
-        return "Buttons"
-    end
-    -- Other Class browsing: no identity strip, so name whatever the wide
-    -- column is showing - the selected entry or the group-side selection.
-    local entryName = GetSelectedEntryHeaderName()
-    if entryName then
-        return "Entry: " .. entryName
-    end
-    return GetGroupSideHeaderTitle(selection)
+    -- Every other workspace is the Live Preview, with or without a
+    -- selection. Browsing other classes uses the same workspace, and every
+    -- caller skips titles while the talent picker owns the column.
+    return "Live Preview"
 end
 
 local function ShouldShowSettingsColumn(col3)
@@ -551,7 +469,8 @@ local function ApplyConfigColumnTitles(frame)
     -- Two labeled workspace areas: while a pinned preview is showing, the
     -- column title names the preview region and the editing surface in the
     -- Settings column carries its own "Editing:" header; without a preview
-    -- the title keeps naming the settings content.
+    -- a module or multi-select workspace keeps its own title and anything
+    -- else is still the Live Preview.
     local activeHost = frame.col3._cdcActiveWideHost
     if activeHost and activeHost:IsShown() then
         frame.col3:SetTitle("Live Preview")
@@ -573,12 +492,21 @@ refreshGuard:Hide()
 refreshGuard:SetScript("OnUpdate", function(self)
     self:Hide()
     CS.configRefreshInProgress = false
+    -- The Settings Finder's navigation refresh sets this around the same
+    -- synchronous refresh, so an error strands it the same way.
+    CS._settingsFinderNavigationRefresh = nil
     wipe(pendingScrollFixes)
 end)
 
 local function BeginConfigRefresh()
     CS.configRefreshInProgress = true
     refreshGuard:Show()
+end
+
+-- Leaves a refresh that has built nothing yet, so another can take over.
+local function CancelConfigRefresh()
+    CS.configRefreshInProgress = false
+    refreshGuard:Hide()
 end
 
 local function FixConfigScroll(widget)
@@ -1183,23 +1111,11 @@ local function CreateConfigPanel()
     -- Cleanup on hide (covers ESC, X button, OnClose, ToggleConfig)
     -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
     local isCollapsing = false
-    content:HookScript("OnHide", function()
-        SetMainConfigDragAlpha(false)
-        CS.configWindowSizing = nil
-        if CancelFirstIconPanelTutorial then
-            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
-        end
-        -- The minimized config deliberately preserves the editing widgets,
-        -- but Finder query/results are visibility-scoped and must not return
-        -- when the workspace expands again.
-        if ST._ClearSettingsFinderActionRowState
-            and CS.configFrame and CS.configFrame.col3
-        then
-            ST._ClearSettingsFinderActionRowState(CS.configFrame.col3)
-        end
-        if isCollapsing then return end
-        -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
-        -- the tab and its editor, so drop this one's animation driver and any
+    -- A real close's cleanup. The minimized window's own close paths run it
+    -- too: the floating pickers and the preview must not outlive the config.
+    function frame._runCloseCleanup()
+        -- The next open runs RefreshConfigPanel, which rebuilds the tab and
+        -- its editor, so drop this one's animation driver and any
         -- confirmation it left standing.
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
@@ -1237,6 +1153,24 @@ local function CreateConfigPanel()
         end
         CloseDropDownMenus()
         CS.HideAutocomplete()
+    end
+
+    content:HookScript("OnHide", function()
+        SetMainConfigDragAlpha(false)
+        CS.configWindowSizing = nil
+        if CancelFirstIconPanelTutorial then
+            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
+        end
+        -- The minimized config deliberately preserves the editing widgets,
+        -- but Finder query/results are visibility-scoped and must not return
+        -- when the workspace expands again.
+        if ST._ClearSettingsFinderActionRowState
+            and CS.configFrame and CS.configFrame.col3
+        then
+            ST._ClearSettingsFinderActionRowState(CS.configFrame.col3)
+        end
+        if isCollapsing then return end
+        frame._runCloseCleanup()
     end)
 
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
@@ -1682,10 +1616,7 @@ local function CreateConfigPanel()
 
     local function CloseMinimizedConfig()
         GameTooltip:Hide()
-        if frame.HideChangelogOverlay then
-            frame.HideChangelogOverlay()
-        end
-        ClearTransientConfigPreviewState()
+        frame._runCloseCleanup()
         miniFrame:Hide()
     end
 
@@ -2547,6 +2478,20 @@ end
 -- panel/entry settings edit. These operations retain the Navigator because
 -- neither its structure nor the selected panel changes.
 ------------------------------------------------------------------------
+-- A selection change repaints the Navigator's highlight in place. A
+-- different panel (a context menu or the bar workspace can switch it) needs
+-- the Navigator rebuilt, and so do rows the in-place repaint finds stale.
+-- With no panel selected there is no row to repaint, a panel outside any
+-- Group has no rows the repaint can reach, and a Group drawing no rows
+-- (its section collapsed, or a Finder query it misses) has none to repaint.
+local function SelectionNeedsNavigatorRebuild()
+    if CS.selectedGroup ~= CS.lastCol1SelectedGroup then return true end
+    local panel = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    if not (panel and panel.parentContainerId) then return false end
+    local repainted, unrendered = ST._RefreshConfigEditNavigator(CS.selectedGroup)
+    return not (repainted or unrendered)
+end
+
 local function RefreshConfigWorkspace(selectionOnly, edit)
     if not (CS.configFrame and CS.configFrame.frame:IsShown()) then return end
     if CS.talentPickerMode then return end
@@ -2559,6 +2504,12 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     BeginConfigRefresh()
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     ST._NormalizeIndicatorConfigSelection()
+    -- Asked once the normalizers have settled the selection and before the
+    -- workspace builds, so a rebuild builds it only once.
+    if selectionOnly and ST._RefreshConfigEditNavigator and SelectionNeedsNavigatorRebuild() then
+        CancelConfigRefresh()
+        return CooldownCompanion:_configRefreshPanelImpl()
+    end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2692,16 +2643,7 @@ function CooldownCompanion:_configToggleImpl()
 
     -- If minimized, close everything and reset state
     if CS.configFrame._miniFrame and CS.configFrame._miniFrame:IsShown() then
-        if CS.configFrame.HideChangelogOverlay then
-            CS.configFrame.HideChangelogOverlay()
-        end
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-        end
-        if CS.CloseSpellbookPanel then
-            CS.CloseSpellbookPanel()
-        end
-        ClearTransientConfigPreviewState()
+        CS.configFrame._runCloseCleanup()
         CS.configFrame._miniFrame:Hide()
         return
     end

@@ -42,6 +42,12 @@ function CooldownCompanion:GetMasqueRegions(button)
     }
 end
 
+-- Masque skins icon entries on an icon panel only: populate, the toggle and
+-- dormant-frame recovery all ask this, so bars never lose CC's own borders.
+function CooldownCompanion:IsMasqueSkinnedButton(group, button)
+    return group.displayMode == "icons" and button._buttonPoolKey == "icons"
+end
+
 function CooldownCompanion:AddButtonToMasque(groupId, button)
     if not Masque then return end
     local masqueGroup = MasqueGroups[groupId]
@@ -124,10 +130,12 @@ function CooldownCompanion:ToggleGroupMasque(groupId, enable)
         if not MasqueGroups[groupId] then
             self:CreateMasqueGroup(groupId)
         end
-        -- Add all existing buttons to Masque
+        -- Add every icon entry to Masque (the populate rule)
         if frame and frame.buttons then
             for _, button in ipairs(frame.buttons) do
-                self:AddButtonToMasque(groupId, button)
+                if self:IsMasqueSkinnedButton(group, button) then
+                    self:AddButtonToMasque(groupId, button)
+                end
             end
         end
     else

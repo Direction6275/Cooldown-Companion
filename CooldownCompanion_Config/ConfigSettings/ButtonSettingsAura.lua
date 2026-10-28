@@ -63,13 +63,8 @@ end
 -- The user's explicit unit override, when set. Absolute over every derived
 -- answer in this section (owner ruling 2026-08-28): it exists for auras
 -- whose spell data misclassifies, so no classifier read may outrank it.
-local function GetAuraUnitOverride(buttonData)
-    local override = buttonData.auraUnitOverride
-    if override == "player" or override == "target" then
-        return override
-    end
-    return nil
-end
+local GetAuraUnitOverride = ST.GetEntryAuraUnitOverride
+local GetAuraIDOverride = ST.GetEntryAuraIDOverride
 
 local function GetExplicitAuraCandidateUnit(buttonData)
     local unitOverride = GetAuraUnitOverride(buttonData)
@@ -79,6 +74,16 @@ local function GetExplicitAuraCandidateUnit(buttonData)
     if buttonData.addedAs == "aura" then
         local resolved = ResolveConfiguredAuraSpellID(buttonData)
         return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
+    end
+    -- An Aura ID Override is the entry's head, so its classification owns
+    -- the polarity ahead of the list, the order the runtime resolver uses
+    -- (ResolveExplicitAuraCandidateUnit).
+    local idOverride = GetAuraIDOverride(buttonData)
+    if idOverride then
+        local overrideUnit = ClassifyAuraSpellUnit(idOverride)
+        if overrideUnit then
+            return overrideUnit
+        end
     end
     local candidates = GetAuraCandidateList(buttonData)
     if #candidates == 0 then
@@ -134,16 +139,7 @@ local function GetOverrideSurfaceRejectMessage(group, buttonData)
         surfaceUnit = CooldownCompanion:GetAuraSectionUnit(group, anchor, buttonData)
     end
     if not surfaceUnit or surfaceUnit == entryUnit then return nil end
-    if isPanel then
-        if surfaceUnit == "player" then
-            return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
-        end
-        return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
-    end
-    if surfaceUnit == "player" then
-        return "This section tracks your buffs. Target debuff auras need a section of their own."
-    end
-    return "This section tracks target debuffs. Your own buff auras need a section of their own."
+    return ST.GetAuraSurfaceUnitMismatchText(isPanel, surfaceUnit)
 end
 
 -- Store the derived unit whenever tracking config changes, so the runtime's
@@ -192,6 +188,72 @@ local function CharacterCanCommandPets()
         return true
     end
     return false
+end
+
+-- The Tracked on choices for one aura source, shared by entries and aura
+-- Indicators: the list, its order and the current value.
+function ST._GetAuraScopeChoices(buttonData, isAuraPanel)
+    local unitOverride = GetAuraUnitOverride(buttonData)
+    local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
+    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
+    local isBuff = unit ~= "target"
+    -- The derived unit falls back to the stored auraUnit (then "player") when
+    -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
+    -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
+    -- the user tick a box on what turns out to be a debuff, where the runtime
+    -- resolves to the target unconditionally and the setting does nothing.
+    -- A user override IS confirmation: it decides the bind unit outright.
+    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
+    -- Any confirmed helpful aura may use group scope. The runtime matches
+    -- only auras applied by the player, including on the player themselves.
+    local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
+    -- A stored flag offers the choice regardless of the gate (same escape the
+    -- pet side has): the runtime binds group tokens
+    -- off the flag alone, so the row has to state it and give it a way out.
+    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
+    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
+    -- entries can follow pet self-buffs without a separate castable spell, and
+    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
+    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
+    -- The extra gate is character capability (learned sticky, see
+    -- CharacterCanCommandPets):
+    -- per-spell "lands on the pet" knowledge does not exist in any API, so
+    -- character level is the finest honest cut. A stored flag offers the
+    -- choice regardless of every gate, so retained or imported pet state
+    -- always has a clearing path.
+    local canTrackPet = not isAuraPanel and isBuff and polarityKnown
+        and CharacterCanCommandPets()
+        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
+    local offerPet = canTrackPet or buttonData.auraTrackPet == true
+    local automaticLabel = "Automatic"
+    if classifiedUnit == "target" then
+        automaticLabel = "Automatic (Target)"
+    elseif classifiedUnit == "player" then
+        automaticLabel = "Automatic (You)"
+    end
+    -- One dropdown for the whole scope. Group and pet are exclusive with
+    -- each other, so they are two more choices beside the unit rather than
+    -- two checkboxes that cleared each other. The stored keys are unchanged.
+    local scopeList = {
+        automatic = automaticLabel,
+        player = "You",
+        target = "Target",
+    }
+    local scopeOrder = { "automatic", "player", "target" }
+    if offerGroup then
+        scopeList.group = "You and your group"
+        scopeOrder[#scopeOrder + 1] = "group"
+    end
+    if offerPet then
+        scopeList.pet = "Your pet"
+        scopeOrder[#scopeOrder + 1] = "pet"
+    end
+    local scopeValue = buttonData.auraTrackPet == true and "pet"
+        or buttonData.auraTrackGroup == true and "group"
+        or unitOverride
+        or "automatic"
+    return scopeList, scopeOrder, scopeValue
 end
 
 
@@ -475,66 +537,8 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- reads harmful); the override is the user's escape hatch and is
     -- absolute at bind time. Shown for Aura Panel cells too: they are
     -- single-unit, but WHICH unit is still polarity.
-    local unitOverride = GetAuraUnitOverride(buttonData)
     local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
-    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
-    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
-    local isBuff = unit ~= "target"
-    -- The derived unit falls back to the stored auraUnit (then "player") when
-    -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
-    -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
-    -- the user tick a box on what turns out to be a debuff, where the runtime
-    -- resolves to the target unconditionally and the setting does nothing.
-    -- A user override IS confirmation: it decides the bind unit outright.
-    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
-    -- Any confirmed helpful aura may use group scope. The runtime matches
-    -- only auras applied by the player, including on the player themselves.
-    local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
-    -- A stored flag offers the choice regardless of the gate (same escape the
-    -- pet side has): the runtime binds group tokens
-    -- off the flag alone, so the row has to state it and give it a way out.
-    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
-    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
-    -- entries can follow pet self-buffs without a separate castable spell, and
-    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
-    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
-    -- The extra gate is character capability (learned sticky, see
-    -- CharacterCanCommandPets):
-    -- per-spell "lands on the pet" knowledge does not exist in any API, so
-    -- character level is the finest honest cut. A stored flag offers the
-    -- choice regardless of every gate, so retained or imported pet state
-    -- always has a clearing path.
-    local canTrackPet = not isAuraPanel and isBuff and polarityKnown
-        and CharacterCanCommandPets()
-        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
-    local offerPet = canTrackPet or buttonData.auraTrackPet == true
-    local automaticLabel = "Automatic"
-    if classifiedUnit == "target" then
-        automaticLabel = "Automatic (Target)"
-    elseif classifiedUnit == "player" then
-        automaticLabel = "Automatic (You)"
-    end
-    -- One dropdown for the whole scope. Group and pet are exclusive with
-    -- each other, so they are two more choices beside the unit rather than
-    -- two checkboxes that cleared each other. The stored keys are unchanged.
-    local scopeList = {
-        automatic = automaticLabel,
-        player = "You",
-        target = "Target",
-    }
-    local scopeOrder = { "automatic", "player", "target" }
-    if offerGroup then
-        scopeList.group = "You and your group"
-        scopeOrder[#scopeOrder + 1] = "group"
-    end
-    if offerPet then
-        scopeList.pet = "Your pet"
-        scopeOrder[#scopeOrder + 1] = "pet"
-    end
-    local scopeValue = buttonData.auraTrackPet == true and "pet"
-        or buttonData.auraTrackGroup == true and "group"
-        or unitOverride
-        or "automatic"
+    local scopeList, scopeOrder, scopeValue = ST._GetAuraScopeChoices(buttonData, isAuraPanel)
     local scopeRow = AddDropdownRow(auraLeft, {
         setting = auraSettings.unit,
         indent = not isStandalone,
@@ -574,7 +578,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     })
     ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
     AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Tracked On",
+        "Tracked on",
         { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
     }, infoButtons))
 
@@ -708,7 +712,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         -- An ID override replaces the implicit head: it leads the line and
         -- the entry's own aura leaves the filter with the rest of the
         -- automatic machinery.
-        local hasIDOverride = tonumber(buttonData.auraIDOverride) ~= nil
+        local hasIDOverride = GetAuraIDOverride(buttonData) ~= nil
         if hasIDOverride then
             AppendTrackedAuraID(primaryAuraSpellID)
         end

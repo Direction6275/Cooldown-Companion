@@ -130,11 +130,27 @@ local ResourceBars = { instances = {} }
 -- unlocked for positioning, it only mutes resource sounds. The bars stay real
 -- (owner ruling 2026-07-26 — previews live in the config canvas and nowhere else).
 local isUnlockAssistActive = false
-local savedContainerAlpha = nil
+local panelAlphaSyncActive = false
 local alphaSyncFrame = nil
 local lastAppliedBarSpacing = nil
 local lastAppliedBarThickness = nil
 local independentWrapperFrame = nil
+
+-- The follow-panel sync writes the panel's alpha straight onto these frames.
+-- Leaving it hands them back at full alpha: an alpha config with nothing active
+-- never writes, so a synced fade would otherwise stay on the bars.
+local function StopPanelAlphaSync()
+    if alphaSyncFrame then
+        alphaSyncFrame:SetScript("OnUpdate", nil)
+    end
+    if not panelAlphaSyncActive then return end
+    panelAlphaSyncActive = false
+    if containerFrameAbove then containerFrameAbove:SetAlpha(1) end
+    if containerFrameBelow then containerFrameBelow:SetAlpha(1) end
+    RB._barContainers.aboveMain:SetAlpha(1)
+    RB._barContainers.belowMain:SetAlpha(1)
+    CooldownCompanion:GetResourceAuraHostRoot():SetAlpha(1)
+end
 
 function CooldownCompanion:GetIndependentResourceStackSnapFrame()
     return independentWrapperFrame and independentWrapperFrame._dragSnapRectFrame
@@ -485,15 +501,35 @@ local function EnsureIndependentStackMoverChrome(frame)
     CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
 end
 
-UpdateIndependentStackDragState = function(settings, placementSettings)
-    if not independentWrapperFrame then return end
-    local frame = independentWrapperFrame
-    placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
-    local unlocked = placementSettings
+local function IsIndependentStackUnlocked(placementSettings)
+    return placementSettings
         and CooldownCompanion:IsResourceBarAnchorIndependent()
         and not placementSettings.independentAnchorLocked
         and not CooldownCompanion._combatForcedLock
         and not InCombatLockdown()
+        or false
+end
+
+-- Read by the alpha pass on every tick: an unlocked stack shows at full alpha,
+-- like an unlocked panel. UpdateIndependentStackDragState stamps the answer
+-- (the same one its mover chrome follows); only a combat start can flip it
+-- without a restamp, so that part is read live.
+local function IsIndependentStackAlphaUnlocked()
+    return independentWrapperFrame ~= nil
+        and independentWrapperFrame._cdcAlphaUnlocked == true
+        and not CooldownCompanion._combatForcedLock
+        and not InCombatLockdown()
+end
+
+UpdateIndependentStackDragState = function(settings, placementSettings)
+    if not independentWrapperFrame then return end
+    local frame = independentWrapperFrame
+    placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
+    local unlocked = IsIndependentStackUnlocked(placementSettings)
+    if frame._cdcAlphaUnlocked ~= unlocked then
+        frame._cdcAlphaUnlocked = unlocked
+        CooldownCompanion:EnsureAlphaDriverArmed()
+    end
     if not unlocked and frame._dragInProgress then
         CooldownCompanion:CancelIndependentResourceStackDrag()
     end
@@ -549,6 +585,7 @@ local function HideIndependentWrapperFrame()
         independentWrapperFrame._cdcUnlockAssist = false
         CooldownCompanion:StopResourceBarUnlockAssist()
     end
+    independentWrapperFrame._cdcAlphaUnlocked = nil
 end
 
 --- Re-anchor drag handle and coord label to frame the bar content.
@@ -2485,29 +2522,24 @@ function CooldownCompanion:ApplyResourceBars(opts)
     local rbModuleId = "rb"
 
     if isIndependentStack then
-        -- Independent mode: own alpha settings, no group inheritance
-        if alphaSyncFrame then
-            alphaSyncFrame:SetScript("OnUpdate", nil)
-        end
-        savedContainerAlpha = nil
+        -- Independent mode: own alpha settings, no group inheritance. The
+        -- wrapper stays out of the list: its only children are the mover
+        -- chrome and the snap rect, and the mover must not fade.
+        StopPanelAlphaSync()
 
         local frames = {}
-        if independentWrapperFrame then frames[#frames + 1] = independentWrapperFrame end
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
         if containerFrameBelow then frames[#frames + 1] = containerFrameBelow end
         frames[#frames + 1] = RB._barContainers.aboveMain
         frames[#frames + 1] = RB._barContainers.belowMain
         frames[#frames + 1] = self:GetResourceAuraHostRoot()
         if #frames > 0 then
-            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames)
+            CooldownCompanion:RegisterModuleAlpha(rbModuleId, settings, frames, IsIndependentStackAlphaUnlocked)
         end
     elseif layout.inheritAlpha and groupFrame then
         -- Attached + inheriting: sync to group alpha via 30Hz polling
         CooldownCompanion:UnregisterModuleAlpha(rbModuleId)
-
-        if not savedContainerAlpha then
-            savedContainerAlpha = containerFrameAbove:GetAlpha()
-        end
+        panelAlphaSyncActive = true
 
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
         containerFrameAbove:SetAlpha(groupAlpha)
@@ -2544,10 +2576,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         end)
     else
         -- Attached + NOT inheriting: own alpha settings on container frames
-        if alphaSyncFrame then
-            alphaSyncFrame:SetScript("OnUpdate", nil)
-        end
-        savedContainerAlpha = nil
+        StopPanelAlphaSync()
 
         local frames = {}
         if containerFrameAbove then frames[#frames + 1] = containerFrameAbove end
@@ -2592,14 +2621,7 @@ function CooldownCompanion:RevertResourceBars()
 
     -- Stop alpha sync, unregister module alpha, restore alpha
     CooldownCompanion:UnregisterModuleAlpha("rb")
-    if alphaSyncFrame then
-        alphaSyncFrame:SetScript("OnUpdate", nil)
-    end
-    if savedContainerAlpha then
-        if containerFrameAbove then containerFrameAbove:SetAlpha(savedContainerAlpha) end
-        if containerFrameBelow then containerFrameBelow:SetAlpha(savedContainerAlpha) end
-    end
-    savedContainerAlpha = nil
+    StopPanelAlphaSync()
 
     -- Aura host root goes dark with the bars (safe in combat: plain CC
     -- frame; a hidden container is inert and self-refreshes on show). The

@@ -249,7 +249,7 @@ local function GetLayoutFinderState(context)
     -- Structural, not compactLayout state: the gear now builds with Compact
     -- Mode off too, opening its panel read-only behind the Turn On footer, so
     -- the rows inside stay findable. Only the centered-growth restriction
-    -- still hides the Growth Direction row itself.
+    -- still hides the Collapse Direction row itself.
     state.compactAdvanced = state.compact
     local style = group.style or {}
     state.compactGrowth = state.compactAdvanced
@@ -336,13 +336,15 @@ if ST._DefineSettingRoute then
             aliases = { "panel point" },
             applies = LayoutFinderFlag("anchorPoint"),
         },
+        -- An Indicator's points carry the panel names (owner ruling
+        -- 2026-10-27); the older words stay searchable.
         displayPoint = {
-            label = "Display Point",
-            aliases = { "anchor point", "trigger point" },
+            label = "Anchor Point",
+            aliases = { "display point", "trigger point" },
             applies = LayoutFinderFlag("displayPoint"),
         },
-        targetPoint = { label = "Target Point", aliases = { "relative point" }, applies = LayoutFinderFlag("targetPoint") },
-        screenPoint = { label = "Screen Point", aliases = { "relative point" }, applies = LayoutFinderFlag("screenPoint") },
+        targetPoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("targetPoint") },
+        screenPoint = { label = "Relative Point", aliases = { "screen point" }, applies = LayoutFinderFlag("screenPoint") },
         relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
         xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("xOffset") },
         yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("yOffset") },
@@ -382,8 +384,8 @@ if ST._DefineSettingRoute then
         advancedKey = "compactLayout",
     })
     LAYOUT_FINDER.compact = compact:Settings({
-        growth = { label = "Growth Direction", applies = LayoutFinderFlag("compactGrowth") },
-        maxVisible = { label = "Max Visible Buttons", aliases = { "button limit" }, applies = LayoutFinderFlag("compactAdvanced") },
+        growth = { label = "Collapse Direction", aliases = { "growth direction" }, applies = LayoutFinderFlag("compactGrowth") },
+        maxVisible = { label = "Max Visible Entries", aliases = { "button limit", "max visible buttons" }, applies = LayoutFinderFlag("compactAdvanced") },
     })
 
     for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
@@ -674,7 +676,7 @@ local function BuildLayoutTab(container)
             return
         end
         local textureGroupId = CS.selectedGroup
-        local anchorLabel = "Display Point"
+        local anchorLabel = "Anchor Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
         local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
             and CooldownCompanion:GetCursorAnchorTargetName()
@@ -945,7 +947,7 @@ local function BuildLayoutTab(container)
                 x = 16,
                 y = 16,
                 range = 2000,
-                step = 1,
+                step = 0.1,
             }, RefreshCursorAnchor, {
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
@@ -990,7 +992,7 @@ local function BuildLayoutTab(container)
             local targetsScreen = targetMode == "group" and not group.parentContainerId
             AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
                 RefreshTextureVisual,
-                targetsScreen and "Screen Point" or "Target Point",
+                "Relative Point",
                 {
                     setting = LAYOUT_FINDER.position and (targetsScreen
                         and LAYOUT_FINDER.position.screenPoint
@@ -1000,7 +1002,7 @@ local function BuildLayoutTab(container)
                 x = 0,
                 y = 0,
                 range = 2000,
-                step = 1,
+                step = 0.1,
             }, RefreshTextureVisual, {
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
@@ -1129,6 +1131,7 @@ local function BuildLayoutTab(container)
         local panelAnchorRow = AddDropdownRow(anchorLeft, {
             label = "Anchor to Panel",
             setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
+            pulloutWidth = WIDE_PULLOUT_WIDTH,
             onChange = function(val, widget)
                 if not val or val == "" then return end
                 local targetGroupId = tonumber(val)
@@ -1161,10 +1164,15 @@ local function BuildLayoutTab(container)
     -- in Automatic mode; explicit module selections ignore this preference.
     if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
         and not CooldownCompanion:IsAuraPanel(group) then
+        -- Shows what Automatic actually does: a Group that opted out takes
+        -- its panels with it, and only the Group's own row brings them back.
+        local containerIncluded = CooldownCompanion:IsContainerAutoAnchorEligible(
+            CooldownCompanion:GetParentContainer(group))
         local anchorEligibleRow = AddCheckboxRow(anchorRight, {
             label = "Include in Auto-Anchoring",
             setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.autoAnchor,
-            value = group.anchorEligible ~= false,
+            value = containerIncluded and group.anchorEligible ~= false,
+            disabled = not containerIncluded,
             onChange = function(val)
                 if val then
                     group.anchorEligible = nil
@@ -1185,6 +1193,8 @@ local function BuildLayoutTab(container)
             {"They scan your groups in list order, then the panels inside each group, and attach to the first eligible icon panel that is currently shown.", 1, 1, 1, true},
             {" ", 1, 1, 1},
             {"Uncheck this to skip this panel in Automatic mode. Modules using Choose Panel can still attach here.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"A group can exclude all of its panels in its own settings. Global groups start excluded.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 

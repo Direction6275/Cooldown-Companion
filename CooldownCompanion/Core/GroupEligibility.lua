@@ -326,6 +326,12 @@ function CooldownCompanion:IsGroupVisibleInUnlockPreview(groupId, opts)
                 return false
             end
         end
+        -- A hero-tree limit hides like a spec limit, the pair IsGroupActive
+        -- checks, so a panel for the other tree never ghosts here and then
+        -- vanishes on lock.
+        if not self:IsHeroTalentAllowed(group) then
+            return false
+        end
     end
 
     return true

@@ -601,7 +601,7 @@ function CooldownCompanion:PopulateGroupButtons(groupId)
                 button:Show()
 
                 -- Add to Masque if enabled (after button is shown and in the list, icons only)
-                if poolKey == "icons" and group.displayMode == "icons" and group.masqueEnabled then
+                if group.masqueEnabled and self:IsMasqueSkinnedButton(group, button) then
                     self:AddButtonToMasque(groupId, button)
                 end
             end

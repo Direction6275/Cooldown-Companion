@@ -436,6 +436,14 @@ for _, id in ipairs(ST.SHARED_BAR_STYLE_SECTIONS) do
         available = function(group) return ST._SharedBarStyleAllowed(group, id) end }
 end
 
+-- An ordinary panel whose bars form the body: it lays out as a grid from the
+-- shared bar style, so it takes Bar Spacing like an Aura or Totem bar panel.
+-- Module contexts carry no _settingsOwner, so Resources and the Cast Bar don't.
+local function IsBarOnlyPanelContext(group)
+    return group._settingsOwner ~= nil and group._attachedBarOwner ~= nil
+        and ST.IsBarOnlyPanel(group._settingsOwner)
+end
+
 local function BuildBarAppearanceTab(container, group, style)
     local refreshStyle = ST._MakeConfigEditRefresh(group)
 
@@ -593,7 +601,7 @@ local function BuildBarAppearanceTab(container, group, style)
     })
 
     end
-    if lens.mode ~= "entry" and not group._attachedBarOwner
+    if lens.mode ~= "entry" and (not group._attachedBarOwner or IsBarOnlyPanelContext(group))
         and ((group.buttons and #group.buttons > 1) or group._settingsContext) then
         AddSliderRow(barRight, {
             label = "Bar Spacing",
@@ -850,7 +858,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local rightBracket = lowTimeRight ~= lowTimeLeft
             and lowTimeSec:Bracket(lowTimeRight) or nil
         local entryIsAuraOnly = (lens and lens.mode == "entry") and lens.buttonData
-            and ST.IsAuraSectionEntry(group, lens.buttonData)
+            and ST.IsNativeFlowAuraEntry(group, lens.buttonData)
         -- Master row unindented and aura opt-in row: keep in step with the
         -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
         local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
@@ -2073,7 +2081,7 @@ local function BarFinderLowTimeAuraToggle(context)
     local group = context.group
     if ST.IsAuraPanelGroup(group) then return false end
     if context.scope == "entry" and context.buttonData
-        and ST.IsAuraSectionEntry(group, context.buttonData) then
+        and ST.IsNativeFlowAuraEntry(group, context.buttonData) then
         return false
     end
     return BarsDrawAuraDurationRows(group, BarFinderStyle(context))
@@ -2096,7 +2104,7 @@ if ST._DefineSettingRoute then
             applies = function(context)
                 local buttons = context and context.group and context.group.buttons
                 local group = context.group
-                return not group._attachedBarOwner
+                return (not group._attachedBarOwner or IsBarOnlyPanelContext(group))
                     and ((buttons and #buttons > 1) or group._settingsContext ~= nil)
             end,
         },

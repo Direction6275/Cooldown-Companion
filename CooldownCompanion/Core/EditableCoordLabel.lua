@@ -354,7 +354,7 @@ end
 --   isUnlocked()     true while this mover is editable
 --   getAnchorPoint() saved anchor point, for the center/edge travel factors
 --   minWidth/maxWidth   width clamps (default 20/600, the config slider range)
---   minHeight/maxHeight height clamps (default 4/40, the config slider range)
+--   minHeight/maxHeight height clamps (default 4/100, the config slider range)
 --   applyInterval    seconds between live re-applies during a grip drag;
 --                    0 applies every frame (the default)
 function ST.AttachMoverWidthResize(frame, opts)
@@ -364,7 +364,7 @@ function ST.AttachMoverWidthResize(frame, opts)
     local minWidth = opts.minWidth or 20
     local maxWidth = opts.maxWidth or 600
     local minHeight = opts.minHeight or 4
-    local maxHeight = opts.maxHeight or 40
+    local maxHeight = opts.maxHeight or 100
     local applyInterval = opts.applyInterval or MOVER_WIDTH_RESIZE_INTERVAL
 
     local function Clamp(value, minValue, maxValue)

@@ -21,7 +21,7 @@ local function RefreshProfileBar(bar)
     wipe(CS.profileBarAceWidgets)
 
     local db = CooldownCompanion.db
-    local profiles = db:GetProfiles()
+    local profiles = ST._GetSortedProfiles()
     local currentProfile = db:GetCurrentProfile()
 
     -- Build ordered profile list for AceGUI Dropdown
@@ -89,7 +89,7 @@ local function RefreshProfileBar(bar)
         local allProfiles = db:GetProfiles()
         local isOnly = #allProfiles <= 1
         if isOnly then
-            ShowPopupAboveConfig("CDC_RESET_PROFILE", currentProfile, { profileName = currentProfile, isOnly = true })
+            ShowPopupAboveConfig("CDC_RESET_PROFILE", currentProfile, { profileName = currentProfile })
         else
             ShowPopupAboveConfig("CDC_DELETE_PROFILE", currentProfile, { profileName = currentProfile })
         end

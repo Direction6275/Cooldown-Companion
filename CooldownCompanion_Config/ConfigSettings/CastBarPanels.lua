@@ -209,7 +209,7 @@ if ST._DefineSettingRoute then
         applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.icon = icon:Settings({
-        offset = { label = "Icon Offset" },
+        offset = { label = "Custom Icon Position", aliases = { "icon offset" } },
         xOffset = { label = "Icon X Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         yOffset = { label = "Icon Y Offset", applies = CastBarFinderCacheFlag("iconOffsetEnabled") },
         borderThickness = {
@@ -793,7 +793,7 @@ local function BuildCastBarStylingPanel(container)
 
     local function BuildIconAdvanced(panel)
         AddCheckboxRow(panel, {
-            label = "Icon Offset",
+            label = "Custom Icon Position",
             setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.offset,
             value = settings.iconOffset or false,
             onChange = function(val)

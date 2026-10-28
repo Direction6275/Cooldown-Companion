@@ -25,7 +25,8 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
-local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
+local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local ShowUnglobalGroupsPopup = ST._ShowUnglobalGroupsPopup
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local ClearConfigFinderText = ST._ClearConfigFinderText
@@ -1265,8 +1266,15 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
-                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
+                if container.isGlobal and GroupsHaveForeignSpecs({ container }, false) then
+                    ShowUnglobalGroupsPopup(container.name, function()
+                        -- A move, not a toggle: the Group may have changed
+                        -- scope while the prompt was up.
+                        if CooldownCompanion:SetContainerGlobalScope(containerId, false) then
+                            CooldownCompanion:RefreshAllGroups()
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    end)
                     return
                 end
                 CooldownCompanion:ToggleGroupGlobal(containerId)
@@ -1279,7 +1287,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
+                ST._ShowDeleteGroupPopup(containerId)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then
@@ -3210,6 +3218,7 @@ local function RefreshColumn1(preserveDrag)
         label:SetFullWidth(true)
         CS.col1Scroll:AddChild(label)
         CS.lastCol1RenderedRows = col1RenderedRows
+        CS.lastCol1SelectedGroup = CS.selectedGroup
         if CS.otherClassLibraryActive then
             PopulateOtherClassBrowseButtonBar()
         else
@@ -3345,6 +3354,8 @@ local function RefreshColumn1(preserveDrag)
     UpdateRailDestinations()
 
     CS.lastCol1RenderedRows = col1RenderedRows
+    -- The panel this build painted as selected (RefreshConfigWorkspace).
+    CS.lastCol1SelectedGroup = CS.selectedGroup
 
     if CS._UpdatePanelDropScan then
         CS._UpdatePanelDropScan()
@@ -3362,6 +3373,8 @@ end
 ------------------------------------------------------------------------
 -- Refresh the edited panel and its containing header without releasing rows.
 -- A load-bucket or binding change belongs to the structural Navigator owner.
+-- False when the rows are stale; a second true says instead that the Group
+-- draws no rows at all (a collapsed section, a Finder query it misses).
 function ST._RefreshConfigEditNavigator(panelId)
     local db = CooldownCompanion.db.profile
     local panel = db.groups[panelId]
@@ -3387,7 +3400,7 @@ function ST._RefreshConfigEditNavigator(panelId)
             if row.ownerProfile ~= db or row.owner ~= panel.buttons[row.id] then return false end
         end
     end
-    if not header then return false end
+    if not header then return false, true end
     local _, resourcePanelId = ST._GetBarWorkspacePlacement("resources")
     header.refreshAppearance(stats, inactive, resourcePanelId)
     for _, row in ipairs(rows) do

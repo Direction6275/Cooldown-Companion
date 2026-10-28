@@ -1064,7 +1064,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         ) ~= nil
         if not centeredActive then
             local growthRow = ST._AddDropdownRow(panel, {
-                label = "Growth Direction",
+                label = "Collapse Direction",
                 setting = opts and opts.settings and opts.settings.growth,
                 list = GetCompactGrowthDirectionLabels(group),
                 order = {"start", "center", "end"},
@@ -1083,8 +1083,10 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
             -- Anchor args are a placeholder - AnchorRowBadge re-points the button
             -- onto the end of the row's label.
             ST._AnchorRowBadge(growthRow, CreateInfoButton(growthRow.frame, growthRow.frame, "LEFT", "LEFT", 0, 0, {
-                "Growth Direction",
-                {"Choose which edge acts as the compact anchor icon/bar as visibility changes. Horizontal uses Left/Center/Right, vertical uses Top/Center/Bottom.", 1, 1, 1, true},
+                "Collapse Direction",
+                {"Shown entries pack from the start of the panel, from its center, or from its end.", 1, 1, 1, true},
+                {" ", 1, 1, 1},
+                {"Hidden entries take no space.", 1, 1, 1, true},
             }, tabInfoButtons))
         end
 
@@ -1102,7 +1104,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
             end
         end
         local maxVisRow = ST._AddSliderRow(panel, {
-            label = "Max Visible Buttons",
+            label = "Max Visible Entries",
             setting = opts and opts.settings and opts.settings.maxVisible,
             min = 1, max = sliderMax, step = 1,
             value = savedLimit == 0 and sliderMax or savedLimit,
@@ -1120,8 +1122,8 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         -- (GroupFrame's visible-button pass skips its members). Said only on a
         -- panel that actually has one, so every other panel reads as before.
         local maxVisTooltip = {
-            "Max Visible Buttons",
-            {"Limits how many buttons can appear at once. The first buttons (in panel order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
+            "Max Visible Entries",
+            {"Limits how many entries can appear at once. The first entries (in panel order) that pass visibility checks are shown; the rest are hidden.", 1, 1, 1, true},
             {"The highest slider value removes the limit. A saved limit also applies as entries are added.", 1, 1, 1, true},
         }
         if ST.PanelHasAuraSection and ST.PanelHasAuraSection(group) then

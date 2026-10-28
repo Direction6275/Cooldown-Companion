@@ -322,7 +322,8 @@ local customKeybindSettings = ST._DefineSettingRoute({
     sectionLabel = "Custom Keybind Text",
     collapseKeys = EntrySettingsCollapseKey("customkeybind"),
     applies = function(context)
-        if not (context.group and context.buttonData and context.group.displayMode == "icons")
+        if not (context.group and context.buttonData
+            and ST.GetEntryPresentation(context.group, context.buttonData) == "icons")
             or context.buttonData.rotationAssistant then
             return false
         end
@@ -509,18 +510,17 @@ end
 
 -- Sound alerts sit at the foot of the entry's Settings tab on every panel
 -- type; a conditions Indicator that does not use its source's sounds gets its
--- panel-level sound section instead. Entries that never had a sound surface
--- (equipment slots, and anything that is not a spell outside conditions
--- Indicators) add nothing rather than a section that only says "not
--- available".
+-- panel-level sound section instead, whatever its source (trinket slots
+-- included). Entries that never had a sound surface (equipment slots, and
+-- anything that is not a spell outside conditions Indicators) add nothing
+-- rather than a section that only says "not available".
 local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     if buttonData.rotationAssistant then return end
-    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
-        return
-    end
-
     if CooldownCompanion:IsConditionsIndicatorGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
         BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+        return
+    end
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
 
@@ -1228,7 +1228,8 @@ end
 local function BuildCustomKeybindSection(scroll, buttonData)
     if buttonData.rotationAssistant then return end
     local group = CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    if not group or group.displayMode ~= "icons" then return end
+    -- Bars draw no keybind text: ask how the entry shows, not the panel type.
+    if not group or ST.GetEntryPresentation(group, buttonData) ~= "icons" then return end
     -- An Aura Panel offers no Keybind Text at all (owner ruling 2026-08-15,
     -- carried by ST.AURA_PANEL_DENIED_OVERRIDE_SECTIONS), so the custom
     -- replacement for a bind has nothing to replace. The panel toggle this

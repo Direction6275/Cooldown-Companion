@@ -859,7 +859,7 @@ function I.SetDisplayType(group, displayType)
     settings.displayType = displayType
 end
 
-I.SameAuraText = "This Indicator already checks that aura there. Change its Tracked On first to check it on another unit."
+I.SameAuraText = "This Indicator already checks that aura there. Change its Tracked on first to check it on another unit."
 I.SameAuraUnitText = "This Indicator already checks that aura on that unit."
 
 -- One aura's When inside a list, as text and as a saved choice.

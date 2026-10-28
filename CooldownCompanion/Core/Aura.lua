@@ -334,6 +334,7 @@ local function GetEntryAuraIDOverride(buttonData)
     local numericID = buttonData and tonumber(buttonData.auraIDOverride)
     return numericID and numericID ~= 0 and numericID or nil
 end
+ST.GetEntryAuraIDOverride = GetEntryAuraIDOverride
 
 -- Explicit candidate lists own the slot polarity for ordinary spell entries.
 -- The migration and config writer keep those lists single-polarity; the stored

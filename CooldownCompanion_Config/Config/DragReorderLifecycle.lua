@@ -9,8 +9,8 @@ local CS = ST._configState
 local DR = ST._DragReorder or {}
 ST._DragReorder = DR
 
-local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local ShowUnglobalGroupsPopup = ST._ShowUnglobalGroupsPopup
 local SelectConfigPanel = ST._SelectConfigPanel
 local ClearConfigButtonSelection = ST._ClearConfigButtonSelection
 
@@ -120,17 +120,8 @@ local function GetContainerSection(container)
 end
 
 local function ApplyContainerSection(containerId, container, targetSection)
-    if targetSection == "global" then
-        container.isGlobal = true
-        return true
-    end
-    if targetSection == "char" then
-        container.isGlobal = false
-        container.createdBy = CooldownCompanion.db.keys.char
-        if CooldownCompanion.NormalizeContainerEligibilityForCharacterScope then
-            CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(containerId)
-        end
-        return true
+    if targetSection == "global" or targetSection == "char" then
+        return CooldownCompanion:SetContainerGlobalScope(containerId, targetSection == "global")
     end
     return targetSection == GetContainerSection(container)
 end
@@ -143,6 +134,8 @@ local function ApplyCol1Drop(state)
     if not dropTarget then return end
 
     local db = CooldownCompanion.db.profile
+    -- A section change can load or unload panels; the tail rebuilds for it.
+    local scopeChanged = false
 
     if state.kind == "group" then
         -- Navigator Group rows use container IDs (sourceGroupId holds one).
@@ -162,6 +155,7 @@ local function ApplyCol1Drop(state)
                 if not ApplyContainerSection(sourceContainerId, container, targetSection) then
                     return
                 end
+                scopeChanged = true
             end
             local renderedRows = state.col1RenderedRows
             if renderedRows then
@@ -201,18 +195,23 @@ local function ApplyCol1Drop(state)
         local targetRow = dropTarget.targetRow
         local targetSection = targetRow.section or state.sourceSection
 
+        -- Every Group is checked before any moves: a confirm popup can land
+        -- after the selection changed, and a refusal part-way through would
+        -- leave the earlier Groups moved and nothing rebuilt.
         for cid in pairs(sourceContainerIds) do
             local container = db.groupContainers[cid]
-            if container then
-                local containerSection = GetContainerSection(container)
-                if not IsCol1OwnershipMoveAllowed(containerSection, targetSection) then
-                    return
-                end
-                if containerSection ~= targetSection then
-                    if not ApplyContainerSection(cid, container, targetSection) then
-                        return
-                    end
-                end
+            local containerSection = container and GetContainerSection(container)
+            if container and (not IsCol1OwnershipMoveAllowed(containerSection, targetSection)
+                or containerSection ~= targetSection
+                    and targetSection ~= "global" and targetSection ~= "char") then
+                return
+            end
+        end
+        for cid in pairs(sourceContainerIds) do
+            local container = db.groupContainers[cid]
+            if container and GetContainerSection(container) ~= targetSection then
+                ApplyContainerSection(cid, container, targetSection)
+                scopeChanged = true
             end
         end
 
@@ -301,8 +300,14 @@ local function ApplyCol1Drop(state)
         end
     end
 
-    -- Container order may have changed — re-evaluate auto-anchored bars
-    CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
+    -- A section change rebuilds every panel, as the menu's move does (that
+    -- refresh re-evaluates the modules). Otherwise only the container order
+    -- may have changed, so re-evaluate auto-anchored bars.
+    if scopeChanged then
+        CooldownCompanion:RefreshAllGroups()
+    else
+        CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
+    end
 end
 
 ------------------------------------------------------------------------
@@ -572,9 +577,12 @@ local function FinishCol1GroupDrag(state)
            and targetSection == "char"
            and sourceContainer
            and GroupsHaveForeignSpecs({ sourceContainer }, false) then
-            ShowPopupAboveConfig("CDC_DRAG_UNGLOBAL_GROUP", sourceContainer.name, {
-                dragState = state,
-            })
+            ShowUnglobalGroupsPopup(sourceContainer.name, function()
+                if CooldownCompanion.db.profile.groupContainers[state.sourceGroupId] then
+                    ApplyCol1Drop(state)
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+            end)
             return
         end
     end
@@ -599,17 +607,10 @@ local function FinishCol1GroupDrag(state)
                 end
             end
             if GroupsHaveForeignSpecs(groupList, true) then
-                local ids = {}
-                for gid in pairs(state.sourceGroupIds) do
-                    ids[#ids + 1] = gid
-                end
-                ShowPopupAboveConfig("CDC_UNGLOBAL_SELECTED_GROUPS", nil, {
-                    groupIds = ids,
-                    callback = function()
-                        ApplyCol1Drop(state)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                })
+                ShowUnglobalGroupsPopup(nil, function()
+                    ApplyCol1Drop(state)
+                    CooldownCompanion:RefreshConfigPanel()
+                end)
                 return
             end
         end
@@ -1017,7 +1018,6 @@ end
 ------------------------------------------------------------------------
 ST._CancelDrag = CancelDrag
 ST._StartDragTracking = StartDragTracking
-ST._ApplyCol1Drop = ApplyCol1Drop
 ST._HideDragIndicator = HideDragIndicator
 ST._GetScaledCursorPosition = GetScaledCursorPosition
 ST._PerformButtonReorder = PerformButtonReorder

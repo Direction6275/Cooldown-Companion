@@ -83,6 +83,7 @@ if ST._DefineSettingRoute then
     }):Settings({
         xOffset = { label = "X Offset", aliases = { "horizontal position" } },
         yOffset = { label = "Y Offset", aliases = { "vertical position" } },
+        autoAnchor = { label = "Include in Auto-Anchoring", aliases = { "auto anchor" } },
     })
 
     local alphaRoute = ST._DefineSettingRoute({
@@ -260,6 +261,28 @@ local function BuildContainerGeneralTab(scroll, containerId)
                 ApplyContainerOffset("y", val)
             end,
         })
+
+        -- Automatic anchoring's Group-level opt-in (IsContainerAutoAnchorEligible):
+        -- unset means out for a Global Group and in for a character Group.
+        local autoLeft = BeginRowGrid(scroll)
+        local autoAnchorRow = AddCheckboxRow(autoLeft, {
+            label = "Include in Auto-Anchoring",
+            setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.autoAnchor,
+            value = CooldownCompanion:IsContainerAutoAnchorEligible(container),
+            onChange = function(val)
+                -- Saved either way, so the choice survives a move into or
+                -- out of Global, where the unset default flips.
+                container.anchorEligible = val and true or false
+                CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+        AnchorRowBadge(autoAnchorRow, CreateInfoButton(autoAnchorRow.frame, autoAnchorRow.frame, "LEFT", "LEFT", 0, 0, {
+            "Include in Auto-Anchoring",
+            {"Lets Resource Bars, the Cast Bar, and Unit Frames in Automatic mode attach to this group's panels.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"Global groups start excluded. Modules using Choose Panel can still attach here.", 1, 1, 1, true},
+        }, tabInfoButtons))
     end -- if not layoutCollapsed
 
     -- ================================================================

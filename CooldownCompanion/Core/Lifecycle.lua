@@ -615,6 +615,11 @@ function CooldownCompanion:OnCombatStart()
         }
         configFrame.frame:Hide()
         if miniFrame and miniFrame:IsShown() then
+            -- Hiding the full window ran no cleanup (its content was already
+            -- hidden by the collapse), so run a real close's here.
+            if configFrame._runCloseCleanup then
+                configFrame._runCloseCleanup()
+            end
             miniFrame:Hide()
         end
         self:Print("Config closed for combat. It will reopen when combat ends.")

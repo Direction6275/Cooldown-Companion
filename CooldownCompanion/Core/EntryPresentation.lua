@@ -127,8 +127,16 @@ function ST.PanelSupportsAttachedBars(group)
         and not ST.IsTotemPanelGroup(group)
 end
 
+-- The real panel behind a layout or settings view of it (GetPanelLayoutGroup,
+-- GetPanelBarStyleGroup, the settings contexts). Those views carry their own
+-- displayMode, so a panel-type test such as PanelSupportsAttachedBars must be
+-- asked of the owner, or it quietly answers false for the view.
+function ST.GetPanelOwner(group)
+    return group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+end
+
 function ST.GetEntryPresentation(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     if entry and entry.rotationAssistant then return "icons" end
     if ST.IsIndicatorGroup(group) then return "indicator" end
     if ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" then
@@ -138,13 +146,13 @@ function ST.GetEntryPresentation(group, entry)
 end
 
 function ST.IsPanelBarEntry(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     return ST.PanelSupportsAttachedBars(group) and entry and not entry.rotationAssistant
         and entry.displayAs == "bars" or false
 end
 
 function ST.CanSegmentEntryCharges(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     return entry ~= nil and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
         and ST.GetEntryPresentation(group, entry) == "bars"
         and entry.type == "spell" and entry.addedAs ~= "aura" and entry.hasCharges == true
@@ -314,6 +322,13 @@ function ST.GetPanelGeometryKind(group, kind)
     return bars and "bars" or icons and "icons" or "empty"
 end
 
+-- An ordinary panel whose bars form the body (its layout kind: the eligible
+-- entries, or every entry when none is eligible, are all bars), so they lay
+-- out as a grid from the shared bar style instead of sitting beside icons.
+function ST.IsBarOnlyPanel(group, kind)
+    return ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group, kind) == "bars"
+end
+
 function ST.PanelUsesAttachedBarLayout(group, kind)
     if not ST.PanelSupportsAttachedBars(group) then return false end
     kind = ST.GetPanelGeometryKind(group, kind)
@@ -378,7 +393,7 @@ end
 -- walking many entries in one pass.
 function ST.GetEntryBaseStyle(group, entry, barStyle)
     if entry and entry._geometryContext then return entry._geometryContext:ReadStyle() end
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     if ST.IsPanelBarEntry(group, entry) then return barStyle or ST.GetAttachedBarStyle(group) end
     return group and group.style or {}
 end
@@ -387,7 +402,7 @@ end
 -- shared bar style without changing the saved panel type or the icon arrangement.
 -- Compact Mode is the panel's own: one setting for icons and bars alike.
 function ST.GetPanelLayoutGroup(group, forEditing, kind)
-    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars" then return group end
+    if not ST.IsBarOnlyPanel(group, kind) then return group end
     return setmetatable({
         _unifiedPanelOwner = group, displayMode = "bars", style = ST.GetAttachedBarStyle(group, forEditing),
     }, { __index = group })
@@ -401,7 +416,7 @@ end
 
 -- Movers on a bar-only panel edit its shared bar style's dimensions.
 function ST.GetPanelSizingGroup(group)
-    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars" then
+    if ST.IsBarOnlyPanel(group) then
         return ST.GetPanelBarStyleGroup(group)
     end
     return group
@@ -478,11 +493,21 @@ function ST.ResolvePanelAttachmentRegion(group, side, region)
     return "main"
 end
 
+-- Asked of the owner panel, so a settings view gets the panel's answer.
 function ST.IsCollapsingAttachedBar(group, entry, layoutKind)
+    group = ST.GetPanelOwner(group)
     return entry and entry.type == "spell" and entry.addedAs == "aura"
         and entry.hideWhileAuraNotActive == true
         and not entry.auraTrackGroup and not entry.auraTrackPet
         and ST.IsAttachedBarEntry(group, entry, layoutKind) or false
+end
+
+-- An entry of an ordinary panel that Blizzard's aura container draws, the way
+-- it draws an Aura Panel: an aura section member or a collapsing attached aura
+-- bar. Such an entry always takes Low Time on its aura text and reserves no
+-- space while hidden. Aura Panels themselves are a panel-level check.
+function ST.IsNativeFlowAuraEntry(group, entry)
+    return ST.IsAuraSectionEntry(group, entry) or ST.IsCollapsingAttachedBar(group, entry)
 end
 
 function Addon:SetEntryPresentation(groupId, index, presentation)

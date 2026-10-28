@@ -45,7 +45,10 @@ local CDM_PANEL_SOURCES = {
         key = "trackedBars",
         categoryKey = "TrackedBar",
         panelName = "CDM | Tracked Bars",
-        displayMode = "bars",
+        -- An ordinary panel whose entries show as bars, as Tracked Buffs is
+        -- an ordinary panel of aura icons.
+        displayMode = "icons",
+        entryPresentation = "bars",
         entryKind = "aura",
         layoutKind = "trackedBars",
     },
@@ -220,6 +223,7 @@ local function CopySourceSpec(source)
         panelName = source.panelName,
         displayMode = source.displayMode,
         entryKind = source.entryKind,
+        entryPresentation = source.entryPresentation,
         layoutKind = source.layoutKind,
     }
 end
@@ -293,7 +297,9 @@ local function PopulateCDMPanelFromSource(panelId, sourceData)
             entry.isPassive,
             entry.forceAura,
             nil,
-            sourceData.entryKind == "spell"
+            sourceData.entryKind == "spell",
+            nil,
+            sourceData.entryPresentation
         )
         if index then
             if sourceData.entryKind == "spell" and group.buttons and group.buttons[index] then
@@ -369,12 +375,14 @@ local function ApplyCDMStarterPanelLayout(group, sourceKey, containerId, entryCo
     elseif source.layoutKind == "trackedBars" then
         group.compactLayout = true
         group.compactGrowthDirection = "center"
-        style.barOrientation = "vertical"
-        style.growthOrigin = "TOPLEFT"
-        style.buttonsPerRow = GetStarterButtonLimit(entryCount, style.buttonsPerRow)
-        style.barLength = math_max(180, tonumber(style.barLength) or 180)
-        style.barHeight = math_max(20, tonumber(style.barHeight) or 20)
-        style.barIconSize = math_max(20, tonumber(style.barIconSize) or style.barHeight or 20)
+        -- Bar entries lay out and draw from the panel's shared bar style.
+        local barStyle = ST.GetAttachedBarStyle(group, true)
+        barStyle.barOrientation = "vertical"
+        barStyle.growthOrigin = "TOPLEFT"
+        barStyle.buttonsPerRow = GetStarterButtonLimit(entryCount, barStyle.buttonsPerRow)
+        barStyle.barLength = math_max(180, tonumber(barStyle.barLength) or 180)
+        barStyle.barHeight = math_max(20, tonumber(barStyle.barHeight) or 20)
+        barStyle.barIconSize = math_max(20, tonumber(barStyle.barIconSize) or barStyle.barHeight or 20)
         SetPanelAnchor(group, containerId, 150, 0)
     end
 end

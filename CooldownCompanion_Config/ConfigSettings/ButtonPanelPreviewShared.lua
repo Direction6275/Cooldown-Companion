@@ -335,8 +335,11 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         activeReasons.unusable = true
     end
 
+    -- The aura shell is drawn on the bar's regions, apart from the hide-rule
+    -- alpha set (Visibility.lua), so the two aura reasons are not counted as
+    -- hide rules: they layer on top of the rules' result below.
     local reasons = {}
-    local onlyReason
+    local ruleCount, onlyRule = 0, nil
     for _, definition in ipairs(BAR_PREVIEW_REASON_DEFS) do
         if activeReasons[definition.key] then
             local rule = definition.rule
@@ -348,21 +351,34 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
                 label = definition.label,
                 rule = rule,
             }
-            onlyReason = definition
+            if definition.key ~= "aura-inactive" and definition.key ~= "aura-active" then
+                ruleCount = ruleCount + 1
+                onlyRule = definition
+            end
         end
     end
 
     local underlyingMode = "visible"
     local underlyingAlpha = 1
-    if #reasons == 1
-        and onlyReason.fallback
-        and buttonData[onlyReason.fallback]
-        and not (zeroOnlyChargeSpellHide and onlyReason.key == "not-on-cooldown") then
+    if ruleCount == 1
+        and onlyRule.fallback
+        and buttonData[onlyRule.fallback]
+        and not (zeroOnlyChargeSpellHide and onlyRule.key == "not-on-cooldown") then
         underlyingMode = "dimmed"
         underlyingAlpha = CooldownCompanion.DIM_FALLBACK_ALPHA
-    elseif #reasons > 0 then
+    elseif ruleCount > 0 then
         underlyingMode = "hidden"
         underlyingAlpha = PANEL_PREVIEW_GHOST_ALPHA
+    end
+    -- A hiding aura mode hides; Dim While Inactive dims whatever the rules
+    -- left, so an aura dim plus a rule dim draws faint, as in game.
+    if activeReasons["aura-active"]
+        or (activeReasons["aura-inactive"] and not buttonData.auraShellDim) then
+        underlyingMode = "hidden"
+        underlyingAlpha = PANEL_PREVIEW_GHOST_ALPHA
+    elseif activeReasons["aura-inactive"] and underlyingMode ~= "hidden" then
+        underlyingMode = "dimmed"
+        underlyingAlpha = underlyingAlpha * CooldownCompanion.DIM_FALLBACK_ALPHA
     end
 
     return {
@@ -963,8 +979,7 @@ local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     local displayMode = group and (group.displayMode or "icons") or "icons"
     return (displayMode == "icons" or displayMode == "bars")
         and not ST.IsAuraPanelGroup(group)
-        and not ST.IsAuraSectionEntry(group, buttonData)
-        and not ST.IsCollapsingAttachedBar(group, buttonData)
+        and not ST.IsNativeFlowAuraEntry(group, buttonData)
         and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and (buttonData.hideWhileAuraNotActive == true
