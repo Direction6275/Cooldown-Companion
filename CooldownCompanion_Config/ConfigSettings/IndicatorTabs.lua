@@ -464,20 +464,21 @@ local function AddMainSourceBadges(row, group, source, changed)
 end
 
 -- Where an aura Indicator looks for an aura. Each aura in a list has its own
--- (each gets its own hidden tracker).
+-- (each gets its own hidden tracker). The choices, their words and their
+-- Group/Pet gate are the entry's (ST._GetAuraScopeChoices).
 local function AddTrackedOn(column, group, source, changed)
-    local automaticSource = CopyTable(source)
-    automaticSource.auraUnitOverride = nil
-    local automaticUnit = Addon:ResolveStandaloneAuraDefaultUnit(automaticSource)
+    local list, order, value = ST._GetAuraScopeChoices(source, false)
     -- An aura list has no group form: Group is offered there only if saved.
-    local order = {"automatic","player","target","group","pet"}
-    if I.IsMultiAura(group) and not source.auraTrackGroup then table.remove(order, 4) end
-    Dropdown(column, {setting=whenToShow.unit, indent=true,
-        list={automatic="Automatic ("..(automaticUnit == "target" and "Target" or "Player")..")",
-            player="Player",target="Target",group="Group (Your Buffs)",pet="Pet"},
+    if I.IsMultiAura(group) and not source.auraTrackGroup and list.group then
+        list.group = nil
+        for i = #order, 1, -1 do
+            if order[i] == "group" then table.remove(order, i) end
+        end
+    end
+    local row = Dropdown(column, {setting=whenToShow.unit, indent=true,
+        list=list,
         order=order,
-        value=source.auraTrackPet and "pet" or source.auraTrackGroup and "group"
-            or source.auraUnitOverride or "automatic",
+        value=value,
         onChange=function(value)
             local function Apply(entry)
                 entry.auraUnitOverride=(value == "player" or value == "target") and value or nil
@@ -499,6 +500,7 @@ local function AddTrackedOn(column, group, source, changed)
             Apply(source)
             changed(true)
         end})
+    ST._AddDropdownItemTooltips(row, ST._AuraScopeTooltips)
 end
 
 -- An aura list's Match: every aura's When must hold, or at least one.

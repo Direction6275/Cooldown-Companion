@@ -194,6 +194,72 @@ local function CharacterCanCommandPets()
     return false
 end
 
+-- The Tracked on choices for one aura source, shared by entries and aura
+-- Indicators: the list, its order and the current value.
+function ST._GetAuraScopeChoices(buttonData, isAuraPanel)
+    local unitOverride = GetAuraUnitOverride(buttonData)
+    local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
+    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
+    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
+    local isBuff = unit ~= "target"
+    -- The derived unit falls back to the stored auraUnit (then "player") when
+    -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
+    -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
+    -- the user tick a box on what turns out to be a debuff, where the runtime
+    -- resolves to the target unconditionally and the setting does nothing.
+    -- A user override IS confirmation: it decides the bind unit outright.
+    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
+    -- Any confirmed helpful aura may use group scope. The runtime matches
+    -- only auras applied by the player, including on the player themselves.
+    local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
+    -- A stored flag offers the choice regardless of the gate (same escape the
+    -- pet side has): the runtime binds group tokens
+    -- off the flag alone, so the row has to state it and give it a way out.
+    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
+    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
+    -- entries can follow pet self-buffs without a separate castable spell, and
+    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
+    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
+    -- The extra gate is character capability (learned sticky, see
+    -- CharacterCanCommandPets):
+    -- per-spell "lands on the pet" knowledge does not exist in any API, so
+    -- character level is the finest honest cut. A stored flag offers the
+    -- choice regardless of every gate, so retained or imported pet state
+    -- always has a clearing path.
+    local canTrackPet = not isAuraPanel and isBuff and polarityKnown
+        and CharacterCanCommandPets()
+        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
+    local offerPet = canTrackPet or buttonData.auraTrackPet == true
+    local automaticLabel = "Automatic"
+    if classifiedUnit == "target" then
+        automaticLabel = "Automatic (Target)"
+    elseif classifiedUnit == "player" then
+        automaticLabel = "Automatic (You)"
+    end
+    -- One dropdown for the whole scope. Group and pet are exclusive with
+    -- each other, so they are two more choices beside the unit rather than
+    -- two checkboxes that cleared each other. The stored keys are unchanged.
+    local scopeList = {
+        automatic = automaticLabel,
+        player = "You",
+        target = "Target",
+    }
+    local scopeOrder = { "automatic", "player", "target" }
+    if offerGroup then
+        scopeList.group = "You and your group"
+        scopeOrder[#scopeOrder + 1] = "group"
+    end
+    if offerPet then
+        scopeList.pet = "Your pet"
+        scopeOrder[#scopeOrder + 1] = "pet"
+    end
+    local scopeValue = buttonData.auraTrackPet == true and "pet"
+        or buttonData.auraTrackGroup == true and "group"
+        or unitOverride
+        or "automatic"
+    return scopeList, scopeOrder, scopeValue
+end
+
 
 -- Post-change hook for the shared list writers: keep the stored (derived)
 -- unit in sync with the list's polarity, then re-normalize standalone
@@ -475,66 +541,8 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     -- reads harmful); the override is the user's escape hatch and is
     -- absolute at bind time. Shown for Aura Panel cells too: they are
     -- single-unit, but WHICH unit is still polarity.
-    local unitOverride = GetAuraUnitOverride(buttonData)
     local primaryAuraSpellID = ResolveConfiguredAuraSpellID(buttonData)
-    local classifiedUnit = ClassifyAuraSpellUnit(primaryAuraSpellID)
-    local unit = unitOverride or classifiedUnit or buttonData.auraUnit or "player"
-    local isBuff = unit ~= "target"
-    -- The derived unit falls back to the stored auraUnit (then "player") when
-    -- the spell's data is not cached yet, so `isBuff` can be a guess. The scope
-    -- row is gated on a CONFIRMED polarity: offering it off the fallback lets
-    -- the user tick a box on what turns out to be a debuff, where the runtime
-    -- resolves to the target unconditionally and the setting does nothing.
-    -- A user override IS confirmation: it decides the bind unit outright.
-    local polarityKnown = unitOverride ~= nil or classifiedUnit ~= nil
-    -- Any confirmed helpful aura may use group scope. The runtime matches
-    -- only auras applied by the player, including on the player themselves.
-    local canTrackGroup = not isAuraPanel and isBuff and polarityKnown
-    -- A stored flag offers the choice regardless of the gate (same escape the
-    -- pet side has): the runtime binds group tokens
-    -- off the flag alone, so the row has to state it and give it a way out.
-    local offerGroup = canTrackGroup or buttonData.auraTrackGroup == true
-    -- Pet eligibility is deliberately NOT canTrackGroup: standalone Aura
-    -- entries can follow pet self-buffs without a separate castable spell, and
-    -- a harmful base spell applying a helpful pet aura is also valid (Barbed
-    -- Shot -> Frenzy). Spell entries keep the CORE castable-identity check.
-    -- The extra gate is character capability (learned sticky, see
-    -- CharacterCanCommandPets):
-    -- per-spell "lands on the pet" knowledge does not exist in any API, so
-    -- character level is the finest honest cut. A stored flag offers the
-    -- choice regardless of every gate, so retained or imported pet state
-    -- always has a clearing path.
-    local canTrackPet = not isAuraPanel and isBuff and polarityKnown
-        and CharacterCanCommandPets()
-        and CooldownCompanion:EntryCanUsePetAuraScope(buttonData, primaryAuraSpellID)
-    local offerPet = canTrackPet or buttonData.auraTrackPet == true
-    local automaticLabel = "Automatic"
-    if classifiedUnit == "target" then
-        automaticLabel = "Automatic (Target)"
-    elseif classifiedUnit == "player" then
-        automaticLabel = "Automatic (You)"
-    end
-    -- One dropdown for the whole scope. Group and pet are exclusive with
-    -- each other, so they are two more choices beside the unit rather than
-    -- two checkboxes that cleared each other. The stored keys are unchanged.
-    local scopeList = {
-        automatic = automaticLabel,
-        player = "You",
-        target = "Target",
-    }
-    local scopeOrder = { "automatic", "player", "target" }
-    if offerGroup then
-        scopeList.group = "You and your group"
-        scopeOrder[#scopeOrder + 1] = "group"
-    end
-    if offerPet then
-        scopeList.pet = "Your pet"
-        scopeOrder[#scopeOrder + 1] = "pet"
-    end
-    local scopeValue = buttonData.auraTrackPet == true and "pet"
-        or buttonData.auraTrackGroup == true and "group"
-        or unitOverride
-        or "automatic"
+    local scopeList, scopeOrder, scopeValue = ST._GetAuraScopeChoices(buttonData, isAuraPanel)
     local scopeRow = AddDropdownRow(auraLeft, {
         setting = auraSettings.unit,
         indent = not isStandalone,
@@ -574,7 +582,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     })
     ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
     AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Tracked On",
+        "Tracked on",
         { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
     }, infoButtons))
 
