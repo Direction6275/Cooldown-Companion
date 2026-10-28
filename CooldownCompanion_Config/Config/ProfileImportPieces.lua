@@ -1028,6 +1028,23 @@ local function SetProfileImportPieceSelected(model, row, selected)
         for _, panelInfo in ipairs(row.panels or {}) do
             SetChildSelection(panelInfo, enabled)
         end
+    elseif row.kind == "panel" and not enabled then
+        -- Unticking a Group's last panel unticks the Group too, the rule the
+        -- setup tiles follow: a Group never arrives emptied of its panels.
+        local containerRow = model.containersByKey and model.containersByKey[row.parentContainerKey]
+        if containerRow and containerRow.selected then
+            local anySelected = false
+            for _, panelInfo in ipairs(containerRow.panels or {}) do
+                if panelInfo.eligible and panelInfo.selected then
+                    anySelected = true
+                    break
+                end
+            end
+            if not anySelected then
+                containerRow.selected = false
+                containerRow.userChanged = true
+            end
+        end
     end
     RecountSelection(model)
 end

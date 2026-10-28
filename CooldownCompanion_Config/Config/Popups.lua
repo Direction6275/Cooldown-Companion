@@ -987,17 +987,6 @@ ST._BuildSetupExportPayload = BuildSetupExportPayload
 local BuildRootAnchor = ST._BuildRootAnchor
 local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
 
-local function BuildDefaultImportedPanel(containerId)
-    return {
-        name = "Panel 1",
-        order = 1,
-        parentContainerId = containerId,
-        displayMode = "icons",
-        buttons = {},
-        anchor = BuildRootAnchor("CooldownCompanionContainer" .. containerId),
-    }
-end
-
 local function AnchorImportedContainerFrame(containerId, anchor)
     local frame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
     if frame then
@@ -1021,14 +1010,12 @@ local function CreateImportedPanel(db, containerId, panelIndex, srcPanel, import
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
 
-    if srcPanel then
-        importState.importedGroupIds[#importState.importedGroupIds + 1] = groupId
-        if srcPanel._originalGroupId then
-            importState.groupIdMap[srcPanel._originalGroupId] = groupId
-        end
+    importState.importedGroupIds[#importState.importedGroupIds + 1] = groupId
+    if srcPanel._originalGroupId then
+        importState.groupIdMap[srcPanel._originalGroupId] = groupId
     end
 
-    local panel = srcPanel and CopyTable(srcPanel) or BuildDefaultImportedPanel(containerId)
+    local panel = CopyTable(srcPanel)
     panel._originalGroupId = nil
     if panel._indicatorMigrationOriginal then
         db._indicatorMigrationBackup = db._indicatorMigrationBackup or {}
@@ -1158,12 +1145,9 @@ local function ImportContainerEntries(db, entries, charKey, importState, options
         db.groupContainers[containerId] = container
         CooldownCompanion:CreateContainerFrame(containerId)
 
-        local panels = entry.panels or {}
-        for panelIndex, srcPanel in ipairs(panels) do
+        -- An empty Group arrives empty, as the import review shows it.
+        for panelIndex, srcPanel in ipairs(entry.panels or {}) do
             CreateImportedPanel(db, containerId, panelIndex, srcPanel, importState)
-        end
-        if #panels == 0 then
-            CreateImportedPanel(db, containerId, 1, nil, importState)
         end
 
         importState.containerCount = importState.containerCount + 1
