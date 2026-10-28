@@ -173,6 +173,8 @@ local function ResolveLayoutArrangementState(group, layoutCount)
         orientation = not isIndicator and not isBarMode,
         growth = not isIndicator and (showAll or layoutCount > 1),
         collapse = not isIndicator and (isAuraPanel or isTotemPanel),
+        -- Aura and Totem Panels take one form for every entry.
+        panelForm = not isIndicator and (isAuraPanel or isTotemPanel),
         buttonsPerLine = not isIndicator and not auraBarPanel,
         compact = not isIndicator and not isAuraPanel and not isTotemPanel
             and (isIconsMode or isBarMode),
@@ -361,6 +363,8 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     LAYOUT_FINDER.arrangement = arrangement:Settings({
+        panelForm = { label = "Display as", aliases = { "panel type", "switch to bars", "switch to icons" },
+            applies = LayoutFinderFlag("panelForm") },
         horizontalBars = { label = "Horizontal Bar Layout", aliases = { "bar direction" }, applies = LayoutFinderFlag("horizontalBars") },
         orientation = { label = "Orientation", applies = LayoutFinderFlag("orientation") },
         growth = { label = "Growth Direction", applies = LayoutFinderFlag("growth") },
@@ -466,6 +470,24 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- LEFT column, in every mode: that pair. RIGHT column: how the block is
     -- packed - the wrap count and Compact Mode.
     local arrangeLeft, arrangeRight = BeginRowGrid(container)
+
+    -- The Navigator's right-click Panel Type does the same switch.
+    if state.panelForm then
+        AddDropdownRow(arrangeLeft, {
+            label = "Display as",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.panelForm,
+            list = { icons = "Icons", bars = "Bars" },
+            order = { "icons", "bars" },
+            value = group.displayMode == "bars" and "bars" or "icons",
+            onChange = function(val)
+                if val ~= group.displayMode then
+                    CooldownCompanion:ChangePanelDisplayMode(CS.selectedGroup, val)
+                end
+                -- Also puts the row back when the switch was refused.
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
 
     -- An Aura BAR Panel is ONE vertical column by construction: the aura
     -- container's bars branch hard-codes the axis and takes no line ceiling, so
