@@ -388,7 +388,6 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
         value = CooldownCompanion.GetDurationFormat(settings),
         onChange = function(value)
             settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(value)
-            settings.decimalTimers = nil
             if refreshCallback then
                 refreshCallback()
             end

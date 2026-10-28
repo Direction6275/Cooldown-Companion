@@ -299,11 +299,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
         end
     end
 
-    -- Stored as the EFFECTIVE format: a legacy panel can still carry only
-    -- decimalTimers=true with no durationFormat, and the template must not
-    -- hand a target that panel's "clock" baseline while the panel itself
-    -- renders decimals (the applier's rule). decimalTimers is in no key list,
-    -- so the fresh style never carries it.
+    -- Stored in canonical form, the applier's rule.
     if fields.style.durationFormat and self.GetDurationFormat then
         style.durationFormat = self.GetDurationFormat(sourceStyle)
     end

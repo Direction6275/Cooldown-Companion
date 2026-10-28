@@ -548,7 +548,6 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             targetGroup.attachedBarStyle[key] = CopyPresetValue(sourceStyle[key])
             if key == "durationFormat" and not templateFields and self.GetDurationFormat then
                 targetGroup.attachedBarStyle[key] = self.GetDurationFormat(sourceStyle)
-                targetGroup.attachedBarStyle.decimalTimers = nil
             end
         end
         local function CopyAttachedLayout(key)
@@ -707,15 +706,10 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         end
     end
 
-    -- durationFormat: legacy profiles can still carry only decimalTimers=true
-    -- with no explicit durationFormat (no migration normalizes the pair; the
-    -- read path resolves it, ButtonFrame/Helpers.lua). Copying the raw keys
-    -- would hand such a source's target the baseline "clock" while the source
-    -- renders decimals - so the copy writes the source's EFFECTIVE format in
-    -- canonical form and clears the target's retired legacy key.
+    -- durationFormat is copied in canonical form (an unknown value reads as
+    -- the clock format, ButtonFrame/Helpers.lua).
     if copiedDurationFormat and self.GetDurationFormat then
         targetStyle.durationFormat = self.GetDurationFormat(sourceStyle)
-        targetStyle.decimalTimers = nil
     end
 
     if templateFields and templateFields.style.strataOrder and ST._InvalidatePanelStrataEditor then
