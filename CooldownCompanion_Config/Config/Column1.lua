@@ -2341,6 +2341,9 @@ local function RefreshColumn1(preserveDrag)
                 end
                 return
             end
+            -- Releasing a dragged spell or item over the header is a drop, not
+            -- a click: it must not navigate away from the panel being edited.
+            if button == "LeftButton" and GetCursorInfo() then return end
             if button == "LeftButton" then
                 if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
                 if searchResults then

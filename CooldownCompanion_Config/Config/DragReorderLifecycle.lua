@@ -733,9 +733,13 @@ local function FinishRailPanelDrag(state)
     end
 
     AssignPanelOrder(targetContainerId, finalOrder)
+    -- Only panels that changed Group take the selection with them, as Move to
+    -- Group does; a reorder inside one Group leaves the selection alone.
+    local changedGroup = false
     for sourceContainerId in pairs(sourceContainers) do
         if sourceContainerId ~= targetContainerId then
             AssignPanelOrder(sourceContainerId)
+            changedGroup = true
         end
     end
 
@@ -745,7 +749,9 @@ local function FinishRailPanelDrag(state)
         end
     end
 
-    if #(state.sourcePanelOrder or {}) == 1 then
+    if not changedGroup then
+        -- Selection untouched.
+    elseif #(state.sourcePanelOrder or {}) == 1 then
         SelectConfigPanel(state.sourcePanelOrder[1], { containerId = targetContainerId })
     else
         CS.selectedContainer = targetContainerId
