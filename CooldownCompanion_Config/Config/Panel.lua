@@ -19,7 +19,6 @@ local RefreshColumn3 = ST._RefreshColumn3
 local RefreshProfileBar = ST._RefreshProfileBar
 local SetConfigPrimaryMode = ST._SetConfigPrimaryMode
 local ClearConfigShiftTooltipHover = ST._ClearConfigShiftTooltipHover
-local GetConfigEntryDisplayName = ST._GetConfigEntryDisplayName
 local IsConfigFinderAvailable = ST._IsConfigFinderAvailable
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local SetConfigFinderText = ST._SetConfigFinderText
@@ -370,57 +369,10 @@ local function GetConfigProfile()
     return CooldownCompanion.db and CooldownCompanion.db.profile
 end
 
-local function NormalizeHeaderName(name)
-    if type(name) ~= "string" then
-        return nil
-    end
-    local trimmed = name:match("^%s*(.-)%s*$")
-    if not trimmed or trimmed == "" then
-        return nil
-    end
-    return trimmed
-end
-
-local function GetSelectedEntryHeaderName()
-    if not (CS.selectedGroup and CS.selectedButton) then
-        return nil
-    end
-    if next(CS.selectedButtons) then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
-    local buttonData = group and group.buttons and group.buttons[CS.selectedButton]
-    return buttonData and NormalizeHeaderName(GetConfigEntryDisplayName(buttonData))
-end
-
-local function GetSelectedPanelHeaderName(selection)
-    if not selection or selection.panelMultiCount >= 2 or not CS.selectedGroup then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local group = profile and profile.groups and profile.groups[CS.selectedGroup]
-    return group and NormalizeHeaderName(group.name)
-end
-
-local function GetSelectedGroupHeaderName(selection)
-    if not selection or selection.groupMultiCount >= 2 or not CS.selectedContainer or CS.selectedGroup then
-        return nil
-    end
-
-    local profile = GetConfigProfile()
-    local container = profile and profile.groupContainers and profile.groupContainers[CS.selectedContainer]
-    return container and NormalizeHeaderName(container.name)
-end
-
 local function GetConfigSelectionSummary()
     return {
         panelMultiCount = CountSelections(CS.selectedPanels),
         groupMultiCount = CountSelections(CS.selectedGroups),
-        hasSelectedPanel = CS.selectedGroup ~= nil,
-        hasSelectedGroup = CS.selectedContainer ~= nil,
     }
 end
 
@@ -456,32 +408,6 @@ local function GetColumn3HeaderMode(selection)
     return "button"
 end
 
--- Group-side titles (panel / group): used for the workspace
--- header during Other Class browsing, where it hosts both entry and
--- group-side settings.
-local function GetGroupSideHeaderMode(selection)
-    if selection.panelMultiCount >= 2 or selection.hasSelectedPanel then
-        return "panel"
-    end
-    return "group"
-end
-
-local function GetGroupSideHeaderTitle(selection)
-    local mode = GetGroupSideHeaderMode(selection)
-    if mode == "panel" then
-        local panelName = GetSelectedPanelHeaderName(selection)
-        if panelName then
-            return "Panel: " .. panelName
-        end
-        return "Panel Settings"
-    end
-    local groupName = GetSelectedGroupHeaderName(selection)
-    if groupName then
-        return "Group: " .. groupName
-    end
-    return "Group Settings"
-end
-
 local function GetColumn3HeaderTitle(selection)
     local mode = GetColumn3HeaderMode(selection)
     if mode == "bar_intro" then
@@ -500,18 +426,10 @@ local function GetColumn3HeaderTitle(selection)
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
-    if ST._IsButtonsWideViewActive and ST._IsButtonsWideViewActive() then
-        -- Merged wide column: the identity strip under the preview names
-        -- the selection, so the header stays static instead of tracking it.
-        return "Buttons"
-    end
-    -- Other Class browsing: no identity strip, so name whatever the wide
-    -- column is showing - the selected entry or the group-side selection.
-    local entryName = GetSelectedEntryHeaderName()
-    if entryName then
-        return "Entry: " .. entryName
-    end
-    return GetGroupSideHeaderTitle(selection)
+    -- Nothing pinned (no selection yet): the workspace is still the Live
+    -- Preview. Browsing other classes uses the same workspace, and every
+    -- caller skips titles while the talent picker owns the column.
+    return "Live Preview"
 end
 
 local function ShouldShowSettingsColumn(col3)
@@ -2576,6 +2494,14 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
     FinishConfigRefresh()
+    -- A selection change repaints the Navigator's highlight in place. A
+    -- different panel (a context menu or the bar workspace can switch it)
+    -- needs the Navigator rebuilt.
+    if selectionOnly and ST._RefreshConfigEditNavigator
+        and (CS.selectedGroup ~= CS.lastCol1SelectedGroup
+            or not (CS.selectedGroup and ST._RefreshConfigEditNavigator(CS.selectedGroup))) then
+        return CooldownCompanion:_configRefreshPanelImpl()
+    end
     if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()
     end

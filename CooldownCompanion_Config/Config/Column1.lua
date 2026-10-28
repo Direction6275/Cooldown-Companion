@@ -3216,6 +3216,7 @@ local function RefreshColumn1(preserveDrag)
         label:SetFullWidth(true)
         CS.col1Scroll:AddChild(label)
         CS.lastCol1RenderedRows = col1RenderedRows
+        CS.lastCol1SelectedGroup = CS.selectedGroup
         if CS.otherClassLibraryActive then
             PopulateOtherClassBrowseButtonBar()
         else
@@ -3351,6 +3352,8 @@ local function RefreshColumn1(preserveDrag)
     UpdateRailDestinations()
 
     CS.lastCol1RenderedRows = col1RenderedRows
+    -- The panel this build painted as selected (RefreshConfigWorkspace).
+    CS.lastCol1SelectedGroup = CS.selectedGroup
 
     if CS._UpdatePanelDropScan then
         CS._UpdatePanelDropScan()
