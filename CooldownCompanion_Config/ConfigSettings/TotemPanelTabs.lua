@@ -47,6 +47,11 @@ local function HasIcon(context)
     return group.displayMode ~= "bars" or group.style.showBarIcon ~= false
 end
 local function HasDuration(context) return SelectedGroup(context).style.showCooldownText ~= false end
+-- Totem timers read the cooldown lane's window (TotemPanel.lua binds no lane).
+local function HasDurationWindow(context)
+    return HasDuration(context)
+        and Addon.GetDurationTextVisibilityThreshold(SelectedGroup(context).style, "cooldown") ~= nil
+end
 local function HasName(context) return SelectedGroup(context).style.showBarNameText ~= false end
 local function HasSwipe(context) return IsIcons(context) and SelectedGroup(context).style.showCooldownSwipe ~= false end
 local function HasLowTime(context)
@@ -89,6 +94,12 @@ local fields = {
     tint = Setting(icon, "tint", "Icon Tint", HasIcon),
     showDuration = Setting(duration, "show", "Show Duration Text"),
     format = Setting(duration, "format", "Duration Format", HasDuration),
+    durationVisibility = {
+        mode = duration:Setting({key = "visible", label = "Visible",
+            aliases = {"duration text visibility"}, applies = HasDuration}),
+        threshold = duration:Setting({key = "last", label = "Show During Last",
+            aliases = {"duration text threshold"}, applies = HasDurationWindow}),
+    },
     showName = Setting(name, "show", "Show Name Text"),
     swipe = Setting(effects, "swipe", "Show Duration Swipe", IsIcons),
     swipeReverse = Setting(effects, "reverse", "Reverse Swipe", HasSwipe),
@@ -218,6 +229,11 @@ function ST._BuildTotemAppearanceTab(container, group)
         Toggle(left, fields.showDuration, style, "showCooldownText", true, true)
         if style.showCooldownText ~= false then
             ST._AddDurationFormatDropdown(right, style, Refresh, {setting = fields.format})
+            -- The same window icon panels offer; a copied Appearance can carry it here.
+            ST._AddDurationTextVisibilityRows(right, style, style, "cooldown", nil, {
+                indent = false, settings = fields.durationVisibility,
+                infoButtons = CS.tabInfoButtons, rebuild = Rebuild,
+            })
             TextControls(left, right, style, "cooldown", fields.duration, isBar, false)
             ST._AddDurationLowTimeRows(left, style, Refresh, {
                 settings = fields.lowTime, summaryTarget = "Totem", rebuild = Rebuild,
