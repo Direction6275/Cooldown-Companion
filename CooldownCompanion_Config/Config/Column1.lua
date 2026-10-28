@@ -25,7 +25,8 @@ local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local CancelDrag = ST._CancelDrag
 local StartDragTracking = ST._StartDragTracking
 local GetScaledCursorPosition = ST._GetScaledCursorPosition
-local ContainersHaveForeignSpecs = ST._ContainersHaveForeignSpecs
+local GroupsHaveForeignSpecs = ST._GroupsHaveForeignSpecs
+local ShowUnglobalGroupsPopup = ST._ShowUnglobalGroupsPopup
 local NotifyTutorialAction = ST._NotifyTutorialAction
 local IsConfigFinderActive = ST._IsConfigFinderActive
 local ClearConfigFinderText = ST._ClearConfigFinderText
@@ -1265,8 +1266,13 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                if container.isGlobal and ContainersHaveForeignSpecs({ container }, false) then
-                    ShowPopupAboveConfig("CDC_UNGLOBAL_GROUP", container.name, { containerId = containerId })
+                if container.isGlobal and GroupsHaveForeignSpecs({ container }, false) then
+                    ShowUnglobalGroupsPopup(container.name, function()
+                        if CooldownCompanion.db.profile.groupContainers[containerId] then
+                            CooldownCompanion:ToggleGroupGlobal(containerId)
+                            CooldownCompanion:RefreshConfigPanel()
+                        end
+                    end)
                     return
                 end
                 CooldownCompanion:ToggleGroupGlobal(containerId)

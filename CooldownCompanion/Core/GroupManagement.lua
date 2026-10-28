@@ -1578,20 +1578,26 @@ function CooldownCompanion:CreateGroup(name)
     return containerId
 end
 
-function CooldownCompanion:ToggleGroupGlobal(containerId)
-    local db = self.db.profile
-    local container = db.groupContainers[containerId]
-    if not container then return end
-
-    local newGlobal = not container.isGlobal
-    container.isGlobal = newGlobal
-    if not newGlobal then
+-- Moves a Group into or out of Global. Leaving Global hands it to this
+-- character and strips other classes' Who Can Use This limits, so panels can
+-- start or stop loading: callers rebuild with RefreshAllGroups afterwards.
+function CooldownCompanion:SetContainerGlobalScope(containerId, isGlobal)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return false end
+    container.isGlobal = isGlobal == true
+    if not container.isGlobal then
         container.createdBy = self.db.keys.char
         if self.NormalizeContainerEligibilityForCharacterScope then
             self:NormalizeContainerEligibilityForCharacterScope(containerId)
         end
     end
+    return true
+end
 
+function CooldownCompanion:ToggleGroupGlobal(containerId)
+    local container = self.db.profile.groupContainers[containerId]
+    if not container then return end
+    self:SetContainerGlobalScope(containerId, not container.isGlobal)
     self:RefreshAllGroups()
 end
 

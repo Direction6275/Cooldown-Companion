@@ -780,18 +780,16 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
+-- Moving Groups out of Global strips other classes' limits, so the menu move
+-- and both drags ask here first. The callback performs the move and owns its
+-- own stale-Group check.
+StaticPopupDialogs["CDC_UNGLOBAL_GROUPS"] = {
+    text = "%s",
     button1 = "Continue",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if not data then return end
-        if data.containerId then
-            local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
-            if container then
-                CooldownCompanion:ToggleGroupGlobal(data.containerId)
-                CooldownCompanion:RefreshConfigPanel()
-            end
+        if data and data.callback then
+            data.callback()
         end
     end,
     timeout = 0,
@@ -800,25 +798,13 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUP"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["CDC_DRAG_UNGLOBAL_GROUP"] = {
-    text = "This will remove foreign eligibility filters and move '%s' into your current class. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.dragState then
-            local db = CooldownCompanion.db.profile
-            local container = db.groupContainers[data.dragState.sourceGroupId]
-            if container then
-                ST._ApplyCol1Drop(data.dragState)
-                CooldownCompanion:RefreshConfigPanel()
-            end
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
+-- groupName names the one Group being moved; nil words it for a selection.
+function ST._ShowUnglobalGroupsPopup(groupName, callback)
+    local text = groupName
+        and ("This will remove foreign eligibility filters and move '" .. groupName .. "' into your current class. Continue?")
+        or "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?"
+    ST._ShowPopupAboveConfig("CDC_UNGLOBAL_GROUPS", text, { callback = callback })
+end
 
 StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     text = "Delete %d selected groups?",
@@ -833,21 +819,6 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
             end
             ResetConfigSelection(true)
             CooldownCompanion:RefreshConfigPanel()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
-
-StaticPopupDialogs["CDC_UNGLOBAL_SELECTED_GROUPS"] = {
-    text = "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?",
-    button1 = "Continue",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and data.callback then
-            data.callback()
         end
     end,
     timeout = 0,

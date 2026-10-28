@@ -3083,21 +3083,6 @@ local function EntityOrChildPanelsHaveForeignEligibility(entity, playerSpecIds, 
     return ContainerPanelsHaveForeignEligibility(containerId, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
 end
 
-local function ContainersHaveForeignSpecs(containers, requireGlobal)
-    local playerSpecIds = BuildPlayerSpecSet()
-    local playerClassKey = BuildPlayerClassKey()
-    local playerCharKey = BuildPlayerCharacterKey()
-    local playerHeroTalentIds, hasHeroTalentData = BuildPlayerHeroTalentSet(playerSpecIds)
-    for _, c in ipairs(containers) do
-        if not requireGlobal or c.isGlobal then
-            if EntityOrChildPanelsHaveForeignEligibility(c, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData) then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 local function GroupsHaveForeignSpecs(groups, requireGlobal)
     local playerSpecIds = BuildPlayerSpecSet()
     local playerClassKey = BuildPlayerClassKey()
@@ -3234,7 +3219,6 @@ ST._IsButtonsWideViewActive = IsButtonsWideViewActive
 ST._ResetConfigSelection = ResetConfigSelection
 ST._SetConfigPrimaryModeImpl = SetConfigPrimaryMode
 ST._GroupsHaveForeignSpecs = GroupsHaveForeignSpecs
-ST._ContainersHaveForeignSpecs = ContainersHaveForeignSpecs
 
 -- Runtime mover menus load the config on demand, then route directly to the
 -- selected object's Layout controls. Keeping the route inside the config
