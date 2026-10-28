@@ -772,6 +772,22 @@ end
 -- spec-dependent Cooldown Manager data, so "unknown" is a state the same entry
 -- moves in and out of, and refusing on it would make the section reject on one
 -- spec what it accepted on another.
+-- The one wording for an aura on the other buff/debuff side from the
+-- single-unit Aura Panel or aura section it would join: the add doors here
+-- and the config's unit-override preflight.
+function ST.GetAuraSurfaceUnitMismatchText(isPanel, surfaceUnit)
+    if isPanel then
+        if surfaceUnit == "player" then
+            return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
+        end
+        return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
+    end
+    if surfaceUnit == "player" then
+        return "This section tracks your buffs. Target debuff auras need a section of their own."
+    end
+    return "This section tracks target debuffs. Your own buff auras need a section of their own."
+end
+
 function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entryData)
     if type(entryData) ~= "table" or entryData.type ~= "spell" or entryData.addedAs ~= "aura" then
         return "Aura Sections hold only Aura entries."
@@ -780,10 +796,7 @@ function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entry
     if not sectionUnit then return nil end
     local entryUnit = self:ResolveAuraEntryUnit(entryData)
     if entryUnit and entryUnit ~= sectionUnit then
-        if sectionUnit == "player" then
-            return "This section tracks your buffs. Target debuff auras need a section of their own."
-        end
-        return "This section tracks target debuffs. Your own buff auras need a section of their own."
+        return ST.GetAuraSurfaceUnitMismatchText(false, sectionUnit)
     end
     return nil
 end
@@ -820,10 +833,7 @@ function CooldownCompanion:GetPanelManualEntryRejectMessage(group, entryData, kn
             end
             local entryUnit = (bd == entryData and knownUnit) or self:ResolveAuraEntryUnit(bd)
             if panelUnit and entryUnit and entryUnit ~= panelUnit then
-                if panelUnit == "player" then
-                    return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
-                end
-                return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
+                return ST.GetAuraSurfaceUnitMismatchText(true, panelUnit)
             end
             panelUnit = panelUnit or entryUnit
         end

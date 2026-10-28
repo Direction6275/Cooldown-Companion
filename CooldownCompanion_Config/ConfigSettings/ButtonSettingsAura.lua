@@ -63,13 +63,7 @@ end
 -- The user's explicit unit override, when set. Absolute over every derived
 -- answer in this section (owner ruling 2026-08-28): it exists for auras
 -- whose spell data misclassifies, so no classifier read may outrank it.
-local function GetAuraUnitOverride(buttonData)
-    local override = buttonData.auraUnitOverride
-    if override == "player" or override == "target" then
-        return override
-    end
-    return nil
-end
+local GetAuraUnitOverride = ST.GetEntryAuraUnitOverride
 
 local function GetExplicitAuraCandidateUnit(buttonData)
     local unitOverride = GetAuraUnitOverride(buttonData)
@@ -79,6 +73,16 @@ local function GetExplicitAuraCandidateUnit(buttonData)
     if buttonData.addedAs == "aura" then
         local resolved = ResolveConfiguredAuraSpellID(buttonData)
         return ClassifyAuraSpellUnit(resolved) or buttonData.auraUnit or "player"
+    end
+    -- An Aura ID Override is the entry's head, so its classification owns
+    -- the polarity ahead of the list, the order the runtime resolver uses
+    -- (ResolveExplicitAuraCandidateUnit).
+    local idOverride = tonumber(buttonData.auraIDOverride)
+    if idOverride and idOverride ~= 0 then
+        local overrideUnit = ClassifyAuraSpellUnit(idOverride)
+        if overrideUnit then
+            return overrideUnit
+        end
     end
     local candidates = GetAuraCandidateList(buttonData)
     if #candidates == 0 then
@@ -134,16 +138,7 @@ local function GetOverrideSurfaceRejectMessage(group, buttonData)
         surfaceUnit = CooldownCompanion:GetAuraSectionUnit(group, anchor, buttonData)
     end
     if not surfaceUnit or surfaceUnit == entryUnit then return nil end
-    if isPanel then
-        if surfaceUnit == "player" then
-            return "This panel tracks your buffs. Target debuff auras need their own Aura Panel."
-        end
-        return "This panel tracks target debuffs. Your own buff auras need their own Aura Panel."
-    end
-    if surfaceUnit == "player" then
-        return "This section tracks your buffs. Target debuff auras need a section of their own."
-    end
-    return "This section tracks target debuffs. Your own buff auras need a section of their own."
+    return ST.GetAuraSurfaceUnitMismatchText(isPanel, surfaceUnit)
 end
 
 -- Store the derived unit whenever tracking config changes, so the runtime's
