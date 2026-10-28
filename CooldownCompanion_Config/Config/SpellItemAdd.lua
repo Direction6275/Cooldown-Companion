@@ -141,7 +141,7 @@ local AUTOCOMPLETE_TYPE_GAP = 4
 local AUTOCOMPLETE_ADD_FOOTER_HEIGHT = 24
 local AUTOCOMPLETE_ADD_FOOTER_PADDING = 5
 local AUTOCOMPLETE_ADD_BUTTON_GAP = 4
-local AUTOCOMPLETE_ADD_LABELS = { icons = "Icon", bars = "Bar", text = "Text", textures = "Texture" }
+local AUTOCOMPLETE_ADD_LABELS = { icons = "Icon", bars = "Bar" }
 
 -- Player-owned auras applied indirectly by a passive can lack their own
 -- spellbook or Cooldown Manager suggestion row.

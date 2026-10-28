@@ -42,7 +42,6 @@ local STEP_ORDER = {
     "add_one_spell",
     "entry_settings_intro",
     "panel_settings_intro",
-    "view_modes_intro",
     "finish",
 }
 
@@ -58,8 +57,8 @@ local STEP_DATA = {
         placement = "center",
     },
     groups_column_intro = {
-        title = "Navigator Groups",
-        text = "The Navigator lists your groups and their panels. Groups organize related panels and are shared by characters of the same class by default.",
+        title = "Groups",
+        text = "Groups organize related panels and are shared by characters of the same class by default. The Navigator lists each group with the panels inside it.",
         anchor = "groups_column_area",
         placement = "right",
     },
@@ -85,28 +84,22 @@ local STEP_DATA = {
     },
     add_one_spell = {
         title = "Add Your First Ability",
-        text = "This is an empty icon panel. Let's add something to track.\n\nType the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter.",
+        text = "This is an empty icon panel. Let's add something to track.\n\nType the name of a spell your character can use in the edit box.\n\nAs you type, the addon will attempt to help you narrow down what you're looking for. Add the spell by clicking on it in the dropdown or using arrow keys + Enter. Add as, at the bottom of the dropdown, chooses whether it shows as an icon or a bar.",
         anchor = "selected_panel_add_input",
         placement = "right",
         gate = "addedEntry",
     },
     entry_settings_intro = {
         title = "Entry Settings",
-        text = "Your panel is previewed at the top of this column. Click a button in the preview to select it - its settings sections appear below: cooldown settings, sound alerts, and more.",
-        anchor = "col3_area",
-        placement = "right",
+        text = "The Live Preview shows your panel. Click an entry in it to select it, and this column shows that entry's settings: cooldown settings, sound alerts, and more.",
+        anchor = "settings_column_area",
+        placement = "left",
     },
     panel_settings_intro = {
         title = "Panel Settings",
-        text = "With a button selected, the styling tabs show that button's values. Each section reads Panel setting until Customize gives the button its own copy, and Revert hands it back.\n\nClick a setting name or its |A:QuestLog-icon-setting:14:14|a to expand options directly below it. The checkbox turns the feature on or off.",
-        anchor = "col3_area",
-        placement = "right",
-    },
-    view_modes_intro = {
-        title = "Resources and Cast Bar",
-        text = "Edit attached resources and the cast bar in their panel's workspace. Select Resources for shared settings, or click a bar to edit it.\n\nUse Add Icon or Add Bar in a panel to create entries. Resources and the cast bar retain their own settings.",
-        anchor = "panels_column_area",
-        placement = "above",
+        text = "With an entry selected, the styling tabs show that entry's values. Each section reads Panel setting until Customize gives the entry its own copy, and Revert hands it back.\n\nClick a setting name or its |A:QuestLog-icon-setting:14:14|a to expand options directly below it. The checkbox turns the feature on or off.",
+        anchor = "settings_column_area",
+        placement = "left",
     },
     finish = {
         title = "Tutorial Complete",
@@ -584,12 +577,6 @@ local function RefreshTutorialPlacement()
     frame:SetFrameLevel(CS.configFrame.frame:GetFrameLevel() + 40)
 
     local step = runtime.step or "welcome"
-    if step == "view_modes_intro" and CS.profileBar and CS.profileBar:IsShown() then
-        CS.profileBar:Hide()
-        if ST._RebuildTutorialAnchors then
-            ST._RebuildTutorialAnchors()
-        end
-    end
     local data = STEP_DATA[step] or STEP_DATA.welcome
     local titleText = frame.titleText
     if titleText then
@@ -636,16 +623,22 @@ local function RebuildTutorialAnchors()
         anchors.gear_button = CS.gearButton
     end
 
+    -- The Get Started card stands in for the Navigator on an empty profile,
+    -- which is exactly when the tutorial starts on its own.
+    local welcome = CS.configFrame and CS.configFrame.profileWelcome
     local col1Frame = CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame
-    if col1Frame then
+    if welcome and welcome.frame:IsShown() then
+        anchors.groups_column_area = welcome.pane
+    elseif col1Frame then
         anchors.groups_column_area = col1Frame
+    end
+    if col1Frame then
         anchors.panels_column_area = col1Frame
     end
 
     -- Named handle, not a bar position: Browse Other Classes swaps the New
     -- Group button out for its own toggle, and only the named field goes nil
     -- there.
-    local welcome = CS.configFrame and CS.configFrame.profileWelcome
     local createButton = welcome and welcome.frame:IsShown() and welcome.pane.create
         or CS.col1CreateButton
     if createButton and createButton.frame then
@@ -678,8 +671,9 @@ local function RebuildTutorialAnchors()
         end
     end
 
-    if CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3.frame then
-        anchors.col3_area = CS.configFrame.col3.frame
+    local settingsColumn = CS.configFrame and CS.configFrame.col3 and CS.configFrame.col3._cdcSettingsColumn
+    if settingsColumn and settingsColumn.frame then
+        anchors.settings_column_area = settingsColumn.frame
     end
 end
 
@@ -744,13 +738,9 @@ local function NotifyTutorialAction(action, payload)
             AdvanceStep("add_one_spell")
         end
     elseif action == "inline_add_succeeded" and runtime.step == "add_one_spell" then
+        -- The add already selected the new entry: CompleteAdd notifies only then.
         if payload and payload.groupId and payload.buttonIndex then
             runtime.addedEntry = true
-            CS.selectedGroup = payload.groupId
-            CS.selectedButton = payload.buttonIndex
-            wipe(CS.selectedButtons)
-            wipe(CS.selectedPanels)
-            wipe(CS.selectedGroups)
             AdvanceStep("entry_settings_intro")
         end
     end
