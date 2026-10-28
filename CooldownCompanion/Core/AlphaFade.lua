@@ -975,6 +975,30 @@ function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCo
         self.alphaState[moduleId] = state
     end
 
+    -- An unlocked module shows at full alpha, like an unlocked panel. The
+    -- registrant's isUnlocked is read every pass, so a combat lock reaches it
+    -- through the combat re-arm hook.
+    local entry = self._moduleAlphaTargets and self._moduleAlphaTargets[moduleId]
+    if entry and entry.isUnlocked and entry.isUnlocked() then
+        local differs = state.currentAlpha ~= 1 or state.lastAlpha ~= 1
+        for i = 1, #frames do
+            if differs then break end
+            differs = FrameAlphaDiffers(frames[i], 1)
+        end
+        if differs then
+            for i = 1, #frames do
+                local f = frames[i]
+                if f then f:SetAlpha(1) end
+            end
+            state.currentAlpha = 1
+            state.desiredAlpha = 1
+            state.fadeDuration = 0
+            state.lastAlpha = 1
+        end
+        state.hoverExpire = nil
+        return
+    end
+
     local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
 
     -- Mouseover check across all frames
@@ -1011,14 +1035,20 @@ function CooldownCompanion:UpdateModuleAlpha(moduleId, config, frames, now, inCo
 end
 
 -- Registration for module alpha targets processed by the OnUpdate loop.
--- _moduleAlphaTargets[moduleId] = { config = table, frames = {frame, ...} }
-function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
+-- _moduleAlphaTargets[moduleId] = { config = table, frames = {frame, ...}, isUnlocked = fn or nil }
+function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames, isUnlocked)
     if not self._moduleAlphaTargets then
         self._moduleAlphaTargets = {}
     end
     local hasActiveSettings = ST.HasActiveAlphaSettings and ST.HasActiveAlphaSettings(config) or false
     local entry = self._moduleAlphaTargets[moduleId]
     if entry and entry.config == config and AlphaFrameListsEqual(entry.frames, frames) then
+        if entry.isUnlocked ~= isUnlocked then
+            entry.isUnlocked = isUnlocked
+            entry.hasActiveSettings = hasActiveSettings
+            self:RefreshAlphaUpdateDriver()
+            return
+        end
         if entry.hasActiveSettings ~= hasActiveSettings then
             entry.hasActiveSettings = hasActiveSettings
             self:RefreshAlphaUpdateDriver()
@@ -1032,7 +1062,12 @@ function CooldownCompanion:RegisterModuleAlpha(moduleId, config, frames)
         end
         return
     end
-    self._moduleAlphaTargets[moduleId] = { config = config, frames = frames, hasActiveSettings = hasActiveSettings }
+    self._moduleAlphaTargets[moduleId] = {
+        config = config,
+        frames = frames,
+        hasActiveSettings = hasActiveSettings,
+        isUnlocked = isUnlocked,
+    }
     if self.RefreshAlphaUpdateDriver then
         self:RefreshAlphaUpdateDriver()
     end
