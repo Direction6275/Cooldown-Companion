@@ -231,8 +231,17 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 local scroll = AceGUI:Create("ScrollFrame")
                 scroll:SetLayout("List")
                 widget:AddChild(scroll)
-                SetSettingsScrollOwner(scroll,
-                    CooldownCompanion.db.profile.groupContainers[CS.selectedContainer], "group:" .. tab)
+                local groupContainer = CooldownCompanion.db.profile.groupContainers[CS.selectedContainer]
+                SetSettingsScrollOwner(scroll, groupContainer, "group:" .. tab)
+                -- Each Group keeps its last tab and its place on every tab
+                -- for the session, as panels do.
+                if groupContainer then
+                    local state = ST._GetPanelSettingsState(groupContainer)
+                    state.panelTab = tab
+                    local key = "group:" .. tab
+                    state.scrolls[key] = state.scrolls[key] or {}
+                    scroll:SetStatusTable(state.scrolls[key])
+                end
 
                 if tab == "general" then
                     ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
@@ -258,6 +267,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         })
         container.containerTabGroup.frame:Show()
         local containerTab = CS.selectedContainerTab
+        local groupContainer = CooldownCompanion.db.profile.groupContainers[CS.selectedContainer]
+        if groupContainer and container._groupTabOwner ~= groupContainer and not CS.pendingSettingHighlight then
+            containerTab = ST._GetPanelSettingsState(groupContainer).panelTab or containerTab
+        end
+        container._groupTabOwner = groupContainer
         if containerTab ~= "general" and containerTab ~= "loadconditions" then
             containerTab = "general"
         end
@@ -367,6 +381,15 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                         or oldEntry ~= entry or CS.pendingLensAnchor) then
                         ST._PreparePanelSettingsView(scroll)
                     end
+                else
+                    -- Aura, Totem and Indicator panels keep the same memory:
+                    -- their last tab and their place on each tab, one place
+                    -- per tab shared by the panel's entries.
+                    local state = ST._GetPanelSettingsState(styleGroup)
+                    state.panelTab = tab
+                    local key = scroll._cdcSettingsScopeKey
+                    state.scrolls[key] = state.scrolls[key] or {}
+                    scroll:SetStatusTable(state.scrolls[key])
                 end
             end
             if ST._BeginLensAnchorBuild then
@@ -461,6 +484,13 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         if scope == "panel" and not CS.pendingSettingHighlight
             and container._settingsTabOwner ~= group then
             CS.selectedTab = state.panelTab or CS.selectedTab
+        end
+        container._settingsTabOwner = group
+    elseif group then
+        -- Every other panel kind reopens on the tab last used there too.
+        if not isSingleEntry and not CS.pendingSettingHighlight
+            and container._settingsTabOwner ~= group then
+            CS.selectedTab = ST._GetPanelSettingsState(group).panelTab or CS.selectedTab
         end
         container._settingsTabOwner = group
     else
