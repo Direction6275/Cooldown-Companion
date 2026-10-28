@@ -175,7 +175,7 @@ local function AdaptOrdinaryBarTemplate(self, template)
         end
     end
     adapted.attachedBarStyle = {}
-    local sourceStyle, baseline = template.style or {}, self.db.profile.globalStyle or {}
+    local sourceStyle, baseline = template.style or {}, ST._defaults.profile.globalStyle
     -- These defaults changed with compact ordinary entries. An old complete
     -- snapshot's captured nil meant the old renderer's default, never compact.
     local legacyDefaults = { barHeight = 20, showBarIcon = true, showBarNameText = true }

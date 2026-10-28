@@ -116,8 +116,8 @@ local defaults = {
                         --                       -- container instead of CC buttons
                         -- },
                     },
-                    -- style = CopyTable(globalStyle) below, plus CreatePanel's birth stamps
-                    -- (Core/GroupManagement.lua).
+                    -- style = a copy of the shipped globalStyle below, plus CreatePanel's
+                    -- birth stamps (Core/GroupManagement.lua).
                     enabled = true,
                     displayMode = "icons",    -- "icons" | "bars" | "indicator"
                     frameStrata = nil,        -- nil = "MEDIUM" (default), or "BACKGROUND"/"LOW"/"HIGH"/"DIALOG"

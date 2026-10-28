@@ -597,10 +597,11 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         return true
     end
 
-    -- Quick-copy and legacy templates retain their seeded baseline behavior.
-    -- V3 templates instead treat a captured nil as an authoritative reset to
-    -- the runtime default; another profile's baseline must not fill the hole.
-    local baseline = db.globalStyle or {}
+    -- Quick-copy and legacy templates fill a missing value from the shipped
+    -- defaults, the same in every profile (a profile's own globalStyle is an
+    -- imported leftover no setting writes). V3 templates instead treat a
+    -- captured nil as an authoritative reset to the runtime default.
+    local baseline = ST._defaults.profile.globalStyle
     local sourceStyle = source.style or {}
     local targetStyle = targetGroup.style
     if type(targetStyle) ~= "table" then
@@ -1274,7 +1275,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
             y = 0,
         },
         buttons = {},
-        style = CopyTable(db.globalStyle),
+        -- The shipped defaults, as the bar style below starts from: never a
+        -- profile's imported globalStyle, which no setting writes.
+        style = CopyTable(ST._defaults.profile.globalStyle),
         displayMode = displayMode,
         masqueEnabled = false,
         compactLayout = ShouldDefaultPanelCompactLayout(displayMode),
