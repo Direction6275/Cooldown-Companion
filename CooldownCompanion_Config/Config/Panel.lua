@@ -1183,23 +1183,11 @@ local function CreateConfigPanel()
     -- Cleanup on hide (covers ESC, X button, OnClose, ToggleConfig)
     -- isCollapsing flag prevents cleanup when collapsing (vs truly closing)
     local isCollapsing = false
-    content:HookScript("OnHide", function()
-        SetMainConfigDragAlpha(false)
-        CS.configWindowSizing = nil
-        if CancelFirstIconPanelTutorial then
-            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
-        end
-        -- The minimized config deliberately preserves the editing widgets,
-        -- but Finder query/results are visibility-scoped and must not return
-        -- when the workspace expands again.
-        if ST._ClearSettingsFinderActionRowState
-            and CS.configFrame and CS.configFrame.col3
-        then
-            ST._ClearSettingsFinderActionRowState(CS.configFrame.col3)
-        end
-        if isCollapsing then return end
-        -- Truly closing: the next open runs RefreshConfigPanel, which rebuilds
-        -- the tab and its editor, so drop this one's animation driver and any
+    -- A real close's cleanup. The minimized window's own close paths run it
+    -- too: the floating pickers and the preview must not outlive the config.
+    function frame._runCloseCleanup()
+        -- The next open runs RefreshConfigPanel, which rebuilds the tab and
+        -- its editor, so drop this one's animation driver and any
         -- confirmation it left standing.
         if frame.HideChangelogOverlay then
             frame.HideChangelogOverlay()
@@ -1237,6 +1225,24 @@ local function CreateConfigPanel()
         end
         CloseDropDownMenus()
         CS.HideAutocomplete()
+    end
+
+    content:HookScript("OnHide", function()
+        SetMainConfigDragAlpha(false)
+        CS.configWindowSizing = nil
+        if CancelFirstIconPanelTutorial then
+            CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
+        end
+        -- The minimized config deliberately preserves the editing widgets,
+        -- but Finder query/results are visibility-scoped and must not return
+        -- when the workspace expands again.
+        if ST._ClearSettingsFinderActionRowState
+            and CS.configFrame and CS.configFrame.col3
+        then
+            ST._ClearSettingsFinderActionRowState(CS.configFrame.col3)
+        end
+        if isCollapsing then return end
+        frame._runCloseCleanup()
     end)
 
     -- ESC to close support (keyboard handler — more reliable than UISpecialFrames)
@@ -1682,10 +1688,7 @@ local function CreateConfigPanel()
 
     local function CloseMinimizedConfig()
         GameTooltip:Hide()
-        if frame.HideChangelogOverlay then
-            frame.HideChangelogOverlay()
-        end
-        ClearTransientConfigPreviewState()
+        frame._runCloseCleanup()
         miniFrame:Hide()
     end
 
@@ -2692,16 +2695,7 @@ function CooldownCompanion:_configToggleImpl()
 
     -- If minimized, close everything and reset state
     if CS.configFrame._miniFrame and CS.configFrame._miniFrame:IsShown() then
-        if CS.configFrame.HideChangelogOverlay then
-            CS.configFrame.HideChangelogOverlay()
-        end
-        if CS.CloseAdvancedSettingsPanel then
-            CS.CloseAdvancedSettingsPanel({ skipRefresh = true })
-        end
-        if CS.CloseSpellbookPanel then
-            CS.CloseSpellbookPanel()
-        end
-        ClearTransientConfigPreviewState()
+        CS.configFrame._runCloseCleanup()
         CS.configFrame._miniFrame:Hide()
         return
     end
