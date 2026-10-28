@@ -470,8 +470,9 @@ end
 local function CompleteAdd(request, buttonIndex)
     if request.replacement then CS.indicatorSourceReplacement = nil end
     if request.autoSelect then SelectNewButton(request.groupId, buttonIndex) end
-    -- The tutorial selects its new entry when advancing. Do not let it undo
-    -- navigation during an item load or replace the Texture picker selection.
+    -- The tutorial relies on this add's own selection, so it is told only when
+    -- the new entry was left selected: never during an item load, and never
+    -- when a Texture picker replacement kept a different selection.
     if request.autoSelect and request.tutorialInput and NotifyTutorialAction
         and CS.selectedGroup == request.groupId and CS.selectedButton == buttonIndex then
         NotifyTutorialAction("inline_add_succeeded", {

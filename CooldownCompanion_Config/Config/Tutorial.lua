@@ -588,7 +588,9 @@ local function RefreshTutorialPlacement()
     ResizeTutorialFrame(frame)
 
     local anchor = data.anchor and GetAnchor(data.anchor) or nil
-    PositionFrame(frame, anchor, data.placement)
+    local placementOverride = data.anchor and CS.tutorialPlacementOverrides
+        and CS.tutorialPlacementOverrides[data.anchor]
+    PositionFrame(frame, anchor, placementOverride or data.placement)
     frame:Show()
 end
 
@@ -627,8 +629,12 @@ local function RebuildTutorialAnchors()
     -- which is exactly when the tutorial starts on its own.
     local welcome = CS.configFrame and CS.configFrame.profileWelcome
     local col1Frame = CS.configFrame and CS.configFrame.col1 and CS.configFrame.col1.frame
+    CS.tutorialPlacementOverrides = nil
     if welcome and welcome.frame:IsShown() then
-        anchors.groups_column_area = welcome.pane
+        -- The card fills the column area, so the box sits under its New
+        -- Group button rather than beside it.
+        anchors.groups_column_area = welcome.pane.create.frame
+        CS.tutorialPlacementOverrides = { groups_column_area = "below" }
     elseif col1Frame then
         anchors.groups_column_area = col1Frame
     end

@@ -339,15 +339,19 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         local showPopup = ST._ShowPopupAboveConfig
         if moduleContext then
             if not (moduleContext:IsCurrent() and showPopup) then return end
-            -- The context checks itself again on Accept: a popup outlives
-            -- the selection that opened it.
+            -- Any config rebuild while the popup is up releases this build's
+            -- context, so Accept builds a fresh one for the same bar and
+            -- reverts only while it still edits the same saved settings.
+            local kind, powerType, spec = moduleContext.kind, moduleContext.powerType, moduleContext.spec
+            local settings = moduleContext.settings
             showPopup("CDC_REVERT_MODULE_CUSTOMIZATIONS", buttonData.name or "this bar", {
                 callback = function()
-                    if not moduleContext:IsCurrent() then return end
+                    local fresh = ST._CreateModuleSettingsContext(kind, powerType, spec)
+                    if not (fresh and fresh.settings == settings) then return end
                     for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER) do
-                        CooldownCompanion:RevertSection(buttonData, sectionId)
+                        CooldownCompanion:RevertSection(fresh.entry, sectionId)
                     end
-                    moduleContext:Refresh()
+                    fresh:Refresh()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
@@ -430,7 +434,7 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
         -- would open behind a gear that is not on screen. Parent toggles no
         -- longer unbuild gears - an off toggle's gear opens read-only.
         local advancedKey
-        if navigable and not item.reason and item.sectionId and gearBySection
+        if navigable and item.sectionId and gearBySection
             and IsSectionHomeGearBuilt(item.home, group, predicateStyle) then
             advancedKey = gearBySection[item.sectionId]
             if advancedKey == CUSTOMIZATIONS_GEAR_AMBIGUOUS then
@@ -473,9 +477,9 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
             row.rowLabel:SetTextColor(SCOPE_CHROME_GOLD[1], SCOPE_CHROME_GOLD[2], SCOPE_CHROME_GOLD[3])
             local nav = EnsureRowNameButton(row, "_cdcCustomizationsName")
             -- The link covers the label, so the row frame's own hover no longer
-            -- fires there; the clause rides the link's tooltip so an inactive
-            -- row still explains itself under the pointer.
-            WireScopeTextHover(nav, reasonText)
+            -- fires there. Inactive rows carry no link, so their clause stays
+            -- on the row's own tooltip.
+            WireScopeTextHover(nav)
             -- The route resolves the destination itself, from the same
             -- registry consulted above.
             local sectionId = item.sectionId

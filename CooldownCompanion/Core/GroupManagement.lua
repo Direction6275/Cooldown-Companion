@@ -1613,8 +1613,9 @@ end
 -- panel with sections only BASE members count: a sectioned entry lays out on
 -- its own anchor, never in the base line, so an add into a section must not
 -- widen the base wrap. The entries at or below the old count are read as the
--- ones already there, which every add path's append makes exact.
-function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+-- ones already there, which an append makes exact; a path that inserts mid-list
+-- (Duplicate) passes the added entries instead, as a set keyed by entry.
+function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, addedEntries)
     if not group then return end
     local displayMode = group.displayMode or "icons"
     if displayMode ~= "icons" and displayMode ~= "bars" then
@@ -1643,7 +1644,13 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
         end
         if inLine then
             newLine = newLine + 1
-            if index <= previousCount then
+            local wasThere
+            if addedEntries then
+                wasThere = not addedEntries[buttonData]
+            else
+                wasThere = index <= previousCount
+            end
+            if wasThere then
                 previousLine = previousLine + 1
             end
         end

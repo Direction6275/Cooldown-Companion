@@ -754,8 +754,10 @@ end
 
 function CooldownCompanion:OnBindingsChanged()
     self:RebuildAddonSlotBindings()
-    -- A newly bound addon-bar slot can be the only home of an item.
-    self:CacheAddonBarItemSlots()
+    -- Addon-bar item picks follow the bindings: a newly bound slot can be an
+    -- item's only home, and an unbound one must let its item go. Bindings
+    -- never change frame.action, so the Blizzard pass picks as before.
+    self:RebuildItemSlotCache()
     self:OnKeybindsChanged()
 end
 

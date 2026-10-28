@@ -520,7 +520,7 @@ local function AddAuraMatch(column, group, changed)
             changed(true)
         end})
     if I.AuraListProblem(group) == "indicator_aura_group" then
-        Hint(column, "Group tracking works with a single aura, so this stays hidden. Choose another Tracked On.")
+        Hint(column, "Group tracking works with a single aura, so this stays hidden. Choose another Tracked on.")
     end
 end
 

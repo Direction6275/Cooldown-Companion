@@ -604,15 +604,19 @@ local function DuplicateEntrySelection(snapshot)
     CloseDropDownMenus()
     CooldownCompanion:ClearAllConfigPreviews()
     local previousCount = #group.buttons
+    -- Copies land beside their sources, not at the end, so the single-line
+    -- rule is told which entries are new.
+    local copies = {}
     for i = #snapshot.indices, 1, -1 do
         local copy = CopyTable(snapshot.entries[i])
         -- Preserve section membership, but mint the copy its own aura key.
         CooldownCompanion:AdoptAuraEntryKey(group, copy)
         table.insert(group.buttons, snapshot.indices[i] + 1, copy)
+        copies[copy] = true
     end
     local results = {}
     for i, index in ipairs(snapshot.indices) do results[i] = index + i end
-    CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount)
+    CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, copies)
     SelectEntryActionResults(snapshot.groupId, results)
     CooldownCompanion:RefreshGroupFrame(snapshot.groupId)
     CooldownCompanion:RefreshConfigPanel()

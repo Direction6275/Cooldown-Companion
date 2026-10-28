@@ -490,7 +490,10 @@ end
 -- bar. Such an entry always takes Low Time on its aura text and reserves no
 -- space while hidden. Aura Panels themselves are a panel-level check.
 function ST.IsNativeFlowAuraEntry(group, entry)
-    return ST.IsAuraSectionEntry(group, entry) or ST.IsCollapsingAttachedBar(group, entry)
+    -- Settings pass a bar-style view of the panel; the attached-bar test
+    -- needs the real panel behind it.
+    local owner = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    return ST.IsAuraSectionEntry(owner, entry) or ST.IsCollapsingAttachedBar(owner, entry)
 end
 
 function Addon:SetEntryPresentation(groupId, index, presentation)

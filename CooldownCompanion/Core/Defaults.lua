@@ -758,20 +758,6 @@ function CooldownCompanion:GetAuraSectionUnit(group, anchor, exclude)
     return ResolveAuraSurfaceUnit(self, group, anchor, exclude)
 end
 
--- Whether one entry may live in one aura section: nil to admit it, a short
--- player-facing sentence to refuse. The section's own membership writer and its
--- aura-only toggle are the two callers, so a refusal is always something the
--- owner just tried to do and can be told about.
---
--- Admission is PRIMARY aura entries only (addedAs == "aura"). An ordinary spell
--- entry that merely has aura tracking switched on still has a cooldown display
--- to draw and would have nothing to render through the aura container, so it
--- stays out -- the same line the Aura Panel add door draws.
---
--- An unresolvable unit does not refuse. ResolveAuraEntryUnit answers from
--- spec-dependent Cooldown Manager data, so "unknown" is a state the same entry
--- moves in and out of, and refusing on it would make the section reject on one
--- spec what it accepted on another.
 -- The one wording for an aura on the other buff/debuff side from the
 -- single-unit Aura Panel or aura section it would join: the add doors here
 -- and the config's unit-override preflight.
@@ -788,6 +774,20 @@ function ST.GetAuraSurfaceUnitMismatchText(isPanel, surfaceUnit)
     return "This section tracks target debuffs. Your own buff auras need a section of their own."
 end
 
+-- Whether one entry may live in one aura section: nil to admit it, a short
+-- player-facing sentence to refuse. The section's own membership writer and its
+-- aura-only toggle are the two callers, so a refusal is always something the
+-- owner just tried to do and can be told about.
+--
+-- Admission is PRIMARY aura entries only (addedAs == "aura"). An ordinary spell
+-- entry that merely has aura tracking switched on still has a cooldown display
+-- to draw and would have nothing to render through the aura container, so it
+-- stays out -- the same line the Aura Panel add door draws.
+--
+-- An unresolvable unit does not refuse. ResolveAuraEntryUnit answers from
+-- spec-dependent Cooldown Manager data, so "unknown" is a state the same entry
+-- moves in and out of, and refusing on it would make the section reject on one
+-- spec what it accepted on another.
 function CooldownCompanion:GetAuraSectionEntryRejectMessage(group, anchor, entryData)
     if type(entryData) ~= "table" or entryData.type ~= "spell" or entryData.addedAs ~= "aura" then
         return "Aura Sections hold only Aura entries."
