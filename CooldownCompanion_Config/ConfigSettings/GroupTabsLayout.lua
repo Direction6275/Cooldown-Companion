@@ -382,8 +382,8 @@ if ST._DefineSettingRoute then
         advancedKey = "compactLayout",
     })
     LAYOUT_FINDER.compact = compact:Settings({
-        growth = { label = "Growth Direction", applies = LayoutFinderFlag("compactGrowth") },
-        maxVisible = { label = "Max Visible Buttons", aliases = { "button limit" }, applies = LayoutFinderFlag("compactAdvanced") },
+        growth = { label = "Collapse Direction", aliases = { "growth direction" }, applies = LayoutFinderFlag("compactGrowth") },
+        maxVisible = { label = "Max Visible Entries", aliases = { "button limit", "max visible buttons" }, applies = LayoutFinderFlag("compactAdvanced") },
     })
 
     for _, sectionAnchor in ipairs(ST.PANEL_SECTION_ANCHORS or {}) do
