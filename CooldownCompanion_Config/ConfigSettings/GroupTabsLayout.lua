@@ -704,8 +704,6 @@ local function AddFrameStrataRow(parent, group, infoButtons, onChanged)
         {"Sets the rendering layer for this " .. subject .. ".", 1, 1, 1, true},
         " ",
         {"Panels and Indicators on a higher strata fully overlap lower ones.", 1, 1, 1, true},
-        " ",
-        {"Only change this if you need it to overlap another panel or Indicator.", 1, 1, 1, true},
     }, infoButtons))
 end
 

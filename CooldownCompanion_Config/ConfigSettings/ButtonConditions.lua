@@ -2416,9 +2416,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
 
     if not allPassive then
     if not allNeverUnusable then
-    -- An Aura entry never takes castability (Visibility.lua), so a batch
-    -- reads and sets only the other entries; clearing still reaches all.
-    local function FilterCastabilityEntry(bd) return bd.addedAs ~= "aura" end
+    -- Passives and Aura entries never take castability (Helpers.lua), so a
+    -- batch reads and sets only the other entries; clearing still reaches all.
+    local FilterCastabilityEntry = CooldownCompanion.CanTakeCastabilityHide
     local function ApplyToCastabilityEntries(field, value)
         ApplyFiltered(FilterCastabilityEntry, field, value)
     end

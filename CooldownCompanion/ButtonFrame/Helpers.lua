@@ -69,11 +69,18 @@ CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
 -- Whether Hide While Unusable can act on this entry. Castability is a spell or
 -- item question: a passive never casts, and an Aura entry is present or not,
--- so a saved flag on either stays inert. The one rule visibility, the ticker
--- floor, the usability event pass and the config preview share.
+-- so a saved flag on either stays inert. CanTakeCastabilityHide is the entry
+-- half, which the config's batch rows read and write by; UsesCastabilityHide
+-- adds the flag, the one rule visibility, the ticker floor, the usability
+-- event pass and the config preview share.
+local function CanTakeCastabilityHide(buttonData)
+    return not buttonData.isPassive and not buttonData.isPassiveCooldown
+        and buttonData.addedAs ~= "aura"
+end
+CooldownCompanion.CanTakeCastabilityHide = CanTakeCastabilityHide
+
 local function UsesCastabilityHide(buttonData)
-    return buttonData.hideWhileUnusable and not buttonData.isPassive
-        and not buttonData.isPassiveCooldown and buttonData.addedAs ~= "aura"
+    return buttonData.hideWhileUnusable and CanTakeCastabilityHide(buttonData)
 end
 CooldownCompanion.UsesCastabilityHide = UsesCastabilityHide
 

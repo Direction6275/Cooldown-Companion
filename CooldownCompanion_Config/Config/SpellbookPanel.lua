@@ -22,7 +22,8 @@ local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 local CONTENT_INSET = 2
-local HINT_GAP = 5
+-- Space between the Rotation Assistant row and the search box under it.
+local ASSISTANT_GAP = 5
 local TAB_HEIGHT = 26
 local TAB_GAP = 4
 -- The stock AceGUI EditBox's own label-less height (its SetLabel("") branch),
@@ -707,8 +708,8 @@ local function EnsureChrome()
     searchBox:SetText("")
     searchBox.frame:SetParent(host)
     searchBox.frame:ClearAllPoints()
-    searchBox.frame:SetPoint("TOPLEFT", assistant, "BOTTOMLEFT", 0, -HINT_GAP)
-    searchBox.frame:SetPoint("TOPRIGHT", assistant, "BOTTOMRIGHT", 0, -HINT_GAP)
+    searchBox.frame:SetPoint("TOPLEFT", assistant, "BOTTOMLEFT", 0, -ASSISTANT_GAP)
+    searchBox.frame:SetPoint("TOPRIGHT", assistant, "BOTTOMRIGHT", 0, -ASSISTANT_GAP)
     searchBox.frame:SetHeight(SEARCH_HEIGHT)
     searchBox.frame:Show()
 

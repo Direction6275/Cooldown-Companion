@@ -657,16 +657,20 @@ local function ShowPanelContextMenu(panelId, containerId)
             UIDropDownMenu_AddButton(info, level)
 
             -- Another class's panel can't be moved or anchored to from here:
-            -- its frame never loads on this character.
-            local ownClass = CanChangeLock(containerId)
+            -- its frame never loads on this character. Locking asks the lock
+            -- rule and the External Anchor asks the class gate itself, so a
+            -- change to either rule leaves the other alone.
+            local canLock = CanChangeLock(containerId)
+            local ownClass = ST._IsCreateTargetContainer(containerId) == true
             local holderId = CooldownCompanion:GetExternalAnchorPanelId()
             local isHolder = holderId ~= nil and holderId == tonumber(panelId)
             local cursorAnchored = CooldownCompanion.IsGroupCursorAnchored
                 and CooldownCompanion:IsGroupCursorAnchored(panel)
-            if ownClass or (isHolder and not cursorAnchored) then
+            local offersExternalAnchor = (ownClass or isHolder) and not cursorAnchored
+            if canLock or offersExternalAnchor then
                 UIDropDownMenu_AddSeparator(level)
             end
-            if ownClass then
+            if canLock then
                 info = UIDropDownMenu_CreateInfo()
                 local anchorUnlocked = panel.locked == false
                 if not anchorUnlocked and CooldownCompanion:IsGroupCursorAnchored(panel) then
@@ -685,7 +689,7 @@ local function ShowPanelContextMenu(panelId, containerId)
             -- marked panel per spec. A cursor-anchored panel cannot provide
             -- a stable position for other addons. Another class's panel only
             -- offers to clear a mark it already holds.
-            if (ownClass or isHolder) and not cursorAnchored then
+            if offersExternalAnchor then
                 local holder = holderId and db.groups[holderId] or nil
                 local holderName = holder and (holder.name or ("Panel " .. tostring(holderId))) or "none"
                 info = UIDropDownMenu_CreateInfo()

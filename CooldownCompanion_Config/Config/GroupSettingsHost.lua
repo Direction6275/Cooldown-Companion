@@ -170,6 +170,16 @@ local function SetSettingsScrollOwner(scroll, owner, scope, entry)
     end)
 end
 
+-- Settings memory for the session: every panel and Group remembers its last
+-- tab and its place on each view (key). Returns the owner's memory.
+local function UseSettingsMemory(scroll, owner, tab, key)
+    local state = ST._GetPanelSettingsState(owner)
+    state.panelTab = tab
+    state.scrolls[key] = state.scrolls[key] or {}
+    scroll:SetStatusTable(state.scrolls[key])
+    return state
+end
+
 -- stripOnly: the selected entry's Settings/Customizations tab owns the shared
 -- surface, so its style tabs are painted beside it without building content.
 -- Both strips still belong to the same selected entry.
@@ -233,14 +243,8 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 widget:AddChild(scroll)
                 local groupContainer = CooldownCompanion.db.profile.groupContainers[CS.selectedContainer]
                 SetSettingsScrollOwner(scroll, groupContainer, "group:" .. tab)
-                -- Each Group keeps its last tab and its place on every tab
-                -- for the session, as panels do.
                 if groupContainer then
-                    local state = ST._GetPanelSettingsState(groupContainer)
-                    state.panelTab = tab
-                    local key = "group:" .. tab
-                    state.scrolls[key] = state.scrolls[key] or {}
-                    scroll:SetStatusTable(state.scrolls[key])
+                    UseSettingsMemory(scroll, groupContainer, tab, "group:" .. tab)
                 end
 
                 if tab == "general" then
@@ -364,32 +368,22 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 if ST.PanelSupportsAttachedBars(styleGroup) then
                     local entry = ST._GetPanelSettingsSelection(styleGroup)
                     local scope = entry and "entry" or "panel"
-                    local state = ST._GetPanelSettingsState(styleGroup)
-                    state.panelTab = tab
-                    if entry then state.presentation = ST.GetEntryPresentation(styleGroup, entry) end
                     if presentation then scope = scope .. ":" .. presentation end
                     scroll._cdcStylePresentation = presentation or "ordinary"
                     scroll._cdcSettingsScopeKey = scope .. ":" .. tab
                     scroll._cdcSettingsOwner = styleGroup
                     scroll._cdcSettingsEntry = entry
                     scroll._cdcSettingsViewKey = presentation and presentation .. ":" .. tab or nil
-                    local views = state.scrolls
-                    local key = scope .. ":" .. tab
-                    views[key] = views[key] or {}
-                    scroll:SetStatusTable(views[key])
+                    local state = UseSettingsMemory(scroll, styleGroup, tab, scope .. ":" .. tab)
+                    if entry then state.presentation = ST.GetEntryPresentation(styleGroup, entry) end
                     if presentation and (oldOwner ~= styleGroup or oldView ~= scroll._cdcSettingsViewKey
                         or oldEntry ~= entry or CS.pendingLensAnchor) then
                         ST._PreparePanelSettingsView(scroll)
                     end
                 else
-                    -- Aura, Totem and Indicator panels keep the same memory:
-                    -- their last tab and their place on each tab, one place
-                    -- per tab shared by the panel's entries.
-                    local state = ST._GetPanelSettingsState(styleGroup)
-                    state.panelTab = tab
-                    local key = scroll._cdcSettingsScopeKey
-                    state.scrolls[key] = state.scrolls[key] or {}
-                    scroll:SetStatusTable(state.scrolls[key])
+                    -- Aura, Totem and Indicator panels: one place per tab,
+                    -- shared by the panel's entries.
+                    UseSettingsMemory(scroll, styleGroup, tab, scroll._cdcSettingsScopeKey)
                 end
             end
             if ST._BeginLensAnchorBuild then
@@ -476,21 +470,17 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if availableTabs then
         tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
     end
-    if group and ST.PanelSupportsAttachedBars(group) then
-        local entry = ST._GetPanelSettingsSelection(group)
-        local scope = entry and "entry" or "panel"
+    if group then
+        -- Every panel kind reopens on the tab last used there, at panel scope
+        -- (an attached-bar panel's isSingleEntry is its entry selection).
         local state = ST._GetPanelSettingsState(group)
-        if entry then state.presentation = ST.GetEntryPresentation(group, entry) end
-        if scope == "panel" and not CS.pendingSettingHighlight
-            and container._settingsTabOwner ~= group then
-            CS.selectedTab = state.panelTab or CS.selectedTab
+        if ST.PanelSupportsAttachedBars(group) then
+            local entry = ST._GetPanelSettingsSelection(group)
+            if entry then state.presentation = ST.GetEntryPresentation(group, entry) end
         end
-        container._settingsTabOwner = group
-    elseif group then
-        -- Every other panel kind reopens on the tab last used there too.
         if not isSingleEntry and not CS.pendingSettingHighlight
             and container._settingsTabOwner ~= group then
-            CS.selectedTab = ST._GetPanelSettingsState(group).panelTab or CS.selectedTab
+            CS.selectedTab = state.panelTab or CS.selectedTab
         end
         container._settingsTabOwner = group
     else

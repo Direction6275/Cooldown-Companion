@@ -614,7 +614,10 @@ local function IsExactStandaloneAuraIdentity(buttonData)
         and (spellID == 48107 or spellID == 48108)
 end
 
-local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+-- frameFree: skip the buff-viewer frame rung. The save path asks this way:
+-- those frames exist only while the Cooldown Manager display is on, and a
+-- saved list must not depend on a display setting (owner ruling R12 part 2).
+local function BuildStandaloneOriginalAuraCandidateIDs(buttonData, frameFree)
     local candidateIDs = {}
     local orderedCandidateSet = {}
     local orderedCandidateIDs = {}
@@ -653,7 +656,7 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, curatedAuraID)
     end
 
-    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    local directAuraID = not frameFree and ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID then
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, directAuraID)
     end
@@ -693,8 +696,10 @@ local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCan
 end
 
 
+-- The saved list keeps only IDs the entry would not find by itself, judged
+-- frame-free so the same list saves with the display on or off.
 local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
-    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData, true)
     local fallbackIDs = {}
     local seen = {}
     if not rawIDs then
@@ -1310,18 +1315,10 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
         changed = true
     end
 
-    if buttonData.addedAs == "aura" then
-        local fallbackIDs = self:GetStandaloneAuraFallbackSpellIDText(buttonData)
-        if buttonData.auraSpellID ~= fallbackIDs then
-            buttonData.auraSpellID = fallbackIDs
-            changed = true
-        end
-    elseif not buttonData.auraSpellID then
-        local inferredAuraSpellID = self:InferConfirmedAuraSpellIDString(buttonData)
-        if inferredAuraSpellID then
-            buttonData.auraSpellID = inferredAuraSpellID
-            changed = true
-        end
+    local fallbackIDs = self:GetStandaloneAuraFallbackSpellIDText(buttonData)
+    if buttonData.auraSpellID ~= fallbackIDs then
+        buttonData.auraSpellID = fallbackIDs
+        changed = true
     end
 
     if buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then

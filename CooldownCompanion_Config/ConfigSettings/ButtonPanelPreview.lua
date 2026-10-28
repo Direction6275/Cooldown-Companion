@@ -786,11 +786,12 @@ local function GetPreviewUpdateGroup(preview, panelId)
     for index, buttonData in ipairs(buttons) do
         local binding = bindings[index]
         local side, region, resources = ST.GetAttachedBarPlacement(buttonData)
-        local visible = not filtered or ST.GetEntryPresentation(group, buttonData) == "bars"
+        local presentation = ST.GetEntryPresentation(group, buttonData)
+        local visible = not filtered or presentation == "bars"
             or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
         if binding.buttonData ~= buttonData
             or binding.entryType ~= buttonData.type or binding.entryId ~= buttonData.id
-            or binding.presentation ~= ST.GetEntryPresentation(group, buttonData)
+            or binding.presentation ~= presentation
             or binding.section ~= ST.GetPanelSectionForEntry(group, buttonData)
             or binding.side ~= side or binding.region ~= region or binding.resources ~= resources
             or (binding.slot and binding.attached ~= ST.IsAttachedBarEntry(group, buttonData))
