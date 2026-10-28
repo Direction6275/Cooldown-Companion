@@ -11,10 +11,10 @@
 
     The list covers everything a panel can hold: the learned spells of the
     active spec, the pet bank, flyout contents flattened in place, and an
-    unavailable section for off-spec and not-yet-learned spells. Unavailable
-    rows cannot be dragged -- Blizzard's own pickup no-ops for them -- so they
-    add to the selected panel on double-click instead. CDM auras have their
-    own section and also add on double-click, with explicit aura intent.
+    unavailable section for off-spec and not-yet-learned spells. Every row adds
+    to the selected panel on double-click; learned, pet and flyout rows also
+    drag, while unavailable rows cannot -- Blizzard's own pickup no-ops for
+    them. CDM auras have their own section and add with explicit aura intent.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -58,9 +58,9 @@ local CLASS_SKILL_LINE = Enum.SpellBookSkillLineIndex.Class
 local MAIN_SPEC_SKILL_LINE = Enum.SpellBookSkillLineIndex.MainSpec
 
 local TABS = {
-    { id = "spells", name = "Spells", hint = "Drag a spell onto a panel to add it.", empty = "No spells available." },
-    { id = "auras", name = "Auras", hint = "Double-click an aura to add it.", empty = "No auras available." },
-    { id = "unavailable", name = "Unavailable", hint = "Double-click a spell to add it.", empty = "No unavailable spells." },
+    { id = "spells", name = "Spells", empty = "No spells available." },
+    { id = "auras", name = "Auras", empty = "No auras available." },
+    { id = "unavailable", name = "Unavailable", empty = "No unavailable spells." },
 }
 local NOT_LEARNED_REASON = "Not learned"
 local DIM_TEXT = { 0.5, 0.5, 0.5 }
@@ -378,16 +378,26 @@ local function AcquireRow()
     end)
 
     -- Double-click, not click: a stray click on a list this dense should never
-    -- put a spell in a panel.
+    -- put a spell in a panel. Every row adds this way, the rows that drag too:
+    -- a slot row reads its spell back from the book as it stands now.
     row:SetScript("OnDoubleClick", function(self)
-        if not self.addSpellID or InCombatLockdown() then
+        if InCombatLockdown() then
+            return
+        end
+        local spellID = self.addSpellID
+        if not spellID and self.slot and self.bank then
+            local info = C_SpellBook.GetSpellBookItemInfo(self.slot, self.bank)
+            spellID = info and (info.spellID or info.actionID)
+        end
+        spellID = spellID or self.pickupSpellID
+        if not spellID then
             return
         end
         if not CS.selectedGroup then
             CooldownCompanion:Print("Select a panel first before adding spells.")
             return
         end
-        local added = ST._TryAddSpell(tostring(self.addSpellID), nil, self.forceAura,
+        local added = ST._TryAddSpell(tostring(spellID), self.bank == PET_BANK or nil, self.forceAura,
             { groupId = CS.selectedGroup })
         if added then
             CooldownCompanion:RefreshConfigPanel()
@@ -410,9 +420,6 @@ local function AcquireRow()
         end
         if self.forceAura and self.tooltipSpellID then
             GameTooltip:AddLine("Spell ID: " .. self.tooltipSpellID, 0.7, 0.7, 0.7)
-        end
-        if self.addSpellID then
-            GameTooltip:AddLine("Double-click to add to the selected panel.", 0.7, 0.7, 0.7)
         end
         GameTooltip:Show()
     end)
@@ -502,12 +509,10 @@ local function RefreshTabs()
             button.label:SetTextColor(0.7, 0.7, 0.7)
         end
         if not searching and tab.id == activeTab then
-            chrome.hint:SetText(tab.hint)
             chrome.empty:SetText(tab.empty)
         end
     end
     if searching then
-        chrome.hint:SetText("Drag spells; double-click other entries.")
         chrome.empty:SetText("No matches in any category.")
     end
 end
@@ -686,20 +691,10 @@ local function EnsureChrome()
     assistant:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(ST.ROTATION_ASSISTANT_NAME)
-        GameTooltip:AddLine("Shows Blizzard's recommended next spell. Drag onto a panel or double-click to add.", 1, 1, 1, true)
+        GameTooltip:AddLine("Shows Blizzard's recommended next spell.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     assistant:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-    -- Centred over the whole window and one size up from the list's own small
-    -- text: it captions the list rather than labelling the search box. Still
-    -- muted grey -- it is an instruction, not a heading.
-    local hint = host:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-    hint:SetPoint("TOPLEFT", assistant, "BOTTOMLEFT", 0, -HINT_GAP)
-    hint:SetPoint("TOPRIGHT", assistant, "BOTTOMRIGHT", 0, -HINT_GAP)
-    hint:SetJustifyH("CENTER")
-    hint:SetWordWrap(false)
-    hint:SetText("Drag a spell onto a panel to add it.")
 
     -- A stock AceGUI EditBox rather than Blizzard's SearchBoxTemplate: UI skins
     -- style Ace3 widgets, which is what every other edit box in this config is.
@@ -712,8 +707,8 @@ local function EnsureChrome()
     searchBox:SetText("")
     searchBox.frame:SetParent(host)
     searchBox.frame:ClearAllPoints()
-    searchBox.frame:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -HINT_GAP)
-    searchBox.frame:SetPoint("TOPRIGHT", hint, "BOTTOMRIGHT", 0, -HINT_GAP)
+    searchBox.frame:SetPoint("TOPLEFT", assistant, "BOTTOMLEFT", 0, -HINT_GAP)
+    searchBox.frame:SetPoint("TOPRIGHT", assistant, "BOTTOMRIGHT", 0, -HINT_GAP)
     searchBox.frame:SetHeight(SEARCH_HEIGHT)
     searchBox.frame:Show()
 
@@ -783,7 +778,6 @@ local function EnsureChrome()
     chrome = {
         host = host,
         tabs = tabs,
-        hint = hint,
         searchBox = searchBox,
         searchHint = searchHint,
         scrollFrame = scrollFrame,
