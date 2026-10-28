@@ -15,7 +15,6 @@ local UnitExists = UnitExists
 local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
-local C_CVar_GetCVarBool = C_CVar.GetCVarBool
 
 -- Utils.lua
 local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
@@ -1212,9 +1211,6 @@ function CooldownCompanion:SnapshotCooldownPassContext()
         hasHostileTarget = UnitCanAttack("player", "softenemy") and true or false
     end
     self._assistedHighlightHasHostileTarget = hasHostileTarget
-
-    -- Cache CDM viewer CVar once per tick (avoids per-button GetCVarBool in ResolveBuffViewerFrameForSpell)
-    self._cdmViewerEnabled = C_CVar_GetCVarBool("cooldownViewerEnabled") == true
 end
 
 function CooldownCompanion:UpdateAllCooldowns()

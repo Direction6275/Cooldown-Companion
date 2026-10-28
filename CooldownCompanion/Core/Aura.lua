@@ -965,47 +965,12 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
         return tostring(resolvedAuraId)
     end
 
-    local buffViewerFrame = self:ResolveBuffViewerFrameForSpell(baseId)
-        or (baseId ~= buttonData.id and self:ResolveBuffViewerFrameForSpell(buttonData.id))
-    local distinctAuraIDs = {}
-    if buffViewerFrame and type(buffViewerFrame.cooldownInfo) == "table" then
-        local info = buffViewerFrame.cooldownInfo
-        for _, spellID in ipairs({
-            info.overrideSpellID,
-            info.overrideTooltipSpellID,
-        }) do
-            local numericID = tonumber(spellID)
-            if numericID
-                and numericID ~= 0
-                and numericID ~= buttonData.id
-                and numericID ~= baseId
-                and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-                distinctAuraIDs[numericID] = true
-            end
-        end
-        if info.linkedSpellIDs then
-            for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                local numericID = tonumber(linkedSpellID)
-                if numericID
-                    and numericID ~= 0
-                    and numericID ~= buttonData.id
-                    and numericID ~= baseId
-                    and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-                    distinctAuraIDs[numericID] = true
-                end
-            end
-        end
-    end
-
-    local inferredAuraSpellID
-    for spellID in pairs(distinctAuraIDs) do
-        if inferredAuraSpellID then
-            return nil
-        end
-        inferredAuraSpellID = tostring(spellID)
-    end
-
-    return inferredAuraSpellID
+    -- No guess from the Cooldown Manager's on-screen buff frames: it could
+    -- only be made while that display is on, and a saved ID outranks
+    -- detection from then on, so the same spell would save different auras
+    -- depending on a display setting (owner ruling R12 part 2, 2026-10-28).
+    -- Linked auras are still tracked through the Cooldown Manager data rows.
+    return nil
 end
 
 -- The one unit rule for every aura display (owner ruling R12, 2026-10-24):
@@ -1578,26 +1543,6 @@ function CooldownCompanion:QueueBuildViewerAuraMap(allowAssociationGate)
             self:RefreshConfigPanel()
         end
     end)
-end
-
-function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-    local enabled = self._cdmViewerEnabled
-    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
-    if not spellID or spellID == 0 or not enabled then
-        return nil
-    end
-
-    local child = self.viewerAuraFrames and self.viewerAuraFrames[spellID]
-    if IsBuffViewerChild(child) and type(child.cooldownInfo) == "table" then
-        return child
-    end
-
-    child = FindChildInViewers(VIEWER_NAMES, spellID, true)
-    if child then
-        self.viewerAuraFrames[spellID] = child
-        return child
-    end
-    return nil
 end
 
 -- Map readable cooldownInfo spell identities to Blizzard cooldown viewer
