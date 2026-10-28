@@ -1522,6 +1522,10 @@ local function FilterChargeCapable(bd)
     if bd.type == "item" and not CooldownCompanion.IsItemEquippable(bd) then return true end
     return false
 end
+-- Hide Cooldown While Charges Remain hides an icon's swipe; bars draw none.
+local function FilterChargeSwipe(group, bd)
+    return FilterChargeCapable(bd) and ST.GetEntryPresentation(group, bd) ~= "bars"
+end
 local function FilterChargeSpell(bd)
     if bd.rotationAssistant then return true end
     if HasItemFallbacks(bd) then return false end
@@ -1664,6 +1668,7 @@ local function GetEntryVisibilityFinderState(context)
     state.noProcFamily = not passive and buttonData.type == "spell"
         and buttonData.addedAs ~= "aura" and not buttonData.isPassiveCooldown
     state.chargeFamily = chargeCapable
+    state.chargeSwipeFamily = FilterChargeSwipe(group, buttonData)
     state.stackFamily = nonEquippableItem and (hasFallbacks or not UsesChargeBehavior(buttonData))
     state.fallbackItemUses = state.stackFamily and hasFallbacks
     state.equipFamily = isItem and CooldownCompanion.IsItemEquippable(buttonData)
@@ -1732,7 +1737,7 @@ local entryVisibilitySettings = ST._DefineSettingRoute({
     chargeCooldown = {
         label = "Hide Cooldown While Charges Remain",
         aliases = { "charge cooldown swipe" },
-        applies = EntryVisibilityApplies(function(state) return state.chargeFamily end),
+        applies = EntryVisibilityApplies(function(state) return state.chargeSwipeFamily end),
     },
     zeroStacks = {
         label = "At Zero Stacks",
@@ -1981,14 +1986,16 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    -- Filtered apply: only write to charge-capable buttons (charge toggles).
-    -- When clearing (value is falsy), write to ALL selected to clean stale data.
-    local function ApplyToChargeCapable(field, value)
+    -- Filtered apply: only write to charge-capable buttons (charge toggles),
+    -- or to the narrower filter a row passes. When clearing (value is falsy),
+    -- write to ALL selected to clean stale data.
+    local function ApplyToChargeCapable(field, value, filter)
+        filter = filter or FilterChargeCapable
         if isBatch then
             for idx in pairs(CS.selectedButtons) do
                 local bd = group.buttons[idx]
                 if bd then
-                    if not value or FilterChargeCapable(bd) then
+                    if not value or filter(bd) then
                         bd[field] = value
                     end
                 end
@@ -2528,16 +2535,27 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             end,
         })
 
-        -- Hide Cooldown While Charges Remain
-        AddFamily(function(column)
-            AddVisibilityRow(column, "Hide Cooldown While Charges Remain", "hideCooldownWithCharges", {
-                setting = entryVisibilitySettings.chargeCooldown,
-                filter = FilterChargeCapable,
-                onChanged = function(widget, event, val)
-                    ApplyToChargeCapable("hideCooldownWithCharges", val or nil)
-                end,
-            })
-        end)
+        -- Hide Cooldown While Charges Remain: icon entries only.
+        local function filterChargeSwipe(bd) return FilterChargeSwipe(group, bd) end
+        local showChargeSwipe = not isBatch and filterChargeSwipe(buttonData)
+        for idx in pairs(isBatch and CS.selectedButtons or {}) do
+            local bd = group.buttons[idx]
+            if bd and filterChargeSwipe(bd) then
+                showChargeSwipe = true
+                break
+            end
+        end
+        if showChargeSwipe then
+            AddFamily(function(column)
+                AddVisibilityRow(column, "Hide Cooldown While Charges Remain", "hideCooldownWithCharges", {
+                    setting = entryVisibilitySettings.chargeCooldown,
+                    filter = filterChargeSwipe,
+                    onChanged = function(widget, event, val)
+                        ApplyToChargeCapable("hideCooldownWithCharges", val or nil, filterChargeSwipe)
+                    end,
+                })
+            end)
+        end
     end
 
     -- Stack-based visibility (non-equippable items without charges)
