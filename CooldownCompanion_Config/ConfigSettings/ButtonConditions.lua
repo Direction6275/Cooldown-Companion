@@ -149,7 +149,7 @@ local panelAlphaSettings = ST._DefineSettingRoute({
     combat = { label = "In Combat", aliases = { "combat alpha", "hide in combat", "show in combat" } },
     outOfCombat = { label = "Out of Combat", aliases = { "ooc alpha", "hide out of combat", "show out of combat" } },
     regularMount = { label = "Regular Mount", aliases = { "mounted alpha", "hide while mounted", "show while mounted" } },
-    skyriding = { label = "Skyriding", aliases = { "dragonriding alpha", "hide while skyriding", "hide while dragonriding" } },
+    skyriding = { label = "Skyriding", aliases = { "dragonriding alpha", "hide while skyriding", "show while skyriding", "hide while dragonriding" } },
     travelForm = {
         label = "Include Druid Travel Form (applies to both)",
         aliases = { "travel form" },
@@ -2460,9 +2460,25 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
 
     if not allPassive then
     if not allNeverUnusable then
+    -- An Aura entry never takes castability (Visibility.lua), so a batch
+    -- reads and sets only the other entries; clearing still reaches all.
+    local function FilterCastabilityEntry(bd) return bd.addedAs ~= "aura" end
+    local function ApplyToCastabilityEntries(field, value)
+        if isBatch then
+            for idx in pairs(CS.selectedButtons) do
+                local bd = group.buttons[idx]
+                if bd and (not value or FilterCastabilityEntry(bd)) then
+                    bd[field] = value
+                end
+            end
+        else
+            buttonData[field] = value
+        end
+    end
     AddStateFamily({
         setting = entryVisibilitySettings.unusable,
-        apply = ApplyToSelected,
+        filter = FilterCastabilityEntry,
+        apply = ApplyToCastabilityEntries,
         hideKey = "hideWhileUnusable",
         dimKey = "useBaselineAlphaFallbackUnusable",
         title = "While Unusable",

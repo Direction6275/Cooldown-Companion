@@ -781,12 +781,13 @@ local function GetPreviewUpdateGroup(preview, panelId)
     for anchor, section in pairs(preview.sectionOwners) do
         if not group.sections or group.sections[anchor] ~= section then return end
     end
-    local filtered = group.displayMode ~= "bars" and CS.panelPreviewUnavailableHidden
-        and not CS.otherClassLibraryActive
+    -- The same keep rule LayoutPreviewEntries builds with: bars always stay.
+    local filtered = CS.panelPreviewUnavailableHidden and not CS.otherClassLibraryActive
     for index, buttonData in ipairs(buttons) do
         local binding = bindings[index]
         local side, region, resources = ST.GetAttachedBarPlacement(buttonData)
-        local visible = not filtered or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
+        local visible = not filtered or ST.GetEntryPresentation(group, buttonData) == "bars"
+            or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
         if binding.buttonData ~= buttonData
             or binding.entryType ~= buttonData.type or binding.entryId ~= buttonData.id
             or binding.presentation ~= ST.GetEntryPresentation(group, buttonData)

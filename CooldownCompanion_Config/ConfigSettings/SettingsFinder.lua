@@ -223,6 +223,12 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     for _, field in ipairs(ROUTE_FIELDS) do
         CopyRouteField(descriptor, routeDefaults, settingOptions, field)
     end
+    -- Ordinary and Totem panels called the Effects tab and its sections
+    -- Indicators until 2026-10-28; the old word keeps finding their rows.
+    if descriptor.tab == "effects" then
+        descriptor.aliases = descriptor.aliases or {}
+        descriptor.aliases[#descriptor.aliases + 1] = "indicators"
+    end
 
     if descriptorsById[descriptor.id] then
         error("Cooldown Companion Settings Finder: duplicate descriptor id " .. descriptor.id)

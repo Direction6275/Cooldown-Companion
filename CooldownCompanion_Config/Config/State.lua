@@ -3229,10 +3229,12 @@ ST._ApplyConfigRoute = function(route)
         SelectConfigPanel(route.id, { containerId = route.containerId })
         CS.selectedTab = "layout"
         CS.panelSettingsTab = "layout"
+        ST._RememberSettingsTab(CooldownCompanion.db.profile.groups[route.id], "layout")
         CS.collapsedSections.layout_anchor = false
     elseif route.kind == "container" and route.id then
         SelectConfigContainer(route.id)
         CS.selectedContainerTab = "general"
+        ST._RememberSettingsTab(CooldownCompanion.db.profile.groupContainers[route.id], "general")
         CS.collapsedSections.container_layout = false
     elseif route.kind == "resource" then
         if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end

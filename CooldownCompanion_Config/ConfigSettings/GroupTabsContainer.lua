@@ -100,7 +100,10 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     CONTAINER_FINDER.alpha = alphaRoute:Settings({
-        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" } },
+        -- The hide words also land here: the rows they name exist only once
+        -- Group Alpha is on.
+        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency",
+            "hide in combat", "hide out of combat", "hide while mounted", "hide while skyriding" } },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" }, applies = ContainerFinderAlphaEnabled },
         combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" },
             applies = ContainerFinderAlphaEnabled },
@@ -108,7 +111,7 @@ if ST._DefineSettingRoute then
             applies = ContainerFinderAlphaEnabled },
         regularMount = { label = "Regular Mount", aliases = { "hide while mounted", "show while mounted" },
             applies = ContainerFinderAlphaEnabled },
-        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "hide while dragonriding" },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "show while skyriding", "hide while dragonriding" },
             applies = ContainerFinderAlphaEnabled },
         travelForm = {
             label = "Include Druid Travel Form (applies to both)",

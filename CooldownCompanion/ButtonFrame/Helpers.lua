@@ -720,7 +720,7 @@ end
 -- deliberately exclude the policy must not collide with duration surfaces
 -- that opt into it). Same
 -- no-write-back rule as durationLowTimeMemo. The recorded dependencies are the
--- two raw format fields plus the RESOLVED low-time tuple, which
+-- raw durationFormat field plus the RESOLVED low-time tuple, which
 -- GetDurationLowTime revalidates against every raw low-time field and color
 -- component on each call — so a config edit can never be skipped here.
 local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })

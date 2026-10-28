@@ -14,6 +14,13 @@ function ST._GetPanelSettingsState(owner)
     return state
 end
 
+-- A caller that opens settings on a named tab (Shift-click to Visibility,
+-- the mover menu's Open Settings) records it as that object's tab, so the
+-- settings host's tab memory lands there instead of the last tab used.
+function ST._RememberSettingsTab(owner, tab)
+    if owner then ST._GetPanelSettingsState(owner).panelTab = tab end
+end
+
 function ST._GetSettingsPreviewTarget(target)
     local meta = getmetatable(target)
     return meta and meta._settingsPreviewTarget

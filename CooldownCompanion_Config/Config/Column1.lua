@@ -415,6 +415,7 @@ local function OpenContainerLoadConditions(containerId)
     if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
     SelectConfigContainer(containerId)
     CS.selectedContainerTab = "loadconditions"
+    ST._RememberSettingsTab(CooldownCompanion.db.profile.groupContainers[containerId], "loadconditions")
     CooldownCompanion:RefreshConfigPanel()
 end
 
@@ -652,7 +653,9 @@ local function ShowPanelContextMenu(panelId, containerId)
             local ownClass = ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId)
             local holderId = CooldownCompanion:GetExternalAnchorPanelId()
             local isHolder = holderId ~= nil and holderId == tonumber(panelId)
-            if ownClass or isHolder then
+            local cursorAnchored = CooldownCompanion.IsGroupCursorAnchored
+                and CooldownCompanion:IsGroupCursorAnchored(panel)
+            if ownClass or (isHolder and not cursorAnchored) then
                 UIDropDownMenu_AddSeparator(level)
             end
             if ownClass then
@@ -674,8 +677,7 @@ local function ShowPanelContextMenu(panelId, containerId)
             -- marked panel per spec. A cursor-anchored panel cannot provide
             -- a stable position for other addons. Another class's panel only
             -- offers to clear a mark it already holds.
-            if (ownClass or isHolder)
-                and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+            if (ownClass or isHolder) and not cursorAnchored then
                 local holder = holderId and db.groups[holderId] or nil
                 local holderName = holder and (holder.name or ("Panel " .. tostring(holderId))) or "none"
                 info = UIDropDownMenu_CreateInfo()
@@ -2598,6 +2600,7 @@ local function RefreshColumn1(preserveDrag)
                             SelectConfigPanel(panelId, { containerId = containerId })
                             CS.selectedTab = "loadconditions"
                             CS.panelSettingsTab = "loadconditions"
+                            ST._RememberSettingsTab(db.groups[panelId], "loadconditions")
                             -- A deliberate destination, so it outranks a
                             -- display mode's own default landing tab.
                             CooldownCompanion:RefreshConfigPanel()

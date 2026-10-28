@@ -3370,7 +3370,7 @@ if ST._DefineSettingRoute then
         combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" } },
         outOfCombat = { label = "Out of Combat", aliases = { "hide out of combat", "show out of combat" } },
         regularMount = { label = "Regular Mount", aliases = { "hide while mounted", "show while mounted" } },
-        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "hide while dragonriding" } },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "show while skyriding", "hide while dragonriding" } },
         travelForm = {
             label = "Include Druid Travel Form (applies to both)",
             aliases = { "travel form" },
