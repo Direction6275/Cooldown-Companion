@@ -1285,7 +1285,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             info.notCheckable = true
             info.func = function()
                 CloseDropDownMenus()
-                ShowPopupAboveConfig("CDC_DELETE_GROUP", container.name, { containerId = containerId })
+                ST._ShowDeleteGroupPopup(containerId)
             end
             UIDropDownMenu_AddButton(info, level)
         elseif menuList == "ADD_PANEL" then

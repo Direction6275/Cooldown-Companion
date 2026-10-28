@@ -1061,7 +1061,7 @@ local function ShowEntryContextMenu(panelId, index, buttonData)
                     and ST._GetConfigEntryDisplayName(entryData))
                     or entryData.name
                     or "this entry"
-                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { groupId = sourceGroupId, buttonIndex = sourceIndex, snapshot = snapshot })
+                ShowPopupAboveConfig("CDC_DELETE_BUTTON", name, { snapshot = snapshot })
             end
             UIDropDownMenu_AddButton(deleteInfo, level)
         elseif menuList == "COPY_CUSTOMIZATION" then

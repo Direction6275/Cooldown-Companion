@@ -39,6 +39,31 @@ local function ProfileNameExists(name)
     return false
 end
 
+-- Profile names are trimmed where they are made; a blank name is refused.
+local function TrimProfileName(text)
+    return text and strtrim(text) or ""
+end
+
+-- Profiles in A-Z order, ignoring case: the profile bar lists them this way
+-- and Delete lands on the first one left.
+local function GetSortedProfiles()
+    local profiles = CooldownCompanion.db:GetProfiles()
+    table.sort(profiles, function(a, b)
+        local lowerA, lowerB = a:lower(), b:lower()
+        if lowerA ~= lowerB then return lowerA < lowerB end
+        return a < b
+    end)
+    return profiles
+end
+ST._GetSortedProfiles = GetSortedProfiles
+
+-- Rename boxes open holding the current name, selected, like Save Template.
+local function PrefillEditBox(popup, text)
+    popup.EditBox:SetText(text or "")
+    popup.EditBox:SetFocus()
+    popup.EditBox:HighlightText()
+end
+
 local function RejectUnsupportedImportPayload(data, dataLabel)
     if CooldownCompanion.IsUnsupportedImportPayload and CooldownCompanion:IsUnsupportedImportPayload(data) then
         CooldownCompanion:NotifyLegacySupportCutoff(dataLabel)
@@ -316,7 +341,7 @@ end
 ST._ShowResourceBarConflictChooser = ShowResourceBarConflictChooser
 
 StaticPopupDialogs["CDC_DELETE_GROUP"] = {
-    text = "Are you sure you want to delete group '%s'?",
+    text = "%s",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -338,8 +363,26 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     preferredIndex = 3,
 }
 
+-- Deleting a Group deletes every panel in it, so the prompt says how many.
+function ST._ShowDeleteGroupPopup(containerId)
+    local db = CooldownCompanion.db.profile
+    local container = db.groupContainers[containerId]
+    if not container then return end
+    local panelCount = 0
+    for _, group in pairs(db.groups) do
+        if group.parentContainerId == containerId then
+            panelCount = panelCount + 1
+        end
+    end
+    local text = "Delete group '" .. (container.name or "Group") .. "'"
+    if panelCount > 0 then
+        text = text .. " and its " .. panelCount .. (panelCount == 1 and " panel" or " panels")
+    end
+    ST._ShowPopupAboveConfig("CDC_DELETE_GROUP", text .. "?", { containerId = containerId })
+end
+
 StaticPopupDialogs["CDC_DELETE_PANEL"] = {
-    text = "Are you sure you want to delete panel '%s'?",
+    text = "Delete panel '%s'?",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -469,8 +512,11 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
         StaticPopupDialogs["CDC_RENAME_GROUP"].OnAccept(parent, parent.data)
         parent:Hide()
     end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
+    OnShow = function(self, data)
+        local profile = CooldownCompanion.db.profile
+        local target = data and (data.containerId and profile.groupContainers[data.containerId]
+            or data.groupId and profile.groups[data.groupId])
+        PrefillEditBox(self, target and target.name)
     end,
     timeout = 0,
     whileDead = true,
@@ -553,18 +599,12 @@ StaticPopupDialogs["CDC_DELETE_PANEL_TEMPLATE"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
-    text = "Are you sure you want to delete '%s'?",
+    text = "Delete '%s'?",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
         if data and data.snapshot then
             ST._DeleteEntrySelection(data.snapshot)
-            return
-        end
-        if data and data.groupId and data.buttonIndex then
-            CooldownCompanion:RemoveButtonFromGroup(data.groupId, data.buttonIndex)
-            ResetConfigSelection(false)
-            CooldownCompanion:RefreshConfigPanel()
         end
     end,
     timeout = 0,
@@ -615,20 +655,15 @@ StaticPopupDialogs["CDC_DELETE_PROFILE"] = {
     OnAccept = function(self, data)
         if data and data.profileName then
             local db = CooldownCompanion.db
-            if data.isOnly then
-                db:ResetProfile()
-            else
-                local allProfiles = db:GetProfiles()
-                local nextProfile = nil
-                for _, name in ipairs(allProfiles) do
-                    if name ~= data.profileName then
-                        nextProfile = name
-                        break
-                    end
+            local nextProfile = nil
+            for _, name in ipairs(GetSortedProfiles()) do
+                if name ~= data.profileName then
+                    nextProfile = name
+                    break
                 end
-                db:SetProfile(nextProfile)
-                db:DeleteProfile(data.profileName, true)
             end
+            db:SetProfile(nextProfile)
+            db:DeleteProfile(data.profileName, true)
             -- The AceDB profile callbacks (ConfigLoader) reset config and refresh.
         end
     end,
@@ -644,8 +679,8 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self)
-        local text = self.EditBox:GetText()
-        if text and text ~= "" then
+        local text = TrimProfileName(self.EditBox:GetText())
+        if text ~= "" then
             if ProfileNameExists(text) then
                 CooldownCompanion:Print("A profile named '" .. text .. "' already exists.")
                 return
@@ -675,8 +710,8 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data and data.oldName then
+        local newName = TrimProfileName(self.EditBox:GetText())
+        if newName ~= "" and data and data.oldName then
             if newName ~= data.oldName and ProfileNameExists(newName) then
                 CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")
                 return
@@ -704,8 +739,8 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
         StaticPopupDialogs["CDC_RENAME_PROFILE"].OnAccept(parent, parent.data)
         parent:Hide()
     end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
+    OnShow = function(self, data)
+        PrefillEditBox(self, data and data.oldName)
     end,
     timeout = 0,
     whileDead = true,
@@ -719,8 +754,8 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data and data.source then
+        local newName = TrimProfileName(self.EditBox:GetText())
+        if newName ~= "" and data and data.source then
             if ProfileNameExists(newName) then
                 CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")
                 return
@@ -752,8 +787,8 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
         StaticPopupDialogs["CDC_DUPLICATE_PROFILE"].OnAccept(parent, parent.data)
         parent:Hide()
     end,
-    OnShow = function(self)
-        self.EditBox:SetFocus()
+    OnShow = function(self, data)
+        PrefillEditBox(self, data and data.source)
     end,
     timeout = 0,
     whileDead = true,
@@ -818,8 +853,8 @@ StaticPopupDialogs["CDC_UNGLOBAL_GROUPS"] = {
 -- groupName names the one Group being moved; nil words it for a selection.
 function ST._ShowUnglobalGroupsPopup(groupName, callback)
     local text = groupName
-        and ("This will remove foreign eligibility filters and move '" .. groupName .. "' into your current class. Continue?")
-        or "Some selected groups have foreign eligibility filters. Moving to your current class will remove those filters. Continue?"
+        and ("This removes other classes' Who Can Use This limits and moves '" .. groupName .. "' into your current class. Continue?")
+        or "Some selected groups have other classes' Who Can Use This limits. Moving them to your current class removes those limits. Continue?"
     ST._ShowPopupAboveConfig("CDC_UNGLOBAL_GROUPS", text, { callback = callback })
 end
 
