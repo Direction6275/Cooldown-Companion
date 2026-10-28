@@ -447,6 +447,15 @@ local function ResolveChargeState(button, buttonData, usesChargeBehavior)
             and button._resolvedItemQuantityKind == "stacks" then
         return CHARGE_STATE_FULL
     end
+    -- A multi-use item with uses left is "on cooldown" while its own timer
+    -- runs, the same timer that greys its icon, and ready once it ends; its
+    -- uses mostly come back by refilling, not by recharging one at a time.
+    -- Zero uses still classify below.
+    if readableCharges ~= nil
+            and readableCharges > 0
+            and buttonData.type == "item" then
+        return button._chargeRecharging == true and CHARGE_STATE_MISSING or CHARGE_STATE_FULL
+    end
 
     return ClassifyChargeState(
         readableCharges,
