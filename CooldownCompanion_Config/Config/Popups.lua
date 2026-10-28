@@ -417,6 +417,23 @@ StaticPopupDialogs["CDC_REVERT_ENTRY_CUSTOMIZATIONS"] = {
     preferredIndex = 3,
 }
 
+-- The same Revert All for a Resources or Cast Bar customization list. The
+-- callback re-checks its module context before reverting anything.
+StaticPopupDialogs["CDC_REVERT_MODULE_CUSTOMIZATIONS"] = {
+    text = "Revert every customization on '%s'?",
+    button1 = "Revert All",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and data.callback then
+            data.callback()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     text = "Rename '%s' to:",
     button1 = "Rename",

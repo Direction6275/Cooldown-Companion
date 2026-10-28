@@ -331,23 +331,31 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
     local headingFrame = heading.frame
     local revertAll = EnsureScopeText(headingFrame, "_cdcCustomizationsRevertAll", true)
     SetScopeText(revertAll, "Revert All", SCOPE_CHROME_GOLD)
-    WireScopeTextHover(revertAll, "Revert every customization on this entry")
+    WireScopeTextHover(revertAll, moduleContext and "Revert every customization on this bar"
+        or "Revert every customization on this entry")
     revertAll:SetScript("OnClick", function()
+        -- Through the house raiser, not StaticPopup_Show: the config window
+        -- sits high enough to cover a stock dialog.
+        local showPopup = ST._ShowPopupAboveConfig
         if moduleContext then
-            if not moduleContext:IsCurrent() then return end
-            for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER) do
-                CooldownCompanion:RevertSection(buttonData, sectionId)
-            end
-            moduleContext:Refresh()
-            CooldownCompanion:RefreshConfigPanel()
+            if not (moduleContext:IsCurrent() and showPopup) then return end
+            -- The context checks itself again on Accept: a popup outlives
+            -- the selection that opened it.
+            showPopup("CDC_REVERT_MODULE_CUSTOMIZATIONS", buttonData.name or "this bar", {
+                callback = function()
+                    if not moduleContext:IsCurrent() then return end
+                    for _, sectionId in ipairs(ST.OVERRIDE_SECTION_ORDER) do
+                        CooldownCompanion:RevertSection(buttonData, sectionId)
+                    end
+                    moduleContext:Refresh()
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            })
             return
         end
         local entryName = ST._GetConfigEntryDisplayName
             and ST._GetConfigEntryDisplayName(buttonData)
             or buttonData.name
-        -- Through the house raiser, not StaticPopup_Show: the config window
-        -- sits high enough to cover a stock dialog.
-        local showPopup = ST._ShowPopupAboveConfig
         if showPopup then
             showPopup("CDC_REVERT_ENTRY_CUSTOMIZATIONS", entryName or "this entry",
                 { groupId = groupId, buttonIndex = buttonIndex, target = editTarget, entry = buttonData })
