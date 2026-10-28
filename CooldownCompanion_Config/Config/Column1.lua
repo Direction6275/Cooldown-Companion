@@ -520,13 +520,23 @@ local function BuildFlatContainerOrder(db, excludedContainerId, panelId)
     return flattened
 end
 
+-- Every lock change from the config waits for combat to end, as the panel
+-- menu always has: movers can't be shown or hidden mid-combat.
+local function RefuseLockChangeInCombat()
+    if InCombatLockdown() or CooldownCompanion._combatForcedLock then
+        CooldownCompanion:Print("Cannot lock or unlock during combat.")
+        return true
+    end
+    return false
+end
+ST._RefuseLockChangeInCombat = RefuseLockChangeInCombat
+
 local function TogglePanelAnchorLock(panelId)
     local panel = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[panelId]
     if not panel then
         return false
     end
-    if InCombatLockdown() or CooldownCompanion._combatForcedLock then
-        CooldownCompanion:Print("Cannot change anchor lock during combat.")
+    if RefuseLockChangeInCombat() then
         return false
     end
 
@@ -552,6 +562,7 @@ local function ToggleContainerLock(containerId)
     local containers = CooldownCompanion.db.profile.groupContainers
     local container = containers and containers[containerId]
     if not container then return false end
+    if RefuseLockChangeInCombat() then return false end
 
     local isLocked = container.locked ~= false
     CooldownCompanion:SetContainerLocked(containerId, not isLocked)
@@ -636,27 +647,35 @@ local function ShowPanelContextMenu(panelId, containerId)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            UIDropDownMenu_AddSeparator(level)
-
-            info = UIDropDownMenu_CreateInfo()
-            local anchorUnlocked = panel.locked == false
-            if not anchorUnlocked and CooldownCompanion:IsGroupCursorAnchored(panel) then
-                anchorUnlocked = CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(panelId)
+            -- Another class's panel can't be moved or anchored to from here:
+            -- its frame never loads on this character.
+            local ownClass = ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId)
+            local holderId = CooldownCompanion:GetExternalAnchorPanelId()
+            local isHolder = holderId ~= nil and holderId == tonumber(panelId)
+            if ownClass or isHolder then
+                UIDropDownMenu_AddSeparator(level)
             end
-            info.text = anchorUnlocked and "Lock Anchor" or "Unlock Anchor"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                TogglePanelAnchorLock(panelId)
+            if ownClass then
+                info = UIDropDownMenu_CreateInfo()
+                local anchorUnlocked = panel.locked == false
+                if not anchorUnlocked and CooldownCompanion:IsGroupCursorAnchored(panel) then
+                    anchorUnlocked = CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(panelId)
+                end
+                info.text = anchorUnlocked and "Lock Anchor" or "Unlock Anchor"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    TogglePanelAnchorLock(panelId)
+                end
+                UIDropDownMenu_AddButton(info, level)
             end
-            UIDropDownMenu_AddButton(info, level)
 
             -- Stable external anchor (Core/ExternalAnchorFrame.lua): one
             -- marked panel per spec. A cursor-anchored panel cannot provide
-            -- a stable position for other addons.
-            if not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
-                local holderId = CooldownCompanion:GetExternalAnchorPanelId()
-                local isHolder = holderId ~= nil and holderId == tonumber(panelId)
+            -- a stable position for other addons. Another class's panel only
+            -- offers to clear a mark it already holds.
+            if (ownClass or isHolder)
+                and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
                 local holder = holderId and db.groups[holderId] or nil
                 local holderName = holder and (holder.name or ("Panel " .. tostring(holderId))) or "none"
                 info = UIDropDownMenu_CreateInfo()
@@ -1198,16 +1217,18 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            UIDropDownMenu_AddSeparator(level)
+            if IsCreateTargetContainer(containerId) then
+                UIDropDownMenu_AddSeparator(level)
 
-            info = UIDropDownMenu_CreateInfo()
-            info.text = container.locked ~= false and "Unlock" or "Lock"
-            info.notCheckable = true
-            info.func = function()
-                CloseDropDownMenus()
-                ToggleContainerLock(containerId)
+                info = UIDropDownMenu_CreateInfo()
+                info.text = container.locked ~= false and "Unlock" or "Lock"
+                info.notCheckable = true
+                info.func = function()
+                    CloseDropDownMenus()
+                    ToggleContainerLock(containerId)
+                end
+                UIDropDownMenu_AddButton(info, level)
             end
-            UIDropDownMenu_AddButton(info, level)
 
             UIDropDownMenu_AddSeparator(level)
 
@@ -2363,7 +2384,7 @@ local function RefreshColumn1(preserveDrag)
                 end
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, containerId, container)
-            elseif button == "MiddleButton" and not browsePanels then
+            elseif button == "MiddleButton" and IsCreateTargetContainer(containerId) then
                 ToggleContainerLock(containerId)
             end
         end)
@@ -2589,7 +2610,7 @@ local function RefreshColumn1(preserveDrag)
                         end
                     elseif button == "RightButton" and ST._ShowPanelContextMenu then
                         ST._ShowPanelContextMenu(panelId, containerId)
-                    elseif button == "MiddleButton" and not browsePanels then
+                    elseif button == "MiddleButton" and IsCreateTargetContainer(containerId) then
                         TogglePanelAnchorLock(panelId)
                     end
                 end)

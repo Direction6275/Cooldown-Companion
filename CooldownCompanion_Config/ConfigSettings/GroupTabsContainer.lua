@@ -68,7 +68,10 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     }):Settings({
         enabled = { label = "Enabled", aliases = { "show group" } },
-        locked = { label = "Locked", aliases = { "unlock group", "move group" } },
+        locked = { label = "Locked", aliases = { "unlock group", "move group" },
+            applies = function(context)
+                return context and context.containerId ~= nil and ST._IsCreateTargetContainer(context.containerId) or false
+            end },
     })
 
     CONTAINER_FINDER.layout = ST._DefineSettingRoute({
@@ -174,11 +177,18 @@ local function BuildContainerGeneralTab(scroll, containerId)
         end,
     })
 
+    -- Another class's Group never loads here, so it has nothing to unlock.
+    if ST._IsCreateTargetContainer(containerId) then
     AddCheckboxRow(masterRight, {
         label = "Locked",
         setting = CONTAINER_FINDER.general and CONTAINER_FINDER.general.locked,
         value = container.locked ~= false,
         onChange = function(value)
+            -- Refused in combat; the rebuild puts the box back.
+            if ST._RefuseLockChangeInCombat() then
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
             CooldownCompanion:SetContainerLocked(containerId, value)
             CooldownCompanion:RefreshConfigPanel()
             if not value and ST.CollapseConfigForUnlock then
@@ -188,6 +198,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             end
         end,
     })
+    end
 
     -- ================================================================
     -- Layout

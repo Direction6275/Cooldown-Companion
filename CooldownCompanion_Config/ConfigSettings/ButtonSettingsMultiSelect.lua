@@ -194,9 +194,13 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                if ST._RefuseLockChangeInCombat() then return end
                 local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, containerId in ipairs(multiGroupIds) do
-                    CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
+                    -- Another class's Group never loads here; leave its lock.
+                    if ST._IsCreateTargetContainer(containerId) then
+                        CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
+                    end
                 end
                 CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
@@ -310,10 +314,11 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                if ST._RefuseLockChangeInCombat() then return end
                 local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, pid in ipairs(multiPanelIds) do
                     local panel = db.groups[pid]
-                    if panel
+                    if panel and ST._IsCreateTargetContainer(panel.parentContainerId)
                         and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
                         CooldownCompanion:SetPanelLocked(pid, anyUnlocked)
                     end
