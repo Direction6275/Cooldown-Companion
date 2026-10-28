@@ -144,10 +144,12 @@ local panelAlphaSettings = ST._DefineSettingRoute({
         applies = PanelAlphaApplies(function(state) return state.anchorSource ~= nil end),
     },
     baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" } },
-    combat = { label = "In Combat", aliases = { "combat alpha" } },
-    outOfCombat = { label = "Out of Combat", aliases = { "ooc alpha" } },
-    regularMount = { label = "Regular Mount", aliases = { "mounted alpha" } },
-    skyriding = { label = "Skyriding", aliases = { "dragonriding alpha" } },
+    -- The hide and show words find these three-way rows, whose Fully Hidden
+    -- and Fully Visible states are reached by clicking through them.
+    combat = { label = "In Combat", aliases = { "combat alpha", "hide in combat", "show in combat" } },
+    outOfCombat = { label = "Out of Combat", aliases = { "ooc alpha", "hide out of combat", "show out of combat" } },
+    regularMount = { label = "Regular Mount", aliases = { "mounted alpha", "hide while mounted", "show while mounted" } },
+    skyriding = { label = "Skyriding", aliases = { "dragonriding alpha", "hide while skyriding", "hide while dragonriding" } },
     travelForm = {
         label = "Include Druid Travel Form (applies to both)",
         aliases = { "travel form" },

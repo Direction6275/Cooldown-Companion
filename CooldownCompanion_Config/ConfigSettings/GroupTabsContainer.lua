@@ -102,10 +102,14 @@ if ST._DefineSettingRoute then
     CONTAINER_FINDER.alpha = alphaRoute:Settings({
         enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" } },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" }, applies = ContainerFinderAlphaEnabled },
-        combat = { label = "In Combat", applies = ContainerFinderAlphaEnabled },
-        outOfCombat = { label = "Out of Combat", applies = ContainerFinderAlphaEnabled },
-        regularMount = { label = "Regular Mount", applies = ContainerFinderAlphaEnabled },
-        skyriding = { label = "Skyriding", aliases = { "dragonriding" }, applies = ContainerFinderAlphaEnabled },
+        combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" },
+            applies = ContainerFinderAlphaEnabled },
+        outOfCombat = { label = "Out of Combat", aliases = { "hide out of combat", "show out of combat" },
+            applies = ContainerFinderAlphaEnabled },
+        regularMount = { label = "Regular Mount", aliases = { "hide while mounted", "show while mounted" },
+            applies = ContainerFinderAlphaEnabled },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "hide while dragonriding" },
+            applies = ContainerFinderAlphaEnabled },
         travelForm = {
             label = "Include Druid Travel Form (applies to both)",
             aliases = { "travel form" },
