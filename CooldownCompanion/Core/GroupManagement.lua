@@ -531,12 +531,16 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
     end
     if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
+        -- A bar-only panel shows Bar Spacing on Appearance, so there it travels
+        -- with Appearance, as Icon Spacing does; on any other panel the value
+        -- is the latent bar-grid spacing and stays with Arrangement.
+        local spacingScope = ST.GetPanelGeometryKind(targetGroup) == "bars" and "appearance" or "arrangement"
         local function CopyAttachedStyle(key)
             if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
             if key == "buttonSpacing" and not templateFields then
-                local arrangement = false
-                for _, scope in ipairs(scopes) do if scope == "arrangement" then arrangement = true end end
-                if not arrangement then return end
+                local carried = false
+                for _, scope in ipairs(scopes) do if scope == spacingScope then carried = true end end
+                if not carried then return end
             end
             targetGroup.attachedBarStyle = targetGroup.attachedBarStyle or {}
             local sourceStyle = templateFields and (source.attachedBarStyle or {})
