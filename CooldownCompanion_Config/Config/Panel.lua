@@ -503,6 +503,12 @@ local function BeginConfigRefresh()
     refreshGuard:Show()
 end
 
+-- Leaves a refresh that has built nothing yet, so another can take over.
+local function CancelConfigRefresh()
+    CS.configRefreshInProgress = false
+    refreshGuard:Hide()
+end
+
 local function FixConfigScroll(widget)
     if CS.configRefreshInProgress then
         pendingScrollFixes[widget] = true
@@ -2475,13 +2481,15 @@ end
 -- A selection change repaints the Navigator's highlight in place. A
 -- different panel (a context menu or the bar workspace can switch it) needs
 -- the Navigator rebuilt, and so do rows the in-place repaint finds stale.
--- With no panel selected there is no row to repaint, and a panel outside any
--- Group has no rows the repaint can reach.
+-- With no panel selected there is no row to repaint, a panel outside any
+-- Group has no rows the repaint can reach, and a Group drawing no rows
+-- (its section collapsed, or a Finder query it misses) has none to repaint.
 local function SelectionNeedsNavigatorRebuild()
     if CS.selectedGroup ~= CS.lastCol1SelectedGroup then return true end
     local panel = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-    return panel and panel.parentContainerId
-        and not ST._RefreshConfigEditNavigator(CS.selectedGroup) or false
+    if not (panel and panel.parentContainerId) then return false end
+    local repainted, unrendered = ST._RefreshConfigEditNavigator(CS.selectedGroup)
+    return not (repainted or unrendered)
 end
 
 local function RefreshConfigWorkspace(selectionOnly, edit)
@@ -2493,13 +2501,15 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
         and not ST._RefreshConfigEditNavigator(edit.panelId) then
         return CooldownCompanion:_configRefreshPanelImpl(edit)
     end
-    -- Asked before the workspace builds, so a rebuild builds it only once.
-    if selectionOnly and ST._RefreshConfigEditNavigator and SelectionNeedsNavigatorRebuild() then
-        return CooldownCompanion:_configRefreshPanelImpl()
-    end
     BeginConfigRefresh()
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
     ST._NormalizeIndicatorConfigSelection()
+    -- Asked once the normalizers have settled the selection and before the
+    -- workspace builds, so a rebuild builds it only once.
+    if selectionOnly and ST._RefreshConfigEditNavigator and SelectionNeedsNavigatorRebuild() then
+        CancelConfigRefresh()
+        return CooldownCompanion:_configRefreshPanelImpl()
+    end
     if ST._BeginNavSettingHighlightRefresh then
         ST._BeginNavSettingHighlightRefresh()
     end
@@ -2511,10 +2521,6 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
     FinishConfigRefresh()
-    -- The normalizers above can still move the selection to another panel.
-    if selectionOnly and CS.selectedGroup ~= CS.lastCol1SelectedGroup then
-        return CooldownCompanion:_configRefreshPanelImpl()
-    end
     if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()
     end

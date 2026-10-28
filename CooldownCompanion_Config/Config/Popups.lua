@@ -51,8 +51,8 @@ local function GetCopyProfileName(source)
     return name
 end
 
--- Profile names are trimmed where they are made; a blank name is refused.
-local function TrimProfileName(text)
+-- Names typed into a popup are trimmed; a blank one is refused.
+local function TrimEnteredName(text)
     return text and strtrim(text) or ""
 end
 
@@ -493,8 +493,8 @@ StaticPopupDialogs["CDC_RENAME_GROUP"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = self.EditBox:GetText()
-        if newName and newName ~= "" and data then
+        local newName = TrimEnteredName(self.EditBox:GetText())
+        if newName ~= "" and data then
             if data.containerId then
                 local container = CooldownCompanion.db.profile.groupContainers[data.containerId]
                 if container then
@@ -689,7 +689,7 @@ StaticPopupDialogs["CDC_NEW_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self)
-        local text = TrimProfileName(self.EditBox:GetText())
+        local text = TrimEnteredName(self.EditBox:GetText())
         if text ~= "" then
             if ProfileNameExists(text) then
                 CooldownCompanion:Print("A profile named '" .. text .. "' already exists.")
@@ -720,7 +720,7 @@ StaticPopupDialogs["CDC_RENAME_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = TrimProfileName(self.EditBox:GetText())
+        local newName = TrimEnteredName(self.EditBox:GetText())
         if newName ~= "" and data and data.oldName then
             if newName ~= data.oldName and ProfileNameExists(newName) then
                 CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")
@@ -764,7 +764,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
     button2 = "Cancel",
     hasEditBox = true,
     OnAccept = function(self, data)
-        local newName = TrimProfileName(self.EditBox:GetText())
+        local newName = TrimEnteredName(self.EditBox:GetText())
         if newName ~= "" and data and data.source then
             if ProfileNameExists(newName) then
                 CooldownCompanion:Print("A profile named '" .. newName .. "' already exists.")

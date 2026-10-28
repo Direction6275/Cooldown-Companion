@@ -322,6 +322,13 @@ function ST.GetPanelGeometryKind(group, kind)
     return bars and "bars" or icons and "icons" or "empty"
 end
 
+-- An ordinary panel whose bars form the body (its layout kind: the eligible
+-- entries, or every entry when none is eligible, are all bars), so they lay
+-- out as a grid from the shared bar style instead of sitting beside icons.
+function ST.IsBarOnlyPanel(group, kind)
+    return ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group, kind) == "bars"
+end
+
 function ST.PanelUsesAttachedBarLayout(group, kind)
     if not ST.PanelSupportsAttachedBars(group) then return false end
     kind = ST.GetPanelGeometryKind(group, kind)
@@ -395,7 +402,7 @@ end
 -- shared bar style without changing the saved panel type or the icon arrangement.
 -- Compact Mode is the panel's own: one setting for icons and bars alike.
 function ST.GetPanelLayoutGroup(group, forEditing, kind)
-    if not ST.PanelSupportsAttachedBars(group) or ST.GetPanelGeometryKind(group, kind) ~= "bars" then return group end
+    if not ST.IsBarOnlyPanel(group, kind) then return group end
     return setmetatable({
         _unifiedPanelOwner = group, displayMode = "bars", style = ST.GetAttachedBarStyle(group, forEditing),
     }, { __index = group })
@@ -409,7 +416,7 @@ end
 
 -- Movers on a bar-only panel edit its shared bar style's dimensions.
 function ST.GetPanelSizingGroup(group)
-    if ST.PanelSupportsAttachedBars(group) and ST.GetPanelGeometryKind(group) == "bars" then
+    if ST.IsBarOnlyPanel(group) then
         return ST.GetPanelBarStyleGroup(group)
     end
     return group

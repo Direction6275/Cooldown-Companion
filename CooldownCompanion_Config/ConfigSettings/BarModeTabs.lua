@@ -441,7 +441,7 @@ end
 -- Module contexts carry no _settingsOwner, so Resources and the Cast Bar don't.
 local function IsBarOnlyPanelContext(group)
     return group._settingsOwner ~= nil and group._attachedBarOwner ~= nil
-        and group._fittedBarLayout == false
+        and ST.IsBarOnlyPanel(group._settingsOwner)
 end
 
 local function BuildBarAppearanceTab(container, group, style)

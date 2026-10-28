@@ -534,7 +534,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         -- A bar-only panel shows Bar Spacing on Appearance, so there it travels
         -- with Appearance, as Icon Spacing does; on any other panel the value
         -- is the latent bar-grid spacing and stays with Arrangement.
-        local spacingScope = ST.GetPanelGeometryKind(targetGroup) == "bars" and "appearance" or "arrangement"
+        local spacingScope = ST.IsBarOnlyPanel(targetGroup) and "appearance" or "arrangement"
         local function CopyAttachedStyle(key)
             if key == "barSegmentCharges" then return end -- retired template default; entries own this choice
             if key == "buttonSpacing" and not templateFields then
@@ -1632,7 +1632,7 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, add
     local lineIsBars
     local perLine = tonumber(style.buttonsPerRow) or 12
     if ST.PanelSupportsAttachedBars(group) then
-        lineIsBars = ST.GetPanelGeometryKind(group) == "bars"
+        lineIsBars = ST.IsBarOnlyPanel(group)
         if lineIsBars then
             perLine = tonumber(ST.GetAttachedBarStyle(group).buttonsPerRow) or 12
         end

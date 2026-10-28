@@ -195,19 +195,23 @@ local function ApplyCol1Drop(state)
         local targetRow = dropTarget.targetRow
         local targetSection = targetRow.section or state.sourceSection
 
+        -- Every Group is checked before any moves: a confirm popup can land
+        -- after the selection changed, and a refusal part-way through would
+        -- leave the earlier Groups moved and nothing rebuilt.
         for cid in pairs(sourceContainerIds) do
             local container = db.groupContainers[cid]
-            if container then
-                local containerSection = GetContainerSection(container)
-                if not IsCol1OwnershipMoveAllowed(containerSection, targetSection) then
-                    return
-                end
-                if containerSection ~= targetSection then
-                    if not ApplyContainerSection(cid, container, targetSection) then
-                        return
-                    end
-                    scopeChanged = true
-                end
+            local containerSection = container and GetContainerSection(container)
+            if container and (not IsCol1OwnershipMoveAllowed(containerSection, targetSection)
+                or containerSection ~= targetSection
+                    and targetSection ~= "global" and targetSection ~= "char") then
+                return
+            end
+        end
+        for cid in pairs(sourceContainerIds) do
+            local container = db.groupContainers[cid]
+            if container and GetContainerSection(container) ~= targetSection then
+                ApplyContainerSection(cid, container, targetSection)
+                scopeChanged = true
             end
         end
 

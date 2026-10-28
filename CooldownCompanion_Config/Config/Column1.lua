@@ -3373,6 +3373,8 @@ end
 ------------------------------------------------------------------------
 -- Refresh the edited panel and its containing header without releasing rows.
 -- A load-bucket or binding change belongs to the structural Navigator owner.
+-- False when the rows are stale; a second true says instead that the Group
+-- draws no rows at all (a collapsed section, a Finder query it misses).
 function ST._RefreshConfigEditNavigator(panelId)
     local db = CooldownCompanion.db.profile
     local panel = db.groups[panelId]
@@ -3398,7 +3400,7 @@ function ST._RefreshConfigEditNavigator(panelId)
             if row.ownerProfile ~= db or row.owner ~= panel.buttons[row.id] then return false end
         end
     end
-    if not header then return false end
+    if not header then return false, true end
     local _, resourcePanelId = ST._GetBarWorkspacePlacement("resources")
     header.refreshAppearance(stats, inactive, resourcePanelId)
     for _, row in ipairs(rows) do
