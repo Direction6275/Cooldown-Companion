@@ -623,10 +623,11 @@ local function NoteButtonTimeState(button, now, floorFailOpen)
         forced = charge or HasPendingReadyGlowWindow(button, now)
     end
 
-    -- Combat ticker floor fail-open: hideWhileUnusable visibility is not covered
-    -- by the self-animating icon/bar path (the usability events only queue a
-    -- pass for Ready Glow Only While Usable icons; power marks demoted), so it
-    -- must force regardless of timeActive.
+    -- Combat ticker floor fail-open: hideWhileUnusable on an item-like entry or
+    -- the Rotation Assistant has no usability event to re-show it (spell
+    -- entries ride SPELL_UPDATE_USABLE / ACTION_USABLE_CHANGED, see
+    -- EventHandlers OnReadyGlowUsabilityChanged), so it must force regardless
+    -- of timeActive.
     local floorForce = false
     if not forced and floorFailOpen then
         floorForce = true
@@ -662,13 +663,14 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
     local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     -- Combat ticker floor fail-open gate ("hide-unusable" / nil; any truthy
-    -- value forces). hideWhileUnusable must keep the ticker walking whether the
-    -- button is shown or hidden (visibility re-show is walk-driven: the
-    -- SPELL_UPDATE_USABLE/ACTION_USABLE_CHANGED pass only runs for Ready Glow
-    -- Only While Usable icons, see EventHandlers OnReadyGlowUsabilityChanged):
-    -- hidden buttons early-return before NoteButtonTimeState, so
-    -- this is also applied in the visibility-hidden branch below. The string
-    -- doubles as the term name for the dev-gated forcing attribution.
+    -- value forces). An item-like or Rotation Assistant hideWhileUnusable entry
+    -- must keep the ticker walking whether the button is shown or hidden: no
+    -- usability event covers it, and hidden buttons early-return before
+    -- NoteButtonTimeState, so this is also applied in the visibility-hidden
+    -- branch below. A spell entry re-shows from the usability events
+    -- (EventHandlers OnReadyGlowUsabilityChanged) with the ~1 s safety walk as
+    -- the fallback (owner sign-off R5, 2026-10-28). The string doubles as the
+    -- term name for the dev-gated forcing attribution.
     -- Indicators do NOT force: every panel input is event-covered,
     -- self-animating, or in the owner-approved <=1s walk-cadence class, so
     -- panels ride dirty ticks + the safety walk like icon visuals (disposition
@@ -676,6 +678,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- force cost ~25 ms/s in combat and defeated the idle skip entirely).
     local floorFailOpen = (buttonData.hideWhileUnusable
             and not buttonData.isPassive and not buttonData.isPassiveCooldown
+            and (IsEntryItemLike(buttonData) or buttonData._rotationAssistantVirtual == true)
             and "hide-unusable")
         or nil
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then

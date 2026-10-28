@@ -51,19 +51,21 @@
         1. Mode-aware classifier (NoteButtonTimeState): an active cooldown or
            GCD swipe on an icon or bar button no longer forces a walk because
            its swipe, numbers, and iconFill self-animate. Charge recharge,
-           ready-glow windows, and hide-unusable fail-open state still force
-           walks. Indicator manual item timers/drains
+           ready-glow windows, and hide-unusable fail-open state on item-like
+           and Rotation Assistant entries still force walks. Indicator manual item timers/drains
            register at their readout writer via PinCooldownTicker, since their
            hidden source buttons bypass the ordinary classifier.
         2. Power-mark demotion: UNIT_POWER_FREQUENT does not mark dirty; the
            castability tint rides walk cadence (safety walk ~1s worst case).
            Coupled to the hide-unusable floorFailOpen term in
            CooldownUpdate.UpdateButtonCooldown: SPELL_UPDATE_USABLE and
-           ACTION_USABLE_CHANGED only queue a pass when a shown panel has a
-           Ready Glow Only While Usable icon (EventHandlers
-           OnReadyGlowUsabilityChanged), so with power marks demoted,
-           hide-while-unusable re-show rides the walk. Lifting the demotion
-           and lifting that floor must be decided together.
+           ACTION_USABLE_CHANGED queue a pass when a shown panel has a Ready
+           Glow Only While Usable icon or a Hide While Unusable spell entry
+           (EventHandlers OnReadyGlowUsabilityChanged), so a spell entry's
+           re-show rides those events, with the safety walk as the fallback
+           if one is skipped (owner sign-off R5, 2026-10-28). Item-like and
+           Rotation Assistant entries keep the floor. Lifting the demotion
+           and narrowing that floor further must be decided together.
       Discrete cooldown start/end edges stay event-covered. The safety walk
       (TICKER_MAX_CONSECUTIVE_SKIPS) is load-bearing in combat.
     - Broadcast demotion (F1 3a) may downgrade ACTIONBAR/BAG cooldown events

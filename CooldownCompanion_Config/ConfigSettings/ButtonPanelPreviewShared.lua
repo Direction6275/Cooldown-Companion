@@ -331,6 +331,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     if buttonData.hideWhileUnusable
         and not buttonData.isPassive
         and not buttonData.isPassiveCooldown
+        and buttonData.addedAs ~= "aura"
         and unusable then
         activeReasons.unusable = true
     end

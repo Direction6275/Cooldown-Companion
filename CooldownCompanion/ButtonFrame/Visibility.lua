@@ -192,8 +192,10 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         hideReasons = bit_bor(hideReasons, HIDE_NOT_EQUIPPED)
     end
 
-    -- Check hideWhileUnusable
-    if buttonData.hideWhileUnusable and not buttonData.isPassive and not buttonData.isPassiveCooldown then
+    -- Check hideWhileUnusable. Castability is a spell or item question: an
+    -- Aura entry is present or not, so a saved flag on one stays inert.
+    if buttonData.hideWhileUnusable and not buttonData.isPassive and not buttonData.isPassiveCooldown
+        and buttonData.addedAs ~= "aura" then
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             if not C_Spell_IsSpellUsable(spellID) then
