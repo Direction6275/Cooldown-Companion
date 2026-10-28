@@ -99,11 +99,11 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     CONTAINER_FINDER.alpha = alphaRoute:Settings({
-        -- The hide and show words also land here: the rows they name exist
-        -- only once Group Alpha is on.
-        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency",
-            "hide in combat", "show in combat", "hide out of combat", "show out of combat",
-            "hide while mounted", "show while mounted", "hide while skyriding", "show while skyriding" } },
+        -- The hide and show words also land here, ranked after the rows they
+        -- name: those rows exist only once Group Alpha is on.
+        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" },
+            weakAliases = { "hide in combat", "show in combat", "hide out of combat", "show out of combat",
+                "hide while mounted", "show while mounted", "hide while skyriding", "show while skyriding" } },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" }, applies = ContainerFinderAlphaEnabled },
         combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" },
             applies = ContainerFinderAlphaEnabled },

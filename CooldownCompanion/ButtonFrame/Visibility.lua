@@ -99,6 +99,12 @@ local function IsNoCooldownForVisibility(button)
     return button._baseNoCooldown == true
 end
 
+-- The one castability read for a spell entry. The evaluation below and the
+-- stale check after it must ask the same question with the same spell ID.
+local function IsSpellEntryUnusable(button, buttonData)
+    return not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
+end
+
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
 -- Called inside UpdateButtonCooldown after cooldown fetch and aura tracking are complete.
 -- Fast path: if no toggles are enabled, zero overhead.
@@ -196,8 +202,7 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     -- Check hideWhileUnusable (passives and Aura entries never take it).
     if UsesCastabilityHide(buttonData) then
         if buttonData.type == "spell" then
-            local spellID = button._displaySpellId or buttonData.id
-            if not C_Spell_IsSpellUsable(spellID) then
+            if IsSpellEntryUnusable(button, buttonData) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         elseif IsEntryItemLike(buttonData) then
@@ -243,10 +248,10 @@ end
 -- Whether a spell entry's Hide While Unusable answer has changed since its
 -- last evaluation. The usability events fire on every power tick, so their
 -- pass (EventHandlers OnReadyGlowUsabilityChanged) walks only when this is
--- true, asking the same question with the same spell ID as the check above.
+-- true. It shares IsSpellEntryUnusable with the evaluation above.
 local function IsSpellUnusableHideStale(button, buttonData)
-    local unusable = not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
-    return unusable ~= (bit_band(button._visibilityReasonBits or 0, HIDE_UNUSABLE) ~= 0)
+    return IsSpellEntryUnusable(button, buttonData)
+        ~= (bit_band(button._visibilityReasonBits or 0, HIDE_UNUSABLE) ~= 0)
 end
 
 -- Update loss-of-control cooldown on a button.

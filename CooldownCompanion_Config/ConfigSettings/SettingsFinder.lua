@@ -46,9 +46,11 @@ local VALID_ROW_SCOPES = {
     detail = true,
 }
 
--- formerTabLabel: the name a tab had before a rename. The old word still
--- finds the tab's rows, scored after every label, alias and breadcrumb match
--- so it never outranks a row that actually names the word.
+-- Weak search terms: a route's formerTabLabel (the name a tab had before a
+-- rename) and a setting's weakAliases (words for rows that exist only once
+-- this setting is on). They still find the row, but score after every label,
+-- alias and breadcrumb match, so they never outrank a row that actually
+-- names the word.
 local ROUTE_FIELDS = {
     "scope", "tab", "tabLabel", "section", "sectionId", "sectionLabel",
     "collapseKeys", "collapseStore", "rowScope", "tabStateKey",
@@ -223,6 +225,7 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
         key = key,
         label = settingOptions.label,
         aliases = CopyTable(settingOptions.aliases),
+        weakAliases = CopyTable(settingOptions.weakAliases),
         _routeApplies = routeDefaults.applies,
         _settingApplies = settingOptions.applies,
     }
@@ -240,8 +243,10 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     descriptor._normalizedLabel = NormalizeSearchText(descriptor.label)
     descriptor._normalizedAliases = NormalizeAliases(descriptor.aliases)
     descriptor._normalizedBreadcrumb = NormalizeSearchText(descriptor.breadcrumb)
-    descriptor._normalizedFormerTabLabel = descriptor.formerTabLabel
-        and NormalizeSearchText(descriptor.formerTabLabel) or nil
+    descriptor._normalizedWeakTerms = NormalizeAliases(descriptor.weakAliases)
+    if descriptor.formerTabLabel then
+        AppendAlias(descriptor._normalizedWeakTerms, descriptor.formerTabLabel)
+    end
 
     descriptorsById[descriptor.id] = descriptor
     registry[#registry + 1] = descriptor
@@ -639,8 +644,9 @@ local function ScoreToken(descriptor, token)
     if StartsAtWord(breadcrumb, token) then return 80 end
     if breadcrumb:find(token, 1, true) then return 90 end
 
-    local former = descriptor._normalizedFormerTabLabel
-    if former and StartsAtWord(former, token) then return 95 end
+    for _, term in ipairs(descriptor._normalizedWeakTerms) do
+        if StartsAtWord(term, token) then return 95 end
+    end
     return nil
 end
 

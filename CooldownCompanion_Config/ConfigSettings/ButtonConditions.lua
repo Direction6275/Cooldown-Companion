@@ -1573,9 +1573,10 @@ local HasCastCountText = CooldownCompanion.HasCastCountText
 local function IsNeverUnusableButton(bd)
     if bd and bd.rotationAssistant then return false end
     if not bd or bd.type ~= "spell" then return false end
-    -- An Aura entry is present or not; castability never applies to it, the
-    -- rule Unusable Visual already follows (Tracking.lua).
-    if bd.addedAs == "aura" then return true end
+    -- Passives, passive cooldowns and Aura entries never take castability:
+    -- the rule Hide While Unusable acts by (Helpers.lua), and the one Unusable
+    -- Visual already follows for Aura entries (Tracking.lua).
+    if not CooldownCompanion.CanTakeCastabilityHide(bd) then return true end
     if bd.id == WHIRLING_DRAGON_PUNCH_SPELL_ID then return false end
     if HasCastCountText(bd) then return false end
     local costs = C_Spell.GetSpellPowerCost(bd.id)

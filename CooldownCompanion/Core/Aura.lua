@@ -615,8 +615,9 @@ local function IsExactStandaloneAuraIdentity(buttonData)
 end
 
 -- frameFree: skip the buff-viewer frame rung. The save path asks this way:
--- those frames exist only while the Cooldown Manager display is on, and a
--- saved list must not depend on a display setting (owner ruling R12 part 2).
+-- those frames exist only once a viewer has shown and then linger hidden
+-- (InferConfirmedAuraSpellIDString below), and a saved list must not depend on
+-- a display setting (owner ruling R12 part 2).
 local function BuildStandaloneOriginalAuraCandidateIDs(buttonData, frameFree)
     local candidateIDs = {}
     local orderedCandidateSet = {}
@@ -952,11 +953,13 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
 
     -- Every step from here is frame-free. This resolver PERSISTS its answer,
     -- and a saved ID outranks detection from then on, so it never reads the
-    -- Cooldown Manager's on-screen buff frames: those exist only while that
-    -- display is on, and the same spell would save different auras
-    -- depending on a display setting (owner ruling R12 part 2, 2026-10-28).
-    -- The live standalone and implicit-head chains keep the frame rung as a
-    -- bonus.
+    -- Cooldown Manager's on-screen buff frames. Those are built only once a
+    -- viewer has shown (display on, Edit Mode or the viewer settings), then
+    -- stay hidden with their last data after it hides (live
+    -- Blizzard_CooldownViewer: RefreshLayout runs from OnShow, OnHide releases
+    -- nothing), so the same spell would save different auras depending on a
+    -- display setting (owner ruling R12 part 2, 2026-10-28). The live
+    -- standalone and implicit-head chains keep the frame rung as a bonus.
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
     local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
     if linkedAppliedID and linkedAppliedID ~= buttonData.id then
@@ -1305,7 +1308,7 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
 
     -- Aura entries are never dynamic spell buttons: keep auraTracking on so
     -- they remain aura-only even when CDM is temporarily not ready.
-    if buttonData.addedAs == "aura" and buttonData.auraTracking ~= true then
+    if buttonData.auraTracking ~= true then
         buttonData.auraTracking = true
         changed = true
     end
