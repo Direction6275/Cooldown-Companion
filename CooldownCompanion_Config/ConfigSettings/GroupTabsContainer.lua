@@ -118,19 +118,6 @@ if ST._DefineSettingRoute then
         fadeOut = { label = "Fade Out Duration (seconds)", applies = ContainerFinderCustomFade },
     })
 
-    CONTAINER_FINDER.strata = ST._DefineSettingRoute({
-        idPrefix = "group.general.strata",
-        scope = "group",
-        tab = "general",
-        tabLabel = "General",
-        section = "strata",
-        sectionLabel = "Frame Strata",
-        collapseKeys = { "container_strata" },
-        rowScope = "primary",
-    }):Settings({
-        frameStrata = { label = "Container Frame Strata", aliases = { "layer" } },
-    })
-
     local whereRoute = ST._DefineSettingRoute({
         idPrefix = "group.visibility.where",
         scope = "group",
@@ -333,37 +320,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
             })
         end
     end -- if not alphaCollapsed
-
-    -- ================================================================
-    -- Frame Strata
-    -- ================================================================
-    local _, strataCollapsed = BuildCollapsibleSection(scroll, "Frame Strata", "container_strata", nil, nil, ROW_SECTION)
-
-    if not strataCollapsed then
-    -- One setting; the right column stays empty.
-    local strataLeft = BeginRowGrid(scroll)
-
-    AddDropdownRow(strataLeft, {
-        label = "Container Frame Strata",
-        setting = CONTAINER_FINDER.strata and CONTAINER_FINDER.strata.frameStrata,
-        list = {
-            BACKGROUND = "Background",
-            LOW = "Low",
-            MEDIUM = "Medium (Default)",
-            HIGH = "High",
-        },
-        order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" },
-        value = container.frameStrata or "MEDIUM",
-        onChange = function(value)
-            container.frameStrata = value
-            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-            if containerFrame then
-                containerFrame:SetFrameStrata(value)
-            end
-            RefreshPanels()
-        end,
-    })
-    end -- if not strataCollapsed
 end
 
 local function BuildContainerLoadConditionsTab(scroll, containerId)
