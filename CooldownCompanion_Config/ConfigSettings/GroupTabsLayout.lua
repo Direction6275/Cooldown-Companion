@@ -1161,10 +1161,15 @@ local function BuildLayoutTab(container)
     -- in Automatic mode; explicit module selections ignore this preference.
     if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
         and not CooldownCompanion:IsAuraPanel(group) then
+        -- Shows what Automatic actually does: a Group that opted out takes
+        -- its panels with it, and only the Group's own row brings them back.
+        local containerIncluded = CooldownCompanion:IsContainerAutoAnchorEligible(
+            CooldownCompanion:GetParentContainer(group))
         local anchorEligibleRow = AddCheckboxRow(anchorRight, {
             label = "Include in Auto-Anchoring",
             setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.autoAnchor,
-            value = group.anchorEligible ~= false,
+            value = containerIncluded and group.anchorEligible ~= false,
+            disabled = not containerIncluded,
             onChange = function(val)
                 if val then
                     group.anchorEligible = nil
@@ -1185,6 +1190,8 @@ local function BuildLayoutTab(container)
             {"They scan your groups in list order, then the panels inside each group, and attach to the first eligible icon panel that is currently shown.", 1, 1, 1, true},
             {" ", 1, 1, 1},
             {"Uncheck this to skip this panel in Automatic mode. Modules using Choose Panel can still attach here.", 1, 1, 1, true},
+            {" ", 1, 1, 1},
+            {"A group can exclude all of its panels in its own settings. Global groups start excluded.", 1, 1, 1, true},
         }, tabInfoButtons))
     end
 

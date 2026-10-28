@@ -595,9 +595,9 @@ local function IsGroupConfigAvailableForPreview(groupId, checkLoadConditions)
         return false
     end
 
-    local container = CooldownCompanion:GetParentContainer(group)
-    if container and container.isGlobal and not container.anchorEligible then return false end
-    if container and not container.isGlobal and container.anchorEligible == false then return false end
+    if not CooldownCompanion:IsContainerAutoAnchorEligible(CooldownCompanion:GetParentContainer(group)) then
+        return false
+    end
 
     return CooldownCompanion:IsGroupActive(groupId, {
         group = group,

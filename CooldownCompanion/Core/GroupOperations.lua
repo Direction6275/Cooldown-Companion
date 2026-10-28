@@ -180,6 +180,14 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
     end
 end
 
+-- Automatic anchoring's Group-level opt-in. Global Groups start opted out,
+-- character Groups opted in; the Group's General tab writes the exception.
+function CooldownCompanion:IsContainerAutoAnchorEligible(container)
+    if not container then return true end
+    if container.isGlobal then return container.anchorEligible == true end
+    return container.anchorEligible ~= false
+end
+
 function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options)
     local group = self.db.profile.groups[groupId]
     if not group then return false end
@@ -188,9 +196,7 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options
     if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
     if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
     if group.anchorEligible == false then return false end
-    local container = self:GetParentContainer(group)
-    if container and container.isGlobal and not container.anchorEligible then return false end
-    if container and not container.isGlobal and container.anchorEligible == false then return false end
+    if not self:IsContainerAutoAnchorEligible(self:GetParentContainer(group)) then return false end
     -- Automatic keeps a panel hidden by its unlock-toolbar eye as its pick,
     -- so the modules on it hide too instead of moving (ModuleAnchoring.lua).
     -- requireShown callers still pass it over: its frame is unloaded.
@@ -213,10 +219,8 @@ function CooldownCompanion:IsGroupAvailableForPanelAnchorTarget(groupId)
     if not group then return false end
     if not self:CanGroupBePanelAnchorTarget(groupId) then return false end
 
-    local container = self:GetParentContainer(group)
-    if container and container.isGlobal and not container.anchorEligible then return false end
-    if container and not container.isGlobal and container.anchorEligible == false then return false end
-
+    -- No auto-anchoring gate here: that opt-in is Automatic's, and a panel
+    -- picked by hand is the player's choice.
     if not self:IsGroupActive(groupId, {
         group = group,
         checkCharVisibility = true,
