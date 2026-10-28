@@ -64,6 +64,7 @@ end
 -- answer in this section (owner ruling 2026-08-28): it exists for auras
 -- whose spell data misclassifies, so no classifier read may outrank it.
 local GetAuraUnitOverride = ST.GetEntryAuraUnitOverride
+local GetAuraIDOverride = ST.GetEntryAuraIDOverride
 
 local function GetExplicitAuraCandidateUnit(buttonData)
     local unitOverride = GetAuraUnitOverride(buttonData)
@@ -77,8 +78,8 @@ local function GetExplicitAuraCandidateUnit(buttonData)
     -- An Aura ID Override is the entry's head, so its classification owns
     -- the polarity ahead of the list, the order the runtime resolver uses
     -- (ResolveExplicitAuraCandidateUnit).
-    local idOverride = tonumber(buttonData.auraIDOverride)
-    if idOverride and idOverride ~= 0 then
+    local idOverride = GetAuraIDOverride(buttonData)
+    if idOverride then
         local overrideUnit = ClassifyAuraSpellUnit(idOverride)
         if overrideUnit then
             return overrideUnit
@@ -711,7 +712,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         -- An ID override replaces the implicit head: it leads the line and
         -- the entry's own aura leaves the filter with the rest of the
         -- automatic machinery.
-        local hasIDOverride = tonumber(buttonData.auraIDOverride) ~= nil
+        local hasIDOverride = GetAuraIDOverride(buttonData) ~= nil
         if hasIDOverride then
             AppendTrackedAuraID(primaryAuraSpellID)
         end

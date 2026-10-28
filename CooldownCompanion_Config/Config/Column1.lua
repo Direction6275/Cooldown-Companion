@@ -1268,8 +1268,10 @@ local function ShowContainerContextMenu(db, containerId, container)
                 CloseDropDownMenus()
                 if container.isGlobal and GroupsHaveForeignSpecs({ container }, false) then
                     ShowUnglobalGroupsPopup(container.name, function()
-                        if CooldownCompanion.db.profile.groupContainers[containerId] then
-                            CooldownCompanion:ToggleGroupGlobal(containerId)
+                        -- A move, not a toggle: the Group may have changed
+                        -- scope while the prompt was up.
+                        if CooldownCompanion:SetContainerGlobalScope(containerId, false) then
+                            CooldownCompanion:RefreshAllGroups()
                             CooldownCompanion:RefreshConfigPanel()
                         end
                     end)

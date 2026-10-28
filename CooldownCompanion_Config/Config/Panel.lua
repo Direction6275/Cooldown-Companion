@@ -426,8 +426,8 @@ local function GetColumn3HeaderTitle(selection)
     elseif mode == "panel_actions" then
         return "Panel Actions"
     end
-    -- Nothing pinned (no selection yet): the workspace is still the Live
-    -- Preview. Browsing other classes uses the same workspace, and every
+    -- Every other workspace is the Live Preview, with or without a
+    -- selection. Browsing other classes uses the same workspace, and every
     -- caller skips titles while the talent picker owns the column.
     return "Live Preview"
 end
@@ -469,7 +469,8 @@ local function ApplyConfigColumnTitles(frame)
     -- Two labeled workspace areas: while a pinned preview is showing, the
     -- column title names the preview region and the editing surface in the
     -- Settings column carries its own "Editing:" header; without a preview
-    -- the title keeps naming the settings content.
+    -- a module or multi-select workspace keeps its own title and anything
+    -- else is still the Live Preview.
     local activeHost = frame.col3._cdcActiveWideHost
     if activeHost and activeHost:IsShown() then
         frame.col3:SetTitle("Live Preview")
@@ -2471,6 +2472,18 @@ end
 -- panel/entry settings edit. These operations retain the Navigator because
 -- neither its structure nor the selected panel changes.
 ------------------------------------------------------------------------
+-- A selection change repaints the Navigator's highlight in place. A
+-- different panel (a context menu or the bar workspace can switch it) needs
+-- the Navigator rebuilt, and so do rows the in-place repaint finds stale.
+-- With no panel selected there is no row to repaint, and a panel outside any
+-- Group has no rows the repaint can reach.
+local function SelectionNeedsNavigatorRebuild()
+    if CS.selectedGroup ~= CS.lastCol1SelectedGroup then return true end
+    local panel = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+    return panel and panel.parentContainerId
+        and not ST._RefreshConfigEditNavigator(CS.selectedGroup) or false
+end
+
 local function RefreshConfigWorkspace(selectionOnly, edit)
     if not (CS.configFrame and CS.configFrame.frame:IsShown()) then return end
     if CS.talentPickerMode then return end
@@ -2479,6 +2492,10 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     if edit and edit.refreshNavigator and ST._RefreshConfigEditNavigator
         and not ST._RefreshConfigEditNavigator(edit.panelId) then
         return CooldownCompanion:_configRefreshPanelImpl(edit)
+    end
+    -- Asked before the workspace builds, so a rebuild builds it only once.
+    if selectionOnly and ST._RefreshConfigEditNavigator and SelectionNeedsNavigatorRebuild() then
+        return CooldownCompanion:_configRefreshPanelImpl()
     end
     BeginConfigRefresh()
     if ST._NormalizeBarWorkspace then ST._NormalizeBarWorkspace() end
@@ -2494,18 +2511,9 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     ApplyConfigColumnTitles(CS.configFrame)
     RestoreScrollState(buttonSettingsScroll, savedButtonSettings)
     FinishConfigRefresh()
-    -- A selection change repaints the Navigator's highlight in place. A
-    -- different panel (a context menu or the bar workspace can switch it)
-    -- needs the Navigator rebuilt, and so do rows the in-place repaint finds
-    -- stale. With no panel selected there is no row to repaint, and a panel
-    -- outside any Group has no rows the repaint can reach.
-    if selectionOnly and ST._RefreshConfigEditNavigator then
-        local panel = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
-        if CS.selectedGroup ~= CS.lastCol1SelectedGroup
-            or (panel and panel.parentContainerId
-                and not ST._RefreshConfigEditNavigator(CS.selectedGroup)) then
-            return CooldownCompanion:_configRefreshPanelImpl()
-        end
+    -- The normalizers above can still move the selection to another panel.
+    if selectionOnly and CS.selectedGroup ~= CS.lastCol1SelectedGroup then
+        return CooldownCompanion:_configRefreshPanelImpl()
     end
     if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()

@@ -270,13 +270,9 @@ local function BuildContainerGeneralTab(scroll, containerId)
             setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.autoAnchor,
             value = CooldownCompanion:IsContainerAutoAnchorEligible(container),
             onChange = function(val)
-                if container.isGlobal then
-                    container.anchorEligible = val and true or nil
-                elseif val then
-                    container.anchorEligible = nil
-                else
-                    container.anchorEligible = false
-                end
+                -- Saved either way, so the choice survives a move into or
+                -- out of Global, where the unset default flips.
+                container.anchorEligible = val and true or false
                 CooldownCompanion:EvaluateBarsAndFramesRuntime("panel-attachment-choice")
                 CooldownCompanion:RefreshConfigPanel()
             end,

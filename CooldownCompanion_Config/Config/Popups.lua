@@ -39,6 +39,18 @@ local function ProfileNameExists(name)
     return false
 end
 
+-- A free name for a copy of a profile, worded like a duplicated Group or
+-- panel: "Main (Copy)", then "Main (Copy 2)" on.
+local function GetCopyProfileName(source)
+    local name = source .. " (Copy)"
+    local suffix = 2
+    while ProfileNameExists(name) do
+        name = source .. " (Copy " .. suffix .. ")"
+        suffix = suffix + 1
+    end
+    return name
+end
+
 -- Profile names are trimmed where they are made; a blank name is refused.
 local function TrimProfileName(text)
     return text and strtrim(text) or ""
@@ -57,7 +69,8 @@ local function GetSortedProfiles()
 end
 ST._GetSortedProfiles = GetSortedProfiles
 
--- Rename boxes open holding the current name, selected, like Save Template.
+-- Rename boxes open holding the current name, and Duplicate a free copy
+-- name, selected, like Save Template.
 local function PrefillEditBox(popup, text)
     popup.EditBox:SetText(text or "")
     popup.EditBox:SetFocus()
@@ -363,16 +376,19 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
     preferredIndex = 3,
 }
 
--- Deleting a Group deletes every panel in it, so the prompt says how many.
+-- Deleting a Group deletes every panel in it, so the prompts say how many:
+-- " and its 3 panels", " and their 1 panel", or nothing for none.
+local function PanelCountClause(panelCount, possessive)
+    if panelCount == 0 then return "" end
+    return " and " .. possessive .. " " .. panelCount .. (panelCount == 1 and " panel" or " panels")
+end
+
 function ST._ShowDeleteGroupPopup(containerId)
     local container = CooldownCompanion.db.profile.groupContainers[containerId]
     if not container then return end
-    local panelCount = #CooldownCompanion:GetPanels(containerId)
     local text = "Delete group '" .. (container.name or "Group") .. "'"
-    if panelCount > 0 then
-        text = text .. " and its " .. panelCount .. (panelCount == 1 and " panel" or " panels")
-    end
-    ST._ShowPopupAboveConfig("CDC_DELETE_GROUP", text .. "?", { containerId = containerId })
+        .. PanelCountClause(CooldownCompanion:GetPanelCount(containerId), "its") .. "?"
+    ST._ShowPopupAboveConfig("CDC_DELETE_GROUP", text, { containerId = containerId })
 end
 
 StaticPopupDialogs["CDC_DELETE_PANEL"] = {
@@ -782,7 +798,7 @@ StaticPopupDialogs["CDC_DUPLICATE_PROFILE"] = {
         parent:Hide()
     end,
     OnShow = function(self, data)
-        PrefillEditBox(self, data and data.source)
+        PrefillEditBox(self, data and data.source and GetCopyProfileName(data.source))
     end,
     timeout = 0,
     whileDead = true,
@@ -853,7 +869,7 @@ function ST._ShowUnglobalGroupsPopup(groupName, callback)
 end
 
 StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
-    text = "Delete %d selected groups?",
+    text = "%s",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -872,6 +888,17 @@ StaticPopupDialogs["CDC_DELETE_SELECTED_GROUPS"] = {
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+-- groupIds: the selected Groups, frozen for Accept.
+function ST._ShowDeleteSelectedGroupsPopup(groupIds)
+    local panelCount = 0
+    for _, gid in ipairs(groupIds) do
+        panelCount = panelCount + CooldownCompanion:GetPanelCount(gid)
+    end
+    local text = "Delete " .. #groupIds .. " selected groups"
+        .. PanelCountClause(panelCount, "their") .. "?"
+    ST._ShowPopupAboveConfig("CDC_DELETE_SELECTED_GROUPS", text, { groupIds = groupIds })
+end
 
 -- A profile change closes every open Cooldown Companion popup (all are named
 -- CDC_*, in this file and elsewhere). Popups capture Group, panel, entry and

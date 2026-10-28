@@ -181,7 +181,7 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
 end
 
 -- Automatic anchoring's Group-level opt-in. Global Groups start opted out,
--- character Groups opted in; the Group's General tab writes the exception.
+-- character Groups opted in; the Group's General tab saves the player's choice.
 function CooldownCompanion:IsContainerAutoAnchorEligible(container)
     if not container then return true end
     if container.isGlobal then return container.anchorEligible == true end

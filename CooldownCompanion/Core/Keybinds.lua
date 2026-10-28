@@ -367,7 +367,7 @@ end
 -- that Blizzard's frames don't show. Runs after the Blizzard pass and only
 -- fills items that pass left uncached, so it never moves an existing pick.
 -- Needs RebuildAddonSlotBindings first.
-function CooldownCompanion:CacheAddonBarItemSlots()
+local function CacheAddonBarItemSlots(cache)
     -- Lowest slot first, so an item on two bound addon slots keeps the same
     -- one across rebuilds instead of following hash order.
     local slots = {}
@@ -376,7 +376,7 @@ function CooldownCompanion:CacheAddonBarItemSlots()
     end
     table.sort(slots)
     for _, slot in ipairs(slots) do
-        CacheItemSlot(self._itemSlotCache, slot)
+        CacheItemSlot(cache, slot)
     end
 end
 
@@ -386,7 +386,7 @@ function CooldownCompanion:RebuildItemSlotCache()
     for slot in pairs(slotToButtonInfo) do
         CacheItemSlot(self._itemSlotCache, slot)
     end
-    self:CacheAddonBarItemSlots()
+    CacheAddonBarItemSlots(self._itemSlotCache)
 end
 
 -- Update item slot cache for a single changed slot.

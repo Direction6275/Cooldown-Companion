@@ -249,7 +249,7 @@ local function GetLayoutFinderState(context)
     -- Structural, not compactLayout state: the gear now builds with Compact
     -- Mode off too, opening its panel read-only behind the Turn On footer, so
     -- the rows inside stay findable. Only the centered-growth restriction
-    -- still hides the Growth Direction row itself.
+    -- still hides the Collapse Direction row itself.
     state.compactAdvanced = state.compact
     local style = group.style or {}
     state.compactGrowth = state.compactAdvanced
