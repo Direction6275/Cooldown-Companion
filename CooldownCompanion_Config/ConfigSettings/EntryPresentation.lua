@@ -30,10 +30,6 @@ local panelSettings = ST._DefineSettingRoute({
 }):Settings({
     spacing = { label = "Stack Spacing", aliases = { "Bar Spacing", "Attached Bar Spacing" }, collapseKeys = { "layout_attached" }, applies = AttachmentApplies },
     gap = { label = "Distance from Panel", aliases = { "Distance from icons", "Gap from anchor" }, collapseKeys = { "layout_attached" }, applies = AttachmentApplies },
-    gridSpacing = { label = "Grid Spacing", applies = function(context)
-        local owner = OrdinaryOwner(context)
-        return owner and context.group._attachedBarOwner and ST.GetPanelLayoutKind(owner) == "bars" or false
-    end },
 })
 
 local function FlushPresentationEditors()
@@ -89,20 +85,10 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
         local _, collapsed = ST._BuildCollapsibleSection(host,
             presentation == "icons" and "Icon Arrangement" or "Bar-only Arrangement",
             "layout_arrangement", nil, nil, { leftAligned = true })
+        -- A bar-only panel's spacing is Bar Spacing on Appearance, beside the
+        -- bar size (owner ruling 2026-08-22: size and spacing live there).
         if not collapsed then
             buildGrid(host, context.group, #(group.buttons or {}))
-            if presentation == "bars" then
-                ST._AddSliderRow(host, { setting = panelSettings.gridSpacing,
-                    value = context.writeStyle.buttonSpacing or ST.BUTTON_SPACING, min = -10, max = 100, step = 0.1,
-                    onChange = function(value)
-                        ST._PreviewScalarSetting(context.writeStyle, "buttonSpacing", value, ST._RefreshSelectedButtonsPreview)
-                    end,
-                    onRelease = function(value)
-                        context.writeStyle.buttonSpacing = value
-                        if context:IsCurrent() then Addon:UpdateGroupStyle(context.panelId) end
-                    end,
-                })
-            end
         end
     end
     local context = ST._CreatePanelSettingsContext(group, "bars")
@@ -118,7 +104,14 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                     { "Distance from the selected panel region to the first bar or block on each side.", 1, 1, 1, true } }
                     or { "Stack Spacing",
                         { "Space between attached bars, including Resources and the cast bar.", 1, 1, 1, true } },
+                -- Preview while dragging, save once on release, like every
+                -- other slider.
                 onChange = function(value)
+                    if not context:IsCurrent() then return end
+                    group.attachedBarLayout = group.attachedBarLayout or {}
+                    ST._PreviewScalarSetting(group.attachedBarLayout, key, value, ST._RefreshSelectedButtonsPreview)
+                end,
+                onRelease = function(value)
                     if not context:IsCurrent() then return end
                     group.attachedBarLayout = group.attachedBarLayout or {}
                     group.attachedBarLayout[key] = value
