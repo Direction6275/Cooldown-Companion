@@ -797,7 +797,7 @@ local function ShowPanelContextMenu(panelId, containerId)
             local scopes = copyMode
                 and CooldownCompanion:GetPanelCopyScopeList(copyMode) or {}
             local scopeLabels = {
-                appearance = "Appearance", indicators = "Indicators", visibility = "Visibility",
+                appearance = "Appearance", indicators = "Effects", visibility = "Visibility",
                 arrangement = "Arrangement", position = "Position",
             }
             local function AddScopeItem(scopeName, label)
@@ -807,7 +807,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 if scopeName == "appearance" then
                     info.tooltipText = "Copies visual styling, size, and spacing. Arrangement, position, visibility rules, and entries stay unchanged."
                 elseif scopeName == "indicators" then
-                    info.tooltipText = "Copies indicator effects, dimming, tooltips, and pings. Size, layout, visibility rules, and entries stay unchanged."
+                    info.tooltipText = "Copies effects, dimming, tooltips, and pings. Size, layout, visibility rules, and entries stay unchanged."
                 elseif scopeName == "visibility" then
                     info.tooltipText = "Visibility copies this panel's Where To Hide It rules and local Alpha settings. Eligibility and Alpha inheritance stay unchanged; inherited Group rules and Alpha still apply."
                 elseif scopeName == "arrangement" then
@@ -815,7 +815,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                 elseif scopeName == "position" then
                     info.tooltipText = "Copies anchor points and offsets relative to each destination's existing target. Anchor targets stay unchanged. Cursor panels copy only to cursor panels."
                 elseif scopeName == "all" then
-                    info.tooltipText = "Copies Appearance, Indicators, Visibility, and Arrangement for matching panel types."
+                    info.tooltipText = "Copies Appearance, Effects, Visibility, and Arrangement for matching panel types."
                         .. " Position, anchor targets, entries, eligibility, and Alpha inheritance stay unchanged."
                 end
                 if info.tooltipText then

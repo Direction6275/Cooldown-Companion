@@ -483,7 +483,7 @@ local CONTROLS = {
     },
     {
         id = "barActiveAura",
-        label = "Preview Active Aura Indicator",
+        label = "Preview Active Aura Effect",
         group = GROUP_AURAS,
         menuOrder = 10,
         modes = { bars = true },

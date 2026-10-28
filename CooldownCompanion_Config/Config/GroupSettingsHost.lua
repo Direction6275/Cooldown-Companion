@@ -469,8 +469,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
         if ST.IsIndicatorGroup(group) then
-            -- The panel tab order; the effects tab keeps its own name, since an
-            -- "Indicators" tab inside an Indicator would read as a list.
+            -- The panel tab order.
             tabs = {{value="layout",text="Layout"},{value="appearance",text="Appearance"},
                 {value="effects",text="Effects"},{value="loadconditions",text="Visibility"}}
         else
@@ -480,7 +479,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             end
             if not availableTabs or availableTabs.appearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
             if not availableTabs or availableTabs.effects then
-                tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
+                tabs[#tabs + 1] = { value = "effects", text = "Effects" }
             end
             tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
         end

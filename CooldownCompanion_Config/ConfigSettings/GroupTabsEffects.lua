@@ -880,7 +880,7 @@ local function BuildEffectsTab(container, settingsGroup)
         or CanGroupUseOverrideSection(group, "lossOfControl")
 
     if spellGlowsShown or spellTimersShown or spellStatesShown then
-    local _, spellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Indicators", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
+    local _, spellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Effects", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
 
     if not spellCollapsed then
 
@@ -1281,7 +1281,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- one an Aura Panel denies.
     local auraLeft, auraRight
     if groupHasAuraEntry then
-        local _, auraCollapsed = BuildCollapsibleSection(container, "Aura Indicators", EFFECTS_AURA_SECTION, nil, nil, ROW_SECTION)
+        local _, auraCollapsed = BuildCollapsibleSection(container, "Aura Effects", EFFECTS_AURA_SECTION, nil, nil, ROW_SECTION)
         if not auraCollapsed then
             -- LEFT the two looks the aura's PRESENCE gives the icon, RIGHT the
             -- look its ABSENCE does.
@@ -1635,7 +1635,7 @@ local function EffectsFinderRoute(prefix, section, sectionLabel, applies, advanc
         idPrefix = prefix,
         scope = EFFECTS_FINDER_SCOPE,
         tab = "effects",
-        tabLabel = "Indicators",
+        tabLabel = "Effects",
         section = section,
         sectionId = sectionId,
         sectionLabel = EFFECTS_FINDER_ADVANCED_SECTION_LABELS[advancedKey]
@@ -1650,7 +1650,7 @@ end
 if ST._DefineSettingRoute then
     local spell = EffectsFinderRoute(
         "panel.icons.effects.spell", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", EffectsFinderIcons)
+        "Cooldown / Spell Effects", EffectsFinderIcons)
     EFFECTS_FINDER.icons.spell = spell:Settings({
         proc = { label = "Show Proc Glow", applies = EffectsFinderIconsRow("procGlow") },
         ready = { label = "Show Ready Glow", applies = EffectsFinderIconsRow("readyGlow") },
@@ -1668,11 +1668,11 @@ if ST._DefineSettingRoute then
 
     local aura = EffectsFinderRoute(
         "panel.icons.effects.aura", EFFECTS_AURA_SECTION,
-        "Aura Indicators", function(context)
+        "Aura Effects", function(context)
             return EffectsFinderIcons(context) and EffectsFinderTracksAura(context)
         end)
     EFFECTS_FINDER.icons.aura = aura:Settings({
-        missingIndicator = { label = "Show Missing Aura Indicator", sectionId = "missingAuraIndicator",
+        missingIndicator = { label = "Show Missing Aura Effect", sectionId = "missingAuraIndicator",
             aliases = { "missing aura indicator", "missing aura glow", "missing marker" },
             applies = EffectsFinderIconsRow("missingAuraIndicator", true) },
         auraGlow = { label = "Show Aura Glow" },
@@ -1707,7 +1707,7 @@ if ST._DefineSettingRoute then
 
     local function DefineGlowAdvanced(prefix, sectionId, advancedKey, needsAura, options)
         local route = EffectsFinderRoute(prefix, needsAura and EFFECTS_AURA_SECTION or EFFECTS_SPELL_SECTION,
-            needsAura and "Aura Indicators" or "Cooldown / Spell Indicators",
+            needsAura and "Aura Effects" or "Cooldown / Spell Effects",
             EffectsFinderIconsAdvanced(sectionId, needsAura), advancedKey, sectionId)
         options.sectionId = sectionId
         return EffectsFinderDefineGlowSettings(route, options), route
@@ -1751,7 +1751,7 @@ if ST._DefineSettingRoute then
     -- through the glow-shaped DefineGlowAdvanced above.
     local pressFlashRoute = EffectsFinderRoute(
         "panel.icons.effects.pressFlash", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators",
+        "Cooldown / Spell Effects",
         EffectsFinderIconsAdvanced("cooldownPressFlash"),
         "cooldownPressFlash", "cooldownPressFlash")
     EFFECTS_FINDER.advanced.pressFlash = pressFlashRoute:Settings({
@@ -1761,7 +1761,7 @@ if ST._DefineSettingRoute then
     })
 
     EFFECTS_FINDER.advanced.missingIndicator = ST._DefineMissingAuraIndicatorSettings(EffectsFinderRoute(
-        "panel.icons.effects.missingIndicator", EFFECTS_AURA_SECTION, "Missing Aura Indicator",
+        "panel.icons.effects.missingIndicator", EFFECTS_AURA_SECTION, "Missing Aura Effect",
         EffectsFinderIconsAdvanced("missingAuraIndicator", true), "missingAuraIndicator", "missingAuraIndicator"), EffectsFinderEffectiveStyle)
 
     local auraGlow = DefineGlowAdvanced(
@@ -1806,7 +1806,7 @@ if ST._DefineSettingRoute then
 
     local assistedRoute = EffectsFinderRoute(
         "panel.icons.effects.assisted", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators",
+        "Cooldown / Spell Effects",
         EffectsFinderIconsAdvanced("assistedHighlight"),
         "assistedHighlight", "assistedHighlight")
     EFFECTS_FINDER.advanced.assisted = assistedRoute:Settings({
@@ -1855,7 +1855,7 @@ if ST._DefineSettingRoute then
     local iconFillStructural = EffectsFinderIconsAdvanced("iconFillTimer")
     local iconFillRoute = EffectsFinderRoute(
         "panel.icons.effects.iconFill", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators",
+        "Cooldown / Spell Effects",
         function(context)
             return iconFillStructural(context)
                 and context.group.masqueEnabled ~= true
@@ -1880,7 +1880,7 @@ if ST._DefineSettingRoute then
     end
     local cooldownSwipeRoute = EffectsFinderRoute(
         "panel.icons.effects.cooldownSwipe", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", CooldownSwipeAdvancedApplies,
+        "Cooldown / Spell Effects", CooldownSwipeAdvancedApplies,
         "cooldownSwipe", "cooldownSwipe")
     EFFECTS_FINDER.advanced.cooldownSwipe = cooldownSwipeRoute:Settings({
         reverse = { label = "Reverse Swipe" },
@@ -1897,7 +1897,7 @@ if ST._DefineSettingRoute then
 
     local auraSwipeRoute = EffectsFinderRoute(
         "panel.icons.effects.auraSwipe", EFFECTS_AURA_SECTION,
-        "Aura Indicators",
+        "Aura Effects",
         EffectsFinderIconsAdvanced("auraDurationSwipe", true),
         "auraDurationSwipe", "auraDurationSwipe")
     EFFECTS_FINDER.advanced.auraSwipe = auraSwipeRoute:Settings({
@@ -1916,7 +1916,7 @@ if ST._DefineSettingRoute then
 
     local unusableRoute = EffectsFinderRoute(
         "panel.icons.effects.unusable", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators",
+        "Cooldown / Spell Effects",
         EffectsFinderIconsAdvanced("unusableDimming"),
         "unusableVisual", "unusableDimming")
     EFFECTS_FINDER.advanced.unusable = unusableRoute:Settings({
@@ -1936,7 +1936,7 @@ if ST._DefineSettingRoute then
     local markerStructural = EffectsFinderIconsAdvanced("pandemic", true)
     local markerRoute = EffectsFinderRoute(
         "panel.icons.effects.pandemicMarker", EFFECTS_AURA_SECTION,
-        "Aura Indicators",
+        "Aura Effects",
         function(context)
             if not markerStructural(context) then return false end
             local style = EffectsFinderEffectiveStyle(context)

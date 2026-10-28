@@ -25,7 +25,7 @@ local TAB_LABELS = {
     settings = "Settings",
     appearance = "Appearance",
     layout = "Layout",
-    effects = "Indicators",
+    effects = "Effects",
     loadconditions = "Visibility",
     health = "Health",
 }

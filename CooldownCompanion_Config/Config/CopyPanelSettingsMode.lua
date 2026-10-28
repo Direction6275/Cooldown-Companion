@@ -26,7 +26,7 @@ local COPY_PANEL_BANNER_HEIGHT = 20
 
 local SCOPE_LABELS = {
     appearance = "Appearance",
-    indicators = "Indicators",
+    indicators = "Effects",
     visibility = "Visibility",
     arrangement = "Arrangement",
     position = "Position",
