@@ -164,15 +164,19 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
     ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local anyDisabled = false
-    local anyUnlocked = false
+    -- Lock state counts this class's Groups only (ST._CanChangeLock).
+    local anyUnlocked, anyLockable = false, false
     for _, containerId in ipairs(multiGroupIds) do
         local container = db.groupContainers[containerId]
         if container then
             if container.enabled == false then
                 anyDisabled = true
             end
-            if container.locked == false then
-                anyUnlocked = true
+            if ST._CanChangeLock(containerId) then
+                anyLockable = true
+                if container.locked == false then
+                    anyUnlocked = true
+                end
             end
         end
     end
@@ -194,9 +198,12 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                if ST._RefuseLockChangeInCombat() then return end
                 local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, containerId in ipairs(multiGroupIds) do
-                    CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
+                    if ST._CanChangeLock(containerId) then
+                        CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
+                    end
                 end
                 CooldownCompanion:EndPanelAttachmentRefresh(attachmentOperation)
                 CooldownCompanion:RefreshConfigPanel()
@@ -208,6 +215,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
             end,
         },
     }
+    if not anyLockable then table.remove(stateActions, 2) end
 
     AddActionStrips(scroll, {
         stateActions,
@@ -275,14 +283,20 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         end
     end
 
-    local anyUnlocked = false
+    -- Lock state counts this class's movable panels only.
+    local function IsLockablePanel(panel)
+        return panel and ST._CanChangeLock(panel.parentContainerId)
+            and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel))
+    end
+    local anyUnlocked, anyLockable = false, false
     for _, pid in ipairs(multiPanelIds) do
         local panel = db.groups[pid]
-        if panel
-            and panel.locked == false
-            and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
-            anyUnlocked = true
-            break
+        if IsLockablePanel(panel) then
+            anyLockable = true
+            if panel.locked == false then
+                anyUnlocked = true
+                break
+            end
         end
     end
 
@@ -310,11 +324,10 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
         {
             text = anyUnlocked and "Lock All" or "Unlock All",
             onClick = function()
+                if ST._RefuseLockChangeInCombat() then return end
                 local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, pid in ipairs(multiPanelIds) do
-                    local panel = db.groups[pid]
-                    if panel
-                        and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel)) then
+                    if IsLockablePanel(db.groups[pid]) then
                         CooldownCompanion:SetPanelLocked(pid, anyUnlocked)
                     end
                 end
@@ -326,6 +339,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
             end,
         },
     }
+    if not anyLockable then table.remove(stateActions, 2) end
 
     local hasOtherContainer = false
     for cid in pairs(db.groupContainers) do

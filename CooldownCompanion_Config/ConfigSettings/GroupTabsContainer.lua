@@ -16,7 +16,6 @@ local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
-local AddDropdownRow = ST._AddDropdownRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
@@ -68,7 +67,10 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     }):Settings({
         enabled = { label = "Enabled", aliases = { "show group" } },
-        locked = { label = "Locked", aliases = { "unlock group", "move group" } },
+        locked = { label = "Locked", aliases = { "unlock group", "move group" },
+            applies = function(context)
+                return context and context.containerId ~= nil and ST._CanChangeLock(context.containerId) or false
+            end },
     })
 
     CONTAINER_FINDER.layout = ST._DefineSettingRoute({
@@ -97,12 +99,20 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     CONTAINER_FINDER.alpha = alphaRoute:Settings({
-        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" } },
+        -- The hide and show words also land here, ranked after the rows they
+        -- name: those rows exist only once Group Alpha is on.
+        enabled = { label = "Enable Group Alpha", aliases = { "group opacity", "group transparency" },
+            weakAliases = { "hide in combat", "show in combat", "hide out of combat", "show out of combat",
+                "hide while mounted", "show while mounted", "hide while skyriding", "show while skyriding" } },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" }, applies = ContainerFinderAlphaEnabled },
-        combat = { label = "In Combat", applies = ContainerFinderAlphaEnabled },
-        outOfCombat = { label = "Out of Combat", applies = ContainerFinderAlphaEnabled },
-        regularMount = { label = "Regular Mount", applies = ContainerFinderAlphaEnabled },
-        skyriding = { label = "Skyriding", aliases = { "dragonriding" }, applies = ContainerFinderAlphaEnabled },
+        combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" },
+            applies = ContainerFinderAlphaEnabled },
+        outOfCombat = { label = "Out of Combat", aliases = { "hide out of combat", "show out of combat" },
+            applies = ContainerFinderAlphaEnabled },
+        regularMount = { label = "Regular Mount", aliases = { "hide while mounted", "show while mounted" },
+            applies = ContainerFinderAlphaEnabled },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "show while skyriding", "hide while dragonriding" },
+            applies = ContainerFinderAlphaEnabled },
         travelForm = {
             label = "Include Druid Travel Form (applies to both)",
             aliases = { "travel form" },
@@ -116,19 +126,6 @@ if ST._DefineSettingRoute then
         fadeDelay = { label = "Fade Delay (seconds)", applies = ContainerFinderCustomFade },
         fadeIn = { label = "Fade In Duration (seconds)", applies = ContainerFinderCustomFade },
         fadeOut = { label = "Fade Out Duration (seconds)", applies = ContainerFinderCustomFade },
-    })
-
-    CONTAINER_FINDER.strata = ST._DefineSettingRoute({
-        idPrefix = "group.general.strata",
-        scope = "group",
-        tab = "general",
-        tabLabel = "General",
-        section = "strata",
-        sectionLabel = "Frame Strata",
-        collapseKeys = { "container_strata" },
-        rowScope = "primary",
-    }):Settings({
-        frameStrata = { label = "Container Frame Strata", aliases = { "layer" } },
     })
 
     local whereRoute = ST._DefineSettingRoute({
@@ -187,11 +184,18 @@ local function BuildContainerGeneralTab(scroll, containerId)
         end,
     })
 
+    -- Another class's Group never loads here, so it has nothing to unlock.
+    if ST._CanChangeLock(containerId) then
     AddCheckboxRow(masterRight, {
         label = "Locked",
         setting = CONTAINER_FINDER.general and CONTAINER_FINDER.general.locked,
         value = container.locked ~= false,
         onChange = function(value)
+            -- Refused in combat; the rebuild puts the box back.
+            if ST._RefuseLockChangeInCombat() then
+                CooldownCompanion:RefreshConfigPanel()
+                return
+            end
             CooldownCompanion:SetContainerLocked(containerId, value)
             CooldownCompanion:RefreshConfigPanel()
             if not value and ST.CollapseConfigForUnlock then
@@ -201,6 +205,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             end
         end,
     })
+    end
 
     -- ================================================================
     -- Layout
@@ -333,37 +338,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
             })
         end
     end -- if not alphaCollapsed
-
-    -- ================================================================
-    -- Frame Strata
-    -- ================================================================
-    local _, strataCollapsed = BuildCollapsibleSection(scroll, "Frame Strata", "container_strata", nil, nil, ROW_SECTION)
-
-    if not strataCollapsed then
-    -- One setting; the right column stays empty.
-    local strataLeft = BeginRowGrid(scroll)
-
-    AddDropdownRow(strataLeft, {
-        label = "Container Frame Strata",
-        setting = CONTAINER_FINDER.strata and CONTAINER_FINDER.strata.frameStrata,
-        list = {
-            BACKGROUND = "Background",
-            LOW = "Low",
-            MEDIUM = "Medium (Default)",
-            HIGH = "High",
-        },
-        order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" },
-        value = container.frameStrata or "MEDIUM",
-        onChange = function(value)
-            container.frameStrata = value
-            local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
-            if containerFrame then
-                containerFrame:SetFrameStrata(value)
-            end
-            RefreshPanels()
-        end,
-    })
-    end -- if not strataCollapsed
 end
 
 local function BuildContainerLoadConditionsTab(scroll, containerId)

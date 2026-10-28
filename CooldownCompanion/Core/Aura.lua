@@ -614,7 +614,11 @@ local function IsExactStandaloneAuraIdentity(buttonData)
         and (spellID == 48107 or spellID == 48108)
 end
 
-local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+-- frameFree: skip the buff-viewer frame rung. The save path asks this way:
+-- those frames exist only once a viewer has shown and then linger hidden
+-- (InferConfirmedAuraSpellIDString below), and a saved list must not depend on
+-- a display setting (owner ruling R12 part 2).
+local function BuildStandaloneOriginalAuraCandidateIDs(buttonData, frameFree)
     local candidateIDs = {}
     local orderedCandidateSet = {}
     local orderedCandidateIDs = {}
@@ -653,7 +657,7 @@ local function BuildStandaloneOriginalAuraCandidateIDs(buttonData)
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, curatedAuraID)
     end
 
-    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
+    local directAuraID = not frameFree and ResolveDirectBuffViewerSpellID(buttonData.id)
     if directAuraID then
         AppendOrderedAuraCandidateID(candidateIDs, orderedCandidateSet, orderedCandidateIDs, directAuraID)
     end
@@ -693,8 +697,10 @@ local function AppendStandaloneFallbackAuraCandidateIDs(candidateIDs, orderedCan
 end
 
 
+-- The saved list keeps only IDs the entry would not find by itself, judged
+-- frame-free so the same list saves with the display on or off.
 local function BuildStandaloneAuraFallbackSpellIDText(buttonData, rawIDs)
-    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData)
+    local _, originalCandidateSet = BuildStandaloneOriginalAuraCandidateIDs(buttonData, true)
     local fallbackIDs = {}
     local seen = {}
     if not rawIDs then
@@ -945,15 +951,16 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
         return curatedAuraID ~= buttonData.id and tostring(curatedAuraID) or nil
     end
 
-    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
-        return tostring(directAuraID)
-    end
-
+    -- Every step from here is frame-free. This resolver PERSISTS its answer,
+    -- and a saved ID outranks detection from then on, so it never reads the
+    -- Cooldown Manager's on-screen buff frames. Those are built only once a
+    -- viewer has shown (display on, Edit Mode or the viewer settings), then
+    -- stay hidden with their last data after it hides (live
+    -- Blizzard_CooldownViewer: RefreshLayout runs from OnShow, OnHide releases
+    -- nothing), so the same spell would save different auras depending on a
+    -- display setting (owner ruling R12 part 2, 2026-10-28). The live
+    -- standalone and implicit-head chains keep the frame rung as a bonus.
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-    -- Frame-free twin of the direct resolution above: this is the resolver
-    -- that PERSISTS into stored config, so it must agree with the live
-    -- chain when no buff viewer frame exists.
     local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
     if linkedAppliedID and linkedAppliedID ~= buttonData.id then
         return tostring(linkedAppliedID)
@@ -964,48 +971,7 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
         and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
         return tostring(resolvedAuraId)
     end
-
-    local buffViewerFrame = self:ResolveBuffViewerFrameForSpell(baseId)
-        or (baseId ~= buttonData.id and self:ResolveBuffViewerFrameForSpell(buttonData.id))
-    local distinctAuraIDs = {}
-    if buffViewerFrame and type(buffViewerFrame.cooldownInfo) == "table" then
-        local info = buffViewerFrame.cooldownInfo
-        for _, spellID in ipairs({
-            info.overrideSpellID,
-            info.overrideTooltipSpellID,
-        }) do
-            local numericID = tonumber(spellID)
-            if numericID
-                and numericID ~= 0
-                and numericID ~= buttonData.id
-                and numericID ~= baseId
-                and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-                distinctAuraIDs[numericID] = true
-            end
-        end
-        if info.linkedSpellIDs then
-            for _, linkedSpellID in ipairs(info.linkedSpellIDs) do
-                local numericID = tonumber(linkedSpellID)
-                if numericID
-                    and numericID ~= 0
-                    and numericID ~= buttonData.id
-                    and numericID ~= baseId
-                    and not IsDistinctAuraIdentityForButton(buttonData, numericID) then
-                    distinctAuraIDs[numericID] = true
-                end
-            end
-        end
-    end
-
-    local inferredAuraSpellID
-    for spellID in pairs(distinctAuraIDs) do
-        if inferredAuraSpellID then
-            return nil
-        end
-        inferredAuraSpellID = tostring(spellID)
-    end
-
-    return inferredAuraSpellID
+    return nil
 end
 
 -- The one unit rule for every aura display (owner ruling R12, 2026-10-24):
@@ -1342,7 +1308,7 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
 
     -- Aura entries are never dynamic spell buttons: keep auraTracking on so
     -- they remain aura-only even when CDM is temporarily not ready.
-    if buttonData.addedAs == "aura" and buttonData.auraTracking ~= true then
+    if buttonData.auraTracking ~= true then
         buttonData.auraTracking = true
         changed = true
     end
@@ -1352,18 +1318,10 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
         changed = true
     end
 
-    if buttonData.addedAs == "aura" then
-        local fallbackIDs = self:GetStandaloneAuraFallbackSpellIDText(buttonData)
-        if buttonData.auraSpellID ~= fallbackIDs then
-            buttonData.auraSpellID = fallbackIDs
-            changed = true
-        end
-    elseif not buttonData.auraSpellID then
-        local inferredAuraSpellID = self:InferConfirmedAuraSpellIDString(buttonData)
-        if inferredAuraSpellID then
-            buttonData.auraSpellID = inferredAuraSpellID
-            changed = true
-        end
+    local fallbackIDs = self:GetStandaloneAuraFallbackSpellIDText(buttonData)
+    if buttonData.auraSpellID ~= fallbackIDs then
+        buttonData.auraSpellID = fallbackIDs
+        changed = true
     end
 
     if buttonData.auraUnit ~= "player" and buttonData.auraUnit ~= "target" then
@@ -1578,26 +1536,6 @@ function CooldownCompanion:QueueBuildViewerAuraMap(allowAssociationGate)
             self:RefreshConfigPanel()
         end
     end)
-end
-
-function CooldownCompanion:ResolveBuffViewerFrameForSpell(spellID)
-    local enabled = self._cdmViewerEnabled
-    if enabled == nil then enabled = GetCVarBool("cooldownViewerEnabled") end
-    if not spellID or spellID == 0 or not enabled then
-        return nil
-    end
-
-    local child = self.viewerAuraFrames and self.viewerAuraFrames[spellID]
-    if IsBuffViewerChild(child) and type(child.cooldownInfo) == "table" then
-        return child
-    end
-
-    child = FindChildInViewers(VIEWER_NAMES, spellID, true)
-    if child then
-        self.viewerAuraFrames[spellID] = child
-        return child
-    end
-    return nil
 end
 
 -- Map readable cooldownInfo spell identities to Blizzard cooldown viewer

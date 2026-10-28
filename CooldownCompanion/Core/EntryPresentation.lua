@@ -362,6 +362,9 @@ function ST.InitializeNewPanelBarStyle(group)
     group._barGeometryVersion = 1
     group._sharedBarStyleVersion = 1
     group.attachedBarStyle = CopyTable(ST._defaults.profile.globalStyle)
+    -- Bars count down from birth like the panel's icons (CreatePanel's icon
+    -- stamp); unset still reads as off on panels made before this.
+    group.attachedBarStyle.showCooldownText = true
 end
 local styleCache = setmetatable({}, { __mode = "k" })
 

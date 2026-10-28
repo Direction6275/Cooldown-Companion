@@ -18,6 +18,8 @@ end
 local function Route(section, label, tab, mode, collapseSection)
     return ST._DefineSettingRoute({
         idPrefix = "panel.totem." .. section, scope = "panel", tab = tab or "appearance",
+        -- The Effects tab said Indicators until 2026-10-28.
+        formerTabLabel = tab == "effects" and "Indicators" or nil,
         section = section, sectionLabel = label, rowScope = "primary",
         collapseKeys = { "totem_" .. (collapseSection or section) },
         applies = function(context)

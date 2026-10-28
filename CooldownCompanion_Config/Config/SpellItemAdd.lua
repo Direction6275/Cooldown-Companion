@@ -486,7 +486,7 @@ local function TryAddRotationAssistant(opts)
     if not request or InCombatLockdown() then return false end
     local index = CooldownCompanion:AddRotationAssistantEntry(request.groupId, { section = request.section })
     if not index then return false end
-    request.autoSelect = true
+    -- A drop onto a panel you aren't editing keeps your place, like a spell drop.
     CompleteAdd(request, index)
     CooldownCompanion:Print("Added Rotation Assistant")
     return true

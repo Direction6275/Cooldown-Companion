@@ -750,7 +750,7 @@ local function UpdateStaggerBar(bar, settings)
             if textFormat == "current" then
                 bar.text:SetFormattedText("%d", staggerAmount)
             elseif textFormat == "percent" then
-                bar.text:SetFormattedText("%.0f%%", percent)
+                bar.text:SetFormattedText("%.0f", percent)
             else
                 bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
             end
@@ -1361,7 +1361,7 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
             if textFormat == "current" then
                 holder.text:SetFormattedText("%d", stacks)
             elseif textFormat == "percent" then
-                holder.text:SetFormattedText("%d", (stacks / mwMaxStacks) * 100)
+                holder.text:SetFormattedText("%.0f", (stacks / mwMaxStacks) * 100)
             else
                 holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
             end
@@ -1507,7 +1507,7 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
                 if textFormat == "current" then
                     holder.text:SetFormattedText("%d", stacks)
                 elseif textFormat == "percent" then
-                    holder.text:SetFormattedText("%d", (stacks / maxStacks) * 100)
+                    holder.text:SetFormattedText("%.0f", (stacks / maxStacks) * 100)
                 else
                     holder.text:SetFormattedText("%d / %d", stacks, maxStacks)
                 end

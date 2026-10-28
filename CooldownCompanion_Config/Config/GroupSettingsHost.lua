@@ -170,6 +170,16 @@ local function SetSettingsScrollOwner(scroll, owner, scope, entry)
     end)
 end
 
+-- Settings memory for the session: every panel and Group remembers its last
+-- tab and its place on each view (key). Returns the owner's memory.
+local function UseSettingsMemory(scroll, owner, tab, key)
+    local state = ST._GetPanelSettingsState(owner)
+    state.panelTab = tab
+    state.scrolls[key] = state.scrolls[key] or {}
+    scroll:SetStatusTable(state.scrolls[key])
+    return state
+end
+
 -- stripOnly: the selected entry's Settings/Customizations tab owns the shared
 -- surface, so its style tabs are painted beside it without building content.
 -- Both strips still belong to the same selected entry.
@@ -231,8 +241,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 local scroll = AceGUI:Create("ScrollFrame")
                 scroll:SetLayout("List")
                 widget:AddChild(scroll)
-                SetSettingsScrollOwner(scroll,
-                    CooldownCompanion.db.profile.groupContainers[CS.selectedContainer], "group:" .. tab)
+                local groupContainer = CooldownCompanion.db.profile.groupContainers[CS.selectedContainer]
+                SetSettingsScrollOwner(scroll, groupContainer, "group:" .. tab)
+                if groupContainer then
+                    UseSettingsMemory(scroll, groupContainer, tab, "group:" .. tab)
+                end
 
                 if tab == "general" then
                     ST._BuildContainerGeneralTab(scroll, CS.selectedContainer)
@@ -258,6 +271,11 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
         })
         container.containerTabGroup.frame:Show()
         local containerTab = CS.selectedContainerTab
+        local groupContainer = CooldownCompanion.db.profile.groupContainers[CS.selectedContainer]
+        if groupContainer and container._groupTabOwner ~= groupContainer and not CS.pendingSettingHighlight then
+            containerTab = ST._GetPanelSettingsState(groupContainer).panelTab or containerTab
+        end
+        container._groupTabOwner = groupContainer
         if containerTab ~= "general" and containerTab ~= "loadconditions" then
             containerTab = "general"
         end
@@ -350,23 +368,22 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
                 if ST.PanelSupportsAttachedBars(styleGroup) then
                     local entry = ST._GetPanelSettingsSelection(styleGroup)
                     local scope = entry and "entry" or "panel"
-                    local state = ST._GetPanelSettingsState(styleGroup)
-                    state.panelTab = tab
-                    if entry then state.presentation = ST.GetEntryPresentation(styleGroup, entry) end
                     if presentation then scope = scope .. ":" .. presentation end
                     scroll._cdcStylePresentation = presentation or "ordinary"
                     scroll._cdcSettingsScopeKey = scope .. ":" .. tab
                     scroll._cdcSettingsOwner = styleGroup
                     scroll._cdcSettingsEntry = entry
                     scroll._cdcSettingsViewKey = presentation and presentation .. ":" .. tab or nil
-                    local views = state.scrolls
-                    local key = scope .. ":" .. tab
-                    views[key] = views[key] or {}
-                    scroll:SetStatusTable(views[key])
+                    local state = UseSettingsMemory(scroll, styleGroup, tab, scope .. ":" .. tab)
+                    if entry then state.presentation = ST.GetEntryPresentation(styleGroup, entry) end
                     if presentation and (oldOwner ~= styleGroup or oldView ~= scroll._cdcSettingsViewKey
                         or oldEntry ~= entry or CS.pendingLensAnchor) then
                         ST._PreparePanelSettingsView(scroll)
                     end
+                else
+                    -- Aura, Totem and Indicator panels: one place per tab,
+                    -- shared by the panel's entries.
+                    UseSettingsMemory(scroll, styleGroup, tab, scroll._cdcSettingsScopeKey)
                 end
             end
             if ST._BeginLensAnchorBuild then
@@ -453,12 +470,15 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if availableTabs then
         tabsMode = tabsMode .. ":" .. tostring(availableTabs.layout) .. ":" .. tostring(availableTabs.appearance) .. ":" .. tostring(availableTabs.effects)
     end
-    if group and ST.PanelSupportsAttachedBars(group) then
-        local entry = ST._GetPanelSettingsSelection(group)
-        local scope = entry and "entry" or "panel"
+    if group then
+        -- Every panel kind reopens on the tab last used there, at panel scope
+        -- (an attached-bar panel's isSingleEntry is its entry selection).
         local state = ST._GetPanelSettingsState(group)
-        if entry then state.presentation = ST.GetEntryPresentation(group, entry) end
-        if scope == "panel" and not CS.pendingSettingHighlight
+        if ST.PanelSupportsAttachedBars(group) then
+            local entry = ST._GetPanelSettingsSelection(group)
+            if entry then state.presentation = ST.GetEntryPresentation(group, entry) end
+        end
+        if not isSingleEntry and not CS.pendingSettingHighlight
             and container._settingsTabOwner ~= group then
             CS.selectedTab = state.panelTab or CS.selectedTab
         end
@@ -469,8 +489,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
     if container._cdcPanelSettingsTabsMode ~= tabsMode then
         local tabs = {}
         if ST.IsIndicatorGroup(group) then
-            -- The panel tab order; the effects tab keeps its own name, since an
-            -- "Indicators" tab inside an Indicator would read as a list.
+            -- The panel tab order.
             tabs = {{value="layout",text="Layout"},{value="appearance",text="Appearance"},
                 {value="effects",text="Effects"},{value="loadconditions",text="Visibility"}}
         else
@@ -480,7 +499,7 @@ local function RefreshGroupSettingsHost(container, anchorFn, stripOnly)
             end
             if not availableTabs or availableTabs.appearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
             if not availableTabs or availableTabs.effects then
-                tabs[#tabs + 1] = { value = "effects", text = "Indicators" }
+                tabs[#tabs + 1] = { value = "effects", text = "Effects" }
             end
             tabs[#tabs + 1] = { value = "loadconditions",  text = "Visibility" }
         end

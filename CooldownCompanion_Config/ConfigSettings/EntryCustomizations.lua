@@ -138,7 +138,7 @@ end
 --
 -- A mode's sources are EXACTLY the maps that mode's own builders declare, so
 -- this list can never offer a gear the mode does not draw. Icons builds both
--- the Appearance and Indicators tabs off both maps; bars builds
+-- the Appearance and Effects tabs off both maps; bars builds
 -- its two tabs off the one bars map (its pandemic, unusable and tooltip gears
 -- are listed there, so the indicators map is not a bars source). A mode with
 -- no map here never resolves a gear.

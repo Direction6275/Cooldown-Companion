@@ -175,7 +175,7 @@ local function AdaptOrdinaryBarTemplate(self, template)
         end
     end
     adapted.attachedBarStyle = {}
-    local sourceStyle, baseline = template.style or {}, self.db.profile.globalStyle or {}
+    local sourceStyle, baseline = template.style or {}, ST._defaults.profile.globalStyle
     -- These defaults changed with compact ordinary entries. An old complete
     -- snapshot's captured nil meant the old renderer's default, never compact.
     local legacyDefaults = { barHeight = 20, showBarIcon = true, showBarNameText = true }
@@ -299,11 +299,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
         end
     end
 
-    -- Stored as the EFFECTIVE format: a legacy panel can still carry only
-    -- decimalTimers=true with no durationFormat, and the template must not
-    -- hand a target that panel's "clock" baseline while the panel itself
-    -- renders decimals (the applier's rule). decimalTimers is in no key list,
-    -- so the fresh style never carries it.
+    -- Stored in canonical form, the applier's rule.
     if fields.style.durationFormat and self.GetDurationFormat then
         style.durationFormat = self.GetDurationFormat(sourceStyle)
     end

@@ -307,24 +307,11 @@ function CooldownCompanion:GetButtonSoundAlertConfig(buttonData, createIfMissing
     end
     if not cfg then return nil end
 
-    if createIfMissing and cfg.channel == nil then
-        cfg.channel = DEFAULT_SOUND_CHANNEL
-    end
-
     if createIfMissing and type(cfg.events) ~= "table" then
         cfg.events = {}
     end
 
     return cfg
-end
-
-function CooldownCompanion:GetButtonSoundAlertChannel(buttonData)
-    local cfg = self:GetButtonSoundAlertConfig(buttonData, false)
-    local channel = cfg and cfg.channel
-    if channel and channel ~= "" then
-        return channel
-    end
-    return DEFAULT_SOUND_CHANNEL
 end
 
 function CooldownCompanion:GetConditionsIndicatorSoundAlertConfig(groupOrId, createIfMissing)
@@ -415,7 +402,8 @@ function CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, soundN
 
     if not next(events) then
         cfg.events = nil
-        if (cfg.channel == nil or cfg.channel == DEFAULT_SOUND_CHANNEL) and cfg.auraSoundGap == nil then
+        -- An old saved channel key is ignored: no setting ever chose one.
+        if cfg.auraSoundGap == nil then
             buttonData.soundAlerts = nil
         end
     end
@@ -590,7 +578,7 @@ function CooldownCompanion:PlayResourceSoundAlert(powerType, soundName, trigger,
 end
 
 function CooldownCompanion:PreviewSoundAlertSelection(buttonData, soundName)
-    return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetButtonSpeechText(buttonData))
 end
 
 -- 12.1.5: Blizzard stops an aura sound after five seconds of playback, so
@@ -602,7 +590,7 @@ ST.AURA_SOUND_MAX_SECONDS = AURA_SOUND_MAX_SECONDS
 function CooldownCompanion:PreviewAuraSoundAlertSelection(buttonData, soundName)
     local soundSource = soundName and soundName ~= SOUND_NONE_KEY and LSM:Fetch("sound", soundName, true)
     if type(soundSource) ~= "string" or soundSource == "" then return false end
-    local willPlay, handle = PlaySoundFile(soundSource, self:GetButtonSoundAlertChannel(buttonData))
+    local willPlay, handle = PlaySoundFile(soundSource, DEFAULT_SOUND_CHANNEL)
     if handle then
         C_Timer.After(AURA_SOUND_MAX_SECONDS, function() StopSound(handle) end)
     end
@@ -679,7 +667,7 @@ function CooldownCompanion:GetAuraSoundFileForButton(buttonData, eventKey)
     -- and keep playing it even after the intended media loads.
     local soundSource = LSM:Fetch("sound", soundName, true)
     if type(soundSource) == "string" and soundSource ~= "" then
-        return soundSource, self:GetButtonSoundAlertChannel(buttonData)
+        return soundSource, DEFAULT_SOUND_CHANNEL
     end
     return nil
 end
@@ -710,7 +698,7 @@ function CooldownCompanion:PlayButtonSoundAlertEvent(buttonData, eventKey)
     end
     if not soundName then return false end
 
-    return PlaySharedMediaSound(soundName, self:GetButtonSoundAlertChannel(buttonData), GetButtonSpeechText(buttonData))
+    return PlaySharedMediaSound(soundName, DEFAULT_SOUND_CHANNEL, GetButtonSpeechText(buttonData))
 end
 
 function CooldownCompanion:PlayConditionsIndicatorSoundAlertEvent(groupOrId, eventKey)

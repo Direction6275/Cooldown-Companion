@@ -421,8 +421,18 @@ function CooldownCompanion:OnReadyGlowUsabilityChanged()
         if frame and frame:IsShown() and frame.buttons then
             for _, button in ipairs(frame.buttons) do
                 local style, bd = button.style, button.buttonData
-                -- Include individually hidden entries so hide-while-unusable
-                -- can recover. Only an enabled icon Ready Glow needs this pass.
+                -- Individually hidden entries are included so Hide While
+                -- Unusable can recover: a spell entry re-shows from this pass
+                -- rather than a pinned ticker (item-like entries still pin it).
+                -- These events fire on every power tick, so only an answer
+                -- the button has not applied yet costs a walk.
+                if bd and bd.type == "spell" and not bd._rotationAssistantVirtual
+                        and CooldownCompanion.UsesCastabilityHide(bd)
+                        and ST._IsSpellUnusableHideStale(button, bd) then
+                    self:QueueCooldownRefresh("hide-unusable-usability")
+                    return
+                end
+                -- Otherwise only an enabled icon Ready Glow needs this pass.
                 if button.readyGlow and not button._isBar
                         and style and style.readyGlowOnlyWhileUsable == true
                         and style.readyGlowStyle and style.readyGlowStyle ~= "none"

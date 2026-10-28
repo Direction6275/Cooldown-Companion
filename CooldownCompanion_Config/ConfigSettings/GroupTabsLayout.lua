@@ -46,7 +46,7 @@ local AURA_SECTION_TOOLTIP = {
     {"Only Aura entries can live here.", 1, 1, 1, true},
     " ",
     {"Active auras appear and pack together. Inactive auras take no space.", 1, 1, 1, true},
-    {"Missing-aura indicators are unavailable here because inactive auras have no reserved space.", 1, 1, 1, true},
+    {"Missing-aura effects are unavailable here because inactive auras have no reserved space.", 1, 1, 1, true},
     " ",
     {"Buffs on you and debuffs on your target can't share one section.", 1, 1, 1, true},
 }
@@ -173,6 +173,8 @@ local function ResolveLayoutArrangementState(group, layoutCount)
         orientation = not isIndicator and not isBarMode,
         growth = not isIndicator and (showAll or layoutCount > 1),
         collapse = not isIndicator and (isAuraPanel or isTotemPanel),
+        -- Aura and Totem Panels take one form for every entry.
+        panelForm = not isIndicator and (isAuraPanel or isTotemPanel),
         buttonsPerLine = not isIndicator and not auraBarPanel,
         compact = not isIndicator and not isAuraPanel and not isTotemPanel
             and (isIconsMode or isBarMode),
@@ -260,7 +262,7 @@ local function GetLayoutFinderState(context)
 
     local hasIcons = HasLayoutIcons(group, groupId)
     state.customStrata = HasCustomIconStrata(group, hasIcons)
-    state.frameStrata = not isIndicator
+    state.frameStrata = true
 
     -- Finder visits both presentations; EntryPresentation's builder dispatch
     -- only calls BuildGridArrangement for the eligible grid presentation.
@@ -361,6 +363,8 @@ if ST._DefineSettingRoute then
         rowScope = "primary",
     })
     LAYOUT_FINDER.arrangement = arrangement:Settings({
+        panelForm = { label = "Display as", aliases = { "panel type", "switch to bars", "switch to icons" },
+            applies = LayoutFinderFlag("panelForm") },
         horizontalBars = { label = "Horizontal Bar Layout", aliases = { "bar direction" }, applies = LayoutFinderFlag("horizontalBars") },
         orientation = { label = "Orientation", applies = LayoutFinderFlag("orientation") },
         growth = { label = "Growth Direction", applies = LayoutFinderFlag("growth") },
@@ -466,6 +470,24 @@ local function BuildGridArrangement(container, group, layoutCount)
     -- LEFT column, in every mode: that pair. RIGHT column: how the block is
     -- packed - the wrap count and Compact Mode.
     local arrangeLeft, arrangeRight = BeginRowGrid(container)
+
+    -- The Navigator's right-click Panel Type does the same switch.
+    if state.panelForm then
+        AddDropdownRow(arrangeLeft, {
+            label = "Display as",
+            setting = LAYOUT_FINDER.arrangement and LAYOUT_FINDER.arrangement.panelForm,
+            list = { icons = "Icons", bars = "Bars" },
+            order = { "icons", "bars" },
+            value = group.displayMode == "bars" and "bars" or "icons",
+            onChange = function(val)
+                if val ~= group.displayMode then
+                    CooldownCompanion:ChangePanelDisplayMode(CS.selectedGroup, val)
+                end
+                -- Also puts the row back when the switch was refused.
+                CooldownCompanion:RefreshConfigPanel()
+            end,
+        })
+    end
 
     -- An Aura BAR Panel is ONE vertical column by construction: the aura
     -- container's bars branch hard-codes the axis and takes no line ceiling, so
@@ -653,6 +675,36 @@ local function BuildGridArrangement(container, group, layoutCount)
             settings = LAYOUT_FINDER.compact,
         })
     end
+end
+
+-- The whole panel's draw layer. Ordinary panels show it in their Strata
+-- section and Indicators in theirs; onChanged applies the new layer.
+local function AddFrameStrataRow(parent, group, infoButtons, onChanged)
+    local frameStrataRow = AddDropdownRow(parent, {
+        label = "Frame Strata",
+        setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.frame,
+        list = {
+            BACKGROUND = "Background",
+            LOW = "Low",
+            MEDIUM = "Default",
+            HIGH = "High",
+            DIALOG = "Highest",
+        },
+        order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG" },
+        value = group.frameStrata or "MEDIUM",
+        onChange = function(val)
+            group.frameStrata = (val ~= "MEDIUM") and val or nil
+            onChanged()
+        end,
+    })
+
+    local subject = ST.IsIndicatorGroup(group) and "Indicator" or "panel"
+    AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
+        "Frame Strata",
+        {"Sets the rendering layer for this " .. subject .. ".", 1, 1, 1, true},
+        " ",
+        {"Panels and Indicators on a higher strata fully overlap lower ones.", 1, 1, 1, true},
+    }, infoButtons))
 end
 
 local function BuildLayoutTab(container)
@@ -1026,6 +1078,16 @@ local function BuildLayoutTab(container)
             positionRight:AddChild(resetBtn)
         end
         end -- not positionCollapsed
+
+        -- The same layer choice panels have, so an Indicator can draw above
+        -- a High panel; the display host copies it on refresh.
+        local _, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata", nil, nil, ROW_SECTION)
+        if not strataCollapsed then
+            AddFrameStrataRow(BeginRowGrid(container), group, CS.tabInfoButtons, function()
+                CooldownCompanion:RefreshGroupFrame(textureGroupId)
+                CooldownCompanion:RefreshAllAuraTextureVisuals()
+            end)
+        end
 
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
             OpenOrRebindIndicatorTexturePicker(group, settings, false)
@@ -1558,32 +1620,9 @@ local function BuildLayoutTab(container)
     }, tabInfoButtons))
     end -- showCustomStrata (custom strata toggle)
 
-    local frameStrataRow = AddDropdownRow(strataLeft, {
-        label = "Frame Strata",
-        setting = LAYOUT_FINDER.strata and LAYOUT_FINDER.strata.frame,
-        list = {
-            BACKGROUND = "Background",
-            LOW = "Low",
-            MEDIUM = "Default",
-            HIGH = "High",
-            DIALOG = "Highest",
-        },
-        order = { "BACKGROUND", "LOW", "MEDIUM", "HIGH", "DIALOG" },
-        value = group.frameStrata or "MEDIUM",
-        onChange = function(val)
-            group.frameStrata = (val ~= "MEDIUM") and val or nil
-            CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
-        end,
-    })
-
-    AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Frame Strata",
-        {"Sets the rendering layer for this panel.", 1, 1, 1, true},
-        " ",
-        {"Panels on a higher strata fully overlap lower ones.", 1, 1, 1, true},
-        " ",
-        {"Only change this if you need one panel to overlap another.", 1, 1, 1, true},
-    }, tabInfoButtons))
+    AddFrameStrataRow(strataLeft, group, tabInfoButtons, function()
+        CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
+    end)
 
     if strataToggleRow then
         ST._AddAdvancedToggle(strataToggleRow, "customIconStrata", {}, true, {

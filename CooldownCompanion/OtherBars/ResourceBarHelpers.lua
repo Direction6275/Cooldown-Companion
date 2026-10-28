@@ -438,7 +438,6 @@ local customBarContentFields = {
     "durationTextFontOutline",
     "durationTextFontColor",
     "durationFormat",
-    "decimalTimers",
     "durationLowTimeThreshold",
     "durationLowTimeDecimals",
     "durationLowTimeColor",

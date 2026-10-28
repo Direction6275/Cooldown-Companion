@@ -414,6 +414,11 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local mwContinuous = IsMWContinuous(capturedPt, settings, displaySpecID)
     local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100 and not mwContinuous)
         or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
+    -- Percent needs a fill to measure: every continuous resource, and an
+    -- aura-stack bar drawn Continuous, as Maelstrom Weapon already is.
+    local offersPercent = not isSegmentedResource
+        or (RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
+            and RB.GetAuraStackDisplayStyle(settings, capturedPt, displaySpecID) == "continuous")
     if isHealthResource then
         HealthResource.EnsureSettings(settings)
     else
@@ -481,7 +486,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
                 "current_percent",
                 "current_percent_no_sign",
             }
-        elseif isSegmentedResource then
+        elseif not offersPercent then
             textFormatOptions = {
                 current = "Current Value",
                 current_max = "Current / Max",
@@ -500,14 +505,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
             if not IsHealthTextFormat(textFormatValue) then
                 textFormatValue = "percent"
             end
-        elseif isSegmentedResource then
-            if textFormatValue ~= "current" and textFormatValue ~= "current_max" then
-                textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
-            end
-        else
-            if textFormatValue ~= "current" and textFormatValue ~= "current_max" and textFormatValue ~= "percent" then
-                textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
-            end
+        elseif not textFormatOptions[textFormatValue] then
+            textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
         end
         AddDropdownRow(panel, {
             label = "Text Format",
@@ -523,18 +522,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
                     else
                         resSettings.textFormat = "percent"
                     end
-                elseif isSegmentedResource then
-                    if val == "current" or val == "current_max" then
-                        resSettings.textFormat = val
-                    else
-                        resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                    end
                 else
-                    if val == "current" or val == "current_max" or val == "percent" then
-                        resSettings.textFormat = val
-                    else
-                        resSettings.textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-                    end
+                    resSettings.textFormat = textFormatOptions[val] and val or DEFAULT_RESOURCE_TEXT_FORMAT
                 end
                 applyBars()
             end,
@@ -3377,10 +3366,10 @@ if ST._DefineSettingRoute then
             applies = function() return not CooldownCompanion:IsResourceBarAnchorIndependent() end,
         },
         baseline = { label = "Baseline Alpha", aliases = { "opacity", "transparency" } },
-        combat = { label = "In Combat" },
-        outOfCombat = { label = "Out of Combat" },
-        regularMount = { label = "Regular Mount" },
-        skyriding = { label = "Skyriding", aliases = { "dragonriding" } },
+        combat = { label = "In Combat", aliases = { "hide in combat", "show in combat" } },
+        outOfCombat = { label = "Out of Combat", aliases = { "hide out of combat", "show out of combat" } },
+        regularMount = { label = "Regular Mount", aliases = { "hide while mounted", "show while mounted" } },
+        skyriding = { label = "Skyriding", aliases = { "dragonriding", "hide while skyriding", "show while skyriding", "hide while dragonriding" } },
         travelForm = {
             label = "Include Druid Travel Form (applies to both)",
             aliases = { "travel form" },

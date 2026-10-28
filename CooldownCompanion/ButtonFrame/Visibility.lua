@@ -16,6 +16,7 @@ local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local UsesCastabilityHide = CooldownCompanion.UsesCastabilityHide
 
 local bit_band = bit.band
 local bit_bor  = bit.bor
@@ -96,6 +97,12 @@ local function IsNoCooldownForVisibility(button)
     end
 
     return button._baseNoCooldown == true
+end
+
+-- The one castability read for a spell entry. The evaluation below and the
+-- stale check after it must ask the same question with the same spell ID.
+local function IsSpellEntryUnusable(button, buttonData)
+    return not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
 end
 
 -- Evaluate per-button visibility rules and set hidden/alpha override state.
@@ -192,11 +199,10 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         hideReasons = bit_bor(hideReasons, HIDE_NOT_EQUIPPED)
     end
 
-    -- Check hideWhileUnusable
-    if buttonData.hideWhileUnusable and not buttonData.isPassive and not buttonData.isPassiveCooldown then
+    -- Check hideWhileUnusable (passives and Aura entries never take it).
+    if UsesCastabilityHide(buttonData) then
         if buttonData.type == "spell" then
-            local spellID = button._displaySpellId or buttonData.id
-            if not C_Spell_IsSpellUsable(spellID) then
+            if IsSpellEntryUnusable(button, buttonData) then
                 hideReasons = bit_bor(hideReasons, HIDE_UNUSABLE)
             end
         elseif IsEntryItemLike(buttonData) then
@@ -239,6 +245,15 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     end
 end
 
+-- Whether a spell entry's Hide While Unusable answer has changed since its
+-- last evaluation. The usability events fire on every power tick, so their
+-- pass (EventHandlers OnReadyGlowUsabilityChanged) walks only when this is
+-- true. It shares IsSpellEntryUnusable with the evaluation above.
+local function IsSpellUnusableHideStale(button, buttonData)
+    return IsSpellEntryUnusable(button, buttonData)
+        ~= (bit_band(button._visibilityReasonBits or 0, HIDE_UNUSABLE) ~= 0)
+end
+
 -- Update loss-of-control cooldown on a button.
 -- DurationObject path handles secret values. If no DurationObject is available
 -- (no LoC active), clear the cooldown.
@@ -263,5 +278,6 @@ end
 
 -- Exports
 ST._EvaluateButtonVisibility = EvaluateButtonVisibility
+ST._IsSpellUnusableHideStale = IsSpellUnusableHideStale
 ST._GetButtonVisibilityReasonNames = GetButtonVisibilityReasonNames
 ST._UpdateLossOfControl = UpdateLossOfControl

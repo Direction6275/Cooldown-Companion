@@ -116,8 +116,8 @@ local defaults = {
                         --                       -- container instead of CC buttons
                         -- },
                     },
-                    -- style = CopyTable(globalStyle) below, plus CreatePanel's birth stamps
-                    -- (Core/GroupManagement.lua).
+                    -- style = a copy of the shipped globalStyle below, plus CreatePanel's
+                    -- birth stamps (Core/GroupManagement.lua).
                     enabled = true,
                     displayMode = "icons",    -- "icons" | "bars" | "indicator"
                     frameStrata = nil,        -- nil = "MEDIUM" (default), or "BACKGROUND"/"LOW"/"HIGH"/"DIALOG"
@@ -1082,7 +1082,7 @@ ST.OVERRIDE_SECTIONS = {
         modes = {icons = true, bars = true},
     },
     missingAuraIndicator = {
-        label = "Missing Aura Indicator",
+        label = "Missing Aura Effect",
         keys = {"missingAuraIndicatorEnabled", "missingAuraIndicatorWhen", "missingAuraMarkerEnabled", "missingAuraMarkerText", "missingAuraMarkerColor", "missingAuraMarkerSize", "missingAuraGlowStyle", "missingAuraGlowColor", "missingAuraGlowColor2", "missingAuraGlowSize", "missingAuraGlowSpeed", "missingAuraGlowDashCount", "missingAuraGlowDashThickness"},
         modes = {icons = true, bars = true},
     },
@@ -1119,7 +1119,7 @@ ST.OVERRIDE_SECTIONS = {
     -- migration's every-import strip owns their cleanup). barActiveAura is
     -- live (LCG-removal project wired it through the aura kit).
     barActiveAura = {
-        label = "Active Aura Indicator",
+        label = "Active Aura Effect",
         keys = {"barAuraIndicatorEnabled", "barAuraColor", "barAuraEffect", "barAuraEffectColor", "barAuraEffectSize", "barAuraEffectThickness", "barAuraEffectSpeed", "barAuraEffectLines", "barAuraPulseEnabled", "barAuraPulseSpeed", "barAuraColorShiftEnabled", "barAuraColorShiftSpeed", "barAuraColorShiftColor"},
         modes = {bars = true},
     },

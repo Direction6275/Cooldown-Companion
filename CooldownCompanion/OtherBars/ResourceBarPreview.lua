@@ -371,7 +371,7 @@ function RB.CreateResourceBarPreviewModule(deps)
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxHealth)
                 elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d%%", 100)
+                    barInfo.frame.text:SetFormattedText("%d", 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxHealth, maxHealth)
                 end

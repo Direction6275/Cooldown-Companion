@@ -263,20 +263,20 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     -- or disabled entries and reflow the rest, except for any selected entries
     -- the player is still editing. Dense ordinals place the cells; every
     -- per-entry surface keeps its group.buttons index.
-    -- Never on Bar panels: their mirror is a saved-design projection that
-    -- deliberately keeps live usability and enabled state out
-    -- (CollectBarEntryStatus), so there is no unavailable/disabled state there
-    -- for the toggle to hide. Read-only mirrors stay unfiltered unless they
-    -- opt in with applySessionFilter (the drop ghost's layout-transition copy
-    -- does).
+    -- Bars are always kept, on any layout: a bar's mirror is a saved-design
+    -- projection that deliberately keeps live usability and enabled state out
+    -- (CollectBarEntryStatus), so it never looks unavailable for the toggle to
+    -- hide. Greyed icons are dropped even where the layout view is bars.
+    -- Read-only mirrors stay unfiltered unless they opt in with
+    -- applySessionFilter (the drop ghost's layout-transition copy does).
     local visibleIndices
     if (not readOnly or (options and options.applySessionFilter == true))
-        and not isBarMode
         and CS.panelPreviewUnavailableHidden
         and not CS.otherClassLibraryActive then
         local kept = {}
         for index, buttonData in ipairs(buttons) do
-            if index == dropGhostIndex or CooldownCompanion:IsButtonUsable(buttonData, group)
+            if index == dropGhostIndex or ST.GetEntryPresentation(group, buttonData) == "bars"
+                or CooldownCompanion:IsButtonUsable(buttonData, group)
                 or IsEntrySelected(index) then
                 kept[#kept + 1] = index
             end
@@ -781,15 +781,17 @@ local function GetPreviewUpdateGroup(preview, panelId)
     for anchor, section in pairs(preview.sectionOwners) do
         if not group.sections or group.sections[anchor] ~= section then return end
     end
-    local filtered = group.displayMode ~= "bars" and CS.panelPreviewUnavailableHidden
-        and not CS.otherClassLibraryActive
+    -- The same keep rule LayoutPreviewEntries builds with: bars always stay.
+    local filtered = CS.panelPreviewUnavailableHidden and not CS.otherClassLibraryActive
     for index, buttonData in ipairs(buttons) do
         local binding = bindings[index]
         local side, region, resources = ST.GetAttachedBarPlacement(buttonData)
-        local visible = not filtered or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
+        local presentation = ST.GetEntryPresentation(group, buttonData)
+        local visible = not filtered or presentation == "bars"
+            or CooldownCompanion:IsButtonUsable(buttonData, group) or IsEntrySelected(index)
         if binding.buttonData ~= buttonData
             or binding.entryType ~= buttonData.type or binding.entryId ~= buttonData.id
-            or binding.presentation ~= ST.GetEntryPresentation(group, buttonData)
+            or binding.presentation ~= presentation
             or binding.section ~= ST.GetPanelSectionForEntry(group, buttonData)
             or binding.side ~= side or binding.region ~= region or binding.resources ~= resources
             or (binding.slot and binding.attached ~= ST.IsAttachedBarEntry(group, buttonData))
@@ -958,25 +960,30 @@ ST._ShowPreviewDropGhost = DropGhost.Show
 ST._HidePreviewDropGhost = DropGhost.Hide
 
 -- Quick-toggle support for the buttons-view preview host: nil when this
--- panel type renders no entry grid the filter touches; otherwise whether it
--- contains any unavailable or disabled entry the filter can act on. Filtering
--- reuses IsButtonUsable; selected entries are preserved by the build pass.
--- Bar panels are nil on purpose: their mirror is a saved-design projection
--- the filter never applies to, so the badge must not offer it there. That
--- includes ordinary panels whose entries are all bars (the build swaps in
--- their bars layout view).
+-- panel has no icon entry the filter touches; otherwise whether one of its
+-- icon entries is unavailable or disabled. Filtering reuses IsButtonUsable;
+-- selected entries are preserved by the build pass. Bars never count: their
+-- mirror is a saved-design projection the filter never hides, so a panel of
+-- only bars offers no eye, while a greyed icon offers it on any layout.
 function ST._PanelPreviewUnavailableEntryState(group)
+    -- A layout view (the drag pause passes one) answers for its panel.
+    group = ST.GetPanelOwner(group)
     if not group then return nil end
     if ST.IsTotemPanelGroup(group) then return nil end
-    if not IsIconModePanel(ST.GetPanelLayoutGroup(group)) then
+    if not IsIconModePanel(group) then
         return nil
     end
+    local hasIcons = false
     for _, buttonData in ipairs(group.buttons or {}) do
-        if not CooldownCompanion:IsButtonUsable(buttonData, group) then
-            return true
+        if ST.GetEntryPresentation(group, buttonData) ~= "bars" then
+            hasIcons = true
+            if not CooldownCompanion:IsButtonUsable(buttonData, group) then
+                return true
+            end
         end
     end
-    return false
+    if hasIcons then return false end
+    return nil
 end
 
 function ST._ReleaseButtonPanelPreview(host)

@@ -67,6 +67,23 @@ local function IsEntryItemLike(buttonData)
 end
 CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
+-- Whether Hide While Unusable can act on this entry. Castability is a spell or
+-- item question: a passive never casts, and an Aura entry is present or not,
+-- so a saved flag on either stays inert. CanTakeCastabilityHide is the entry
+-- half, which the config's batch rows read and write by; UsesCastabilityHide
+-- adds the flag, the one rule visibility, the ticker floor, the usability
+-- event pass and the config preview share.
+local function CanTakeCastabilityHide(buttonData)
+    return not buttonData.isPassive and not buttonData.isPassiveCooldown
+        and buttonData.addedAs ~= "aura"
+end
+CooldownCompanion.CanTakeCastabilityHide = CanTakeCastabilityHide
+
+local function UsesCastabilityHide(buttonData)
+    return buttonData.hideWhileUnusable and CanTakeCastabilityHide(buttonData)
+end
+CooldownCompanion.UsesCastabilityHide = UsesCastabilityHide
+
 --------------------------------------------------------------------------------
 -- Entry Pings (12.1 ping system)
 --
@@ -213,22 +230,21 @@ CooldownCompanion.DURATION_FORMAT_CLOCK = DURATION_FORMAT_CLOCK
 local secondsFormatterCache = {}
 local durationTextFormatterCache = {}
 
-local function NormalizeDurationFormat(value, decimalTimers)
+-- The old Show Decimal Point switch was folded into durationFormat in 1.15,
+-- and older data no longer loads or imports, so only the format is read.
+local function NormalizeDurationFormat(value)
     if DURATION_FORMAT_SET[value] then
         return value
-    end
-    if decimalTimers == true then
-        return DURATION_FORMAT_DECIMAL_UNDER_60
     end
     return DURATION_FORMAT_CLOCK
 end
 CooldownCompanion.NormalizeDurationFormat = NormalizeDurationFormat
 
-local function GetDurationFormat(source, decimalTimers)
+local function GetDurationFormat(source)
     if type(source) == "table" then
-        return NormalizeDurationFormat(source.durationFormat, source.decimalTimers)
+        return NormalizeDurationFormat(source.durationFormat)
     end
-    return NormalizeDurationFormat(source, decimalTimers)
+    return NormalizeDurationFormat(source)
 end
 CooldownCompanion.GetDurationFormat = GetDurationFormat
 
@@ -421,26 +437,21 @@ local function FormatUnitsTime(seconds)
     return ""
 end
 
-local function FormatTime(seconds, formatOrDecimal)
+local function FormatTime(seconds, source)
     if seconds >= 3600 then
-        local formatKey = GetDurationFormat(formatOrDecimal)
+        local formatKey = GetDurationFormat(source)
         if formatKey == DURATION_FORMAT_UNITS then
             return FormatUnitsTime(seconds)
         end
         return string_format("%d:%02d:%02d", math_floor(seconds / 3600), math_floor(seconds / 60) % 60, math_floor(seconds % 60))
     elseif seconds >= 60 then
-        local formatKey = GetDurationFormat(formatOrDecimal)
+        local formatKey = GetDurationFormat(source)
         if formatKey == DURATION_FORMAT_UNITS then
             return FormatUnitsTime(seconds)
         end
         return string_format("%d:%02d", math_floor(seconds / 60), math_floor(seconds % 60))
     elseif seconds > 0 then
-        local formatKey
-        if type(formatOrDecimal) == "boolean" then
-            formatKey = NormalizeDurationFormat(nil, formatOrDecimal)
-        else
-            formatKey = GetDurationFormat(formatOrDecimal)
-        end
+        local formatKey = GetDurationFormat(source)
         if formatKey == DURATION_FORMAT_UNITS then
             return FormatUnitsTime(seconds)
         elseif formatKey == DURATION_FORMAT_DECIMAL_UNDER_60
@@ -726,7 +737,7 @@ end
 -- deliberately exclude the policy must not collide with duration surfaces
 -- that opt into it). Same
 -- no-write-back rule as durationLowTimeMemo. The recorded dependencies are the
--- two raw format fields plus the RESOLVED low-time tuple, which
+-- raw durationFormat field plus the RESOLVED low-time tuple, which
 -- GetDurationLowTime revalidates against every raw low-time field and color
 -- component on each call — so a config edit can never be skipped here.
 local durationTextFormatterMemo = setmetatable({}, { __mode = "k" })
@@ -746,15 +757,14 @@ local function GetDurationTextFormatter(source, allowLowTime, visibilityKind)
         lowThreshold, lowDecimalScope, lowColorHex, lowThreshold2, lowColorHex2 = GetDurationLowTime(source)
     end
 
-    local memoRoot, memo, rawFormat, rawDecimalTimers
+    local memoRoot, memo, rawFormat
     if sourceIsTable then
-        rawFormat, rawDecimalTimers = source.durationFormat, source.decimalTimers
+        rawFormat = source.durationFormat
         memoRoot = durationTextFormatterMemo[source]
         local memoKey = (allowLow and "low:" or "plain:") .. (visibilityKind or "none")
         memo = memoRoot and memoRoot[memoKey]
         if memo
             and memo.rawFormat == rawFormat
-            and memo.rawDecimalTimers == rawDecimalTimers
             and memo.lowThreshold == lowThreshold
             and memo.lowDecimalScope == lowDecimalScope
             and memo.lowColorHex == lowColorHex
@@ -799,7 +809,7 @@ local function GetDurationTextFormatter(source, allowLowTime, visibilityKind)
     end
 
     if sourceIsTable then
-        memo.rawFormat, memo.rawDecimalTimers = rawFormat, rawDecimalTimers
+        memo.rawFormat = rawFormat
         memo.lowThreshold, memo.lowDecimalScope, memo.lowColorHex = lowThreshold, lowDecimalScope, lowColorHex
         memo.lowThreshold2, memo.lowColorHex2 = lowThreshold2, lowColorHex2
         memo.visibilityThreshold = visibilityThreshold

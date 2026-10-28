@@ -94,7 +94,7 @@ local function EnableBarAuraIndicator(write)
 end
 
 local TURNON_BAR_AURA_INDICATOR = {
-    label = "Enable Active Aura Indicator",
+    label = "Enable Active Aura Effect",
     apply = EnableBarAuraIndicator,
 }
 
@@ -126,7 +126,7 @@ local ROW_SECTION = { leftAligned = true }
 -- States and Pandemic collapsibles are quiet SUBHEADINGS inside them, so the
 -- "effects_timers", "effects_states" and "effects_pandemic" keys are retired -
 -- nothing may name them again. Bars has no spell glows at all (its one glow row
--- is the active aura indicator, which belongs to Aura Indicators), so it draws
+-- is the active aura indicator, which belongs to Aura Effects), so it draws
 -- no Glows subheading.
 local EFFECTS_SPELL_SECTION = "effects_spell"
 local EFFECTS_AURA_SECTION = "effects_aura"
@@ -365,7 +365,7 @@ ST._SECTION_HOME.bars = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = BarsGroupTracksAura,
     },
-    -- The Pandemic subheading at the foot of Aura Indicators, so the home names
+    -- The Pandemic subheading at the foot of Aura Effects, so the home names
     -- that section's key.
     pandemic = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
@@ -1388,7 +1388,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- the one enable path for this checkbox AND the read-only panel's
     -- Turn On footer.
     local enableRow = AddCheckboxRow(container, {
-        label = "Show Active Aura Indicator",
+        label = "Show Active Aura Effect",
         setting = BAR_FINDER.effects.aura.active,
         value = indicatorOn,
         disabled = auraSec.disabled,
@@ -1415,7 +1415,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
 
     if auraSec.scope ~= "denied" then
         AddAdvancedToggle(enableRow, "barActiveAura", tabInfoButtons, true, {
-            title = "Active Aura Indicator Advanced",
+            title = "Active Aura Effect Advanced",
             build = BuildBarActiveAuraAdvanced,
             unlock = { sec = auraSec,
                 enable = not indicatorOn and TURNON_BAR_AURA_INDICATOR or nil },
@@ -1425,7 +1425,7 @@ local function BuildBarActiveAuraSection(container, group, style, lens)
     -- lens attaches last. The anchor args below are a placeholder -
     -- AnchorRowBadge appends to whatever the chain actually ends at.
     AnchorRowBadge(enableRow, CreateInfoButton(enableRow.frame, enableRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Active Aura Indicator",
+        "Active Aura Effect",
         {"Adds a border effect to a bar while its tracked aura is active, with optional fill pulse and fill color shift. The preview shows the bar as if the aura were running.", 1, 1, 1, true},
     }, tabInfoButtons))
     auraSec:Chrome(enableRow)
@@ -1590,9 +1590,9 @@ local function BuildBarEffectsTab(container, group, style)
     local barIconShown = effIconSec.read.showBarIcon ~= false
 
     -- ================================================================
-    -- Aura Indicators
+    -- Aura Effects
     -- ================================================================
-    -- The bars twin of the icons Aura Indicators section (owner ruling
+    -- The bars twin of the icons Aura Effects section (owner ruling
     -- 2026-08-30): the aura family's own section, holding what used to be a lone
     -- "Glows" row, the missing-aura desaturate that used to hang in the States
     -- right column, and - as a SUBHEADING at its foot - the Pandemic pair that
@@ -1600,7 +1600,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- an aura.
     local auraLeft, auraRight
     if GroupHasAuraTrackingEntry(group) then
-        local _, auraCollapsed = BuildCollapsibleSection(container, "Aura Indicators", EFFECTS_AURA_SECTION, nil, nil, ROW_SECTION)
+        local _, auraCollapsed = BuildCollapsibleSection(container, "Aura Effects", EFFECTS_AURA_SECTION, nil, nil, ROW_SECTION)
         if not auraCollapsed then
             -- LEFT the look the aura's PRESENCE gives the bar, RIGHT the look
             -- its ABSENCE gives the icon square - the same split the icons twin
@@ -1675,7 +1675,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- ---------------------------------------------------------------
     -- Pandemic
     -- ---------------------------------------------------------------
-    -- A SUBHEADING inside Aura Indicators now (owner ruling 2026-08-30), not a
+    -- A SUBHEADING inside Aura Effects now (owner ruling 2026-08-30), not a
     -- collapsible of its own: both halves are aura-only, like the rows above
     -- them, and its old "effects_pandemic" key is retired with it.
     --
@@ -1706,7 +1706,7 @@ local function BuildBarEffectsTab(container, group, style)
     -- panel the condition is barIconShown and nothing changes.
     if barIconShown or isAuraPanel then
         -- ================================================================
-        -- Cooldown / Spell Indicators
+        -- Cooldown / Spell Effects
         -- ================================================================
         -- The bars twin of the icons mega-section (owner ruling 2026-08-30):
         -- ONE section for everything the spell's own state drives, with the
@@ -1725,7 +1725,7 @@ local function BuildBarEffectsTab(container, group, style)
             and CanGroupUseOverrideSection(group, "desaturation")
 
         if barSpellTimersShown or barSpellStatesShown then
-        local _, spellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Indicators", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
+        local _, spellCollapsed = BuildCollapsibleSection(container, "Cooldown / Spell Effects", EFFECTS_SPELL_SECTION, nil, nil, ROW_SECTION)
 
         if not spellCollapsed then
 
@@ -1768,7 +1768,7 @@ local function BuildBarEffectsTab(container, group, style)
         if barSpellStatesShown then
         AddSettingsSubheading(container, "States")
         -- Spell-side only, now that the missing-aura desaturate has moved into
-        -- the Aura Indicators section above. The same even split the icons twin
+        -- the Aura Effects section above. The same even split the icons twin
         -- makes of the same four rows: LEFT whether the spell is READY to cast
         -- (on cooldown, unusable), RIGHT whether it can REACH its target (out of
         -- range, locked out of control). No family captions: both columns are
@@ -1841,7 +1841,7 @@ local function BuildBarEffectsTab(container, group, style)
         end -- States subheading
 
         end -- not spellCollapsed
-        end -- Cooldown / Spell Indicators has at least one subgroup
+        end -- Cooldown / Spell Effects has at least one subgroup
 
         -- ================================================================
         -- Interaction
@@ -1993,7 +1993,9 @@ local function BarFinderRoute(prefix, tab, section, sectionLabel, collapseKey,
         idPrefix = prefix,
         scope = BAR_FINDER_SCOPE,
         tab = tab,
-        tabLabel = tab == "effects" and "Indicators" or "Appearance",
+        tabLabel = tab == "effects" and "Effects" or "Appearance",
+        -- The Effects tab and its sections said Indicators until 2026-10-28.
+        formerTabLabel = tab == "effects" and "Indicators" or nil,
         section = section,
         sectionId = sectionId or section,
         sectionLabel = sectionLabel,
@@ -2331,22 +2333,23 @@ if ST._DefineSettingRoute then
     })
 
     BAR_FINDER.advanced.missingIndicator = ST._DefineMissingAuraIndicatorSettings(BarFinderRoute(
-        "panel.bars.effects.missingIndicator", "effects", EFFECTS_AURA_SECTION, "Missing Aura Indicator", EFFECTS_AURA_SECTION,
+        "panel.bars.effects.missingIndicator", "effects", EFFECTS_AURA_SECTION, "Missing Aura Effect", EFFECTS_AURA_SECTION,
         function(context)
             return BarFinderTracksAura(context) and BarFinderIconShown(context)
                 and BarFinderCanUse(context, "missingAuraIndicator")
         end, "missingAuraIndicator", "missingAuraIndicator"), BarFinderStyle)
 
     local auraEffects = BarFinderEffectRoute(
-        "panel.bars.effects.aura", EFFECTS_AURA_SECTION, "Aura Indicators",
+        "panel.bars.effects.aura", EFFECTS_AURA_SECTION, "Aura Effects",
         BarFinderTracksAura)
     BAR_FINDER.effects.aura = auraEffects:Settings({
-        missingIndicator = { label = "Show Missing Aura Indicator", sectionId = "missingAuraIndicator",
+        missingIndicator = { label = "Show Missing Aura Effect", sectionId = "missingAuraIndicator",
             aliases = { "missing aura indicator", "missing aura glow", "missing marker" },
             applies = function(context)
                 return BarFinderIconShown(context) and BarFinderCanUse(context, "missingAuraIndicator")
             end },
-        active = { label = "Show Active Aura Indicator", sectionId = "barActiveAura" },
+        active = { label = "Show Active Aura Effect", sectionId = "barActiveAura",
+            aliases = { "active aura indicator" } },
         missingBarColor = { label = "Missing Bar Color", sectionId = "auraMissingBarColor",
             aliases = { "show while inactive", "missing bar" },
             applies = function(context)
@@ -2376,7 +2379,7 @@ if ST._DefineSettingRoute then
 
     local spellEffects = BarFinderEffectRoute(
         "panel.bars.effects.spell", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators")
+        "Cooldown / Spell Effects")
     local function SpellStates(context)
         return BarFinderIconShown(context) and BarFinderCanUse(context, "desaturation")
     end
@@ -2447,7 +2450,7 @@ if ST._DefineSettingRoute then
     end
 
     local activeAura = BarFinderEffectRoute(
-        "panel.bars.effects.activeAura", EFFECTS_AURA_SECTION, "Aura Indicators",
+        "panel.bars.effects.activeAura", EFFECTS_AURA_SECTION, "Aura Effects",
         ActiveAuraAdvanced, "barActiveAura", "barActiveAura")
     BAR_FINDER.advanced.activeAura = activeAura:Settings({
         style = { label = "Glow Style", aliases = { "border effect", "aura indicator style" } },
@@ -2503,14 +2506,14 @@ if ST._DefineSettingRoute then
 
     BAR_FINDER.advanced.pandemicMarker = BarFinderEffectRoute(
         "panel.bars.effects.pandemicMarker", EFFECTS_AURA_SECTION,
-        "Aura Indicators", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible),
+        "Aura Effects", BarFinderAdvanced("pandemic", BarFinderAuraTextVisible),
         "barPandemicMarker", "pandemic"):Settings({
         color = { label = "Timer Color" },
     })
 
     BAR_FINDER.advanced.unusable = BarFinderEffectRoute(
         "panel.bars.effects.unusable", EFFECTS_SPELL_SECTION,
-        "Cooldown / Spell Indicators", BarFinderAdvanced("unusableDimming",
+        "Cooldown / Spell Effects", BarFinderAdvanced("unusableDimming",
             function(context)
                 return SpellStates(context) and BarFinderCanUse(context, "unusableDimming")
             end),

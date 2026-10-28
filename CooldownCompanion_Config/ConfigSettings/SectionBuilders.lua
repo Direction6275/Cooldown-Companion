@@ -388,7 +388,6 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
         value = CooldownCompanion.GetDurationFormat(settings),
         onChange = function(value)
             settings.durationFormat = CooldownCompanion.NormalizeDurationFormat(value)
-            settings.decimalTimers = nil
             if refreshCallback then
                 refreshCallback()
             end
@@ -908,7 +907,7 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the mode row, returned so the caller can chain a
 --                       gear, then ST._AddPandemicMarkerInfo's (?), and the
---                       section's scope chrome off it (the Indicators tab's
+--                       section's scope chrome off it (the Effects tab's
 --                       Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a control that is elsewhere.
@@ -2419,7 +2418,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
         CooldownCompanion:RefreshConfigPanel()
     end
     local row = AddCheckboxRow(container, {
-        label = "Show Missing Aura Indicator", setting = opts.setting,
+        label = "Show Missing Aura Effect", setting = opts.setting,
         value = enabled, disabled = sec.disabled,
         onChange = function(value)
             if not sec.write then return end
@@ -2446,7 +2445,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
         end
         if hasHarmful then
             local when = style.missingAuraIndicatorWhen
-            AddDropdownRow(panel, { label = "Show Indicator When", setting = settings.when,
+            AddDropdownRow(panel, { label = "Show Effect When", setting = settings.when,
                 list = { target = "Hostile Target Exists", target_combat = "Hostile Target Exists + In Combat" },
                 order = { "target", "target_combat" }, pulloutWidth = WIDE_PULLOUT_WIDTH,
                 value = (when == "target_combat" or when == "combat") and "target_combat" or "target",
@@ -2455,7 +2454,7 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
                 AddLabelRow(panel, { label = "Helpful Auras", controlText = "In Combat" })
             end
         else
-            AddLabelRow(panel, { label = "Show Indicator When", setting = settings.when, controlText = "In Combat" })
+            AddLabelRow(panel, { label = "Show Effect When", setting = settings.when, controlText = "In Combat" })
         end
         AddCheckboxRow(panel, { label = "Show Marker", setting = settings.marker,
             value = style.missingAuraMarkerEnabled ~= false,
@@ -2496,14 +2495,14 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
     end
     if sec.scope ~= "denied" then
         AddAdvancedToggle(row, "missingAuraIndicator", opts.infoButtons or {}, true, {
-            title = "Missing Aura Indicator", build = BuildAdvanced,
+            title = "Missing Aura Effect", build = BuildAdvanced,
             unlock = { sec = sec, enable = not enabled and {
-                label = "Enable Missing Aura Indicator", key = "missingAuraIndicatorEnabled" } or nil },
+                label = "Enable Missing Aura Effect", key = "missingAuraIndicatorEnabled" } or nil },
         })
     end
     -- After the gear, so the row reads label, gear, (?) like every other row.
     AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame, "LEFT", "LEFT", 0, 0, {
-        "Missing Aura Indicator",
+        "Missing Aura Effect",
         {"Shows a marker, an inset glow, or both while the tracked aura is missing.", 1, 1, 1, true},
         " ",
         {"Follows this entry's Tracked on setting.", 1, 1, 1, true},
@@ -2529,7 +2528,7 @@ function ST._DefineMissingAuraIndicatorSettings(route, resolveStyle)
         return style and style.missingAuraMarkerEnabled ~= false
     end
     local settings = route:Settings({
-        when = { label = "Show Indicator When", aliases = {"hostile target exists", "target exists", "combat"} },
+        when = { label = "Show Effect When", aliases = {"show indicator when", "hostile target exists", "target exists", "combat"} },
         marker = { label = "Show Marker" },
         text = { label = "Marker Text", applies = MarkerShown },
         markerColor = { label = "Marker Color", applies = MarkerShown },

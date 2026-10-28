@@ -25,7 +25,7 @@ local TAB_LABELS = {
     settings = "Settings",
     appearance = "Appearance",
     layout = "Layout",
-    effects = "Indicators",
+    effects = "Effects",
     loadconditions = "Visibility",
     health = "Health",
 }
@@ -46,10 +46,15 @@ local VALID_ROW_SCOPES = {
     detail = true,
 }
 
+-- Weak search terms: a route's formerTabLabel (the name a tab had before a
+-- rename) and a setting's weakAliases (words for rows that exist only once
+-- this setting is on). They still find the row, but score after every label,
+-- alias and breadcrumb match, so they never outrank a row that actually
+-- names the word.
 local ROUTE_FIELDS = {
     "scope", "tab", "tabLabel", "section", "sectionId", "sectionLabel",
     "collapseKeys", "collapseStore", "rowScope", "tabStateKey",
-    "advancedKey",
+    "advancedKey", "formerTabLabel",
 }
 
 local function Trim(text)
@@ -198,6 +203,9 @@ local function ValidateDescriptorShape(descriptor)
     if descriptor._settingApplies ~= nil and type(descriptor._settingApplies) ~= "function" then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid setting predicate")
     end
+    if descriptor.formerTabLabel ~= nil and type(descriptor.formerTabLabel) ~= "string" then
+        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid former tab label")
+    end
 end
 
 local function RegisterDescriptor(routeDefaults, settingOptions)
@@ -217,6 +225,7 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
         key = key,
         label = settingOptions.label,
         aliases = CopyTable(settingOptions.aliases),
+        weakAliases = CopyTable(settingOptions.weakAliases),
         _routeApplies = routeDefaults.applies,
         _settingApplies = settingOptions.applies,
     }
@@ -234,6 +243,10 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     descriptor._normalizedLabel = NormalizeSearchText(descriptor.label)
     descriptor._normalizedAliases = NormalizeAliases(descriptor.aliases)
     descriptor._normalizedBreadcrumb = NormalizeSearchText(descriptor.breadcrumb)
+    descriptor._normalizedWeakTerms = NormalizeAliases(descriptor.weakAliases)
+    if descriptor.formerTabLabel then
+        AppendAlias(descriptor._normalizedWeakTerms, descriptor.formerTabLabel)
+    end
 
     descriptorsById[descriptor.id] = descriptor
     registry[#registry + 1] = descriptor
@@ -630,6 +643,10 @@ local function ScoreToken(descriptor, token)
     local breadcrumb = descriptor._normalizedBreadcrumb
     if StartsAtWord(breadcrumb, token) then return 80 end
     if breadcrumb:find(token, 1, true) then return 90 end
+
+    for _, term in ipairs(descriptor._normalizedWeakTerms) do
+        if StartsAtWord(term, token) then return 95 end
+    end
     return nil
 end
 

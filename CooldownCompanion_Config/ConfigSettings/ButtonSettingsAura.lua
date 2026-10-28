@@ -858,7 +858,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         })
     end
     -- Desaturate-while-MISSING is NOT a row here any more: it is a style key
-    -- in the panel's Desaturation section (Indicators tab, States), beside
+    -- in the panel's Desaturation section (Effects tab, States), beside
     -- Desaturate On Cooldown, reachable per entry through the style lens.
     -- Only passives keep an entry-side desat switch (Never Desaturate above):
     -- their default-on missing desat is entry-shaped, and the Desaturation
@@ -866,7 +866,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
 
     -- The refresh window is NOT configured here any more (owner ruling
     -- 2026-08-16): the marker and the pandemic effect are style keys in the
-    -- panel's Pandemic section (Indicators tab), reachable per entry by
+    -- panel's Pandemic section (Effects tab), reachable per entry by
     -- customizing that section through the style lens. The marker's old
     -- unit-dependent default survives as that section's "Auto" mode.
 end

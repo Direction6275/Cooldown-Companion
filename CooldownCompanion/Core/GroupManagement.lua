@@ -548,7 +548,6 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             targetGroup.attachedBarStyle[key] = CopyPresetValue(sourceStyle[key])
             if key == "durationFormat" and not templateFields and self.GetDurationFormat then
                 targetGroup.attachedBarStyle[key] = self.GetDurationFormat(sourceStyle)
-                targetGroup.attachedBarStyle.decimalTimers = nil
             end
         end
         local function CopyAttachedLayout(key)
@@ -598,10 +597,11 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         return true
     end
 
-    -- Quick-copy and legacy templates retain their seeded baseline behavior.
-    -- V3 templates instead treat a captured nil as an authoritative reset to
-    -- the runtime default; another profile's baseline must not fill the hole.
-    local baseline = db.globalStyle or {}
+    -- Quick-copy and legacy templates fill a missing value from the shipped
+    -- defaults, the same in every profile (a profile's own globalStyle is an
+    -- imported leftover no setting writes). V3 templates instead treat a
+    -- captured nil as an authoritative reset to the runtime default.
+    local baseline = ST._defaults.profile.globalStyle
     local sourceStyle = source.style or {}
     local targetStyle = targetGroup.style
     if type(targetStyle) ~= "table" then
@@ -707,15 +707,10 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         end
     end
 
-    -- durationFormat: legacy profiles can still carry only decimalTimers=true
-    -- with no explicit durationFormat (no migration normalizes the pair; the
-    -- read path resolves it, ButtonFrame/Helpers.lua). Copying the raw keys
-    -- would hand such a source's target the baseline "clock" while the source
-    -- renders decimals - so the copy writes the source's EFFECTIVE format in
-    -- canonical form and clears the target's retired legacy key.
+    -- durationFormat is copied in canonical form (an unknown value reads as
+    -- the clock format, ButtonFrame/Helpers.lua).
     if copiedDurationFormat and self.GetDurationFormat then
         targetStyle.durationFormat = self.GetDurationFormat(sourceStyle)
-        targetStyle.decimalTimers = nil
     end
 
     if templateFields and templateFields.style.strataOrder and ST._InvalidatePanelStrataEditor then
@@ -1056,7 +1051,10 @@ end
 
 -- Both panel anchor stores use the same IDs, but retain their own fallback
 -- when an addon target is outside the copy. Cursor anchors belong to panels.
-local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allowCursor)
+-- keepOutsidePanels: a chain to an existing panel outside the copy stays on
+-- that same panel, as Duplicate Panel keeps it, so the copy sits on its
+-- original.
+local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allowCursor, keepOutsidePanels)
     local relativeTo = type(settings) == "table" and settings.relativeTo
     if type(relativeTo) ~= "string" or relativeTo == "UIParent" then
         return true
@@ -1070,7 +1068,7 @@ local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allow
         local newTargetId = targetId and groupIdMap[targetId] or nil
         if newTargetId then
             settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
-        else
+        elseif not (keepOutsidePanels and targetId and CooldownCompanion.db.profile.groups[targetId]) then
             return false
         end
     elseif targetKind == "container" then
@@ -1182,7 +1180,7 @@ local function DuplicateContainerSet(self, containerIds, skipFinalize)
     local db = self.db.profile
     for _, groupId in ipairs(newGroupIds) do
         local panel = db.groups[groupId]
-        if not panel.anchor or not RemapDuplicatedAnchor(panel.anchor, groupIdMap, containerIdMap, true) then
+        if not panel.anchor or not RemapDuplicatedAnchor(panel.anchor, groupIdMap, containerIdMap, true, true) then
             local anchor = panel.anchor
             panel.anchor = {
                 point = "CENTER", relativePoint = "CENTER",
@@ -1280,7 +1278,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
             y = 0,
         },
         buttons = {},
-        style = CopyTable(db.globalStyle),
+        -- The shipped defaults, as the bar style below starts from: never a
+        -- profile's imported globalStyle, which no setting writes.
+        style = CopyTable(ST._defaults.profile.globalStyle),
         displayMode = displayMode,
         masqueEnabled = false,
         compactLayout = ShouldDefaultPanelCompactLayout(displayMode),
