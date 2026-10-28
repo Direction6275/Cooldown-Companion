@@ -510,11 +510,15 @@ local function IsIndependentStackUnlocked(placementSettings)
         or false
 end
 
--- Read by the alpha pass: an unlocked stack shows at full alpha, like an
--- unlocked panel.
+-- Read by the alpha pass on every tick: an unlocked stack shows at full alpha,
+-- like an unlocked panel. UpdateIndependentStackDragState stamps the answer
+-- (the same one its mover chrome follows); only a combat start can flip it
+-- without a restamp, so that part is read live.
 local function IsIndependentStackAlphaUnlocked()
-    local settings = GetResourceBarSettings()
-    return IsIndependentStackUnlocked(settings and GetSpecLayoutOrder(settings))
+    return independentWrapperFrame ~= nil
+        and independentWrapperFrame._cdcAlphaUnlocked == true
+        and not CooldownCompanion._combatForcedLock
+        and not InCombatLockdown()
 end
 
 UpdateIndependentStackDragState = function(settings, placementSettings)

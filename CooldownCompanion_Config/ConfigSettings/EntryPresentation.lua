@@ -106,10 +106,15 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                         { "Space between attached bars, including Resources and the cast bar.", 1, 1, 1, true } },
                 -- Preview while dragging, save once on release, like every
                 -- other slider.
+                -- The preview draws from a copy, so a drag that never commits
+                -- leaves the saved layout (or its absence) untouched.
                 onChange = function(value)
                     if not context:IsCurrent() then return end
-                    group.attachedBarLayout = group.attachedBarLayout or {}
-                    ST._PreviewScalarSetting(group.attachedBarLayout, key, value, ST._RefreshSelectedButtonsPreview)
+                    ST._WithSettingsPreview(group, "attachedBarLayout", function()
+                        local layout = CopyTable(group.attachedBarLayout or {})
+                        layout[key] = value
+                        group.attachedBarLayout = layout
+                    end, ST._RefreshSelectedButtonsPreview)
                 end,
                 onRelease = function(value)
                     if not context:IsCurrent() then return end

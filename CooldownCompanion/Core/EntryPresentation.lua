@@ -127,8 +127,16 @@ function ST.PanelSupportsAttachedBars(group)
         and not ST.IsTotemPanelGroup(group)
 end
 
+-- The real panel behind a layout or settings view of it (GetPanelLayoutGroup,
+-- GetPanelBarStyleGroup, the settings contexts). Those views carry their own
+-- displayMode, so a panel-type test such as PanelSupportsAttachedBars must be
+-- asked of the owner, or it quietly answers false for the view.
+function ST.GetPanelOwner(group)
+    return group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+end
+
 function ST.GetEntryPresentation(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     if entry and entry.rotationAssistant then return "icons" end
     if ST.IsIndicatorGroup(group) then return "indicator" end
     if ST.PanelSupportsAttachedBars(group) and entry and entry.displayAs == "bars" then
@@ -138,13 +146,13 @@ function ST.GetEntryPresentation(group, entry)
 end
 
 function ST.IsPanelBarEntry(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     return ST.PanelSupportsAttachedBars(group) and entry and not entry.rotationAssistant
         and entry.displayAs == "bars" or false
 end
 
 function ST.CanSegmentEntryCharges(group, entry)
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     return entry ~= nil and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
         and ST.GetEntryPresentation(group, entry) == "bars"
         and entry.type == "spell" and entry.addedAs ~= "aura" and entry.hasCharges == true
@@ -378,7 +386,7 @@ end
 -- walking many entries in one pass.
 function ST.GetEntryBaseStyle(group, entry, barStyle)
     if entry and entry._geometryContext then return entry._geometryContext:ReadStyle() end
-    group = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
+    group = ST.GetPanelOwner(group)
     if ST.IsPanelBarEntry(group, entry) then return barStyle or ST.GetAttachedBarStyle(group) end
     return group and group.style or {}
 end
@@ -478,7 +486,9 @@ function ST.ResolvePanelAttachmentRegion(group, side, region)
     return "main"
 end
 
+-- Asked of the owner panel, so a settings view gets the panel's answer.
 function ST.IsCollapsingAttachedBar(group, entry, layoutKind)
+    group = ST.GetPanelOwner(group)
     return entry and entry.type == "spell" and entry.addedAs == "aura"
         and entry.hideWhileAuraNotActive == true
         and not entry.auraTrackGroup and not entry.auraTrackPet
@@ -490,10 +500,7 @@ end
 -- bar. Such an entry always takes Low Time on its aura text and reserves no
 -- space while hidden. Aura Panels themselves are a panel-level check.
 function ST.IsNativeFlowAuraEntry(group, entry)
-    -- Settings pass a bar-style view of the panel; the attached-bar test
-    -- needs the real panel behind it.
-    local owner = group and (group._unifiedPanelOwner or group._attachedBarOwner or group)
-    return ST.IsAuraSectionEntry(owner, entry) or ST.IsCollapsingAttachedBar(owner, entry)
+    return ST.IsAuraSectionEntry(group, entry) or ST.IsCollapsingAttachedBar(group, entry)
 end
 
 function Addon:SetEntryPresentation(groupId, index, presentation)

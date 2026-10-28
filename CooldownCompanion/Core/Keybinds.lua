@@ -368,7 +368,14 @@ end
 -- fills items that pass left uncached, so it never moves an existing pick.
 -- Needs RebuildAddonSlotBindings first.
 function CooldownCompanion:CacheAddonBarItemSlots()
+    -- Lowest slot first, so an item on two bound addon slots keeps the same
+    -- one across rebuilds instead of following hash order.
+    local slots = {}
     for slot in pairs(addonSlotBindings) do
+        slots[#slots + 1] = slot
+    end
+    table.sort(slots)
+    for _, slot in ipairs(slots) do
         CacheItemSlot(self._itemSlotCache, slot)
     end
 end

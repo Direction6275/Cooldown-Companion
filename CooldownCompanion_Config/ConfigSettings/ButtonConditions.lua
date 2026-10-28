@@ -2537,13 +2537,11 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
 
         -- Hide Cooldown While Charges Remain: icon entries only.
         local function filterChargeSwipe(bd) return FilterChargeSwipe(group, bd) end
-        local showChargeSwipe = not isBatch and filterChargeSwipe(buttonData)
-        for idx in pairs(isBatch and CS.selectedButtons or {}) do
-            local bd = group.buttons[idx]
-            if bd and filterChargeSwipe(bd) then
-                showChargeSwipe = true
-                break
-            end
+        local showChargeSwipe
+        if isBatch then
+            showChargeSwipe = AnySelectedMatch(filterChargeSwipe)
+        else
+            showChargeSwipe = filterChargeSwipe(buttonData)
         end
         if showChargeSwipe then
             AddFamily(function(column)

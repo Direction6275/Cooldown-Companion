@@ -1635,8 +1635,6 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, add
         lineIsBars = ST.GetPanelGeometryKind(group) == "bars"
         if lineIsBars then
             perLine = tonumber(ST.GetAttachedBarStyle(group).buttonsPerRow) or 12
-            style = group.attachedBarStyle or {}
-            group.attachedBarStyle = style
         end
     end
     local sectioned = ST.GetSectionsForLayout(group)
@@ -1660,7 +1658,12 @@ function CooldownCompanion:KeepPanelSingleLineOnGrowth(group, previousCount, add
         end
     end
     if perLine >= previousLine and newLine > perLine then
-        style.buttonsPerRow = newLine
+        if lineIsBars then
+            group.attachedBarStyle = group.attachedBarStyle or {}
+            group.attachedBarStyle.buttonsPerRow = newLine
+        else
+            style.buttonsPerRow = newLine
+        end
     end
 end
 

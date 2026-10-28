@@ -365,15 +365,9 @@ StaticPopupDialogs["CDC_DELETE_GROUP"] = {
 
 -- Deleting a Group deletes every panel in it, so the prompt says how many.
 function ST._ShowDeleteGroupPopup(containerId)
-    local db = CooldownCompanion.db.profile
-    local container = db.groupContainers[containerId]
+    local container = CooldownCompanion.db.profile.groupContainers[containerId]
     if not container then return end
-    local panelCount = 0
-    for _, group in pairs(db.groups) do
-        if group.parentContainerId == containerId then
-            panelCount = panelCount + 1
-        end
-    end
+    local panelCount = #CooldownCompanion:GetPanels(containerId)
     local text = "Delete group '" .. (container.name or "Group") .. "'"
     if panelCount > 0 then
         text = text .. " and its " .. panelCount .. (panelCount == 1 and " panel" or " panels")

@@ -2496,11 +2496,16 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     FinishConfigRefresh()
     -- A selection change repaints the Navigator's highlight in place. A
     -- different panel (a context menu or the bar workspace can switch it)
-    -- needs the Navigator rebuilt.
-    if selectionOnly and ST._RefreshConfigEditNavigator
-        and (CS.selectedGroup ~= CS.lastCol1SelectedGroup
-            or not (CS.selectedGroup and ST._RefreshConfigEditNavigator(CS.selectedGroup))) then
-        return CooldownCompanion:_configRefreshPanelImpl()
+    -- needs the Navigator rebuilt, and so do rows the in-place repaint finds
+    -- stale. With no panel selected there is no row to repaint, and a panel
+    -- outside any Group has no rows the repaint can reach.
+    if selectionOnly and ST._RefreshConfigEditNavigator then
+        local panel = CS.selectedGroup and CooldownCompanion.db.profile.groups[CS.selectedGroup]
+        if CS.selectedGroup ~= CS.lastCol1SelectedGroup
+            or (panel and panel.parentContainerId
+                and not ST._RefreshConfigEditNavigator(CS.selectedGroup)) then
+            return CooldownCompanion:_configRefreshPanelImpl()
+        end
     end
     if CS.tutorialRuntime and CS.tutorialRuntime.active and RebuildTutorialAnchors then
         RebuildTutorialAnchors()
