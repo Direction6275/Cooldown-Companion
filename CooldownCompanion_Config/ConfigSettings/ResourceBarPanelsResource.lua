@@ -497,9 +497,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
                 current = "Current Value",
                 current_max = "Current / Max",
                 percent = "Percent",
-                percent_no_sign = "Percent (No %)",
             }
-            textFormatOrder = { "current", "current_max", "percent", "percent_no_sign" }
+            textFormatOrder = { "current", "current_max", "percent" }
         end
         local textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
         if isHealthResource then
