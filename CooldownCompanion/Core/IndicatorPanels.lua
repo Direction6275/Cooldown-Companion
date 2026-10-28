@@ -1075,6 +1075,9 @@ function I.PromoteAura(group, entry)
     table.insert(group.buttons, 1, entry)
     entry.indicatorAuraListed = nil
     old.indicatorAuraListed = true
+    -- The Indicator plays one sound set for its whole list, read from slot
+    -- one, so the sounds the player set move with the slot.
+    entry.soundAlerts, old.soundAlerts = old.soundAlerts, entry.soundAlerts
     return true
 end
 
@@ -1133,6 +1136,8 @@ function I.RemoveSource(group, entry)
         local nextAura = index == 1 and I.AuraList(group)[2] or nil
         ReshapeAuraList(group, notes, function()
             if nextAura then
+                -- Slot one's sounds are the Indicator's: they stay with it.
+                nextAura.soundAlerts = entry.soundAlerts
                 table.remove(buttons, IndexOf(group, nextAura))
                 nextAura.indicatorAuraListed = nil
                 buttons[1] = nextAura
