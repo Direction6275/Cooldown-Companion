@@ -103,7 +103,7 @@ if ST._DefineSettingRoute then
         applies = FrameAnchoringFinderEnabled,
     }):Settings({
         anchorPoint = { label = "Anchor Point" },
-        relativePoint = { label = "Relative Anchor Point" },
+        relativePoint = { label = "Relative Point", aliases = { "relative anchor point" } },
         xOffset = { label = "X Offset" },
         yOffset = { label = "Y Offset" },
     })
@@ -136,7 +136,7 @@ if ST._DefineSettingRoute then
         applies = TargetFrameFinderPositioned,
     }):Settings({
         anchorPoint = { label = "Anchor Point" },
-        relativePoint = { label = "Relative Anchor Point" },
+        relativePoint = { label = "Relative Point", aliases = { "relative anchor point" } },
         xOffset = { label = "X Offset" },
         yOffset = { label = "Y Offset" },
     })
@@ -223,7 +223,7 @@ local function AddFramePositionRows(posLeft, posRight, frameSettings, anchorDefa
     AddAnchorDropdown(posLeft, frameSettings, "anchorPoint", anchorDefault, onChanged, "Anchor Point",
         { setting = finderSettings and finderSettings.anchorPoint })
 
-    AddAnchorDropdown(posLeft, frameSettings, "relativePoint", relativeDefault, onChanged, "Relative Anchor Point",
+    AddAnchorDropdown(posLeft, frameSettings, "relativePoint", relativeDefault, onChanged, "Relative Point",
         { setting = finderSettings and finderSettings.relativePoint })
 
     AddSliderRow(posRight, {

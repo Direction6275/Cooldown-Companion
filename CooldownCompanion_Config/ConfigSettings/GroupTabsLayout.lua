@@ -336,13 +336,15 @@ if ST._DefineSettingRoute then
             aliases = { "panel point" },
             applies = LayoutFinderFlag("anchorPoint"),
         },
+        -- An Indicator's points carry the panel names (owner ruling
+        -- 2026-10-27); the older words stay searchable.
         displayPoint = {
-            label = "Display Point",
-            aliases = { "anchor point", "trigger point" },
+            label = "Anchor Point",
+            aliases = { "display point", "trigger point" },
             applies = LayoutFinderFlag("displayPoint"),
         },
-        targetPoint = { label = "Target Point", aliases = { "relative point" }, applies = LayoutFinderFlag("targetPoint") },
-        screenPoint = { label = "Screen Point", aliases = { "relative point" }, applies = LayoutFinderFlag("screenPoint") },
+        targetPoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("targetPoint") },
+        screenPoint = { label = "Relative Point", aliases = { "screen point" }, applies = LayoutFinderFlag("screenPoint") },
         relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
         xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("xOffset") },
         yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("yOffset") },
@@ -674,7 +676,7 @@ local function BuildLayoutTab(container)
             return
         end
         local textureGroupId = CS.selectedGroup
-        local anchorLabel = "Display Point"
+        local anchorLabel = "Anchor Point"
         local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
         local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
             and CooldownCompanion:GetCursorAnchorTargetName()
@@ -945,7 +947,7 @@ local function BuildLayoutTab(container)
                 x = 16,
                 y = 16,
                 range = 2000,
-                step = 1,
+                step = 0.1,
             }, RefreshCursorAnchor, {
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
@@ -990,7 +992,7 @@ local function BuildLayoutTab(container)
             local targetsScreen = targetMode == "group" and not group.parentContainerId
             AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
                 RefreshTextureVisual,
-                targetsScreen and "Screen Point" or "Target Point",
+                "Relative Point",
                 {
                     setting = LAYOUT_FINDER.position and (targetsScreen
                         and LAYOUT_FINDER.position.screenPoint
@@ -1000,7 +1002,7 @@ local function BuildLayoutTab(container)
                 x = 0,
                 y = 0,
                 range = 2000,
-                step = 1,
+                step = 0.1,
             }, RefreshTextureVisual, {
                 settings = LAYOUT_FINDER.position and {
                     x = LAYOUT_FINDER.position.xOffset,
@@ -1129,6 +1131,7 @@ local function BuildLayoutTab(container)
         local panelAnchorRow = AddDropdownRow(anchorLeft, {
             label = "Anchor to Panel",
             setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
+            pulloutWidth = WIDE_PULLOUT_WIDTH,
             onChange = function(val, widget)
                 if not val or val == "" then return end
                 local targetGroupId = tonumber(val)
