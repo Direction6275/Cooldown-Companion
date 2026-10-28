@@ -1974,57 +1974,36 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         ApplyFieldToSelection(group, buttonData, field, value)
     end
 
-    -- Filtered apply: only write to non-equippable items (stack toggles).
-    -- When clearing (value is falsy), write to ALL selected to clean stale data.
+    -- Filtered apply: a batch writes only the selected entries `filter`
+    -- accepts (and `eligible`, when a row narrows the set further). Clearing
+    -- (a falsy value) still writes every selected entry so none keeps a stale
+    -- key. A single entry is written directly.
+    local function ApplyFiltered(filter, field, value, eligible)
+        if not isBatch then
+            buttonData[field] = value
+            return
+        end
+        for idx in pairs(CS.selectedButtons) do
+            local bd = group.buttons[idx]
+            if bd and (not eligible or eligible(bd)) and (not value or filter(bd)) then
+                bd[field] = value
+            end
+        end
+    end
+
+    -- Stack toggles: non-equippable items only.
     local function ApplyToNonEquippable(field, value)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd then
-                    if not value or FilterNonEquippable(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(FilterNonEquippable, field, value)
     end
 
-    -- Filtered apply: only write to charge-capable buttons (charge toggles),
-    -- or to the narrower filter a row passes. When clearing (value is falsy),
-    -- write to ALL selected to clean stale data.
+    -- Charge toggles: charge-capable entries, or the narrower filter a row passes.
     local function ApplyToChargeCapable(field, value, filter)
-        filter = filter or FilterChargeCapable
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd then
-                    if not value or filter(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(filter or FilterChargeCapable, field, value)
     end
 
-    -- Filtered apply: only write to charge-based spell buttons.
-    -- When clearing (value is falsy), write to ALL selected to clean stale data.
+    -- Charge-based spell entries only.
     local function ApplyToChargeSpell(field, value)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd then
-                    if not value or FilterChargeSpell(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(FilterChargeSpell, field, value)
     end
 
     -- Filtered apply for the Cooldown Visibility row's Show Only At 0 Charges
@@ -2042,21 +2021,9 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         end
     end
 
-    -- Filtered apply: only write to equippable items (equip toggles).
-    -- When clearing, write to ALL selected to clean stale data.
+    -- Equip toggles: equippable items only.
     local function ApplyToEquippable(field, value)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd then
-                    if not value or FilterEquippable(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(FilterEquippable, field, value)
     end
 
     -- Helper: set checkbox value (batch-aware tri-state or normal).
@@ -2286,18 +2253,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
             and not ST.IsAuraSectionEntry(group, bd)
     end
     local function ApplyToAuraEntries(field, value, eligible)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd and (not eligible or eligible(bd)) then
-                    if not value or FilterAuraEntry(bd) then
-                        bd[field] = value
-                    end
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(FilterAuraEntry, field, value, eligible)
     end
     local anyAuraEntry
     if isBatch then anyAuraEntry = AnySelectedMatch(FilterAuraEntry)
@@ -2464,16 +2420,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
     -- reads and sets only the other entries; clearing still reaches all.
     local function FilterCastabilityEntry(bd) return bd.addedAs ~= "aura" end
     local function ApplyToCastabilityEntries(field, value)
-        if isBatch then
-            for idx in pairs(CS.selectedButtons) do
-                local bd = group.buttons[idx]
-                if bd and (not value or FilterCastabilityEntry(bd)) then
-                    bd[field] = value
-                end
-            end
-        else
-            buttonData[field] = value
-        end
+        ApplyFiltered(FilterCastabilityEntry, field, value)
     end
     AddStateFamily({
         setting = entryVisibilitySettings.unusable,

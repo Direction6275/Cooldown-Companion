@@ -1506,8 +1506,8 @@ function ST._BuildGroupPanelOverview(host, containerId)
 
     local records = {}
     local includeSections = true
-    local browsingOtherClasses = ST._configState
-        and ST._configState.otherClassLibraryActive == true
+    -- The Navigator's lock rule, so a tile, its menu and its row agree.
+    local canToggleAnchorLock = ST._CanChangeLock(containerId)
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
         local modules = ST._GetPanelAttachmentPreviewModules(panelInfo.groupId, { groupOverview = true })
@@ -1523,7 +1523,7 @@ function ST._BuildGroupPanelOverview(host, containerId)
             naturalHeight = math_max(1, tonumber(naturalHeight) or 90),
             hasAttachedResources = #modules > 0,
             previewOptions = { groupOverview = true, previewModules = modules },
-            canToggleAnchorLock = not browsingOtherClasses,
+            canToggleAnchorLock = canToggleAnchorLock,
         }
         local panelDisabled = panelInfo.group.enabled == false
         local groupDisabled = container.enabled == false

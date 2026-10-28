@@ -64,6 +64,7 @@ local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local UsesChargeTextLane = CooldownCompanion.UsesChargeTextLane
 local IsEquipmentSlotEntry = CooldownCompanion.IsEquipmentSlotEntry
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local UsesCastabilityHide = CooldownCompanion.UsesCastabilityHide
 local SetEntryPingReceiver = ST.SetEntryPingReceiver
 local ResolveEffectiveItem = CooldownCompanion.ResolveEffectiveItem
 local ResolveItemFallback = CooldownCompanion.ResolveItemFallback
@@ -685,8 +686,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     -- panels ride dirty ticks + the safety walk like icon visuals (disposition
     -- doc 2026-07-04-023; forcing-attribution captures showed the old blanket
     -- force cost ~25 ms/s in combat and defeated the idle skip entirely).
-    local floorFailOpen = (buttonData.hideWhileUnusable
-            and not buttonData.isPassive and not buttonData.isPassiveCooldown
+    local floorFailOpen = (UsesCastabilityHide(buttonData)
             and (IsEntryItemLike(buttonData) or buttonData._rotationAssistantVirtual == true)
             and "hide-unusable")
         or nil

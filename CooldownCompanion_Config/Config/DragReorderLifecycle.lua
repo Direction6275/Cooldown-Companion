@@ -749,11 +749,9 @@ local function FinishRailPanelDrag(state)
         end
     end
 
-    if not changedGroup then
-        -- Selection untouched.
-    elseif #(state.sourcePanelOrder or {}) == 1 then
+    if changedGroup and #(state.sourcePanelOrder or {}) == 1 then
         SelectConfigPanel(state.sourcePanelOrder[1], { containerId = targetContainerId })
-    else
+    elseif changedGroup then
         CS.selectedContainer = targetContainerId
         CS.selectedGroup = nil
         CS.expandedContainer = targetContainerId

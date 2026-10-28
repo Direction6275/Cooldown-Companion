@@ -907,7 +907,7 @@ local PANDEMIC_MARKER_MODE_ORDER = { "auto", "on", "off" }
 -- Row grammar only (RowWidgets.lua). Three shapes, one builder:
 --   opts.enableOnly   - just the mode row, returned so the caller can chain a
 --                       gear, then ST._AddPandemicMarkerInfo's (?), and the
---                       section's scope chrome off it (the Indicators tab's
+--                       section's scope chrome off it (the Effects tab's
 --                       Pandemic section).
 --   opts.childrenOnly - just what that gear opens, so the rows fill the panel
 --                       instead of indenting under a control that is elsewhere.

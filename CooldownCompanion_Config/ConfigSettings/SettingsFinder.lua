@@ -46,10 +46,13 @@ local VALID_ROW_SCOPES = {
     detail = true,
 }
 
+-- formerTabLabel: the name a tab had before a rename. The old word still
+-- finds the tab's rows, scored after every label, alias and breadcrumb match
+-- so it never outranks a row that actually names the word.
 local ROUTE_FIELDS = {
     "scope", "tab", "tabLabel", "section", "sectionId", "sectionLabel",
     "collapseKeys", "collapseStore", "rowScope", "tabStateKey",
-    "advancedKey",
+    "advancedKey", "formerTabLabel",
 }
 
 local function Trim(text)
@@ -198,6 +201,9 @@ local function ValidateDescriptorShape(descriptor)
     if descriptor._settingApplies ~= nil and type(descriptor._settingApplies) ~= "function" then
         error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid setting predicate")
     end
+    if descriptor.formerTabLabel ~= nil and type(descriptor.formerTabLabel) ~= "string" then
+        error("Cooldown Companion Settings Finder: " .. descriptor.id .. " has an invalid former tab label")
+    end
 end
 
 local function RegisterDescriptor(routeDefaults, settingOptions)
@@ -223,12 +229,6 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     for _, field in ipairs(ROUTE_FIELDS) do
         CopyRouteField(descriptor, routeDefaults, settingOptions, field)
     end
-    -- Ordinary and Totem panels called the Effects tab and its sections
-    -- Indicators until 2026-10-28; the old word keeps finding their rows.
-    if descriptor.tab == "effects" then
-        descriptor.aliases = descriptor.aliases or {}
-        descriptor.aliases[#descriptor.aliases + 1] = "indicators"
-    end
 
     if descriptorsById[descriptor.id] then
         error("Cooldown Companion Settings Finder: duplicate descriptor id " .. descriptor.id)
@@ -240,6 +240,8 @@ local function RegisterDescriptor(routeDefaults, settingOptions)
     descriptor._normalizedLabel = NormalizeSearchText(descriptor.label)
     descriptor._normalizedAliases = NormalizeAliases(descriptor.aliases)
     descriptor._normalizedBreadcrumb = NormalizeSearchText(descriptor.breadcrumb)
+    descriptor._normalizedFormerTabLabel = descriptor.formerTabLabel
+        and NormalizeSearchText(descriptor.formerTabLabel) or nil
 
     descriptorsById[descriptor.id] = descriptor
     registry[#registry + 1] = descriptor
@@ -636,6 +638,9 @@ local function ScoreToken(descriptor, token)
     local breadcrumb = descriptor._normalizedBreadcrumb
     if StartsAtWord(breadcrumb, token) then return 80 end
     if breadcrumb:find(token, 1, true) then return 90 end
+
+    local former = descriptor._normalizedFormerTabLabel
+    if former and StartsAtWord(former, token) then return 95 end
     return nil
 end
 

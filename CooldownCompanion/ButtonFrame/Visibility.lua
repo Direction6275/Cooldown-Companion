@@ -16,6 +16,7 @@ local C_Spell_IsSpellUsable = C_Spell.IsSpellUsable
 local IsUsableItem = C_Item.IsUsableItem
 local UsesChargeBehavior = CooldownCompanion.UsesChargeBehavior
 local IsEntryItemLike = CooldownCompanion.IsEntryItemLike
+local UsesCastabilityHide = CooldownCompanion.UsesCastabilityHide
 
 local bit_band = bit.band
 local bit_bor  = bit.bor
@@ -192,10 +193,8 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         hideReasons = bit_bor(hideReasons, HIDE_NOT_EQUIPPED)
     end
 
-    -- Check hideWhileUnusable. Castability is a spell or item question: an
-    -- Aura entry is present or not, so a saved flag on one stays inert.
-    if buttonData.hideWhileUnusable and not buttonData.isPassive and not buttonData.isPassiveCooldown
-        and buttonData.addedAs ~= "aura" then
+    -- Check hideWhileUnusable (passives and Aura entries never take it).
+    if UsesCastabilityHide(buttonData) then
         if buttonData.type == "spell" then
             local spellID = button._displaySpellId or buttonData.id
             if not C_Spell_IsSpellUsable(spellID) then
@@ -241,6 +240,15 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
     end
 end
 
+-- Whether a spell entry's Hide While Unusable answer has changed since its
+-- last evaluation. The usability events fire on every power tick, so their
+-- pass (EventHandlers OnReadyGlowUsabilityChanged) walks only when this is
+-- true, asking the same question with the same spell ID as the check above.
+local function IsSpellUnusableHideStale(button, buttonData)
+    local unusable = not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
+    return unusable ~= (bit_band(button._visibilityReasonBits or 0, HIDE_UNUSABLE) ~= 0)
+end
+
 -- Update loss-of-control cooldown on a button.
 -- DurationObject path handles secret values. If no DurationObject is available
 -- (no LoC active), clear the cooldown.
@@ -265,5 +273,6 @@ end
 
 -- Exports
 ST._EvaluateButtonVisibility = EvaluateButtonVisibility
+ST._IsSpellUnusableHideStale = IsSpellUnusableHideStale
 ST._GetButtonVisibilityReasonNames = GetButtonVisibilityReasonNames
 ST._UpdateLossOfControl = UpdateLossOfControl

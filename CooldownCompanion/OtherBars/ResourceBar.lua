@@ -41,6 +41,7 @@ local MW_AURA_SPELL_ID = RB.MW_AURA_SPELL_ID
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local RESOURCE_MAELSTROM_WEAPON = RB.RESOURCE_MAELSTROM_WEAPON
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
+local PERCENT_TEXT_FORMATS = RB.RESOURCE_PERCENT_TEXT_FORMATS
 local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
@@ -689,10 +690,10 @@ local function UpdateContinuousBar(bar, powerType, settings)
         local textFormat = bar._textFormat
         if textFormat == "current" then
             bar.text:SetFormattedText("%d", currentPower)
-        elseif textFormat == "percent" or textFormat == "percent_no_sign" then
+        elseif PERCENT_TEXT_FORMATS[textFormat] then
             -- UnitPowerPercent returns a 0..1 value by default; evaluate through a curve
             -- to get 0..100 without Lua arithmetic (secret-safe in combat).
-            bar.text:SetFormattedText(textFormat == "percent" and "%.0f%%" or "%.0f",
+            bar.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat],
                 UnitPowerPercent("player", powerType, false, PERCENT_SCALE_CURVE))
         else
             bar.text:SetFormattedText("%d / %d", currentPower, maxPower)
@@ -750,10 +751,8 @@ local function UpdateStaggerBar(bar, settings)
             local textFormat = bar._textFormat
             if textFormat == "current" then
                 bar.text:SetFormattedText("%d", staggerAmount)
-            elseif textFormat == "percent" then
-                bar.text:SetFormattedText("%.0f%%", percent)
-            elseif textFormat == "percent_no_sign" then
-                bar.text:SetFormattedText("%.0f", percent)
+            elseif PERCENT_TEXT_FORMATS[textFormat] then
+                bar.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], percent)
             else
                 bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
             end
@@ -1363,9 +1362,8 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
             local textFormat = holder._textFormat
             if textFormat == "current" then
                 holder.text:SetFormattedText("%d", stacks)
-            elseif textFormat == "percent" or textFormat == "percent_no_sign" then
-                holder.text:SetFormattedText(textFormat == "percent" and "%.0f%%" or "%.0f",
-                    (stacks / mwMaxStacks) * 100)
+            elseif PERCENT_TEXT_FORMATS[textFormat] then
+                holder.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], (stacks / mwMaxStacks) * 100)
             else
                 holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
             end
@@ -1510,9 +1508,8 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
                 local textFormat = holder._textFormat
                 if textFormat == "current" then
                     holder.text:SetFormattedText("%d", stacks)
-                elseif textFormat == "percent" or textFormat == "percent_no_sign" then
-                    holder.text:SetFormattedText(textFormat == "percent" and "%.0f%%" or "%.0f",
-                        (stacks / maxStacks) * 100)
+                elseif PERCENT_TEXT_FORMATS[textFormat] then
+                    holder.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], (stacks / maxStacks) * 100)
                 else
                     holder.text:SetFormattedText("%d / %d", stacks, maxStacks)
                 end
@@ -1938,8 +1935,7 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, a
     end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
-    if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent"
-        and textFormat ~= "percent_no_sign" then
+    if textFormat ~= "current" and textFormat ~= "current_max" and not PERCENT_TEXT_FORMATS[textFormat] then
         textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
     end
     local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT

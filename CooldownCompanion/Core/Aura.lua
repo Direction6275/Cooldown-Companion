@@ -945,15 +945,14 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
         return curatedAuraID ~= buttonData.id and tostring(curatedAuraID) or nil
     end
 
-    local directAuraID = ResolveDirectBuffViewerSpellID(buttonData.id)
-    if directAuraID and not IsDistinctAuraIdentityForButton(buttonData, directAuraID) then
-        return tostring(directAuraID)
-    end
-
+    -- Every step from here is frame-free. This resolver PERSISTS its answer,
+    -- and a saved ID outranks detection from then on, so it never reads the
+    -- Cooldown Manager's on-screen buff frames: those exist only while that
+    -- display is on, and the same spell would save different auras
+    -- depending on a display setting (owner ruling R12 part 2, 2026-10-28).
+    -- The live standalone and implicit-head chains keep the frame rung as a
+    -- bonus.
     local baseId = C_Spell.GetBaseSpell(buttonData.id) or buttonData.id
-    -- Frame-free twin of the direct resolution above: this is the resolver
-    -- that PERSISTS into stored config, so it must agree with the live
-    -- chain when no buff viewer frame exists.
     local linkedAppliedID = ResolveLinkedAppliedAuraForButton(buttonData, baseId)
     if linkedAppliedID and linkedAppliedID ~= buttonData.id then
         return tostring(linkedAppliedID)
@@ -964,12 +963,6 @@ function CooldownCompanion:InferConfirmedAuraSpellIDString(buttonData)
         and not IsDistinctAuraIdentityForButton(buttonData, resolvedAuraId) then
         return tostring(resolvedAuraId)
     end
-
-    -- No guess from the Cooldown Manager's on-screen buff frames: it could
-    -- only be made while that display is on, and a saved ID outranks
-    -- detection from then on, so the same spell would save different auras
-    -- depending on a display setting (owner ruling R12 part 2, 2026-10-28).
-    -- Linked auras are still tracked through the Cooldown Manager data rows.
     return nil
 end
 

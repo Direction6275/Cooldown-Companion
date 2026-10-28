@@ -328,11 +328,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
         and chargeState == "zero" then
         activeReasons["zero-charges"] = true
     end
-    if buttonData.hideWhileUnusable
-        and not buttonData.isPassive
-        and not buttonData.isPassiveCooldown
-        and buttonData.addedAs ~= "aura"
-        and unusable then
+    if CooldownCompanion.UsesCastabilityHide(buttonData) and unusable then
         activeReasons.unusable = true
     end
 

@@ -677,7 +677,7 @@ local function BuildCooldownPressFlashSection(container, group, style, lens)
     flashSec:Finish()
 end
 
--- The Indicators tab's row-grammar sections. They collapse like every
+-- The Effects tab's row-grammar sections. They collapse like every
 -- other row-grammar section, which means the advanced gears inside them only
 -- build while their section is open - and a queued advanced key with no gear
 -- left to consume it expires silently (ConsumeQueuedAdvancedSettingsPanelOpen).
@@ -689,7 +689,7 @@ end
 -- gear added to one of these sections belongs here the same day.
 --
 -- BAR MODE SHARES THESE KEYS. BarModeTabs draws its own Cooldown / Spell
--- Indicators / Aura Indicators / Interaction sections and deliberately reuses
+-- Effects / Aura Effects / Interaction sections and deliberately reuses
 -- these collapse keys, so one entry per advanced key covers both tabs. That is
 -- why `barActiveAura` - a bars-only gear - lives in this icons-owned map: the
 -- map is keyed by gear, and a key reached in a mode that has no such section
@@ -715,7 +715,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     cooldownPressFlash = EFFECTS_SPELL_SECTION,
     assistedHighlight = EFFECTS_SPELL_SECTION,
 
-    -- The aura family has a section of its own on BOTH Indicators tabs (owner
+    -- The aura family has a section of its own on BOTH Effects tabs (owner
     -- ruling 2026-08-30: one aura toggle stranded in each spell section's right
     -- column read as a lopsided column, not as a family), so every aura gear
     -- names it - icons' aura glow and aura duration swipe, bars' active aura
@@ -744,7 +744,7 @@ ST._INDICATORS_SECTION_BY_ADVANCED_KEY = {
     tooltipBehavior = EFFECTS_INTERACTION_SECTION,
 }
 
--- The icons Indicators tab's advanced gears, by the OVERRIDE SECTION each one
+-- The icons Effects tab's advanced gears, by the OVERRIDE SECTION each one
 -- belongs to. A SECOND map for the same gears, because it answers a different
 -- question than the collapse map directly above: that one says "which
 -- COLLAPSE section is this gear inside", this one says "which OVERRIDE section
@@ -814,7 +814,7 @@ local function BuildEffectsTab(container, settingsGroup)
     -- a BeginRowGrid grid, whose two columns stack at full width.
     --
     -- THREE sections, and all three collapse like every other row-grammar
-    -- section: Cooldown / Spell Indicators, Aura Indicators, Interaction (owner
+    -- section: Cooldown / Spell Effects, Aura Effects, Interaction (owner
     -- ruling 2026-08-30). The families that used to be collapsibles of their
     -- own - Glows, Timers, States, Pandemic - are quiet SUBHEADINGS inside the
     -- two indicator sections, so they carry no collapse state at all.
@@ -845,13 +845,13 @@ local function BuildEffectsTab(container, settingsGroup)
     -- its own.
     AddLensPanelScopeNote(container, lens)
 
-    -- Named once here: the Aura Indicators section below is gated on it
+    -- Named once here: the Aura Effects section below is gated on it
     -- outright, and the missing-aura row inside that section names it again
     -- beside its own override gate.
     local groupHasAuraEntry = GroupHasAuraTrackingEntry(group)
 
     -- ================================================================
-    -- Cooldown / Spell Indicators
+    -- Cooldown / Spell Effects
     -- ================================================================
     -- ONE section for everything the spell's own state drives (owner ruling
     -- 2026-08-30): the tab splits at the SECTION level between the
@@ -1180,7 +1180,7 @@ local function BuildEffectsTab(container, settingsGroup)
     if spellStatesShown then
     AddSettingsSubheading(container, "States")
     -- Spell-side only, now that the missing-aura desaturate has moved into the
-    -- Aura Indicators section below. Two even columns, split by what the state
+    -- Aura Effects section below. Two even columns, split by what the state
     -- is about:
     -- LEFT whether the spell is READY to cast (on cooldown, unusable), RIGHT
     -- whether it can REACH its target (out of range, locked out of control). No
@@ -1260,13 +1260,13 @@ local function BuildEffectsTab(container, settingsGroup)
     end -- States subheading
 
     end -- not spellCollapsed
-    end -- Cooldown / Spell Indicators has at least one subgroup
+    end -- Cooldown / Spell Effects has at least one subgroup
 
     -- ================================================================
-    -- Aura Indicators
+    -- Aura Effects
     -- ================================================================
     -- The aura family's own section (owner ruling 2026-08-30), the twin of the
-    -- Cooldown / Spell Indicators section above. Every aura indicator on this
+    -- Cooldown / Spell Effects section above. Every aura indicator on this
     -- tab used to hang alone in a spell section's right column - one toggle
     -- beside four - which read as a lopsided column rather than as a family;
     -- collected here they are the family. The refresh window is aura-only too,
@@ -1366,13 +1366,13 @@ local function BuildEffectsTab(container, settingsGroup)
         setting = EFFECTS_FINDER.icons.aura.missingIndicator,
         settings = EFFECTS_FINDER.advanced.missingIndicator, infoButtons = tabInfoButtons,
     })
-    end -- Aura Indicators section open
+    end -- Aura Effects section open
 
     -- ---------------------------------------------------------------
     -- Pandemic
     -- ---------------------------------------------------------------
     -- Both halves are aura-only, like the rows above them, so the refresh
-    -- window is a subheading INSIDE Aura Indicators rather than a collapsible
+    -- window is a subheading INSIDE Aura Effects rather than a collapsible
     -- of its own (owner ruling 2026-08-30). Its old "effects_pandemic" key is
     -- retired with it; a subheading owns no collapse state, so the section's
     -- key folds the whole aura family together.
@@ -1636,6 +1636,8 @@ local function EffectsFinderRoute(prefix, section, sectionLabel, applies, advanc
         scope = EFFECTS_FINDER_SCOPE,
         tab = "effects",
         tabLabel = "Effects",
+        -- The tab and its sections said Indicators until 2026-10-28.
+        formerTabLabel = "Indicators",
         section = section,
         sectionId = sectionId,
         sectionLabel = EFFECTS_FINDER_ADVANCED_SECTION_LABELS[advancedKey]

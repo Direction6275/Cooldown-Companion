@@ -16,7 +16,6 @@ local AddClassSpecEligibilityControls = ST._AddClassSpecEligibilityControls
 -- Imports from RowWidgets.lua (the row grammar)
 local AddCheckboxRow = ST._AddCheckboxRow
 local AddSliderRow = ST._AddSliderRow
-local AddDropdownRow = ST._AddDropdownRow
 local AnchorRowBadge = ST._AnchorRowBadge
 local BeginRowGrid = ST._BeginRowGrid
 
@@ -70,7 +69,7 @@ if ST._DefineSettingRoute then
         enabled = { label = "Enabled", aliases = { "show group" } },
         locked = { label = "Locked", aliases = { "unlock group", "move group" },
             applies = function(context)
-                return context and context.containerId ~= nil and ST._IsCreateTargetContainer(context.containerId) or false
+                return context and context.containerId ~= nil and ST._CanChangeLock(context.containerId) or false
             end },
     })
 
@@ -185,7 +184,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
     })
 
     -- Another class's Group never loads here, so it has nothing to unlock.
-    if ST._IsCreateTargetContainer(containerId) then
+    if ST._CanChangeLock(containerId) then
     AddCheckboxRow(masterRight, {
         label = "Locked",
         setting = CONTAINER_FINDER.general and CONTAINER_FINDER.general.locked,

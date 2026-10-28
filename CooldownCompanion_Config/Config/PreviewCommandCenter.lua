@@ -352,7 +352,7 @@ local function StateRoute(advancedKey)
     -- (ST._INDICATORS_SECTION_BY_ADVANCED_KEY maps it to "effects_spell");
     -- with none there is nothing to resolve from, so name the section on the
     -- route or the gear lands on a collapsed header with nothing under it.
-    -- The state looks are a subgroup of the Cooldown / Spell Indicators section
+    -- The state looks are a subgroup of the Cooldown / Spell Effects section
     -- in both icon and bar presentation
     -- and the subheading over them owns no collapse state of its own.
     local statesSection = (advancedKey == nil) and "effects_spell" or nil
@@ -600,8 +600,8 @@ local CONTROLS = {
         menuOrder = 60,
         modes = { icons = true, bars = true },
         -- Sits with the readouts, not the effects: the timer color IS the
-        -- duration text, dressed. Its settings live under the Indicators tab's Pandemic
-        -- subheading, inside Aura Indicators, so this is a two-mode effects
+        -- duration text, dressed. Its settings live under the Effects tab's Pandemic
+        -- subheading, inside Aura Effects, so this is a two-mode effects
         -- route rather than TextRoute's Appearance one; both gear keys are in
         -- the gear-to-section map, which is what uncollapses that header.
         section = "pandemic",
@@ -1345,7 +1345,7 @@ local function ApplyGearRoute(route, queueKey, sectionId, running)
         ForceSectionOpen(home and home.collapseKey, lens, routeGroup)
         ForceSectionOpen(route.uncollapse, lens, routeGroup)
         -- Same rule, read off the key rather than named on the route: the
-        -- Indicators tab collapses each of its sections, and which one holds a
+        -- Effects tab collapses each of its sections, and which one holds a
         -- given gear is GroupTabs' fact to state - it owns both the sections and
         -- the advanced keys - so the map lives there. Keys
         -- reached in a display mode that has no such section just clear one

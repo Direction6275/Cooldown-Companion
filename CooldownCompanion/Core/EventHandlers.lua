@@ -424,9 +424,11 @@ function CooldownCompanion:OnReadyGlowUsabilityChanged()
                 -- Individually hidden entries are included so Hide While
                 -- Unusable can recover: a spell entry re-shows from this pass
                 -- rather than a pinned ticker (item-like entries still pin it).
-                if bd and bd.hideWhileUnusable and bd.type == "spell"
-                        and not bd.isPassive and not bd.isPassiveCooldown
-                        and bd.addedAs ~= "aura" and not bd._rotationAssistantVirtual then
+                -- These events fire on every power tick, so only an answer
+                -- the button has not applied yet costs a walk.
+                if bd and bd.type == "spell" and not bd._rotationAssistantVirtual
+                        and CooldownCompanion.UsesCastabilityHide(bd)
+                        and ST._IsSpellUnusableHideStale(button, bd) then
                     self:QueueCooldownRefresh("hide-unusable-usability")
                     return
                 end

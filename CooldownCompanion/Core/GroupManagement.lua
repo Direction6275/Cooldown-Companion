@@ -1051,7 +1051,10 @@ end
 
 -- Both panel anchor stores use the same IDs, but retain their own fallback
 -- when an addon target is outside the copy. Cursor anchors belong to panels.
-local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allowCursor)
+-- keepOutsidePanels: a chain to an existing panel outside the copy stays on
+-- that same panel, as Duplicate Panel keeps it, so the copy sits on its
+-- original.
+local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allowCursor, keepOutsidePanels)
     local relativeTo = type(settings) == "table" and settings.relativeTo
     if type(relativeTo) ~= "string" or relativeTo == "UIParent" then
         return true
@@ -1065,7 +1068,7 @@ local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allow
         local newTargetId = targetId and groupIdMap[targetId] or nil
         if newTargetId then
             settings.relativeTo = "CooldownCompanionGroup" .. tostring(newTargetId)
-        else
+        elseif not (keepOutsidePanels and targetId and CooldownCompanion.db.profile.groups[targetId]) then
             return false
         end
     elseif targetKind == "container" then
@@ -1177,15 +1180,7 @@ local function DuplicateContainerSet(self, containerIds, skipFinalize)
     local db = self.db.profile
     for _, groupId in ipairs(newGroupIds) do
         local panel = db.groups[groupId]
-        local anchorKept = panel.anchor and RemapDuplicatedAnchor(panel.anchor, groupIdMap, containerIdMap, true)
-        if panel.anchor and not anchorKept then
-            -- A chain to a panel outside the copy stays on that same panel, as
-            -- Duplicate Panel keeps it, so the copy sits on its original.
-            local targetKind, targetId = ParseIndicatorAddonAnchorTarget(panel.anchor.relativeTo)
-            anchorKept = targetKind == "group" and targetId ~= nil and not groupIdMap[targetId]
-                and db.groups[targetId] ~= nil
-        end
-        if not anchorKept then
+        if not panel.anchor or not RemapDuplicatedAnchor(panel.anchor, groupIdMap, containerIdMap, true, true) then
             local anchor = panel.anchor
             panel.anchor = {
                 point = "CENTER", relativePoint = "CENTER",

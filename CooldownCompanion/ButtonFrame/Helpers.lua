@@ -67,6 +67,16 @@ local function IsEntryItemLike(buttonData)
 end
 CooldownCompanion.IsEntryItemLike = IsEntryItemLike
 
+-- Whether Hide While Unusable can act on this entry. Castability is a spell or
+-- item question: a passive never casts, and an Aura entry is present or not,
+-- so a saved flag on either stays inert. The one rule visibility, the ticker
+-- floor, the usability event pass and the config preview share.
+local function UsesCastabilityHide(buttonData)
+    return buttonData.hideWhileUnusable and not buttonData.isPassive
+        and not buttonData.isPassiveCooldown and buttonData.addedAs ~= "aura"
+end
+CooldownCompanion.UsesCastabilityHide = UsesCastabilityHide
+
 --------------------------------------------------------------------------------
 -- Entry Pings (12.1 ping system)
 --

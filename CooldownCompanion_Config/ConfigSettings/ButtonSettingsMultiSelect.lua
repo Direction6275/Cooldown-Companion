@@ -164,8 +164,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
     ST._ApplyLeftAlignedHeading(heading, nil, true)
 
     local anyDisabled = false
-    -- Lock state counts this class's Groups only: another class's Group
-    -- never loads here, so it has nothing to lock or unlock.
+    -- Lock state counts this class's Groups only (ST._CanChangeLock).
     local anyUnlocked, anyLockable = false, false
     for _, containerId in ipairs(multiGroupIds) do
         local container = db.groupContainers[containerId]
@@ -173,7 +172,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
             if container.enabled == false then
                 anyDisabled = true
             end
-            if ST._IsCreateTargetContainer(containerId) then
+            if ST._CanChangeLock(containerId) then
                 anyLockable = true
                 if container.locked == false then
                     anyUnlocked = true
@@ -202,8 +201,7 @@ function ST._RefreshGroupMultiSelect(scroll, multiCount, multiGroupIds)
                 if ST._RefuseLockChangeInCombat() then return end
                 local attachmentOperation = CooldownCompanion:BeginPanelAttachmentRefresh()
                 for _, containerId in ipairs(multiGroupIds) do
-                    -- Another class's Group never loads here; leave its lock.
-                    if ST._IsCreateTargetContainer(containerId) then
+                    if ST._CanChangeLock(containerId) then
                         CooldownCompanion:SetContainerLocked(containerId, anyUnlocked)
                     end
                 end
@@ -287,7 +285,7 @@ function ST._RefreshPanelMultiSelect(scroll, multiCount, multiPanelIds)
 
     -- Lock state counts this class's movable panels only.
     local function IsLockablePanel(panel)
-        return panel and ST._IsCreateTargetContainer(panel.parentContainerId)
+        return panel and ST._CanChangeLock(panel.parentContainerId)
             and not (CooldownCompanion.IsGroupCursorAnchored and CooldownCompanion:IsGroupCursorAnchored(panel))
     end
     local anyUnlocked, anyLockable = false, false

@@ -532,9 +532,17 @@ local function RefuseLockChangeInCombat()
 end
 ST._RefuseLockChangeInCombat = RefuseLockChangeInCombat
 
+-- The one class rule every lock surface asks, and both toggles below enforce:
+-- another class's Group never loads on this character, so it has no movers
+-- to lock or unlock. Read through ST: the class gate is defined further down.
+local function CanChangeLock(containerId)
+    return ST._IsCreateTargetContainer(containerId) == true
+end
+ST._CanChangeLock = CanChangeLock
+
 local function TogglePanelAnchorLock(panelId)
     local panel = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[panelId]
-    if not panel then
+    if not panel or not CanChangeLock(panel.parentContainerId) then
         return false
     end
     if RefuseLockChangeInCombat() then
@@ -562,7 +570,7 @@ ST._TogglePanelAnchorLock = TogglePanelAnchorLock
 local function ToggleContainerLock(containerId)
     local containers = CooldownCompanion.db.profile.groupContainers
     local container = containers and containers[containerId]
-    if not container then return false end
+    if not container or not CanChangeLock(containerId) then return false end
     if RefuseLockChangeInCombat() then return false end
 
     local isLocked = container.locked ~= false
@@ -650,7 +658,7 @@ local function ShowPanelContextMenu(panelId, containerId)
 
             -- Another class's panel can't be moved or anchored to from here:
             -- its frame never loads on this character.
-            local ownClass = ST._IsCreateTargetContainer and ST._IsCreateTargetContainer(containerId)
+            local ownClass = CanChangeLock(containerId)
             local holderId = CooldownCompanion:GetExternalAnchorPanelId()
             local isHolder = holderId ~= nil and holderId == tonumber(panelId)
             local cursorAnchored = CooldownCompanion.IsGroupCursorAnchored
@@ -1219,7 +1227,7 @@ local function ShowContainerContextMenu(db, containerId, container)
             end
             UIDropDownMenu_AddButton(info, level)
 
-            if IsCreateTargetContainer(containerId) then
+            if CanChangeLock(containerId) then
                 UIDropDownMenu_AddSeparator(level)
 
                 info = UIDropDownMenu_CreateInfo()
@@ -2364,9 +2372,16 @@ local function RefreshColumn1(preserveDrag)
                 end
                 return
             end
-            -- Releasing a dragged spell or item over the header is a drop, not
-            -- a click: it must not navigate away from the panel being edited.
-            if button == "LeftButton" and GetCursorInfo() then return end
+            -- A click while carrying a spell or item opens the Group so one of
+            -- its panels can take the drop, and never navigates away from the
+            -- panel being edited.
+            if button == "LeftButton" and GetCursorInfo() then
+                if not searchResults and not IsContainerExpanded(containerId) then
+                    CS.peekedContainers[containerId] = true
+                    CooldownCompanion:RefreshConfigPanel()
+                end
+                return
+            end
             if button == "LeftButton" then
                 if CS.spellbookPanelWindow then CS.CloseSpellbookPanel() end
                 if searchResults then
@@ -2386,7 +2401,7 @@ local function RefreshColumn1(preserveDrag)
                 end
             elseif button == "RightButton" then
                 ShowContainerContextMenu(db, containerId, container)
-            elseif button == "MiddleButton" and IsCreateTargetContainer(containerId) then
+            elseif button == "MiddleButton" and CanChangeLock(containerId) then
                 ToggleContainerLock(containerId)
             end
         end)
@@ -2613,7 +2628,7 @@ local function RefreshColumn1(preserveDrag)
                         end
                     elseif button == "RightButton" and ST._ShowPanelContextMenu then
                         ST._ShowPanelContextMenu(panelId, containerId)
-                    elseif button == "MiddleButton" and IsCreateTargetContainer(containerId) then
+                    elseif button == "MiddleButton" and CanChangeLock(containerId) then
                         TogglePanelAnchorLock(panelId)
                     end
                 end)

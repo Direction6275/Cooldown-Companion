@@ -35,6 +35,7 @@ local RB = ST._RB
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 local RESOURCE_OVERLAY_HOLDER_LEVEL = RB.RESOURCE_OVERLAY_HOLDER_LEVEL
 local PREVIEW_STACKS = RB.RESOURCE_AURA_PREVIEW_STACKS
+local PERCENT_TEXT_FORMATS = RB.RESOURCE_PERCENT_TEXT_FORMATS
 -- How wounded the player is while a health-effect preview runs. The effect
 -- bars are sized as shares of the real maximum, so this leaves them room.
 local HEALTH_EFFECT_PREVIEW_FILL = 0.65
@@ -287,10 +288,8 @@ function RB.CreateResourceBarPreviewModule(deps)
             local textFormat = bar._textFormat
             if textFormat == "current" then
                 bar.text:SetFormattedText("%d", maxValue)
-            elseif textFormat == "percent" then
-                bar.text:SetFormattedText("%d%%", 100)
-            elseif textFormat == "percent_no_sign" then
-                bar.text:SetFormattedText("%d", 100)
+            elseif PERCENT_TEXT_FORMATS[textFormat] then
+                bar.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], 100)
             else
                 bar.text:SetFormattedText("%d / %d", maxValue, maxValue)
             end
@@ -372,10 +371,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 local textFormat = barInfo.frame._textFormat
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxHealth)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d%%", 100)
-                elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
+                elseif PERCENT_TEXT_FORMATS[textFormat] then
+                    barInfo.frame.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxHealth, maxHealth)
                 end
@@ -421,10 +418,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 local textFormat = barInfo.frame._textFormat
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxStacks)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d%%", 100)
-                elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
+                elseif PERCENT_TEXT_FORMATS[textFormat] then
+                    barInfo.frame.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
                 end
@@ -455,10 +450,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 local textFormat = barInfo.frame._textFormat
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxStacks)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d%%", 100)
-                elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
+                elseif PERCENT_TEXT_FORMATS[textFormat] then
+                    barInfo.frame.text:SetFormattedText(PERCENT_TEXT_FORMATS[textFormat], 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
                 end

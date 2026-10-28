@@ -698,13 +698,14 @@ local function AddFrameStrataRow(parent, group, infoButtons, onChanged)
         end,
     })
 
+    local subject = ST.IsIndicatorGroup(group) and "Indicator" or "panel"
     AnchorRowBadge(frameStrataRow, CreateInfoButton(frameStrataRow.frame, frameStrataRow.frame, "LEFT", "LEFT", 0, 0, {
         "Frame Strata",
-        {"Sets the rendering layer for this panel.", 1, 1, 1, true},
+        {"Sets the rendering layer for this " .. subject .. ".", 1, 1, 1, true},
         " ",
-        {"Panels on a higher strata fully overlap lower ones.", 1, 1, 1, true},
+        {"Panels and Indicators on a higher strata fully overlap lower ones.", 1, 1, 1, true},
         " ",
-        {"Only change this if you need one panel to overlap another.", 1, 1, 1, true},
+        {"Only change this if you need it to overlap another panel or Indicator.", 1, 1, 1, true},
     }, infoButtons))
 end
 

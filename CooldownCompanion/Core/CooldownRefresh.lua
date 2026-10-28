@@ -60,7 +60,8 @@
            Coupled to the hide-unusable floorFailOpen term in
            CooldownUpdate.UpdateButtonCooldown: SPELL_UPDATE_USABLE and
            ACTION_USABLE_CHANGED queue a pass when a shown panel has a Ready
-           Glow Only While Usable icon or a Hide While Unusable spell entry
+           Glow Only While Usable icon, or a Hide While Unusable spell entry
+           whose usability answer changed since its last evaluation
            (EventHandlers OnReadyGlowUsabilityChanged), so a spell entry's
            re-show rides those events, with the safety walk as the fallback
            if one is skipped (owner sign-off R5, 2026-10-28). Item-like and

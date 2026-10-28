@@ -256,7 +256,7 @@ ST._SECTION_HOME.icons = {
     -- Icon Zoom is one row inside the panel's own Icon Settings section, which
     -- is where its collapse key comes from.
     iconZoom = { tab = "appearance", collapseKey = "appearance_icons" },
-    -- Indicators tab. The collapse keys come from the section constants
+    -- Effects tab. The collapse keys come from the section constants
     -- imported from GroupTabsEffects.lua, never from literals: the bar tab
     -- shares those same constants, and a copy could drift from them.
     --
@@ -267,7 +267,7 @@ ST._SECTION_HOME.icons = {
     procGlow = {
         tab = "effects", collapseKey = EFFECTS_SPELL_SECTION,
     },
-    -- The aura family has its own section on the Indicators tab (owner ruling
+    -- The aura family has its own section on the Effects tab (owner ruling
     -- 2026-08-30), so the three aura rows below name it rather than the spell
     -- section each used to hang off. BuildAuraGlowSection returns early without
     -- an aura-tracking entry, and the section itself is gated on one.
@@ -289,7 +289,7 @@ ST._SECTION_HOME.icons = {
     },
     -- Both halves of the refresh window live in one section, so the feature has
     -- one home whichever half a consumer was looking for. It is the Pandemic
-    -- subheading at the foot of Aura Indicators now, so the home names that
+    -- subheading at the foot of Aura Effects now, so the home names that
     -- section's key; the subheading is gated on an aura-tracking entry
     -- (BuildEffectsTab), and both halves return early without one.
     --
@@ -310,7 +310,7 @@ ST._SECTION_HOME.icons = {
         end,
     },
     -- The aura duration swipe is drawn only while the GROUP tracks an aura -
-    -- in the Aura Indicators section, with the aura glow above it.
+    -- in the Aura Effects section, with the aura glow above it.
     auraDurationSwipe = {
         tab = "effects", collapseKey = EFFECTS_AURA_SECTION,
         available = IconsGroupTracksAura,
@@ -763,7 +763,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     --    any gear inside one needs queue-safe uncollapse wiring: whatever
     --    queues an advanced-panel open for that gear must clear the section's
     --    collapse key first, or the queued key expires against a gear that
-    --    never built. The Indicators tab does this with a gear-to-section map
+    --    never built. The Effects tab does this with a gear-to-section map
     --    (ST._INDICATORS_SECTION_BY_ADVANCED_KEY) read by the preview command
     --    center; bar mode's text section names its key on the route itself
     --    (`uncollapse`). Either shape is fine; having neither is not.
