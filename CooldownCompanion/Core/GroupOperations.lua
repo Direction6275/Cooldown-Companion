@@ -1133,7 +1133,9 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
     if group and group.masqueEnabled and self.Masque and not self.MasqueGroups[groupId] then
         self:CreateMasqueGroup(groupId)
         for _, button in ipairs(frame.buttons) do
-            self:AddButtonToMasque(groupId, button)
+            if self:IsMasqueSkinnedButton(group, button) then
+                self:AddButtonToMasque(groupId, button)
+            end
         end
     elseif self.Masque and self.MasqueGroups[groupId] and not (group and group.masqueEnabled) then
         for _, button in ipairs(frame.buttons) do
