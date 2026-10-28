@@ -354,19 +354,32 @@ local function CacheButtonBindingKeys(button, buttonData)
     RefreshKeyPressHighlightEnrollment(button)
 end
 
+local function CacheItemSlot(cache, slot)
+    if C_ActionBar.HasAction(slot) and C_ActionBar.IsItemAction(slot) then
+        local actionType, id = GetActionInfo(slot)
+        if actionType == "item" and id and not cache[id] then
+            cache[id] = slot
+        end
+    end
+end
+
+-- Items found only on an addon bar's bound slot (an ElvUI page-2 bar, say)
+-- that Blizzard's frames don't show. Runs after the Blizzard pass and only
+-- fills items that pass left uncached, so it never moves an existing pick.
+-- Needs RebuildAddonSlotBindings first.
+function CooldownCompanion:CacheAddonBarItemSlots()
+    for slot in pairs(addonSlotBindings) do
+        CacheItemSlot(self._itemSlotCache, slot)
+    end
+end
+
 -- Rebuild the entire item→slot reverse lookup cache by scanning action button frames.
 function CooldownCompanion:RebuildItemSlotCache()
     wipe(self._itemSlotCache)
-    for slot, info in pairs(slotToButtonInfo) do
-        if C_ActionBar.HasAction(slot) and C_ActionBar.IsItemAction(slot) then
-            local actionType, id = GetActionInfo(slot)
-            if actionType == "item" and id then
-                if not self._itemSlotCache[id] then
-                    self._itemSlotCache[id] = slot
-                end
-            end
-        end
+    for slot in pairs(slotToButtonInfo) do
+        CacheItemSlot(self._itemSlotCache, slot)
     end
+    self:CacheAddonBarItemSlots()
 end
 
 -- Update item slot cache for a single changed slot.
@@ -379,14 +392,7 @@ function CooldownCompanion:UpdateItemSlotCache(slot)
         end
     end
     -- Add new entry if slot now has an item
-    if C_ActionBar.HasAction(slot) and C_ActionBar.IsItemAction(slot) then
-        local actionType, id = GetActionInfo(slot)
-        if actionType == "item" and id then
-            if not self._itemSlotCache[id] then
-                self._itemSlotCache[id] = slot
-            end
-        end
-    end
+    CacheItemSlot(self._itemSlotCache, slot)
 end
 
 -- Resolve the action bar slot from a button frame, or nil.
@@ -509,8 +515,9 @@ end
 
 function CooldownCompanion:RefreshKeybindState()
     self:RebuildSlotMapping()
-    self:RebuildItemSlotCache()
+    -- Addon bindings first: the item cache's second pass reads them.
     self:RebuildAddonSlotBindings()
+    self:RebuildItemSlotCache()
     self:OnKeybindsChanged()
 end
 

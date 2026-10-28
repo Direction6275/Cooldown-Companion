@@ -754,6 +754,8 @@ end
 
 function CooldownCompanion:OnBindingsChanged()
     self:RebuildAddonSlotBindings()
+    -- A newly bound addon-bar slot can be the only home of an item.
+    self:CacheAddonBarItemSlots()
     self:OnKeybindsChanged()
 end
 
