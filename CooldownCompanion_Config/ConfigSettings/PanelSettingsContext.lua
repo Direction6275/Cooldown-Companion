@@ -223,9 +223,20 @@ function ST._MarkSettingsScope(widget, scope, group, descendants)
     end
 end
 
+local HIGHLIGHT_WIDGET_FIELDS = { "settingWidget", "rowWidget", "sectionRowWidget", "headingWidget" }
+
 local function RemoveWidget(container, index)
     local widget = table.remove(container.children, index)
     widget._cdcSettingsScope, widget._cdcSettingsHeading, widget._cdcSettingsCollapsed = nil, nil, nil
+    -- A pooled widget can be handed out again before the highlight fires, so
+    -- a pending flash must not keep pointing at it; it falls back to the next
+    -- recorded widget (the section heading) instead.
+    local pending = CS.pendingSettingHighlight
+    if pending then
+        for _, field in ipairs(HIGHLIGHT_WIDGET_FIELDS) do
+            if pending[field] == widget then pending[field] = nil end
+        end
+    end
     AceGUI:Release(widget)
 end
 

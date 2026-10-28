@@ -407,10 +407,12 @@ local function BuildCustomizationsSection(scroll, group, buttonData, infoButtons
 
         -- Read before the badges so the gear can require it: a gear whose
         -- section has no home in this mode - or whose home is not DRAWN for
-        -- this group and this entry - would navigate nowhere. An unavailable
-        -- row keeps everything else it had: its revert, and its inactive clause
+        -- this group and this entry - would navigate nowhere. An inactive row
+        -- is plain text too, like its gear (owner ruling 2026-10-27): its
+        -- home does not show the setting for this entry. An unavailable row
+        -- keeps everything else it had: its revert, and its inactive clause
         -- when it has one. Only the link goes.
-        local navigable = item.tab ~= nil
+        local navigable = item.tab ~= nil and not item.reason
             and IsSectionHomeAvailable(item.home, group, predicateStyle, item.sectionId)
 
         -- ADVANCED GEAR (owner ruling 2026-08-14): a row whose section has an

@@ -573,6 +573,9 @@ refreshGuard:Hide()
 refreshGuard:SetScript("OnUpdate", function(self)
     self:Hide()
     CS.configRefreshInProgress = false
+    -- The Settings Finder's navigation refresh sets this around the same
+    -- synchronous refresh, so an error strands it the same way.
+    CS._settingsFinderNavigationRefresh = nil
     wipe(pendingScrollFixes)
 end)
 
