@@ -509,18 +509,17 @@ end
 
 -- Sound alerts sit at the foot of the entry's Settings tab on every panel
 -- type; a conditions Indicator that does not use its source's sounds gets its
--- panel-level sound section instead. Entries that never had a sound surface
--- (equipment slots, and anything that is not a spell outside conditions
--- Indicators) add nothing rather than a section that only says "not
--- available".
+-- panel-level sound section instead, whatever its source (trinket slots
+-- included). Entries that never had a sound surface (equipment slots, and
+-- anything that is not a spell outside conditions Indicators) add nothing
+-- rather than a section that only says "not available".
 local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
     if buttonData.rotationAssistant then return end
-    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
-        return
-    end
-
     if CooldownCompanion:IsConditionsIndicatorGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
         BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+        return
+    end
+    if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
         return
     end
 

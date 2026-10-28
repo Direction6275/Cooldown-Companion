@@ -114,7 +114,6 @@ local soundRoute = ST._DefineSettingRoute({
     idPrefix="panel.indicator.sounds",scope="panel",rowScope="primary",tab="effects",tabLabel="Effects",
     section="sounds",sectionLabel="Sound Alerts",
     collapseKeys=function(context) return {tostring(context.groupId).."_nil_soundalerts"} end,
-    applies=Applies(function(g) return not Addon.IsEquipmentSlotEntry(I.Primary(g)) end),
 })
 local soundDefinitions = {
     sourceSounds={label="Sound Events",applies=Applies(function(g) return not I.IsAura(g) and I.Primary(g).type == "spell" end)},
