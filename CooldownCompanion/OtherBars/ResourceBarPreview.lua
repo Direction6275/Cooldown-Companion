@@ -288,6 +288,8 @@ function RB.CreateResourceBarPreviewModule(deps)
             if textFormat == "current" then
                 bar.text:SetFormattedText("%d", maxValue)
             elseif textFormat == "percent" then
+                bar.text:SetFormattedText("%d%%", 100)
+            elseif textFormat == "percent_no_sign" then
                 bar.text:SetFormattedText("%d", 100)
             else
                 bar.text:SetFormattedText("%d / %d", maxValue, maxValue)
@@ -372,6 +374,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                     barInfo.frame.text:SetFormattedText("%d", maxHealth)
                 elseif textFormat == "percent" then
                     barInfo.frame.text:SetFormattedText("%d%%", 100)
+                elseif textFormat == "percent_no_sign" then
+                    barInfo.frame.text:SetFormattedText("%d", 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxHealth, maxHealth)
                 end
@@ -418,6 +422,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxStacks)
                 elseif textFormat == "percent" then
+                    barInfo.frame.text:SetFormattedText("%d%%", 100)
+                elseif textFormat == "percent_no_sign" then
                     barInfo.frame.text:SetFormattedText("%d", 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
@@ -450,6 +456,8 @@ function RB.CreateResourceBarPreviewModule(deps)
                 if textFormat == "current" then
                     barInfo.frame.text:SetFormattedText("%d", maxStacks)
                 elseif textFormat == "percent" then
+                    barInfo.frame.text:SetFormattedText("%d%%", 100)
+                elseif textFormat == "percent_no_sign" then
                     barInfo.frame.text:SetFormattedText("%d", 100)
                 else
                     barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
