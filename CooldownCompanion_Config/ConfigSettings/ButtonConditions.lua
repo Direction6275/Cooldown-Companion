@@ -2317,7 +2317,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
                     VISIBILITY_TOOLTIP_SPACER,
                     {"Show While Inactive shows the entry only while the aura is missing. A target aura needs a hostile target. Tracked on your group, it shows while nobody has it.", 1, 1, 1, true},
                     VISIBILITY_TOOLTIP_SPACER,
-                    {"Hidden auras still reserve their space, including in Compact Mode.", 1, 1, 1, true},
+                    {"Hidden auras still reserve their space, including in Compact Mode. An aura bar beside icons that only shows while active takes no space instead.", 1, 1, 1, true},
                 }),
                 write = function(value)
                     ApplyToAuraEntries("hideWhileAuraNotActive", value == "hide" or nil)

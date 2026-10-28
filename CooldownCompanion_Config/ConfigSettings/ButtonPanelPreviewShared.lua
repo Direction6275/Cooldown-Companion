@@ -963,8 +963,7 @@ local function DoesHiddenAuraReserveLayoutSpace(buttonData, group)
     local displayMode = group and (group.displayMode or "icons") or "icons"
     return (displayMode == "icons" or displayMode == "bars")
         and not ST.IsAuraPanelGroup(group)
-        and not ST.IsAuraSectionEntry(group, buttonData)
-        and not ST.IsCollapsingAttachedBar(group, buttonData)
+        and not ST.IsNativeFlowAuraEntry(group, buttonData)
         and buttonData.type == "spell"
         and (buttonData.auraTracking or buttonData.addedAs == "aura")
         and (buttonData.hideWhileAuraNotActive == true

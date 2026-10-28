@@ -850,7 +850,7 @@ local function BuildBarAppearanceTab(container, group, style)
         local rightBracket = lowTimeRight ~= lowTimeLeft
             and lowTimeSec:Bracket(lowTimeRight) or nil
         local entryIsAuraOnly = (lens and lens.mode == "entry") and lens.buttonData
-            and ST.IsAuraSectionEntry(group, lens.buttonData)
+            and ST.IsNativeFlowAuraEntry(group, lens.buttonData)
         -- Master row unindented and aura opt-in row: keep in step with the
         -- icon-mode twin in GroupTabsAppearance.lua (owner ruling 2026-08-28).
         local rows = ST._AddDurationLowTimeRows(lowTimeLeft, lowTimeSec.tbl, refreshStyle, {
@@ -2073,7 +2073,7 @@ local function BarFinderLowTimeAuraToggle(context)
     local group = context.group
     if ST.IsAuraPanelGroup(group) then return false end
     if context.scope == "entry" and context.buttonData
-        and ST.IsAuraSectionEntry(group, context.buttonData) then
+        and ST.IsNativeFlowAuraEntry(group, context.buttonData) then
         return false
     end
     return BarsDrawAuraDurationRows(group, BarFinderStyle(context))

@@ -485,6 +485,14 @@ function ST.IsCollapsingAttachedBar(group, entry, layoutKind)
         and ST.IsAttachedBarEntry(group, entry, layoutKind) or false
 end
 
+-- An entry of an ordinary panel that Blizzard's aura container draws, the way
+-- it draws an Aura Panel: an aura section member or a collapsing attached aura
+-- bar. Such an entry always takes Low Time on its aura text and reserves no
+-- space while hidden. Aura Panels themselves are a panel-level check.
+function ST.IsNativeFlowAuraEntry(group, entry)
+    return ST.IsAuraSectionEntry(group, entry) or ST.IsCollapsingAttachedBar(group, entry)
+end
+
 function Addon:SetEntryPresentation(groupId, index, presentation)
     local group = self.db.profile.groups[groupId]
     local entry = group and group.buttons and group.buttons[index]
