@@ -249,7 +249,7 @@ end
 -- identity, entries, and icon style throughout widget building and callbacks.
 function ST._ResolveStylingGroup(group)
     if group and group._settingsContext then return group end
-    if not ST.PanelSupportsAttachedBars(group) then return group end
+    if not ST._UsesPanelSettingsView(group) then return group end
     return ST._CreatePanelSettingsContext(group).group
 end
 
@@ -404,10 +404,6 @@ local SECTION_DENIAL_CLAUSES = {
 
 local function GetSectionDenialClause(reason)
     return SECTION_DENIAL_CLAUSES[reason] or SECTION_DENIAL_CLAUSES.entryType
-end
-
-local function AddSectionDeniedTooltipLines(reason)
-    GameTooltip:AddLine("Not available: " .. GetSectionDenialClause(reason) .. ".", 0.5, 0.5, 0.5)
 end
 
 ------------------------------------------------------------------------
@@ -1014,7 +1010,9 @@ local function AttachHeadingScopeChrome(heading, sec)
     end
 
     local lens, group, sectionId = sec.lens, sec.group, sec.sectionId
-    local scope, deniedReason = sec.scope, sec.deniedReason
+    local scope = sec.scope
+    -- Denied and panel-only headings carry no chrome: an entry's settings view
+    -- removes the ones with nothing it can edit (_FilterEntrySettingsWidgets).
     if ST._MarkSettingsScope then ST._MarkSettingsScope(heading, scope, group) end
     HideScopeChrome(frame, HEADING_SCOPE_FIELDS)
 
@@ -1043,25 +1041,6 @@ local function AttachHeadingScopeChrome(heading, sec)
         SetScopeText(revert, "Revert", SCOPE_CHROME_GOLD)
         WireScopeRevertAction(revert, lens.buttonData, sectionId)
         ChainHeadingBadges(heading, revert)
-        attached = true
-
-    elseif scope == "denied" then
-        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
-        SetScopeText(note, "Not available", SCOPE_CHROME_GREY)
-        note:EnableMouse(true)
-        note:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            AddSectionDeniedTooltipLines(deniedReason)
-            GameTooltip:Show()
-        end)
-        note:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        ChainHeadingBadges(heading, note)
-        attached = true
-
-    elseif scope == "panelOnly" then
-        local note = EnsureScopeText(frame, "_cdcScopeNote", false)
-        SetScopeText(note, "Applies to all entries", SCOPE_CHROME_GREY)
-        ChainHeadingBadges(heading, note)
         attached = true
     end
 
@@ -1417,20 +1396,13 @@ end
 
 -- THE one decision point for which collapse key a section uses under the
 -- current lens. Every navigation and section-building caller must route its
--- collapse key through here rather than testing the lens itself, so "which
--- sections open by default for this selection" has a single owner.
+-- collapse key through here rather than testing the lens itself.
 --
--- Sections an entry cannot edit ("panelOnly", "denied") are noise in an entry
--- lens, so they get their OWN key and open COLLAPSED the first time that key is
--- seen. The key is per SECTION, never per entry: collapsing one entry's inert
--- sections collapses them for the next entry too, which is the point - the
--- owner is expressing "hide what I cannot edit here", not a per-entry state.
--- Everything else keeps its base key, so a section's normal collapse state
+-- An entry is edited through its panel's settings view, which qualifies the
+-- key by presentation on ordinary panels and records whether the entry can
+-- edit the section, so _FilterEntrySettingsWidgets drops what it cannot.
+-- Everywhere else a section keeps its base key, so its collapse state
 -- survives selecting an entry and coming back.
---
--- Seeding writes to CS.collapsedSections, the store BuildCollapsibleSection
--- defaults to (truthy = collapsed). Lens sections must use that default store;
--- a caller with its own store would seed the wrong table.
 local function ResolveLensCollapseKey(lens, group, sectionId, baseKey, opts)
     local context = group and group._settingsContext
     if context then
@@ -1446,37 +1418,7 @@ local function ResolveLensCollapseKey(lens, group, sectionId, baseKey, opts)
         end
         return key
     end
-    if not baseKey or not (lens and lens.mode == "entry") then
-        return baseKey
-    end
-
-    local scope = ResolveLensSection(lens, group, sectionId)
-    if scope ~= "panelOnly" and scope ~= "denied" then
-        return baseKey
-    end
-
-    -- A panel-only collapsible can HOST an override section (Icon Settings
-    -- hosts Icon Zoom). While the entry has CUSTOMIZED a hosted section it has
-    -- live business inside, so the fold-by-default gives way (owner ruling
-    -- 2026-08-14); an inherited hosted section stays behind the fold with its
-    -- Customize one click away.
-    local hosts = opts and opts.hostsSections
-    if hosts then
-        for i = 1, #hosts do
-            if ResolveLensSection(lens, group, hosts[i]) == "customized" then
-                return baseKey
-            end
-        end
-    end
-
-    local lensKey = "lens_" .. baseKey
-    local store = CS.collapsedSections
-    -- nil means never seen, which is exactly what the default-collapsed seed
-    -- must not overwrite once the owner has expanded it (false is stored).
-    if store and store[lensKey] == nil then
-        store[lensKey] = true
-    end
-    return lensKey
+    return baseKey
 end
 
 -- One grey line at the top of a styling tab when several entries are selected.

@@ -2055,6 +2055,9 @@ end
 local function BarFinderDurationFormat(context)
     local group = context and context.group
     if not group then return false end
+    -- With an entry selected the row is that entry's only on attached bars,
+    -- which keep it in Bar Settings; anywhere else the panel owns it.
+    if context.scope == "entry" and not group._attachedBarOwner then return false end
     local panelStyle = group.style or {}
     local effectiveStyle = BarFinderStyle(context) or panelStyle
     return BarsDrawCooldownDurationRows(group, panelStyle)

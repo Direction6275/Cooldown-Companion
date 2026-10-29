@@ -190,13 +190,6 @@ end
 -- Place-preserving Panel <-> Entry lens handoff
 ------------------------------------------------------------------------
 
-local function NormalizeLensAnchorKey(key)
-    if type(key) == "string" and key:sub(1, 5) == "lens_" then
-        return key:sub(6)
-    end
-    return key
-end
-
 local function BeginLensAnchorBuild(scroll)
     CS.lensAnchorRegistry = {
         scroll = scroll,
@@ -227,7 +220,7 @@ RegisterLensAnchorHeading = function(widget, key)
     end
     local heading = {
         widget = widget,
-        semanticKey = NormalizeLensAnchorKey(key),
+        semanticKey = key,
     }
     registry.headings[#registry.headings + 1] = heading
     local onRelease = widget.events and widget.events.OnRelease
