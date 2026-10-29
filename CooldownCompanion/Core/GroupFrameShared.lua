@@ -168,19 +168,22 @@ end
 local function ApplyGroupOwnAlpha(frame)
     if not frame then return end
 
-    local alpha
+    -- Painted as UpdateGroupAlpha paints it. The layout preview's full-alpha
+    -- stand-in below is for locked panels only, so a parked ghost never
+    -- blinks to full.
     if GetPanelUnlockState(frame.groupId) then
-        alpha = GetUnlockedPanelAlpha(frame)
-    else
-        -- A fresh sync hands the opacity back: its tick writes only on change.
-        local sync = frame.alphaSyncFrame
-        if frame.anchoredToParent and sync and sync:GetScript("OnUpdate") then
-            CooldownCompanion:SetupAlphaSync(frame, frame.anchoredToParent)
-            return
-        end
-        local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
-        alpha = hasRuntimeAlpha and currentAlpha or GetPanelBaseAlpha(frame.groupId)
+        frame._naturalAlpha = nil
+        frame:SetAlpha(GetUnlockedPanelAlpha(frame))
+        return
     end
+    -- A fresh sync hands the opacity back: its tick writes only on change.
+    local sync = frame.alphaSyncFrame
+    if frame.anchoredToParent and sync and sync:GetScript("OnUpdate") then
+        CooldownCompanion:SetupAlphaSync(frame, frame.anchoredToParent)
+        return
+    end
+    local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
+    local alpha = hasRuntimeAlpha and currentAlpha or GetPanelBaseAlpha(frame.groupId)
 
     if ST.IsGroupRuntimeLayoutPreviewActive
         and ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then

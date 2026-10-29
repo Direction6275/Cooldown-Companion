@@ -497,7 +497,7 @@ local SCOPE_GLYPH_ICON_SIZE = 12
 local SCOPE_ENTRY_NAME_MAX_CHARS = 18
 
 local HEADING_SCOPE_FIELDS = { "_cdcScopeNote", "_cdcScopeAction", "_cdcScopeRevertText" }
-local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert", "_cdcScopeRowPanel" }
+local ROW_SCOPE_FIELDS = { "_cdcScopeRowAction", "_cdcScopeRowRevert" }
 
 -- A grey row has no affordance to explain itself, so the explanation is a
 -- HOVER - on the CONTROL, not the row. It rides RowWidgets' SetScopeTooltip,
@@ -1128,35 +1128,6 @@ local function AttachRowScopeChrome(rowWidget, sec)
     return scope
 end
 
--- Chrome for a row that stays PANEL-OWNED inside an entry-scope section: its
--- key has no override identity, so it always reads and writes the panel style,
--- and under an entry lens the grey label says so instead of the section's
--- Customize/Revert chrome. No affordance - there is nothing to promote.
-local function AttachPanelSettingRowChrome(rowWidget)
-    local frame = rowWidget and rowWidget.frame
-    if not (frame and rowWidget.badgeAnchor) then
-        return
-    end
-
-    HideScopeChrome(frame, ROW_SCOPE_FIELDS)
-    -- The note is visible, so this row needs no hover explanation - but it must
-    -- not keep one a previous tenant of the pooled row left behind.
-    SetRowScopeTooltip(rowWidget, nil)
-
-    local note = EnsureScopeText(frame, "_cdcScopeRowPanel", false)
-    SetScopeText(note, "Panel setting", SCOPE_CHROME_GREY)
-    ST._AnchorRowBadge(rowWidget, note)
-
-    local prevOnRelease = rowWidget.events and rowWidget.events["OnRelease"]
-    rowWidget:SetCallback("OnRelease", function(widget, event, ...)
-        if prevOnRelease then
-            prevOnRelease(widget, event, ...)
-        end
-        HideScopeChrome(frame, ROW_SCOPE_FIELDS)
-        SetRowScopeTooltip(widget, nil)
-    end)
-end
-
 ------------------------------------------------------------------------
 -- LENS SECTION HOST
 ------------------------------------------------------------------------
@@ -1320,13 +1291,10 @@ function LensSection:HeadingChrome(heading)
     return AttachHeadingScopeChrome(heading, self)
 end
 
--- Chrome for a panel-owned row inside this section (see
--- AttachPanelSettingRowChrome): label only, and only under an entry lens.
+-- A row that stays PANEL-OWNED inside an entry-scope section: its key has no
+-- override identity, so an entry's settings view removes it.
 function LensSection:PanelRowChrome(row)
     if ST._MarkSettingsScope then ST._MarkSettingsScope(row, "panelOnly", self.group) end
-    if self.lens and self.lens.mode == "entry" then
-        AttachPanelSettingRowChrome(row)
-    end
 end
 
 -- Take (or retake) the primary bracket mark. Heading-owning sections take

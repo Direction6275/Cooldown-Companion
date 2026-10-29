@@ -768,18 +768,12 @@ function CooldownCompanion:EnsureAuraTextureHost(button)
         EnsureAuraTextureRuntimeRoot(existing)
         -- Acquisition for a live display: the teardown latch never survives it.
         existing._indicatorTeardownFor = nil
-        -- A pooled button can move to another panel; its display follows. The
-        -- render pass restores the strata a reparent resets.
-        local parent = button:GetParent()
-        if parent and existing:GetParent() ~= parent
-            and not (InCombatLockdown() and existing:IsProtected()) then
-            existing:SetParent(parent)
-        end
         return existing
     end
 
     -- The panel frame's child, so its fade, Group alpha, ghost look and
     -- hiding reach the display directly (the host carries only source dimming).
+    -- Button pools are per panel frame, so the host never changes panels.
     local host = CreateFrame("Frame", nil, button:GetParent() or UIParent)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
@@ -1004,7 +998,6 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
-    host._unlockGhost = nil
     SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
@@ -1307,7 +1300,6 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
         visibilityState and visibilityState.groupedPreviewFrame)
     host:Show()
 
-    host._unlockGhost = frame and frame._unlockGhost or nil
     local honorSourceVisibility = ST.Indicator.Settings(group).sourceVisibility ~= false
     local visibilityAlpha = honorSourceVisibility and Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1) or 1
     -- The panel frame, the host's parent, carries the fade, Group alpha and

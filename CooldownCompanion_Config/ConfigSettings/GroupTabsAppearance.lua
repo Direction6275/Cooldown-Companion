@@ -800,19 +800,19 @@ local function BuildAppearanceTab(container, settingsGroup)
     AddLensPanelScopeNote(container, lens)
 
     -- Sections with NO override identity of their own (the panel's layout, its
-    -- Masque skinning): an entry cannot own them, so under an entry lens they
-    -- say "Applies to all entries" and go read-only rather than quietly letting
-    -- a panel-wide edit be made from an entry's page. They begin a lens section
+    -- Masque skinning): an entry cannot own them, so an entry's settings view
+    -- removes them (_FilterEntrySettingsWidgets) rather than letting a
+    -- panel-wide edit be made from an entry's page. They begin a lens section
     -- with a nil sectionId, which resolves to no write table exactly under an
     -- entry lens.
 
     -- ================================================================
     -- Icon Settings (shape, size, spacing, packing)
     -- ================================================================
-    -- Panel-only under an entry lens, so the collapse key is lens-scoped and
-    -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
-    -- Icon Zoom lives INSIDE this section, so an entry that customized it
-    -- keeps the section open (the hostsSections exception).
+    -- Panel-only under an entry lens; its collapse key is the panel's, shared
+    -- with the entry (ST._ResolveLensCollapseKey). Icon Zoom lives INSIDE this
+    -- section, so hostsSections keeps the heading for an entry while Icon Zoom
+    -- is editable there.
     local iconHeading, iconSettingsCollapsed = BuildCollapsibleSection(container, "Icon Settings",
         ResolveLensCollapseKey(lens, group, nil, "appearance_icons", { hostsSections = { "iconZoom" } }), nil, nil, ROW_SECTION)
     -- Panel-only (sectionId nil): shape, size and packing belong to the panel.
@@ -1134,7 +1134,6 @@ local function BuildAppearanceTab(container, settingsGroup)
         local row = AddDurationFormatDropdown(sharedLeft, group.style, refreshStyle, {
             setting = APPEARANCE_FINDER.text.durationFormat,
             sharedHelp = true,
-            infoButtons = tabInfoButtons,
         })
         durationFormatAdded = row ~= nil
         return row
@@ -1441,11 +1440,11 @@ local function BuildAppearanceTab(container, settingsGroup)
                 -- them inside the auraText store would be keys RevertSection
                 -- cannot clear (the never-share-a-key rule the bar name offsets
                 -- and Duration Format both follow). So they are openly
-                -- PANEL-OWNED and wear the grey "Panel setting" label.
-                -- Under a panel settings context (group._settingsContext) they
-                -- instead open the cooldownText lens section itself, so they
-                -- read, write and wear that section's scope; the grey panel
-                -- label is the no-context path.
+                -- PANEL-OWNED. Under a panel settings context (an entry, or a
+                -- presentation of the panel) they instead open the
+                -- cooldownText lens section itself, so they read, write and
+                -- wear that section's scope; without one (panel or multi
+                -- scope) they are plain panel rows.
                 local sharedPosition = group._settingsContext and BeginLensSection(lens, group, "cooldownText", { column = panel })
                 local positionStyle = sharedPosition and sharedPosition.tbl or group.style
                 local anchorRow, offsetXRow, offsetYRow = AddTextPositionControls(panel, positionStyle,

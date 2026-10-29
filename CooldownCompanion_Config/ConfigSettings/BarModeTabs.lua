@@ -530,8 +530,8 @@ local function BuildBarAppearanceTab(container, group, style)
     -- key, Duration Format, lives with the duration text (Text & Icon).
     local hasBarSettingsRows = not (group._attachedBarOwner and group._fittedBarLayout)
     if hasBarSettingsRows then
-    -- Panel-only under an entry lens, so the collapse key is lens-scoped and
-    -- opens folded the first time (ST._ResolveLensCollapseKey owns that rule).
+    -- Panel-only under an entry lens (an entry's settings view removes it) unless
+    -- attached bars own it as barShape; ST._ResolveLensCollapseKey picks the key.
     local barSettingsHeading, barSettingsCollapsed = BuildCollapsibleSection(container, "Bar Settings",
         ResolveLensCollapseKey(lens, group, group._attachedBarOwner and "barShape" or nil, "barappearance_settings"), nil, nil, ROW_SECTION)
     -- Ordinary bars share the standard Customize/Revert section contract.
@@ -839,7 +839,7 @@ local function BuildBarAppearanceTab(container, group, style)
     -- scope, and wears the section's chrome itself when Bar Settings has no
     -- rows on screen.
     local function AddBarDurationFormat(column, textSec)
-        local formatOpts = { sharedHelp = true, infoButtons = tabInfoButtons,
+        local formatOpts = { sharedHelp = true,
             setting = BAR_FINDER.appearance.text and BAR_FINDER.appearance.text.durationFormat }
         if not group._attachedBarOwner then
             local row = AddDurationFormatDropdown(column, group.style, refreshStyle, formatOpts)

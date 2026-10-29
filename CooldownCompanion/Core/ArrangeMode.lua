@@ -1125,7 +1125,6 @@ function CooldownCompanion:BeginCombatForcedLock()
             end
             local host = button and button.auraTextureHost or nil
             if host then
-                host._unlockGhost = nil
                 host._dragEnabled = false
                 ForceCombatMouseLock(host)
                 SuppressFrameVisibilityForCombat(host.dragHandle)

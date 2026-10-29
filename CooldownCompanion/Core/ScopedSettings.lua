@@ -1981,8 +1981,9 @@ function CooldownCompanion:PrepareScopedBarSettings()
 end
 
 -- Read-only (owner rule Q1). Before PrepareScopedBarSettings, or on a profile
--- whose conversion stopped, reads get an unsaved default so none creates a
--- record.
+-- whose conversion stopped, reads get the character's own record from before
+-- sharing, which Prepare later promotes, so edits there are kept; with none,
+-- an unsaved default. No read creates a record.
 local scopedBarFallbacks = setmetatable({}, { __mode = "k" })
 
 local function GetScopedBarSettings(addon, systemKey)
@@ -1996,6 +1997,12 @@ local function GetScopedBarSettings(addon, systemKey)
     local settings = classKey and type(classStore) == "table" and classStore[classKey] or nil
     if type(settings) == "table" then
         return settings
+    end
+    local charKey = addon.db.keys and addon.db.keys.char
+    local charStore = rawget(profile, systemSpec.storeKey)
+    local own = charKey and type(charStore) == "table" and charStore[charKey] or nil
+    if type(own) == "table" then
+        return own
     end
     local fallbacks = scopedBarFallbacks[profile]
     if not fallbacks then
@@ -2435,6 +2442,10 @@ function CooldownCompanion:CopyScopedBarSettings(systemKey, sourceKey)
     end
 
     PromoteScopedBarSettings(systemKey, GetScopedBarClassStore(profile, systemSpec, true), classKey, source, sourceClassKey)
+    -- A setup from before sharing can name a panel cursor-anchored since.
+    if self.SanitizeCursorAnchorPolicy then
+        self:SanitizeCursorAnchorPolicy(profile)
+    end
     return true
 end
 

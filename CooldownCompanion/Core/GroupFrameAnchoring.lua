@@ -242,21 +242,22 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         return
     end
 
-    -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
-    -- An unlocked panel keeps reading its parent as it is (the tick below
-    -- skips it, and its refresh paints unlocked alpha).
+    -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade.
+    -- An unlocked panel wears its own unlocked look (the one paint), never its
+    -- parent's reading, which re-anchoring after a refresh would otherwise
+    -- leave in place; the tick below takes over once it reads locked.
     local lastAlpha
     if GetPanelUnlockState(frame.groupId) then
-        lastAlpha = GetAnchorInheritedAlpha(parentFrame)
+        ApplyGroupOwnAlpha(frame)
     else
         lastAlpha = GetSyncedParentAlpha(parentFrame)
-    end
-    if lastAlpha ~= nil then
-        SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
-        frame:SetAlpha(lastAlpha)
-    elseif ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
-        lastAlpha = 1
-        frame:SetAlpha(1)
+        if lastAlpha ~= nil then
+            SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
+            frame:SetAlpha(lastAlpha)
+        elseif ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
+            lastAlpha = 1
+            frame:SetAlpha(1)
+        end
     end
 
     -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)

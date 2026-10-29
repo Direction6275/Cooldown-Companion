@@ -267,20 +267,6 @@ local function IsGroupAlphaMouseOver(frame, group)
     return frame and frame:IsShown() and frame:IsMouseOver() or false
 end
 
-local function ClampAlpha(alpha)
-    if alpha < 0 then return 0 end
-    if alpha > 1 then return 1 end
-    return alpha
-end
-
-local function GetFrameAlphaWithContainerMultiplier(frame, alpha)
-    local multiplier = frame and frame._containerAlphaVisibilityAlpha
-    if type(multiplier) == "number" then
-        return ClampAlpha(alpha * multiplier)
-    end
-    return alpha
-end
-
 local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 
 local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlpha, unlocked, previewAlpha)
@@ -293,7 +279,6 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
     local frameAlpha = alpha
     if previewAlpha then
         frame._naturalAlpha = naturalAlpha
-        frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
     elseif unlocked then
         frame._naturalAlpha = nil
         frameAlpha = GetUnlockedPanelAlpha(frame)
@@ -302,7 +287,6 @@ local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlph
         frameAlpha = 1
     else
         frame._naturalAlpha = nil
-        frameAlpha = GetFrameAlphaWithContainerMultiplier(frame, frameAlpha)
     end
 
     if FrameAlphaDiffers(frame, frameAlpha) then
@@ -332,17 +316,6 @@ function CooldownCompanion:GetPanelCurrentAlphaValue(groupId, group)
         return state.currentAlpha, false, true
     end
     return group and group.baselineAlpha or 1, false, false
-end
-
-function CooldownCompanion:SetContainerAlphaVisibilityMultiplier(frame, multiplier)
-    if not frame then
-        return
-    end
-    if type(multiplier) == "number" then
-        frame._containerAlphaVisibilityAlpha = ClampAlpha(multiplier)
-    else
-        frame._containerAlphaVisibilityAlpha = nil
-    end
 end
 
 function CooldownCompanion:ClearContainerAlphaRuntimeState(containerId)
@@ -467,7 +440,7 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries, 
                     or FrameAlphaDiffers(entry.frame, GetUnlockedPanelAlpha(entry.frame))) then
                 return true
             end
-        elseif FrameAlphaDiffers(entry.frame, GetFrameAlphaWithContainerMultiplier(entry.frame, entryAlpha)) then
+        elseif FrameAlphaDiffers(entry.frame, entryAlpha) then
             return true
         end
         if AlphaStateNeedsCleanup(self, entry.groupId) then

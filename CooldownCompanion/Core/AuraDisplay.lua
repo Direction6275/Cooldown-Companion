@@ -11,7 +11,7 @@
       * All slot work happens in the restriction-gated rebind pass
         (RequestAuraRebind).
       * Slot buttons live under an _ccNoTouch mount: button.auraLayer for
-        icon/bar hosts, or an aura Indicator's UIParent-level runtime root.
+        icon/bar hosts, or an aura Indicator's runtime root under its panel frame.
         Frame sweeps never recurse into either flagged frame.
       * While auras are secret the only permitted aura-system calls are container-level
         (UpdateAllAuras, SetAuraSlotCandidateFilters).
@@ -2466,7 +2466,7 @@ end
 
 -- Aura Indicators' source buttons are intentionally alpha-zero 1x1 identity
 -- shells, so their production AuraContainer mounts under the existing movable
--- UIParent-level Indicator host instead. The host and root are permanent once a
+-- Indicator host (a child of the Indicator's panel frame) instead. The host and root are permanent once a
 -- slot exists; only the safe root's alpha is used to suppress it for previews.
 local function EnsureAuraIndicatorLayer(button)
     local host = CooldownCompanion:EnsureAuraTextureHost(button)

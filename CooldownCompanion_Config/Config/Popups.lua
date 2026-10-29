@@ -1818,6 +1818,26 @@ local function ApplySetupImportData(data, existingPanelIds)
         if anchorId then
             settings.anchorGroupId = attachmentPanelIds[anchorId]
         end
+        -- An Independent bar placed on a panel or Group follows the one
+        -- imported from this string. The exporter's panel and Group numbers
+        -- mean nothing here otherwise, so the bar goes back to the screen.
+        -- Named frames (resource bars, totems, the cursor, other addons) keep.
+        local independent = settings.independentAnchor
+        local relativeTo = type(independent) == "table" and independent.relativeTo or nil
+        local panelId = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
+        local containerId = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionContainer(%d+)$"))
+        if panelId or containerId then
+            local mappedPanel = panelId and attachmentPanelIds[panelId]
+            local mappedContainer = containerId and importState and importState.containerIdMap[containerId]
+            if mappedPanel then
+                independent.relativeTo = "CooldownCompanionGroup" .. mappedPanel
+            elseif mappedContainer then
+                independent.relativeTo = "CooldownCompanionContainer" .. mappedContainer
+            else
+                independent.point, independent.relativePoint = "CENTER", "CENTER"
+                independent.relativeTo, independent.x, independent.y = nil, 0, 0
+            end
+        end
         if CooldownCompanion:ReplaceCastBarClassSettings(castBarClassKey, settings) then
             applied = true
             CooldownCompanion:Print("Imported Cast Bar setup for " .. tostring(castBarClassKey) .. ".")
