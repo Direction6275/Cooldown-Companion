@@ -1144,8 +1144,10 @@ function CooldownCompanion:BeginCombatForcedLock()
         end
 
         if active then
-            local frameAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
-            frame:SetAlpha(frameAlpha)
+            -- The one paint: a panel that copies its parent's opacity goes back
+            -- to the anchor sync instead of taking its own resting alpha, which
+            -- the sync would not correct while the parent's opacity holds.
+            self:ApplyGroupOwnAlpha(frame)
         elseif frame:IsProtected() then
             frame:SetAlpha(0)
         else
