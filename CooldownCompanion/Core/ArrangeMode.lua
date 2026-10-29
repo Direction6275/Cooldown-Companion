@@ -14,8 +14,6 @@ local next = next
 local type = type
 local InCombatLockdown = InCombatLockdown
 
-local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
-
 function CooldownCompanion:IsContainerUnlockPreviewActive(containerOrContainerId)
     local container = containerOrContainerId
     local containerId = nil
@@ -1096,9 +1094,7 @@ function CooldownCompanion:BeginCombatForcedLock()
 
     for groupId, frame in pairs(self.groupFrames or {}) do
         local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-        frame._containerUnlockPreviewActive = nil
-        frame._panelUnlockPreviewActive = nil
-        frame._unlockGhost = nil
+        self:ClearPanelUnlockMarks(frame)
         local active = group and self:IsGroupActive(groupId, {
             group = group,
             checkCharVisibility = true,
@@ -1450,7 +1446,7 @@ function CooldownCompanion:UnlockAllFrames()
                 frame.dragHandle:Show()
             end
             if panelUnlocked then
-                frame:SetAlpha(GetUnlockedPanelAlpha(frame))
+                self:ApplyGroupOwnAlpha(frame)
             end
         end
     end

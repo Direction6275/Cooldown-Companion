@@ -16,9 +16,6 @@ local UnitCanAttack = UnitCanAttack
 local InCombatLockdown = InCombatLockdown
 local GetTime = GetTime
 
--- Utils.lua
-local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
-
 local function ClearButtonVisualState(button)
     local clear = ST._ClearButtonVisualState
     if clear then
@@ -979,16 +976,14 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
                     else
                         frame:Show()
                     end
-                    -- Keep unlocked panels fully visible, except unlock ghosts.
-                    if self:GetPanelUnlockState(groupId, group) then
-                        frame:SetAlpha(GetUnlockedPanelAlpha(frame))
-                    -- Apply current alpha from the alpha fade system so frame
-                    -- doesn't flash at 1.0 when baseline alpha is configured.
+                    -- During an unlock a ghost that now loads, or the reverse,
+                    -- follows at once; the full refresh owns the chrome its
+                    -- marks move. Otherwise the one paint, so the frame doesn't
+                    -- flash at 1.0 or keep a ghost's 0.4 after the session.
+                    if self:RefreshPanelUnlockMarks(frame, groupId, group, true) then
+                        self:RefreshGroupFrame(groupId)
                     else
-                        local frameAlpha, _, hasRuntimeAlpha = self:GetPanelCurrentAlphaValue(groupId, group)
-                        if hasRuntimeAlpha then
-                            frame:SetAlpha(frameAlpha)
-                        end
+                        self:ApplyGroupOwnAlpha(frame)
                     end
 
                     -- When transitioning hidden -> shown, refresh button state
@@ -1060,6 +1055,8 @@ function CooldownCompanion:UnloadGroup(groupId)
     if self.alphaState then
         self.alphaState[groupId] = nil
     end
+    -- A dormant frame is never previewed; recovery paints it afresh.
+    self:ClearPanelUnlockMarks(frame)
 
     -- Stop alphaSyncFrame OnUpdate
     if frame.alphaSyncFrame then
