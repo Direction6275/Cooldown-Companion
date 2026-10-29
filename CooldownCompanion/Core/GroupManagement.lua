@@ -443,9 +443,12 @@ local function CopyPanelPosition(self, source, target)
     anchor.y = tonumber(sourceAnchor.y) or defaults.y
 end
 
--- Template snapshots use the same field writers as direct panel copying.
+-- Template snapshots and their one-time conversion use the same field writers
+-- as direct panel copying.
 ST._CopyPanelVisibility = CopyPanelVisibility
 ST._CopyPanelPosition = CopyPanelPosition
+ST._CopyPanelArrangement = CopyPanelArrangement
+ST._CopyCompactLayoutSettings = CopyCompactLayoutSettings
 
 local function RefreshCopiedPanelLayout(self, groupId, position)
     if not self:IsGroupVisibleToCurrentChar(groupId) then return end
@@ -480,26 +483,15 @@ end
 -- `scopes` is the list of ST.PANEL_COPY_SCOPES[mode] scope names to write.
 --
 -- opts, every one optional and template-only (the copy feature passes none):
---   templateFields  v3 captured coverage intersected with the current template
---                   contract. Writes raw values, including nil, without a
---                   profile baseline. All validation precedes this writer.
---   preserveCompactLimit  retain a template's limit as future entries arrive
---   shapeKeys    style keys copied after the look scopes, each by the same
---                source-value-else-baseline rule (ST.PANEL_TEMPLATE_SHAPE_KEYS)
---   copyCompact  copy the original template compact trio independently of
---                quick-copy scope ownership
---   skipCompact  leave the target's compact trio alone (an Aura template
---                carries none)
---   skipAttachedBars  leave the target's attached bar style alone
---                (PanelTemplates passes it for templates older than version 4)
+--   templateFields  the template's captured coverage intersected with the
+--                   current template contract. Writes raw values, including
+--                   nil, without a profile baseline. All validation precedes
+--                   this writer.
 --   sections     { [anchor] = { <ST.PANEL_TEMPLATE_SECTION_KEYS> } }: per
 --                anchor, the section's settings, written onto the target's
 --                section at that anchor (created member-less when absent).
 --                Only for a target the section model covers. Anchors the
 --                source lacks are left alone: their members keep their place.
---   anchor       { point, relativePoint, x, y }: the target's offset from its
---                own Group frame, written and re-anchored only for a panel
---                that has one. Never any other anchor target.
 --
 -- Returns true once the data is written, whether the frame refresh ran or
 -- was combat-deferred, exactly as the copy feature always has.
@@ -529,7 +521,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             if not applied then return false, reason end
         end
     end
-    if not opts.skipAttachedBars and ST.PanelSupportsAttachedBars(source)
+    if ST.PanelSupportsAttachedBars(source)
         and ST.PanelSupportsAttachedBars(targetGroup) then
         -- A bar-only panel shows Bar Spacing on Appearance, so there it travels
         -- with Appearance, as Icon Spacing does; on any other panel the value
@@ -573,7 +565,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             CopyPanelVisibility(self, source, targetGroup, scopeData)
             copiedVisibility = true
         elseif scopeData and scopeName == "arrangement" then
-            CopyPanelArrangement(source, targetGroup, mode, scopeData, opts.preserveCompactLimit)
+            CopyPanelArrangement(source, targetGroup, mode, scopeData)
             copiedArrangement = true
         elseif scopeData and scopeName == "position" then
             CopyPanelPosition(self, source, targetGroup)
@@ -597,10 +589,11 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         return true
     end
 
-    -- Quick-copy and legacy templates fill a missing value from the shipped
-    -- defaults, the same in every profile (a profile's own globalStyle is an
-    -- imported leftover no setting writes). V3 templates instead treat a
-    -- captured nil as an authoritative reset to the runtime default.
+    -- Quick copy fills a missing value from the shipped defaults, the same in
+    -- every profile (a profile's own globalStyle is an imported leftover no
+    -- setting writes). Templates instead treat a captured nil as an
+    -- authoritative reset to the runtime default; their one-time conversion
+    -- filled older gaps from these same defaults.
     local baseline = ST._defaults.profile.globalStyle
     local sourceStyle = source.style or {}
     local targetStyle = targetGroup.style
@@ -653,19 +646,6 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
             end
 
         end
-    end
-
-    -- Templates retain their original compact contract after packing moved
-    -- out of Appearance. Aura endpoints still do not give or take this trio.
-    if opts.copyCompact and not opts.skipCompact
-        and not ST.IsAuraPanelGroup(source)
-        and not ST.IsAuraPanelGroup(targetGroup) then
-        CopyCompactLayoutSettings(source, targetGroup, opts.preserveCompactLimit)
-    end
-
-    -- Legacy templates retain their original shape registry and baseline rule.
-    for _, key in ipairs(opts.shapeKeys or {}) do
-        CopyStyleKey(key)
     end
 
     -- Sections ride after the shape, only onto a panel the section model
@@ -736,23 +716,11 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         newMasqueEnabled = false
     end
 
-    -- The Group-relative offset is pure data, so it lands before the combat
-    -- gate like every key above; the frame side runs with the refresh below,
-    -- or rides _anchorDirty out of combat the way a deferred layout does.
-    local anchor = opts.anchor
+    -- Position data lands before the combat gate like every key above; the
+    -- frame side runs with the refresh below, or rides _anchorDirty out of
+    -- combat the way a deferred layout does.
+    local anchor = copiedPosition and targetGroup.anchor or nil
     local wasCursorAnchored = copiedPosition and self:IsCursorAnchor(targetGroup.anchor) or false
-    if anchor and targetGroup.parentContainerId then
-        wasCursorAnchored = self:IsCursorAnchor(targetGroup.anchor)
-        targetGroup.anchor = {
-            point = anchor.point or "CENTER",
-            relativeTo = "CooldownCompanionContainer" .. targetGroup.parentContainerId,
-            relativePoint = anchor.relativePoint or "CENTER",
-            x = tonumber(anchor.x) or 0,
-            y = tonumber(anchor.y) or 0,
-        }
-    else
-        anchor = copiedPosition and targetGroup.anchor or nil
-    end
 
     if copiedVisibility then
         -- Other-class copies update saved data without creating runtime frames

@@ -3582,8 +3582,9 @@ end
 -- name, displayMode, style, Masque/compact/visible-limit flags and a
 -- relativeTo-less anchor, with an always-empty buttons list. Current snapshots
 -- also carry templateVersion, Aura subtype, Visibility and section settings
--- without members. Never infer those new scopes for an unversioned template;
--- only saving/updating from an actual panel upgrades its snapshot.
+-- without members. Older snapshots ride the legacy passes below, then convert
+-- once to version 4 at the end of this walk (ST.UpgradeLegacyPanelTemplates,
+-- Core/PanelTemplates.lua).
 --
 -- The shape is the whole point. The retired groupSettingPresets store had its
 -- own layout, so every pass that rewrote style vocabulary had to grow a
@@ -3614,7 +3615,9 @@ end
 -- MAINTENANCE RULE: a new pass that rewrites groups[*].style vocabulary must
 -- be added here the same day it is added to RunAllMigrations. Otherwise
 -- templates become the unreached store presets used to be, and applying one
--- hands a panel keys the runtime no longer reads.
+-- hands a panel keys the runtime no longer reads. After the conversion the
+-- legacy population is normally empty, so a new pass must convert version 4
+-- values and their coverage together.
 function CooldownCompanion:NormalizePanelTemplateStore(store)
     if type(store) ~= "table" or type(store.groups) ~= "table" then return end
     local quiet = setmetatable({ Print = function() end }, { __index = self })
@@ -3684,6 +3687,10 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     -- Bar-only arrangement blocks retired with Collapsing Stack (2026-10-19).
     -- Only current snapshots ever carried one.
     for _, template in pairs(currentGroups) do ST.RetireTemplateBarOnlyLayout(template) end
+    -- LEGACY CONVERSION, last: older snapshots, now in the current vocabulary,
+    -- become version 4 once (owner ruling R11, 2026-10-28). The store itself,
+    -- because ApplyTemplates may have replaced entries the maps above hold.
+    ST.UpgradeLegacyPanelTemplates(originalStore)
 end
 
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles

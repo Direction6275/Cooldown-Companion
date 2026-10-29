@@ -1374,7 +1374,6 @@ end
 --
 -- Appearance carries Masque where supported. Arrangement carries the
 -- compact trio on ordinary panels and Collapse Direction on Aura Panels.
--- Templates preserve their original compact behavior explicitly.
 local PANEL_VISIBILITY_COPY_SCOPE = {
     copiesLoadConditions = true,
     groupKeys = {
@@ -1468,11 +1467,10 @@ ST.PANEL_COPY_SCOPES = {
 
 ------------------------------------------------------------------------
 -- PANEL TEMPLATE SHAPE REGISTRY
--- The original shape keys carried by unversioned Panel Templates, retained
--- for legacy apply compatibility (Core/PanelTemplates.lua). Version 2 used
--- the shared Arrangement scope plus bar-fill extras. Keep this historical
--- coverage fixed; new settings belong in the complete template contract below.
--- Strata and Aura Collapse Direction were outside this original coverage.
+-- LEGACY CONVERSION ONLY: the shape keys unversioned Panel Templates applied,
+-- read once by ST.UpgradeLegacyPanelTemplates (Core/PanelTemplates.lua). Keep
+-- this historical coverage fixed; new settings belong in the complete
+-- template contract below.
 ST.PANEL_TEMPLATE_SHAPE_KEYS = {
     icons = { "orientation", "growthOrigin", "buttonsPerRow" },
     bars = { "barOrientation", "growthOrigin", "buttonsPerRow", "barFillVertical", "barReverseFill" },

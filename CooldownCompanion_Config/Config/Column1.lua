@@ -922,7 +922,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                     end
                     info.disabled = not allowed
                     info.tooltipTitle = template.name
-                    info.tooltipText = ST._GetPanelTemplateApplyTooltipText(template)
+                    info.tooltipText = ST._GetPanelTemplateApplyTooltipText()
                     if menuList == "UPDATE_PANEL_TEMPLATE" then
                         info.tooltipText = "Replaces this template's saved setup with this panel's current settings."
                     end
