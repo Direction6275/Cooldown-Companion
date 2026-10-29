@@ -544,6 +544,12 @@ local function InheritPanelContainerEligibility(panelInfos, containersByKey)
                     panelInfo.note = containerInfo.note
                 end
             end
+        else
+            -- No heading to sit under, and nothing lands at apply either.
+            panelInfo.eligible = false
+            panelInfo.selected = false
+            panelInfo.disabledReason = "Missing parent group"
+            panelInfo.note = nil
         end
     end
 end
