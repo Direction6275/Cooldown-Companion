@@ -3798,6 +3798,11 @@ function CooldownCompanion:RunAllMigrations()
     self:PrepareResourceBarSettings()
     if not unifiedOK then return false end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
+    -- Cast Bar and Unit Frames are shared per class (owner ruling Q40): class
+    -- records come from the upgraded per-character ones, then the current
+    -- class's record is made. Until then their getters read an unsaved default.
+    self:RunScopedBarClassScopeMigration()
+    self:PrepareScopedBarSettings()
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
     -- After every conversion above (MigrateSharedBarStyle fills the bar fonts

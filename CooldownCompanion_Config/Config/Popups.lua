@@ -1855,12 +1855,12 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if not (data and data.systemKey and data.sourceCharKey) then
+        if not (data and data.systemKey and data.sourceKey) then
             CooldownCompanion:Print("Copy failed: missing context.")
             return
         end
 
-        local ok = CooldownCompanion:CopyCharacterScopedSettings(data.systemKey, data.sourceCharKey)
+        local ok = CooldownCompanion:CopyScopedBarSettings(data.systemKey, data.sourceKey)
         if not ok then
             CooldownCompanion:Print("Copy failed.")
             return

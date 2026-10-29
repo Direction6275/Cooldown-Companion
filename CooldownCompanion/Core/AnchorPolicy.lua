@@ -33,6 +33,8 @@ local EXTERNAL_ANCHOR_STORES = {
         legacyName = "Cast Bar Seed",
         scopedKey = "castBarByChar",
         scopedNamePrefix = "Cast Bar ",
+        classScopedKey = "castBarByClass",
+        classScopedNamePrefix = "Cast Bar Class ",
     },
     resourceBars = {
         rootKey = "resourceBars",
@@ -51,6 +53,8 @@ local EXTERNAL_ANCHOR_STORES = {
         legacyName = "Unit Frames Seed",
         scopedKey = "frameAnchoringByChar",
         scopedNamePrefix = "Unit Frames ",
+        classScopedKey = "frameAnchoringByClass",
+        classScopedNamePrefix = "Unit Frames Class ",
     },
 }
 

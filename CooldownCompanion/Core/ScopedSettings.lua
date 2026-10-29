@@ -37,18 +37,25 @@ local function BackfillLegacyResourceAuraUnit(resourceAuraEntry)
     resourceAuraEntry.auraUnitExplicit = nil
 end
 
+-- storeKey is each character's own record from before class sharing (owner
+-- ruling Q40, 2026-10-29); classStoreKey is the live one.
 local SCOPED_BAR_SYSTEMS = {
     castBar = {
         storeKey = "castBarByChar",
+        classStoreKey = "castBarByClass",
         seedKey = "legacyCastBarSeed",
         legacyKey = "castBar",
+        label = "Cast Bar",
     },
     frameAnchoring = {
         storeKey = "frameAnchoringByChar",
+        classStoreKey = "frameAnchoringByClass",
         seedKey = "legacyFrameAnchoringSeed",
         legacyKey = "frameAnchoring",
+        label = "Unit Frames",
     },
 }
+local SCOPED_BAR_SYSTEM_ORDER = { "castBar", "frameAnchoring" }
 
 local function GetScopedBarSystemSpec(systemKey)
     return SCOPED_BAR_SYSTEMS[systemKey]
@@ -403,15 +410,6 @@ local function CopySpecOverrideWithoutAura(sourceSpecData, targetSpecData)
     end
 
     return next(copied) and copied or nil
-end
-
-local function EnsureScopedBarSystemStore(profile, storeKey)
-    local store = rawget(profile, storeKey)
-    if type(store) ~= "table" then
-        store = {}
-        profile[storeKey] = store
-    end
-    return store
 end
 
 -- AceDB copies every default (scalars included) into a brand-new profile, so
@@ -1825,29 +1823,187 @@ function CooldownCompanion:EnsureLegacyScopedBarSeenCharacters()
     return snapshot
 end
 
-function CooldownCompanion:GetCharacterScopedSettings(systemKey)
+-- Cast Bar and Unit Frames are shared by every character of a class (owner
+-- ruling Q40, 2026-10-29), as Resources are. Each character's own record from
+-- before (castBarByChar, frameAnchoringByChar) stays saved as it was: the
+-- conversion below reads it, and the copy button offers it as a setup from
+-- before sharing. Nothing else reads it.
+local SCOPED_BAR_PENDING_KEY = "scopedBarClassPending"
+local SCOPED_BAR_NOTICE_KEY = "scopedBarClassNoticeShown"
+
+local function ComparableScopedBarSettings(settings)
+    local comparable = {}
+    for key, value in pairs(settings) do
+        if not (type(key) == "string" and key:match("^_%w+Version$")) then comparable[key] = value end
+    end
+    return comparable
+end
+
+local function GetScopedBarClassStore(profile, systemSpec, create)
+    local store = rawget(profile, systemSpec.classStoreKey)
+    if type(store) ~= "table" and create then
+        store = {}
+        profile[systemSpec.classStoreKey] = store
+    end
+    return type(store) == "table" and store or nil
+end
+
+-- A setup taken from another class names that class's specs in its panel
+-- choices, so those start on Automatic.
+local function ClearScopedBarSpecChoices(systemKey, settings)
+    if systemKey == "castBar" then
+        settings.attachmentBySpec = nil
+        return
+    end
+    for _, unit in ipairs({ "player", "target" }) do
+        if type(settings[unit]) == "table" then settings[unit].attachmentBySpec = nil end
+    end
+end
+
+local function PromoteScopedBarSettings(systemKey, classStore, classKey, source, sourceClassKey)
+    local settings = CopyTable(source)
+    if sourceClassKey ~= classKey then ClearScopedBarSpecChoices(systemKey, settings) end
+    SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
+    if systemKey == "castBar" and ST.MigrateSharedCastBarStyle then ST.MigrateSharedCastBarStyle(settings) end
+    classStore[classKey] = settings
+    return settings
+end
+
+local function GetScopedBarCharacterName(charKey)
+    return type(charKey) == "string" and (charKey:match("^(.-) %- ") or charKey) or tostring(charKey)
+end
+
+local function GetScopedBarClassName(classKey)
+    local className = GetClassInfoByID(GetClassIDFromClassKey(classKey))
+    return className or classKey
+end
+
+-- Runs with every migration pass (no stamp: it only ever adds a record a
+-- class lacks). A class whose characters have exactly one turned-on setup
+-- takes it now. A class with several different ones waits for its first
+-- login (PrepareScopedBarSettings, owner ruling Q40a). Characters of unknown
+-- class keep only their own record.
+function CooldownCompanion:RunScopedBarClassScopeMigration()
+    local profile = self.db and self.db.profile
+    if type(profile) ~= "table" then
+        return
+    end
+
+    local hadCharacterRecords = false
+    for _, systemKey in ipairs(SCOPED_BAR_SYSTEM_ORDER) do
+        local systemSpec = SCOPED_BAR_SYSTEMS[systemKey]
+        local charStore = rawget(profile, systemSpec.storeKey)
+        local classStore = GetScopedBarClassStore(profile, systemSpec, true)
+        local buckets = {}
+        for charKey, settings in pairs(type(charStore) == "table" and charStore or {}) do
+            if type(settings) == "table" then
+                hadCharacterRecords = true
+                local classKey = settings.enabled == true and ResolveResourceBarCandidateClassKey(self, charKey)
+                if classKey and classStore[classKey] == nil then
+                    buckets[classKey] = buckets[classKey] or {}
+                    buckets[classKey][#buckets[classKey] + 1] = charKey
+                end
+            end
+        end
+        for classKey, charKeys in pairs(buckets) do
+            sort(charKeys)
+            local first = ComparableScopedBarSettings(charStore[charKeys[1]])
+            local differ = false
+            for index = 2, #charKeys do
+                if not DeepEqual(first, ComparableScopedBarSettings(charStore[charKeys[index]])) then
+                    differ = true
+                    break
+                end
+            end
+            if differ then
+                local pending = rawget(profile, SCOPED_BAR_PENDING_KEY)
+                if type(pending) ~= "table" then
+                    pending = {}
+                    profile[SCOPED_BAR_PENDING_KEY] = pending
+                end
+                pending[systemKey] = pending[systemKey] or {}
+                pending[systemKey][classKey] = charKeys
+            else
+                PromoteScopedBarSettings(systemKey, classStore, classKey, charStore[charKeys[1]], classKey)
+            end
+        end
+    end
+
+    if hadCharacterRecords and not rawget(profile, SCOPED_BAR_NOTICE_KEY) then
+        profile[SCOPED_BAR_NOTICE_KEY] = true
+        self:Print("Cast Bar and Unit Frames are now shared by every character of a class, like Resources.")
+    end
+end
+
+-- Login, profile change and import (RunAllMigrations): the current class's
+-- record before any runtime or editor read, and its only creator besides the
+-- copy button. A class waiting on a choice keeps the logging-in character's
+-- turned-on setup, else the first turned-on one by name.
+function CooldownCompanion:PrepareScopedBarSettings()
     local profile = self.db and self.db.profile
     local charKey = self.db and self.db.keys and self.db.keys.char
-    local systemSpec = GetScopedBarSystemSpec(systemKey)
-    if not profile or not charKey or not systemSpec then
+    local classKey = GetCurrentResourceBarClassKey(self)
+    if type(profile) ~= "table" or not charKey or not classKey then
+        return
+    end
+
+    local pending = rawget(profile, SCOPED_BAR_PENDING_KEY)
+    for _, systemKey in ipairs(SCOPED_BAR_SYSTEM_ORDER) do
+        local systemSpec = SCOPED_BAR_SYSTEMS[systemKey]
+        local classStore = GetScopedBarClassStore(profile, systemSpec, true)
+        local waiting = type(pending) == "table" and type(pending[systemKey]) == "table"
+            and pending[systemKey][classKey] or nil
+        if type(classStore[classKey]) ~= "table" then
+            local charStore = rawget(profile, systemSpec.storeKey)
+            local own = type(charStore) == "table" and charStore[charKey] or nil
+            if type(waiting) == "table" and type(charStore) == "table" then
+                local keptKey = type(own) == "table" and own.enabled == true and charKey or waiting[1]
+                PromoteScopedBarSettings(systemKey, classStore, classKey, charStore[keptKey], classKey)
+                self:Print(("%s: your %s characters now share %s's setup."):format(
+                    systemSpec.label, GetScopedBarClassName(classKey), GetScopedBarCharacterName(keptKey)))
+            elseif type(own) == "table" then
+                PromoteScopedBarSettings(systemKey, classStore, classKey, own, classKey)
+            else
+                local seed = CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
+                local seenCharacters = self:EnsureLegacyScopedBarSeenCharacters()
+                local useSeed = type(seed) == "table"
+                    and type(seenCharacters) == "table"
+                    and seenCharacters[charKey] == true
+                local settings = PromoteScopedBarSettings(systemKey, classStore, classKey,
+                    useSeed and seed or CopySubsystemDefaults(systemSpec.legacyKey), classKey)
+                if systemKey == "castBar" and not useSeed then settings._barGeometryVersion = 1 end
+            end
+        end
+        if waiting ~= nil then
+            pending[systemKey][classKey] = nil
+        end
+    end
+end
+
+-- Read-only (owner rule Q1). Before PrepareScopedBarSettings, or on a profile
+-- whose conversion stopped, reads get an unsaved default so none creates a
+-- record.
+local scopedBarFallbacks = setmetatable({}, { __mode = "k" })
+
+local function GetScopedBarSettings(addon, systemKey)
+    local profile = addon.db and addon.db.profile
+    local systemSpec = SCOPED_BAR_SYSTEMS[systemKey]
+    if not (profile and systemSpec) then
         return nil
     end
-
-    local store = EnsureScopedBarSystemStore(profile, systemSpec.storeKey)
-    local settings = store[charKey]
-    if type(settings) ~= "table" then
-        local seed = CaptureLegacyScopedBarSystemSeed(profile, systemSpec)
-        local seenCharacters = self:EnsureLegacyScopedBarSeenCharacters()
-        local shouldUseLegacySeed = type(seed) == "table"
-            and type(seenCharacters) == "table"
-            and seenCharacters[charKey] == true
-        settings = shouldUseLegacySeed and CopyTable(seed) or CopySubsystemDefaults(systemSpec.legacyKey)
-        if systemKey == "castBar" and not shouldUseLegacySeed then settings._barGeometryVersion = 1 end
-        SanitizeCopiedOrSeededScopedBarSettings(systemKey, settings)
-        store[charKey] = settings
+    local classKey = GetCurrentResourceBarClassKey(addon)
+    local classStore = rawget(profile, systemSpec.classStoreKey)
+    local settings = classKey and type(classStore) == "table" and classStore[classKey] or nil
+    if type(settings) == "table" then
+        return settings
     end
-
-    return settings
+    local fallbacks = scopedBarFallbacks[profile]
+    if not fallbacks then
+        fallbacks = {}
+        scopedBarFallbacks[profile] = fallbacks
+    end
+    fallbacks[systemKey] = fallbacks[systemKey] or CopySubsystemDefaults(systemSpec.legacyKey)
+    return fallbacks[systemKey]
 end
 
 function CooldownCompanion:RunResourceBarClassScopeMigration()
@@ -2008,11 +2164,11 @@ ST._GetClassIDFromResourceBarClassKey = GetClassIDFromClassKey
 ST._GetResourceBarClassSpecInfo = GetClassSpecInfo
 
 function CooldownCompanion:GetCastBarSettings()
-    return self:GetCharacterScopedSettings("castBar")
+    return GetScopedBarSettings(self, "castBar")
 end
 
 function CooldownCompanion:GetFrameAnchoringSettings()
-    return self:GetCharacterScopedSettings("frameAnchoring")
+    return GetScopedBarSettings(self, "frameAnchoring")
 end
 
 function CooldownCompanion:GetResourceBarConflict(classKey)
@@ -2147,33 +2303,41 @@ function CooldownCompanion:ResolveResourceBarConflict(classKey, sourceCharKey, o
     return true
 end
 
-function CooldownCompanion:GetCharacterScopedSettingsStore(systemKey)
+-- Copy choices for the Cast Bar and Unit Frames pages: other classes' setups
+-- ("class:<CLASS>") and each character's setup from before sharing
+-- ("char:<character>"), the way back from an automatic Q40a pick.
+function CooldownCompanion:GetScopedBarCopyOptions(systemKey)
     local profile = self.db and self.db.profile
     local systemSpec = GetScopedBarSystemSpec(systemKey)
-    if not profile or not systemSpec then
-        return nil
-    end
-    return EnsureScopedBarSystemStore(profile, systemSpec.storeKey)
-end
-
-function CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
-    local store = self:GetCharacterScopedSettingsStore(systemKey)
-    local currentChar = self.db and self.db.keys and self.db.keys.char
-    local values = {}
-    local order = {}
-
-    if type(store) ~= "table" then
+    local values, order = {}, {}
+    if type(profile) ~= "table" or not systemSpec then
         return values, order
     end
 
-    for charKey, settings in pairs(store) do
-        if charKey ~= currentChar and type(settings) == "table" then
-            values[charKey] = charKey
-            order[#order + 1] = charKey
+    local currentClass = GetCurrentResourceBarClassKey(self)
+    local classOrder = {}
+    for classKey, settings in pairs(GetScopedBarClassStore(profile, systemSpec, false) or {}) do
+        if classKey ~= currentClass and type(settings) == "table" then
+            local key = "class:" .. classKey
+            values[key] = GetScopedBarClassName(classKey)
+            classOrder[#classOrder + 1] = key
         end
     end
+    sort(classOrder, function(a, b) return values[a] < values[b] end)
 
-    sort(order)
+    local charOrder = {}
+    local charStore = rawget(profile, systemSpec.storeKey)
+    for charKey, settings in pairs(type(charStore) == "table" and charStore or {}) do
+        if type(charKey) == "string" and type(settings) == "table" then
+            local key = "char:" .. charKey
+            values[key] = GetScopedBarCharacterName(charKey) .. " (before sharing)"
+            charOrder[#charOrder + 1] = key
+        end
+    end
+    sort(charOrder, function(a, b) return values[a] < values[b] end)
+
+    for _, key in ipairs(classOrder) do order[#order + 1] = key end
+    for _, key in ipairs(charOrder) do order[#order + 1] = key end
     return values, order
 end
 
@@ -2209,23 +2373,31 @@ function CooldownCompanion:GetResourceBarSpecCopyOptions()
     return values, order, currentSpecID
 end
 
-function CooldownCompanion:CopyCharacterScopedSettings(systemKey, sourceCharKey)
+-- Replaces the current class's setup with the chosen one (see
+-- GetScopedBarCopyOptions). Every character of the class follows it.
+function CooldownCompanion:CopyScopedBarSettings(systemKey, sourceKey)
     local profile = self.db and self.db.profile
-    local currentChar = self.db and self.db.keys and self.db.keys.char
     local systemSpec = GetScopedBarSystemSpec(systemKey)
-    if not profile or not currentChar or not sourceCharKey or not systemSpec then
+    local classKey = GetCurrentResourceBarClassKey(self)
+    if type(profile) ~= "table" or not systemSpec or not classKey or type(sourceKey) ~= "string" then
         return false, "invalid_request"
     end
 
-    local store = EnsureScopedBarSystemStore(profile, systemSpec.storeKey)
-    local source = store[sourceCharKey]
+    local kind, id = sourceKey:match("^(%a+):(.+)$")
+    local source, sourceClassKey
+    if kind == "class" then
+        local classStore = GetScopedBarClassStore(profile, systemSpec, false)
+        source, sourceClassKey = classStore and classStore[id], id
+    elseif kind == "char" then
+        local charStore = rawget(profile, systemSpec.storeKey)
+        source = type(charStore) == "table" and charStore[id] or nil
+        sourceClassKey = ResolveResourceBarCandidateClassKey(self, id)
+    end
     if type(source) ~= "table" then
         return false, "missing_source"
     end
 
-    local copied = CopyTable(source)
-    SanitizeCopiedOrSeededScopedBarSettings(systemKey, copied)
-    store[currentChar] = copied
+    PromoteScopedBarSettings(systemKey, GetScopedBarClassStore(profile, systemSpec, true), classKey, source, sourceClassKey)
     return true
 end
 

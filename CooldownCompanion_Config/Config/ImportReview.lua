@@ -143,8 +143,14 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount, templa
     if type(profile) == "table" then
         if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resources" end
         if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "Resources" end
-        if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
-        if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end
+        -- Older backups hold these per character; they become shared by class
+        -- when restored.
+        if CountPairs(profile.castBarByClass) > 0 or type(profile.castBarByChar) == "table" then
+            classScoped[#classScoped + 1] = "Cast Bar"
+        end
+        if CountPairs(profile.frameAnchoringByClass) > 0 or type(profile.frameAnchoringByChar) == "table" then
+            classScoped[#classScoped + 1] = "Unit Frames"
+        end
     end
     if #classScoped > 0 then
         AddLine(lines, "Class-scoped settings: " .. table.concat(classScoped, ", "))

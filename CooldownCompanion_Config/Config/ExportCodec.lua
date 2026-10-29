@@ -438,7 +438,9 @@ local SCOPED_SYSTEM_DEFAULTS = {
 local SCOPED_STORE_KEYS = {
     resourceBarsByClass = "resourceBars",
     resourceBarsByChar = "resourceBars",
+    castBarByClass = "castBar",
     castBarByChar = "castBar",
+    frameAnchoringByClass = "frameAnchoring",
     frameAnchoringByChar = "frameAnchoring",
 }
 
