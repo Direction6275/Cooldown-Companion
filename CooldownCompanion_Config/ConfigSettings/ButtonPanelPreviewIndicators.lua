@@ -257,12 +257,9 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     -- Detached saved-design render: no production aura widgets are inspected.
     local candidate = CopyTable(group)
     I.Initialize(candidate)
-    local stage = CS.textureConfigPreviewStage
     local pickerStage = CS.textureMirrorStage
     if not readOnly and pickerStage and pickerStage.groupId == panelId and pickerStage.selection then
         candidate.indicatorSettings.signal=CopyTable(pickerStage.selection)
-    elseif not readOnly and stage and stage.groupId == panelId then
-        candidate.indicatorSettings.signal=CopyTable(stage.settings)
     end
     local surface = preview.indicatorSurface
     if not surface then

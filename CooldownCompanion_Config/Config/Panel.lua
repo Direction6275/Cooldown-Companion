@@ -34,7 +34,6 @@ local SetupChangelogOverlay = ST._SetupChangelogOverlay
 local RefreshVisibleConfigCompactRows = ST._RefreshVisibleConfigCompactRows
 
 local function ClearTransientConfigPreviewState()
-    CS.textureConfigPreviewStage = nil
     if CooldownCompanion.ClearAllConfigPreviews then
         CooldownCompanion:ClearAllConfigPreviews()
     end

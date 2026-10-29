@@ -1008,11 +1008,6 @@ do
             end
         end)
 
-        -- slider.obj/editbox.obj stay pointed at the stock child because its
-        -- own scripts read them. GroupTabs' staged texture sliders need the
-        -- ROW from the raw frame, so publish it separately.
-        slider.cdcRow = widget
-
         widget.sliderWidget = child
         widget.slider = slider   -- raw Slider frame, reached by call sites
         widget.editbox = editbox -- raw EditBox frame, reached by call sites
