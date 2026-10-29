@@ -12,6 +12,9 @@ local math_floor = math.floor
 local math_min = math.min
 local select = select
 
+-- Utils.lua
+local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
+
 local GF = {}
 ST._GroupFrame = GF
 
@@ -49,45 +52,50 @@ local function GetPanelContainerFrameName(groupId)
     return nil
 end
 
--- Resolve lock + alpha for a group frame.
--- Panels normally use their own alpha, unless Group Alpha controls panels
--- anchored directly to their parent container.
--- Legacy groups (no container) use group.locked and group.baselineAlpha directly.
-local function GetContainerState(groupId)
+-- A panel's resting alpha: Group Alpha's value when it controls panels
+-- anchored directly to their Group, otherwise the panel's own baseline.
+local function GetPanelBaseAlpha(groupId)
     local profile = CooldownCompanion.db and CooldownCompanion.db.profile
-    if not profile then return true, 1 end
-    local group = profile.groups[groupId]
-    if not group then return true, 1 end
-
-    if group.parentContainerId then
-        local containerId, container
-        if CooldownCompanion.GetPanelContainerAlphaSource then
-            containerId, container = CooldownCompanion:GetPanelContainerAlphaSource(groupId)
-        end
+    local group = profile and profile.groups[groupId]
+    if not group then return 1 end
+    if group.parentContainerId and CooldownCompanion.GetPanelContainerAlphaSource then
+        local containerId, container = CooldownCompanion:GetPanelContainerAlphaSource(groupId)
         if container then
-            local alpha = CooldownCompanion.GetContainerAlphaValue
+            return CooldownCompanion.GetContainerAlphaValue
                 and CooldownCompanion:GetContainerAlphaValue(containerId, container)
                 or container.baselineAlpha
                 or 1
-            return CooldownCompanion._combatForcedLock or group.locked ~= false, alpha
         end
-
-        if CooldownCompanion._combatForcedLock then
-            return true, group.baselineAlpha or 1
-        end
-        if IsCursorAnchor(group.anchor) then
-            return true, group.baselineAlpha or 1
-        end
-        -- Panel: own lock state (nil/true = locked, false = unlocked), panel's own alpha
-        return group.locked ~= false, group.baselineAlpha or 1
     end
+    return group.baselineAlpha or 1
+end
 
-    if CooldownCompanion._combatForcedLock then
-        return true, group.baselineAlpha or 1
+-- One lock answer for panel chrome, mouse and fade.
+-- unlocked: the panel wears unlocked alpha (parked on the dummy cursor,
+-- previewed with its unlocked Group, or unlocked on its own).
+-- ownUnlocked: its own padlock is open, which earns an independent mover.
+-- The combat lock, cursor anchoring (unless parked) and an Arrange padlock read
+-- locked, so a padlocked panel goes back to normal play while its Group stays
+-- unlocked. A Group padlocked in Arrange is saved locked, so its preview term
+-- is already false.
+local function GetPanelUnlockState(groupId, group)
+    local addon = CooldownCompanion
+    if not group then
+        local profile = addon.db and addon.db.profile
+        group = profile and profile.groups[groupId]
     end
-
-    -- Legacy path (no container)
-    return group.locked ~= false, group.baselineAlpha or 1
+    if not group or addon._combatForcedLock then
+        return false, false
+    end
+    local parked = addon:IsCursorAnchorLayoutPreviewGroupActive(groupId)
+    if IsCursorAnchor(group.anchor) or addon:IsArrangePanelSuppressed(groupId) then
+        return parked, false
+    end
+    local ownUnlocked = addon:IsPanelUnlockPreviewActive(group)
+    local containerId = group.parentContainerId
+    local unlocked = parked or ownUnlocked
+        or (containerId ~= nil and addon:IsContainerUnlockPreviewActive(containerId))
+    return unlocked, ownUnlocked
 end
 
 local IsSecretValue = ST.IsSecretValue
@@ -151,13 +159,12 @@ end
 local function ApplyGroupOwnAlpha(frame)
     if not frame then return end
 
-    local locked, baseAlpha = GetContainerState(frame.groupId)
-    local alpha = locked and (baseAlpha or 1) or 1
-    if locked then
+    local alpha
+    if GetPanelUnlockState(frame.groupId) then
+        alpha = GetUnlockedPanelAlpha(frame)
+    else
         local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
-        if hasRuntimeAlpha then
-            alpha = currentAlpha
-        end
+        alpha = hasRuntimeAlpha and currentAlpha or GetPanelBaseAlpha(frame.groupId)
     end
 
     if ST.IsGroupRuntimeLayoutPreviewActive
@@ -610,6 +617,11 @@ function CooldownCompanion:IsCursorAnchorLayoutPreviewSelected(groupId)
     return IsCursorAnchorLayoutPreviewSelected(self, groupId)
 end
 
+-- For files that load before this one (AlphaFade, ArrangeMode, GroupOperations).
+function CooldownCompanion:GetPanelUnlockState(groupId, group)
+    return GetPanelUnlockState(groupId, group)
+end
+
 function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
     local _, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
     return anchorState
@@ -802,7 +814,8 @@ end
 
 -- Private helpers consumed by later GroupFrame files.
 GF.GetFrameRectInUIParentSpace = GetFrameRectInUIParentSpace
-GF.GetContainerState = GetContainerState
+GF.GetPanelUnlockState = GetPanelUnlockState
+GF.GetPanelBaseAlpha = GetPanelBaseAlpha
 GF.IsSecretValue = IsSecretValue
 GF.NUDGE_BTN_SIZE = NUDGE_BTN_SIZE
 GF.IsCursorAnchor = IsCursorAnchor

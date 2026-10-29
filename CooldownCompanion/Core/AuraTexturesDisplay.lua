@@ -1208,7 +1208,7 @@ function CooldownCompanion:GetIndicatorDisplayVisibilityState(group, frame, driv
         isCursorLayoutPreview = isCursorLayoutPreview,
         isGroupedPreview = groupedPreviewFrame ~= nil,
         groupedPreviewFrame = groupedPreviewFrame,
-        isUnlocked = not isCursorAnchored and not combatForcedLock and group and (group.locked == false or groupedPreviewFrame ~= nil),
+        isUnlocked = not isCursorAnchored and not combatForcedLock and group and (self:IsPanelUnlockPreviewActive(group) or groupedPreviewFrame ~= nil),
         triggerMatched = isConditionsIndicator and frame and frame:IsShown() and DoesIndicatorMatch(frame) or false,
         showDisplay = false,
     }

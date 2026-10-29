@@ -766,9 +766,13 @@ function CooldownCompanion:IsGroupActive(groupId, opts)
         return false
     end
 
-    -- If this panel has a parent container, check container-level state first
+    -- If this panel has a parent container, check container-level state first.
+    -- An Arrange padlock hands the panel back to normal play while its Group
+    -- stays unlocked.
     local container = self:GetParentContainer(group)
-    if container and not opts.configurationOnly and not opts.ignoreUnlockPreview and self:IsContainerUnlockPreviewActive(container) then
+    if container and not opts.configurationOnly and not opts.ignoreUnlockPreview
+        and self:IsContainerUnlockPreviewActive(container)
+        and not self:IsArrangePanelSuppressed(groupId) then
         return self:IsGroupVisibleInUnlockPreview(groupId, {
             group = group,
             container = container,

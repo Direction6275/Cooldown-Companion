@@ -977,15 +977,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
                     else
                         frame:Show()
                     end
-                    local isLocked = not (
-                        frame._containerUnlockPreviewActive == true
-                        or frame._panelUnlockPreviewActive == true
-                    )
-                    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
-                        isLocked = true
-                    end
                     -- Keep unlocked panels fully visible, except unlock ghosts.
-                    if not isLocked then
+                    if self:GetPanelUnlockState(groupId, group) then
                         frame:SetAlpha(GetUnlockedPanelAlpha(frame))
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.

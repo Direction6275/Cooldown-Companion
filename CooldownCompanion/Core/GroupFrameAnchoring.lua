@@ -22,7 +22,8 @@ local ResolveSafeAnchorTarget = GF.ResolveSafeAnchorTarget
 local GetPanelContainerFrameName = GF.GetPanelContainerFrameName
 local ShouldSyncAnchorAlpha = GF.ShouldSyncAnchorAlpha
 local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
-local GetContainerState = GF.GetContainerState
+local GetPanelBaseAlpha = GF.GetPanelBaseAlpha
+local GetPanelUnlockState = GF.GetPanelUnlockState
 local GetAnchorInheritedAlpha = GF.GetAnchorInheritedAlpha
 local ComputeGroupFrameCoordinates = GF.ComputeGroupFrameCoordinates
 local IsCursorAnchorLayoutPreviewGroupActive = GF.IsCursorAnchorLayoutPreviewGroupActive
@@ -199,7 +200,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
 
     -- If this group has baseline alpha < 1, the alpha fade system takes
     -- priority unless panel alpha inheritance is explicitly active.
-    local _, baseAlpha = GetContainerState(frame.groupId)
+    local baseAlpha = GetPanelBaseAlpha(frame.groupId)
     if baseAlpha < 1 and not inheritsAnchorAlpha then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         SetExternalAnchorAlphaSyncActive(frame, false)
@@ -224,9 +225,11 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         if accumulator < SYNC_INTERVAL then return end
         accumulator = 0
         if frame.anchoredToParent then
-            -- Skip sync if this panel owns alpha locally or the group is unlocked.
-            local locked, bAlpha = GetContainerState(frame.groupId)
-            if (bAlpha < 1 and not inheritsAnchorAlpha) or not locked then return end
+            -- Skip sync if this panel owns alpha locally or is unlocked.
+            if (not inheritsAnchorAlpha and GetPanelBaseAlpha(frame.groupId) < 1)
+                or GetPanelUnlockState(frame.groupId) then
+                return
+            end
             -- Read parent's natural alpha to avoid config override cascade
             local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
             if alpha == nil then return end
