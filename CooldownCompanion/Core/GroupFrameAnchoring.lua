@@ -525,7 +525,10 @@ function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, delet
             if type(settings) == "table"
                 and NamesDeletedTarget(settings.relativeTo, deletedGroupIds, deletedContainerIds) then
                 if not self:SaveIndicatorScreenPosition(groupId, group) then
-                    local px, py = not self:IsGroupCursorAnchored(group) and GetAnchoredPointOnScreen(settings)
+                    local px, py
+                    if not self:IsGroupCursorAnchored(group) then
+                        px, py = GetAnchoredPointOnScreen(settings)
+                    end
                     local ux, uy = UIParent:GetCenter()
                     if px and ux then
                         settings.relativeTo, settings.relativePoint = "UIParent", "CENTER"
