@@ -877,7 +877,7 @@ local function ApplyCastBarPosition(s, width, height, target)
         or (rbSettings and rbSettings.barSpacing)
         or 3.6
     local panelYOffset = GetAttachedCastBarPanelYOffset(s)
-    local geometryPanel = ST.GetModuleGeometryPanel("castbar", nil, target)
+    local geometryPanel = ST.GetModuleGeometryHost("castbar", nil, target)
     if geometryPanel then
         local geometry = ST.ResolveBarGeometry(geometryPanel)
         gap, barSpacing = geometry.distance, geometry.spacing
@@ -923,7 +923,7 @@ end
 
 -- false (not nil) tells the style resolver "no panel" without resolving.
 local function CastBarStyleHost(target)
-    return ST.GetModuleGeometryPanel("castbar", nil, target) or false
+    return ST.GetModuleGeometryHost("castbar", nil, target) or false
 end
 
 ------------------------------------------------------------------------

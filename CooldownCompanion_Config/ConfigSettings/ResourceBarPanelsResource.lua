@@ -177,7 +177,7 @@ local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
 local RESOURCE_FINDER = {}
 
 function RESOURCE_FINDER.FillDirectionSettingKey(settings, specID)
-    if not ST.GetModuleGeometryPanel("resources", specID) then return "verticalFill" end
+    if not ST.GetModuleGeometryHost("resources", specID) then return "verticalFill" end
     local health = settings and settings.resources and settings.resources[RESOURCE_HEALTH]
     if health and health.enabled == true then return "healthVerticalFill" end
 end
@@ -1239,7 +1239,7 @@ local function BuildResourceBarPositioningPanel(container)
     -- ============================================================
     -- Bar Size (how thick each bar is, and how they sit apart)
     -- ============================================================
-    if not ST.GetModuleGeometryPanel("resources") then
+    if not ST.GetModuleGeometryHost("resources") then
         local _, sizeCollapsed = BuildCollapsibleSection(container, "Bar Size", "rb_bar_size", resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not sizeCollapsed then
@@ -1367,7 +1367,7 @@ local function BuildResourceBarPositioningPanel(container)
     end
 
     -- ============ Layout Section (attached mode only) ============
-    if not isIndependentStack and not ST.GetModuleGeometryPanel("resources") then
+    if not isIndependentStack and not ST.GetModuleGeometryHost("resources") then
         local posKey = "rb_position"
         local _, posCollapsed = BuildCollapsibleSection(container, "Layout", posKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
@@ -2600,7 +2600,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
 
     if showBarText then
-        if not showResourceSettings and not ST.GetModuleGeometryPanel("resources", displaySpecID) then
+        if not showResourceSettings and not ST.GetModuleGeometryHost("resources", displaySpecID) then
             -- The same Bar Appearance rows as every other bar surface. Here they edit
             -- the defaults every resource starts from.
             ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
@@ -3309,11 +3309,11 @@ if ST._DefineSettingRoute then
             applies = RESOURCE_FINDER.BarsEnabled,
         })
         RESOURCE_FINDER.primary.size = route:Settings({
-            spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
+            spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryHost("resources") end },
             segmentGap = { label = "Segment Gap", aliases = { "segment spacing" },
                 tab = "appearance", tabLabel = "Appearance", section = "segments", sectionLabel = "Segments",
                 collapseKeys = { ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide") },
-                applies = function() return not ST.GetModuleGeometryPanel("resources") end },
+                applies = function() return not ST.GetModuleGeometryHost("resources") end },
         })
     end
 
@@ -3356,7 +3356,7 @@ if ST._DefineSettingRoute then
             local layout = RESOURCE_FINDER.Layout(context)
             return RESOURCE_FINDER.BarsEnabled(context)
                 and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
-                and not ST.GetModuleGeometryPanel("resources")
+                and not ST.GetModuleGeometryHost("resources")
         end,
     }):Settings({
         x = {

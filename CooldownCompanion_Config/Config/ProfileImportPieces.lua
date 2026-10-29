@@ -501,8 +501,6 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
                 sourceCharacterInfo
             )
             local panels = panelsByContainer[key] or {}
-            local panelCount = #panels
-            local detail = tostring(panelCount) .. " panel" .. (panelCount == 1 and "" or "s")
             local info = {
                 kind = "container",
                 sourceId = containerId,
@@ -516,7 +514,6 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
                 selected = eligible and selected or false,
                 disabledReason = not eligible and reason or nil,
                 note = eligible and reason or nil,
-                detail = detail,
             }
             containerInfos[#containerInfos + 1] = info
             byKey[key] = info
@@ -554,10 +551,10 @@ local function InheritPanelContainerEligibility(panelInfos, containersByKey)
     end
 end
 
-local function AddRows(model, infos, prefix)
+-- Counts each row. Only Custom Bar rows render as labelled checkboxes, and
+-- they label themselves; Groups, panels and templates render from their data.
+local function AddRows(model, infos)
     for _, info in ipairs(infos) do
-        local reason = info.disabledReason or info.note
-        info.label = RowLabel(prefix, info.name, info.detail, reason)
         model.rows[#model.rows + 1] = info
         if info.eligible then
             model.eligibleCount = model.eligibleCount + 1
@@ -860,10 +857,10 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
         customBarCount = #customBarInfos,
     }
 
-    AddRows(model, containerInfos, "Group")
-    AddRows(model, panelInfos, "Panel")
-    AddRows(model, customBarInfos, "Custom Bar")
-    AddRows(model, templateInfos, "Template")
+    AddRows(model, containerInfos)
+    AddRows(model, panelInfos)
+    AddRows(model, customBarInfos)
+    AddRows(model, templateInfos)
     return model
 end
 

@@ -43,6 +43,8 @@ function ST.GetConfiguredModuleBarSettings(kind)
     return profile.castBarByChar and profile.castBarByChar[char]
 end
 
+-- The panel a module's bars take their shared geometry from, or nil when
+-- Independent. Every host is an ordinary icon panel (CanModuleAnchorToPanel).
 -- target: an already resolved runtime ResolveModulePanel(kind) result, so a
 -- caller that resolved once per apply reuses it.
 function ST.GetModuleGeometryHost(kind, spec, target)
@@ -51,11 +53,6 @@ function ST.GetModuleGeometryHost(kind, spec, target)
         target = Addon:ResolveModulePanel(kind, spec, spec and spec ~= Addon._currentSpecId and { configured = true } or nil)
     end
     return target and target.mode ~= "independent" and target.group or nil
-end
-
-function ST.GetModuleGeometryPanel(kind, spec, target)
-    local group = ST.GetModuleGeometryHost(kind, spec, target)
-    return ST.PanelSupportsAttachedBars(group) and group or nil
 end
 
 function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)

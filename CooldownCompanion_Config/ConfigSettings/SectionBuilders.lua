@@ -2101,16 +2101,46 @@ function ST._EnableAuraGlow(style)
     AURA_GLOW_CFG.onStyleChanged(style, "pulse")
 end
 
--- Proc and Ready Glow re-enable the same way: their default style, with its
--- per-style keys reset, so a size another style left can't draw a 30px border.
+-- Proc and Ready Glow re-enable on their default style. A size that fits
+-- that style's slider is the player's and stays; one another style left
+-- outside it (a 30 overhang on a border) resets to the style default.
+local function EnableProcReadyGlow(cfg, style)
+    local defaultStyle = cfg.defaultStyle
+    style[cfg.styleKey] = defaultStyle
+    local size = style[cfg.sizeKey]
+    for _, entry in ipairs(GLOW_SLIDER_SPEC[defaultStyle] or {}) do
+        if entry.keyField == "size"
+            and not (type(size) == "number" and size >= entry.min and size <= entry.max) then
+            style[cfg.sizeKey] = PROC_READY_GLOW_SIZE_RESETS[defaultStyle]
+        end
+    end
+end
+
+-- Turning one off from another style hands its size back to the default
+-- style's, since turning it on again always picks the default style; a size
+-- set on the default style itself survives the round trip.
+local function DisableProcReadyGlow(cfg, style, currentStyle)
+    local current = NormalizeGlowStyleForDisplay(currentStyle, nil)
+    if current and current ~= cfg.defaultStyle then
+        style[cfg.sizeKey] = PROC_READY_GLOW_SIZE_RESETS[cfg.defaultStyle]
+    end
+    style[cfg.styleKey] = "none"
+end
+
 function ST._EnableProcGlow(style)
-    style.procGlowStyle = PROC_GLOW_CFG.defaultStyle
-    PROC_GLOW_CFG.onStyleChanged(style, PROC_GLOW_CFG.defaultStyle)
+    EnableProcReadyGlow(PROC_GLOW_CFG, style)
 end
 
 function ST._EnableReadyGlow(style)
-    style.readyGlowStyle = READY_GLOW_CFG.defaultStyle
-    READY_GLOW_CFG.onStyleChanged(style, READY_GLOW_CFG.defaultStyle)
+    EnableProcReadyGlow(READY_GLOW_CFG, style)
+end
+
+function ST._DisableProcGlow(style, currentStyle)
+    DisableProcReadyGlow(PROC_GLOW_CFG, style, currentStyle)
+end
+
+function ST._DisableReadyGlow(style, currentStyle)
+    DisableProcReadyGlow(READY_GLOW_CFG, style, currentStyle)
 end
 
 -- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit

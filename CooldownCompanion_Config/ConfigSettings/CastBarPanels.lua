@@ -102,7 +102,7 @@ if ST._DefineSettingRoute then
     })
     CASTBAR_FINDER.attached = attached:Settings({
         yOffset = { label = "Y Offset", aliases = { "stack gap" },
-            applies = function() return not ST.GetModuleGeometryPanel("castbar") end },
+            applies = function() return not ST.GetModuleGeometryHost("castbar") end },
         ownYOffset = {
             label = "Enable Cast Bar-Only Y Offset",
             aliases = { "separate cast bar offset" },
@@ -451,7 +451,7 @@ local function BuildCastBarPositioningPanel(container)
 
         if layoutCollapsed then return end
 
-        if ST.GetModuleGeometryPanel("castbar") then
+        if ST.GetModuleGeometryHost("castbar") then
             local left = BeginRowGrid(container)
             BuildAttachedCastBarOffsetControls(left)
             return

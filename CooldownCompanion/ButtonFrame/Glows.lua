@@ -30,7 +30,7 @@ local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_AURA_GLOW_COLOR2 = {0.1, 0.3, 1, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
-local DEFAULT_GLOW_SIZES = {solid = 5, glow = 30, autocast = 2, ants = 23, dashes = 12}
+local DEFAULT_GLOW_SIZES = {solid = 5, pulse = 2, glow = 30, autocast = 2, ants = 23, dashes = 12}
 -- ants overhang matches Blizzard's assisted-combat highlight ratio (66px art
 -- on a 45px button); dashes size is the line length in px and thickness is
 -- its own key.
@@ -112,8 +112,12 @@ end
 
 local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
     local size = styleTable and styleTable[sizeKey]
-    if glowStyle == "solid" or glowStyle == "pulsingBorder" or glowStyle == "colorShift" then
+    if glowStyle == "solid" then
         return size or defaults.solid
+    elseif glowStyle == "pulsingBorder" or glowStyle == "colorShift" then
+        -- The Border Size slider's own default for these two, where a family
+        -- sets one; otherwise the family's solid border.
+        return size or defaults.pulse or defaults.solid
     elseif glowStyle == "ants" then
         return size or defaults.ants
     elseif glowStyle == "dashes" then

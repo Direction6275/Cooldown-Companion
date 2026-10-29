@@ -59,8 +59,9 @@ local ROW_SECTION = { leftAligned = true }
 -- gears store in options.unlock / opts.advancedUnlock (resolved only at
 -- panel-build time by ST._ResolveAdvancedUnlock, StyleLens.lua). File-local
 -- constants so a tab rebuild allocates none of them.
--- Proc and Ready share the aura glow's rule: the checkbox and the Turn On
--- footer enable through one helper that resets the per-style keys.
+-- Proc and Ready: the checkbox and the Turn On footer enable through one
+-- helper, and turning off from another style hands the size back first, so
+-- a size set on the default style survives and another style's never shows.
 local TURNON_PROC_GLOW = {
     label = "Enable Proc Glow",
     apply = function(write) ST._EnableProcGlow(write) end,
@@ -190,7 +191,7 @@ local function BuildProcGlowSection(container, group, style, lens)
             if val then
                 ST._EnableProcGlow(procSec.write)
             else
-                procSec.write.procGlowStyle = "none"
+                ST._DisableProcGlow(procSec.write, procSec.read.procGlowStyle)
             end
             refreshStyle("style-settings")
         end,
@@ -427,7 +428,7 @@ local function BuildReadyGlowSection(container, group, style, lens)
             if val then
                 ST._EnableReadyGlow(readySec.write)
             else
-                readySec.write.readyGlowStyle = "none"
+                ST._DisableReadyGlow(readySec.write, readySec.read.readyGlowStyle)
             end
             refreshStyle("style-settings")
         end,

@@ -87,7 +87,7 @@ function ST.ResolveModuleBarStyle(kind, settings, powerType, spec, host)
     local object = kind == "resources" and layout and layout.resources and layout.resources[canonical] or nil
     if kind == "castbar" then object = settings end
     local panel = host
-    if panel == nil then panel = ST.GetModuleGeometryPanel(kind, spec) end
+    if panel == nil then panel = ST.GetModuleGeometryHost(kind, spec) end
     if panel == false then panel = nil end
     local base = panel and ST.GetAttachedBarStyle(panel) or nil
     local profile = kind == "resources" and settings.displayProfiles
@@ -201,7 +201,7 @@ function ST.RefreshPanelBarAppearance(groupId, scope)
     if scope and (scope.entry or scope.presentation ~= "bars") then return end
     local group = Addon.db.profile.groups[groupId]
     for kind, feature in pairs({ resources = "resourceBars", castbar = "castBar" }) do
-        if group and ST.GetModuleGeometryPanel(kind) == group then
+        if group and ST.GetModuleGeometryHost(kind) == group then
             Addon:RefreshBarsAndFramesRuntimeFeature(feature, "panel-bar-style", true)
         end
     end

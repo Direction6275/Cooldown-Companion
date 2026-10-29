@@ -91,8 +91,11 @@ local function GetPanelUnlockState(groupId, group)
     if IsCursorAnchor(group.anchor) or addon:IsArrangePanelSuppressed(groupId) then
         return parked, false
     end
-    local ownUnlocked = addon:IsPanelUnlockPreviewActive(group)
+    -- IsPanelUnlockPreviewActive's answer, without repeating the combat and
+    -- cursor tests above (this runs per panel on every alpha pass).
     local containerId = group.parentContainerId
+    local ownUnlocked = group.locked == false
+        and not (containerId ~= nil and addon:IsArrangeContainerSuppressed(containerId))
     local unlocked = parked or ownUnlocked
         or (containerId ~= nil and addon:IsContainerUnlockPreviewActive(containerId))
     return unlocked, ownUnlocked
