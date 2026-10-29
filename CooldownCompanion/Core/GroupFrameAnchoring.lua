@@ -184,16 +184,31 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 end
 
 -- A padlocked (locked) panel follows its parent's normal-play look. While a
--- shown parent itself wears unlocked alpha (the unlock preview), its resting
--- alpha stands in for it. A ghost or hidden parent would be hidden in play,
--- so its own alpha reading stays.
+-- shown parent itself wears unlocked alpha (the unlock preview), its
+-- normal-play target stands in: what the fade pass works out from its rules
+-- (UpdateGroupAlpha), else what it copies from its own parent, else its
+-- resting alpha. A ghost parent would be hidden in play, so the child reads
+-- hidden; a hidden parent keeps its own reading.
 local function GetSyncedParentAlpha(parentFrame)
     local parentId = parentFrame and parentFrame.groupId
-    if parentId and parentFrame:IsShown() and not parentFrame._unlockGhost
-        and GetPanelUnlockState(parentId) then
-        return GetPanelBaseAlpha(parentId)
+    if not (parentId and parentFrame:IsShown() and GetPanelUnlockState(parentId)) then
+        return GetAnchorInheritedAlpha(parentFrame)
     end
-    return GetAnchorInheritedAlpha(parentFrame)
+    if parentFrame._unlockGhost then
+        return 0
+    end
+    local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[parentId]
+    -- Rules removed mid-session stop the fade pass visiting the parent, so a
+    -- kept target counts only while the parent still has rules.
+    if state and state.restingAlpha ~= nil
+        and ST.HasActiveAlphaSettings(CooldownCompanion.db.profile.groups[parentId]) then
+        return state.restingAlpha
+    end
+    local sync = parentFrame.alphaSyncFrame
+    if parentFrame.anchoredToParent and sync and sync:GetScript("OnUpdate") then
+        return GetSyncedParentAlpha(parentFrame.anchoredToParent)
+    end
+    return GetPanelBaseAlpha(parentId)
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)

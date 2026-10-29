@@ -771,8 +771,14 @@ function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat
         state.desiredAlpha = unlockedAlpha
         state.fadeDuration = 0
         state.lastAlpha = unlockedAlpha
+        -- Its normal-play target, hover aside, for a padlocked panel that
+        -- copies it (GetSyncedParentAlpha, GroupFrameAnchoring.lua). Kept
+        -- beside the unlocked look, never painted.
+        local forceFull, forceHidden, baseline = EvaluateDesiredAlpha(group, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+        state.restingAlpha = forceFull and 1 or (forceHidden and 0 or baseline)
         return
     end
+    state.restingAlpha = nil
 
     local layoutPreviewActive = ST.IsGroupRuntimeLayoutPreviewActive(groupId)
 
