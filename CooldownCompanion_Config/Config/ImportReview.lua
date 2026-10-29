@@ -339,10 +339,14 @@ local function GetSetupSections(data)
         and data.resources
         or nil
     local templates = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
-    return hasContainers, customBars, resources, templates
+    local castBar = type(data.castBar) == "table"
+        and type(data.castBar.settings) == "table"
+        and data.castBar
+        or nil
+    return hasContainers, customBars, resources, templates, castBar
 end
 
-local function BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates)
+local function BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates, castBar)
     local lines = {}
     AddLine(lines, "Setup export")
 
@@ -366,6 +370,17 @@ local function BuildSetupSummaryLines(data, hasContainers, customBars, resources
         end
         if classKey and playerClassKey and classKey ~= playerClassKey then
             foreignClassKey = classKey
+        end
+    end
+
+    if castBar then
+        local classKey = GetSetupSectionClassKey(castBar)
+        AddLine(lines, "Cast Bar setup: " .. tostring(classKey or "Unknown class"))
+        if classKey and CooldownCompanion:IsCastBarClassConfigured(classKey) then
+            AddLine(lines, "This replaces your current " .. tostring(classKey) .. " Cast Bar.")
+        end
+        if classKey and playerClassKey and classKey ~= playerClassKey then
+            foreignClassKey = foreignClassKey or classKey
         end
     end
 
@@ -517,12 +532,12 @@ end
 -- become containers/setup payloads (see _ConvertUnifiedPanelImport).
 local function ClassifyEntityPayload(data)
     if data.type == "setup" then
-        local hasContainers, customBars, resources, templates = GetSetupSections(data)
-        if not hasContainers and not customBars and not resources and not templates then
+        local hasContainers, customBars, resources, templates, castBar = GetSetupSections(data)
+        if not hasContainers and not customBars and not resources and not templates and not castBar then
             return BuildError("empty_setup", "Import failed: this setup export is empty.")
         end
         return BuildReview("setup", data, "Setup Import", "Import Setup",
-            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates))
+            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates, castBar))
     end
 
     if data.type == "group" and data.group then

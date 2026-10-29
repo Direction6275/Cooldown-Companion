@@ -967,7 +967,7 @@ local function EncodeExportData(payload)
 end
 
 -- Assembles the one-string setup payload from its sections (containers,
--- resources, templates). Any section may be nil.
+-- resources, castBar, templates). Any section may be nil.
 local function BuildSetupExportPayload(sections)
     if type(sections) ~= "table" then
         return nil
@@ -982,6 +982,10 @@ local function BuildSetupExportPayload(sections)
     if type(sections.resources) == "table"
         and type(sections.resources.settings) == "table" then
         payload.resources = sections.resources
+        hasAny = true
+    end
+    if type(sections.castBar) == "table" and type(sections.castBar.settings) == "table" then
+        payload.castBar = sections.castBar
         hasAny = true
     end
     if type(sections.templates) == "table" and #sections.templates > 0 then
@@ -1727,7 +1731,11 @@ local function ApplySetupImportData(data, existingPanelIds)
         and data.resources
         or nil
     local templatesSection = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
-    if not hasContainers and not resourcesSection and not templatesSection then
+    local castBarSection = type(data.castBar) == "table"
+        and type(data.castBar.settings) == "table"
+        and data.castBar
+        or nil
+    if not hasContainers and not resourcesSection and not templatesSection and not castBarSection then
         CooldownCompanion:Print("Import failed: this setup export is empty.")
         return false
     end
@@ -1735,6 +1743,11 @@ local function ApplySetupImportData(data, existingPanelIds)
     local resourcesClassKey = resourcesSection and GetSetupSectionClassKey(resourcesSection) or nil
     if resourcesSection and not resourcesClassKey then
         CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
+        return false
+    end
+    local castBarClassKey = castBarSection and GetSetupSectionClassKey(castBarSection) or nil
+    if castBarSection and not castBarClassKey then
+        CooldownCompanion:Print("Import failed: the Cast Bar setup does not name its class.")
         return false
     end
 
@@ -1797,6 +1810,22 @@ local function ApplySetupImportData(data, existingPanelIds)
         end
     end
 
+    -- Per class like Resources: a string for another class waits for it.
+    if castBarSection then
+        local settings = CopyTable(castBarSection.settings)
+        CooldownCompanion:RemapModuleAttachmentPanels(settings, "castbar", attachmentPanelIds)
+        local anchorId = tonumber(settings.anchorGroupId)
+        if anchorId then
+            settings.anchorGroupId = attachmentPanelIds[anchorId]
+        end
+        if CooldownCompanion:ReplaceCastBarClassSettings(castBarClassKey, settings) then
+            applied = true
+            CooldownCompanion:Print("Imported Cast Bar setup for " .. tostring(castBarClassKey) .. ".")
+        else
+            failed = true
+        end
+    end
+
     -- Account-wide, so outside the batch and the profile migration run.
     local templatesApplied = false
     if templatesSection then
@@ -1832,6 +1861,9 @@ local function ApplySetupImportData(data, existingPanelIds)
     -- deferred its migration to this function.
     if resourcesSection then
         CooldownCompanion:ApplyResourceBars()
+    end
+    if castBarSection then
+        CooldownCompanion:EvaluateCastBar()
     end
 
     applied = applied or templatesApplied

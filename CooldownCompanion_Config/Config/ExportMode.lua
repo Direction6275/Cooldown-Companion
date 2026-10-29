@@ -61,6 +61,7 @@ local function EnterExportMode()
             containers = {},
             panels = {},
             resources = false,
+            castBar = false,
             templates = {}, -- keyed by template id
         },
         expanded = {},
@@ -123,6 +124,10 @@ local function IsResourcesExportable()
         and CooldownCompanion:IsResourceBarClassConfigured(classKey)
 end
 
+local function IsCastBarExportable()
+    return CooldownCompanion:IsCastBarClassConfigured(GetResourceBarClassKey())
+end
+
 -- Ticked templates in list order, read live so one deleted since it was
 -- ticked drops out.
 local function GetCheckedExportTemplates(selection)
@@ -143,6 +148,7 @@ local function CountExportSelection()
     local count = 0
     for _ in pairs(selection.containers) do count = count + 1 end
     if selection.resources then count = count + 1 end
+    if selection.castBar then count = count + 1 end
     count = count + #GetCheckedExportTemplates(selection)
     return count
 end
@@ -199,6 +205,9 @@ local function BuildExportModePayload()
             CooldownCompanion:GetResourceBarSettings(),
             GetResourceBarClassKey())
 
+    end
+    if selection.castBar then
+        sections.castBar = CooldownCompanion:BuildCastBarSetupSection()
     end
     sections.templates = GetCheckedExportTemplates(selection)
 
@@ -605,6 +614,12 @@ local function RenderExportModeSummary(col3)
 
     end
 
+    if selection.castBar then
+        AddSummarySectionHeading(scroll, "Cast Bar  |cff777777(" .. classKey .. ")|r")
+        AddSummarySpacer(scroll, 10)
+        AddSummaryLine(scroll, "Replaces the importer's " .. classKey .. " Cast Bar.", 0.7, 0.7, 0.7)
+    end
+
     local checkedTemplates = GetCheckedExportTemplates(selection)
     if #checkedTemplates > 0 then
         AddSummarySectionHeading(scroll, "Panel Templates  |cff777777(" .. #checkedTemplates .. ")|r")
@@ -628,6 +643,7 @@ ST._ToggleExportMode = ToggleExportMode
 ST._ConfirmExportMode = ConfirmExportMode
 ST._CountExportSelection = CountExportSelection
 ST._IsResourcesExportable = IsResourcesExportable
+ST._IsCastBarExportable = IsCastBarExportable
 ST._RenderExportModeSummary = RenderExportModeSummary
 -- Shared summary grammar, so import mode reads as the mirror image of the
 -- export summary (one visual system, two directions).

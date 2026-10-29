@@ -2167,6 +2167,43 @@ function CooldownCompanion:GetCastBarSettings()
     return GetScopedBarSettings(self, "castBar")
 end
 
+-- The Cast Bar piece of a setup string (owner ruling Q40d) travels per class
+-- like Resources: offered only when the class's Cast Bar is turned on, and the
+-- importer is asked before an existing one is replaced.
+function CooldownCompanion:IsCastBarClassConfigured(classKey)
+    local profile = self.db and self.db.profile
+    classKey = NormalizeClassKey(classKey)
+    local classStore = type(profile) == "table" and rawget(profile, SCOPED_BAR_SYSTEMS.castBar.classStoreKey) or nil
+    local settings = classKey and type(classStore) == "table" and classStore[classKey] or nil
+    return type(settings) == "table" and settings.enabled == true
+end
+
+function CooldownCompanion:BuildCastBarSetupSection()
+    local classKey = GetCurrentResourceBarClassKey(self)
+    if not self:IsCastBarClassConfigured(classKey) then
+        return nil
+    end
+    return {
+        classID = GetClassIDFromClassKey(classKey),
+        classFilename = classKey,
+        settings = CopyTable(self.db.profile[SCOPED_BAR_SYSTEMS.castBar.classStoreKey][classKey]),
+    }
+end
+
+-- Replaces the class's Cast Bar with an imported one; like Resources, the
+-- import is the request to see it, so it is turned on.
+function CooldownCompanion:ReplaceCastBarClassSettings(classKey, settings)
+    local profile = self.db and self.db.profile
+    classKey = NormalizeClassKey(classKey)
+    if type(profile) ~= "table" or not classKey or type(settings) ~= "table" then
+        return nil
+    end
+    local replaced = PromoteScopedBarSettings("castBar",
+        GetScopedBarClassStore(profile, SCOPED_BAR_SYSTEMS.castBar, true), classKey, settings, classKey)
+    replaced.enabled = true
+    return replaced
+end
+
 function CooldownCompanion:GetFrameAnchoringSettings()
     return GetScopedBarSettings(self, "frameAnchoring")
 end
