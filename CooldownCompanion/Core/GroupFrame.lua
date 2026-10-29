@@ -223,7 +223,7 @@ function GF.EnsureMoverChrome(frame)
     CreateEditableCoordLabel(
         frame.sizeLabel,
         function()
-            local currentGroup = ST.GetPanelSizingGroup(CooldownCompanion.db.profile.groups[groupId])
+            local currentGroup = ST.GetPanelLayoutGroup(CooldownCompanion.db.profile.groups[groupId])
             local style = currentGroup and currentGroup.style
             if not style then
                 return 0, 0

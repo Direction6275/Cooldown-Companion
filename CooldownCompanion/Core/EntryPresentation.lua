@@ -368,8 +368,10 @@ function ST.GetAttachedBarStyle(group, forEditing)
         if not group.attachedBarStyle then
             group.attachedBarStyle = CopyTable(ST.ATTACHED_BAR_DEFAULTS)
         end
-        -- Editors and runtime use the same canonical fallback. Materialize
-        -- only missing values; explicit false, zero, and empty values survive.
+        -- Player edits and the load pass (ST.CompleteAttachedBarStyle) only;
+        -- runtime reads take the merged form below, which never writes.
+        -- Materialize only missing values; explicit false, zero, and empty
+        -- values survive.
         for key, value in pairs(ST.ATTACHED_BAR_DEFAULTS) do
             if group.attachedBarStyle[key] == nil then
                 group.attachedBarStyle[key] = type(value) == "table" and CopyTable(value) or value
@@ -385,6 +387,28 @@ function ST.GetAttachedBarStyle(group, forEditing)
     for key, value in pairs(group.attachedBarStyle) do style[key] = value end
     if ST.ApplySharedBarTypography then ST.ApplySharedBarTypography(style) end
     return style
+end
+
+-- Load pass (RunAllMigrations; reads never write). Saves an older panel's bar
+-- style in full once, so a later change to ATTACHED_BAR_DEFAULTS reaches only
+-- new panels, as it already does for icon styles. A panel with bar entries but
+-- no saved style gets the full copy it reads today. Idempotent.
+function ST.CompleteAttachedBarStyle(group)
+    if not ST.PanelSupportsAttachedBars(group) then return end
+    local style = group.attachedBarStyle
+    if style == nil then
+        local hasBars = false
+        for _, entry in ipairs(group.buttons or {}) do
+            if ST.IsPanelBarEntry(group, entry) then
+                hasBars = true
+                break
+            end
+        end
+        if not hasBars then return end
+    elseif type(style) ~= "table" then
+        return
+    end
+    ST.GetAttachedBarStyle(group, true)
 end
 
 -- barStyle: an already resolved GetAttachedBarStyle(owner) for a caller
@@ -412,7 +436,8 @@ function ST.GetPanelBarStyleGroup(group)
         _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, { __index = group, __newindex = group })
 end
 
--- Movers on a bar-only panel edit its shared bar style's dimensions.
+-- Movers on a bar-only panel edit its shared bar style's dimensions. Edits
+-- only: it completes the saved style. Readers use GetPanelLayoutGroup.
 function ST.GetPanelSizingGroup(group)
     if ST.IsBarOnlyPanel(group) then
         return ST.GetPanelBarStyleGroup(group)

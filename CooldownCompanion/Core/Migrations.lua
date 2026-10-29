@@ -3793,6 +3793,9 @@ function CooldownCompanion:RunAllMigrations()
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
+    -- After every conversion above (MigrateSharedBarStyle fills the bar fonts
+    -- first): older panels' bar styles are saved in full.
+    for _, group in pairs(self.db.profile.groups or {}) do ST.CompleteAttachedBarStyle(group) end
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end
