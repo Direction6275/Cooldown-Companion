@@ -3489,7 +3489,8 @@ end
 -- profile[sentinel.current]), so the store re-runs a pass only on a generation
 -- bump, exactly like a profile does. ClearMigrationSentinels is profile-only:
 -- a door that ever installs templates wholesale has to bring them through here
--- itself.
+-- itself. ImportPanelTemplates (Core/PanelTemplates.lua) is that door: it runs
+-- this on a private store, and on a comparison mirror, before anything lands.
 --
 -- Only passes that read or write groups[*].style belong here. Entry, folder,
 -- flag, cast-bar, totem and resource passes would find nothing (empty

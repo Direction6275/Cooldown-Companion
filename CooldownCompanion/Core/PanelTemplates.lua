@@ -46,6 +46,10 @@ local tonumber = tonumber
 local tostring = tostring
 local table_sort = table.sort
 local string_lower = string.lower
+local CopyTable = CopyTable
+
+-- ScopedSettings.lua
+local DeepEqual = ST._DeepEqual
 
 local function IndicatorFieldCaptured(template, key)
     if template.templateVersion ~= 3 and template.templateVersion ~= 4 then return true end
@@ -447,6 +451,91 @@ function CooldownCompanion:DeletePanelTemplate(templateId)
     end
     store.groups[templateId] = nil
     return true
+end
+
+-- An earlier import's copy carries the " (n)" name UniqueTemplateName gave
+-- it, and still counts as the same name.
+local function IsSameTemplateName(storedName, incomingName)
+    if type(storedName) ~= "string" or type(incomingName) ~= "string" then return false end
+    local stored, incoming = string_lower(storedName), string_lower(incomingName)
+    if stored == incoming then return true end
+    local prefix = incoming .. " ("
+    return stored:sub(1, #prefix) == prefix and stored:sub(#prefix + 1):match("^%d+%)$") ~= nil
+end
+
+local function IsTemplateCopy(stored, incoming, incomingName)
+    if type(stored) ~= "table" or type(incoming) ~= "table"
+        or not IsSameTemplateName(stored.name, incomingName) then
+        return false
+    end
+    for key, value in pairs(stored) do
+        if key ~= "name" and not DeepEqual(value, incoming[key]) then return false end
+    end
+    for key in pairs(incoming) do
+        if key ~= "name" and stored[key] == nil then return false end
+    end
+    return true
+end
+
+-- Adds shared or restored templates beside the player's own. They face the
+-- same gate local ones do: NormalizePanelTemplateStore now, CanUsePanelTemplate
+-- at use, so an unknown version lands untouched and shows disabled. An exact
+-- copy of a saved template is skipped, so restoring one backup twice adds
+-- nothing. Returns added, skipped.
+function CooldownCompanion:ImportPanelTemplates(list)
+    local store = self:GetPanelTemplateStore()
+    if not store or type(list) ~= "table" then return 0, 0 end
+    local incoming = { groups = {}, nextGroupId = 1 }
+    local count = 0
+    for _, template in ipairs(list) do
+        if type(template) == "table" then
+            count = count + 1
+            incoming.groups[count] = CopyTable(template)
+        end
+    end
+    if count == 0 then return 0, 0 end
+    -- Private stores carry no pass stamps, so every pass runs on both. The
+    -- mirror puts the saved templates through the same pass code the arrivals
+    -- just went through before they are compared.
+    self:NormalizePanelTemplateStore(incoming)
+    local mirror = { groups = CopyTable(store.groups), nextGroupId = store.nextGroupId }
+    self:NormalizePanelTemplateStore(mirror)
+
+    local added, skipped = 0, 0
+    for index = 1, count do
+        local template = incoming.groups[index]
+        if type(template) == "table" then
+            local name = NormalizeTemplateName(template.name, store.nextGroupId)
+            local isCopy = false
+            for _, existing in pairs(mirror.groups) do
+                if IsTemplateCopy(existing, template, name) then
+                    isCopy = true
+                    break
+                end
+            end
+            if isCopy then
+                skipped = skipped + 1
+            else
+                local templateId = store.nextGroupId
+                store.nextGroupId = templateId + 1
+                template.name = UniqueTemplateName(store, name, templateId)
+                store.groups[templateId] = template
+                added = added + 1
+            end
+        end
+    end
+
+    if added > 0 then
+        local message = "Imported " .. added .. (added == 1 and " Panel Template." or " Panel Templates.")
+        if skipped > 0 then
+            message = message .. " " .. skipped .. " already saved."
+        end
+        self:Print(message)
+    elseif skipped > 0 then
+        self:Print(skipped == 1 and "That Panel Template was already saved."
+            or ("All " .. skipped .. " Panel Templates were already saved."))
+    end
+    return added, skipped
 end
 
 ------------------------------------------------------------------------

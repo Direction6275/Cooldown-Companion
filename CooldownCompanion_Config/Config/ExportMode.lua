@@ -17,6 +17,8 @@ local EncodeExportData = ST._EncodeExportData
 local BuildSetupExportPayload = ST._BuildSetupExportPayload
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
 local SortExportContainerItems = ST._SortExportContainerItems
+-- Column1.lua
+local FormatPanelTemplateMenuText = ST._FormatPanelTemplateMenuText
 
 ------------------------------------------------------------------------
 -- Mode lifecycle. CS.exportMode is nil when inactive; while active it
@@ -59,6 +61,7 @@ local function EnterExportMode()
             containers = {},
             panels = {},
             resources = false,
+            templates = {}, -- keyed by template id
         },
         expanded = {},
     }
@@ -120,6 +123,18 @@ local function IsResourcesExportable()
         and CooldownCompanion:IsResourceBarClassConfigured(classKey)
 end
 
+-- Ticked templates in list order, read live so one deleted since it was
+-- ticked drops out.
+local function GetCheckedExportTemplates(selection)
+    local templates = {}
+    for _, item in ipairs(CooldownCompanion:GetPanelTemplates()) do
+        if selection.templates[item.id] then
+            templates[#templates + 1] = item.template
+        end
+    end
+    return templates
+end
+
 local function CountExportSelection()
     local selection = GetExportSelection()
     if not selection then
@@ -128,6 +143,7 @@ local function CountExportSelection()
     local count = 0
     for _ in pairs(selection.containers) do count = count + 1 end
     if selection.resources then count = count + 1 end
+    count = count + #GetCheckedExportTemplates(selection)
     return count
 end
 
@@ -184,6 +200,7 @@ local function BuildExportModePayload()
             GetResourceBarClassKey())
 
     end
+    sections.templates = GetCheckedExportTemplates(selection)
 
     return BuildSetupExportPayload and BuildSetupExportPayload(sections) or nil
 end
@@ -514,7 +531,7 @@ local function RenderExportModeSummary(col3)
         AddSummarySpacer(scroll, 6)
         AddSummaryLine(scroll, "Nothing selected yet.")
         AddSummarySpacer(scroll, 2)
-        AddSummaryLine(scroll, "Check groups, panels, or Resources in the navigator. Everything you check exports as one string.", 0.7, 0.7, 0.7)
+        AddSummaryLine(scroll, "Check groups, panels, Panel Templates, or Resources in the navigator. Everything you check exports as one string.", 0.7, 0.7, 0.7)
         scroll:DoLayout()
         return
     end
@@ -586,6 +603,15 @@ local function RenderExportModeSummary(col3)
         AddSummarySpacer(scroll, 10)
         AddSummaryLine(scroll, "Includes all resources, styling, and layout order. Replaces the importer's " .. classKey .. " Resources settings.", 0.7, 0.7, 0.7)
 
+    end
+
+    local checkedTemplates = GetCheckedExportTemplates(selection)
+    if #checkedTemplates > 0 then
+        AddSummarySectionHeading(scroll, "Panel Templates  |cff777777(" .. #checkedTemplates .. ")|r")
+        AddSummarySpacer(scroll, 10)
+        for _, template in ipairs(checkedTemplates) do
+            AddSummaryLine(scroll, FormatPanelTemplateMenuText(template))
+        end
     end
 
     AddSummarySpacer(scroll, 4)

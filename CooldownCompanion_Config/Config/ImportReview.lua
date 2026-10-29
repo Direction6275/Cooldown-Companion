@@ -127,6 +127,11 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount)
     AddLine(lines, heading or "Full profile")
     AddLine(lines, FormatCount("Groups", CountPairs(profile and profile.groupContainers)))
     AddLine(lines, FormatCount("Panels", CountPairs(profile and profile.groups)))
+    local templateCount = type(profile) == "table" and type(profile._panelTemplates) == "table"
+        and #profile._panelTemplates or 0
+    if templateCount > 0 then
+        AddLine(lines, FormatCount("Panel Templates", templateCount))
+    end
 
     customBarCount = customBarCount or 0
     if customBarCount > 0 then
@@ -324,16 +329,20 @@ local function GetSetupSections(data)
         and type(data.resources.settings) == "table"
         and data.resources
         or nil
-    return hasContainers, customBars, resources
+    local templates = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
+    return hasContainers, customBars, resources, templates
 end
 
-local function BuildSetupSummaryLines(data, hasContainers, customBars, resources)
+local function BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates)
     local lines = {}
     AddLine(lines, "Setup export")
 
     if hasContainers then
         AddLine(lines, FormatCount("Groups", #data.containers))
         AddLine(lines, FormatCount("Panels", CountContainerPanels(data.containers)))
+    end
+    if templates then
+        AddLine(lines, FormatCount("Panel Templates", #templates))
     end
 
     local playerClassKey = GetPlayerClassKey()
@@ -494,12 +503,12 @@ end
 -- become containers/setup payloads (see _ConvertUnifiedPanelImport).
 local function ClassifyEntityPayload(data)
     if data.type == "setup" then
-        local hasContainers, customBars, resources = GetSetupSections(data)
-        if not hasContainers and not customBars and not resources then
+        local hasContainers, customBars, resources, templates = GetSetupSections(data)
+        if not hasContainers and not customBars and not resources and not templates then
             return BuildError("empty_setup", "Import failed: this setup export is empty.")
         end
         return BuildReview("setup", data, "Setup Import", "Import Setup",
-            BuildSetupSummaryLines(data, hasContainers, customBars, resources))
+            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates))
     end
 
     if data.type == "group" and data.group then
@@ -653,6 +662,10 @@ function CooldownCompanion:ApplyReviewedImport(review)
         local imported = ApplyFullProfileImport and ApplyFullProfileImport(review.data, options)
         if imported then
             self:Print(successMessage)
+            -- Templates land beside the player's own (diagnostics carry none).
+            if review.kind == "profile" then
+                self:ImportPanelTemplates(review.data._panelTemplates)
+            end
         end
         return imported == true
     end

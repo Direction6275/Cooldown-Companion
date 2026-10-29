@@ -826,12 +826,28 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
     local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
+    -- Panel Templates are account-wide, so any class can take them.
+    local templateInfos = {}
+    for index, template in ipairs(type(profile) == "table" and type(profile._panelTemplates) == "table"
+        and profile._panelTemplates or {}) do
+        if type(template) == "table" then
+            templateInfos[#templateInfos + 1] = {
+                kind = "template",
+                sourceKey = index,
+                template = template,
+                name = template.name,
+                eligible = true,
+                selected = true,
+            }
+        end
+    end
 
     local model = {
         rows = {},
         containers = containerInfos,
         panels = panelInfos,
         customBars = customBarInfos,
+        templates = templateInfos,
         containersByKey = containersByKey,
         panelsByContainer = panelsByContainer,
         currentClassID = currentInfo and currentInfo.classID,
@@ -845,6 +861,7 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     AddRows(model, containerInfos, "Group")
     AddRows(model, panelInfos, "Panel")
     AddRows(model, customBarInfos, "Custom Bar")
+    AddRows(model, templateInfos, "Template")
     return model
 end
 
@@ -1068,6 +1085,12 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
 
     local selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
     local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
+    local selectedTemplates = {}
+    for _, info in ipairs(model.templates or {}) do
+        if info.eligible and info.selected then
+            selectedTemplates[#selectedTemplates + 1] = info.template
+        end
+    end
 
     local importedContainers = {}
     local batchToken = BeginImportBatch()
@@ -1132,6 +1155,12 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
             self:ApplyResourceBars()
         end
         self:EndPanelAttachmentRefresh(attachmentOperation)
+    end
+
+    -- Account-wide: no profile migration run and no frame refresh.
+    if #selectedTemplates > 0 then
+        self:ImportPanelTemplates(selectedTemplates)
+        applied = true
     end
 
     if applied and not failed then
