@@ -2225,7 +2225,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                 label = "Border Style",
                 setting = finderAura and finderAura.borderStyle,
                 indent = false,
-                list = { solid = "Solid Border", pixel = "Pixel Glow" },
+                list = { solid = "Solid Border", pixel = "Pixel Dashes" },
                 order = { "solid", "pixel" },
                 value = borderStyle,
                 onChange = function(value)
@@ -2321,7 +2321,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 label = "Border Style",
                 setting = finderStack and finderStack.maxStyle,
                 indent = false,
-                list = { solid = "Solid Border", pixel = "Pixel Glow" },
+                list = { solid = "Solid Border", pixel = "Pixel Dashes" },
                 order = { "solid", "pixel" },
                 value = borderStyle,
                 onChange = function(value)

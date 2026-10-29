@@ -1785,8 +1785,8 @@ end
 
 -- Map a stored bar aura effect to a kit-renderable style. "color" is the
 -- fill-tint-only mode (no border effect). Bars offer border styles only
--- (owner ruling). "pixel" is the live Pixel Glow vocabulary of the resource
--- aura border and the max-stack border (ResourceBarAuraHost
+-- (owner ruling). "pixel" is the stored value of the resource aura border and
+-- the max-stack border, labelled Pixel Dashes (ResourceBarAuraHost
 -- GetResourceOverlayBorderStyle, ResourceBar, config ResourceBarPanelsResource)
 -- and renders as dashes, so a legacy sweep must keep that leg. The
 -- flipbook/fill styles (glow/proc/ants/overlay), retired LibCustomGlow

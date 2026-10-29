@@ -1632,7 +1632,7 @@ local function BuildUnusableDimmingControls(container, styleTable, refreshCallba
 end
 
 local ASSISTED_HIGHLIGHT_STYLES = {
-    blizzard = "Blizzard (Marching Ants)",
+    blizzard = "Marching Ants",
     proc = "Proc Glow",
     solid = "Solid Border",
 }
@@ -1883,7 +1883,7 @@ end
 local PROC_GLOW_STYLE_OPTIONS = {
     ["solid"] = "Solid Border",
     ["pixel"] = "Pixel Glow",
-    ["glow"] = "Glow (Blizzard)",
+    ["glow"] = "Proc Glow",
     ["autocast"] = "Autocast Shine",
 }
 local PROC_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "autocast"}
