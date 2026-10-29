@@ -1566,7 +1566,8 @@ end
 -- (freezeGeometryWhileUnlocked), so arranging stays steady; read per tick so
 -- a lock toggle needs no rebind.
 local function OnSlotShrinkUpdate(layer, elapsed)
-    if layer._ccShrinkGroup.locked == false then
+    local group = layer._ccShrinkGroup
+    if group.locked == false and not CooldownCompanion:IsArrangeContainerSuppressed(group.parentContainerId) then
         if layer._ccShrinkTime ~= 0 then
             layer._ccShrinkTime = 0
             layer:SetScale(1)

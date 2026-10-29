@@ -122,13 +122,12 @@ local function CountContainerPanels(containers)
     return panelCount
 end
 
-local function BuildProfileSummaryLines(profile, heading, customBarCount)
+local function BuildProfileSummaryLines(profile, heading, customBarCount, templateCount)
     local lines = {}
     AddLine(lines, heading or "Full profile")
     AddLine(lines, FormatCount("Groups", CountPairs(profile and profile.groupContainers)))
     AddLine(lines, FormatCount("Panels", CountPairs(profile and profile.groups)))
-    local templateCount = type(profile) == "table" and type(profile._panelTemplates) == "table"
-        and #profile._panelTemplates or 0
+    templateCount = templateCount or 0
     if templateCount > 0 then
         AddLine(lines, FormatCount("Panel Templates", templateCount))
     end
@@ -266,8 +265,12 @@ local function ReviewIsDestructive(review)
     return review and review.destructive and not ReviewUsesSelectedPieces(review)
 end
 
+-- Templates are importable on any class, so they never pick the default: a
+-- backup whose Groups and panels all belong to another class opens on Restore.
 local function DefaultProfileImportMode(pieces)
-    if type(pieces) == "table" and (tonumber(pieces.eligibleCount) or 0) > 0 then
+    local eligible = type(pieces) == "table"
+        and (tonumber(pieces.eligibleCount) or 0) - #(pieces.templates or {}) or 0
+    if eligible > 0 then
         return "selected"
     end
     return "restore"
@@ -424,7 +427,8 @@ local function BuildBlockedImportSummary(data, isDiagnostic)
     elseif data.type == "containers" or data.type == "folder" then
         return BuildContainersSummaryLines(data)
     end
-    return BuildProfileSummaryLines(data, "Profile backup export")
+    return BuildProfileSummaryLines(data, "Profile backup export", nil,
+        type(data._panelTemplates) == "table" and #data._panelTemplates or 0)
 end
 
 local function ValidateProfilePayload(data)
@@ -447,11 +451,15 @@ local function ClassifyProfilePayload(data)
         return validation
     end
 
+    -- Only a backup carries Panel Templates; a diagnostic snapshot's copy is a
+    -- stray an older version's restore left in the profile.
     local pieces = BuildProfileImportPiecesReview and BuildProfileImportPiecesReview(data, {
         exporterCharKey = data._exporterCharKey,
+        includeTemplates = true,
     }) or nil
 
-    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount)
+    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount,
+        pieces and #(pieces.templates or {}))
     AddCharacterEligibilityNotice(lines, data)
 
     return BuildReview("profile", data, "Profile Backup", "Restore Backup",

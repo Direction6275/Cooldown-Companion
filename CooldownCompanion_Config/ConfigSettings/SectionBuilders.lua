@@ -2101,6 +2101,18 @@ function ST._EnableAuraGlow(style)
     AURA_GLOW_CFG.onStyleChanged(style, "pulse")
 end
 
+-- Proc and Ready Glow re-enable the same way: their default style, with its
+-- per-style keys reset, so a size another style left can't draw a 30px border.
+function ST._EnableProcGlow(style)
+    style.procGlowStyle = PROC_GLOW_CFG.defaultStyle
+    PROC_GLOW_CFG.onStyleChanged(style, PROC_GLOW_CFG.defaultStyle)
+end
+
+function ST._EnableReadyGlow(style)
+    style.readyGlowStyle = READY_GLOW_CFG.defaultStyle
+    READY_GLOW_CFG.onStyleChanged(style, READY_GLOW_CFG.defaultStyle)
+end
+
 -- Pandemic glow (PTR 8): the icon-mode pandemic display, a second aura-kit
 -- glow Blizzard reveals only while the tracked aura sits inside its refresh
 -- window. Same style vocabulary as the aura glow, its own key family

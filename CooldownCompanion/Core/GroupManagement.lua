@@ -433,7 +433,7 @@ local function CopyPanelPosition(self, source, target)
     local anchor = target.anchor
     if type(anchor) ~= "table" then
         -- Preserve legacy string targets too; do not substitute the source's
-        -- target or the template applier's Group-relative anchor.
+        -- target.
         anchor = { relativeTo = anchor }
         target.anchor = anchor
     end
@@ -648,7 +648,7 @@ local function ApplyPanelSettingsSource(self, targetGroupId, source, scopes, opt
         end
     end
 
-    -- Sections ride after the shape, only onto a panel the section model
+    -- Sections ride after the style keys, only onto a panel the section model
     -- covers (icons, not an Aura Panel; anywhere else the data is inert and
     -- must not be written). Settings only: the target's members stay where
     -- they are, and an anchor the target has no section at gets a member-

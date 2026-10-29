@@ -68,16 +68,15 @@ function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
     -- Old custom heights apply only off a panel: an Independent stack that
     -- predates the geometry conversion. Every host is an ordinary icon panel
     -- (CanModuleAnchorToPanel).
-    if not ST.PanelSupportsAttachedBars(group) and (group or settings._barGeometryVersion ~= 1)
-        and layout.customBarHeights and slot then
+    if not group and settings._barGeometryVersion ~= 1 and layout.customBarHeights and slot then
         thickness = vertical and (slot.barWidth or slot.barHeight) or (slot.barHeight or slot.barWidth)
     end
-    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and slot or nil, baseline = baseline or 12, thickness = thickness,
+    return ST.ResolveBarGeometry(group, { owner = slot, baseline = baseline or 12, thickness = thickness,
         vertical = vertical, spacing = layout.barSpacing or settings.barSpacing or 3.6 })
 end
 
 -- Segment spacing follows the same panel -> individual resource ownership as
--- thickness. Independent/specialized hosts retain their resource default.
+-- thickness. An Independent stack keeps its resource default.
 function ST.ResolveResourceSegmentGap(settings, layout, powerType, group)
     settings, layout = settings or {}, layout or {}
     local canonical = ST._RB and ST._RB.GetCanonicalPowerType and ST._RB.GetCanonicalPowerType(powerType) or powerType
@@ -94,7 +93,7 @@ end
 
 function ST.ResolveCastBarGeometry(settings, group)
     settings = settings or {}
-    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and settings or nil, baseline = settings.height or 15 })
+    return ST.ResolveBarGeometry(group, { owner = settings, baseline = settings.height or 15 })
 end
 
 -- Screen Y is independent of attachment side: positive is up, negative down.

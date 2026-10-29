@@ -608,7 +608,8 @@ local function BuildIndicatorTextureAppearance(container, group)
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
         if not isConditionsIndicator then
-            RequestAuraIndicatorRestyle(group, groupId)
+            -- Wheel ticks commit one by one; fold them into one restyle.
+            ThrottleAuraIndicatorRestyle(group, groupId)
         end
     end
 

@@ -59,9 +59,11 @@ local ROW_SECTION = { leftAligned = true }
 -- gears store in options.unlock / opts.advancedUnlock (resolved only at
 -- panel-build time by ST._ResolveAdvancedUnlock, StyleLens.lua). File-local
 -- constants so a tab rebuild allocates none of them.
+-- Proc and Ready share the aura glow's rule: the checkbox and the Turn On
+-- footer enable through one helper that resets the per-style keys.
 local TURNON_PROC_GLOW = {
     label = "Enable Proc Glow",
-    apply = function(write) write.procGlowStyle = "glow" end,
+    apply = function(write) ST._EnableProcGlow(write) end,
 }
 
 -- One enable path for the checkbox AND the read-only panel's Turn On
@@ -84,7 +86,7 @@ local TURNON_PANDEMIC_MARKER = {
 }
 local TURNON_READY_GLOW = {
     label = "Enable Ready Glow",
-    apply = function(write) write.readyGlowStyle = "solid" end,
+    apply = function(write) ST._EnableReadyGlow(write) end,
 }
 local TURNON_KEY_PRESS_HIGHLIGHT = {
     label = "Enable Key Press Highlight",
@@ -185,7 +187,11 @@ local function BuildProcGlowSection(container, group, style, lens)
         disabled = procSec.disabled,
         onChange = function(val)
             if not procSec.write then return end
-            procSec.write.procGlowStyle = val and "glow" or "none"
+            if val then
+                ST._EnableProcGlow(procSec.write)
+            else
+                procSec.write.procGlowStyle = "none"
+            end
             refreshStyle("style-settings")
         end,
     })
@@ -418,7 +424,11 @@ local function BuildReadyGlowSection(container, group, style, lens)
         disabled = readySec.disabled,
         onChange = function(val)
             if not readySec.write then return end
-            readySec.write.readyGlowStyle = val and "solid" or "none"
+            if val then
+                ST._EnableReadyGlow(readySec.write)
+            else
+                readySec.write.readyGlowStyle = "none"
+            end
             refreshStyle("style-settings")
         end,
     })

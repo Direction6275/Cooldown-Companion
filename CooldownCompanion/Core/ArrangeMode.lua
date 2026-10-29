@@ -575,7 +575,9 @@ function CooldownCompanion:IsArrangeContainerHidden(containerId)
 end
 
 -- Hidden by its own eye or by its group's. The forced lock lifts the hide, so
--- panels fight as usual; the post-combat refresh puts them away again.
+-- panels fight as usual; the post-combat refresh puts them away again. A
+-- padlocked panel is back in normal play, so its Group's eye lets go of it
+-- too, as its own eye does (SetPanelLocked).
 function CooldownCompanion:IsArrangePanelDisplayHidden(groupId, group)
     if self._combatForcedLock
         or (self._arrangeHiddenPanels == nil and self._arrangeHiddenContainers == nil) then
@@ -588,6 +590,7 @@ function CooldownCompanion:IsArrangePanelDisplayHidden(groupId, group)
     return group ~= nil
         and group.parentContainerId ~= nil
         and self:IsArrangeContainerHidden(group.parentContainerId)
+        and not self:IsArrangePanelSuppressed(groupId)
 end
 
 -- Each eye map drops away once empty, which keeps the IsGroupActive check to

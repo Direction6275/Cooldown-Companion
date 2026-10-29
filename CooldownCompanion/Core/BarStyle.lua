@@ -38,7 +38,7 @@ for _, id in ipairs(ST.SHARED_BAR_STYLE_SECTIONS) do
     for _, existing in ipairs(ST.OVERRIDE_SECTION_ORDER) do if existing == id then found = true; break end end
     if not found then ST.OVERRIDE_SECTION_ORDER[#ST.OVERRIDE_SECTION_ORDER + 1] = id end
 end
--- Fill direction is panel shape (PANEL_TEMPLATE_SHAPE_KEYS), never quick-copied.
+-- Fill direction is panel shape (a template carries it), never quick-copied.
 for id in pairs(sections) do
     if id ~= "barDirection" then table.insert(ST.PANEL_COPY_SCOPES.bars.appearance.sections, id) end
 end

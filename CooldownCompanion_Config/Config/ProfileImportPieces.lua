@@ -826,10 +826,12 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
     local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
-    -- Panel Templates are account-wide, so any class can take them.
+    -- Panel Templates are account-wide, so any class can take them. Backups
+    -- only (options.includeTemplates).
     local templateInfos = {}
-    for index, template in ipairs(type(profile) == "table" and type(profile._panelTemplates) == "table"
-        and profile._panelTemplates or {}) do
+    local templates = options.includeTemplates and type(profile) == "table"
+        and type(profile._panelTemplates) == "table" and profile._panelTemplates or {}
+    for index, template in ipairs(templates) do
         if type(template) == "table" then
             templateInfos[#templateInfos + 1] = {
                 kind = "template",
@@ -1160,7 +1162,6 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     -- Account-wide: no profile migration run and no frame refresh.
     if #selectedTemplates > 0 then
         self:ImportPanelTemplates(selectedTemplates)
-        applied = true
     end
 
     if applied and not failed then
@@ -1168,6 +1169,9 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     elseif failed then
         self:Print("Import failed: some selected profile pieces could not be imported.")
         return false
+    elseif #selectedTemplates > 0 then
+        -- Templates only: ImportPanelTemplates already said what landed.
+        return true
     else
         self:Print("Import failed: selected profile pieces could not be imported.")
     end

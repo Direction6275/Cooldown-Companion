@@ -672,7 +672,7 @@ end
 -- every other create card stands down so the guided path cannot dead-end.
 -- Checked live in the handlers (the tutorial can end without a rebuild); the
 -- build pass reads it once for the dimmed look. Templates use their exact
--- creation mode, including ordinary legacy Bar templates under Panel.
+-- creation mode.
 local function IsCardTutorialLocked(create)
     if not create or create.mode == "icons" then
         return false

@@ -266,13 +266,13 @@ local function CoverLegacyTemplate(template, version)
     template.capturedFields = fields
 end
 
--- Empty coverage: these versions never applied an attached bar style.
+-- Empty coverage: these versions never applied an attached bar style. A
+-- snapshot with no coverage map stays invalid until Update Template.
 local function AddEmptyAttachedBarCoverage(template)
+    if type(template.capturedFields) ~= "table" then return end
     template.attachedBarStyle = type(template.attachedBarStyle) == "table" and template.attachedBarStyle or {}
     template.attachedBarLayout = type(template.attachedBarLayout) == "table" and template.attachedBarLayout or {}
-    if type(template.capturedFields) == "table" then
-        template.capturedFields.attachedBarStyle, template.capturedFields.attachedBarLayout = {}, {}
-    end
+    template.capturedFields.attachedBarStyle, template.capturedFields.attachedBarLayout = {}, {}
 end
 
 -- Version-gated, so idempotent: once converted every template is version 4.

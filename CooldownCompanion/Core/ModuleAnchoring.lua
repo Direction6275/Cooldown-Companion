@@ -161,6 +161,7 @@ function Addon:GetModuleAnchorStatusText(result, kind)
     end
     if result.fallback then
         local unavailable = result.selectedReason == "missing" and "Selected panel is missing."
+            or result.selectedReason == "unsupported" and "Selected panel cannot host this attachment."
             or "Selected panel is unavailable."
         if result.available then
             return unavailable .. " Using Automatic: " .. (result.group.name or ("Panel " .. result.panelId)) .. "."

@@ -143,37 +143,40 @@ local function UsesGlowSpeed(glowStyle)
         or glowStyle == "autocast"
 end
 
+-- Pulse: per-edge Alpha bounce on the solid border textures. Never on
+-- solidFrame itself: its alpha carries the aura-shell hide and dim (IconMode
+-- SetGlowContainerShellAlpha), which a playing Alpha animation on the frame
+-- would override.
 local function StopSolidBorderPulse(container)
-    local frame = container and container.solidFrame
-    if frame and frame._solidPulseAG then
-        frame._solidPulseAG:Stop()
-    end
-    if frame then
-        -- Aura-shell entries latch their glow containers to alpha 0
-        -- (IconMode SetGlowContainerShellAlpha); restoring a flat 1 here
-        -- would resurrect glow edges on an invisible shell button.
-        frame:SetAlpha(container._ccShellAlpha or 1)
+    if not (container and container._solidPulseAGs) then return end
+    for _, ag in ipairs(container._solidPulseAGs) do
+        ag:Stop()
     end
 end
 
 local function StartSolidBorderPulse(container, speed, restart)
-    local frame = container and container.solidFrame
-    if not frame then return end
-    if not frame._solidPulseAG then
-        local ag = frame:CreateAnimationGroup()
-        ag:SetLooping("BOUNCE")
-        local anim = ag:CreateAnimation("Alpha")
-        frame._solidPulseAG = ag
-        frame._solidPulseAnim = anim
+    if not (container and container.solidTextures) then return end
+    if not container._solidPulseAGs then
+        container._solidPulseAGs = {}
+        container._solidPulseAnims = {}
+        for i, tex in ipairs(container.solidTextures) do
+            local ag = tex:CreateAnimationGroup()
+            ag:SetLooping("BOUNCE")
+            container._solidPulseAGs[i] = ag
+            container._solidPulseAnims[i] = ag:CreateAnimation("Alpha")
+        end
     end
-    frame._solidPulseAnim:SetDuration(speed or 0.5)
-    frame._solidPulseAnim:SetFromAlpha(1.0)
-    frame._solidPulseAnim:SetToAlpha(0.3)
-    if restart then
-        frame._solidPulseAG:Stop()
-        frame._solidPulseAG:Play()
-    elseif not frame._solidPulseAG:IsPlaying() then
-        frame._solidPulseAG:Play()
+    for i, ag in ipairs(container._solidPulseAGs) do
+        local anim = container._solidPulseAnims[i]
+        anim:SetDuration(speed or 0.5)
+        anim:SetFromAlpha(1.0)
+        anim:SetToAlpha(0.3)
+        if restart then
+            ag:Stop()
+            ag:Play()
+        elseif not ag:IsPlaying() then
+            ag:Play()
+        end
     end
 end
 

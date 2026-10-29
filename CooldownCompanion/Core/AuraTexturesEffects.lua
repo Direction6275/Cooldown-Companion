@@ -807,6 +807,7 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
     SetTextureIndicatorBaseVisuals(host)
 
     local freezeGeometryWhileUnlocked = group.locked == false
+        and not CooldownCompanion:IsArrangeContainerSuppressed(group.parentContainerId)
     local bounceAmplitude = math_max(
         6,
         math_min(
