@@ -933,8 +933,6 @@ function CooldownCompanion:CreateContainer(name)
     return containerId
 end
 
-local ResetIndicatorAnchorsTargeting
-
 -- Cursor movers outlive config previews. Release their gesture and selection
 -- while the old panel and parent still exist, before deleting or moving them.
 local function ClearCursorPanelMoverBeforeMutation(self, groupId)
@@ -962,7 +960,7 @@ function CooldownCompanion:DeleteContainer(containerId)
             deletedGroupIds[groupId] = true
         end
     end
-    ResetIndicatorAnchorsTargeting(db.groups, deletedGroupIds, { [containerId] = true })
+    self:ReleaseDeletedAnchorDependents(deletedGroupIds, { [containerId] = true })
     for _, groupId in ipairs(panelIds) do
         ClearCursorPanelMoverBeforeMutation(self, groupId)
         self:UnloadGroup(groupId)
@@ -1005,13 +1003,6 @@ local function ParseIndicatorAddonAnchorTarget(relativeTo)
     return nil
 end
 
-local function GetIndicatorAddonAnchorTarget(panel)
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
-    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
-    local kind, id = ParseIndicatorAddonAnchorTarget(relativeTo)
-    return kind, id, relativeTo
-end
-
 local function GetIndicatorPanelAnchorTarget(panel)
     local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
@@ -1030,24 +1021,6 @@ local function ResetIndicatorPanelAnchor(panel)
     settings.y = 0
 end
 ST._ResetIndicatorPanelAnchor = ResetIndicatorPanelAnchor
-
-ResetIndicatorAnchorsTargeting = function(groups, deletedGroupIds, deletedContainerIds)
-    if type(groups) ~= "table" then
-        return
-    end
-    deletedGroupIds = type(deletedGroupIds) == "table" and deletedGroupIds or {}
-    deletedContainerIds = type(deletedContainerIds) == "table" and deletedContainerIds or {}
-
-    for groupId, panel in pairs(groups) do
-        if not deletedGroupIds[groupId] then
-            local targetKind, targetId = GetIndicatorAddonAnchorTarget(panel)
-            if (targetKind == "group" and deletedGroupIds[targetId])
-                or (targetKind == "container" and deletedContainerIds[targetId]) then
-                ResetIndicatorPanelAnchor(panel)
-            end
-        end
-    end
-end
 
 -- Both panel anchor stores use the same IDs, but retain their own fallback
 -- when an addon target is outside the copy. Cursor anchors belong to panels.
@@ -1347,7 +1320,7 @@ function CooldownCompanion:DeletePanel(containerId, groupId)
 
     local attachmentOperation = self:BeginPanelAttachmentRefresh()
     ClearCursorPanelMoverBeforeMutation(self, groupId)
-    ResetIndicatorAnchorsTargeting(db.groups, { [groupId] = true })
+    self:ReleaseDeletedAnchorDependents({ [groupId] = true })
     self:UnloadGroup(groupId)
     self:DiscardDormantFrame(groupId)
     db.groups[groupId] = nil
@@ -1437,27 +1410,21 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
 
     self:RefreshGroupFrame(groupId)
 
-    -- If source container is now empty, delete it
-    local sourceDeleted = false
-    if self:GetPanelCount(sourceContainerId) == 0 then
-        self:DeleteContainer(sourceContainerId)
-        sourceDeleted = true
-    elseif self.RefreshStableExternalAnchorCompactSuppression then
+    -- An emptied Group stays, as it does when its last panel is deleted.
+    if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
     end
 
     RefreshPanelAlphaDependencyTargets(self)
     if self.RefreshContainerWrapper then
-        if not sourceDeleted then
-            self:RefreshContainerWrapper(sourceContainerId)
-        end
+        self:RefreshContainerWrapper(sourceContainerId)
         self:RefreshContainerWrapper(targetContainerId)
     end
     if restoreCursorSelection then
         self:ActivateArrangePanel(targetContainerId, groupId, false)
     end
     self:EndPanelAttachmentRefresh(attachmentOperation, true, "move-panel")
-    return true, sourceDeleted
+    return true
 end
 
 local DISPLAY_MODE_CHANGE_REFUSALS = {

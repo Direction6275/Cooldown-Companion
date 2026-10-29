@@ -381,6 +381,30 @@ local function SaveGroupedIndicatorPreviewSettings(host, group, settings, groupI
     return true
 end
 
+-- Deleting the panel or Group an Indicator display hangs off leaves the box
+-- where it is: its current screen spot, measured as the grouped drag save
+-- measures, saved as a Group-mode display. False when the box was never
+-- placed or the panel follows the cursor.
+function CooldownCompanion:SaveIndicatorScreenPosition(groupId, group)
+    local settings = self:GetIndicatorAnchorSettings(group)
+    local frame = (self.groupFrames and self.groupFrames[groupId])
+        or (self._dormantFrames and self._dormantFrames[groupId])
+    local body = frame and frame._indicatorAnchorBodyActive and frame._indicatorAnchorBody
+    if type(settings) ~= "table" or not body or self:IsGroupCursorAnchored(group) then
+        return false
+    end
+    local x, y, point, relativePoint = GetTextureHostDisplayCoords(body, settings.point, "CENTER")
+    if x == nil or y == nil then
+        return false
+    end
+    settings.point = point
+    settings.relativePoint = relativePoint
+    settings.relativeTo = UI_PARENT_NAME
+    settings.x = x
+    settings.y = y
+    return true
+end
+
 local function GetTextureHostPositionContext(host)
     local owner = host and host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId)

@@ -32,6 +32,11 @@ local BuildDefaultCursorAnchor = GF.BuildDefaultCursorAnchor
 local ParseAddonAnchorFrameName = GF.ParseAddonAnchorFrameName
 local WouldFrameDependencyCreateCircularAnchor = GF.WouldFrameDependencyCreateCircularAnchor
 
+-- AnchorPolicy.lua
+local BuildRootAnchor = ST._BuildRootAnchor
+-- GroupManagement.lua
+local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
+
 -- Indicator geometry and alpha have the same active connection. The panel
 -- frame owns natural alpha even when no source/display host exists.
 function CooldownCompanion:RefreshIndicatorAnchorAlpha(frame, group, force)
@@ -405,6 +410,94 @@ function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
     end
 
     return dependents
+end
+
+local function NamesDeletedTarget(relativeTo, deletedGroupIds, deletedContainerIds)
+    local kind, id = ParseAddonAnchorFrameName(relativeTo)
+    if kind == "group" then return deletedGroupIds[id] == true end
+    if kind == "container" then return deletedContainerIds[id] == true end
+    return false
+end
+
+-- A panel keeps its spot on its own Group, measured as SaveGroupPosition
+-- measures a drag (point and relativePoint kept). A panel with no placed frame,
+-- and an Indicator's shell anchor, take the Group's own CENTER 0,0.
+local function ReleasePanelAnchor(self, groupId, group)
+    local targetName = GetPanelContainerFrameName(groupId) or "UIParent"
+    local targetFrame = targetName == "UIParent" and UIParent
+        or (self.containerFrames and self.containerFrames[group.parentContainerId])
+    local frame = (self.groupFrames and self.groupFrames[groupId])
+        or (self._dormantFrames and self._dormantFrames[groupId])
+    local x, y
+    if frame and targetFrame and not ST.IsIndicatorGroup(group)
+        and ST.GetPanelAnchorBodyFrame(frame):GetCenter() and targetFrame:GetCenter() then
+        x, y = ComputeGroupFrameCoordinates(self, frame, groupId, group, true, targetName, targetFrame, "ok")
+    end
+    if x and y then
+        group.anchor.relativeTo = targetName
+        group.anchor.x = x
+        group.anchor.y = y
+    else
+        group.anchor = BuildRootAnchor(targetName)
+    end
+end
+
+--- Run before panels or Groups are deleted: everything anchored to them keeps
+--- its spot on screen. A panel goes on its own Group; a Group and an
+--- Indicator's display go on the screen. Choose Panel attachments and the Cast
+--- Bar, Resources and Unit Frame anchors keep their own fallbacks.
+function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, deletedContainerIds)
+    local profile = self.db and self.db.profile
+    if not profile then return end
+    deletedGroupIds = deletedGroupIds or {}
+    deletedContainerIds = deletedContainerIds or {}
+    local layoutModes = ST._configState and ST._configState.layoutAnchorTargetMode
+
+    for groupId, group in pairs(profile.groups or {}) do
+        if not deletedGroupIds[groupId] and type(group) == "table" then
+            local released = false
+            if type(group.anchor) == "table"
+                and NamesDeletedTarget(group.anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
+                ReleasePanelAnchor(self, groupId, group)
+                released = true
+            end
+            local settings = self:GetIndicatorAnchorSettings(group)
+            if type(settings) == "table"
+                and NamesDeletedTarget(settings.relativeTo, deletedGroupIds, deletedContainerIds) then
+                if not self:SaveIndicatorScreenPosition(groupId, group) then
+                    ResetIndicatorPanelAnchor(group)
+                end
+                released = true
+            end
+            if released then
+                -- The Layout tab shows the new target, not a remembered Panel mode.
+                if layoutModes then layoutModes[groupId] = nil end
+                local frame = self.groupFrames and self.groupFrames[groupId]
+                if frame then
+                    self:AnchorGroupFrame(frame, group.anchor)
+                    local driver = ST.IsIndicatorGroup(group) and ST.Indicator.RuntimeSource(frame, group)
+                    if driver then self:UpdateAuraTextureVisual(driver) end
+                end
+            end
+        end
+    end
+
+    for containerId, container in pairs(profile.groupContainers or {}) do
+        local anchor = type(container) == "table" and container.anchor
+        if not deletedContainerIds[containerId] and type(anchor) == "table"
+            and NamesDeletedTarget(anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
+            -- The login finalize's conversion to screen offsets. A target with no
+            -- geometry already shows the Group on UIParent at these offsets.
+            local normalized, _, deferred = self:NormalizeContainerAnchor(anchor, true)
+            if deferred then
+                anchor.relativeTo = "UIParent"
+                normalized = self:NormalizeContainerAnchor(anchor, true)
+            end
+            container.anchor = normalized
+            local frame = self.containerFrames and self.containerFrames[containerId]
+            if frame then self:AnchorContainerFrame(frame, container.anchor) end
+        end
+    end
 end
 
 local function FormatDependentAnchorNames(dependents)
