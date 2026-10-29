@@ -283,25 +283,6 @@ end
 
 local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 
--- A panel outside container alpha reads unlocked through its container's
--- unlock or its own, as ContainerAlphaEntryIsUnlocked does for members; the
--- combat forced lock overrides both. Cursor anchoring is applied later by
--- UpdateGroupAlpha.
-local function PanelAlphaIsLocked(self, group, containers)
-    if self._combatForcedLock then
-        return true
-    end
-    local container = group.parentContainerId and containers and containers[group.parentContainerId]
-    if container and container.locked == false then
-        return false
-    end
-    return group.locked ~= false
-end
-
-local function ContainerAlphaIsUnlocked(self, container)
-    return container and container.locked == false and not self._combatForcedLock
-end
-
 local function ApplyContainerAlphaFrame(self, frame, groupId, alpha, naturalAlpha, unlocked, previewAlpha)
     if not frame then
         return
@@ -458,24 +439,6 @@ local function GroupSetHasMemberNotInCurrent(previousSet, currentSet)
     return false
 end
 
-local function ContainerAlphaEntryIsUnlocked(self, container, entry)
-    if ContainerAlphaIsUnlocked(self, container) then
-        return true
-    end
-    if self._combatForcedLock then
-        return false
-    end
-
-    local group = entry and entry.group
-    if group and group.locked == false then
-        if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
-            return false
-        end
-        return true
-    end
-    return false
-end
-
 local function ContainerAlphaNeedsUpdate(self, containerId, container, entries, probeNow)
     local stateKey = GetContainerAlphaStateKey(containerId)
     if ConfigNeedsAlphaUpdate(self, container, stateKey, probeNow) then
@@ -498,7 +461,7 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries, 
             and ST.IsGroupRuntimeLayoutPreviewActive(entry.groupId) then
             return true
         end
-        if ContainerAlphaEntryIsUnlocked(self, container, entry) then
+        if self:GetPanelUnlockState(entry.groupId, entry.group) then
             if entry.frame
                 and (entry.frame._naturalAlpha ~= nil
                     or FrameAlphaDiffers(entry.frame, GetUnlockedPanelAlpha(entry.frame))) then
@@ -514,7 +477,7 @@ local function ContainerAlphaNeedsUpdate(self, containerId, container, entries, 
     return false
 end
 
-local function RestoreReleasedContainerAlphaGroups(self, previousSet, currentSet, groups, containers, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+local function RestoreReleasedContainerAlphaGroups(self, previousSet, currentSet, groups, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     if type(previousSet) ~= "table" then
         return false
     end
@@ -531,7 +494,7 @@ local function RestoreReleasedContainerAlphaGroups(self, previousSet, currentSet
                         self.alphaState[groupId] = nil
                     end
                 else
-                    self:UpdateGroupAlpha(groupId, group, PanelAlphaIsLocked(self, group, containers), frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                    self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 end
                 restored = true
             end
@@ -784,20 +747,15 @@ local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget,
     return forceFull, forceHidden, config.baselineAlpha or 1
 end
 
-function CooldownCompanion:UpdateGroupAlpha(groupId, group, locked, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+function CooldownCompanion:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
     local state = self.alphaState[groupId]
     if not state then
         state = {}
         self.alphaState[groupId] = state
     end
 
-    local cursorPreviewActive = self.IsCursorAnchorLayoutPreviewGroupActive
-        and self:IsCursorAnchorLayoutPreviewGroupActive(groupId)
-    if cursorPreviewActive then
-        locked = false
-    elseif not locked and self:IsGroupCursorAnchored(group) then
-        locked = true
-    end
+    -- The same lock answer panel chrome reads (GroupFrameShared.lua).
+    local locked = not self:GetPanelUnlockState(groupId, group)
 
     -- Keep unlocked panels fully visible, except unlock ghosts.
     if not locked then
@@ -922,7 +880,7 @@ function CooldownCompanion:UpdateContainerAlpha(containerId, container, entries,
         local entry = entries[i]
         local frame = entry.frame
         if frame then
-            local unlocked = ContainerAlphaEntryIsUnlocked(self, container, entry)
+            local unlocked = self:GetPanelUnlockState(entry.groupId, entry.group)
             ApplyContainerAlphaFrame(self, frame, entry.groupId, alpha, desired, unlocked)
             ResetOwnedGroupAlphaState(self, entry.groupId)
         end
@@ -933,13 +891,11 @@ end
 
 function CooldownCompanion:ApplyContainerAlphaPreview(containerId, alpha)
     local profile = self.db and self.db.profile
-    local container = profile and profile.groupContainers and profile.groupContainers[containerId] or nil
-    local unlocked = ContainerAlphaIsUnlocked(self, container)
     local function applyPreviewAlpha(frame, groupId)
         if not (frame and frame.IsShown and frame:IsShown()) then
             return
         end
-        ApplyContainerAlphaFrame(self, frame, groupId, alpha, alpha, unlocked, true)
+        ApplyContainerAlphaFrame(self, frame, groupId, alpha, alpha, false, true)
     end
 
     local groups = profile and profile.groups or nil
@@ -1223,7 +1179,7 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
         entriesByContainer, containerAlphaControlledGroups =
             BuildContainerAlphaEntryMaps(self, groups, panelAlphaAnchorTargets, driverEntryScratch, controlledGroupsTarget)
 
-        if RestoreReleasedContainerAlphaGroups(self, previousContainerAlphaGroups, containerAlphaControlledGroups, groups, containers, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm) then
+        if RestoreReleasedContainerAlphaGroups(self, previousContainerAlphaGroups, containerAlphaControlledGroups, groups, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm) then
             processedAlphaWork = true
             needsPostPassRefresh = true
         end
@@ -1269,7 +1225,7 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
                     and AlphaStateNeedsCleanup(self, groupId) then
                     needsPostPassRefresh = true
                 end
-                self:UpdateGroupAlpha(groupId, group, PanelAlphaIsLocked(self, group, containers), frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
+                self:UpdateGroupAlpha(groupId, group, frame, now, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
                 if passMaySettle and not AlphaWorkMaySettle(self, group, groupId, now) then
                     passMaySettle = false
                 end

@@ -22,7 +22,8 @@ local ResolveSafeAnchorTarget = GF.ResolveSafeAnchorTarget
 local GetPanelContainerFrameName = GF.GetPanelContainerFrameName
 local ShouldSyncAnchorAlpha = GF.ShouldSyncAnchorAlpha
 local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
-local GetContainerState = GF.GetContainerState
+local GetPanelBaseAlpha = GF.GetPanelBaseAlpha
+local GetPanelUnlockState = GF.GetPanelUnlockState
 local GetAnchorInheritedAlpha = GF.GetAnchorInheritedAlpha
 local ComputeGroupFrameCoordinates = GF.ComputeGroupFrameCoordinates
 local IsCursorAnchorLayoutPreviewGroupActive = GF.IsCursorAnchorLayoutPreviewGroupActive
@@ -30,6 +31,13 @@ local CURSOR_ANCHOR_TARGET = GF.CURSOR_ANCHOR_TARGET
 local BuildDefaultCursorAnchor = GF.BuildDefaultCursorAnchor
 local ParseAddonAnchorFrameName = GF.ParseAddonAnchorFrameName
 local WouldFrameDependencyCreateCircularAnchor = GF.WouldFrameDependencyCreateCircularAnchor
+
+-- Utils.lua
+local GetAnchorOffset = ST._GetPanelAnchorOffset
+-- AnchorPolicy.lua
+local BuildRootAnchor = ST._BuildRootAnchor
+-- GroupManagement.lua
+local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
 
 -- Indicator geometry and alpha have the same active connection. The panel
 -- frame owns natural alpha even when no source/display host exists.
@@ -175,6 +183,19 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     UpdateCoordLabel(frame, anchor.x, anchor.y)
 end
 
+-- A padlocked (locked) panel follows its parent's normal-play look. While a
+-- shown parent itself wears unlocked alpha (the unlock preview), its resting
+-- alpha stands in for it. A ghost or hidden parent would be hidden in play,
+-- so its own alpha reading stays.
+local function GetSyncedParentAlpha(parentFrame)
+    local parentId = parentFrame and parentFrame.groupId
+    if parentId and parentFrame:IsShown() and not parentFrame._unlockGhost
+        and GetPanelUnlockState(parentId) then
+        return GetPanelBaseAlpha(parentId)
+    end
+    return GetAnchorInheritedAlpha(parentFrame)
+end
+
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     local shouldSync, inheritsAnchorAlpha, inheritsExternalAlpha = ShouldSyncAnchorAlpha(self, frame.groupId, parentFrame)
     if not shouldSync then
@@ -199,7 +220,7 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
 
     -- If this group has baseline alpha < 1, the alpha fade system takes
     -- priority unless panel alpha inheritance is explicitly active.
-    local _, baseAlpha = GetContainerState(frame.groupId)
+    local baseAlpha = GetPanelBaseAlpha(frame.groupId)
     if baseAlpha < 1 and not inheritsAnchorAlpha then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         SetExternalAnchorAlphaSyncActive(frame, false)
@@ -207,7 +228,14 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     end
 
     -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
-    local lastAlpha = GetAnchorInheritedAlpha(parentFrame)
+    -- An unlocked panel keeps reading its parent as it is (the tick below
+    -- skips it, and its refresh paints unlocked alpha).
+    local lastAlpha
+    if GetPanelUnlockState(frame.groupId) then
+        lastAlpha = GetAnchorInheritedAlpha(parentFrame)
+    else
+        lastAlpha = GetSyncedParentAlpha(parentFrame)
+    end
     if lastAlpha ~= nil then
         SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
         frame:SetAlpha(lastAlpha)
@@ -224,11 +252,13 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
         if accumulator < SYNC_INTERVAL then return end
         accumulator = 0
         if frame.anchoredToParent then
-            -- Skip sync if this panel owns alpha locally or the group is unlocked.
-            local locked, bAlpha = GetContainerState(frame.groupId)
-            if (bAlpha < 1 and not inheritsAnchorAlpha) or not locked then return end
+            -- Skip sync if this panel owns alpha locally or is unlocked.
+            if (not inheritsAnchorAlpha and GetPanelBaseAlpha(frame.groupId) < 1)
+                or GetPanelUnlockState(frame.groupId) then
+                return
+            end
             -- Read parent's natural alpha to avoid config override cascade
-            local alpha = GetAnchorInheritedAlpha(frame.anchoredToParent)
+            local alpha = GetSyncedParentAlpha(frame.anchoredToParent)
             if alpha == nil then return end
             SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
             -- Explicit layout preview: retain natural alpha for downstream
@@ -402,6 +432,142 @@ function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
     end
 
     return dependents
+end
+
+local function NamesDeletedTarget(relativeTo, deletedGroupIds, deletedContainerIds)
+    local kind, id = ParseAddonAnchorFrameName(relativeTo)
+    if kind == "group" then return deletedGroupIds[id] == true end
+    if kind == "container" then return deletedContainerIds[id] == true end
+    return false
+end
+
+-- Where an anchor's own point sits on screen, read from its target's live
+-- body (the target is still placed: release runs before the delete).
+local function GetAnchoredPointOnScreen(anchor)
+    local target = type(anchor.relativeTo) == "string" and _G[anchor.relativeTo]
+    if not (target and target.GetCenter) then return nil end
+    target = ST.GetPanelAnchorBodyFrame(target)
+    local cx, cy = target:GetCenter()
+    local w, h = target:GetSize()
+    if not (cx and cy and w and h) then return nil end
+    local ox, oy = GetAnchorOffset(anchor.relativePoint or "CENTER", w, h)
+    return cx + ox + (tonumber(anchor.x) or 0), cy + oy + (tonumber(anchor.y) or 0)
+end
+
+-- A Group's 1x1 anchor frame on screen: its frame when built here, else its
+-- saved screen offset (the shape the login finalize writes).
+local function GetContainerCenterOnScreen(self, containerId)
+    local frame = self.containerFrames and self.containerFrames[containerId]
+    if frame and frame:GetCenter() then return frame:GetCenter() end
+    local container = self.db.profile.groupContainers[containerId]
+    local anchor = type(container) == "table" and container.anchor
+    if type(anchor) == "table" and (anchor.relativeTo or "UIParent") == "UIParent"
+        and (anchor.point or "CENTER") == "CENTER" and (anchor.relativePoint or "CENTER") == "CENTER" then
+        local ux, uy = UIParent:GetCenter()
+        if ux then return ux + (tonumber(anchor.x) or 0), uy + (tonumber(anchor.y) or 0) end
+    end
+end
+
+-- A panel keeps its spot on its own Group, measured as SaveGroupPosition
+-- measures a drag (point and relativePoint kept). A panel never built here
+-- (its Group is hidden from this character) is placed from the same live
+-- geometry its anchor resolves against, so it keeps its spot for the
+-- character who sees it. An Indicator's shell anchor, and anything still
+-- unmeasurable, take the Group's own CENTER 0,0.
+local function ReleasePanelAnchor(self, groupId, group)
+    local targetName = GetPanelContainerFrameName(groupId) or "UIParent"
+    local targetFrame = targetName == "UIParent" and UIParent
+        or (self.containerFrames and self.containerFrames[group.parentContainerId])
+    local frame = (self.groupFrames and self.groupFrames[groupId])
+        or (self._dormantFrames and self._dormantFrames[groupId])
+    local x, y
+    if ST.IsIndicatorGroup(group) then
+        -- The shell follows its display; nothing to keep.
+    elseif frame and targetFrame and ST.GetPanelAnchorBodyFrame(frame):GetCenter() and targetFrame:GetCenter() then
+        x, y = ComputeGroupFrameCoordinates(self, frame, groupId, group, true, targetName, targetFrame, "ok")
+    elseif not frame and group.parentContainerId then
+        local px, py = GetAnchoredPointOnScreen(group.anchor)
+        local cx, cy = GetContainerCenterOnScreen(self, group.parentContainerId)
+        if px and cx then
+            local rx, ry = GetAnchorOffset(group.anchor.relativePoint or "CENTER", 1, 1)
+            x, y = ST.RoundToTenths(px - cx - rx), ST.RoundToTenths(py - cy - ry)
+        end
+    end
+    if x and y then
+        group.anchor.relativeTo = targetName
+        group.anchor.x = x
+        group.anchor.y = y
+    else
+        group.anchor = BuildRootAnchor(targetName)
+    end
+end
+
+--- Run before panels or Groups are deleted: everything anchored to them keeps
+--- its spot on screen. A panel goes on its own Group; a Group and an
+--- Indicator's display go on the screen. Choose Panel attachments and the Cast
+--- Bar, Resources and Unit Frame anchors keep their own fallbacks.
+function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, deletedContainerIds)
+    local profile = self.db and self.db.profile
+    if not profile then return end
+    deletedGroupIds = deletedGroupIds or {}
+    deletedContainerIds = deletedContainerIds or {}
+    local layoutModes = ST._configState and ST._configState.layoutAnchorTargetMode
+
+    for groupId, group in pairs(profile.groups or {}) do
+        if not deletedGroupIds[groupId] and type(group) == "table" then
+            local released = false
+            if type(group.anchor) == "table"
+                and NamesDeletedTarget(group.anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
+                ReleasePanelAnchor(self, groupId, group)
+                released = true
+            end
+            local settings = self:GetIndicatorAnchorSettings(group)
+            if type(settings) == "table"
+                and NamesDeletedTarget(settings.relativeTo, deletedGroupIds, deletedContainerIds) then
+                if not self:SaveIndicatorScreenPosition(groupId, group) then
+                    local px, py
+                    if not self:IsGroupCursorAnchored(group) then
+                        px, py = GetAnchoredPointOnScreen(settings)
+                    end
+                    local ux, uy = UIParent:GetCenter()
+                    if px and ux then
+                        settings.relativeTo, settings.relativePoint = "UIParent", "CENTER"
+                        settings.x, settings.y = ST.RoundToTenths(px - ux), ST.RoundToTenths(py - uy)
+                    else
+                        ResetIndicatorPanelAnchor(group)
+                    end
+                end
+                released = true
+            end
+            if released then
+                -- The Layout tab shows the new target, not a remembered Panel mode.
+                if layoutModes then layoutModes[groupId] = nil end
+                local frame = self.groupFrames and self.groupFrames[groupId]
+                if frame then
+                    self:AnchorGroupFrame(frame, group.anchor)
+                    local driver = ST.IsIndicatorGroup(group) and ST.Indicator.RuntimeSource(frame, group)
+                    if driver then self:UpdateAuraTextureVisual(driver) end
+                end
+            end
+        end
+    end
+
+    for containerId, container in pairs(profile.groupContainers or {}) do
+        local anchor = type(container) == "table" and container.anchor
+        if not deletedContainerIds[containerId] and type(anchor) == "table"
+            and NamesDeletedTarget(anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
+            -- The login finalize's conversion to screen offsets. A target with no
+            -- geometry already shows the Group on UIParent at these offsets.
+            local normalized, _, deferred = self:NormalizeContainerAnchor(anchor, true)
+            if deferred then
+                anchor.relativeTo = "UIParent"
+                normalized = self:NormalizeContainerAnchor(anchor, true)
+            end
+            container.anchor = normalized
+            local frame = self.containerFrames and self.containerFrames[containerId]
+            if frame then self:AnchorContainerFrame(frame, container.anchor) end
+        end
+    end
 end
 
 local function FormatDependentAnchorNames(dependents)

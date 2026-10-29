@@ -318,7 +318,7 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
     -- Same "current spec" owner as the renderer (ST.ResolveModuleBarStyle).
     spec = spec or (ST._RB and ST._RB.GetCurrentSpecID and ST._RB.GetCurrentSpecID()) or Addon._currentSpecId
     local canonical = kind == "resources" and ST._RB.GetCanonicalPowerType(powerType) or nil
-    local panel = ST.GetModuleGeometryPanel(kind, spec)
+    local panel = ST.GetModuleGeometryHost(kind, spec)
     local captured = {}
     for _, key in ipairs(MODULE_SELECTION_KEYS) do
         captured[key] = CS[key]
@@ -332,7 +332,7 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
             if CS[key] ~= captured[key] then return false end
         end
         local current = kind == "resources" and Addon:GetResourceBarSettings() or Addon:GetCastBarSettings()
-        return current == settings and ST.GetModuleGeometryPanel(kind, spec) == panel
+        return current == settings and ST.GetModuleGeometryHost(kind, spec) == panel
     end
     function context:GetLayout(create)
         if kind ~= "resources" then return nil end

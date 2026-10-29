@@ -24,7 +24,7 @@ local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
-local GetContainerState = GF.GetContainerState
+local GetPanelUnlockState = GF.GetPanelUnlockState
 local IsCursorAnchor = GF.IsCursorAnchor
 local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
@@ -68,7 +68,7 @@ local function BeginPanelDrag(frame, surfaceDrag)
     frame._arrangePanelSurfaceDrag = nil
     CancelCoordinateEdit(frame.coordLabel)
     CancelCoordinateEdit(frame.sizeLabel)
-    local locked = GetContainerState(frame.groupId)
+    local _, ownUnlocked = GetPanelUnlockState(frame.groupId)
     local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(frame.groupId)
     local dragGroup = CooldownCompanion.db.profile.groups[frame.groupId]
     if dragGroup and IsCursorAnchor(dragGroup.anchor) then
@@ -94,7 +94,7 @@ local function BeginPanelDrag(frame, surfaceDrag)
         frame:StartMoving()
         CooldownCompanion:BeginMoverChromeFade(frame)
         BeginSelfExcludedDragSnapSession(frame)
-    elseif not locked then
+    elseif ownUnlocked then
         if dragGroup and dragGroup.parentContainerId
             and not CooldownCompanion:ActivateArrangePanel(
                 dragGroup.parentContainerId,
@@ -223,7 +223,7 @@ function GF.EnsureMoverChrome(frame)
     CreateEditableCoordLabel(
         frame.sizeLabel,
         function()
-            local currentGroup = ST.GetPanelSizingGroup(CooldownCompanion.db.profile.groups[groupId])
+            local currentGroup = ST.GetPanelLayoutGroup(CooldownCompanion.db.profile.groups[groupId])
             local style = currentGroup and currentGroup.style
             if not style then
                 return 0, 0
@@ -329,11 +329,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     frame.groupId = groupId
     frame.buttons = {}
-    frame._containerUnlockPreviewActive = group.parentContainerId
-        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
-        and not self:IsArrangePanelSuppressed(groupId)
-        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
-        or nil
+    frame._containerUnlockPreviewActive = GetContainerPreviewSelectionState(groupId) or nil
     frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
 
     -- Set initial size (will be updated when buttons are added)
@@ -349,18 +345,14 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Position the frame
     self:AnchorGroupFrame(frame, group.anchor)
 
-    -- Resolve locked state from container (or group for legacy)
-    local isLocked, baseAlpha = GetContainerState(groupId)
-    if self:IsArrangePanelSuppressed(groupId)
-        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
-        isLocked = true
-    end
+    -- One lock answer for chrome, mouse and fade (GroupFrameShared.lua).
+    local _, ownUnlocked = GetPanelUnlockState(groupId, group)
 
     -- Make it movable when unlocked. Indicators drag their display host
     -- directly instead of using the standard panel drag handle.
     local isIndicator = ST.IsIndicatorGroup(group)
     frame:SetMovable(true)
-    frame:EnableMouse((not isLocked) and (not isIndicator))
+    frame:EnableMouse(ownUnlocked and not isIndicator)
     frame:RegisterForDrag("LeftButton")
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
@@ -370,7 +362,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local hasDragEntry = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
-    self:SetGroupDragControlsShown(frame, (not isLocked) and hasDragEntry and not isIndicator and not isCursorAnchored)
+    self:SetGroupDragControlsShown(frame, ownUnlocked and hasDragEntry and not isIndicator and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self) BeginPanelDrag(self, true) end)
@@ -511,21 +503,13 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
             end
         end
 
-        frame._containerUnlockPreviewActive = group.parentContainerId
-            and self:IsContainerUnlockPreviewActive(group.parentContainerId)
-            and not self:IsArrangePanelSuppressed(groupId)
-            and not self:IsArrangeContainerSuppressed(group.parentContainerId)
-            or nil
+        frame._containerUnlockPreviewActive = GetContainerPreviewSelectionState(groupId) or nil
         frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
         self:PopulateGroupButtons(groupId)
     end
 
-    -- Resolve locked/alpha from container
-    local isLocked, baseAlpha = GetContainerState(groupId)
-    if self:IsArrangePanelSuppressed(groupId)
-        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
-        isLocked = true
-    end
+    -- One lock answer for chrome, mouse and fade (GroupFrameShared.lua).
+    local unlocked, ownUnlocked = GetPanelUnlockState(groupId, group)
 
     -- Update drag handle text and lock state. An empty Aura Panel keeps a
     -- reserved cell the owner can arrange before adding auras.
@@ -568,7 +552,7 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
                 or (
                     not isCursorAnchored
                     and ((containerPreviewActive and selectedInContainer)
-                        or (not containerPreviewActive and not isLocked and independentPanelMoverShown))
+                        or (not containerPreviewActive and ownUnlocked and independentPanelMoverShown))
                 )
             )
     )
@@ -585,7 +569,7 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
             frame:Show()
         end
         -- Keep unlocked panels fully visible, except unlock ghosts.
-        if IsCursorAnchorLayoutPreviewGroupActive(self, groupId) or containerPreviewActive or not isLocked then
+        if unlocked then
             frame:SetAlpha(GetUnlockedPanelAlpha(frame))
         -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
         else
@@ -644,30 +628,22 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     if not frame or not group then return end
 
-    local isLocked = GetContainerState(groupId)
+    local _, ownUnlocked = GetPanelUnlockState(groupId, group)
+    local isLocked = not ownUnlocked
     local isIndicator = ST.IsIndicatorGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
-    if self:IsArrangePanelSuppressed(groupId)
-        or (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId)) then
-        isLocked = true
-    end
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
         or false
-    local containerPreviewActive = group.parentContainerId
-        and self:IsContainerUnlockPreviewActive(group.parentContainerId)
-        and not self:IsArrangePanelSuppressed(groupId)
-        and not self:IsArrangeContainerSuppressed(group.parentContainerId)
-        or false
+    local containerPreviewActive, isSelectedInContainer = GetContainerPreviewSelectionState(groupId)
     local independentPanelSoloHidden = not containerPreviewActive
-        and group.locked == false
+        and ownUnlocked
         and self._arrangeSoloContainerId ~= nil
         and self._arrangeSelectedPanelId ~= groupId
         or false
     if independentPanelSoloHidden then
         isLocked = true
     end
-    local isSelectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
     -- An empty Aura Panel still lays out one
     -- reserved cell, so the wheel has a real cell to scale.
     local hasResizeEntry = ST.IsAuraPanelGroup(group)

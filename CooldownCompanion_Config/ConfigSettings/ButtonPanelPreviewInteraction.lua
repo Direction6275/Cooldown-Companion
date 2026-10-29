@@ -375,14 +375,12 @@ end
 function ST._HandleModuleThicknessCopy(slot)
     if not CS.copyCustomization or (slot.kind ~= "resource" and slot.kind ~= "cast") then return false end
     local kind = slot.kind == "resource" and "resources" or "castbar"
-    if not ST.UsesSharedModuleGeometry(kind) then return false end
     local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
     return context and HandleCopyCustomizationClick(CS.selectedGroup, nil, context.entry) or false
 end
 
 function ST._ShowModuleThicknessMenu(slot)
     local kind = slot.kind == "resource" and "resources" or "castbar"
-    if not ST.UsesSharedModuleGeometry(kind) then return end
     local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
     if not context then return end
     CS.barGeometryMenu = CS.barGeometryMenu or CreateFrame("Frame", "CDCBarGeometryMenu", UIParent, "UIDropDownMenuTemplate")
@@ -402,10 +400,6 @@ end
 
 function ST._ApplyModuleCopyTargetVisuals(frame, slot)
     local kind = slot.kind == "resource" and "resources" or "castbar"
-    if not ST.UsesSharedModuleGeometry(kind) then
-        if frame.copyTargetHighlight then frame.copyTargetHighlight:Hide() end
-        return
-    end
     local context = ST._CreateModuleSettingsContext(kind, slot.powerType)
     if context then ApplyCopyTargetVisuals(frame, CS.selectedGroup, context.entry) end
 end

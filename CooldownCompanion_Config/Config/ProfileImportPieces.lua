@@ -501,8 +501,6 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
                 sourceCharacterInfo
             )
             local panels = panelsByContainer[key] or {}
-            local panelCount = #panels
-            local detail = tostring(panelCount) .. " panel" .. (panelCount == 1 and "" or "s")
             local info = {
                 kind = "container",
                 sourceId = containerId,
@@ -516,7 +514,6 @@ local function BuildContainerInfos(profile, panelsByContainer, defaultOwnerKey, 
                 selected = eligible and selected or false,
                 disabledReason = not eligible and reason or nil,
                 note = eligible and reason or nil,
-                detail = detail,
             }
             containerInfos[#containerInfos + 1] = info
             byKey[key] = info
@@ -544,14 +541,20 @@ local function InheritPanelContainerEligibility(panelInfos, containersByKey)
                     panelInfo.note = containerInfo.note
                 end
             end
+        else
+            -- No heading to sit under, and nothing lands at apply either.
+            panelInfo.eligible = false
+            panelInfo.selected = false
+            panelInfo.disabledReason = "Missing parent group"
+            panelInfo.note = nil
         end
     end
 end
 
-local function AddRows(model, infos, prefix)
+-- Counts each row. Only Custom Bar rows render as labelled checkboxes, and
+-- they label themselves; Groups, panels and templates render from their data.
+local function AddRows(model, infos)
     for _, info in ipairs(infos) do
-        local reason = info.disabledReason or info.note
-        info.label = RowLabel(prefix, info.name, info.detail, reason)
         model.rows[#model.rows + 1] = info
         if info.eligible then
             model.eligibleCount = model.eligibleCount + 1
@@ -820,12 +823,30 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
     )
     InheritPanelContainerEligibility(panelInfos, containersByKey)
     local customBarInfos = BuildCustomBarInfos(profile, currentCharKey, currentInfo, sourceCharacterInfo)
+    -- Panel Templates are account-wide, so any class can take them. Backups
+    -- only (options.includeTemplates).
+    local templateInfos = {}
+    local templates = options.includeTemplates and type(profile) == "table"
+        and type(profile._panelTemplates) == "table" and profile._panelTemplates or {}
+    for index, template in ipairs(templates) do
+        if type(template) == "table" then
+            templateInfos[#templateInfos + 1] = {
+                kind = "template",
+                sourceKey = index,
+                template = template,
+                name = template.name,
+                eligible = true,
+                selected = true,
+            }
+        end
+    end
 
     local model = {
         rows = {},
         containers = containerInfos,
         panels = panelInfos,
         customBars = customBarInfos,
+        templates = templateInfos,
         containersByKey = containersByKey,
         panelsByContainer = panelsByContainer,
         currentClassID = currentInfo and currentInfo.classID,
@@ -836,9 +857,10 @@ function CooldownCompanion:BuildProfileImportPiecesReview(profile, options)
         customBarCount = #customBarInfos,
     }
 
-    AddRows(model, containerInfos, "Group")
-    AddRows(model, panelInfos, "Panel")
-    AddRows(model, customBarInfos, "Custom Bar")
+    AddRows(model, containerInfos)
+    AddRows(model, panelInfos)
+    AddRows(model, customBarInfos)
+    AddRows(model, templateInfos)
     return model
 end
 
@@ -1062,6 +1084,12 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
 
     local selectedContainers, selectedPanels, selectedCustomBars, deselectedContainers, deselectedPanels = SelectionSets(model)
     local selectedCustomBarsPayload = BuildSelectedCustomBarsPayload(model, selectedCustomBars)
+    local selectedTemplates = {}
+    for _, info in ipairs(model.templates or {}) do
+        if info.eligible and info.selected then
+            selectedTemplates[#selectedTemplates + 1] = info.template
+        end
+    end
 
     local importedContainers = {}
     local batchToken = BeginImportBatch()
@@ -1128,11 +1156,19 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         self:EndPanelAttachmentRefresh(attachmentOperation)
     end
 
+    -- Account-wide: no profile migration run and no frame refresh.
+    if #selectedTemplates > 0 then
+        self:ImportPanelTemplates(selectedTemplates)
+    end
+
     if applied and not failed then
         self:Print("Imported selected profile pieces.")
     elseif failed then
         self:Print("Import failed: some selected profile pieces could not be imported.")
         return false
+    elseif #selectedTemplates > 0 then
+        -- Templates only: ImportPanelTemplates already said what landed.
+        return true
     else
         self:Print("Import failed: selected profile pieces could not be imported.")
     end

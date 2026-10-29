@@ -14,6 +14,7 @@ local PROFILE_IMPORT_METADATA_KEYS = {
     _exporterCharKey = true,
     _characterInfo = true,
     _cdcCharacterEligibilityStripped = true,
+    _panelTemplates = true,
     resourceBarMigration = true,
 }
 

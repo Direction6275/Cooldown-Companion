@@ -13,6 +13,8 @@ local CS = ST._configState
 local AceGUI = LibStub("AceGUI-3.0")
 
 local ShowPopupAboveConfig = ST._ShowPopupAboveConfig
+-- Column1.lua
+local FormatPanelTemplateMenuText = ST._FormatPanelTemplateMenuText
 
 local IMPORT_MODE_CONFIRM_POPUP = "CDC_IMPORT_MODE_CONFIRM"
 local IMPORT_PASTE_LINES = 7
@@ -67,6 +69,7 @@ local function EnterImportMode()
         statusText = nil,
         skipResources = false,
         excludedPanels = {},
+        excludedTemplates = {},
     }
     if ST._UpdateImportModeTitleButton then
         ST._UpdateImportModeTitleButton()
@@ -143,6 +146,9 @@ end
 -- the payload's own panel tables, which are stable for the life of the
 -- paste; reclassifying resets them. A group whose every panel is
 -- excluded is skipped entirely; a genuinely empty group still imports.
+-- Profile pieces draw the same tiles, but their selection stays on the
+-- pieces rows (RenderPieceRows), so SetProfileImportPieceSelected's
+-- last-panel rule is their gate.
 ------------------------------------------------------------------------
 
 local function IsPanelExcluded(mode, panelData)
@@ -228,8 +234,17 @@ local function GetEffectiveImportData(mode, review)
         if mode.skipResources then
             copy.resources = nil
         end
+        if type(copy.templates) == "table" then
+            local kept = {}
+            for _, template in ipairs(copy.templates) do
+                if not (mode.excludedTemplates and mode.excludedTemplates[template]) then
+                    kept[#kept + 1] = template
+                end
+            end
+            copy.templates = #kept > 0 and kept or nil
+        end
         local hasContainers = type(copy.containers) == "table" and #copy.containers > 0
-        if not hasContainers and type(copy.resources) ~= "table" then
+        if not hasContainers and type(copy.resources) ~= "table" and not copy.templates then
             return nil
         end
         return copy
@@ -367,6 +382,7 @@ local function ReviewImportModeText(text)
     mode.statusText = nil
     mode.skipResources = false
     mode.excludedPanels = {}
+    mode.excludedTemplates = {}
 
     local review = CooldownCompanion.ClassifyImportReviewText
         and CooldownCompanion:ClassifyImportReviewText(text or "")
@@ -391,7 +407,9 @@ end
 -- mirror: one section per incoming group with a tile band of real panel
 -- previews (rendered from the payload's own data), then a Resources section
 -- in the section class's own color. Every other
--- string type renders its classified summary under one section heading.
+-- string type renders its classified summary under one section heading;
+-- in Import selected pieces, a profile or diagnostic string then shows its
+-- Groups as the same tile sections under that summary.
 ------------------------------------------------------------------------
 
 local function AddHeading(scroll, text)
@@ -447,14 +465,30 @@ local function TogglePanelExcluded(mode, panelData)
     UpdateImportModePill()
 end
 
+-- Keyed by the payload's own template tables, like the panel gate.
+local function ToggleTemplateExcluded(mode, template)
+    if not mode.excludedTemplates then
+        mode.excludedTemplates = {}
+    end
+    mode.excludedTemplates[template] = (not mode.excludedTemplates[template]) or nil
+    RenderImportModeReview()
+    UpdateImportModePill()
+end
+
+-- Setup and group strings keep their gate in mode.excludedPanels.
+local function ModePanelGate(mode)
+    return function(panelData) return IsPanelExcluded(mode, panelData) end,
+        function(panelData) TogglePanelExcluded(mode, panelData) end
+end
+
 -- Incoming groups render exactly like the export summary: a class-colored
 -- accent-rule heading per group with a bordered tile band of real panel
 -- previews under it, built from the payload's own (rehydrated) panel data.
--- The tiles double as the gate: click toggles a panel out of the import
--- (dimmed, tagged, and counted out of the heading). The heading helper
+-- The caller supplies the gate the tiles toggle: a click takes a panel out
+-- of the import (dimmed, tagged, and counted out of the heading). The heading helper
 -- carries 10px above the title; 10px goes below it so titles center
 -- between bands, same as the export summary.
-local function AddContainerSections(scroll, mode, entries)
+local function AddContainerSections(scroll, entries, isExcluded, toggleExcluded)
     local tileIndex = 0
     local anyExcluded = false
     for _, entry in ipairs(entries) do
@@ -463,7 +497,7 @@ local function AddContainerSections(scroll, mode, entries)
             local name = type(entry.container) == "table" and entry.container.name or nil
             local included = 0
             for _, panelData in ipairs(panels) do
-                if not IsPanelExcluded(mode, panelData) then
+                if not isExcluded(panelData) then
                     included = included + 1
                 end
             end
@@ -488,7 +522,7 @@ local function AddContainerSections(scroll, mode, entries)
                             naturalWidth = ST._GetReadOnlyPanelPreviewNaturalSizeFromData(panelData)
                         end
                         local panelName = panelData.name or "Panel"
-                        local excluded = IsPanelExcluded(mode, panelData)
+                        local excluded = isExcluded(panelData)
                         tileInfos[#tileInfos + 1] = {
                             tile = ST._AcquireModePreviewTile(tileIndex),
                             groupData = panelData,
@@ -498,12 +532,12 @@ local function AddContainerSections(scroll, mode, entries)
                             weight = math.max(1, tonumber(naturalWidth) or 220),
                             dimmed = excluded,
                             onClick = function()
-                                TogglePanelExcluded(mode, panelData)
+                                toggleExcluded(panelData)
                             end,
                             onEnter = function(tileFrame)
                                 GameTooltip:SetOwner(tileFrame, "ANCHOR_RIGHT")
                                 GameTooltip:AddLine(panelName)
-                                if IsPanelExcluded(mode, panelData) then
+                                if isExcluded(panelData) then
                                     GameTooltip:AddLine("Excluded. Click to include it in the import.", 1, 1, 1, true)
                                 else
                                     GameTooltip:AddLine("Click to exclude it from the import.", 1, 1, 1, true)
@@ -530,17 +564,45 @@ local function AddContainerSections(scroll, mode, entries)
     end
 end
 
+-- Incoming Panel Templates, one checkbox each. The caller supplies the gate,
+-- as for the Group tiles.
+local function AddTemplateSection(scroll, templates, isExcluded, toggleExcluded)
+    if type(templates) ~= "table" or #templates == 0 then
+        return
+    end
+    local included = 0
+    for _, template in ipairs(templates) do
+        if not isExcluded(template) then
+            included = included + 1
+        end
+    end
+    local countText = included == #templates and tostring(included) or (included .. " of " .. #templates)
+    AddSectionHeading(scroll, "Panel Templates  |cff777777(" .. countText .. ")|r")
+    AddSpacer(scroll, 10)
+    for _, template in ipairs(templates) do
+        local cb = AceGUI:Create("CheckBox")
+        cb:SetFullWidth(true)
+        cb:SetLabel(FormatPanelTemplateMenuText(template))
+        cb:SetValue(not isExcluded(template))
+        cb:SetCallback("OnValueChanged", function()
+            toggleExcluded(template)
+        end)
+        scroll:AddChild(cb)
+    end
+end
+
 local function RenderSetupReview(scroll, mode, review)
     local data = review.data
     -- Reviewed setups are converted data: legacy Custom Bars sections have
-    -- already become panel entries, so only containers and resources remain.
-    local hasContainers, _, resources = ST._GetSetupImportSections(data)
+    -- already become panel entries, so containers, resources and templates
+    -- remain.
+    local hasContainers, _, resources, templates = ST._GetSetupImportSections(data)
 
     AddHeading(scroll, "This string contains")
     AddSpacer(scroll, 6)
 
     if hasContainers then
-        AddContainerSections(scroll, mode, data.containers)
+        AddContainerSections(scroll, data.containers, ModePanelGate(mode))
     end
 
     local playerClassKey = GetPlayerClassKey()
@@ -586,6 +648,12 @@ local function RenderSetupReview(scroll, mode, review)
             end
         end
     end
+
+    AddTemplateSection(scroll, templates, function(template)
+        return mode.excludedTemplates and mode.excludedTemplates[template] == true
+    end, function(template)
+        ToggleTemplateExcluded(mode, template)
+    end)
 
     AddCharacterEligibilityLine(scroll, data)
 end
@@ -633,11 +701,60 @@ local function RenderPieceRows(scroll, review)
     end
     AddSpacer(scroll, 6)
 
-    local pieces = review.pieces
-    local rows = type(pieces) == "table" and type(pieces.rows) == "table" and pieces.rows or nil
-    local visibleRows = 0
-    for _, row in ipairs(rows or {}) do
+    local pieces = type(review.pieces) == "table" and review.pieces or nil
+    -- Groups and their panels are picked from the same tiles setup strings
+    -- show. Other-class rows are not drawn; a Group with no eligible panels
+    -- shows as empty and imports empty.
+    local entries, rowByPanel = {}, {}
+    for _, containerRow in ipairs(pieces and pieces.containers or {}) do
+        if containerRow.eligible then
+            local panels = {}
+            for _, panelRow in ipairs(containerRow.panels or {}) do
+                if panelRow.eligible and type(panelRow.panel) == "table" then
+                    panels[#panels + 1] = panelRow.panel
+                    rowByPanel[panelRow.panel] = panelRow
+                end
+            end
+            entries[#entries + 1] = { container = containerRow.container, panels = panels }
+        end
+    end
+    local visibleRows = #entries
+    if visibleRows > 0 then
+        AddContainerSections(scroll, entries, function(panelData)
+            return rowByPanel[panelData].selected ~= true
+        end, function(panelData)
+            local row = rowByPanel[panelData]
+            if ST._SetProfileImportPieceSelected then
+                ST._SetProfileImportPieceSelected(pieces, row, row.selected ~= true)
+            end
+            RenderImportModeReview()
+            UpdateImportModePill()
+        end)
+    end
+
+    local templates, rowByTemplate = {}, {}
+    for _, row in ipairs(pieces and pieces.templates or {}) do
         if row.eligible then
+            templates[#templates + 1] = row.template
+            rowByTemplate[row.template] = row
+        end
+    end
+    visibleRows = visibleRows + #templates
+    AddTemplateSection(scroll, templates, function(template)
+        return rowByTemplate[template].selected ~= true
+    end, function(template)
+        local row = rowByTemplate[template]
+        if ST._SetProfileImportPieceSelected then
+            ST._SetProfileImportPieceSelected(pieces, row, row.selected ~= true)
+        end
+        RenderImportModeReview()
+        UpdateImportModePill()
+    end)
+
+    -- LEGACY: Custom Bar pieces keep their checkboxes until #62 retires them.
+    local rows = pieces and type(pieces.rows) == "table" and pieces.rows or {}
+    for _, row in ipairs(rows) do
+        if row.kind == "customBar" and row.eligible then
             visibleRows = visibleRows + 1
             local cb = AceGUI:Create("CheckBox")
             cb:SetFullWidth(true)
@@ -680,7 +797,7 @@ local function RenderClassifiedReview(scroll, mode, review)
         end
         AddHeading(scroll, "This string contains")
         AddSpacer(scroll, 6)
-        AddContainerSections(scroll, mode, entries)
+        AddContainerSections(scroll, entries, ModePanelGate(mode))
         AddCharacterEligibilityLine(scroll, review.data)
         return
     end
@@ -740,6 +857,7 @@ local function ResetImportModePaste()
     mode.statusText = nil
     mode.skipResources = false
     mode.excludedPanels = {}
+    mode.excludedTemplates = {}
     if col3._importPasteBox then
         col3._importPasteBox:SetText("")
     end

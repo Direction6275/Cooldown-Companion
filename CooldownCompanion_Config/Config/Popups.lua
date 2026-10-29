@@ -829,6 +829,14 @@ StaticPopupDialogs["CDC_EXPORT_PROFILE"] = {
         local exportData = CopyTable(db.profile, true)
         exportData._exporterCharKey = db.keys.char
         exportData._characterInfo = db.global.characterInfo
+        -- Panel Templates are account-wide, so a backup carries every one.
+        -- The explicit nil also drops a stray copy an older restore left in
+        -- the profile.
+        local templates = {}
+        for _, item in ipairs(CooldownCompanion:GetPanelTemplates()) do
+            templates[#templates + 1] = item.template
+        end
+        exportData._panelTemplates = #templates > 0 and templates or nil
         self.EditBox:SetText(EncodeSharedPayload(exportData, "profile"))
         self.EditBox:HighlightText()
         self.EditBox:SetFocus()
@@ -959,7 +967,7 @@ local function EncodeExportData(payload)
 end
 
 -- Assembles the one-string setup payload from its sections (containers,
--- resources). Any section may be nil.
+-- resources, templates). Any section may be nil.
 local function BuildSetupExportPayload(sections)
     if type(sections) ~= "table" then
         return nil
@@ -974,6 +982,10 @@ local function BuildSetupExportPayload(sections)
     if type(sections.resources) == "table"
         and type(sections.resources.settings) == "table" then
         payload.resources = sections.resources
+        hasAny = true
+    end
+    if type(sections.templates) == "table" and #sections.templates > 0 then
+        payload.templates = sections.templates
         hasAny = true
     end
 
@@ -1690,7 +1702,8 @@ end
 ST._GetSetupSectionClassKey = GetSetupSectionClassKey
 
 -- Applies a `setup` payload: groups additively, then the Resources section as
--- a whole-bucket replace for its class. Legacy Custom Bars sections were
+-- a whole-bucket replace for its class, then any Panel Templates beside the
+-- player's own. Legacy Custom Bars sections were
 -- converted into panel entries by _ConvertUnifiedPanelImport above. Order
 -- matters: groups first so the Resources anchor can remap
 -- onto the groups imported from the same string.
@@ -1713,7 +1726,8 @@ local function ApplySetupImportData(data, existingPanelIds)
         and type(data.resources.settings) == "table"
         and data.resources
         or nil
-    if not hasContainers and not resourcesSection then
+    local templatesSection = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
+    if not hasContainers and not resourcesSection and not templatesSection then
         CooldownCompanion:Print("Import failed: this setup export is empty.")
         return false
     end
@@ -1783,6 +1797,13 @@ local function ApplySetupImportData(data, existingPanelIds)
         end
     end
 
+    -- Account-wide, so outside the batch and the profile migration run.
+    local templatesApplied = false
+    if templatesSection then
+        CooldownCompanion:ImportPanelTemplates(templatesSection)
+        templatesApplied = true
+    end
+
     ST._FinishGroupImportBatch(batchToken, containersApplied)
 
     -- The single migration run for every section this setup inserted, taken
@@ -1813,6 +1834,7 @@ local function ApplySetupImportData(data, existingPanelIds)
         CooldownCompanion:ApplyResourceBars()
     end
 
+    applied = applied or templatesApplied
     if failed then
         CooldownCompanion:Print(applied
             and "Import finished: some parts of this setup could not be imported."

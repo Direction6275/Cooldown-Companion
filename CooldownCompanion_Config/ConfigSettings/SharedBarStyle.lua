@@ -52,7 +52,7 @@ end
 function ST._ResourceWideAppearanceApplies(context)
     local settings = context and context.resourceSettings
     return settings and settings.enabled == true
-        and ST.GetModuleGeometryPanel("resources", context.resourceSpecID) == nil or false
+        and ST.GetModuleGeometryHost("resources", context.resourceSpecID) == nil or false
 end
 local function Allowed(group, id)
     if ST.IsTotemPanelGroup(group) then return false end

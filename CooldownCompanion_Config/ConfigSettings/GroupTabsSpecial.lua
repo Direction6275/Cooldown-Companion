@@ -2,7 +2,6 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
-local math_abs = math.abs
 local tonumber = tonumber
 
 -- Imports from Helpers.lua
@@ -90,145 +89,6 @@ end
 local SCREEN_LOCATION = Enum and Enum.ScreenLocationType or {}
 local PREVIEW_LOCATION_LEFTRIGHT = SCREEN_LOCATION.LeftRight or 9
 local PREVIEW_LOCATION_TOPBOTTOM = SCREEN_LOCATION.TopBottom or 10
-
--- Texture-slider wiring keeps the config preview smooth without continuously
--- redrawing the runtime panel. The value is staged and previewed during drag;
--- the runtime visual applies once on mouse release (or edit-box confirmation).
-local function AttachTexturePreviewSliderRefresh(sliderWidget, applyValue, previewFn, confirmFn, cancelFn)
-    if not sliderWidget or not sliderWidget.slider or type(applyValue) ~= "function" then
-        return
-    end
-
-    local sliderFrame = sliderWidget.slider
-    sliderWidget._ccApplyLiveTextureValue = applyValue
-    sliderWidget._ccRefreshTexturePreview = previewFn
-    sliderWidget._ccConfirmTextureValue = confirmFn
-    sliderWidget._ccCancelTextureValue = cancelFn
-    sliderWidget._ccLastLiveTextureValue = nil
-    -- AceGUI wheel changes have no release/confirm event, so these staged
-    -- texture sliders intentionally accept drag or edit-box input only.
-    sliderWidget._ccDisableTextureMouseWheel = true
-    sliderFrame:EnableMouseWheel(false)
-
-    local function pushValue(widget, value)
-        if not widget then
-            return
-        end
-
-        value = tonumber(value)
-        if value == nil then
-            return
-        end
-
-        local lastValue = widget._ccLastLiveTextureValue
-        if lastValue ~= nil and math_abs(lastValue - value) < 0.0001 then
-            return
-        end
-
-        widget._ccLastLiveTextureValue = value
-
-        local liveApply = widget._ccApplyLiveTextureValue
-        if type(liveApply) == "function" then
-            liveApply(value)
-        end
-        local refreshPreview = widget._ccRefreshTexturePreview
-        if type(refreshPreview) == "function" then
-            refreshPreview()
-        end
-    end
-
-    sliderWidget:SetCallback("OnValueChanged", function(widget, _, value)
-        pushValue(widget, value)
-    end)
-
-    sliderWidget:SetCallback("OnMouseUp", function(widget, _, value)
-        pushValue(widget, value)
-        sliderFrame:SetScript("OnUpdate", nil)
-        sliderFrame._ccLiveTextureSliderActive = nil
-        widget._ccLastLiveTextureValue = nil
-        local confirmValue = widget._ccConfirmTextureValue
-        if type(confirmValue) == "function" then
-            confirmValue(value)
-        end
-    end)
-
-    local prevOnRelease = sliderWidget.events and sliderWidget.events["OnRelease"]
-    sliderWidget:SetCallback("OnRelease", function(widget, event)
-        local cancelValue = widget._ccCancelTextureValue
-        if type(cancelValue) == "function" then
-            cancelValue(widget)
-        end
-        sliderFrame:SetScript("OnUpdate", nil)
-        sliderFrame._ccLiveTextureSliderActive = nil
-        widget._ccApplyLiveTextureValue = nil
-        widget._ccRefreshTexturePreview = nil
-        widget._ccConfirmTextureValue = nil
-        widget._ccCancelTextureValue = nil
-        widget._ccLastLiveTextureValue = nil
-        widget._ccDisableTextureMouseWheel = nil
-        sliderFrame:EnableMouseWheel(false)
-        if prevOnRelease then
-            prevOnRelease(widget, event)
-        end
-    end)
-
-    local widgetFrame = sliderWidget.frame
-    if widgetFrame and not widgetFrame._ccTextureMouseWheelHooked then
-        widgetFrame._ccTextureMouseWheelHooked = true
-        widgetFrame:HookScript("OnMouseDown", function(frame)
-            local widget = frame.obj
-            if widget and widget._ccDisableTextureMouseWheel and widget.slider then
-                widget.slider:EnableMouseWheel(false)
-            end
-        end)
-    end
-
-    if sliderFrame._ccLiveTextureSliderHooked then
-        return
-    end
-
-    sliderFrame._ccLiveTextureSliderHooked = true
-
-    -- The row's track is a stock AceGUI Slider's frame, so frame.obj is that
-    -- stock child, not the row. RowWidgets publishes the row as frame.cdcRow;
-    -- the frame.obj fallback covers any plain slider widget.
-    sliderFrame:HookScript("OnMouseDown", function(frame)
-        frame._ccLiveTextureSliderActive = true
-        frame:SetScript("OnUpdate", function(self)
-            if not self._ccLiveTextureSliderActive then
-                self:SetScript("OnUpdate", nil)
-                return
-            end
-
-            local widget = self.cdcRow or self.obj
-            if widget then
-                pushValue(widget, widget:GetValue())
-            end
-        end)
-    end)
-
-    sliderFrame:HookScript("OnMouseUp", function(frame)
-        frame._ccLiveTextureSliderActive = nil
-        frame:SetScript("OnUpdate", nil)
-        local widget = frame.cdcRow or frame.obj
-        if widget then
-            widget._ccLastLiveTextureValue = nil
-        end
-    end)
-
-    sliderFrame:HookScript("OnHide", function(frame)
-        frame._ccLiveTextureSliderActive = nil
-        frame:SetScript("OnUpdate", nil)
-        local widget = frame.cdcRow or frame.obj
-        if widget then
-            local cancelValue = widget._ccCancelTextureValue
-            if type(cancelValue) == "function" then
-                cancelValue(widget)
-            end
-            widget._ccLastLiveTextureValue = nil
-        end
-    end)
-end
 
 local function GetIndicatorTextureSelectionLabel(group, settings)
     if not settings or not settings.sourceType then
@@ -726,13 +586,8 @@ end
 -- Row grammar (RowWidgets.lua): shape and color sections of display rows. The
 -- texture itself is shown and picked in the Live Preview above, so the tab
 -- holds no preview canvas or picker buttons. Reached for Indicators whose
--- display type is "texture" (aura or conditions tracking).
---
--- The staging machinery below - the config-only settings copy, the
--- stage/refresh/cancel closures and AttachTextureValueSlider - moved verbatim.
--- It is owner-validated behaviour: runtime refreshes read the SAVED table, so a
--- Texture Indicator edits a copy until the interaction is confirmed, and the row
--- conversion only changes which widget holds the control.
+-- display type is "texture" (aura or conditions tracking). Its sliders and
+-- color row use the shared mirror-first wiring, as the Icon rows do.
 local function BuildIndicatorTextureAppearance(container, group)
     local isConditionsIndicator = CooldownCompanion:IsConditionsIndicatorGroup(group)
     local settings = CooldownCompanion:GetIndicatorTextureSettings(group)
@@ -741,45 +596,10 @@ local function BuildIndicatorTextureAppearance(container, group)
     end
 
     local groupId = CS.selectedGroup
-    if CS.textureConfigPreviewStage and CS.textureConfigPreviewStage.groupId == groupId then
-        CS.textureConfigPreviewStage = nil
-    end
 
-    -- Runtime refreshes read the saved settings table directly, so texture
-    -- panels need a separate config-only copy while an interaction is in
-    -- progress. Otherwise a normal cooldown refresh could repaint the live
-    -- display before the user releases the slider or confirms the color.
-    local previewSettings = {}
-    for key, value in pairs(settings) do
-        if type(value) == "table" then
-            local valueCopy = {}
-            for nestedKey, nestedValue in pairs(value) do
-                valueCopy[nestedKey] = nestedValue
-            end
-            previewSettings[key] = valueCopy
-        else
-            previewSettings[key] = value
-        end
-    end
-
-    local function ClearTextureConfigPreviewStage()
-        local staged = CS.textureConfigPreviewStage
-        if staged and staged.groupId == groupId then
-            CS.textureConfigPreviewStage = nil
-            return true
-        end
-        return false
-    end
-
-    local function RefreshTexturePreview()
-        CS.textureConfigPreviewStage = {
-            groupId = groupId,
-            settings = previewSettings,
-        }
+    -- Repaint the pinned mirror and the live display after a committed change.
+    local function RefreshTextureVisual()
         RefreshIndicatorPreviewMirror(groupId)
-    end
-
-    local function RefreshTextureRuntime(requestAuraRestyle)
         local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
         local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
         if button then
@@ -787,45 +607,19 @@ local function BuildIndicatorTextureAppearance(container, group)
         else
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
-        if requestAuraRestyle and not isConditionsIndicator then
-            RequestAuraIndicatorRestyle(group, groupId)
+        if not isConditionsIndicator then
+            -- Wheel ticks commit one by one; fold them into one restyle.
+            ThrottleAuraIndicatorRestyle(group, groupId)
         end
     end
 
-    local function RefreshTextureVisual(requestAuraRestyle)
-        ClearTextureConfigPreviewStage()
-        -- Repaint the pinned mirror after the saved value has been committed.
-        RefreshIndicatorPreviewMirror(groupId)
-        RefreshTextureRuntime(requestAuraRestyle ~= false)
-    end
-
-    local function CancelTexturePreviewChange()
-        if ClearTextureConfigPreviewStage()
-            and ST._RefreshButtonsPreviewMirror
-        then
-            ST._RefreshButtonsPreviewMirror(groupId)
-        end
-    end
-
-    local textureValueChanged = RefreshTexturePreview
-
+    -- Dragging previews in the mirror; release, a wheel tick or Enter commits.
     local function AttachTextureValueSlider(slider, key)
-        local confirmValue = function(value)
+        WireMirrorFirstSlider(slider, function(value)
             settings[key] = value
-            previewSettings[key] = value
-            RefreshTextureVisual()
-        end
-        local cancelValue = function(widget)
-            previewSettings[key] = settings[key]
-            if widget and widget.SetValue then
-                widget:SetValue(settings[key])
-            end
-            CancelTexturePreviewChange()
-        end
-
-        AttachTexturePreviewSliderRefresh(slider, function(value)
-            previewSettings[key] = value
-        end, textureValueChanged, confirmValue, cancelValue)
+        end, RefreshTextureVisual, function()
+            RefreshIndicatorPreviewMirror(groupId)
+        end, settings, key)
     end
 
     local selectionLabel = GetIndicatorTextureSelectionLabel(group, settings)
@@ -843,14 +637,13 @@ local function BuildIndicatorTextureAppearance(container, group)
             OpenOrRebindIndicatorTexturePicker(group, settings, false)
         end
 
-        RefreshTexturePreview()
+        RefreshIndicatorPreviewMirror(groupId)
         return
     end
 
     local _, shapeCollapsed = BuildCollapsibleSection(container,
         "Shape & Arrangement", "appearance_textureShape", nil, nil, ROW_SECTION)
     if not shapeCollapsed then
-    -- Geometry keeps the same staged values and commit boundaries as before.
     local textureLeft, textureRight = BeginRowGrid(container)
 
     local locationOptions, locationOrder = CooldownCompanion:GetIndicatorTextureLayoutOptions()
@@ -864,7 +657,6 @@ local function BuildIndicatorTextureAppearance(container, group)
         onChange = function(value)
             value = tonumber(value) or 0
             settings.locationType = value
-            previewSettings.locationType = value
             RefreshTextureVisual()
             CooldownCompanion:RefreshConfigPanel()
         end,
@@ -933,7 +725,6 @@ local function BuildIndicatorTextureAppearance(container, group)
         onChange = function(value)
             value = value or "BLEND"
             settings.blendMode = value
-            previewSettings.blendMode = value
             RefreshTextureVisual()
         end,
     })
@@ -946,66 +737,20 @@ local function BuildIndicatorTextureAppearance(container, group)
     })
     AttachTextureValueSlider(alphaRow, "alpha")
 
-    local function ConfirmTextureColor()
-        local color = previewSettings.color or { 1, 1, 1, 1 }
-        settings.color = { color[1], color[2], color[3], color[4] }
-        RefreshTextureVisual()
-    end
-
-    -- Preview through the staging table; only ConfirmTextureColor copies
-    -- the committed color across to the saved settings.
-    local colorRow = AddColorRow(textureLeft, {
+    AddColorRow(textureLeft, {
         label = "Color",
         setting = SPECIAL_FINDER.texture.color,
-        tbl = previewSettings,
-        key = "color",
-        default = { 1, 1, 1, 1 },
-        hasAlpha = true,
-        onConfirm = ConfirmTextureColor,
-        onPreview = textureValueChanged,
+        tbl = settings, key = "color",
+        default = { 1, 1, 1, 1 }, hasAlpha = true,
+        onConfirm = RefreshTextureVisual,
     })
-
-    -- The cancel triad hangs on the row's embedded stock ColorPicker - the
-    -- same widget SetupColorCallbacks was pointed at - so releasing the row
-    -- (which releases the child) and hiding the tab both roll the staged color
-    -- back.
-        local colorPicker = colorRow.colorPicker
-        colorPicker._ccCancelTextureValue = function(widget)
-            local color = settings.color or { 1, 1, 1, 1 }
-            previewSettings.color = { color[1], color[2], color[3], color[4] }
-            widget:SetColor(color[1], color[2], color[3], color[4])
-            CancelTexturePreviewChange()
-        end
-
-        local prevOnRelease = colorPicker.events and colorPicker.events["OnRelease"]
-        colorPicker:SetCallback("OnRelease", function(widget, event)
-            local cancelValue = widget._ccCancelTextureValue
-            if type(cancelValue) == "function" then
-                cancelValue(widget)
-            end
-            widget._ccCancelTextureValue = nil
-            if prevOnRelease then
-                prevOnRelease(widget, event)
-            end
-        end)
-
-        if not colorPicker.frame._ccTexturePreviewHideHooked then
-            colorPicker.frame._ccTexturePreviewHideHooked = true
-            colorPicker.frame:HookScript("OnHide", function(frame)
-                local widget = frame.obj
-                local cancelValue = widget and widget._ccCancelTextureValue
-                if type(cancelValue) == "function" then
-                    cancelValue(widget)
-                end
-            end)
-        end
     end -- not colorCollapsed
 
     if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
         OpenOrRebindIndicatorTexturePicker(group, settings, false)
     end
 
-    RefreshTexturePreview()
+    RefreshIndicatorPreviewMirror(groupId)
 end
 
 ------------------------------------------------------------------------

@@ -597,6 +597,8 @@ local function FormatPanelTemplateMenuText(template)
     local modeLabel = ST._GetPanelTemplateModeLabel(template)
     return (template.name or "") .. " |cff777777(" .. modeLabel .. ")|r"
 end
+-- Also read by the Export and Import mode template lists.
+ST._FormatPanelTemplateMenuText = FormatPanelTemplateMenuText
 
 -- A list filtered to one type says which type it has none of ("No Icon
 -- Panel templates"); the all-types list just says there are none.
@@ -920,7 +922,7 @@ local function ShowPanelContextMenu(panelId, containerId)
                     end
                     info.disabled = not allowed
                     info.tooltipTitle = template.name
-                    info.tooltipText = ST._GetPanelTemplateApplyTooltipText(template)
+                    info.tooltipText = ST._GetPanelTemplateApplyTooltipText()
                     if menuList == "UPDATE_PANEL_TEMPLATE" then
                         info.tooltipText = "Replaces this template's saved setup with this panel's current settings."
                     end
@@ -1759,6 +1761,16 @@ local function SortExportContainerItems(items)
 end
 ST._SortExportContainerItems = SortExportContainerItems
 
+-- The panel-type badge an Export Mode row wears, for panels and templates.
+local function GetExportPanelBadge(panel)
+    local atlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
+    if ST.IsTotemPanelGroup(panel) then
+        return atlas, ST.TOTEM_PANEL_BADGE_TINT, true
+    end
+    local auraTint = GetConfigAuraPanelBadgeTint(panel)
+    return atlas, auraTint, auraTint ~= nil
+end
+
 local function RenderExportModeGroups(db, selection, mode)
     local ordered = {}
     for cid, container in pairs(db.groupContainers or {}) do
@@ -1846,24 +1858,8 @@ local function RenderExportModeGroups(db, selection, mode)
                 local panelId = panelInfo.groupId
                 local panel = panelInfo.group
                 local panelEntry = AcquireExportModeRow(panel.name or ("Panel " .. tostring(panelId)))
-                local iconTexture = 134400
-                local iconAtlas
-                local iconVertexColor
-                local iconDesaturated = false
-                local iconTexCoord
-                if ST.IsTotemPanelGroup(panel) then
-                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
-                    iconVertexColor = ST.TOTEM_PANEL_BADGE_TINT
-                    iconDesaturated = true
-                else
-                    iconAtlas = GetConfigPanelTypeBadgeAtlas(panel.displayMode)
-                    local auraTint = GetConfigAuraPanelBadgeTint(panel)
-                    if auraTint then
-                        iconVertexColor = auraTint
-                        iconDesaturated = true
-                    end
-                end
-                ApplyConfigRowIcon(panelEntry, iconTexture, {
+                local iconAtlas, iconVertexColor, iconDesaturated = GetExportPanelBadge(panel)
+                ApplyConfigRowIcon(panelEntry, 134400, {
                     atlas = iconAtlas,
                     desaturated = iconDesaturated,
                     indent = TREE.PANEL_INDENT,
@@ -1871,7 +1867,6 @@ local function RenderExportModeGroups(db, selection, mode)
                     iconGap = TREE.ICON_GAP,
                     rowHeight = TREE.PANEL_ROW_HEIGHT,
                     compactRowHeight = 24,
-                    texCoord = iconTexCoord,
                     vertexColor = iconVertexColor,
                 })
                 SetNavigatorRowTooltip(panelEntry,
@@ -1906,9 +1901,10 @@ local function RenderExportModeGroups(db, selection, mode)
     return #ordered
 end
 
+-- Returns whether the section drew.
 local function RenderExportModeResources(selection, isFirstSection)
     if not (ST._IsResourcesExportable and ST._IsResourcesExportable()) then
-        return
+        return false
     end
 
     AddColumn1SectionHeading("Resources", nil, isFirstSection)
@@ -1933,6 +1929,43 @@ local function RenderExportModeResources(selection, isFirstSection)
         selection.resources = not selection.resources
         CooldownCompanion:RefreshConfigPanel()
     end)
+    return true
+end
+
+local function RenderExportModeTemplates(selection, isFirstSection)
+    local templates = GetPanelTemplateList(nil)
+    if #templates == 0 then
+        return
+    end
+
+    AddColumn1SectionHeading("Panel Templates", nil, isFirstSection)
+    local shell = AddExportModeRowShell()
+    for _, item in ipairs(templates) do
+        local templateId, template = item.id, item.template
+        local name = template.name or ("Template " .. tostring(templateId))
+        local entry = AcquireExportModeRow(name)
+        local atlas, vertexColor, desaturated = GetExportPanelBadge(template)
+        ApplyConfigRowIcon(entry, 134400, {
+            atlas = atlas,
+            desaturated = desaturated,
+            indent = 2,
+            iconSize = TREE.PANEL_ICON_SIZE,
+            iconGap = TREE.ICON_GAP,
+            rowHeight = TREE.PANEL_ROW_HEIGHT,
+            compactRowHeight = 24,
+            vertexColor = vertexColor,
+        })
+        shell:AddChild(entry)
+        SetNavigatorRowTooltip(entry, name, ST._GetPanelTypeLabel(template))
+        if selection.templates[templateId] then
+            entry:SetColor(0.4, 0.7, 1.0)
+        end
+        entry:SetCallback("OnClick", function(_, _, mouseButton)
+            if mouseButton ~= "LeftButton" then return end
+            selection.templates[templateId] = (not selection.templates[templateId]) or nil
+            CooldownCompanion:RefreshConfigPanel()
+        end)
+    end
 end
 
 
@@ -1945,7 +1978,8 @@ local function RenderExportModeNavigator(db)
     local selection = mode.selection
 
     local groupCount = RenderExportModeGroups(db, selection, mode)
-    RenderExportModeResources(selection, groupCount == 0)
+    local resourcesShown = RenderExportModeResources(selection, groupCount == 0)
+    RenderExportModeTemplates(selection, groupCount == 0 and not resourcesShown)
 
     AddColumn1BottomSpacer()
     PopulateExportModeButtonBar()

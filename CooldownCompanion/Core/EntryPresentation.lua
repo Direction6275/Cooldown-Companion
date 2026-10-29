@@ -43,6 +43,8 @@ function ST.GetConfiguredModuleBarSettings(kind)
     return profile.castBarByChar and profile.castBarByChar[char]
 end
 
+-- The panel a module's bars take their shared geometry from, or nil when
+-- Independent. Every host is an ordinary icon panel (CanModuleAnchorToPanel).
 -- target: an already resolved runtime ResolveModulePanel(kind) result, so a
 -- caller that resolved once per apply reuses it.
 function ST.GetModuleGeometryHost(kind, spec, target)
@@ -53,17 +55,6 @@ function ST.GetModuleGeometryHost(kind, spec, target)
     return target and target.mode ~= "independent" and target.group or nil
 end
 
-function ST.GetModuleGeometryPanel(kind, spec, target)
-    local group = ST.GetModuleGeometryHost(kind, spec, target)
-    return ST.PanelSupportsAttachedBars(group) and group or nil
-end
-
-function ST.UsesSharedModuleGeometry(kind, spec)
-    if not Addon.ResolveModulePanel then return false end
-    local group = ST.GetModuleGeometryHost(kind, spec)
-    return not group or ST.PanelSupportsAttachedBars(group)
-end
-
 function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
     settings, layout = settings or {}, layout or {}
     local vertical = (layout.orientation or settings.orientation) == "vertical"
@@ -71,18 +62,18 @@ function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
         or (layout.barHeight or settings.barHeight or layout.barWidth or settings.barWidth)
     local slot = layout.resources and layout.resources[powerType]
     local thickness
-    -- Specialized hosts retain their old geometry behavior. Independent bars
-    -- use the same explicit customization but keep their local sizing baseline.
-    if not ST.PanelSupportsAttachedBars(group) and (group or settings._barGeometryVersion ~= 1)
-        and layout.customBarHeights and slot then
+    -- Old custom heights apply only off a panel: an Independent stack that
+    -- predates the geometry conversion. Every host is an ordinary icon panel
+    -- (CanModuleAnchorToPanel).
+    if not group and settings._barGeometryVersion ~= 1 and layout.customBarHeights and slot then
         thickness = vertical and (slot.barWidth or slot.barHeight) or (slot.barHeight or slot.barWidth)
     end
-    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and slot or nil, baseline = baseline or 12, thickness = thickness,
+    return ST.ResolveBarGeometry(group, { owner = slot, baseline = baseline or 12, thickness = thickness,
         vertical = vertical, spacing = layout.barSpacing or settings.barSpacing or 3.6 })
 end
 
 -- Segment spacing follows the same panel -> individual resource ownership as
--- thickness. Independent/specialized hosts retain their resource default.
+-- thickness. An Independent stack keeps its resource default.
 function ST.ResolveResourceSegmentGap(settings, layout, powerType, group)
     settings, layout = settings or {}, layout or {}
     local canonical = ST._RB and ST._RB.GetCanonicalPowerType and ST._RB.GetCanonicalPowerType(powerType) or powerType
@@ -99,7 +90,7 @@ end
 
 function ST.ResolveCastBarGeometry(settings, group)
     settings = settings or {}
-    return ST.ResolveBarGeometry(group, { owner = (not group or ST.PanelSupportsAttachedBars(group)) and settings or nil, baseline = settings.height or 15 })
+    return ST.ResolveBarGeometry(group, { owner = settings, baseline = settings.height or 15 })
 end
 
 -- Screen Y is independent of attachment side: positive is up, negative down.
@@ -373,8 +364,10 @@ function ST.GetAttachedBarStyle(group, forEditing)
         if not group.attachedBarStyle then
             group.attachedBarStyle = CopyTable(ST.ATTACHED_BAR_DEFAULTS)
         end
-        -- Editors and runtime use the same canonical fallback. Materialize
-        -- only missing values; explicit false, zero, and empty values survive.
+        -- Player edits and the load pass (ST.CompleteAttachedBarStyle) only;
+        -- runtime reads take the merged form below, which never writes.
+        -- Materialize only missing values; explicit false, zero, and empty
+        -- values survive.
         for key, value in pairs(ST.ATTACHED_BAR_DEFAULTS) do
             if group.attachedBarStyle[key] == nil then
                 group.attachedBarStyle[key] = type(value) == "table" and CopyTable(value) or value
@@ -390,6 +383,28 @@ function ST.GetAttachedBarStyle(group, forEditing)
     for key, value in pairs(group.attachedBarStyle) do style[key] = value end
     if ST.ApplySharedBarTypography then ST.ApplySharedBarTypography(style) end
     return style
+end
+
+-- Load pass (RunAllMigrations; reads never write). Saves an older panel's bar
+-- style in full once, so a later change to ATTACHED_BAR_DEFAULTS reaches only
+-- new panels, as it already does for icon styles. A panel with bar entries but
+-- no saved style gets the full copy it reads today. Idempotent.
+function ST.CompleteAttachedBarStyle(group)
+    if not ST.PanelSupportsAttachedBars(group) then return end
+    local style = group.attachedBarStyle
+    if style == nil then
+        local hasBars = false
+        for _, entry in ipairs(group.buttons or {}) do
+            if ST.IsPanelBarEntry(group, entry) then
+                hasBars = true
+                break
+            end
+        end
+        if not hasBars then return end
+    elseif type(style) ~= "table" then
+        return
+    end
+    ST.GetAttachedBarStyle(group, true)
 end
 
 -- barStyle: an already resolved GetAttachedBarStyle(owner) for a caller
@@ -417,7 +432,8 @@ function ST.GetPanelBarStyleGroup(group)
         _fittedBarLayout = ST.GetPanelGeometryKind(group) ~= "bars" }, { __index = group, __newindex = group })
 end
 
--- Movers on a bar-only panel edit its shared bar style's dimensions.
+-- Movers on a bar-only panel edit its shared bar style's dimensions. Edits
+-- only: it completes the saved style. Readers use GetPanelLayoutGroup.
 function ST.GetPanelSizingGroup(group)
     if ST.IsBarOnlyPanel(group) then
         return ST.GetPanelBarStyleGroup(group)

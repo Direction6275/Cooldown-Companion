@@ -59,9 +59,12 @@ local ROW_SECTION = { leftAligned = true }
 -- gears store in options.unlock / opts.advancedUnlock (resolved only at
 -- panel-build time by ST._ResolveAdvancedUnlock, StyleLens.lua). File-local
 -- constants so a tab rebuild allocates none of them.
+-- Proc and Ready: the checkbox and the Turn On footer enable through one
+-- helper, and turning off from another style hands the size back first, so
+-- a size set on the default style survives and another style's never shows.
 local TURNON_PROC_GLOW = {
     label = "Enable Proc Glow",
-    apply = function(write) write.procGlowStyle = "glow" end,
+    apply = function(write) ST._EnableProcGlow(write) end,
 }
 
 -- One enable path for the checkbox AND the read-only panel's Turn On
@@ -84,7 +87,7 @@ local TURNON_PANDEMIC_MARKER = {
 }
 local TURNON_READY_GLOW = {
     label = "Enable Ready Glow",
-    apply = function(write) write.readyGlowStyle = "solid" end,
+    apply = function(write) ST._EnableReadyGlow(write) end,
 }
 local TURNON_KEY_PRESS_HIGHLIGHT = {
     label = "Enable Key Press Highlight",
@@ -185,7 +188,11 @@ local function BuildProcGlowSection(container, group, style, lens)
         disabled = procSec.disabled,
         onChange = function(val)
             if not procSec.write then return end
-            procSec.write.procGlowStyle = val and "glow" or "none"
+            if val then
+                ST._EnableProcGlow(procSec.write)
+            else
+                ST._DisableProcGlow(procSec.write, procSec.read.procGlowStyle)
+            end
             refreshStyle("style-settings")
         end,
     })
@@ -418,7 +425,11 @@ local function BuildReadyGlowSection(container, group, style, lens)
         disabled = readySec.disabled,
         onChange = function(val)
             if not readySec.write then return end
-            readySec.write.readyGlowStyle = val and "solid" or "none"
+            if val then
+                ST._EnableReadyGlow(readySec.write)
+            else
+                ST._DisableReadyGlow(readySec.write, readySec.read.readyGlowStyle)
+            end
             refreshStyle("style-settings")
         end,
     })
@@ -1589,12 +1600,6 @@ local function EffectsFinderDefineGlowSettings(route, options)
     if supported.pulse then
         result.pulseDuration = route:Setting({ key = "pulseDuration", label = "Pulse Duration", applies = Uses("pulse") })
     end
-    if supported.pixel then
-        result.lineLength = route:Setting({ key = "lineLength", label = "Line Length", applies = Uses("pixel") })
-        result.lineThickness = route:Setting({ key = "lineThickness", label = "Line Thickness", applies = Uses("pixel") })
-        result.speed = route:Setting({ key = "speed", label = "Speed", applies = Uses("pixel") })
-        result.lineCount = route:Setting({ key = "lineCount", label = "Number of Lines", applies = Uses("pixel") })
-    end
     if supported.glow or supported.ants or supported.proc then
         result.glowSize = route:Setting({ key = "glowSize", label = "Glow Size", applies = Uses("glow", "ants", "proc") })
     end
@@ -1717,16 +1722,22 @@ if ST._DefineSettingRoute then
 
     local proc, procRoute = DefineGlowAdvanced(
         "panel.icons.effects.proc", "procGlow", "procGlow", false, {
-            styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color",
-            supported = { solid = true, pixel = true, glow = true, autocast = true },
+            styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color", color2 = true,
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
+                ants = true, glow = true, overlay = true,
+            },
         })
     proc.combatOnly = procRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
     EFFECTS_FINDER.advanced.proc = proc
 
     local ready, readyRoute = DefineGlowAdvanced(
         "panel.icons.effects.ready", "readyGlow", "readyGlow", false, {
-            styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color",
-            supported = { solid = true, pixel = true, glow = true, autocast = true },
+            styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color", color2 = true,
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
+                ants = true, glow = true, overlay = true,
+            },
         })
     ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
     ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only while usable" })

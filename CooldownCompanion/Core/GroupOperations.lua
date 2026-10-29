@@ -191,9 +191,11 @@ function CooldownCompanion:IsGroupAvailableForAnchoring(groupId, specId, options
     local group = self.db.profile.groups[groupId]
     if not group then return false end
     if not group.parentContainerId then return false end
-    -- Refuses cursor-rooted panels and Aura Panels (see AnchorPolicy).
+    -- Refuses cursor-rooted panels and Aura Panels (see AnchorPolicy). The host
+    -- check below also refuses Totem Panels and non-icon panels, the same rule
+    -- as CanModuleAnchorToPanel.
     if not self:CanGroupBeExternalAnchorTarget(groupId) then return false end
-    if self.IsIconLikeDisplayMode and not self:IsIconLikeDisplayMode(group.displayMode) then return false end
+    if not ST.PanelSupportsAttachedBars(group) then return false end
     if group.anchorEligible == false then return false end
     if not self:IsContainerAutoAnchorEligible(self:GetParentContainer(group)) then return false end
     -- Automatic keeps a panel hidden by its unlock-toolbar eye as its pick,
@@ -977,15 +979,8 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
                     else
                         frame:Show()
                     end
-                    local isLocked = not (
-                        frame._containerUnlockPreviewActive == true
-                        or frame._panelUnlockPreviewActive == true
-                    )
-                    if self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group) then
-                        isLocked = true
-                    end
                     -- Keep unlocked panels fully visible, except unlock ghosts.
-                    if not isLocked then
+                    if self:GetPanelUnlockState(groupId, group) then
                         frame:SetAlpha(GetUnlockedPanelAlpha(frame))
                     -- Apply current alpha from the alpha fade system so frame
                     -- doesn't flash at 1.0 when baseline alpha is configured.

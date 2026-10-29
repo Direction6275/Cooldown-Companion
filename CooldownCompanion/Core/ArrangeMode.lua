@@ -59,10 +59,12 @@ function CooldownCompanion:IsPanelUnlockPreviewActive(groupOrGroupId)
     if type(groupOrGroupId) == "number" then
         group = self.db.profile.groups[groupOrGroupId]
     end
+    -- A padlock on the panel's Group in Arrange ends its own unlock too.
     return group
         and group.locked == false
         and not self._combatForcedLock
         and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+        and not (group.parentContainerId and self:IsArrangeContainerSuppressed(group.parentContainerId))
         or false
 end
 
@@ -491,7 +493,8 @@ end
 -- to. Containers normally preview every child regardless of the child's saved
 -- independent lock flag. Arrange also parks cursor panels regardless of that
 -- flag, so the session needs an effective-lock layer shared by every preview,
--- toolbar, and activation path.
+-- toolbar, and activation path. GetPanelUnlockState (GroupFrameShared.lua)
+-- folds these padlocks into the one lock answer chrome, mouse and fade read.
 function CooldownCompanion:IsArrangePanelSuppressed(groupId)
     return self._arrangePanelSuppressed ~= nil
         and self._arrangePanelSuppressed[groupId] == true
@@ -572,7 +575,9 @@ function CooldownCompanion:IsArrangeContainerHidden(containerId)
 end
 
 -- Hidden by its own eye or by its group's. The forced lock lifts the hide, so
--- panels fight as usual; the post-combat refresh puts them away again.
+-- panels fight as usual; the post-combat refresh puts them away again. A
+-- padlocked panel is back in normal play, so its Group's eye lets go of it
+-- too, as its own eye does (SetPanelLocked).
 function CooldownCompanion:IsArrangePanelDisplayHidden(groupId, group)
     if self._combatForcedLock
         or (self._arrangeHiddenPanels == nil and self._arrangeHiddenContainers == nil) then
@@ -585,6 +590,7 @@ function CooldownCompanion:IsArrangePanelDisplayHidden(groupId, group)
     return group ~= nil
         and group.parentContainerId ~= nil
         and self:IsArrangeContainerHidden(group.parentContainerId)
+        and not self:IsArrangePanelSuppressed(groupId)
 end
 
 -- Each eye map drops away once empty, which keeps the IsGroupActive check to
@@ -1437,11 +1443,7 @@ function CooldownCompanion:UnlockAllFrames()
     for groupId, frame in pairs(self.groupFrames) do
         if frame then
             self:UpdateGroupClickthrough(groupId)
-            local group = self.db.profile.groups[groupId]
-            local panelUnlocked = group
-                and group.locked == false
-                and not self._combatForcedLock
-                and not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group))
+            local _, panelUnlocked = self:GetPanelUnlockState(groupId)
             if panelUnlocked and self.SetGroupDragControlsShown then
                 self:SetGroupDragControlsShown(frame, true)
             elseif panelUnlocked and frame.dragHandle then

@@ -30,7 +30,7 @@ local IsCursorAnchorLayoutPreviewSelected = GF.IsCursorAnchorLayoutPreviewSelect
 local UpdateCoordLabel = GF.UpdateCoordLabel
 local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
-local GetContainerState = GF.GetContainerState
+local GetPanelUnlockState = GF.GetPanelUnlockState
 local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local ApplySectionSelectionTint = GF.ApplySectionSelectionTint
@@ -319,14 +319,13 @@ local function CanUsePanelResizeInteractions(groupId, group)
         return IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId)
     end
 
-    if not GetContainerState(groupId) then
+    local _, ownUnlocked = GetPanelUnlockState(groupId, group)
+    if ownUnlocked then
         return true
     end
 
-    return group.parentContainerId
-        and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
-        and CooldownCompanion:IsContainerPanelSelected(group.parentContainerId, groupId)
-        or false
+    local previewActive, selected = GetContainerPreviewSelectionState(groupId)
+    return previewActive and selected or false
 end
 
 local function RoundAndClampPanelSize(value, minValue, maxValue)

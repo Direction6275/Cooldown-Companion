@@ -1055,6 +1055,8 @@ local function DeepEqual(left, right)
     end
     return true
 end
+-- Shared with the Panel Template import (PanelTemplates.lua).
+ST._DeepEqual = DeepEqual
 
 -- Migration stamps (_barGeometryVersion, _barSegmentGapVersion,
 -- _sharedBarStyleVersion and any later _...Version) record what the addon

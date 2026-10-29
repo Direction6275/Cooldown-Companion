@@ -562,13 +562,6 @@ local function IsResourceBarVerticalConfig(settings, layout)
     return settings and settings.orientation == "vertical"
 end
 
-local function GetResourceThicknessFieldConfig(settings, layout)
-    if IsResourceBarVerticalConfig(settings, layout) then
-        return "barWidth", "Bar Width", "Custom Resource Bar Widths"
-    end
-    return "barHeight", "Bar Height", "Custom Resource Bar Heights"
-end
-
 local function GetResourceGapFieldConfig(settings, layout)
     if IsResourceBarVerticalConfig(settings, layout) then
         return "verticalXOffset", "X Offset"
@@ -728,7 +721,6 @@ ST._RBP = {
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
     BuildTrackedAuraAutocompleteCache = BuildTrackedAuraAutocompleteCache,
     IsResourceBarVerticalConfig = IsResourceBarVerticalConfig,
-    GetResourceThicknessFieldConfig = GetResourceThicknessFieldConfig,
     GetResourceGapFieldConfig = GetResourceGapFieldConfig,
     BuildResourceBarConflictGate = BuildResourceBarConflictGate,
 }

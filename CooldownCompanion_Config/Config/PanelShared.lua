@@ -182,15 +182,8 @@ local function GetPanelTemplateFailureText(reason, details)
 end
 ST._GetPanelTemplateFailureText = GetPanelTemplateFailureText
 
-local function GetPanelTemplateApplyTooltipText(template)
-    local sectionNote = " Aura Only stays off in sections containing non-Aura entries."
-    if template.templateVersion == 3 or template.templateVersion == 4 then
-        return "Applies all saved panel settings, including Alpha mode, layers, and panel text format. Entries and their customizations, eligibility, connections, and position stay unchanged." .. sectionNote
-    end
-    local scope = template.templateVersion == 2
-        and "This older template applies its original saved settings."
-        or "This older template applies its saved look and arrangement; visibility stays unchanged."
-    return scope .. " Update it from a panel to capture all panel settings. Existing entry customizations remain." .. sectionNote
+local function GetPanelTemplateApplyTooltipText()
+    return "Applies the saved panel settings. Entries and their customizations, eligibility, connections, and position stay unchanged. Aura Only stays off in sections containing non-Aura entries."
 end
 ST._GetPanelTemplateApplyTooltipText = GetPanelTemplateApplyTooltipText
 -- One sentence for every surface that offers to build from a template, the
@@ -200,11 +193,7 @@ local function GetPanelTemplateTooltipText(template)
     if not usable then return GetPanelTemplateFailureText(reason) end
     local modeLabel = GetPanelTypeLabel(template)
     local article = modeLabel:sub(1, 1):lower():match("[aeiou]") and "an" or "a"
-    local text = "Creates " .. article .. " " .. modeLabel .. " with the saved panel settings and placement. Entries and their customizations are not copied."
-    if template.templateVersion ~= 3 and template.templateVersion ~= 4 then
-        text = text .. " Older template: update it from a panel to capture all panel settings."
-    end
-    return text
+    return "Creates " .. article .. " " .. modeLabel .. " with the saved panel settings and placement. Entries and their customizations are not copied."
 end
 local function AddPanelTemplateMenuTooltip(info, template)
     info.tooltipTitle = template.name

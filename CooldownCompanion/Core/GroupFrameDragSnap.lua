@@ -20,7 +20,7 @@ local GF = ST._GroupFrame
 local function GetFrameRectInUIParentSpace(frame)
     return GF.GetFrameRectInUIParentSpace(ST.GetPanelAnchorBodyFrame(frame))
 end
-local GetContainerState = GF.GetContainerState
+local GetPanelUnlockState = GF.GetPanelUnlockState
 local IsSecretValue = GF.IsSecretValue
 
 local SNAP_THRESHOLD = 8
@@ -109,8 +109,8 @@ local function AddDragSnapCandidate(session, candidateFrame, candidateGroupId, e
 end
 
 local function GroupFrameRendersVisibleSnapTarget(frame, groupId)
-    local isLocked = GetContainerState(groupId)
-    if not isLocked then
+    local _, ownUnlocked = GetPanelUnlockState(groupId)
+    if ownUnlocked then
         return true
     end
 

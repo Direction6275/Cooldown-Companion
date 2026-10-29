@@ -1634,6 +1634,11 @@ local DURATION_LOW_TIME_AURAS_SENTINEL = {
 local DURATION_TEXT_VISIBILITY_SENTINEL = {
     current = "_cdcDurationTextVisibilityMigrated",
 }
+-- Proc and Ready Glow's own Pixel Glow retired into Pixel Dashes (owner ruling
+-- Q37, 2026-10-28), and their customized sections gained a second color.
+local PROC_READY_DASHES_SENTINEL = {
+    current = "_cdcProcReadyDashesMigrated",
+}
 local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
@@ -1652,6 +1657,7 @@ local MIGRATION_SENTINELS = {
     { current = "_cdcAuraPanelIntegrityMigrated" },
     DURATION_LOW_TIME_AURAS_SENTINEL,
     DURATION_TEXT_VISIBILITY_SENTINEL,
+    PROC_READY_DASHES_SENTINEL,
 }
 
 -- Every registered stamp name, current and retired. The export filter
@@ -2407,6 +2413,108 @@ local function MigrateLcgGlowStyles(self, profile)
     if counts.autocast > 0 then changed[#changed + 1] = ("Autocast Shine is now addon-rendered (x%d)"):format(counts.autocast) end
     if #changed > 0 then
         self:Print("Glow styles updated: " .. table.concat(changed, "; ") .. ".")
+    end
+end
+
+-- Proc and Ready Glow's own Pixel Glow becomes the shared Pixel Dashes
+-- (owner ruling Q37). Its speed (10..200) was a lap of 120/speed seconds;
+-- Pixel Dashes stores the lap itself in 1..3 s, at most 8 dashes and a 2..20 px
+-- dash, so values outside those ranges snap to the nearest one. All five keys
+-- are written, which keeps today's look where the dashes defaults differ.
+local PROC_READY_PIXEL_FAMILIES = {
+    { style = "procGlowStyle", size = "procGlowSize", thickness = "procGlowThickness",
+        speed = "procGlowSpeed", lines = "procGlowLines" },
+    { style = "readyGlowStyle", size = "readyGlowSize", thickness = "readyGlowThickness",
+        speed = "readyGlowSpeed", lines = "readyGlowLines" },
+}
+-- What the retired renderer drew for an unset key.
+local PIXEL_GLOW_FALLBACKS = { size = 8, thickness = 4, speed = 50, lines = 8 }
+
+local function ReadPixelGlowValue(style, fallback, key, default)
+    local value = rawget(style, key)
+    if value == nil and type(fallback) == "table" then value = fallback[key] end
+    if value == nil then value = style[key] end
+    if type(value) ~= "number" then value = default end
+    return value
+end
+
+local function MigrateProcReadyPixelGlowTable(style, fallback, fields, counts)
+    if type(style) ~= "table" then return end
+    for _, f in ipairs(PROC_READY_PIXEL_FAMILIES) do
+        if rawget(style, f.style) == "pixel" then
+            local size = ReadPixelGlowValue(style, fallback, f.size, PIXEL_GLOW_FALLBACKS.size)
+            local thickness = ReadPixelGlowValue(style, fallback, f.thickness, PIXEL_GLOW_FALLBACKS.thickness)
+            local speed = ReadPixelGlowValue(style, fallback, f.speed, PIXEL_GLOW_FALLBACKS.speed)
+            local lines = ReadPixelGlowValue(style, fallback, f.lines, PIXEL_GLOW_FALLBACKS.lines)
+            local lap = 120 / math.max(speed, 1)
+            local newLap = math.min(math.max(lap, 1), 3)
+            local newLines = math.min(math.max(math.floor(lines), 1), 8)
+            local newSize = math.min(math.max(size, 2), 20)
+            style[f.style] = "dashes"
+            style[f.size] = newSize
+            style[f.thickness] = thickness
+            style[f.speed] = newLap
+            style[f.lines] = newLines
+            if type(fields) == "table" then
+                fields[f.style], fields[f.size], fields[f.thickness] = true, true, true
+                fields[f.speed], fields[f.lines] = true, true
+            end
+            if counts then
+                counts.converted = counts.converted + 1
+                if newLap ~= lap or newLines ~= lines or newSize ~= size then
+                    counts.snapped = counts.snapped + 1
+                end
+            end
+        end
+    end
+end
+
+-- A customized Proc or Ready Glow section that predates the second color
+-- would follow the panel's under the presence-based merge; seed what it
+-- renders today (the MigrateDurationLowTimeAurasBackfill drift fix).
+local function SeedProcReadyGlowColor2(buttonData, groupStyle)
+    local sections = rawget(buttonData, "overrideSections")
+    local overrides = rawget(buttonData, "styleOverrides")
+    if type(sections) ~= "table" or type(overrides) ~= "table" then return end
+    for _, seed in ipairs({
+        { section = "procGlow", key = "procGlowColor2" },
+        { section = "readyGlow", key = "readyGlowColor2" },
+    }) do
+        if sections[seed.section] and rawget(overrides, seed.key) == nil then
+            local value = type(groupStyle) == "table" and rawget(groupStyle, seed.key)
+            if type(value) ~= "table" then
+                value = ST.OVERRIDE_SECTIONS[seed.section].defaults[seed.key]
+            end
+            overrides[seed.key] = CopyTable(value)
+        end
+    end
+end
+
+local function MigrateProcReadyPixelGlows(self, profile)
+    if type(profile) ~= "table" or not ClaimMigrationPass(profile, PROC_READY_DASHES_SENTINEL) then return end
+    local counts = { converted = 0, snapped = 0 }
+
+    MigrateProcReadyPixelGlowTable(profile.globalStyle, nil, nil, counts)
+    for _, group in pairs(type(profile.groups) == "table" and profile.groups or {}) do
+        if type(group) == "table" then
+            -- Entries first: they read the panel's values as saved.
+            for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
+                if type(buttonData) == "table" then
+                    MigrateProcReadyPixelGlowTable(rawget(buttonData, "styleOverrides"), group.style, nil, counts)
+                    SeedProcReadyGlowColor2(buttonData, group.style)
+                end
+            end
+            MigrateProcReadyPixelGlowTable(group.style, nil, nil, counts)
+        end
+    end
+
+    profile[PROC_READY_DASHES_SENTINEL.current] = true
+    if counts.converted > 0 then
+        local message = ("Glow styles updated: Proc and Ready Glow's Pixel Glow is now Pixel Dashes (x%d)"):format(counts.converted)
+        if counts.snapped > 0 then
+            message = message .. ("; %d adjusted to fit its ranges"):format(counts.snapped)
+        end
+        self:Print(message .. ".")
     end
 end
 
@@ -3474,8 +3582,9 @@ end
 -- name, displayMode, style, Masque/compact/visible-limit flags and a
 -- relativeTo-less anchor, with an always-empty buttons list. Current snapshots
 -- also carry templateVersion, Aura subtype, Visibility and section settings
--- without members. Never infer those new scopes for an unversioned template;
--- only saving/updating from an actual panel upgrades its snapshot.
+-- without members. Older snapshots ride the legacy passes below, then convert
+-- once to version 4 at the end of this walk (ST.UpgradeLegacyPanelTemplates,
+-- Core/PanelTemplates.lua).
 --
 -- The shape is the whole point. The retired groupSettingPresets store had its
 -- own layout, so every pass that rewrote style vocabulary had to grow a
@@ -3489,7 +3598,8 @@ end
 -- profile[sentinel.current]), so the store re-runs a pass only on a generation
 -- bump, exactly like a profile does. ClearMigrationSentinels is profile-only:
 -- a door that ever installs templates wholesale has to bring them through here
--- itself.
+-- itself. ImportPanelTemplates (Core/PanelTemplates.lua) is that door: it runs
+-- this on a private store, and on a comparison mirror, before anything lands.
 --
 -- Only passes that read or write groups[*].style belong here. Entry, folder,
 -- flag, cast-bar, totem and resource passes would find nothing (empty
@@ -3505,7 +3615,9 @@ end
 -- MAINTENANCE RULE: a new pass that rewrites groups[*].style vocabulary must
 -- be added here the same day it is added to RunAllMigrations. Otherwise
 -- templates become the unreached store presets used to be, and applying one
--- hands a panel keys the runtime no longer reads.
+-- hands a panel keys the runtime no longer reads. After the conversion the
+-- legacy population is normally empty, so a new pass must convert version 4
+-- values and their coverage together.
 function CooldownCompanion:NormalizePanelTemplateStore(store)
     if type(store) ~= "table" or type(store.groups) ~= "table" then return end
     local quiet = setmetatable({ Print = function() end }, { __index = self })
@@ -3558,6 +3670,7 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     for _, template in pairs(currentGroups) do
         local fields = type(template.capturedFields) == "table" and template.capturedFields.style or nil
         RetireSwipeFillFromStyle(template.style, nil, fields)
+        MigrateProcReadyPixelGlowTable(template.style, nil, fields)
     end
     StripRetiredSwipeEdgeKeys(store)
     StripRetiredIconFillAuraColor(store)
@@ -3566,6 +3679,7 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     MigratePerModeOrientation(quiet, store)
     MigrateAuraGlowRebuild(quiet, store)
     MigrateLcgGlowStyles(quiet, store)
+    MigrateProcReadyPixelGlows(quiet, store)
     MigrateBarAuraEffectStyles(quiet, store)
     MigratePandemicSwitchOwnership(quiet, store)
     ST.IndicatorMigration.ApplyTemplates(originalStore)
@@ -3573,6 +3687,10 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     -- Bar-only arrangement blocks retired with Collapsing Stack (2026-10-19).
     -- Only current snapshots ever carried one.
     for _, template in pairs(currentGroups) do ST.RetireTemplateBarOnlyLayout(template) end
+    -- LEGACY CONVERSION, last: older snapshots, now in the current vocabulary,
+    -- become version 4 once (owner ruling R11, 2026-10-28). The store itself,
+    -- because ApplyTemplates may have replaced entries the maps above hold.
+    ST.UpgradeLegacyPanelTemplates(originalStore)
 end
 
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
@@ -3649,6 +3767,7 @@ function CooldownCompanion:RunAllMigrations()
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
     MigrateAuraGlowRebuild(self, self.db and self.db.profile)
     MigrateLcgGlowStyles(self, self.db and self.db.profile)
+    MigrateProcReadyPixelGlows(self, self.db and self.db.profile)
     MigrateBarAuraEffectStyles(self, self.db and self.db.profile)
     -- After the style-table passes above: they strip dead keys from entry
     -- override tables too, so this one compares cleaned data.
@@ -3681,6 +3800,9 @@ function CooldownCompanion:RunAllMigrations()
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
+    -- After every conversion above (MigrateSharedBarStyle fills the bar fonts
+    -- first): older panels' bar styles are saved in full.
+    for _, group in pairs(self.db.profile.groups or {}) do ST.CompleteAttachedBarStyle(group) end
     if self.SanitizeCursorAnchorPolicy and not self._deferCursorAnchorPolicySanitizer then
         self:SanitizeCursorAnchorPolicy(self.db and self.db.profile)
     end

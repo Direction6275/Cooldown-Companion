@@ -236,6 +236,7 @@ local function GetLayoutFinderState(context)
     state.autoAnchor = not isIndicator
         and CooldownCompanion:IsIconLikeDisplayMode(owner.displayMode)
         and not CooldownCompanion:IsAuraPanel(group)
+        and not ST.IsTotemPanelGroup(group)
 
     state.panelPoint = targetMode == "cursor"
     state.anchorPoint = not isIndicator and targetMode ~= "cursor"
@@ -1218,14 +1219,15 @@ local function BuildLayoutTab(container)
     end
 
     -- Auto-Anchoring eligibility (icon-like modes only - others are never
-    -- eligible). An Aura Panel is structurally excluded in
+    -- eligible). Aura and Totem Panels are structurally excluded in
     -- IsGroupAvailableForAnchoring, so the checkbox has nothing to opt into.
     --
     -- It reads as anchoring rather than arrangement: it decides whether the
     -- Resource Bars, the Cast Bar and the Unit Frames may hang off this panel,
     -- in Automatic mode; explicit module selections ignore this preference.
     if CooldownCompanion:IsIconLikeDisplayMode(group.displayMode)
-        and not CooldownCompanion:IsAuraPanel(group) then
+        and not CooldownCompanion:IsAuraPanel(group)
+        and not ST.IsTotemPanelGroup(group) then
         -- Shows what Automatic actually does: a Group that opted out takes
         -- its panels with it, and only the Group's own row brings them back.
         local containerIncluded = CooldownCompanion:IsContainerAutoAnchorEligible(

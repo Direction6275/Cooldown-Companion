@@ -764,7 +764,7 @@ local function ShowResourcesTabPage(col3, stripOnly)
         { value = "layout", text = "Layout" },
     }
     -- The spec being edited decides, as it does for the page and the Finder.
-    local localAppearance = ST.GetModuleGeometryPanel("resources",
+    local localAppearance = ST.GetModuleGeometryHost("resources",
         CS._GetCurrentConfigSpecID and CS._GetCurrentConfigSpecID()) == nil
     if localAppearance then tabs[#tabs + 1] = { value = "appearance", text = "Appearance" } end
     if healthEnabled then
