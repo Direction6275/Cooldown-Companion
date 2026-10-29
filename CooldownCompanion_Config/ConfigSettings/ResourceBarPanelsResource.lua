@@ -166,7 +166,6 @@ local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
 local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
 local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
-local GetResourceThicknessFieldConfig = RBP.GetResourceThicknessFieldConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 local ResolveTrackedAuraSpellIDFromText = RBP.ResolveTrackedAuraSpellIDFromText
 local BuildTrackedAuraAutocompleteCache = RBP.BuildTrackedAuraAutocompleteCache
@@ -1244,13 +1243,8 @@ local function BuildResourceBarPositioningPanel(container)
         local _, sizeCollapsed = BuildCollapsibleSection(container, "Bar Size", "rb_bar_size", resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not sizeCollapsed then
-            -- LEFT column: the thickness of a bar, shared or per-resource - the
-            -- override toggle disables the shared slider above it, so the two stay
-            -- adjacent. RIGHT column: the gaps between the things being sized.
-            local sizeLeft, sizeRight = BeginRowGrid(container)
-
-            -- Bar Height + Custom Heights
-            if not ST.UsesSharedModuleGeometry("resources") then ST._BuildBarHeightControls(sizeLeft, settings, layout) end
+            -- RIGHT column: the gap between bars. Thickness lives on the Appearance tab.
+            local _, sizeRight = BeginRowGrid(container)
 
             -- Bar Spacing. The canvas takes its lane gap straight from this value,
             -- so the whole stack re-spaces under the drag and the live bars
@@ -1420,158 +1414,7 @@ end
 
 ------------------------------------------------------------------------
 
--- Extracted to its own function to keep upvalue counts manageable in the caller.
-local function BuildLegacyBarHeightControls(container, settings, layout)
-    local applyBars = MakeResourceEditRefresh(container)
-    layout = layout or settings
-    local thicknessField, thicknessLabel, customThicknessLabel = GetResourceThicknessFieldConfig(settings, layout)
-    local customHeightsAdvKey = "customResourceBarHeights"
-
-    local thicknessValue
-    if thicknessField == "barWidth" then
-        thicknessValue = layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
-    else
-        thicknessValue = layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
-    end
-
-    -- Every bar on the canvas is drawn at this thickness (or its per-resource
-    -- override below), so the stack resizes under the drag.
-    AddMirrorFirstSliderRow(container, {
-        label = thicknessLabel,
-        setting = thicknessField == "barWidth"
-            and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.width
-            or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.height,
-        min = 4, max = 40, step = 0.1,
-        value = thicknessValue,
-        disabled = layout.customBarHeights or false,
-        set = function(val) layout[thicknessField] = val end,
-        apply = function()
-            applyBars()
-        end,
-        stateOwner = layout,
-        stateKeys = thicknessField,
-    })
-
-    local customHeightsCb = AddCheckboxRow(container, {
-        label = customThicknessLabel,
-        setting = thicknessField == "barWidth"
-            and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.customWidths
-            or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
-                and RESOURCE_FINDER.primary.size.customHeights,
-        value = layout.customBarHeights or false,
-        onChange = function(val)
-            layout.customBarHeights = val
-            applyBars("style-settings")
-        end,
-    })
-
-    -- Single rail (AdvancedSettingsPanel.lua): one slider row per active
-    -- resource, straight onto the panel scroll. The toggle they belong to lives
-    -- back on the tab, so none of them indents. "<Resource> <thickness label>"
-    -- runs long against a slider track, so the full label rides the row
-    -- tooltip too.
-    local function BuildCustomResourceHeightsAdvanced(panel)
-        if type(layout.resources) ~= "table" then
-            layout.resources = {}
-        end
-
-        -- A mutually exclusive pair is one bar in one slot, so it gets one
-        -- thickness row: the half that proxies its placement is dropped
-        -- here, because the value its row would store is never read. The row
-        -- that survives is named for whichever half is live right now and
-        -- writes the canonical half's entry, matching the single slot the
-        -- layout canvas draws.
-        local resources = {}
-        for _, pt in ipairs(GetConfigActiveResources()) do
-            if RB.GetCanonicalPowerType(pt) == pt then
-                resources[#resources + 1] = pt
-            end
-        end
-        for _, pt in ipairs(resources) do
-            local capturedPt = pt
-            local renderPt = RB.GetPlacementRenderPowerType(pt)
-            local name = POWER_NAMES[renderPt] or ("Power " .. renderPt)
-            local enabled = IsResourceEnabled(settings, renderPt)
-            local resLayout = type(layout.resources[capturedPt]) == "table" and layout.resources[capturedPt] or {}
-
-            local resThickness
-            if thicknessField == "barWidth" then
-                resThickness = resLayout.barWidth or resLayout.barHeight
-                    or layout.barWidth or layout.barHeight or settings.barWidth or settings.barHeight or 12
-            else
-                resThickness = resLayout.barHeight or resLayout.barWidth
-                    or layout.barHeight or layout.barWidth or settings.barHeight or settings.barWidth or 12
-            end
-
-            local rowLabel = name .. " " .. thicknessLabel
-            AddMirrorFirstSliderRow(panel, {
-                label = rowLabel,
-                setting = thicknessField == "barWidth"
-                    and RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.customWidth
-                        and RESOURCE_FINDER.primary.customWidth[renderPt]
-                    or RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.customHeight
-                        and RESOURCE_FINDER.primary.customHeight[renderPt],
-                tooltip = { rowLabel },
-                min = 4, max = 40, step = 0.1,
-                value = resThickness,
-                disabled = not enabled,
-                set = function(val)
-                    if not enabled then
-                        return
-                    end
-                    if type(layout.resources[capturedPt]) ~= "table" then
-                        layout.resources[capturedPt] = {}
-                    end
-                    layout.resources[capturedPt][thicknessField] = val
-                end,
-                apply = function()
-                    applyBars()
-                end,
-                captureState = function()
-                    local current = rawget(layout.resources, capturedPt)
-                    local restoreOwner = ST._CaptureRawSettingsFields(layout.resources, { capturedPt })
-                    local restoreField = ST._CaptureRawSettingsFields(current, { thicknessField })
-                    return function()
-                        restoreField()
-                        restoreOwner()
-                    end
-                end,
-                restoreState = function(restore) restore() end,
-            })
-        end
-    end
-
-    AddAdvancedToggle(customHeightsCb, customHeightsAdvKey, tabInfoButtons, true, {
-        title = customThicknessLabel .. " Advanced",
-        build = BuildCustomResourceHeightsAdvanced,
-        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): the checkbox's own
-        -- sequence runs the full bar/cast-bar/anchor apply chain,
-        -- which no shared refreshKind runs, so the
-        -- enable owns its whole sequence as `run`.
-        unlock = layout.customBarHeights ~= true and {
-            enable = {
-                label = "Enable " .. customThicknessLabel,
-                run = function()
-                    layout.customBarHeights = true
-                    applyBars("style-settings")
-                end,
-            },
-        } or nil,
-    })
-
-    -- Second badge after the gear: the anchor args below are a placeholder -
-    -- AnchorRowBadge re-points the button behind the chained gear.
-    AnchorRowBadge(customHeightsCb, CreateInfoButton(customHeightsCb.frame, customHeightsCb.frame, "LEFT", "LEFT", 0, 0, {
-        customThicknessLabel,
-        {"When enabled, each resource can have its own bar size. Open advanced settings here to configure all resource sizes together.", 1, 1, 1, true},
-    }, customHeightsCb))
-end
-
 ST._BuildBarHeightControls = function(container, settings, layout)
-    if not ST.UsesSharedModuleGeometry("resources") then return BuildLegacyBarHeightControls(container, settings, layout) end
     if not CooldownCompanion:IsResourceBarAnchorIndependent() then return end
     if not settings.enabled or not layout then return end
     local context = ST._CreateModuleSettingsContext("resources", nil, CooldownCompanion._currentSpecId)
@@ -2761,7 +2604,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             -- The same Bar Appearance rows as every other bar surface. Here they edit
             -- the defaults every resource starts from.
             ST._BuildModuleBarStyle(container, "resources", nil, displaySpecID, "appearance", { resourceWide = true,
-                leadingRows = ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+                leadingRows = CooldownCompanion:IsResourceBarAnchorIndependent()
                     and function(left) ST._BuildBarHeightControls(left, settings, CooldownCompanion:GetSpecLayoutOrder()) end or nil })
 
             local _, segmentsCollapsed = BuildCollapsibleSection(container, "Segments",
@@ -3077,17 +2920,14 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
-    local sharedGeometry = ST.UsesSharedModuleGeometry("resources", numericSpecID)
     local segmented = ST._RB.SupportsResourceAuraStackMode(numericPowerType)
         and not ST._RB.IsContinuousResourceShape(CooldownCompanion:GetResourceBarSettings(), numericPowerType, numericSpecID)
-    if sharedGeometry then
-        ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
-    end
+    ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
     ST._BuildModuleBarStyle(container, "resources", numericPowerType, numericSpecID, "appearance",
-        sharedGeometry and { leadingRows = function(left)
+        { leadingRows = function(left)
             ST._BuildModuleBarThickness(left, "resources", numericPowerType, numericSpecID,
                 ST._ResourceThicknessSetting)
-        end } or nil)
+        end })
     if segmented then
         local _, collapsed = BuildCollapsibleSection(container, "Segments", ST._SharedBarStyleCollapseKey("barSmoothing", "resource"), nil, nil, ROW_SECTION)
         if not collapsed then
@@ -3469,85 +3309,12 @@ if ST._DefineSettingRoute then
             applies = RESOURCE_FINDER.BarsEnabled,
         })
         RESOURCE_FINDER.primary.size = route:Settings({
-            height = {
-                label = "Bar Height",
-                applies = function(context)
-                    if ST.UsesSharedModuleGeometry("resources") then return false end
-                    local layout = RESOURCE_FINDER.Layout(context)
-                    local settings = RESOURCE_FINDER.Settings(context)
-                    return (layout and layout.orientation or settings and settings.orientation)
-                        ~= "vertical"
-                end,
-            },
-            width = {
-                label = "Bar Width",
-                applies = function(context)
-                    if ST.UsesSharedModuleGeometry("resources") then return false end
-                    local layout = RESOURCE_FINDER.Layout(context)
-                    local settings = RESOURCE_FINDER.Settings(context)
-                    return (layout and layout.orientation or settings and settings.orientation)
-                        == "vertical"
-                end,
-            },
-            customHeights = {
-                label = "Custom Resource Bar Heights",
-                advancedKey = "customResourceBarHeights",
-                applies = function(context)
-                    if ST.UsesSharedModuleGeometry("resources") then return false end
-                    local layout = RESOURCE_FINDER.Layout(context)
-                    local settings = RESOURCE_FINDER.Settings(context)
-                    return (layout and layout.orientation or settings and settings.orientation)
-                        ~= "vertical"
-                end,
-            },
-            customWidths = {
-                label = "Custom Resource Bar Widths",
-                advancedKey = "customResourceBarHeights",
-                applies = function(context)
-                    if ST.UsesSharedModuleGeometry("resources") then return false end
-                    local layout = RESOURCE_FINDER.Layout(context)
-                    local settings = RESOURCE_FINDER.Settings(context)
-                    return (layout and layout.orientation or settings and settings.orientation)
-                        == "vertical"
-                end,
-            },
             spacing = { label = "Bar Spacing", aliases = { "resource spacing" }, applies = function() return not ST.GetModuleGeometryPanel("resources") end },
             segmentGap = { label = "Segment Gap", aliases = { "segment spacing" },
                 tab = "appearance", tabLabel = "Appearance", section = "segments", sectionLabel = "Segments",
                 collapseKeys = { ST._SharedBarStyleCollapseKey("barSmoothing", "resourceWide") },
                 applies = function() return not ST.GetModuleGeometryPanel("resources") end },
         })
-        RESOURCE_FINDER.primary.customHeight = {}
-        RESOURCE_FINDER.primary.customWidth = {}
-        for powerType, name in pairs(POWER_NAMES) do
-            local capturedPowerType = powerType
-            -- STRUCTURE only, matching gear existence: the per-resource rows
-            -- live behind the custom-sizes gear, which builds whether or not
-            -- the toggle is on - off just opens its panel read-only behind
-            -- the Turn On footer, so the rows stay findable.
-            local function CustomSizeApplies(context, vertical)
-                if ST.UsesSharedModuleGeometry("resources") then return false end
-                local layout = RESOURCE_FINDER.Layout(context)
-                local settings = RESOURCE_FINDER.Settings(context)
-                local orientation = layout and layout.orientation
-                    or settings and settings.orientation
-                local active = context and context._settingsFinderActiveResourceSet
-                return type(active) == "table" and active[capturedPowerType] == true
-                    and ((orientation == "vertical") == vertical)
-            end
-            RESOURCE_FINDER.primary.customHeight[capturedPowerType] = route:Setting({
-                key = "height_" .. tostring(capturedPowerType),
-                label = name .. " Bar Height",
-                advancedKey = "customResourceBarHeights",
-                applies = function(context) return CustomSizeApplies(context, false) end,
-            })
-            RESOURCE_FINDER.primary.customWidth[capturedPowerType] = route:Setting({
-                key = "width_" .. tostring(capturedPowerType),
-                label = name .. " Bar Width",
-                advancedKey = "customResourceBarHeights",
-                applies = function(context) return CustomSizeApplies(context, true) end,
-            })
-        end
     end
 
     RESOURCE_FINDER.primary.anchor = ST._DefineSettingRoute({
@@ -3625,7 +3392,7 @@ if ST._DefineSettingRoute then
         applies = RESOURCE_FINDER.LocalAppearance,
     }):Settings({
         thickness = { label = "Default Bar Thickness", aliases = { "bar thickness", "height", "width" }, applies = function()
-            return ST.UsesSharedModuleGeometry("resources") and CooldownCompanion:IsResourceBarAnchorIndependent()
+            return CooldownCompanion:IsResourceBarAnchorIndependent()
         end },
     })
 
@@ -4381,7 +4148,6 @@ ST._ResourceThicknessSetting = ST._DefineSettingRoute({
     idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",
     tab = "settings", tabLabel = "Settings", section = "barThickness", sectionLabel = "Bar Appearance",
     collapseKeys = { ST._SharedBarStyleCollapseKey("barTexture", "resource") },
-    applies = function(context) return ST.UsesSharedModuleGeometry("resources", context.resourceSpecID) end,
 }):Setting({ key = "thickness", label = "Bar Thickness", aliases = { "height", "width" } })
 ST._ResourceSegmentGapSetting = ST._DefineSettingRoute({
     idPrefix = "resource.appearance.geometry", scope = "resource", rowScope = "detail",

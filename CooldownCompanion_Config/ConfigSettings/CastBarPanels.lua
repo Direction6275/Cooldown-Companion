@@ -149,8 +149,7 @@ if ST._DefineSettingRoute then
         applies = CastBarFinderEnabled,
     })
     CASTBAR_FINDER.bar = bar:Settings({
-        height = { label = "Height", aliases = { "bar height" }, applies = function() return not ST.UsesSharedModuleGeometry("castbar") end },
-        thickness = { label = "Bar Thickness", sectionId = "barThickness", applies = function() return ST.UsesSharedModuleGeometry("castbar") end },
+        thickness = { label = "Bar Thickness", sectionId = "barThickness", aliases = { "height", "bar height" } },
         color = { label = "Cast Color", aliases = { "bar color", "fill color" } },
     })
     -- Customizations links land on the thickness row like the resource ones.
@@ -580,7 +579,7 @@ local function BuildCastBarPositioningPanel(container)
 end
 
 local function BuildCastBarStylingPanel(container)
-    if ST.UsesSharedModuleGeometry("castbar") then ST._BuildModuleGeometrySummary(container, "castbar") end
+    ST._BuildModuleGeometrySummary(container, "castbar")
     local settings = CooldownCompanion:GetCastBarSettings()
 
     -- The retired styling switch used to carry this gate too: with the
@@ -608,17 +607,7 @@ local function BuildCastBarStylingPanel(container)
     -- Size leads and the fill color closes the one Bar Appearance section.
     ST._BuildModuleBarStyle(container, "castbar", nil, nil, "appearance", {
         leadingRows = function(left)
-            if ST.UsesSharedModuleGeometry("castbar") then
-                ST._BuildModuleBarThickness(left, "castbar", nil, nil, CASTBAR_FINDER.bar.thickness)
-            else
-                -- Specialized hosts retain the cast bar's local height baseline.
-                AddMirrorFirstSliderRow(left, {
-                    label = "Height", setting = CASTBAR_FINDER.bar.height,
-                    min = 4, max = 40, step = 0.1, value = settings.height or 15,
-                    set = function(value) settings.height = value end,
-                    apply = applyCastBar, stateOwner = settings, stateKeys = "height",
-                })
-            end
+            ST._BuildModuleBarThickness(left, "castbar", nil, nil, CASTBAR_FINDER.bar.thickness)
         end,
         trailingRows = function(left)
             -- Fill color conveys casting; it does not inherit a spell's ready color.

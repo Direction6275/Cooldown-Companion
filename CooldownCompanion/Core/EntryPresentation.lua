@@ -58,12 +58,6 @@ function ST.GetModuleGeometryPanel(kind, spec, target)
     return ST.PanelSupportsAttachedBars(group) and group or nil
 end
 
-function ST.UsesSharedModuleGeometry(kind, spec)
-    if not Addon.ResolveModulePanel then return false end
-    local group = ST.GetModuleGeometryHost(kind, spec)
-    return not group or ST.PanelSupportsAttachedBars(group)
-end
-
 function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
     settings, layout = settings or {}, layout or {}
     local vertical = (layout.orientation or settings.orientation) == "vertical"
@@ -71,8 +65,9 @@ function ST.ResolveResourceBarGeometry(settings, layout, powerType, group)
         or (layout.barHeight or settings.barHeight or layout.barWidth or settings.barWidth)
     local slot = layout.resources and layout.resources[powerType]
     local thickness
-    -- Specialized hosts retain their old geometry behavior. Independent bars
-    -- use the same explicit customization but keep their local sizing baseline.
+    -- Old custom heights apply only off a panel: an Independent stack that
+    -- predates the geometry conversion. Every host is an ordinary icon panel
+    -- (CanModuleAnchorToPanel).
     if not ST.PanelSupportsAttachedBars(group) and (group or settings._barGeometryVersion ~= 1)
         and layout.customBarHeights and slot then
         thickness = vertical and (slot.barWidth or slot.barHeight) or (slot.barHeight or slot.barWidth)

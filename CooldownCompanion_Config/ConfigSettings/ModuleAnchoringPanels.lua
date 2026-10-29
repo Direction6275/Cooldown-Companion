@@ -65,7 +65,7 @@ function ST._BuildModuleAnchoringControls(container, kind, finder)
                 if tonumber(value) then ST._SetBarAttachment(kind, "panel", tonumber(value), context) end
             end,
         })
-        AddHelp(row, "Anchor Panel", "Explicit selections ignore Include in Auto-Anchoring. Aura Panels, cursor-attached panels, and non-icon panels cannot be selected.")
+        AddHelp(row, "Anchor Panel", "Explicit selections ignore Include in Auto-Anchoring. Aura Panels, Totem Panels, cursor-attached panels, and non-icon panels cannot be selected.")
         for _, key in ipairs(headers) do row.dropdown:SetItemDisabled(key, true) end
     end
     local target = Addon:ResolveModulePanel(kind)

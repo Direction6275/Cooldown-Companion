@@ -81,7 +81,8 @@ function Addon:CanModuleAnchorToPanel(panelId)
     if not group.parentContainerId or not self.db.profile.groupContainers[group.parentContainerId] then
         return false, "missing"
     end
-    if not self:IsIconLikeDisplayMode(group.displayMode) then return false, "unsupported" end
+    -- Only an ordinary icon panel hosts. Aura and Totem Panels never do, in either form.
+    if not ST.PanelSupportsAttachedBars(group) then return false, "unsupported" end
     return self:CanGroupBeExternalAnchorTarget(panelId)
 end
 
