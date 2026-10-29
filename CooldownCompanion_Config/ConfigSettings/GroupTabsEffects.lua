@@ -1589,12 +1589,6 @@ local function EffectsFinderDefineGlowSettings(route, options)
     if supported.pulse then
         result.pulseDuration = route:Setting({ key = "pulseDuration", label = "Pulse Duration", applies = Uses("pulse") })
     end
-    if supported.pixel then
-        result.lineLength = route:Setting({ key = "lineLength", label = "Line Length", applies = Uses("pixel") })
-        result.lineThickness = route:Setting({ key = "lineThickness", label = "Line Thickness", applies = Uses("pixel") })
-        result.speed = route:Setting({ key = "speed", label = "Speed", applies = Uses("pixel") })
-        result.lineCount = route:Setting({ key = "lineCount", label = "Number of Lines", applies = Uses("pixel") })
-    end
     if supported.glow or supported.ants or supported.proc then
         result.glowSize = route:Setting({ key = "glowSize", label = "Glow Size", applies = Uses("glow", "ants", "proc") })
     end
@@ -1717,16 +1711,22 @@ if ST._DefineSettingRoute then
 
     local proc, procRoute = DefineGlowAdvanced(
         "panel.icons.effects.proc", "procGlow", "procGlow", false, {
-            styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color",
-            supported = { solid = true, pixel = true, glow = true, autocast = true },
+            styleKey = "procGlowStyle", fallback = "glow", colorLabel = "Glow Color", color2 = true,
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
+                ants = true, glow = true, overlay = true,
+            },
         })
     proc.combatOnly = procRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
     EFFECTS_FINDER.advanced.proc = proc
 
     local ready, readyRoute = DefineGlowAdvanced(
         "panel.icons.effects.ready", "readyGlow", "readyGlow", false, {
-            styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color",
-            supported = { solid = true, pixel = true, glow = true, autocast = true },
+            styleKey = "readyGlowStyle", fallback = "solid", colorLabel = "Glow Color", color2 = true,
+            supported = {
+                solid = true, pulse = true, colorShift = true, dashes = true, autocast = true,
+                ants = true, glow = true, overlay = true,
+            },
         })
     ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
     ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only while usable" })

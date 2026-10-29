@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - ButtonFrame/Glows
-    Glow systems: proc glow, aura glow, the pixel/autocast perimeter engines,
+    Glow systems: proc glow, aura glow, the dash/autocast perimeter engines,
     assisted highlight, bar aura effect, and shared glow container creation
 ]]
 
@@ -30,11 +30,11 @@ local DEFAULT_AURA_GLOW_COLOR = {1, 0.84, 0, 0.9}
 local DEFAULT_AURA_GLOW_COLOR2 = {0.1, 0.3, 1, 0.9}
 local DEFAULT_READY_COLOR = {0.2, 1.0, 0.2, 1}
 local DEFAULT_KEY_PRESS_COLOR = {1, 1, 1, 0.4}
-local DEFAULT_GLOW_SIZES = {solid = 5, pixel = 8, glow = 30, autocast = 2}
+local DEFAULT_GLOW_SIZES = {solid = 5, glow = 30, autocast = 2, ants = 23, dashes = 12}
 -- ants overhang matches Blizzard's assisted-combat highlight ratio (66px art
 -- on a 45px button); dashes size is the line length in px and thickness is
 -- its own key.
-local BAR_AURA_GLOW_SIZES = {solid = 2, pixel = 8, glow = 30, autocast = 2, ants = 23, dashes = 12}
+local BAR_AURA_GLOW_SIZES = {solid = 2, glow = 30, autocast = 2, ants = 23, dashes = 12}
 local DEFAULT_AURA_GLOW_DASH_THICKNESS = 3
 -- Marching ants flipbook from ActionBarButtonAssistedCombatHighlightTemplate
 -- (Blizzard_ActionBar/Shared/ActionButtonComponentTemplate.xml): 30 frames in
@@ -43,10 +43,6 @@ local KIT_ANTS_ATLAS = "rotationhelper_ants_flipbook"
 -- Dash pool ceiling for the dashes aura glow style. The kit prebuilds this
 -- many (write-once regions); the CC-side preview grows its pool lazily.
 local MAX_AURA_GLOW_DASHES = 8
--- Dash pool ceiling for the pixel glow style (proc/ready containers grow
--- lazily, so the higher ceiling costs nothing until a user asks for it; the
--- lines slider tops out at 16).
-local MAX_PIXEL_DASHES = 16
 -- Aura glow speed semantics: pulse/colorShift store cycle seconds, dashes
 -- stores lap seconds, and autocast stores frequency (10..200). Keyed by
 -- both kit names and their normalized preview names.
@@ -70,6 +66,16 @@ local function NormalizeGlowStyle(style)
     if style == "lcgAutoCast" then
         return "autocast"
     end
+    return style
+end
+
+-- Proc and Ready Glow draw the aura vocabulary on CC frames; stored "pulse" is
+-- ShowGlowStyle's pulsingBorder. A "pixel" that missed the load or import
+-- conversion draws as dashes and is never written back (reads never write).
+local function NormalizeProcReadyGlowStyle(style)
+    style = NormalizeGlowStyle(style)
+    if style == "pulse" then return "pulsingBorder" end
+    if style == "pixel" then return "dashes" end
     return style
 end
 
@@ -112,8 +118,6 @@ local function GetGlowSize(styleTable, sizeKey, glowStyle, defaults)
         return size or defaults.ants
     elseif glowStyle == "dashes" then
         return size or defaults.dashes
-    elseif glowStyle == "pixel" then
-        return size or defaults.pixel
     elseif glowStyle == "autocast" then
         -- AutoCast scale looks best in 0.2..3. Keep old/invalid values from
         -- inflating particles by falling back to a safe default.
@@ -133,15 +137,8 @@ local function SpeedToAutocastLap(speed)
     return 480 / math_max(speed or 60, 1)
 end
 
--- Convert user-facing speed (10..200) to a pixel glow lap duration in
--- seconds. Matches the retired LCG PixelGlow timing exactly (frequency was
--- speed/120, lap = 1/frequency), so stored speeds keep their meaning.
-local function SpeedToPixelLap(speed)
-    return 120 / math_max(speed or 60, 1)
-end
-
 local function UsesGlowSpeed(glowStyle)
-    return glowStyle == "pixel" or glowStyle == "pulsingBorder"
+    return glowStyle == "pulsingBorder"
         or glowStyle == "colorShift" or glowStyle == "dashes"
         or glowStyle == "autocast"
 end
@@ -644,7 +641,7 @@ local function HideGlowStyles(container)
 end
 
 -- Show the selected glow style on a container.
--- style: "solid", "pulsingBorder", "colorShift", "overlay", "pixel",
+-- style: "solid", "pulsingBorder", "colorShift", "overlay",
 -- "autocast", "ants", "dashes", "glow", or "blizzard"
 -- button: the parent button frame (for positioning)
 -- color: {r, g, b, a} color table
@@ -665,18 +662,6 @@ local function ShowGlowStyle(container, style, button, color, params)
         else
             StopSolidBorderPulse(container)
         end
-    elseif style == "pixel" then
-        -- CC-owned dash engine (same machinery as the dashes style): regions
-        -- live on solidFrame, so ApplyStrataOrder positioning and shell alpha
-        -- stamping apply — unlike the retired LCG renderer, which parented to
-        -- the button and ignored both.
-        local count = math_min(math_max(params.lines or 8, 1), MAX_PIXEL_DASHES)
-        container.dashes = container.dashes or {}
-        container.dashMasks = container.dashMasks or CreateDashMasks(container.solidFrame)
-        CreateDashRegions(container.solidFrame, container.dashes, container.dashMasks, count)
-        local lap = SpeedToPixelLap(params.speed)
-        StyleDashPerimeter(container.dashes, container.dashMasks, button, size or 8, params.thickness, lap, count,
-            color[1], color[2], color[3], color[4] or defaultAlpha)
     elseif style == "autocast" then
         container.sparks = container.sparks or {}
         CreateSparkRegions(container.solidFrame, container.sparks)
@@ -998,11 +983,11 @@ local function MakeGlowSetter(cfg)
                 -- Resolve full params (thickness, speed, lines) if supported
                 if fullParams then
                     usesSpeed = UsesGlowSpeed(glowStyle)
-                    th = (glowStyle == "pixel" or glowStyle == "dashes")
+                    th = glowStyle == "dashes"
                         and ((btnStyle and btnStyle[thKey]) or defThickness) or 0
                     spd = usesSpeed and ((btnStyle and btnStyle[spdKey])
                         or (defSpeeds and defSpeeds[glowStyle]) or defSpeed) or 0
-                    ln = (glowStyle == "pixel" or glowStyle == "dashes")
+                    ln = glowStyle == "dashes"
                         and ((btnStyle and btnStyle[lnKey]) or defLines) or 0
                 end
             end
@@ -1050,7 +1035,7 @@ local function MakeGlowSetter(cfg)
         if fullParams then
             opts.thickness = th
             opts.speed = spd
-            if glowStyle == "pixel" or glowStyle == "dashes" then opts.lines = ln end
+            if glowStyle == "dashes" then opts.lines = ln end
         end
         if includeScale and usesSpeed then
             opts.scale = math_min(math_max(sz, 0.2), 3)
@@ -1099,14 +1084,20 @@ end
 
 local SetProcGlow = MakeGlowSetter({
     containerKey       = "procGlow",
-    normalizeStyle     = NormalizeGlowStyle,
+    normalizeStyle     = NormalizeProcReadyGlowStyle,
     noneIsOff          = false,
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 1,
     includeScale       = true,
+    -- The Pixel Dashes slider defaults, so an unset value draws what it shows.
+    defaultSpeeds      = AURA_GLOW_SPEED_DEFAULTS,
+    defaultLines       = 5,
+    defaultThickness   = DEFAULT_AURA_GLOW_DASH_THICKNESS,
     styleKey           = "procGlowStyle",       defaultStyle = "glow",
     colorKey           = "procGlowColor",       defaultColor = DEFAULT_WHITE,
+    color2Key          = "procGlowColor2",      defaultColor2 = DEFAULT_AURA_GLOW_COLOR2,
+    cacheColor2        = "_procGlowC2",
     sizeKey            = "procGlowSize",
     thicknessKey       = "procGlowThickness",
     speedKey           = "procGlowSpeed",
@@ -1170,14 +1161,19 @@ local SetAuraGlow = MakeGlowSetter({
 
 local SetReadyGlow = MakeGlowSetter({
     containerKey       = "readyGlow",
-    normalizeStyle     = NormalizeGlowStyle,
+    normalizeStyle     = NormalizeProcReadyGlowStyle,
     noneIsOff          = false,
     fullParams         = true,
     useGetGlowSize     = true,
     defaultAlpha       = 1,
     includeScale       = true,
+    defaultSpeeds      = AURA_GLOW_SPEED_DEFAULTS,
+    defaultLines       = 5,
+    defaultThickness   = DEFAULT_AURA_GLOW_DASH_THICKNESS,
     styleKey           = "readyGlowStyle",      defaultStyle = "solid",
     colorKey           = "readyGlowColor",      defaultColor = DEFAULT_READY_COLOR,
+    color2Key          = "readyGlowColor2",     defaultColor2 = DEFAULT_AURA_GLOW_COLOR2,
+    cacheColor2        = "_readyGlowC2",
     sizeKey            = "readyGlowSize",
     thicknessKey       = "readyGlowThickness",
     speedKey           = "readyGlowSpeed",
@@ -1290,8 +1286,8 @@ local function StopCooldownPressFlash(button)
 end
 
 -- Create a complete glow container with solid border and proc glow sub-frames.
--- Pixel dash and autocast spark regions are created lazily on solidFrame by
--- their ShowGlowStyle branches.
+-- Dash, ants, overlay and autocast spark regions are created lazily on
+-- solidFrame by their ShowGlowStyle branches.
 -- parent: parent button frame
 -- overhang: overhang percentage for the proc glow frame (default 32)
 -- withOverlay: if true, also create a full-button overlay texture (only KPH needs this)

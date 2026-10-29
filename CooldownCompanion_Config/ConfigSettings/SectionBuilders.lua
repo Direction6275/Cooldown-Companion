@@ -1724,15 +1724,12 @@ end
 --
 -- keys = { size = "...", thickness = "...", speed = "...", lines = "...",
 --          solidSizeDefault = n } - the calling glow family's store keys.
--- pixelSizeMin: minimum for the pixel "Line Length" slider (1 for glow
---   style controls, 2 for bar effect controls).
 --
 -- Entry fields:
 --   label, min, max, step  literal slider setup
 --   keyField               which name in `keys` holds this slider's store key
 --   default                fallback when the store holds nothing
 --   defaultFrom            name in `keys` whose value outranks `default`
---   minFrom                "pixelSizeMin": the min comes from the parameter
 --   requiresKey            skip the entry when `keys[keyField]` is absent
 --                          (the optional dash count/thickness sliders)
 --   clampToRange           a stored value outside [min, max] falls back to
@@ -1749,12 +1746,6 @@ local GLOW_SLIDER_SPEC = {
         {label = "Border Size", settingField = "borderSize", keyField = "size", min = 1, max = 8, step = 0.1,
             default = 2, defaultFrom = "solidSizeDefault"},
         {label = "Pulse Duration", settingField = "pulseDuration", keyField = "speed", min = 0.1, max = 2.0, step = 0.05, default = 0.5},
-    },
-    pixel = {
-        {label = "Line Length", settingField = "lineLength", keyField = "size", minFrom = "pixelSizeMin", max = 12, step = 0.1, default = 8},
-        {label = "Line Thickness", settingField = "lineThickness", keyField = "thickness", min = 1, max = 6, step = 0.1, default = 4},
-        {label = "Speed", settingField = "speed", keyField = "speed", min = 10, max = 200, step = 0.1, default = 50},
-        {label = "Number of Lines", settingField = "lineCount", keyField = "lines", min = 1, max = 16, step = 1, default = 8, requiresKey = true},
     },
     glow = {
         {label = "Glow Size", settingField = "glowSize", keyField = "size", min = 0, max = 60, step = 0.1, default = 30},
@@ -1790,16 +1781,15 @@ GLOW_SLIDER_SPEC.pulsingBorder = GLOW_SLIDER_SPEC.pulse
 -- entry is conditional on a key this caller does not have; otherwise the store
 -- key, the resolved minimum and the value to seed the slider with.
 --
--- storeKey may legitimately come back nil for an entry without requiresKey
--- (the pixel thickness slider has always been emitted unconditionally); that
--- reads as nil from the style table exactly as it did before.
-local function ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+-- storeKey may legitimately come back nil for an entry without requiresKey;
+-- that reads as nil from the style table.
+local function ResolveGlowSliderEntry(entry, styleTable, keys)
     local storeKey = keys[entry.keyField]
     if entry.requiresKey and not storeKey then
         return false
     end
 
-    local minValue = entry.minFrom and pixelSizeMin or entry.min
+    local minValue = entry.min
     local default = (entry.defaultFrom and keys[entry.defaultFrom]) or entry.default
     local value = styleTable[storeKey]
     if entry.clampToRange and (not value or value < minValue or value > entry.max) then
@@ -1830,10 +1820,10 @@ end
 -- `previewRefresh` lets resource/cast surfaces name their own canvas. Ordinary
 -- panel callers fall back to the pinned Buttons preview. Every live apply runs
 -- once on release.
-local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, pixelSizeMin, indent, previewRefresh, settings, labelOverrides)
+local function AddGlowSliderRows(container, styleTable, currentStyle, keys, refreshCallback, indent, previewRefresh, settings, labelOverrides)
     previewRefresh = previewRefresh or ST._RefreshSelectedButtonsPreview
     for _, entry in ipairs(GLOW_SLIDER_SPEC[currentStyle] or {}) do
-        local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys, pixelSizeMin)
+        local ok, storeKey, minValue, value = ResolveGlowSliderEntry(entry, styleTable, keys)
         if ok then
             AddSliderRow(container, {
                 label = labelOverrides and labelOverrides[entry.settingField]
@@ -1880,14 +1870,6 @@ local function NormalizeGlowStyleForDisplay(style, fallback)
     return style
 end
 
-local PROC_GLOW_STYLE_OPTIONS = {
-    ["solid"] = "Solid Border",
-    ["pixel"] = "Pixel Glow",
-    ["glow"] = "Proc Glow",
-    ["autocast"] = "Autocast Shine",
-}
-local PROC_GLOW_STYLE_ORDER = {"solid", "pixel", "glow", "autocast"}
-
 -- Generic glow style builder (Group A), row grammar only: a style row, a color
 -- row and this style's conditional slider rows. Backs BuildProcGlowControls,
 -- BuildReadyGlowControls, BuildKeyPressHighlightControls.
@@ -1912,12 +1894,8 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
     end
     local currentStyle = NormalizeGlowStyleForDisplay(styleTable[cfg.styleKey], cfg.defaultStyle)
 
-    local styleOptions = cfg.styleOptions or {
-        ["solid"] = "Solid Border",
-        ["pixel"] = "Pixel Glow",
-        ["glow"] = "Glow",
-    }
-    local styleOrder = cfg.styleOrder or {"solid", "pixel", "glow"}
+    local styleOptions = cfg.styleOptions
+    local styleOrder = cfg.styleOrder
 
     local childIndent = opts.indent
 
@@ -1963,7 +1941,7 @@ local function BuildGlowStyleControls(container, styleTable, refreshCallback, cf
             })
         end
 
-        AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, 1, true,
+        AddGlowSliderRows(container, styleTable, currentStyle, GlowSliderKeys(cfg), refreshCallback, true,
             opts.previewRefresh, opts.settings, cfg.sliderLabels)
     end
     if opts.advancedKey then
@@ -1976,26 +1954,6 @@ end
 ------------------------------------------------------------------------
 -- PUBLIC GLOW/EFFECT WRAPPERS (same signatures as original functions)
 ------------------------------------------------------------------------
-local function BuildProcGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "procGlowStyle", colorKey = "procGlowColor", colorLabel = "Glow Color",
-        sizeKey = "procGlowSize", thicknessKey = "procGlowThickness", speedKey = "procGlowSpeed", linesKey = "procGlowLines",
-        defaultStyle = "glow", defaultColor = {1, 1, 1, 1},
-        styleOptions = PROC_GLOW_STYLE_OPTIONS,
-        styleOrder = PROC_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
-local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
-    BuildGlowStyleControls(container, styleTable, refreshCallback, {
-        styleKey = "readyGlowStyle", colorKey = "readyGlowColor", colorLabel = "Glow Color",
-        sizeKey = "readyGlowSize", thicknessKey = "readyGlowThickness", speedKey = "readyGlowSpeed", linesKey = "readyGlowLines",
-        defaultStyle = "solid", defaultColor = {0.2, 1.0, 0.2, 1},
-        styleOptions = PROC_GLOW_STYLE_OPTIONS,
-        styleOrder = PROC_GLOW_STYLE_ORDER,
-    }, opts)
-end
-
 -- Aura glow styles are limited to what the aura slot kit can render: static
 -- textures and AnimationGroup-driven effects. The kit's dashes style is
 -- the pixel equivalent; autocast shares the proc/ready spark animation.
@@ -2029,6 +1987,43 @@ local PANDEMIC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "au
 -- to that style's defaults.
 local AURA_GLOW_SIZE_RESETS = { proc = 30, ants = 23, dashes = 12 }
 local AURA_GLOW_SPEED_RESETS = { colorShift = 0.8, dashes = 2, autocast = 50 }
+
+-- Proc and Ready Glow offer the aura menu. Blizzard's proc art keeps its
+-- stored value "glow", which Defaults, the Show checkbox and Turn On write.
+local PROC_GLOW_STYLE_OPTIONS = { glow = AURA_GLOW_STYLE_OPTIONS.proc }
+for k, v in pairs(AURA_GLOW_STYLE_OPTIONS) do
+    if k ~= "proc" then PROC_GLOW_STYLE_OPTIONS[k] = v end
+end
+local PROC_GLOW_STYLE_ORDER = {"solid", "pulse", "colorShift", "dashes", "autocast", "ants", "glow", "overlay"}
+-- The aura resets under the proc/ready names, with their shipped 5px border.
+local PROC_READY_GLOW_SIZE_RESETS = { solid = 5, glow = 30, ants = 23, dashes = 12 }
+
+local function ProcReadyGlowControlConfig(prefix, defaultStyle, defaultColor)
+    return {
+        styleKey = prefix .. "Style", colorKey = prefix .. "Color", colorLabel = "Glow Color",
+        color2Key = prefix .. "Color2", color2Label = "Second Color", defaultColor2 = {0.1, 0.3, 1, 0.9},
+        sizeKey = prefix .. "Size", thicknessKey = prefix .. "Thickness",
+        speedKey = prefix .. "Speed", linesKey = prefix .. "Lines",
+        defaultStyle = defaultStyle, defaultColor = defaultColor,
+        styleOptions = PROC_GLOW_STYLE_OPTIONS,
+        styleOrder = PROC_GLOW_STYLE_ORDER,
+        onStyleChanged = function(targetStyle, val)
+            targetStyle[prefix .. "Size"] = PROC_READY_GLOW_SIZE_RESETS[val] or 2
+            targetStyle[prefix .. "Speed"] = AURA_GLOW_SPEED_RESETS[val] or 0.5
+            targetStyle[prefix .. "Lines"] = 5
+            targetStyle[prefix .. "Thickness"] = 3
+        end,
+    }
+end
+
+local PROC_GLOW_CFG = ProcReadyGlowControlConfig("procGlow", "glow", {1, 1, 1, 1})
+local READY_GLOW_CFG = ProcReadyGlowControlConfig("readyGlow", "solid", {0.2, 1.0, 0.2, 1})
+local function BuildProcGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, PROC_GLOW_CFG, opts)
+end
+local function BuildReadyGlowControls(container, styleTable, refreshCallback, opts)
+    BuildGlowStyleControls(container, styleTable, refreshCallback, READY_GLOW_CFG, opts)
+end
 
 -- Aura and missing-aura controls share the vocabulary, defaults, and resets.
 -- Only their saved-key prefix and primary color differ.

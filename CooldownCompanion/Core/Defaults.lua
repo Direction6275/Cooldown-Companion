@@ -226,6 +226,7 @@ local defaults = {
             iconFillCooldownColor = {0.6, 0.13, 0.18, 0.55},
             showLossOfControl = true,
             procGlowColor = {1, 1, 1, 1},
+            procGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
             procGlowStyle = "glow",
             procGlowSize = 30,
             procGlowThickness = 4,
@@ -256,6 +257,7 @@ local defaults = {
             auraGlowDashThickness = 3, -- dashes style only, line thickness px
             readyGlowStyle = "none",
             readyGlowColor = {0.2, 1.0, 0.2, 1},
+            readyGlowColor2 = {0.1, 0.3, 1, 0.9}, -- colorShift second color
             readyGlowSize = 5,
             readyGlowThickness = 4,
             readyGlowSpeed = 50,
@@ -1039,7 +1041,10 @@ ST.OVERRIDE_SECTIONS = {
     },
     procGlow = {
         label = "Proc Glow",
-        keys = {"procGlowStyle", "procGlowColor", "procGlowSize", "procGlowThickness", "procGlowSpeed", "procGlowLines", "procGlowCombatOnly"},
+        keys = {"procGlowStyle", "procGlowColor", "procGlowColor2", "procGlowSize", "procGlowThickness", "procGlowSpeed", "procGlowLines", "procGlowCombatOnly"},
+        -- A panel older than the second color lacks the key; promoting must
+        -- still give the entry its own copy.
+        defaults = { procGlowColor2 = {0.1, 0.3, 1, 0.9} },
         modes = {icons = true},
     },
     -- PTR 8 lit the pandemic key family up (the kit rig in AuraDisplay.lua);
@@ -1098,7 +1103,8 @@ ST.OVERRIDE_SECTIONS = {
     },
     readyGlow = {
         label = "Ready Glow",
-        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowOnlyWhileUsable", "readyGlowOnlyAtMaxCharges", "readyGlowDuration"},
+        keys = {"readyGlowStyle", "readyGlowColor", "readyGlowColor2", "readyGlowSize", "readyGlowThickness", "readyGlowSpeed", "readyGlowLines", "readyGlowCombatOnly", "readyGlowOnlyWhileUsable", "readyGlowOnlyAtMaxCharges", "readyGlowDuration"},
+        defaults = { readyGlowColor2 = {0.1, 0.3, 1, 0.9} },
         modes = {icons = true},
     },
     keyPressHighlight = {

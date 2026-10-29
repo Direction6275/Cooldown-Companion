@@ -2264,7 +2264,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             -- opt-in, and every non-resource caller leaves it off.
             AddGlowSliderRows(panel, entry,
                 borderStyle == "pixel" and "dashes" or "solid",
-                AURA_BORDER_SLIDER_KEYS, applyBars, 1, true, previewOnly,
+                AURA_BORDER_SLIDER_KEYS, applyBars, true, previewOnly,
                 finderAura and finderAura.glow)
         end,
     })
@@ -2347,7 +2347,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
             })
             AddGlowSliderRows(panel, resource,
                 borderStyle == "pixel" and "dashes" or "solid",
-                keys, applyRows, 1, true, previewOnly,
+                keys, applyRows, true, previewOnly,
                 finderStack and finderStack.maxGlow)
         end,
     })
