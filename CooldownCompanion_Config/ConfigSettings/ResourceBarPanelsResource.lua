@@ -146,7 +146,6 @@ local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
 local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
-local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
@@ -195,20 +194,6 @@ local function EnsureResourceLayoutAnchor(settings, layout)
     end
 end
 
-local function SeedSpecResourceDisplaySettings(settings, powerType, specID, keys)
-    local specSettings = GetResourceSpecOverrideTable(settings, powerType, specID, true)
-    local baseSettings = settings and settings.resources and settings.resources[powerType]
-    if not specSettings then return baseSettings end
-    if type(baseSettings) == "table" and type(keys) == "table" then
-        for _, key in ipairs(keys) do
-            if specSettings[key] == nil and baseSettings[key] ~= nil then
-                specSettings[key] = CopyTableValue(baseSettings[key])
-            end
-        end
-    end
-    return specSettings
-end
-
 local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
     if type(specSettings) == "table" and specSettings[key] ~= nil then
         return specSettings[key]
@@ -233,79 +218,35 @@ function HealthResource.GetEffectTextureOptions()
     return options, order
 end
 
-function HealthResource.NormalizeEffectTexture(health, key)
-    if type(health[key]) ~= "string"
-        or health[key] == ""
-        or not LSM:IsValid("statusbar", health[key]) then
-        health[key] = DEFAULT_HEALTH_EFFECT_TEXTURE
-    end
-end
-
-function HealthResource.EnsureSettings(settings)
-    settings.resources = settings.resources or {}
-    if type(settings.resources[HealthResource.ID]) ~= "table" then
-        settings.resources[HealthResource.ID] = { enabled = false }
-    elseif settings.resources[HealthResource.ID].enabled == nil then
-        settings.resources[HealthResource.ID].enabled = false
-    end
-    local health = settings.resources[HealthResource.ID]
-    if health.showAbsorbs == nil then health.showAbsorbs = true end
-    if health.showHealAbsorbs == nil then health.showHealAbsorbs = true end
-    if health.showIncomingHeals == nil then health.showIncomingHeals = true end
-    if health.showLowHealthAlert == nil then health.showLowHealthAlert = false end
-    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = false end
-    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
-    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
-    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
-    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR end
-    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
-    return settings.resources[HealthResource.ID]
-end
-
-function HealthResource.EnsureDisplaySettings(settings, specID)
-    local base = HealthResource.EnsureSettings(settings)
-    local health = SeedSpecResourceDisplaySettings(settings, HealthResource.ID, specID, RESOURCE_HEALTH_DISPLAY_KEYS)
-    if not health then return base end
-    if health.showAbsorbs == nil then health.showAbsorbs = base.showAbsorbs ~= false end
-    if health.showHealAbsorbs == nil then health.showHealAbsorbs = base.showHealAbsorbs ~= false end
-    if health.showIncomingHeals == nil then health.showIncomingHeals = base.showIncomingHeals ~= false end
-    if health.showLowHealthAlert == nil then health.showLowHealthAlert = base.showLowHealthAlert == true end
-    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = base.healthLowHealthAlertMissingHealthOnly == true end
-    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = CopyTableValue(base.healthAbsorbColor or DEFAULT_HEALTH_ABSORB_COLOR) end
-    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = CopyTableValue(base.healthHealAbsorbColor or DEFAULT_HEALTH_HEAL_ABSORB_COLOR) end
-    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = CopyTableValue(base.healthIncomingHealColor or DEFAULT_HEALTH_INCOMING_HEAL_COLOR) end
-    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = CopyTableValue(base.healthLowHealthAlertColor or DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR) end
-    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
-    return health
-end
-
-local function EnsureResourceSettings(settings, powerType)
-    if type(settings.resources) ~= "table" then
-        settings.resources = {}
-    end
-
-    if powerType == HealthResource.ID then
-        return HealthResource.EnsureSettings(settings)
-    end
-
-    if type(settings.resources[powerType]) ~= "table" then
-        settings.resources[powerType] = {}
-    end
-    return settings.resources[powerType]
-end
+-- The four Health Effects in page order. One list drives the page rows and
+-- their Settings Finder routes.
+local HEALTH_EFFECTS = {
+    { key = "absorbs", name = "Absorbs", enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
+        colorKey = "healthAbsorbColor", textureKey = "healthAbsorbTexture",
+        colorLabel = "Absorb Color", textureLabel = "Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR, column = "left" },
+    { key = "healingAbsorbs", name = "Healing Absorbs", enabledKey = "showHealAbsorbs", advancedKey = "healthHealAbsorbs",
+        colorKey = "healthHealAbsorbColor", textureKey = "healthHealAbsorbTexture",
+        colorLabel = "Healing Absorb Color", textureLabel = "Healing Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR, column = "left" },
+    { key = "incomingHeals", name = "Incoming Heals", enabledKey = "showIncomingHeals", advancedKey = "healthIncomingHeals",
+        colorKey = "healthIncomingHealColor", textureKey = "healthIncomingHealTexture",
+        colorLabel = "Incoming Heal Color", textureLabel = "Incoming Heal Texture",
+        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR, column = "right" },
+    { key = "lowHealth", name = "Low Health Alert", enabledKey = "showLowHealthAlert", advancedKey = "healthLowHealthAlert",
+        colorKey = "healthLowHealthAlertColor", textureKey = "healthLowHealthAlertTexture",
+        colorLabel = "Low Health Alert Color", textureLabel = "Low Health Alert Texture",
+        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR, column = "right",
+        missingOnly = true,
+        info = "Blizzard sets the low-health threshold to 35%. This cannot be configured." },
+}
 
 local function IsResourceEnabled(settings, powerType)
-    local res = EnsureResourceSettings(settings, powerType)
+    local res = settings.resources and settings.resources[powerType]
     if powerType == HealthResource.ID then
-        return res.enabled == true
+        return type(res) == "table" and res.enabled == true
     end
-    return res.enabled ~= false
+    return not (type(res) == "table" and res.enabled == false)
 end
 
 -- Row grammar has no percent readout (the value box is the readout, and the
@@ -328,13 +269,18 @@ end
 
 function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars, setting)
     local textureOptions, textureOrder = HealthResource.GetEffectTextureOptions()
+    -- A name the media library does not know this session (a disabled media
+    -- pack) shows as the default and stays saved.
+    local saved = health[key]
+    local shown = type(saved) == "string" and saved ~= "" and LSM:IsValid("statusbar", saved)
+        and saved or DEFAULT_HEALTH_EFFECT_TEXTURE
     return AddDropdownRow(container, {
         label = label,
         setting = setting,
         pulloutWidth = MEDIA_PULLOUT_WIDTH,
         list = textureOptions,
         order = textureOrder,
-        value = health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE,
+        value = shown,
         onChange = function(val)
             health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
             applyBars()
@@ -409,13 +355,8 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local textContract = RB.GetResourceTextContract(settings, capturedPt, displaySpecID)
     local isSegmentedResource = textContract.stackText
     local offersPercent = textContract.offersPercent
-    if isHealthResource then
-        HealthResource.EnsureSettings(settings)
-    else
-        EnsureResourceSettings(settings, capturedPt)
-    end
-    local baseSettings = settings.resources[capturedPt]
-    SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, RB.RESOURCE_TEXT_DISPLAY_KEYS)
+    -- Reads fall from the spec to the shared values; writes go to the spec.
+    local baseSettings = settings.resources and settings.resources[capturedPt]
     local resSettings = displaySpecID and ST._ResourceSpecFields(container, settings, capturedPt, displaySpecID) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
     local finderText = isHealthResource
@@ -666,9 +607,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         container:AddChild(label)
         return
     end
-    local health = HealthResource.EnsureDisplaySettings(settings, specID)
     ST._BuildModuleBarStyle(container, "resources", HealthResource.ID, specID, "appearance")
-    health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID)
+    local health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID)
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
         fillGradientEnabled = DEFAULT_HEALTH_BAR_GRADIENT
@@ -772,118 +712,53 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     -- LEFT column: the two shield-shaped effects drawn over the fill. RIGHT
     -- column: the incoming-heal preview and the alert that recolors the bar.
     local effectsLeft, effectsRight = BeginRowGrid(container)
-
-    local absorbsCb = AddCheckboxRow(effectsLeft, {
-        label = "Show Absorbs",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.absorbs,
-        value = health.showAbsorbs == true,
-        onChange = function(val)
-            health.showAbsorbs = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
-        enabledKey = "showAbsorbs",
-        enableLabel = "Enable Absorbs",
-        advancedKey = "healthAbsorbs",
-        colorKey = "healthAbsorbColor",
-        textureKey = "healthAbsorbTexture",
-        colorLabel = "Absorb Color",
-        textureLabel = "Absorb Texture",
-        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.absorbs,
-    }, applyBars)
-
-    local healAbsorbsCb = AddCheckboxRow(effectsLeft, {
-        label = "Show Healing Absorbs",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.healingAbsorbs,
-        value = health.showHealAbsorbs == true,
-        onChange = function(val)
-            health.showHealAbsorbs = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
-        enabledKey = "showHealAbsorbs",
-        enableLabel = "Enable Healing Absorbs",
-        advancedKey = "healthHealAbsorbs",
-        colorKey = "healthHealAbsorbColor",
-        textureKey = "healthHealAbsorbTexture",
-        colorLabel = "Healing Absorb Color",
-        textureLabel = "Healing Absorb Texture",
-        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.healingAbsorbs,
-    }, applyBars)
-
-    local incomingHealsCb = AddCheckboxRow(effectsRight, {
-        label = "Show Incoming Heals",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.incomingHeals,
-        value = health.showIncomingHeals == true,
-        onChange = function(val)
-            health.showIncomingHeals = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
-        enabledKey = "showIncomingHeals",
-        enableLabel = "Enable Incoming Heals",
-        advancedKey = "healthIncomingHeals",
-        colorKey = "healthIncomingHealColor",
-        textureKey = "healthIncomingHealTexture",
-        colorLabel = "Incoming Heal Color",
-        textureLabel = "Incoming Heal Texture",
-        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.incomingHeals,
-    }, applyBars)
-
-    local lowHealthAlertCb = AddCheckboxRow(effectsRight, {
-        label = "Show Low Health Alert",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.lowHealth,
-        value = health.showLowHealthAlert == true,
-        onChange = function(val)
-            health.showLowHealthAlert = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
-        enabledKey = "showLowHealthAlert",
-        enableLabel = "Enable Low Health Alert",
-        advancedKey = "healthLowHealthAlert",
-        colorKey = "healthLowHealthAlertColor",
-        textureKey = "healthLowHealthAlertTexture",
-        colorLabel = "Low Health Alert Color",
-        textureLabel = "Low Health Alert Texture",
-        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth,
-        buildExtra = function(panel)
-            AddCheckboxRow(panel, {
-                label = "Pulse Missing Health Only",
-                setting = RESOURCE_FINDER.primary
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth.missingOnly,
-                value = health.healthLowHealthAlertMissingHealthOnly == true,
-                onChange = function(val)
-                    health.healthLowHealthAlertMissingHealthOnly = val == true
-                    applyBars()
-                end,
-            })
-        end,
-    }, applyBars)
-    -- Second badge after the gear: the anchor args below are a placeholder -
-    -- AnchorRowBadge re-points the button behind the chained gear.
-    AnchorRowBadge(lowHealthAlertCb, CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertCb.frame, "LEFT", "LEFT", 0, 0, {
-        "Low Health Alert",
-        {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
-    }, lowHealthAlertCb))
+    local finderShow = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+    local finderAdvanced = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+    for _, effect in ipairs(HEALTH_EFFECTS) do
+        local column = effect.column == "left" and effectsLeft or effectsRight
+        local enabledKey = effect.enabledKey
+        local advancedFinder = finderAdvanced and finderAdvanced[effect.key]
+        local checkbox = AddCheckboxRow(column, {
+            label = "Show " .. effect.name,
+            setting = finderShow and finderShow[effect.key],
+            value = health[enabledKey] == true,
+            onChange = function(val)
+                health[enabledKey] = val == true
+                applyBars("style-settings")
+            end,
+        })
+        HealthResource.AddEffectStyleControls(column, checkbox, health, {
+            enabledKey = enabledKey,
+            enableLabel = "Enable " .. effect.name,
+            advancedKey = effect.advancedKey,
+            colorKey = effect.colorKey,
+            textureKey = effect.textureKey,
+            colorLabel = effect.colorLabel,
+            textureLabel = effect.textureLabel,
+            defaultColor = effect.defaultColor,
+            settings = advancedFinder,
+            buildExtra = effect.missingOnly and function(panel)
+                AddCheckboxRow(panel, {
+                    label = "Pulse Missing Health Only",
+                    setting = advancedFinder and advancedFinder.missingOnly,
+                    value = health.healthLowHealthAlertMissingHealthOnly == true,
+                    onChange = function(val)
+                        health.healthLowHealthAlertMissingHealthOnly = val == true
+                        applyBars()
+                    end,
+                })
+            end or nil,
+        }, applyBars)
+        if effect.info then
+            -- Second badge after the gear: the anchor args below are a
+            -- placeholder - AnchorRowBadge re-points the button behind the
+            -- chained gear.
+            AnchorRowBadge(checkbox, CreateInfoButton(checkbox.frame, checkbox.frame, "LEFT", "LEFT", 0, 0, {
+                effect.name,
+                {effect.info, 1, 1, 1, true},
+            }, checkbox))
+        end
+    end
 end
 
 local function AddResourceSpecCopyButton(enableCb)
@@ -3417,35 +3292,16 @@ if ST._DefineSettingRoute then
             collapseStore = "resource",
             applies = healthApplies,
         })
-        RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings({
-            absorbs = { label = "Show Absorbs" },
-            healingAbsorbs = { label = "Show Healing Absorbs" },
-            incomingHeals = { label = "Show Incoming Heals" },
-            lowHealth = { label = "Show Low Health Alert" },
-        })
+        local showSettings = {}
+        for _, effect in ipairs(HEALTH_EFFECTS) do
+            showSettings[effect.key] = { label = "Show " .. effect.name }
+        end
+        RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings(showSettings)
         RESOURCE_FINDER.primary.healthEffectAdvanced = {}
-        local effectSpecs = {
-            absorbs = {
-                enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
-                color = "Absorb Color", texture = "Absorb Texture",
-            },
-            healingAbsorbs = {
-                enabledKey = "showHealAbsorbs", advancedKey = "healthHealAbsorbs",
-                color = "Healing Absorb Color", texture = "Healing Absorb Texture",
-            },
-            incomingHeals = {
-                enabledKey = "showIncomingHeals", advancedKey = "healthIncomingHeals",
-                color = "Incoming Heal Color", texture = "Incoming Heal Texture",
-            },
-            lowHealth = {
-                enabledKey = "showLowHealthAlert", advancedKey = "healthLowHealthAlert",
-                color = "Low Health Alert Color", texture = "Low Health Alert Texture",
-            },
-        }
-        for key, spec in pairs(effectSpecs) do
-            local captured = spec
-            RESOURCE_FINDER.primary.healthEffectAdvanced[key] = ST._DefineSettingRoute({
-                idPrefix = "resources.health.effects." .. key,
+        for _, effect in ipairs(HEALTH_EFFECTS) do
+            local captured = effect
+            RESOURCE_FINDER.primary.healthEffectAdvanced[captured.key] = ST._DefineSettingRoute({
+                idPrefix = "resources.health.effects." .. captured.key,
                 scope = "resources",
                 rowScope = "primary",
                 tab = "health",
@@ -3461,9 +3317,9 @@ if ST._DefineSettingRoute then
                 -- opens read-only behind its Turn On footer).
                 applies = healthApplies,
             }):Settings({
-                color = { label = captured.color },
-                texture = { label = captured.texture },
-                missingOnly = key == "lowHealth"
+                color = { label = captured.colorLabel },
+                texture = { label = captured.textureLabel },
+                missingOnly = captured.missingOnly
                     and { label = "Pulse Missing Health Only" } or nil,
             })
         end
