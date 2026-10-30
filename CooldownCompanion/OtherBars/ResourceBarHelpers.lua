@@ -1277,12 +1277,17 @@ local function ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
     return resource and resource[entriesKey], resource and resource[clearedKey] == true
 end
 
+-- Resources counted in stacks: Maelstrom Weapon, the segmented power types
+-- and every aura-stack family member. They take threshold colours instead of
+-- tick markers, and their text counts stacks unless the bar is drawn
+-- Continuous (GetResourceTextContract).
+local function IsStackCountedResource(powerType)
+    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
+        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
+end
+
 local function GetSegmentedThresholdEntriesConfig(powerType, settings)
-    -- Stack-counted resources get threshold colours alongside the real
-    -- segmented power types: Maelstrom Weapon and every aura-stack family
-    -- member.
-    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
-        and RB.AURA_STACK_RESOURCES[powerType] == nil then
+    if not IsStackCountedResource(powerType) then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
     if not settings or not settings.resources then
@@ -1344,8 +1349,7 @@ local function GetSegmentedThresholdColorForValue(powerType, settings, currentVa
 end
 
 local function GetContinuousTickEntriesConfig(powerType, settings)
-    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON
-        or RB.AURA_STACK_RESOURCES[powerType] then
+    if IsStackCountedResource(powerType) then
         return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
     if not settings or not settings.resources then
@@ -1422,11 +1426,6 @@ function RB.CompileResourceBarConfig(holder, powerType, settings)
     holder._ccTickPowerType = powerType
 end
 
-local function SupportsResourceAuraStackMode(powerType)
-    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
-end
-
 -- Whether this resource renders as ONE continuous StatusBar under the
 -- current settings. Mirrors the ApplyResourceBars shape dispatch, so the
 -- config panel and the preview stand-in can answer "can the aura fill
@@ -1449,6 +1448,34 @@ local function IsContinuousResourceShape(settings, powerType, specID)
         return GetAuraStackDisplayStyle(settings, powerType, specID) == "continuous"
     end
     return SEGMENTED_TYPES[powerType] ~= true
+end
+
+-- The value text rules, which follow the bar's shape. Maelstrom Weapon drawn
+-- Continuous takes the continuous rules: text on unless turned off, Percent,
+-- no Hide at 0. An aura-stack bar keeps the stack rules in either shape but
+-- offers Percent when Continuous, since Percent needs a fill to measure. Runes
+-- and Essence count stacks but are not offered Hide at 0.
+local function IsMWContinuous(settings, powerType, specID)
+    return powerType == RESOURCE_MAELSTROM_WEAPON
+        and GetMWDisplayStyle(settings, specID) == "continuous"
+end
+
+local function GetResourceTextContract(settings, powerType, specID)
+    settings = settings or RB.GetResourceBarSettings()
+    local mwContinuous = IsMWContinuous(settings, powerType, specID)
+    local stackText = IsStackCountedResource(powerType) and not mwContinuous
+    return {
+        stackText = stackText,
+        offersPercent = not stackText
+            or (RB.AURA_STACK_RESOURCES[powerType] ~= nil
+                and GetAuraStackDisplayStyle(settings, powerType, specID) == "continuous"),
+        offersHideAtZero = RB.HIDE_AT_ZERO_ELIGIBLE[powerType] == true and not mwContinuous,
+    }
+end
+
+-- Runes alone show recharge duration text.
+local function HasRechargeText(powerType)
+    return powerType == 5
 end
 
 ------------------------------------------------------------------------
@@ -1480,11 +1507,6 @@ end
 ------------------------------------------------------------------------
 -- Segmented Text Helpers
 ------------------------------------------------------------------------
-
-local function IsSegmentedTextResource(powerType)
-    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
-end
 
 local function FormatSegmentedTextNumber(value)
     local n = tonumber(value) or 0
@@ -1590,9 +1612,10 @@ RB.GetNormalizedContinuousTickEntriesFromConfig = GetNormalizedContinuousTickEnt
 RB.ResolveSpecEntryList = ResolveSpecEntryList
 RB.GetSegmentedThresholdColorForValue = GetSegmentedThresholdColorForValue
 RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
-RB.SupportsResourceAuraStackMode = SupportsResourceAuraStackMode
+RB.IsStackCountedResource = IsStackCountedResource
 RB.IsContinuousResourceShape = IsContinuousResourceShape
+RB.GetResourceTextContract = GetResourceTextContract
+RB.HasRechargeText = HasRechargeText
 RB.IsResourceEnabled = IsResourceEnabled
-RB.IsSegmentedTextResource = IsSegmentedTextResource
 RB.ClearSegmentedText = ClearSegmentedText
 RB.SetSegmentedText = SetSegmentedText

@@ -1131,8 +1131,8 @@ local function NormalizeSegmentGaps(profile, context, report)
                 for key in pairs(layout.resources or {}) do keys[tonumber(key) or key] = true end
                 layout.resources = layout.resources or {}
                 for key in pairs(keys) do
-                    if not (ST._RB and ST._RB.SupportsResourceAuraStackMode)
-                        or ST._RB.SupportsResourceAuraStackMode(key) then
+                    if not (ST._RB and ST._RB.IsStackCountedResource)
+                        or ST._RB.IsStackCountedResource(key) then
                         local slot = SpecTable(layout.resources, key) or {}
                         if not (slot.overrideSections and slot.overrideSections.barCharges) then
                             slot.overrideSections = slot.overrideSections or {}

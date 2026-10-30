@@ -18,7 +18,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
     local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
     local GetResourceAuraTrackingMode = RB.GetResourceAuraTrackingMode
-    local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+    local IsStackCountedResource = RB.IsStackCountedResource
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
@@ -260,7 +260,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
             shapes.border = true
         end
         if GetResourceAuraTrackingMode(entry) == "stacks"
-            and SupportsResourceAuraStackMode(powerType) then
+            and IsStackCountedResource(powerType) then
             shapes.stackLane = true
         end
         -- Only the collector passes barType (the live bar's shape); the

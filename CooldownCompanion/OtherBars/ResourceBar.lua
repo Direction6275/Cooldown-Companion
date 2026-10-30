@@ -81,7 +81,7 @@ local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local IsResourceEnabled = RB.IsResourceEnabled
-local IsSegmentedTextResource = RB.IsSegmentedTextResource
+local IsStackCountedResource = RB.IsStackCountedResource
 local ClearSegmentedText = RB.ClearSegmentedText
 local SetSegmentedText = RB.SetSegmentedText
 
@@ -809,7 +809,7 @@ local function StyleRechargeTexts(holder, powerType, settings, appearance)
     if not (holder and holder.rechargeTexts) then return end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local enabled = resourceConfig and resourceConfig.showRechargeText == true
-    if not enabled or powerType ~= 5 then
+    if not enabled or not RB.HasRechargeText(powerType) then
         holder._showRechargeText = false
         HideRechargeTexts(holder)
         return
@@ -1997,7 +1997,7 @@ end
 
 local function StyleSegmentedText(holder, powerType, settings, appearance)
     if not holder or not holder.text then return end
-    if not IsSegmentedTextResource(powerType) then
+    if not IsStackCountedResource(powerType) then
         holder.text:SetShown(false)
         holder._textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
         ClearSegmentedText(holder)

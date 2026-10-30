@@ -75,21 +75,13 @@ local MEDIA_PULLOUT_WIDTH = 300
 local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-local HIDE_AT_ZERO_ELIGIBLE = RB.HIDE_AT_ZERO_ELIGIBLE
 
--- Maelstrom Weapon drawn as one continuous bar takes the continuous text
--- contract the runtime gives it (ResourceBar's continuous styling): text on
--- unless turned off, Percent offered, and no Hide at 0.
-local function IsMWContinuous(powerType, settings, specID)
-    return powerType == 100
-        and RB.GetMWDisplayStyle(settings or RB.GetResourceBarSettings(), specID) == "continuous"
-end
 local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
 local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
 local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
-local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+local IsStackCountedResource = RB.IsStackCountedResource
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED = RB.DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED
@@ -410,14 +402,9 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
     local capturedPt = powerType
     local isHealthResource = capturedPt == HealthResource.ID
-    local mwContinuous = IsMWContinuous(capturedPt, settings, displaySpecID)
-    local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100 and not mwContinuous)
-        or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
-    -- Percent needs a fill to measure: every continuous resource, and an
-    -- aura-stack bar drawn Continuous, as Maelstrom Weapon already is.
-    local offersPercent = not isSegmentedResource
-        or (RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
-            and RB.GetAuraStackDisplayStyle(settings, capturedPt, displaySpecID) == "continuous")
+    local textContract = RB.GetResourceTextContract(settings, capturedPt, displaySpecID)
+    local isSegmentedResource = textContract.stackText
+    local offersPercent = textContract.offersPercent
     if isHealthResource then
         HealthResource.EnsureSettings(settings)
     else
@@ -445,7 +432,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     -- and an empty column takes no height.
     local textLeft, textRight = BeginRowGrid(container)
     ST._AddSettingsSubheading(textLeft, name .. " Value Text")
-    if capturedPt == 5 then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
+    if RB.HasRechargeText(capturedPt) then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
 
     local cb = AddCheckboxRow(textLeft, {
         label = "Show " .. name .. " Text",
@@ -540,7 +527,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
 
-        if HIDE_AT_ZERO_ELIGIBLE[capturedPt] and not mwContinuous then
+        if textContract.offersHideAtZero then
             AddCheckboxRow(panel, {
                 label = "Hide at 0",
                 setting = finderText and finderText.advanced and finderText.advanced.hideAtZero,
@@ -580,7 +567,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     })
 
     ST._BuildModuleBarStyleRows(textLeft, "resources", capturedPt, displaySpecID, "barValueTypography")
-    if capturedPt ~= 5 then
+    if not RB.HasRechargeText(capturedPt) then
         return
     end
 
@@ -2093,7 +2080,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             -- 2026-08-02: separate systems, any combination). It only exists where
             -- the runtime can draw the lane; the stored key stays
             -- auraColorTrackingMode ("stacks"/"active") so no config migrates.
-            if SupportsResourceAuraStackMode(powerType) then
+            if IsStackCountedResource(powerType) then
                 local laneOn = RB.GetResourceOverlayTrackingMode(entry, powerType) == "stacks"
 
                 local laneRow = AddCheckboxRow(panel, {
@@ -2461,9 +2448,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         -- Weapon among them — get threshold colours, every other real power
         -- type gets tick markers, and the two invented ids (Stagger, Health)
         -- get neither. The section shows if either half applies.
-        local isSegmented = SEGMENTED_TYPES[resourceSettingsPowerType] == true
-            or resourceSettingsPowerType == 100
-            or RB.AURA_STACK_RESOURCES[resourceSettingsPowerType] ~= nil
+        local isSegmented = IsStackCountedResource(resourceSettingsPowerType)
         showThresholdsTicks = isSegmented
             or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
@@ -2671,8 +2656,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             local resourceEntry = settings.resources[capturedPt]
             if not (resourceEntry and resourceEntry.enabled == false) then
                 local resourceName = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
-                local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
-                    or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
+                local isSegmented = IsStackCountedResource(capturedPt)
 
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(displaySpecID)
@@ -2920,7 +2904,7 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
-    local segmented = ST._RB.SupportsResourceAuraStackMode(numericPowerType)
+    local segmented = ST._RB.IsStackCountedResource(numericPowerType)
         and not ST._RB.IsContinuousResourceShape(CooldownCompanion:GetResourceBarSettings(), numericPowerType, numericSpecID)
     ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
     ST._BuildModuleBarStyle(container, "resources", numericPowerType, numericSpecID, "appearance",
@@ -3643,10 +3627,7 @@ if ST._DefineSettingRoute then
                 })
             end
 
-            if capturedPowerType == 100
-                or RB.AURA_STACK_RESOURCES[capturedPowerType]
-                or SEGMENTED_TYPES[capturedPowerType] == true
-            then
+            if IsStackCountedResource(capturedPowerType) then
                 local stackSection = capturedPowerType == 100 and "rb_mw_stack_display"
                     or RB.AURA_STACK_RESOURCES[capturedPowerType] and "rb_stack_display"
                     or "rb_max_stack_border"
@@ -3794,12 +3775,11 @@ if ST._DefineSettingRoute then
                     -- The spec the resource page builds for, not the player's.
                     applies = function(context)
                         local specID = context and tonumber(context.resourceSpecID) or GetCurrentConfigSpecID()
-                        return HIDE_AT_ZERO_ELIGIBLE[capturedPowerType] == true
-                            and not IsMWContinuous(capturedPowerType, nil, specID)
+                        return RB.GetResourceTextContract(nil, capturedPowerType, specID).offersHideAtZero
                     end,
                 },
             })
-            if capturedPowerType == 5 then
+            if RB.HasRechargeText(capturedPowerType) then
                 detail.text.recharge = textBase:Setting({
                     key = "show_recharge",
                     label = "Show " .. name .. " Recharge Text",
@@ -3829,9 +3809,7 @@ if ST._DefineSettingRoute then
             end
 
             -- RESOURCE FINDER DETAIL THRESHOLD ROUTES
-            local segmented = SEGMENTED_TYPES[capturedPowerType] == true
-                or capturedPowerType == 100
-                or RB.AURA_STACK_RESOURCES[capturedPowerType] ~= nil
+            local segmented = IsStackCountedResource(capturedPowerType)
             if segmented or capturedPowerType ~= 101 then
                 local thresholdRoute = ST._DefineSettingRoute({
                     idPrefix = "resource." .. tostring(capturedPowerType) .. ".thresholds",
@@ -4037,7 +4015,7 @@ if ST._DefineSettingRoute then
                 key = "stack_lane",
                 label = "Stack Lane",
                 applies = function()
-                    return SupportsResourceAuraStackMode(capturedPowerType)
+                    return IsStackCountedResource(capturedPowerType)
                 end,
             })
             detail.aura.laneColor = auraControls:Setting({
@@ -4045,7 +4023,7 @@ if ST._DefineSettingRoute then
                 label = "Lane Color",
                 applies = function(context)
                     local entry = RESOURCE_FINDER.AuraEntry(context)
-                    return SupportsResourceAuraStackMode(capturedPowerType)
+                    return IsStackCountedResource(capturedPowerType)
                         and entry
                         and RB.GetResourceOverlayTrackingMode(
                             entry, capturedPowerType) == "stacks"
@@ -4156,7 +4134,7 @@ ST._ResourceSegmentGapSetting = ST._DefineSettingRoute({
     applies = function(context)
         local settings = RESOURCE_FINDER.Settings(context)
         local powerType = context.resourcePowerType
-        return ST._RB.SupportsResourceAuraStackMode(powerType)
+        return ST._RB.IsStackCountedResource(powerType)
             and not ST._RB.IsContinuousResourceShape(settings, powerType, context.resourceSpecID)
     end,
 }):Setting({ key = "segmentGap", label = "Segment Gap", aliases = { "segment spacing", "stack spacing" } })
