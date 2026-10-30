@@ -982,11 +982,7 @@ function CooldownCompanion:RefreshAllGroupsVisibilityOnly(opts)
                     -- flash at 1.0 or keep a ghost's 0.4 after the session.
                     if self:RefreshPanelUnlockMarks(frame, groupId, group, true) then
                         self:RefreshGroupFrame(groupId)
-                    elseif not (wasShown and frame.anchoredToParent and frame.alphaSyncFrame
-                        and frame.alphaSyncFrame:GetScript("OnUpdate")
-                        and not self:GetPanelUnlockState(groupId, group)) then
-                        -- A panel already shown under its anchor sync keeps it
-                        -- (this pass runs on every form shift).
+                    else
                         self:ApplyGroupOwnAlpha(frame)
                     end
 

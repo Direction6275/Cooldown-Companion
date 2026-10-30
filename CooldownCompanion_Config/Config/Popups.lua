@@ -1705,6 +1705,28 @@ local function GetSetupSectionClassKey(section)
 end
 ST._GetSetupSectionClassKey = GetSetupSectionClassKey
 
+-- An Independent placement on one of the exporter's panels or Groups follows
+-- the one imported from the same string. The exporter's numbers mean nothing
+-- here otherwise, so it goes back to screen center. Named frames (resource
+-- bars, totems, the cursor, other addons) keep.
+local function RemapImportedIndependentAnchor(anchor, panelIds, containerIdMap)
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    if type(relativeTo) ~= "string" then return end
+    local panelId = tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
+    local containerId = tonumber(relativeTo:match("^CooldownCompanionContainer(%d+)$"))
+    if not (panelId or containerId) then return end
+    local mappedPanel = panelId and panelIds[panelId]
+    local mappedContainer = containerId and containerIdMap and containerIdMap[containerId]
+    if mappedPanel then
+        anchor.relativeTo = "CooldownCompanionGroup" .. mappedPanel
+    elseif mappedContainer then
+        anchor.relativeTo = "CooldownCompanionContainer" .. mappedContainer
+    else
+        anchor.point, anchor.relativePoint = "CENTER", "CENTER"
+        anchor.relativeTo, anchor.x, anchor.y = nil, 0, 0
+    end
+end
+
 -- Applies a `setup` payload: groups additively, then the Resources section as
 -- a whole-bucket replace for its class, then any Panel Templates beside the
 -- player's own. Legacy Custom Bars sections were
@@ -1790,6 +1812,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     for sourceId, targetId in pairs(importState and importState.groupIdMap or {}) do
         attachmentPanelIds[sourceId] = targetId
     end
+    local importedContainerIds = importState and importState.containerIdMap
 
     if resourcesSection then
         local settings = CopyTable(resourcesSection.settings)
@@ -1799,6 +1822,12 @@ local function ApplySetupImportData(data, existingPanelIds)
             -- The exporter's group ids mean nothing here; keep the anchor only
             -- when it remaps onto a group imported from this same string.
             settings.anchorGroupId = attachmentPanelIds[anchorId]
+        end
+        RemapImportedIndependentAnchor(settings.independentAnchor, attachmentPanelIds, importedContainerIds)
+        for _, layout in pairs(type(settings.layoutOrder) == "table" and settings.layoutOrder or {}) do
+            if type(layout) == "table" then
+                RemapImportedIndependentAnchor(layout.independentAnchor, attachmentPanelIds, importedContainerIds)
+            end
         end
         local replaced = CooldownCompanion.ReplaceResourceBarClassSettings
             and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
@@ -1818,26 +1847,7 @@ local function ApplySetupImportData(data, existingPanelIds)
         if anchorId then
             settings.anchorGroupId = attachmentPanelIds[anchorId]
         end
-        -- An Independent bar placed on a panel or Group follows the one
-        -- imported from this string. The exporter's panel and Group numbers
-        -- mean nothing here otherwise, so the bar goes back to the screen.
-        -- Named frames (resource bars, totems, the cursor, other addons) keep.
-        local independent = settings.independentAnchor
-        local relativeTo = type(independent) == "table" and independent.relativeTo or nil
-        local panelId = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
-        local containerId = type(relativeTo) == "string" and tonumber(relativeTo:match("^CooldownCompanionContainer(%d+)$"))
-        if panelId or containerId then
-            local mappedPanel = panelId and attachmentPanelIds[panelId]
-            local mappedContainer = containerId and importState and importState.containerIdMap[containerId]
-            if mappedPanel then
-                independent.relativeTo = "CooldownCompanionGroup" .. mappedPanel
-            elseif mappedContainer then
-                independent.relativeTo = "CooldownCompanionContainer" .. mappedContainer
-            else
-                independent.point, independent.relativePoint = "CENTER", "CENTER"
-                independent.relativeTo, independent.x, independent.y = nil, 0, 0
-            end
-        end
+        RemapImportedIndependentAnchor(settings.independentAnchor, attachmentPanelIds, importedContainerIds)
         if CooldownCompanion:ReplaceCastBarClassSettings(castBarClassKey, settings) then
             applied = true
             CooldownCompanion:Print("Imported Cast Bar setup for " .. tostring(castBarClassKey) .. ".")

@@ -1881,8 +1881,11 @@ end
 -- Runs with every migration pass (no stamp: it only ever adds a record a
 -- class lacks). A class whose characters have exactly one turned-on setup
 -- takes it now. A class with several different ones waits for its first
--- login (PrepareScopedBarSettings, owner ruling Q40a). Characters of unknown
--- class keep only their own record.
+-- login (PrepareScopedBarSettings, owner ruling Q40a), and so does every class
+-- while a turned-on setup belongs to a character of unknown class, which
+-- could be that class's too. A list can name a record that is gone (a string
+-- from another account, whose import moved the exporter's own record), which
+-- the pick skips.
 function CooldownCompanion:RunScopedBarClassScopeMigration()
     local profile = self.db and self.db.profile
     if type(profile) ~= "table" then
@@ -1895,13 +1898,18 @@ function CooldownCompanion:RunScopedBarClassScopeMigration()
         local charStore = rawget(profile, systemSpec.storeKey)
         local classStore = GetScopedBarClassStore(profile, systemSpec, true)
         local buckets = {}
+        local unknownTurnedOn = false
         for charKey, settings in pairs(type(charStore) == "table" and charStore or {}) do
             if type(settings) == "table" then
                 hadCharacterRecords = true
-                local classKey = settings.enabled == true and ResolveResourceBarCandidateClassKey(self, charKey)
-                if classKey and classStore[classKey] == nil then
-                    buckets[classKey] = buckets[classKey] or {}
-                    buckets[classKey][#buckets[classKey] + 1] = charKey
+                if settings.enabled == true then
+                    local classKey = ResolveResourceBarCandidateClassKey(self, charKey)
+                    if not classKey then
+                        unknownTurnedOn = true
+                    elseif classStore[classKey] == nil then
+                        buckets[classKey] = buckets[classKey] or {}
+                        buckets[classKey][#buckets[classKey] + 1] = charKey
+                    end
                 end
             end
         end
@@ -1915,7 +1923,7 @@ function CooldownCompanion:RunScopedBarClassScopeMigration()
                     break
                 end
             end
-            if differ then
+            if differ or unknownTurnedOn then
                 local pending = rawget(profile, SCOPED_BAR_PENDING_KEY)
                 if type(pending) ~= "table" then
                     pending = {}
@@ -1938,7 +1946,7 @@ end
 -- Login, profile change and import (RunAllMigrations): the current class's
 -- record before any runtime or editor read, and its only creator besides the
 -- copy button. A class waiting on a choice keeps the logging-in character's
--- turned-on setup, else the first turned-on one by name.
+-- turned-on setup, else the first turned-on one by name that is still saved.
 function CooldownCompanion:PrepareScopedBarSettings()
     local profile = self.db and self.db.profile
     local charKey = self.db and self.db.keys and self.db.keys.char
@@ -1955,13 +1963,26 @@ function CooldownCompanion:PrepareScopedBarSettings()
             and pending[systemKey][classKey] or nil
         if type(classStore[classKey]) ~= "table" then
             local charStore = rawget(profile, systemSpec.storeKey)
-            local own = type(charStore) == "table" and charStore[charKey] or nil
-            if type(waiting) == "table" and type(charStore) == "table" then
-                local keptKey = type(own) == "table" and own.enabled == true and charKey or waiting[1]
+            charStore = type(charStore) == "table" and charStore or nil
+            local own = charStore and charStore[charKey] or nil
+            own = type(own) == "table" and own or nil
+            local keptKey
+            if type(waiting) == "table" and charStore then
+                keptKey = own and own.enabled == true and charKey or nil
+                if not keptKey then
+                    for _, waitingKey in ipairs(waiting) do
+                        if type(charStore[waitingKey]) == "table" then
+                            keptKey = waitingKey
+                            break
+                        end
+                    end
+                end
+            end
+            if keptKey then
                 PromoteScopedBarSettings(systemKey, classStore, classKey, charStore[keptKey], classKey)
                 self:Print(("%s: your %s characters now share %s's setup."):format(
                     systemSpec.label, GetScopedBarClassName(classKey), GetScopedBarCharacterName(keptKey)))
-            elseif type(own) == "table" then
+            elseif own then
                 PromoteScopedBarSettings(systemKey, classStore, classKey, own, classKey)
             else
                 local seed = CaptureLegacyScopedBarSystemSeed(profile, systemSpec)

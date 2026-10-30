@@ -162,6 +162,13 @@ local function ShouldSyncAnchorAlpha(self, groupId, parentFrame)
     return true, false, false
 end
 
+-- A panel that copies its parent's opacity: its anchor sync tick is running
+-- (SetupAlphaSync, GroupFrameAnchoring.lua).
+local function IsAlphaSyncActive(frame)
+    local sync = frame.alphaSyncFrame
+    return frame.anchoredToParent ~= nil and sync ~= nil and sync:GetScript("OnUpdate") ~= nil
+end
+
 -- The one paint for a shown panel's opacity: its unlocked look, else the
 -- anchor sync's reading for a panel that copies its parent, else its fade,
 -- else its resting alpha.
@@ -176,10 +183,8 @@ local function ApplyGroupOwnAlpha(frame)
         frame:SetAlpha(GetUnlockedPanelAlpha(frame))
         return
     end
-    -- A fresh sync hands the opacity back: its tick writes only on change.
-    local sync = frame.alphaSyncFrame
-    if frame.anchoredToParent and sync and sync:GetScript("OnUpdate") then
-        CooldownCompanion:SetupAlphaSync(frame, frame.anchoredToParent)
+    -- The sync's reading, painted now: its tick writes only on change.
+    if IsAlphaSyncActive(frame) and CooldownCompanion:PaintAlphaSync(frame) then
         return
     end
     local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
@@ -890,6 +895,7 @@ GF.CURSOR_ANCHOR_X = CURSOR_ANCHOR_X
 GF.CURSOR_ANCHOR_Y = CURSOR_ANCHOR_Y
 GF.GetCompactAnchorFixedPoint = GetCompactAnchorFixedPoint
 GF.GetContainerPreviewSelectionState = GetContainerPreviewSelectionState
+GF.IsAlphaSyncActive = IsAlphaSyncActive
 GF.SetPanelPreviewMarks = SetPanelPreviewMarks
 GF.SetPanelGhostMark = SetPanelGhostMark
 GF.RefreshPanelUnlockMarks = RefreshPanelUnlockMarks
