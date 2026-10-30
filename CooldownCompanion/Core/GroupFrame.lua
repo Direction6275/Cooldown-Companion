@@ -18,9 +18,6 @@ local SetFrameClickThrough = ST.SetFrameClickThrough
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
 
--- Utils.lua
-local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
-
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
@@ -31,7 +28,9 @@ local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
 local UpdateCoordLabel = GF.UpdateCoordLabel
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local StopCoordinateDragUpdates = GF.StopCoordinateDragUpdates
-local ApplyCurrentAlphaIfPresent = GF.ApplyCurrentAlphaIfPresent
+local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
+local SetPanelPreviewMarks = GF.SetPanelPreviewMarks
+local SetPanelGhostMark = GF.SetPanelGhostMark
 local IsCursorAnchorLayoutPreviewSelected = GF.IsCursorAnchorLayoutPreviewSelected
 local IsCursorAnchorLayoutPreviewGroupActive = GF.IsCursorAnchorLayoutPreviewGroupActive
 
@@ -329,8 +328,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     frame.groupId = groupId
     frame.buttons = {}
-    frame._containerUnlockPreviewActive = GetContainerPreviewSelectionState(groupId) or nil
-    frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
+    SetPanelPreviewMarks(frame, groupId, group)
 
     -- Set initial size (will be updated when buttons are added)
     frame:SetSize(100, 50)
@@ -410,8 +408,9 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- Show/hide from runtime activity only. Config selection is mirror-only.
     if ShouldShowGroupFrameForRuntime(self, groupId, group) then
         frame:Show()
-        -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
+        SetPanelGhostMark(frame, groupId, group, true)
+        -- Paint now so the frame doesn't flash at 1.0 before the fade pass.
+        ApplyGroupOwnAlpha(frame)
     else
         frame:Hide()
     end
@@ -503,13 +502,16 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
             end
         end
 
-        frame._containerUnlockPreviewActive = GetContainerPreviewSelectionState(groupId) or nil
-        frame._panelUnlockPreviewActive = self:IsPanelUnlockPreviewActive(group) or nil
+        SetPanelPreviewMarks(frame, groupId, group)
         self:PopulateGroupButtons(groupId)
     end
 
+    -- The ghost mark before the lock answer, which reads it for cursor ghosts.
+    local isActive = ShouldShowGroupFrameForRuntime(self, groupId, group)
+    SetPanelGhostMark(frame, groupId, group, isActive)
+
     -- One lock answer for chrome, mouse and fade (GroupFrameShared.lua).
-    local unlocked, ownUnlocked = GetPanelUnlockState(groupId, group)
+    local _, ownUnlocked = GetPanelUnlockState(groupId, group)
 
     -- Update drag handle text and lock state. An empty Aura Panel keeps a
     -- reserved cell the owner can arrange before adding auras.
@@ -527,19 +529,6 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
         or self._arrangeSoloContainerId == nil
         or self._arrangeSelectedPanelId == groupId
     local selectedInContainer = containerPreviewActive and self:IsContainerPanelSelected(group.parentContainerId, groupId)
-    local isActive = ShouldShowGroupFrameForRuntime(self, groupId, group)
-    if (containerPreviewActive or panelPreviewActive) and isActive then
-        local normallyActive = self:IsGroupActive(groupId, {
-            group = group,
-            checkCharVisibility = true,
-            checkLoadConditions = true,
-            requireButtons = true,
-            ignoreUnlockPreview = true,
-        })
-        frame._unlockGhost = not normallyActive or nil
-    else
-        frame._unlockGhost = nil
-    end
     if frame.dragHandle and frame.dragHandle.text then
         frame.dragHandle.text:SetText(group.name)
     end
@@ -568,13 +557,9 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
         else
             frame:Show()
         end
-        -- Keep unlocked panels fully visible, except unlock ghosts.
-        if unlocked then
-            frame:SetAlpha(GetUnlockedPanelAlpha(frame))
-        -- Apply current alpha from the alpha fade system so frame doesn't flash at 1.0
-        else
-            ApplyCurrentAlphaIfPresent(CooldownCompanion, frame, groupId, group)
-        end
+        -- Unlocked look (0.4 for a ghost), the anchor sync, the fade, or
+        -- resting alpha, so the frame doesn't flash at 1.0.
+        ApplyGroupOwnAlpha(frame)
     else
         self:UnloadGroup(groupId)
     end

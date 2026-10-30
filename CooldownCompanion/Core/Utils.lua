@@ -1029,7 +1029,8 @@ function ST.RefreshConfigPanelIfShown()
 end
 
 -- 0.4 for a panel the unlock preview shows although it would otherwise be
--- hidden (frame._unlockGhost, set in GroupFrame.lua), else 1.
+-- hidden (frame._unlockGhost, written only by the unlock mark helpers in
+-- GroupFrameShared.lua), else 1.
 function ST.GetUnlockedPanelAlpha(frame)
     return frame and frame._unlockGhost and 0.4 or 1
 end

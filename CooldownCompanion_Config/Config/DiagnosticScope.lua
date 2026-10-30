@@ -129,13 +129,37 @@ local function BuildScopedDiagnosticProfile(profile, meta, config, runtime, char
             if removed > 0 then scope.omittedCharacterStores[name] = removed end
         end
     end
-    if type(scoped.resourceBarsByClass) == "table" and type(meta.className) == "string" and meta.className ~= "" then
-        for className in pairs(scoped.resourceBarsByClass) do
-            if type(className) == "string" and knownClasses[className:upper()]
-                and className:upper() ~= meta.className:upper()
-                and className ~= config.otherClassLibraryClassKey then
-                scope.omittedClassStores[#scope.omittedClassStores + 1] = className
-                scoped.resourceBarsByClass[className] = nil
+    -- Class-shared stores keep only the current class's record.
+    if type(meta.className) == "string" and meta.className ~= "" then
+        local omitted = {}
+        for _, storeName in ipairs({ "resourceBarsByClass", "castBarByClass", "frameAnchoringByClass" }) do
+            local store = scoped[storeName]
+            for className in pairs(type(store) == "table" and store or {}) do
+                if type(className) == "string" and knownClasses[className:upper()]
+                    and className:upper() ~= meta.className:upper()
+                    and className ~= config.otherClassLibraryClassKey then
+                    store[className] = nil
+                    if not omitted[className] then
+                        omitted[className] = true
+                        scope.omittedClassStores[#scope.omittedClassStores + 1] = className
+                    end
+                end
+            end
+        end
+        -- The Cast Bar and Unit Frames waiting lists are kept per class the
+        -- same way.
+        local pending = scoped.scopedBarClassPending
+        for _, systemPending in pairs(type(pending) == "table" and pending or {}) do
+            for className in pairs(type(systemPending) == "table" and systemPending or {}) do
+                if type(className) == "string" and knownClasses[className:upper()]
+                    and className:upper() ~= meta.className:upper()
+                    and className ~= config.otherClassLibraryClassKey then
+                    systemPending[className] = nil
+                    if not omitted[className] then
+                        omitted[className] = true
+                        scope.omittedClassStores[#scope.omittedClassStores + 1] = className
+                    end
+                end
             end
         end
         table.sort(scope.omittedClassStores)

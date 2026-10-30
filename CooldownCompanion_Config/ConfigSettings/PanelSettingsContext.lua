@@ -73,8 +73,11 @@ function ST._GetSettingsWidgetContext(widget)
     end
 end
 
+-- A one-presentation panel (an Aura Panel) keeps plain keys, so the panel and
+-- its auras share collapse state and scroll anchors.
 function ST._SettingsContextKey(context, key)
-    if not context or context.kind or context.presentation == "shared" or not key or key:match("^presentation:") then return key end
+    if not context or context.kind or context.single or context.presentation == "shared" or not key
+        or key:match("^presentation:") then return key end
     return "presentation:" .. context.presentation .. ":" .. key
 end
 
@@ -85,7 +88,7 @@ function ST._PreparePanelSettingsNavigation(owner, tab)
     local presentation = pending.presentation or (entry and ST.GetEntryPresentation(owner, entry))
         or (ST.GetPanelGeometryKind(owner) == "bars" and "bars" or "icons")
     pending.presentation = presentation
-    local context = { presentation = presentation }
+    local context = { presentation = presentation, single = not ST.PanelSupportsAttachedBars(owner) }
     pending.rowKey = ST._SettingsContextKey(context, pending.rowKey)
     local keys = {}
     for key in pairs(pending.collapseKeys or {}) do keys[#keys + 1] = key end
@@ -103,7 +106,10 @@ local CONTENT_KEYS = { "icons", "bars", "modules" }
 function ST._CreatePanelSettingsContext(owner, presentation)
     local entry, mode, buttonIndex = Selection(owner)
     presentation = presentation or (entry and ST.GetEntryPresentation(owner, entry)) or "shared"
-    local context = { owner = owner, presentation = presentation, entry = entry, mode = mode,
+    -- A one-presentation panel (an Aura Panel, in either form) edits its own
+    -- style and display mode; only ordinary panels carry an attached-bar bundle.
+    local single = not ST.PanelSupportsAttachedBars(owner)
+    local context = { owner = owner, presentation = presentation, entry = entry, mode = mode, single = single,
         buttonIndex = buttonIndex, panelId = CS.selectedGroup, tab = CS.selectedTab, sections = {} }
     context.contents = not entry and ST._GetPanelSettingsContents(owner, context.panelId) or nil
     function context:IsCurrent()
@@ -120,7 +126,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
         return selected == self.entry and scope == self.mode
             and (not selected or ST.GetEntryPresentation(self.owner, selected) == self.presentation)
     end
-    local bar = presentation == "bars"
+    local bar = presentation == "bars" and not single
     local function SavedStyle()
         if bar then return owner.attachedBarStyle end
         return owner.style
@@ -181,7 +187,7 @@ function ST._CreatePanelSettingsContext(owner, presentation)
     context.group = setmetatable({
         _settingsContext = context, _settingsOwner = owner,
         _attachedBarOwner = bar and owner or nil,
-        displayMode = bar and "bars" or "icons", style = writeStyle,
+        displayMode = single and owner.displayMode or (bar and "bars" or "icons"), style = writeStyle,
         -- Fixed dimensions are editable only when bar entries form the body.
         -- All selection scopes use the same applicability as Finder.
         _fittedBarLayout = bar and ST.GetPanelGeometryKind(owner) ~= "bars" or false,
@@ -286,8 +292,17 @@ local function NewSectionHost(container, context)
 end
 ST._NewPanelSettingsSectionHost = NewSectionHost
 
+-- Ordinary panels always edit through a settings view. An Aura Panel does
+-- while one aura is selected, so settings only the panel can change leave
+-- that aura's page as they do on every other panel (owner ruling Q41,
+-- 2026-10-29; it retires lens ruling #3's locked, folded sections).
+function ST._UsesPanelSettingsView(owner)
+    if ST.PanelSupportsAttachedBars(owner) then return true end
+    return ST.IsAuraPanelGroup(owner) and Selection(owner) ~= nil or false
+end
+
 function ST._BuildCompletePanelStyleTab(container, owner, tab, builder)
-    if not ST.PanelSupportsAttachedBars(owner) then return false end
+    if not ST._UsesPanelSettingsView(owner) then return false end
     ST._PreparePanelSettingsNavigation(owner, tab)
     local entry, mode = Selection(owner)
     if entry then

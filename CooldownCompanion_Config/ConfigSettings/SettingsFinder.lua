@@ -487,7 +487,10 @@ local function IsDescriptorApplicable(descriptor, context)
                 or ST._SharedBarStyleAllowed and ST.BAR_STYLE_KEY_SECTIONS and ST.OVERRIDE_SECTIONS[section]
                     and ST._SharedBarStyleAllowed(context.group, section))) then return false end
     end
-    if context.scope == "entry" and context.group and context.group._settingsContext then
+    -- Entry search offers only what the entry can edit. An Aura Panel aura is
+    -- searched on its raw panel (the context must keep naming the saved panel).
+    if context.scope == "entry" and context.group
+        and (context.group._settingsContext or ST.IsAuraPanelGroup(context.group)) then
         local sectionId = descriptor.sectionId or descriptor.section
         if ST.OVERRIDE_SECTIONS[sectionId]
             and not ST._CanButtonUseConfigOverrideSection(context.buttonData, sectionId, context.group) then return false end

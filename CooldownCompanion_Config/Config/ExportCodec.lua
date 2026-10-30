@@ -438,7 +438,9 @@ local SCOPED_SYSTEM_DEFAULTS = {
 local SCOPED_STORE_KEYS = {
     resourceBarsByClass = "resourceBars",
     resourceBarsByChar = "resourceBars",
+    castBarByClass = "castBar",
     castBarByChar = "castBar",
+    frameAnchoringByClass = "frameAnchoring",
     frameAnchoringByChar = "frameAnchoring",
 }
 
@@ -1132,6 +1134,9 @@ local function CompactEntityPayload(payload, formatVersion)
     if type(compact.resources) == "table" and type(compact.resources.settings) == "table" then
         compact.resources.settings = CompactScopedSettings(compact.resources.settings, "resourceBars", true, formatVersion)
     end
+    if type(compact.castBar) == "table" and type(compact.castBar.settings) == "table" then
+        compact.castBar.settings = CompactScopedSettings(compact.castBar.settings, "castBar", true, formatVersion)
+    end
     return compact
 end
 
@@ -1183,6 +1188,9 @@ local function RehydrateEntityPayload(payload, formatVersion)
     end
     if type(payload.resources) == "table" and type(payload.resources.settings) == "table" then
         payload.resources.settings = RehydrateScopedSettings(payload.resources.settings, "resourceBars", formatVersion)
+    end
+    if type(payload.castBar) == "table" and type(payload.castBar.settings) == "table" then
+        payload.castBar.settings = RehydrateScopedSettings(payload.castBar.settings, "castBar", formatVersion)
     end
 
     return payload

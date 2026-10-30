@@ -72,12 +72,12 @@ end
 
 -- One lock answer for panel chrome, mouse and fade.
 -- unlocked: the panel wears unlocked alpha (parked on the dummy cursor,
--- previewed with its unlocked Group, or unlocked on its own).
+-- previewed with its unlocked Group, unlocked on its own, or an unlock ghost).
 -- ownUnlocked: its own padlock is open, which earns an independent mover.
--- The combat lock, cursor anchoring (unless parked) and an Arrange padlock read
--- locked, so a padlocked panel goes back to normal play while its Group stays
--- unlocked. A Group padlocked in Arrange is saved locked, so its preview term
--- is already false.
+-- The combat lock, cursor anchoring (unless parked or a ghost) and an Arrange
+-- padlock read locked, so a padlocked panel goes back to normal play while its
+-- Group stays unlocked. A Group padlocked in Arrange is saved locked, so its
+-- preview term is already false.
 local function GetPanelUnlockState(groupId, group)
     local addon = CooldownCompanion
     if not group then
@@ -89,7 +89,10 @@ local function GetPanelUnlockState(groupId, group)
     end
     local parked = addon:IsCursorAnchorLayoutPreviewGroupActive(groupId)
     if IsCursorAnchor(group.anchor) or addon:IsArrangePanelSuppressed(groupId) then
-        return parked, false
+        -- A cursor panel shown only by its Group's unlock rides the live cursor
+        -- without parking; as a ghost it still wears the ghost look.
+        local frame = addon.groupFrames and addon.groupFrames[groupId]
+        return parked or (frame ~= nil and frame._unlockGhost == true), false
     end
     -- IsPanelUnlockPreviewActive's answer, without repeating the combat and
     -- cursor tests above (this runs per panel on every alpha pass).
@@ -159,16 +162,33 @@ local function ShouldSyncAnchorAlpha(self, groupId, parentFrame)
     return true, false, false
 end
 
+-- A panel that copies its parent's opacity: its anchor sync tick is running
+-- (SetupAlphaSync, GroupFrameAnchoring.lua).
+local function IsAlphaSyncActive(frame)
+    local sync = frame.alphaSyncFrame
+    return frame.anchoredToParent ~= nil and sync ~= nil and sync:GetScript("OnUpdate") ~= nil
+end
+
+-- The one paint for a shown panel's opacity: its unlocked look, else the
+-- anchor sync's reading for a panel that copies its parent, else its fade,
+-- else its resting alpha.
 local function ApplyGroupOwnAlpha(frame)
     if not frame then return end
 
-    local alpha
+    -- Painted as UpdateGroupAlpha paints it. The layout preview's full-alpha
+    -- stand-in below is for locked panels only, so a parked ghost never
+    -- blinks to full.
     if GetPanelUnlockState(frame.groupId) then
-        alpha = GetUnlockedPanelAlpha(frame)
-    else
-        local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
-        alpha = hasRuntimeAlpha and currentAlpha or GetPanelBaseAlpha(frame.groupId)
+        frame._naturalAlpha = nil
+        frame:SetAlpha(GetUnlockedPanelAlpha(frame))
+        return
     end
+    -- The sync's reading, painted now: its tick writes only on change.
+    if IsAlphaSyncActive(frame) and CooldownCompanion:PaintAlphaSync(frame) then
+        return
+    end
+    local currentAlpha, _, hasRuntimeAlpha = CooldownCompanion:GetPanelCurrentAlphaValue(frame.groupId)
+    local alpha = hasRuntimeAlpha and currentAlpha or GetPanelBaseAlpha(frame.groupId)
 
     if ST.IsGroupRuntimeLayoutPreviewActive
         and ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
@@ -179,13 +199,6 @@ local function ApplyGroupOwnAlpha(frame)
 
     frame._naturalAlpha = nil
     frame:SetAlpha(alpha)
-end
-
-local function ApplyCurrentAlphaIfPresent(owner, frame, groupId, group)
-    local alpha, _, hasRuntimeAlpha = owner:GetPanelCurrentAlphaValue(groupId, group)
-    if hasRuntimeAlpha then
-        frame:SetAlpha(alpha)
-    end
 end
 
 local function GetAnchorInheritedAlpha(parentFrame)
@@ -268,6 +281,48 @@ local function GetContainerPreviewSelectionState(groupId)
         and CooldownCompanion:IsContainerPanelSelected(containerId, groupId)
         or false
     return true, selected, containerId
+end
+
+-- The one writer of a panel frame's unlock marks: the two preview marks, which
+-- entry visibility and usability read, and the ghost mark, an unlocked panel
+-- shown only because it is unlocked (0.4, ST.GetUnlockedPanelAlpha). They are
+-- set wherever shown state is decided, and cleared on unload, since a dormant
+-- frame is never previewed. Each returns whether a mark changed.
+local function SetPanelPreviewMarks(frame, groupId, group)
+    local container = GetContainerPreviewSelectionState(groupId) or nil
+    local panel = CooldownCompanion:IsPanelUnlockPreviewActive(group) or nil
+    local changed = frame._containerUnlockPreviewActive ~= container
+        or frame._panelUnlockPreviewActive ~= panel
+    frame._containerUnlockPreviewActive = container
+    frame._panelUnlockPreviewActive = panel
+    return changed
+end
+
+local function SetPanelGhostMark(frame, groupId, group, shown)
+    local ghost
+    if shown and (frame._containerUnlockPreviewActive or frame._panelUnlockPreviewActive) then
+        ghost = not CooldownCompanion:IsGroupActive(groupId, {
+            group = group,
+            checkCharVisibility = true,
+            checkLoadConditions = true,
+            requireButtons = true,
+            ignoreUnlockPreview = true,
+        }) or nil
+    end
+    local changed = frame._unlockGhost ~= ghost
+    frame._unlockGhost = ghost
+    return changed
+end
+
+local function RefreshPanelUnlockMarks(frame, groupId, group, shown)
+    local previewChanged = SetPanelPreviewMarks(frame, groupId, group)
+    return SetPanelGhostMark(frame, groupId, group, shown) or previewChanged
+end
+
+local function ClearPanelUnlockMarks(frame)
+    frame._containerUnlockPreviewActive = nil
+    frame._panelUnlockPreviewActive = nil
+    frame._unlockGhost = nil
 end
 
 -- Frame creation anchors before the coord label exists, so a position that
@@ -625,6 +680,18 @@ function CooldownCompanion:GetPanelUnlockState(groupId, group)
     return GetPanelUnlockState(groupId, group)
 end
 
+function CooldownCompanion:ApplyGroupOwnAlpha(frame)
+    ApplyGroupOwnAlpha(frame)
+end
+
+function CooldownCompanion:RefreshPanelUnlockMarks(frame, groupId, group, shown)
+    return RefreshPanelUnlockMarks(frame, groupId, group, shown)
+end
+
+function CooldownCompanion:ClearPanelUnlockMarks(frame)
+    ClearPanelUnlockMarks(frame)
+end
+
 function CooldownCompanion:GetContainerAnchorTargetState(containerId, relativeTo)
     local _, anchorState = ResolveSafeAnchorTarget(self, containerId, "container", relativeTo)
     return anchorState
@@ -828,12 +895,15 @@ GF.CURSOR_ANCHOR_X = CURSOR_ANCHOR_X
 GF.CURSOR_ANCHOR_Y = CURSOR_ANCHOR_Y
 GF.GetCompactAnchorFixedPoint = GetCompactAnchorFixedPoint
 GF.GetContainerPreviewSelectionState = GetContainerPreviewSelectionState
+GF.IsAlphaSyncActive = IsAlphaSyncActive
+GF.SetPanelPreviewMarks = SetPanelPreviewMarks
+GF.SetPanelGhostMark = SetPanelGhostMark
+GF.RefreshPanelUnlockMarks = RefreshPanelUnlockMarks
 GF.ApplySectionSelectionTint = ApplySectionSelectionTint
 GF.SetExternalAnchorAlphaSyncActive = SetExternalAnchorAlphaSyncActive
 GF.CURSOR_ANCHOR_POINT = CURSOR_ANCHOR_POINT
 GF.IsCursorAnchorLayoutPreviewGroupActive = IsCursorAnchorLayoutPreviewGroupActive
 GF.PreviewMapContains = PreviewMapContains
-GF.ApplyCurrentAlphaIfPresent = ApplyCurrentAlphaIfPresent
 GF.GetFrameSizeInUIParentSpace = GetFrameSizeInUIParentSpace
 GF.CURSOR_ANCHOR_TARGET = CURSOR_ANCHOR_TARGET
 GF.CURSOR_ANCHOR_RELATIVE_POINT = CURSOR_ANCHOR_RELATIVE_POINT

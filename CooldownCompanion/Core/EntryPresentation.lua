@@ -36,11 +36,11 @@ end
 function ST.GetConfiguredModuleBarSettings(kind)
     local profile = Addon.db and Addon.db.profile
     if not profile then return nil end
+    local classKey = Addon._playerClassFilename
     if kind == "resources" then
-        return profile.resourceBarsByClass and profile.resourceBarsByClass[Addon._playerClassFilename]
+        return profile.resourceBarsByClass and profile.resourceBarsByClass[classKey]
     end
-    local char = Addon.db.keys and Addon.db.keys.char
-    return profile.castBarByChar and profile.castBarByChar[char]
+    return profile.castBarByClass and profile.castBarByClass[classKey]
 end
 
 -- The panel a module's bars take their shared geometry from, or nil when

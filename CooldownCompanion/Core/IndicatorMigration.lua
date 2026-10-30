@@ -187,12 +187,17 @@ function M.ConvertPanel(source, defaults)
     local result, entries, entryOrigins = {}, source.buttons or {}, {}
     local count = source.displayMode == 'text' and math.max(1, #entries) or 1
     local style = source.style or {}
+    -- The row or column the old panel drew, by the in-place update's own rule
+    -- (it splits orientation before this conversion runs on load), read from a
+    -- throwaway copy so the source is never changed. Imports reach here first.
+    local orientation = {displayMode = 'text', style = {orientation = style.orientation, textOrientation = style.textOrientation}}
+    ST._NormalizePanelOrientationKeys(orientation)
     for index = 1, count do
         local group = ConvertOne(source, entries[index], defaults, entryOrigins)
         if count > 1 then
             group.name = (source.name or 'Indicator') .. ' - ' .. (entries[index].name or tostring(index))
             local signal = group.indicatorSettings.signal
-            local vertical = (style.textOrientation or 'vertical') == 'vertical'
+            local vertical = orientation.style.textOrientation == 'vertical'
             local step = (vertical and group.indicatorSettings.text.height or group.indicatorSettings.text.width)
                 + (style.buttonSpacing or 4)
             local key = vertical and 'y' or 'x'

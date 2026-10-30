@@ -138,19 +138,21 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount, templa
     end
 
     local classScoped = {}
-    local characterScoped = {}
     local legacyScoped = {}
     if type(profile) == "table" then
         if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resources" end
         if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "Resources" end
-        if type(profile.castBarByChar) == "table" then characterScoped[#characterScoped + 1] = "Cast Bar" end
-        if type(profile.frameAnchoringByChar) == "table" then characterScoped[#characterScoped + 1] = "Frame Anchoring" end
+        -- Older backups hold these per character; they become shared by class
+        -- when restored.
+        if CountPairs(profile.castBarByClass) > 0 or type(profile.castBarByChar) == "table" then
+            classScoped[#classScoped + 1] = "Cast Bar"
+        end
+        if CountPairs(profile.frameAnchoringByClass) > 0 or type(profile.frameAnchoringByChar) == "table" then
+            classScoped[#classScoped + 1] = "Unit Frames"
+        end
     end
     if #classScoped > 0 then
         AddLine(lines, "Class-scoped settings: " .. table.concat(classScoped, ", "))
-    end
-    if #characterScoped > 0 then
-        AddLine(lines, "Character-scoped settings: " .. table.concat(characterScoped, ", "))
     end
     if #legacyScoped > 0 then
         AddLine(lines, "Unresolved legacy settings: " .. table.concat(legacyScoped, ", "))
@@ -333,10 +335,14 @@ local function GetSetupSections(data)
         and data.resources
         or nil
     local templates = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
-    return hasContainers, customBars, resources, templates
+    local castBar = type(data.castBar) == "table"
+        and type(data.castBar.settings) == "table"
+        and data.castBar
+        or nil
+    return hasContainers, customBars, resources, templates, castBar
 end
 
-local function BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates)
+local function BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates, castBar)
     local lines = {}
     AddLine(lines, "Setup export")
 
@@ -360,6 +366,17 @@ local function BuildSetupSummaryLines(data, hasContainers, customBars, resources
         end
         if classKey and playerClassKey and classKey ~= playerClassKey then
             foreignClassKey = classKey
+        end
+    end
+
+    if castBar then
+        local classKey = GetSetupSectionClassKey(castBar)
+        AddLine(lines, "Cast Bar setup: " .. tostring(classKey or "Unknown class"))
+        if classKey and CooldownCompanion:IsCastBarClassConfigured(classKey) then
+            AddLine(lines, "This replaces your current " .. tostring(classKey) .. " Cast Bar.")
+        end
+        if classKey and playerClassKey and classKey ~= playerClassKey then
+            foreignClassKey = foreignClassKey or classKey
         end
     end
 
@@ -511,12 +528,12 @@ end
 -- become containers/setup payloads (see _ConvertUnifiedPanelImport).
 local function ClassifyEntityPayload(data)
     if data.type == "setup" then
-        local hasContainers, customBars, resources, templates = GetSetupSections(data)
-        if not hasContainers and not customBars and not resources and not templates then
+        local hasContainers, customBars, resources, templates, castBar = GetSetupSections(data)
+        if not hasContainers and not customBars and not resources and not templates and not castBar then
             return BuildError("empty_setup", "Import failed: this setup export is empty.")
         end
         return BuildReview("setup", data, "Setup Import", "Import Setup",
-            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates))
+            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates, castBar))
     end
 
     if data.type == "group" and data.group then

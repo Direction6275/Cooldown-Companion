@@ -394,12 +394,15 @@ local function AddDurationFormatDropdown(container, settings, refreshCallback, o
         end,
     })
 
+    -- The row owns its '?': an entry's settings view can release the row
+    -- before the tab's info buttons are swept, and a pooled frame must not
+    -- carry the badge to its next tenant.
     if opts.sharedHelp then
         AnchorRowBadge(row, CreateInfoButton(row.frame, row.frame,
             "LEFT", "LEFT", 0, 0, {
                 "Duration Format",
                 {"Applies to cooldown and aura duration text.", 1, 1, 1, true},
-            }, opts.infoButtons or row))
+            }, row))
     end
 
     return row

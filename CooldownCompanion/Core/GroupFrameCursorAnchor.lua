@@ -27,7 +27,8 @@ local IsCursorAnchorLayoutPreviewGroupActive = GF.IsCursorAnchorLayoutPreviewGro
 local IsCursorAnchor = GF.IsCursorAnchor
 local PreviewMapContains = GF.PreviewMapContains
 local IsCursorAnchorLayoutPreviewSelected = GF.IsCursorAnchorLayoutPreviewSelected
-local ApplyCurrentAlphaIfPresent = GF.ApplyCurrentAlphaIfPresent
+local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
+local RefreshPanelUnlockMarks = GF.RefreshPanelUnlockMarks
 local GetFrameSizeInUIParentSpace = GF.GetFrameSizeInUIParentSpace
 local GetAnchorOffset = ST._GetPanelAnchorOffset
 local CURSOR_ANCHOR_TARGET = GF.CURSOR_ANCHOR_TARGET
@@ -235,11 +236,14 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
     local isIndicator = ST.IsIndicatorGroup(group)
 
+    -- Parking changes no refresh-owned state, so the marks follow here too: a
+    -- padlocked cursor panel leaves its ghost look as it leaves the preview.
     if active then
         if not (InCombatLockdown() and frame:IsProtected()) then
             frame:Show()
         end
-        frame:SetAlpha(1)
+        RefreshPanelUnlockMarks(frame, groupId, group, true)
+        ApplyGroupOwnAlpha(frame)
     else
         local isActive = self:IsGroupActive(groupId, {
             group = group,
@@ -249,8 +253,10 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
         })
         if not isActive and not (InCombatLockdown() and frame:IsProtected()) then
             frame:Hide()
+            RefreshPanelUnlockMarks(frame, groupId, group, false)
         else
-            ApplyCurrentAlphaIfPresent(self, frame, groupId, group)
+            RefreshPanelUnlockMarks(frame, groupId, group, true)
+            ApplyGroupOwnAlpha(frame)
         end
     end
 
@@ -829,8 +835,8 @@ function CooldownCompanion:ShowCursorAnchorLayoutPreview(groupId)
     end
     frame:Show()
     ApplyCursorAnchorLayoutPreviewGroupStates(self, previousActiveGroupIds, activeGroupIds)
-    -- Preview membership is an alpha force-condition input (it forces its panels
-    -- fully visible and stores their natural alpha), so the alpha driver must be
+    -- Preview membership is an alpha force-condition input (it gives its panels
+    -- their unlocked look, 0.4 for a ghost), so the alpha driver must be
     -- running across the whole preview.
     if self.EnsureAlphaDriverArmed then
         self:EnsureAlphaDriverArmed()

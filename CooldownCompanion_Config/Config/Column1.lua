@@ -1932,6 +1932,36 @@ local function RenderExportModeResources(selection, isFirstSection)
     return true
 end
 
+-- Returns whether the section drew.
+local function RenderExportModeCastBar(selection, isFirstSection)
+    if not (ST._IsCastBarExportable and ST._IsCastBarExportable()) then
+        return false
+    end
+
+    AddColumn1SectionHeading("Cast Bar", nil, isFirstSection)
+    local shell = AddExportModeRowShell()
+    local entry = AcquireExportModeRow("Cast Bar")
+    ApplyConfigRowIcon(entry, 134400, {
+        atlas = "ui_adv_health",
+        indent = 2,
+        iconSize = TREE.GROUP_ICON_SIZE,
+        iconGap = TREE.ICON_GAP,
+        rowHeight = TREE.GROUP_ROW_HEIGHT,
+        compactRowHeight = 30,
+    })
+    shell:AddChild(entry)
+    if selection.castBar then
+        entry:SetColor(0.4, 0.7, 1.0)
+    end
+    SetNavigatorRowTooltip(entry, "Cast Bar", "Your class's Cast Bar: look, text, effects and placement.")
+    entry:SetCallback("OnClick", function(_, _, mouseButton)
+        if mouseButton ~= "LeftButton" then return end
+        selection.castBar = not selection.castBar
+        CooldownCompanion:RefreshConfigPanel()
+    end)
+    return true
+end
+
 local function RenderExportModeTemplates(selection, isFirstSection)
     local templates = GetPanelTemplateList(nil)
     if #templates == 0 then
@@ -1979,7 +2009,8 @@ local function RenderExportModeNavigator(db)
 
     local groupCount = RenderExportModeGroups(db, selection, mode)
     local resourcesShown = RenderExportModeResources(selection, groupCount == 0)
-    RenderExportModeTemplates(selection, groupCount == 0 and not resourcesShown)
+    local castBarShown = RenderExportModeCastBar(selection, groupCount == 0 and not resourcesShown)
+    RenderExportModeTemplates(selection, groupCount == 0 and not resourcesShown and not castBarShown)
 
     AddColumn1BottomSpacer()
     PopulateExportModeButtonBar()

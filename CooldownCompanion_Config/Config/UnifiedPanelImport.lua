@@ -4,14 +4,16 @@ local Addon, Migration = ST.Addon, ST.UnifiedPanelMigration
 local LibDeflate = LibStub("LibDeflate")
 
 function ST._ConvertUnifiedPanelImport(data)
-    -- Panel Templates ride beside the panel converters, never through them.
-    -- The converter files a setup without Resources as plain groups, and only
-    -- the setup door lands templates.
-    local templates = type(data) == "table" and data.type == "setup" and data.templates or nil
-    if templates ~= nil then
+    -- Panel Templates and the Cast Bar piece ride beside the panel converters,
+    -- never through them. The converter files a setup without Resources as
+    -- plain groups, and only the setup door lands these pieces.
+    local isSetup = type(data) == "table" and data.type == "setup"
+    local templates = isSetup and data.templates or nil
+    local castBar = isSetup and data.castBar or nil
+    if templates ~= nil or castBar ~= nil then
         local rest = {}
         for key, value in pairs(data) do rest[key] = value end
-        rest.templates = nil
+        rest.templates, rest.castBar = nil, nil
         data = rest
     end
     local context = Addon:GetUnifiedPanelConversionContext()
@@ -21,8 +23,8 @@ function ST._ConvertUnifiedPanelImport(data)
     local converted, report = Migration.ConvertImport(data, context)
     if converted then converted = ST.IndicatorMigration.ConvertImport(converted) end
     if converted then converted = ST.ConvertRotationAssistantImport(converted) end
-    if converted and templates ~= nil then
-        converted.type, converted.templates = "setup", templates
+    if converted and (templates ~= nil or castBar ~= nil) then
+        converted.type, converted.templates, converted.castBar = "setup", templates, castBar
     end
     return converted, report
 end

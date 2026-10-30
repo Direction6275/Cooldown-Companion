@@ -222,130 +222,6 @@ local function GetIndicatorResolvedAnchorFrame(group, settings, groupId)
     return ST.GetPanelAnchorBodyFrame(frame), name
 end
 
-local function StopIndicatorAlphaSync(host)
-    if host and host.indicatorAlphaSyncFrame then
-        host.indicatorAlphaSyncFrame:SetScript("OnUpdate", nil)
-    end
-    if host then
-        host._indicatorAlphaTarget = nil
-        host._indicatorAlphaVisibilityAlpha = nil
-        host._indicatorAlphaLastAlpha = nil
-        host._indicatorAlphaAccumulator = nil
-        host._indicatorAlphaSyncActive = nil
-        if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
-            CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
-        end
-    end
-end
-
-local IsSecretValue = ST.IsSecretValue
-
-local function GetInheritedFrameAlpha(frame)
-    if not frame then
-        return 1
-    end
-    local alpha = frame._naturalAlpha
-    if IsSecretValue(alpha) then
-        return nil
-    end
-    if type(alpha) == "number" then
-        return Clamp(alpha, 0, 1)
-    end
-    if frame.IsShown then
-        local shown = frame:IsShown()
-        if IsSecretValue(shown) then
-            return nil
-        end
-        if shown == nil then
-            return nil
-        end
-        if not shown then
-            return 0
-        end
-    end
-    if frame.GetEffectiveAlpha then
-        alpha = frame:GetEffectiveAlpha()
-        if IsSecretValue(alpha) then
-            return nil
-        end
-        if alpha == nil then
-            return nil
-        end
-        return Clamp(alpha, 0, 1)
-    end
-    if frame.GetAlpha then
-        alpha = frame:GetAlpha()
-        if IsSecretValue(alpha) then
-            return nil
-        end
-        if alpha == nil then
-            return nil
-        end
-        return Clamp(alpha, 0, 1)
-    end
-    return 1
-end
-
-local function StartIndicatorAlphaSync(host, targetFrame, visibilityAlpha)
-    if not (host and targetFrame) then
-        StopIndicatorAlphaSync(host)
-        return
-    end
-
-    visibilityAlpha = Clamp(visibilityAlpha or 1, 0, 1)
-    local wasSyncing = host._indicatorAlphaSyncActive == true
-    local syncChanged = host._indicatorAlphaTarget ~= targetFrame
-        or host._indicatorAlphaVisibilityAlpha ~= visibilityAlpha
-
-    host._indicatorAlphaTarget = targetFrame
-    host._indicatorAlphaVisibilityAlpha = visibilityAlpha
-    if CooldownCompanion.SetContainerAlphaVisibilityMultiplier then
-        CooldownCompanion:SetContainerAlphaVisibilityMultiplier(host, nil)
-    end
-    if syncChanged or not wasSyncing then
-        host._indicatorAlphaAccumulator = 0
-        local inheritedAlpha = GetInheritedFrameAlpha(targetFrame)
-        if inheritedAlpha ~= nil then
-            local alpha = Clamp(inheritedAlpha * visibilityAlpha, 0, 1)
-            host._indicatorAlphaLastAlpha = alpha
-            host:SetAlpha(alpha)
-        end
-    end
-    if wasSyncing then
-        return
-    end
-
-    if not host.indicatorAlphaSyncFrame then
-        host.indicatorAlphaSyncFrame = CreateFrame("Frame", nil, host)
-    end
-
-    host._indicatorAlphaSyncActive = true
-    host.indicatorAlphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-        local activeTarget = host._indicatorAlphaTarget
-        if not activeTarget then
-            self:SetScript("OnUpdate", nil)
-            host._indicatorAlphaSyncActive = nil
-            return
-        end
-
-        host._indicatorAlphaAccumulator = (host._indicatorAlphaAccumulator or 0) + dt
-        if host._indicatorAlphaAccumulator < (1 / 30) then
-            return
-        end
-        host._indicatorAlphaAccumulator = 0
-
-        local inheritedAlpha = GetInheritedFrameAlpha(activeTarget)
-        if inheritedAlpha == nil then
-            return
-        end
-        local alpha = Clamp(inheritedAlpha * (host._indicatorAlphaVisibilityAlpha or 1), 0, 1)
-        if alpha ~= host._indicatorAlphaLastAlpha then
-            host._indicatorAlphaLastAlpha = alpha
-            host:SetAlpha(alpha)
-        end
-    end)
-end
-
 local function SaveGroupedIndicatorPreviewSettings(host, group, settings, groupId)
     local containerFrame = GetGroupedPreviewContainerFrame(group, groupId)
     if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
@@ -888,13 +764,17 @@ end
 
 function CooldownCompanion:EnsureAuraTextureHost(button)
     if button.auraTextureHost then
-        EnsureAuraTextureRuntimeRoot(button.auraTextureHost)
+        local existing = button.auraTextureHost
+        EnsureAuraTextureRuntimeRoot(existing)
         -- Acquisition for a live display: the teardown latch never survives it.
-        button.auraTextureHost._indicatorTeardownFor = nil
-        return button.auraTextureHost
+        existing._indicatorTeardownFor = nil
+        return existing
     end
 
-    local host = CreateFrame("Frame", nil, UIParent)
+    -- The panel frame's child, so its fade, Group alpha, ghost look and
+    -- hiding reach the display directly (the host carries only source dimming).
+    -- Button pools are per panel frame, so the host never changes panels.
+    local host = CreateFrame("Frame", nil, button:GetParent() or UIParent)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
     SetTextureHostMouseEnabled(host, false)
@@ -1098,7 +978,6 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     StopAllTextureIndicatorEffects(host)
     ReleasePresenceDisplay(button)
     host._ccPresenceMode = nil
-    StopIndicatorAlphaSync(host)
     if host._isDragging then
         host._isDragging = nil
         host:StopMovingOrSizing()
@@ -1119,7 +998,6 @@ function CooldownCompanion:HideAuraTextureVisual(button)
     host._activeTextureGeometry = nil
     host._dragEnabled = nil
     host._wrapperManaged = nil
-    host._unlockGhost = nil
     SetTextureHostMouseEnabled(host, false)
     host:SetAlpha(1)
     SetAuraTextureOutlineShown(host, false)
@@ -1422,18 +1300,12 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
         visibilityState and visibilityState.groupedPreviewFrame)
     host:Show()
 
-    host._unlockGhost = frame and frame._unlockGhost or nil
-    local bypassAlpha = ST.GetUnlockedPanelAlpha(host)
     local honorSourceVisibility = ST.Indicator.Settings(group).sourceVisibility ~= false
     local visibilityAlpha = honorSourceVisibility and Clamp(driverButton._rawVisibilityAlphaOverride or 1, 0, 1) or 1
-    if visibilityState.bypassModuleAlpha then
-        StopIndicatorAlphaSync(host)
-        host:SetAlpha(bypassAlpha)
-    else
-        -- The owner supplies natural panel alpha; source dimming belongs only
-        -- to this display and must never leak into downstream panel anchors.
-        StartIndicatorAlphaSync(host, frame, visibilityAlpha)
-    end
+    -- The panel frame, the host's parent, carries the fade, Group alpha and
+    -- the ghost look. The host adds only its own source dimming, which never
+    -- reaches downstream panel anchors, and none while unlocked or previewed.
+    host:SetAlpha(visibilityState.bypassModuleAlpha and 1 or visibilityAlpha)
 
     local indicatorSettings = ST.Indicator.Settings(group)
     local savedSettings = indicatorSettings and indicatorSettings.signal

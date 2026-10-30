@@ -1212,17 +1212,13 @@ end
 -- Force one collapsible open, on BOTH sides of the style lens.
 --
 -- Which key a collapsible actually uses is ST._ResolveLensCollapseKey's call
--- (StyleLens.lua): a section the selected entry cannot edit gets its OWN
--- lens-scoped key and opens collapsed the first time that key is seen. Which
--- side a given collapse key landed on is a per-tab fact - the same key names a
--- whole mixed section on one panel and one lens section on another - so this
--- opens both rather than guessing, and the sectionId handed to the resolver is
--- deliberately nil: a nil section resolves the lens-scoped variant under an
--- entry lens and the base key everywhere else, which is exactly the pair.
+-- (StyleLens.lua): an ordinary panel's settings view qualifies it by
+-- presentation, and everything else keeps the base key. Which side a given
+-- collapse key landed on is a per-tab fact, so this opens both rather than
+-- guessing; the sectionId handed to the resolver is deliberately nil.
 --
--- The lens key is set to FALSE, not nil. nil reads as "never seen", and the
--- resolver seeds that straight back to collapsed on the rebuild this
--- navigation is about to trigger.
+-- The resolved key is set to FALSE, not nil, so the rebuild this navigation
+-- triggers reads it as explicitly open.
 local function ForceSectionOpen(collapseKey, lens, group)
     -- A home whose section depends on the panel shape names it per group.
     if type(collapseKey) == "function" then collapseKey = collapseKey(group) end

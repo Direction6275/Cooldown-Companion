@@ -1185,19 +1185,10 @@ end
 
 local charCopyButtons = {}
 
-local CHARACTER_COPY_TOOLTIP_DETAILS = {
-    frameAnchoring = {
-        "Copies: enable state, unit-frame addon/custom frame choices, player/target anchors, mirroring, and alpha inheritance.",
-        "Does not copy: Resource Bars, Cast Bar, panels, or panel contents.",
-    },
-    castBar = {
-        "Copies: enable state, anchor/position mode, styling, icon, text, and cast effects.",
-        "Does not copy: Resource Bars, Unit Frames, panels, or panel contents.",
-    },
-}
-
+-- Copies another class's setup, or a character's setup from before class
+-- sharing, into the current class (CopyScopedBarSettings, ScopedSettings.lua).
 local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
-    local _, copyOrder = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+    local _, copyOrder = CooldownCompanion:GetScopedBarCopyOptions(systemKey)
     if #copyOrder == 0 then return end
 
     -- Pool one button per systemKey to avoid frame leaks across panel rebuilds
@@ -1225,14 +1216,7 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Copy " .. label .. " Settings")
-        local tooltipDetails = CHARACTER_COPY_TOOLTIP_DETAILS[systemKey]
-        if tooltipDetails then
-            for _, line in ipairs(tooltipDetails) do
-                GameTooltip:AddLine(line, 1, 1, 1, true)
-            end
-        else
-            GameTooltip:AddLine("Copy settings from another character on this profile.", 1, 1, 1, true)
-        end
+        GameTooltip:AddLine("From another class, or from a character's setup before sharing.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1241,13 +1225,14 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
         if not CS.charCopyMenu then
             CS.charCopyMenu = CreateFrame("Frame", "CDCCharCopyMenu", UIParent, "UIDropDownMenuTemplate")
         end
-        local vals, order = CooldownCompanion:GetCharacterScopedSettingsCopyOptions(systemKey)
+        local vals, order = CooldownCompanion:GetScopedBarCopyOptions(systemKey)
         if #order == 0 then return end
+        local className = UnitClass("player")
 
         UIDropDownMenu_Initialize(CS.charCopyMenu, function(self, level)
-            for _, charKey in ipairs(order) do
+            for _, sourceKey in ipairs(order) do
                 local info = UIDropDownMenu_CreateInfo()
-                info.text = vals[charKey]
+                info.text = vals[sourceKey]
                 info.notCheckable = true
                 info.func = function()
                     CloseDropDownMenus()
@@ -1255,10 +1240,11 @@ local function CreateCharacterCopyButton(enableCb, systemKey, label, onCopied)
                         CooldownCompanion:Print("Copy confirmation is unavailable.")
                         return
                     end
-                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label .. " settings from " .. (vals[charKey] or charKey) .. " to this character", {
+                    ShowPopupAboveConfig("CDC_CONFIRM_CHARACTER_SCOPED_COPY", label .. " settings from "
+                        .. (vals[sourceKey] or sourceKey) .. " to every " .. (className or "") .. " character", {
                         systemKey = systemKey,
                         systemLabel = label,
-                        sourceCharKey = charKey,
+                        sourceKey = sourceKey,
                         onCopied = onCopied,
                     })
                 end

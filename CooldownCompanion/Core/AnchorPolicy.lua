@@ -33,6 +33,11 @@ local EXTERNAL_ANCHOR_STORES = {
         legacyName = "Cast Bar Seed",
         scopedKey = "castBarByChar",
         scopedNamePrefix = "Cast Bar ",
+        -- Kept from before class sharing: still sanitized, never a dependent
+        -- (no page edits them, so the player could not act on the warning).
+        scopedIsKeptRecords = true,
+        classScopedKey = "castBarByClass",
+        classScopedNamePrefix = "Cast Bar Class ",
     },
     resourceBars = {
         rootKey = "resourceBars",
@@ -51,6 +56,9 @@ local EXTERNAL_ANCHOR_STORES = {
         legacyName = "Unit Frames Seed",
         scopedKey = "frameAnchoringByChar",
         scopedNamePrefix = "Unit Frames ",
+        scopedIsKeptRecords = true,
+        classScopedKey = "frameAnchoringByClass",
+        classScopedNamePrefix = "Unit Frames Class ",
     },
 }
 
@@ -406,11 +414,11 @@ local function SanitizeCastBarSettings(settings, targetIsCursorRoot)
     SanitizeExternalAnchor(settings.independentAnchor, targetIsCursorRoot)
 end
 
-local function ForEachExternalAnchorSettings(profile, store, apply)
+local function ForEachExternalAnchorSettings(profile, store, apply, liveOnly)
     apply(profile[store.rootKey], store.rootName)
     apply(profile[store.legacyKey], store.legacyName)
 
-    local stores = profile[store.scopedKey]
+    local stores = not (liveOnly and store.scopedIsKeptRecords) and profile[store.scopedKey] or nil
     if type(stores) == "table" then
         for charKey, settings in pairs(stores) do
             apply(settings, store.scopedNamePrefix .. tostring(charKey))
@@ -704,13 +712,13 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
 
     ForEachExternalAnchorSettings(profile, EXTERNAL_ANCHOR_STORES.castBar, function(settings, name)
         AddCastBarDependents(dependents, settings, targetFrameName, name)
-    end)
+    end, true)
     ForEachExternalAnchorSettings(profile, EXTERNAL_ANCHOR_STORES.resourceBars, function(settings, name)
         AddResourceBarDependents(dependents, settings, targetFrameName, name)
-    end)
+    end, true)
     ForEachExternalAnchorSettings(profile, EXTERNAL_ANCHOR_STORES.frameAnchoring, function(settings, name)
         AddFrameAnchoringDependents(dependents, settings, targetFrameName, name)
-    end)
+    end, true)
 
     for id, group in pairs(profile.groups or {}) do
         if type(group) == "table" then

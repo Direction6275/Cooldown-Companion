@@ -942,10 +942,11 @@ end
 -- has no runtime reader. Deleting rather than flipping keeps this pass a
 -- no-op on migrated data, so import-driven re-runs change nothing.
 --
--- Cast bar settings are CHARACTER-SCOPED: the live table is
--- profile.castBarByChar[<char>], seeded from profile.legacyCastBarSeed, with
--- profile.castBar as the pre-scoping legacy table. All three stores can
--- carry the key (and ride export strings), so all three are stripped.
+-- Cast bar settings are CLASS-SCOPED (owner ruling Q40, 2026-10-29): the live
+-- table is profile.castBarByClass[<class>]. profile.castBarByChar[<char>] keeps
+-- each character's record from before sharing, profile.legacyCastBarSeed and
+-- profile.castBar are older legacy tables. Every store can carry the key (and
+-- ride export strings), so all are stripped.
 local function StripCastBarStylingFromStore(castBar)
     if type(castBar) == "table" and rawget(castBar, "stylingEnabled") ~= nil then
         castBar.stylingEnabled = nil
@@ -956,9 +957,11 @@ local function StripRetiredCastBarStylingKey(profile)
     if type(profile) ~= "table" then return end
     StripCastBarStylingFromStore(profile.castBar)
     StripCastBarStylingFromStore(profile.legacyCastBarSeed)
-    if type(profile.castBarByChar) == "table" then
-        for _, castBar in pairs(profile.castBarByChar) do
-            StripCastBarStylingFromStore(castBar)
+    for _, storeKey in ipairs({ "castBarByChar", "castBarByClass" }) do
+        if type(profile[storeKey]) == "table" then
+            for _, castBar in pairs(profile[storeKey]) do
+                StripCastBarStylingFromStore(castBar)
+            end
         end
     end
 end
@@ -3798,6 +3801,11 @@ function CooldownCompanion:RunAllMigrations()
     self:PrepareResourceBarSettings()
     if not unifiedOK then return false end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
+    -- Cast Bar and Unit Frames are shared per class (owner ruling Q40): class
+    -- records come from the upgraded per-character ones, then the current
+    -- class's record is made. Until then their getters read an unsaved default.
+    self:RunScopedBarClassScopeMigration()
+    self:PrepareScopedBarSettings()
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
     -- After every conversion above (MigrateSharedBarStyle fills the bar fonts

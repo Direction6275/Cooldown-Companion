@@ -22,6 +22,7 @@ local ResolveSafeAnchorTarget = GF.ResolveSafeAnchorTarget
 local GetPanelContainerFrameName = GF.GetPanelContainerFrameName
 local ShouldSyncAnchorAlpha = GF.ShouldSyncAnchorAlpha
 local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
+local IsAlphaSyncActive = GF.IsAlphaSyncActive
 local GetPanelBaseAlpha = GF.GetPanelBaseAlpha
 local GetPanelUnlockState = GF.GetPanelUnlockState
 local GetAnchorInheritedAlpha = GF.GetAnchorInheritedAlpha
@@ -184,16 +185,87 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
 end
 
 -- A padlocked (locked) panel follows its parent's normal-play look. While a
--- shown parent itself wears unlocked alpha (the unlock preview), its resting
--- alpha stands in for it. A ghost or hidden parent would be hidden in play,
--- so its own alpha reading stays.
+-- shown parent itself wears unlocked alpha (the unlock preview), its
+-- normal-play target stands in: what the fade pass works out from its rules
+-- (UpdateGroupAlpha), else what it copies from its own parent, else its
+-- resting alpha. A ghost parent would be hidden in play, so the child reads
+-- hidden; a hidden parent keeps its own reading.
 local function GetSyncedParentAlpha(parentFrame)
     local parentId = parentFrame and parentFrame.groupId
-    if parentId and parentFrame:IsShown() and not parentFrame._unlockGhost
-        and GetPanelUnlockState(parentId) then
-        return GetPanelBaseAlpha(parentId)
+    if not (parentId and parentFrame:IsShown() and GetPanelUnlockState(parentId)) then
+        return GetAnchorInheritedAlpha(parentFrame)
     end
-    return GetAnchorInheritedAlpha(parentFrame)
+    if parentFrame._unlockGhost then
+        return 0
+    end
+    local state = CooldownCompanion.alphaState and CooldownCompanion.alphaState[parentId]
+    -- Rules removed mid-session stop the fade pass visiting the parent, so a
+    -- kept target counts only while the parent still has rules.
+    if state and state.restingAlpha ~= nil
+        and ST.HasActiveAlphaSettings(CooldownCompanion.db.profile.groups[parentId]) then
+        return state.restingAlpha
+    end
+    if IsAlphaSyncActive(parentFrame) then
+        return GetSyncedParentAlpha(parentFrame.anchoredToParent)
+    end
+    return GetPanelBaseAlpha(parentId)
+end
+
+-- Whether the sync paints this panel now: not while it is unlocked (its own
+-- look, the one paint), nor while a panel that does not inherit its parent's
+-- opacity has a baseline below 1 (the fade pass paints it).
+local function SyncOwnsAlpha(frame)
+    if GetPanelUnlockState(frame.groupId) then return false end
+    return frame._alphaSyncInheritsAnchor == true or GetPanelBaseAlpha(frame.groupId) >= 1
+end
+
+-- The parent's natural reading, painted as the sync paints it (natural alpha
+-- avoids a config override cascade). force repaints an unchanged reading: a
+-- hand-off after another paint, which the tick, writing only on change,
+-- would not correct.
+local function PaintSyncedAlpha(frame, force)
+    local alpha = GetSyncedParentAlpha(frame.anchoredToParent)
+    local layoutPreview = ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId)
+    if alpha == nil and not layoutPreview then return end
+    if alpha ~= nil then SetExternalAnchorAlphaSyncActive(frame, frame._alphaSyncInheritsExternal) end
+    -- Explicit layout preview: retain natural alpha for downstream chains
+    -- while the positioned frame itself stays fully visible.
+    local painted = alpha
+    if layoutPreview then
+        frame._naturalAlpha = alpha
+        painted = 1
+    else
+        frame._naturalAlpha = nil
+    end
+    if force or frame._alphaSyncLastAlpha ~= painted then
+        frame._alphaSyncLastAlpha = painted
+        frame:SetAlpha(painted)
+    end
+end
+
+-- ~30Hz: smooth enough for fade animations, avoids per-frame overhead. One
+-- script serves every panel; its state lives on the frames.
+local SYNC_INTERVAL = 1 / 30
+local function AlphaSyncOnUpdate(self, dt)
+    local accumulator = (self._syncAccumulator or 0) + dt
+    if accumulator < SYNC_INTERVAL then
+        self._syncAccumulator = accumulator
+        return
+    end
+    self._syncAccumulator = 0
+    local frame = self._syncOwner
+    if frame.anchoredToParent and SyncOwnsAlpha(frame) then
+        PaintSyncedAlpha(frame, false)
+    end
+end
+
+-- The one paint's hand-off (ApplyGroupOwnAlpha): true when the sync owns this
+-- panel's opacity. It paints the parent's reading, or leaves the frame as it
+-- is while that reading cannot be read, as the tick does.
+function CooldownCompanion:PaintAlphaSync(frame)
+    if not SyncOwnsAlpha(frame) then return false end
+    PaintSyncedAlpha(frame, true)
+    return true
 end
 
 function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
@@ -210,8 +282,11 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     -- Create a hidden frame to handle OnUpdate if needed
     if not frame.alphaSyncFrame then
         frame.alphaSyncFrame = CreateFrame("Frame", nil, frame)
+        frame.alphaSyncFrame._syncOwner = frame
     end
 
+    frame._alphaSyncInheritsAnchor = inheritsAnchorAlpha or nil
+    frame._alphaSyncInheritsExternal = inheritsExternalAlpha or nil
     SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
 
     if inheritsAnchorAlpha and self.alphaState then
@@ -224,60 +299,25 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     if baseAlpha < 1 and not inheritsAnchorAlpha then
         frame.alphaSyncFrame:SetScript("OnUpdate", nil)
         SetExternalAnchorAlphaSyncActive(frame, false)
+        -- The fade pass owns this opacity: paint it now rather than leave
+        -- what the sync last wrote.
+        ApplyGroupOwnAlpha(frame)
         return
     end
 
-    -- Sync alpha immediately — use parent's natural alpha to avoid config override cascade
-    -- An unlocked panel keeps reading its parent as it is (the tick below
-    -- skips it, and its refresh paints unlocked alpha).
-    local lastAlpha
+    -- Sync alpha immediately. An unlocked panel wears its own unlocked look
+    -- (the one paint), never its parent's reading, which re-anchoring after a
+    -- refresh would otherwise leave in place; the tick takes over once it
+    -- reads locked.
+    frame._alphaSyncLastAlpha = nil
     if GetPanelUnlockState(frame.groupId) then
-        lastAlpha = GetAnchorInheritedAlpha(parentFrame)
+        ApplyGroupOwnAlpha(frame)
     else
-        lastAlpha = GetSyncedParentAlpha(parentFrame)
-    end
-    if lastAlpha ~= nil then
-        SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
-        frame:SetAlpha(lastAlpha)
-    elseif ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
-        lastAlpha = 1
-        frame:SetAlpha(1)
+        PaintSyncedAlpha(frame, true)
     end
 
-    -- Sync alpha at ~30Hz (smooth enough for fade animations, avoids per-frame overhead)
-    local accumulator = 0
-    local SYNC_INTERVAL = 1 / 30
-    frame.alphaSyncFrame:SetScript("OnUpdate", function(self, dt)
-        accumulator = accumulator + dt
-        if accumulator < SYNC_INTERVAL then return end
-        accumulator = 0
-        if frame.anchoredToParent then
-            -- Skip sync if this panel owns alpha locally or is unlocked.
-            if (not inheritsAnchorAlpha and GetPanelBaseAlpha(frame.groupId) < 1)
-                or GetPanelUnlockState(frame.groupId) then
-                return
-            end
-            -- Read parent's natural alpha to avoid config override cascade
-            local alpha = GetSyncedParentAlpha(frame.anchoredToParent)
-            if alpha == nil then return end
-            SetExternalAnchorAlphaSyncActive(frame, inheritsExternalAlpha)
-            -- Explicit layout preview: retain natural alpha for downstream
-            -- chains while the positioned frame itself stays fully visible.
-            if ST.IsGroupRuntimeLayoutPreviewActive(frame.groupId) then
-                frame._naturalAlpha = alpha
-                if lastAlpha ~= 1 then
-                    lastAlpha = 1
-                    frame:SetAlpha(1)
-                end
-                return
-            end
-            frame._naturalAlpha = nil
-            if lastAlpha == nil or alpha ~= lastAlpha then
-                lastAlpha = alpha
-                frame:SetAlpha(alpha)
-            end
-        end
-    end)
+    frame.alphaSyncFrame._syncAccumulator = 0
+    frame.alphaSyncFrame:SetScript("OnUpdate", AlphaSyncOnUpdate)
 end
 
 function CooldownCompanion:SaveGroupPosition(groupId)

@@ -301,6 +301,38 @@ local function MoveResourceTextToCustomizations(settings, class)
     return true
 end
 
+-- One Cast Bar record's shared-style upgrade: explicitly selected module
+-- artwork stays a visible customization. Stamped, so a re-run is a no-op.
+-- Also used when a class's record is first made (ScopedSettings.lua).
+function ST.MigrateSharedCastBarStyle(settings)
+    if type(settings) ~= "table" then return end
+    local version = tonumber(settings._sharedBarStyleVersion) or 0
+    if version < 1 then
+        if rawget(settings, "iconSizeOverride") == nil then settings.iconSizeOverride = settings.iconOffset == true end
+        if settings.borderStyle == "blizzard" and not (settings.overrideSections and settings.overrideSections.borderSettings) then
+            settings.overrideSections, settings.styleOverrides = settings.overrideSections or {}, settings.styleOverrides or {}
+            settings.overrideSections.borderSettings = true
+            for localKey, key in pairs(common) do
+                if keySections[key] == "borderSettings" then
+                    local value = settings[localKey]
+                    settings.styleOverrides[key] = type(value) == "table" and CopyTable(value) or value
+                end
+            end
+        end
+    end
+    if version < 2 then
+        -- A detached icon's saved size stays with it while attached. The
+        -- customization is parked while the cast bar is independent.
+        if settings.iconOffset == true and not (settings.overrideSections and settings.overrideSections.barIconAppearance) then
+            settings.overrideSections, settings.styleOverrides = settings.overrideSections or {}, settings.styleOverrides or {}
+            settings.overrideSections.barIconAppearance = true
+            settings.styleOverrides.barIconSizeOverride = true
+            settings.styleOverrides.barIconSize = tonumber(settings.iconSize) or 16
+        end
+        settings._sharedBarStyleVersion = 2
+    end
+end
+
 function ST.MigrateSharedBarStyle(profile)
     if not profile then return end
     for _, group in pairs(profile.groups or {}) do
@@ -363,34 +395,10 @@ function ST.MigrateSharedBarStyle(profile)
             group._sharedBarStyleVersion = 1
         end
     end
-    -- Preserve explicitly selected module artwork as a visible customization.
-    for _, settings in pairs(profile.castBarByChar or {}) do
-        local version = tonumber(settings._sharedBarStyleVersion) or 0
-        if version < 1 then
-            if rawget(settings, "iconSizeOverride") == nil then settings.iconSizeOverride = settings.iconOffset == true end
-            if settings.borderStyle == "blizzard" and not (settings.overrideSections and settings.overrideSections.borderSettings) then
-                settings.overrideSections, settings.styleOverrides = settings.overrideSections or {}, settings.styleOverrides or {}
-                settings.overrideSections.borderSettings = true
-                for localKey, key in pairs(common) do
-                    if keySections[key] == "borderSettings" then
-                        local value = settings[localKey]
-                        settings.styleOverrides[key] = type(value) == "table" and CopyTable(value) or value
-                    end
-                end
-            end
-        end
-        if version < 2 then
-            -- A detached icon's saved size stays with it while attached. The
-            -- customization is parked while the cast bar is independent.
-            if settings.iconOffset == true and not (settings.overrideSections and settings.overrideSections.barIconAppearance) then
-                settings.overrideSections, settings.styleOverrides = settings.overrideSections or {}, settings.styleOverrides or {}
-                settings.overrideSections.barIconAppearance = true
-                settings.styleOverrides.barIconSizeOverride = true
-                settings.styleOverrides.barIconSize = tonumber(settings.iconSize) or 16
-            end
-            settings._sharedBarStyleVersion = 2
-        end
-    end
+    -- Preserve explicitly selected module artwork as a visible customization:
+    -- each character's record from before class sharing, and the class ones.
+    for _, settings in pairs(profile.castBarByChar or {}) do ST.MigrateSharedCastBarStyle(settings) end
+    for _, settings in pairs(profile.castBarByClass or {}) do ST.MigrateSharedCastBarStyle(settings) end
     for class, settings in pairs(profile.resourceBarsByClass or {}) do
         local version = tonumber(settings._sharedBarStyleVersion) or 0
         if version < 1 then

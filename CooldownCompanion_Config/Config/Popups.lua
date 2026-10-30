@@ -967,7 +967,7 @@ local function EncodeExportData(payload)
 end
 
 -- Assembles the one-string setup payload from its sections (containers,
--- resources, templates). Any section may be nil.
+-- resources, castBar, templates). Any section may be nil.
 local function BuildSetupExportPayload(sections)
     if type(sections) ~= "table" then
         return nil
@@ -982,6 +982,10 @@ local function BuildSetupExportPayload(sections)
     if type(sections.resources) == "table"
         and type(sections.resources.settings) == "table" then
         payload.resources = sections.resources
+        hasAny = true
+    end
+    if type(sections.castBar) == "table" and type(sections.castBar.settings) == "table" then
+        payload.castBar = sections.castBar
         hasAny = true
     end
     if type(sections.templates) == "table" and #sections.templates > 0 then
@@ -1701,6 +1705,28 @@ local function GetSetupSectionClassKey(section)
 end
 ST._GetSetupSectionClassKey = GetSetupSectionClassKey
 
+-- An Independent placement on one of the exporter's panels or Groups follows
+-- the one imported from the same string. The exporter's numbers mean nothing
+-- here otherwise, so it goes back to screen center. Named frames (resource
+-- bars, totems, the cursor, other addons) keep.
+local function RemapImportedIndependentAnchor(anchor, panelIds, containerIdMap)
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    if type(relativeTo) ~= "string" then return end
+    local panelId = tonumber(relativeTo:match("^CooldownCompanionGroup(%d+)$"))
+    local containerId = tonumber(relativeTo:match("^CooldownCompanionContainer(%d+)$"))
+    if not (panelId or containerId) then return end
+    local mappedPanel = panelId and panelIds[panelId]
+    local mappedContainer = containerId and containerIdMap and containerIdMap[containerId]
+    if mappedPanel then
+        anchor.relativeTo = "CooldownCompanionGroup" .. mappedPanel
+    elseif mappedContainer then
+        anchor.relativeTo = "CooldownCompanionContainer" .. mappedContainer
+    else
+        anchor.point, anchor.relativePoint = "CENTER", "CENTER"
+        anchor.relativeTo, anchor.x, anchor.y = nil, 0, 0
+    end
+end
+
 -- Applies a `setup` payload: groups additively, then the Resources section as
 -- a whole-bucket replace for its class, then any Panel Templates beside the
 -- player's own. Legacy Custom Bars sections were
@@ -1727,7 +1753,11 @@ local function ApplySetupImportData(data, existingPanelIds)
         and data.resources
         or nil
     local templatesSection = type(data.templates) == "table" and #data.templates > 0 and data.templates or nil
-    if not hasContainers and not resourcesSection and not templatesSection then
+    local castBarSection = type(data.castBar) == "table"
+        and type(data.castBar.settings) == "table"
+        and data.castBar
+        or nil
+    if not hasContainers and not resourcesSection and not templatesSection and not castBarSection then
         CooldownCompanion:Print("Import failed: this setup export is empty.")
         return false
     end
@@ -1735,6 +1765,11 @@ local function ApplySetupImportData(data, existingPanelIds)
     local resourcesClassKey = resourcesSection and GetSetupSectionClassKey(resourcesSection) or nil
     if resourcesSection and not resourcesClassKey then
         CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
+        return false
+    end
+    local castBarClassKey = castBarSection and GetSetupSectionClassKey(castBarSection) or nil
+    if castBarSection and not castBarClassKey then
+        CooldownCompanion:Print("Import failed: the Cast Bar setup does not name its class.")
         return false
     end
 
@@ -1777,6 +1812,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     for sourceId, targetId in pairs(importState and importState.groupIdMap or {}) do
         attachmentPanelIds[sourceId] = targetId
     end
+    local importedContainerIds = importState and importState.containerIdMap
 
     if resourcesSection then
         local settings = CopyTable(resourcesSection.settings)
@@ -1787,11 +1823,34 @@ local function ApplySetupImportData(data, existingPanelIds)
             -- when it remaps onto a group imported from this same string.
             settings.anchorGroupId = attachmentPanelIds[anchorId]
         end
+        RemapImportedIndependentAnchor(settings.independentAnchor, attachmentPanelIds, importedContainerIds)
+        for _, layout in pairs(type(settings.layoutOrder) == "table" and settings.layoutOrder or {}) do
+            if type(layout) == "table" then
+                RemapImportedIndependentAnchor(layout.independentAnchor, attachmentPanelIds, importedContainerIds)
+            end
+        end
         local replaced = CooldownCompanion.ReplaceResourceBarClassSettings
             and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
         if replaced then
             applied = true
             CooldownCompanion:Print("Imported Resources setup for " .. tostring(resourcesClassKey) .. ".")
+        else
+            failed = true
+        end
+    end
+
+    -- Per class like Resources: a string for another class waits for it.
+    if castBarSection then
+        local settings = CopyTable(castBarSection.settings)
+        CooldownCompanion:RemapModuleAttachmentPanels(settings, "castbar", attachmentPanelIds)
+        local anchorId = tonumber(settings.anchorGroupId)
+        if anchorId then
+            settings.anchorGroupId = attachmentPanelIds[anchorId]
+        end
+        RemapImportedIndependentAnchor(settings.independentAnchor, attachmentPanelIds, importedContainerIds)
+        if CooldownCompanion:ReplaceCastBarClassSettings(castBarClassKey, settings) then
+            applied = true
+            CooldownCompanion:Print("Imported Cast Bar setup for " .. tostring(castBarClassKey) .. ".")
         else
             failed = true
         end
@@ -1833,6 +1892,9 @@ local function ApplySetupImportData(data, existingPanelIds)
     if resourcesSection then
         CooldownCompanion:ApplyResourceBars()
     end
+    if castBarSection then
+        CooldownCompanion:EvaluateCastBar()
+    end
 
     applied = applied or templatesApplied
     if failed then
@@ -1855,12 +1917,12 @@ StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = function(self, data)
-        if not (data and data.systemKey and data.sourceCharKey) then
+        if not (data and data.systemKey and data.sourceKey) then
             CooldownCompanion:Print("Copy failed: missing context.")
             return
         end
 
-        local ok = CooldownCompanion:CopyCharacterScopedSettings(data.systemKey, data.sourceCharKey)
+        local ok = CooldownCompanion:CopyScopedBarSettings(data.systemKey, data.sourceKey)
         if not ok then
             CooldownCompanion:Print("Copy failed.")
             return

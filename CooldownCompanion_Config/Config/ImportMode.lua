@@ -68,6 +68,7 @@ local function EnterImportMode()
         review = nil,
         statusText = nil,
         skipResources = false,
+        skipCastBar = false,
         excludedPanels = {},
         excludedTemplates = {},
     }
@@ -234,6 +235,9 @@ local function GetEffectiveImportData(mode, review)
         if mode.skipResources then
             copy.resources = nil
         end
+        if mode.skipCastBar then
+            copy.castBar = nil
+        end
         if type(copy.templates) == "table" then
             local kept = {}
             for _, template in ipairs(copy.templates) do
@@ -244,7 +248,8 @@ local function GetEffectiveImportData(mode, review)
             copy.templates = #kept > 0 and kept or nil
         end
         local hasContainers = type(copy.containers) == "table" and #copy.containers > 0
-        if not hasContainers and type(copy.resources) ~= "table" and not copy.templates then
+        if not hasContainers and type(copy.resources) ~= "table" and not copy.templates
+            and type(copy.castBar) ~= "table" then
             return nil
         end
         return copy
@@ -381,6 +386,7 @@ local function ReviewImportModeText(text)
     mode.review = nil
     mode.statusText = nil
     mode.skipResources = false
+    mode.skipCastBar = false
     mode.excludedPanels = {}
     mode.excludedTemplates = {}
 
@@ -596,7 +602,7 @@ local function RenderSetupReview(scroll, mode, review)
     -- Reviewed setups are converted data: legacy Custom Bars sections have
     -- already become panel entries, so containers, resources and templates
     -- remain.
-    local hasContainers, _, resources, templates = ST._GetSetupImportSections(data)
+    local hasContainers, _, resources, templates, castBar = ST._GetSetupImportSections(data)
 
     AddHeading(scroll, "This string contains")
     AddSpacer(scroll, 6)
@@ -606,6 +612,9 @@ local function RenderSetupReview(scroll, mode, review)
     end
 
     local playerClassKey = GetPlayerClassKey()
+    -- The class whose "waiting" notice is already on the surface, so a later
+    -- section for the same class does not repeat it.
+    local waitingNoticeClass
 
     if resources then
         local classKey = ST._GetSetupImportSectionClassKey(resources)
@@ -643,9 +652,34 @@ local function RenderSetupReview(scroll, mode, review)
             -- always resolves the current character's class, so the setup is
             -- genuinely there but not visible until you play that class.
             AddLine(scroll, "It imports for " .. keyText .. " and is waiting the next time you play a " .. keyText .. " character.", 0.7, 0.7, 0.7)
+            waitingNoticeClass = classKey
             if hasContainers then
                 AddLine(scroll, "The anchor to a group in this string does not carry across classes; re-pick it on that character.", 0.7, 0.7, 0.7)
             end
+        end
+    end
+
+    if castBar then
+        local classKey = ST._GetSetupImportSectionClassKey(castBar)
+        local keyText = tostring(classKey or "Unknown class")
+        AddSectionHeading(scroll, "Cast Bar  |cff777777(" .. keyText .. ")|r", classKey)
+        AddSpacer(scroll, 10)
+        -- The same one decision as Resources, shown only when there is a
+        -- turned-on Cast Bar to lose.
+        if classKey and CooldownCompanion:IsCastBarClassConfigured(classKey) then
+            local toggle = AceGUI:Create("CheckBox")
+            toggle:SetFullWidth(true)
+            toggle:SetLabel("Replace my " .. keyText .. " Cast Bar")
+            toggle:SetValue(not mode.skipCastBar)
+            toggle:SetCallback("OnValueChanged", function(_, _, value)
+                mode.skipCastBar = value ~= true
+                RenderImportModeReview()
+                UpdateImportModePill()
+            end)
+            scroll:AddChild(toggle)
+        end
+        if classKey and playerClassKey and classKey ~= playerClassKey and classKey ~= waitingNoticeClass then
+            AddLine(scroll, "It imports for " .. keyText .. " and is waiting the next time you play a " .. keyText .. " character.", 0.7, 0.7, 0.7)
         end
     end
 
@@ -856,6 +890,7 @@ local function ResetImportModePaste()
     mode.review = nil
     mode.statusText = nil
     mode.skipResources = false
+    mode.skipCastBar = false
     mode.excludedPanels = {}
     mode.excludedTemplates = {}
     if col3._importPasteBox then
