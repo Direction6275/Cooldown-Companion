@@ -754,18 +754,3 @@ function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
     end
 end
 
-function ST._GetAttachedBarPreviewRect(panelFrame, lane)
-    local w, h = panelFrame:GetWidth(), panelFrame:GetHeight()
-    if lane ~= "aboveMain" and lane ~= "belowMain" then return 0, 0, w, h end
-    local mirror = panelFrame._cdcPanelPreview
-    local rect = mirror and mirror.barBaseRect
-    if not rect then return 0, 0, w, h end
-    local scale = mirror.content:GetScale()
-    -- The measuring host is sized before the composition anchors it. Its
-    -- two-point mirror root may not have a resolved rect on the first build;
-    -- derive that root's height from the host and its reserved bottom band.
-    local rootHeight = h - (panelFrame._cdcPreviewReserveBottom or 0)
-    return (w - mirror.content:GetWidth() * scale) / 2 + rect.x * scale,
-        (rootHeight - mirror.content:GetHeight() * scale) / 2 + rect.y * scale,
-        rect.width * scale, rect.height * scale
-end

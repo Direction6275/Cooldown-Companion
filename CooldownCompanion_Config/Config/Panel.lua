@@ -1973,18 +1973,11 @@ local function CreateConfigPanel()
             GameTooltip:AddLine("Anchors your player and target unit frames to your panels.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Shared by every character of your class.", 1, 1, 1, true)
-        elseif CS.barsEntrySelected and not CS.selectedResourcePowerType then
+        elseif CS.barsEntrySelected then
             GameTooltip:AddLine("Resource Bars")
             GameTooltip:AddLine("Shared resource bar settings, organized into tabs.", 1, 1, 1, true)
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Layout is saved per specialization.", 1, 1, 1, true)
-        elseif CS.barsEntrySelected then
-            GameTooltip:AddLine("Layout & Order")
-            GameTooltip:AddLine("Arrange attached bars by dragging them around the mirrored icon panel.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Only applies when resource anchoring uses panel anchoring.", 1, 1, 1)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Layout is saved per specialization and swaps automatically.", 1, 1, 1)
         else
             local selection = GetConfigSelectionSummary()
             local mode = GetColumn3HeaderMode(selection)

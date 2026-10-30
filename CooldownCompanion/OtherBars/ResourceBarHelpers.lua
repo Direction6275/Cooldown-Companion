@@ -254,20 +254,6 @@ function RB.SetBarLane(slot, lane)
     slot.anchorRegion = (lane == "aboveMain" or lane == "belowMain") and "main" or "panel"
 end
 
-function RB.GetBarPlacementOptions(group)
-    local list, order = {}, {}
-    for _, side in ipairs({ "above", "below" }) do
-        local label = side == "above" and "Above" or "Below"
-        list[side .. "Main"] = label .. " Main Icons"
-        order[#order + 1] = side .. "Main"
-        if RB.HasBarSectionOnSide(group, side) then
-            list[side] = label .. " Entire Panel"
-            order[#order + 1] = side
-        end
-    end
-    return list, order
-end
-
 -- Only the collapsed destination needs this tie-break. It follows the fixed /
 -- player aura / target aura rank and precedes the saved order within that rank.
 function RB.GetBarRegionRank(lane, region, group)
