@@ -138,7 +138,6 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount, templa
     end
 
     local classScoped = {}
-    local characterScoped = {}
     local legacyScoped = {}
     if type(profile) == "table" then
         if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resources" end
@@ -154,9 +153,6 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount, templa
     end
     if #classScoped > 0 then
         AddLine(lines, "Class-scoped settings: " .. table.concat(classScoped, ", "))
-    end
-    if #characterScoped > 0 then
-        AddLine(lines, "Character-scoped settings: " .. table.concat(characterScoped, ", "))
     end
     if #legacyScoped > 0 then
         AddLine(lines, "Unresolved legacy settings: " .. table.concat(legacyScoped, ", "))

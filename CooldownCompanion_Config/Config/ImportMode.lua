@@ -612,6 +612,9 @@ local function RenderSetupReview(scroll, mode, review)
     end
 
     local playerClassKey = GetPlayerClassKey()
+    -- The class whose "waiting" notice is already on the surface, so a later
+    -- section for the same class does not repeat it.
+    local waitingNoticeClass
 
     if resources then
         local classKey = ST._GetSetupImportSectionClassKey(resources)
@@ -649,6 +652,7 @@ local function RenderSetupReview(scroll, mode, review)
             -- always resolves the current character's class, so the setup is
             -- genuinely there but not visible until you play that class.
             AddLine(scroll, "It imports for " .. keyText .. " and is waiting the next time you play a " .. keyText .. " character.", 0.7, 0.7, 0.7)
+            waitingNoticeClass = classKey
             if hasContainers then
                 AddLine(scroll, "The anchor to a group in this string does not carry across classes; re-pick it on that character.", 0.7, 0.7, 0.7)
             end
@@ -673,11 +677,8 @@ local function RenderSetupReview(scroll, mode, review)
                 UpdateImportModePill()
             end)
             scroll:AddChild(toggle)
-            if mode.skipCastBar then
-                AddLine(scroll, "The Cast Bar will be skipped. Everything else still imports.", 0.7, 0.7, 0.7)
-            end
         end
-        if classKey and playerClassKey and classKey ~= playerClassKey then
+        if classKey and playerClassKey and classKey ~= playerClassKey and classKey ~= waitingNoticeClass then
             AddLine(scroll, "It imports for " .. keyText .. " and is waiting the next time you play a " .. keyText .. " character.", 0.7, 0.7, 0.7)
         end
     end

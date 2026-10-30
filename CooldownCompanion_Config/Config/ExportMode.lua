@@ -616,8 +616,6 @@ local function RenderExportModeSummary(col3)
 
     if selection.castBar then
         AddSummarySectionHeading(scroll, "Cast Bar  |cff777777(" .. classKey .. ")|r")
-        AddSummarySpacer(scroll, 10)
-        AddSummaryLine(scroll, "Replaces the importer's " .. classKey .. " Cast Bar.", 0.7, 0.7, 0.7)
     end
 
     local checkedTemplates = GetCheckedExportTemplates(selection)
