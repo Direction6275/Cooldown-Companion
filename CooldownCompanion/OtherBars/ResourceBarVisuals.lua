@@ -469,45 +469,82 @@ end
 -- Layout: position segments within a segmented bar
 ------------------------------------------------------------------------
 
-local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, orientationOverride, reverseFillOverride, powerType, appearance)
+-- What both segment layouts read once per layout: the resource's look, the
+-- stack's orientation and its fill direction (the shared style always gives
+-- resources a true/false one).
+local function ResolveSegmentLook(holder, settings, powerType, appearance)
+    local style = GetResourceDisplayStyle(settings, powerType, appearance)
+    holder._segmentedSmoothing = style.segmentedSmoothing
+    local shared = appearance and appearance.style
+        or ST.ResolveModuleBarStyle("resources", settings, powerType)
+    return {
+        barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid"),
+        bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 },
+        borderStyle = style and style.borderStyle or "pixel",
+        borderColor = style and style.borderColor or { 0, 0, 0, 1 },
+        borderSize = style and style.borderSize or 1,
+        borderRenderMode = ST.GetBorderRenderMode(style),
+        isVertical = IsVerticalResourceLayout(settings),
+        reverseFill = shared.barReverseFill == true,
+    }
+end
+
+-- Each of `count` segments' size along the bar, with the gap clamped so
+-- they fit.
+local function GetSegmentSize(look, totalWidth, totalHeight, count, gap)
+    local total = look.isVertical and totalHeight or totalWidth
+    gap = ClampSegmentGapToFit(total, count, gap)
+    local subSize = (total - (count - 1) * gap) / count
+    if subSize < 1 then subSize = 1 end
+    return subSize, gap
+end
+
+-- Places segment i of the bar and gives it the resource's look.
+local function PlaceSegment(seg, holder, look, i, subSize, gap, totalWidth, totalHeight)
+    if look.isVertical then
+        seg:SetSize(totalWidth, subSize)
+        local yOfs
+        if look.reverseFill then
+            yOfs = totalHeight - subSize - ((i - 1) * (subSize + gap))
+            if yOfs < 0 then yOfs = 0 end
+        else
+            yOfs = (i - 1) * (subSize + gap)
+        end
+        seg:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, yOfs)
+    else
+        seg:SetSize(subSize, totalHeight)
+        local xOfs
+        if look.reverseFill then
+            xOfs = totalWidth - subSize - ((i - 1) * (subSize + gap))
+            if xOfs < 0 then xOfs = 0 end
+        else
+            xOfs = (i - 1) * (subSize + gap)
+        end
+        seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
+    end
+end
+
+local function StyleSegment(seg, look)
+    seg:SetStatusBarTexture(look.barTexture)
+    seg:SetOrientation(look.isVertical and "VERTICAL" or "HORIZONTAL")
+    seg:SetReverseFill(look.reverseFill)
+    local bgColor = look.bgColor
+    seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+    if look.borderStyle == "pixel" then
+        ApplyPixelBorders(seg.borders, seg, look.borderColor, look.borderSize, look.borderRenderMode)
+    else
+        HidePixelBorders(seg.borders)
+    end
+end
+
+local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, powerType, appearance)
     if not holder or not holder.segments then return end
     local n = holder._activeSegments or #holder.segments
     if n == 0 then return end
 
-    local style = GetResourceDisplayStyle(settings, powerType, appearance)
-    holder._segmentedSmoothing = style.segmentedSmoothing
-    local shared = appearance and appearance.style
-        or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
-    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
-    local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
-    local borderStyle = style and style.borderStyle or "pixel"
-    local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
-    local borderSize = style and style.borderSize or 1
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local isVertical
-    if orientationOverride == "vertical" then
-        isVertical = true
-    elseif orientationOverride == "horizontal" then
-        isVertical = false
-    else
-        isVertical = IsVerticalResourceLayout(settings)
-    end
-    local reverseFill = false
-    if reverseFillOverride ~= nil then
-        reverseFill = reverseFillOverride == true
-    else
-        reverseFill = shared and shared.barReverseFill
-        if reverseFill == nil then reverseFill = isVertical and IsVerticalFillReversed(settings) or false end
-    end
+    local look = ResolveSegmentLook(holder, settings, powerType, appearance)
     local subSize
-    if isVertical then
-        gap = ClampSegmentGapToFit(totalHeight, n, gap)
-        subSize = (totalHeight - (n - 1) * gap) / n
-    else
-        gap = ClampSegmentGapToFit(totalWidth, n, gap)
-        subSize = (totalWidth - (n - 1) * gap) / n
-    end
-    if subSize < 1 then subSize = 1 end
+    subSize, gap = GetSegmentSize(look, totalWidth, totalHeight, n, gap)
 
     for i = 1, #holder.segments do
         local seg = holder.segments[i]
@@ -518,43 +555,12 @@ local function LayoutSegments(holder, totalWidth, totalHeight, gap, settings, or
             if holder.rechargeTexts and holder.rechargeTexts[i] then
                 holder.rechargeTexts[i]:Hide()
             end
-        elseif isVertical then
-            seg:SetSize(totalWidth, subSize)
-            local yOfs
-            if reverseFill then
-                yOfs = totalHeight - subSize - ((i - 1) * (subSize + gap))
-                if yOfs < 0 then yOfs = 0 end
-            else
-                yOfs = (i - 1) * (subSize + gap)
-            end
-            seg:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, yOfs)
         else
-            seg:SetSize(subSize, totalHeight)
-            local xOfs
-            if reverseFill then
-                xOfs = totalWidth - subSize - ((i - 1) * (subSize + gap))
-                if xOfs < 0 then xOfs = 0 end
-            else
-                xOfs = (i - 1) * (subSize + gap)
-            end
-            seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
-        end
-
-        if i <= n then
+            PlaceSegment(seg, holder, look, i, subSize, gap, totalWidth, totalHeight)
             seg:Show()
-            seg:SetStatusBarTexture(barTexture)
-            seg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
-            seg:SetReverseFill(reverseFill)
-            seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-
-            if borderStyle == "pixel" then
-                ApplyPixelBorders(seg.borders, seg, borderColor, borderSize, borderRenderMode)
-            else
-                HidePixelBorders(seg.borders)
-            end
+            StyleSegment(seg, look)
         end
     end
-
 end
 
 ------------------------------------------------------------------------
@@ -612,93 +618,32 @@ local function CreateOverlayBar(parent, halfSegments)
     return holder
 end
 
-local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments, orientationOverride, reverseFillOverride, powerType, appearance)
+local function LayoutOverlaySegments(holder, totalWidth, totalHeight, gap, settings, halfSegments, powerType, appearance)
     if not holder or not holder.segments then return end
 
-    local style = GetResourceDisplayStyle(settings, powerType, appearance)
-    holder._segmentedSmoothing = style.segmentedSmoothing
-    local shared = appearance and appearance.style
-        or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
-    local barTexture = CooldownCompanion:FetchEffectiveBarTexture(style and style.barTexture or "Solid")
-    local bgColor = style and style.backgroundColor or { 0, 0, 0, 0.5 }
-    local borderStyle = style and style.borderStyle or "pixel"
-    local borderColor = style and style.borderColor or { 0, 0, 0, 1 }
-    local borderSize = style and style.borderSize or 1
-    local borderRenderMode = ST.GetBorderRenderMode(style)
-    local isVertical
-    if orientationOverride == "vertical" then
-        isVertical = true
-    elseif orientationOverride == "horizontal" then
-        isVertical = false
-    else
-        isVertical = IsVerticalResourceLayout(settings)
-    end
-    local reverseFill = false
-    if reverseFillOverride ~= nil then
-        reverseFill = reverseFillOverride == true
-    else
-        reverseFill = shared and shared.barReverseFill
-        if reverseFill == nil then reverseFill = isVertical and IsVerticalFillReversed(settings) or false end
-    end
+    local look = ResolveSegmentLook(holder, settings, powerType, appearance)
     local subSize
-    if isVertical then
-        gap = ClampSegmentGapToFit(totalHeight, halfSegments, gap)
-        subSize = (totalHeight - (halfSegments - 1) * gap) / halfSegments
-    else
-        gap = ClampSegmentGapToFit(totalWidth, halfSegments, gap)
-        subSize = (totalWidth - (halfSegments - 1) * gap) / halfSegments
-    end
-    if subSize < 1 then subSize = 1 end
+    subSize, gap = GetSegmentSize(look, totalWidth, totalHeight, halfSegments, gap)
 
     for i = 1, halfSegments do
         local seg = holder.segments[i]
         seg:ClearAllPoints()
-        if isVertical then
-            seg:SetSize(totalWidth, subSize)
-            local yOfs
-            if reverseFill then
-                yOfs = totalHeight - subSize - ((i - 1) * (subSize + gap))
-                if yOfs < 0 then yOfs = 0 end
-            else
-                yOfs = (i - 1) * (subSize + gap)
-            end
-            seg:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, yOfs)
-        else
-            seg:SetSize(subSize, totalHeight)
-            local xOfs
-            if reverseFill then
-                xOfs = totalWidth - subSize - ((i - 1) * (subSize + gap))
-                if xOfs < 0 then xOfs = 0 end
-            else
-                xOfs = (i - 1) * (subSize + gap)
-            end
-            seg:SetPoint("TOPLEFT", holder, "TOPLEFT", xOfs, 0)
-        end
-
-        seg:SetStatusBarTexture(barTexture)
-        seg:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
-        seg:SetReverseFill(reverseFill)
-        seg.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
-
-        if borderStyle == "pixel" then
-            ApplyPixelBorders(seg.borders, seg, borderColor, borderSize, borderRenderMode)
-        else
-            HidePixelBorders(seg.borders)
-        end
+        PlaceSegment(seg, holder, look, i, subSize, gap, totalWidth, totalHeight)
+        StyleSegment(seg, look)
 
         -- Position overlay segment inset by border to stay inside borders
         local ov = holder.overlaySegments[i]
         ov:ClearAllPoints()
-        if borderStyle == "pixel" then
-            local inset = ST.GetEffectiveBorderLayoutSize(seg, borderSize, borderRenderMode)
+        if look.borderStyle == "pixel" then
+            local inset = ST.GetEffectiveBorderLayoutSize(seg, look.borderSize, look.borderRenderMode)
             ov:SetPoint("TOPLEFT", seg, "TOPLEFT", inset, -inset)
             ov:SetPoint("BOTTOMRIGHT", seg, "BOTTOMRIGHT", -inset, inset)
         else
             ov:SetAllPoints(seg)
         end
-        ov:SetStatusBarTexture(barTexture)
-        ov:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
-        ov:SetReverseFill(reverseFill)
+        ov:SetStatusBarTexture(look.barTexture)
+        ov:SetOrientation(look.isVertical and "VERTICAL" or "HORIZONTAL")
+        ov:SetReverseFill(look.reverseFill)
     end
     for i = halfSegments + 1, #holder.segments do
         local seg = holder.segments[i]

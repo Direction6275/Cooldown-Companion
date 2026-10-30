@@ -822,29 +822,33 @@ function HealthBar.Update(bar, settings)
 
     if bar.text and bar.text:IsShown() then
         local textFormat = bar._textFormat
-        if textFormat == "current" then
-            bar.text:SetFormattedText("%s", AbbreviateNumbers(currentHealth))
-        elseif textFormat == "current_max" then
-            bar.text:SetFormattedText("%s / %s", AbbreviateNumbers(currentHealth), AbbreviateNumbers(maxHealth))
-        elseif textFormat == "current_percent" then
-            bar.text:SetFormattedText(
-                "%s | %.0f%%",
-                AbbreviateNumbers(currentHealth),
-                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
-            )
-        elseif textFormat == "current_percent_no_sign" then
-            bar.text:SetFormattedText(
-                "%s | %.0f",
-                AbbreviateNumbers(currentHealth),
-                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
-            )
-        elseif textFormat == "percent_no_sign" then
-            bar.text:SetFormattedText("%.0f", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
-        else
-            bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
+        local percent
+        if textFormat ~= "current" and textFormat ~= "current_max" then
+            percent = UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
         end
+        HealthBar.WriteText(bar.text, textFormat, currentHealth, maxHealth, percent)
     end
 
+end
+
+-- The six Health text formats, for the live bar and its config preview. The
+-- values go straight to SetFormattedText and AbbreviateNumbers, which accept
+-- secret values; the caller works out `percent` only for a format that shows
+-- it.
+function HealthBar.WriteText(fontString, textFormat, current, max, percent)
+    if textFormat == "current" then
+        fontString:SetFormattedText("%s", AbbreviateNumbers(current))
+    elseif textFormat == "current_max" then
+        fontString:SetFormattedText("%s / %s", AbbreviateNumbers(current), AbbreviateNumbers(max))
+    elseif textFormat == "current_percent" then
+        fontString:SetFormattedText("%s | %.0f%%", AbbreviateNumbers(current), percent)
+    elseif textFormat == "current_percent_no_sign" then
+        fontString:SetFormattedText("%s | %.0f", AbbreviateNumbers(current), percent)
+    elseif textFormat == "percent_no_sign" then
+        fontString:SetFormattedText("%.0f", percent)
+    else
+        fontString:SetFormattedText("%.0f%%", percent)
+    end
 end
 
 function HealthBar.Style(bar, settings, appearance)
@@ -899,22 +903,7 @@ function HealthBar.Style(bar, settings, appearance)
         and textFormat ~= "current_percent_no_sign" then
         textFormat = "percent"
     end
-    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
-    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-    local textOutline = ST.GetEffectiveFontOutline(resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
-        textColor = DEFAULT_RESOURCE_TEXT_COLOR
-    end
-
-    bar.text:SetFont(CooldownCompanion:FetchFont(textFontName), textSize, textOutline)
-    ST.ApplyFontShadowForOutline(bar.text, textOutline)
-    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
-    ST.TextAnchorLayout.Apply(bar.text, bar,
-        resourceConfig and resourceConfig.textAnchor or "CENTER",
-        resourceConfig and resourceConfig.textXOffset or 0,
-        resourceConfig and resourceConfig.textYOffset or 0
-    )
+    RB.ApplyResourceTextStyle(bar.text, bar, resourceConfig)
     bar.text:SetShown(resourceConfig and resourceConfig.showText == true)
     bar._textFormat = textFormat
 end

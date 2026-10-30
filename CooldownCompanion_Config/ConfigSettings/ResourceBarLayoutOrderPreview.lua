@@ -966,7 +966,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     CreateSegmentedBar, frame.previewCanvas, mwMaxStacks)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
             local baseColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, mwMaxStacks do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -979,7 +979,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     CreateOverlayBar, frame.previewCanvas, halfSegments)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, nil, nil, slot.powerType, appearance)
+            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, slot.powerType, appearance)
             local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, halfSegments do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -1022,7 +1022,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo.powerType = slot.powerType
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
             local baseColor = GetResourceColors(slot.powerType, rbSettings)
             for i = 1, stackMax do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -1048,7 +1048,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             barInfo.powerType = slot.powerType
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
         StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings, appearance)
     else
         if not barInfo or barInfo.barType ~= "continuous" then

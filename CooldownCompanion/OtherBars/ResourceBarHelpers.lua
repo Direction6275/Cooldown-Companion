@@ -1498,6 +1498,40 @@ local function HasRechargeText(powerType)
     return powerType == 5
 end
 
+-- A resource's value text: "current", "percent", else "current / max". The
+-- values go straight to SetFormattedText, which accepts secret values, and are
+-- never tested here; the caller works out `percent` only for the percent
+-- format, so a secret percent is never read for nothing.
+local function WriteResourceValueText(fontString, textFormat, current, max, percent)
+    if textFormat == "current" then
+        fontString:SetFormattedText("%d", current)
+    elseif textFormat == "percent" then
+        fontString:SetFormattedText("%.0f", percent)
+    else
+        fontString:SetFormattedText("%d / %d", current, max)
+    end
+end
+
+-- Font, colour and anchor of a resource's value text from its resolved
+-- display config. Each caller keeps its own format allow-list and show rule.
+local function ApplyResourceTextStyle(fontString, parent, config)
+    local fontName = config and config.textFont or RB.DEFAULT_RESOURCE_TEXT_FONT
+    local size = tonumber(config and config.textFontSize) or RB.DEFAULT_RESOURCE_TEXT_SIZE
+    local outline = ST.GetEffectiveFontOutline(config and config.textFontOutline or RB.DEFAULT_RESOURCE_TEXT_OUTLINE)
+    local color = config and config.textFontColor or RB.DEFAULT_RESOURCE_TEXT_COLOR
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        color = RB.DEFAULT_RESOURCE_TEXT_COLOR
+    end
+    fontString:SetFont(CooldownCompanion:FetchFont(fontName), size, outline)
+    ST.ApplyFontShadowForOutline(fontString, outline)
+    fontString:SetTextColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+    ST.TextAnchorLayout.Apply(fontString, parent,
+        config and config.textAnchor or "CENTER",
+        config and config.textXOffset or 0,
+        config and config.textYOffset or 0
+    )
+end
+
 ------------------------------------------------------------------------
 -- IsResourceEnabled
 ------------------------------------------------------------------------
@@ -1638,6 +1672,8 @@ RB.IsStackCountedResource = IsStackCountedResource
 RB.IsContinuousResourceShape = IsContinuousResourceShape
 RB.GetResourceTextContract = GetResourceTextContract
 RB.HasRechargeText = HasRechargeText
+RB.WriteResourceValueText = WriteResourceValueText
+RB.ApplyResourceTextStyle = ApplyResourceTextStyle
 RB.IsResourceEnabled = IsResourceEnabled
 RB.ClearSegmentedText = ClearSegmentedText
 RB.SetSegmentedText = SetSegmentedText
