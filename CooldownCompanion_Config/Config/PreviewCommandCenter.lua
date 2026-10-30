@@ -2228,8 +2228,9 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- independent resource stack drops the cast slot from the canvas even
     -- with the cast bar attached, and the control then named a preview that
     -- repainted a cast-free canvas and visibly did nothing.
+    -- The bars canvas draws the Independent stack only.
     local onBarsWorkspace = CS.barsEntrySelected == true and CS.barWorkspaceKind == "resources"
-        and ST._GetBarWorkspacePlacement("resources") ~= "unplaced"
+        and ST._GetBarWorkspacePlacement("resources") == "independent"
     local objects = {
         cast = ST._ResourcesPreviewRendersCastSlot ~= nil
             and ST._ResourcesPreviewRendersCastSlot() == true,

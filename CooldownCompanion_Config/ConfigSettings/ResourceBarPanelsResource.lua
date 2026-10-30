@@ -144,7 +144,6 @@ local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
 local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
-local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
@@ -154,7 +153,6 @@ local thresholdTickEditorErrors = {}
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
-local CopyTableValue = RBP.CopyTableValue
 local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
@@ -966,6 +964,19 @@ local function BuildResourceBarAnchoringPanel(container)
                         settings.resources[pt] = {}
                     end
                     settings.resources[pt].enabled = val
+                    -- Turning Health on is the player's edit (rule Q1): a record
+                    -- that never had its effect switches starts from the shipped
+                    -- defaults, which the bars otherwise read as off.
+                    local healthDefaults = pt == HealthResource.ID and val == true
+                        and ST._defaults and ST._defaults.profile.resourceBars
+                        and ST._defaults.profile.resourceBars.resources[HealthResource.ID]
+                    if healthDefaults then
+                        for _, effect in ipairs(HEALTH_EFFECTS) do
+                            if settings.resources[pt][effect.enabledKey] == nil then
+                                settings.resources[pt][effect.enabledKey] = healthDefaults[effect.enabledKey]
+                            end
+                        end
+                    end
                     applyBars("style-settings")
                 end,
             })

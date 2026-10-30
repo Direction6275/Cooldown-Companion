@@ -678,7 +678,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     preview.panelId = panelId
     preview.readOnly = readOnly
     preview.groupOverview = readOnly and options and options.groupOverview == true or false
-    -- Copy-customization banner surface; nil means the preview's own root.
     if not readOnly and panelId == CS.selectedGroup then
         -- A full build reconciles the cleared stores by construction; do not
         -- make the next selection-only pass repeat that work.

@@ -51,50 +51,6 @@ local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "segmentedSmoothing",
 }
 
--- Fonts are not listed: resource text styling lives in the resource
--- slot's Value/Duration Text customization (BarStyle.lua).
-local RESOURCE_TEXT_DISPLAY_KEYS = {
-    "showText",
-    "textFormat",
-    "textAnchor",
-    "textXOffset",
-    "textYOffset",
-    "hideTextAtZero",
-    "showRechargeText",
-    "rechargeTextMode",
-    "rechargeTextAnchor",
-    "rechargeTextXOffset",
-    "rechargeTextYOffset",
-}
-
-local RESOURCE_HEALTH_DISPLAY_KEYS = {
-    "healthBarColor",
-    "healthBarOpacity",
-    "healthBarGradient",
-    "healthBarFullColor",
-    "healthBarHalfColor",
-    "healthBarLowColor",
-    "healthBackgroundColor",
-    "healthBackgroundGradient",
-    "healthBackgroundFullColor",
-    "healthBackgroundHalfColor",
-    "healthBackgroundLowColor",
-    "healthBackgroundOpacity",
-    "showAbsorbs",
-    "showHealAbsorbs",
-    "showIncomingHeals",
-    "showLowHealthAlert",
-    "healthAbsorbColor",
-    "healthAbsorbTexture",
-    "healthHealAbsorbColor",
-    "healthHealAbsorbTexture",
-    "healthIncomingHealColor",
-    "healthIncomingHealTexture",
-    "healthLowHealthAlertColor",
-    "healthLowHealthAlertTexture",
-    "healthLowHealthAlertMissingHealthOnly",
-}
-
 ------------------------------------------------------------------------
 -- Layout Helpers
 ------------------------------------------------------------------------
@@ -884,29 +840,6 @@ local function GetResourceDisplayConfig(settings, powerType, appearance)
     return resolved
 end
 
-local function GetResourceSpecOverrideTable(settings, powerType, specID, create)
-    if type(settings) ~= "table" or not specID then return nil end
-    specID = tonumber(specID) or specID
-    if type(settings.resources) ~= "table" then
-        if not create then return nil end
-        settings.resources = {}
-    end
-    if type(settings.resources[powerType]) ~= "table" then
-        if not create then return nil end
-        settings.resources[powerType] = {}
-    end
-    local resource = settings.resources[powerType]
-    if type(resource.specOverrides) ~= "table" then
-        if not create then return nil end
-        resource.specOverrides = {}
-    end
-    if type(resource.specOverrides[specID]) ~= "table" then
-        if not create then return nil end
-        resource.specOverrides[specID] = {}
-    end
-    return resource.specOverrides[specID]
-end
-
 local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 ------------------------------------------------------------------------
@@ -1311,8 +1244,8 @@ end
 
 -- Resources counted in stacks: Maelstrom Weapon, the segmented power types
 -- and every aura-stack family member. They take threshold colours instead of
--- tick markers, and their text counts stacks unless the bar is drawn
--- Continuous (GetResourceTextContract).
+-- tick markers, and their text follows the stack rules, except Maelstrom
+-- Weapon drawn Continuous (GetResourceTextContract).
 local function IsStackCountedResource(powerType)
     return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
         or RB.AURA_STACK_RESOURCES[powerType] ~= nil
@@ -1644,9 +1577,6 @@ RB.IsInVoidMetamorphosis = IsInVoidMetamorphosis
 RB.GetCanonicalPowerType = GetCanonicalPowerType
 RB.GetPlacementRenderPowerType = GetPlacementRenderPowerType
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
-RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
-RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS
-RB.RESOURCE_HEALTH_DISPLAY_KEYS = RESOURCE_HEALTH_DISPLAY_KEYS
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive

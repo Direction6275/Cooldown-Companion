@@ -499,7 +499,7 @@ local function GetSegmentSize(look, totalWidth, totalHeight, count, gap)
     return subSize, gap
 end
 
--- Places segment i of the bar and gives it the resource's look.
+-- Sizes and anchors segment i of the bar; StyleSegment gives it the look.
 local function PlaceSegment(seg, holder, look, i, subSize, gap, totalWidth, totalHeight)
     if look.isVertical then
         seg:SetSize(totalWidth, subSize)

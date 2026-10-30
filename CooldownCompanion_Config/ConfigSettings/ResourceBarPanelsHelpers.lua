@@ -518,9 +518,10 @@ end
 --
 -- While a slider on a resources surface is DRAGGED, the candidate value is
 -- exposed only for the workspace's pinned canvas render, then restored. The
--- saved value and live display update once, on release. The canvas wraps the
--- real read-only panel mirror, so it is an
--- honest stand-in for the edit - and driving the live bars from every
+-- saved value and live display update once, on release. The canvas paints with
+-- the live bars' own painters (the Independent stack on the bars workspace,
+-- the panel preview in the buttons view), so it is an honest stand-in for the
+-- edit - and driving the live bars from every
 -- OnValueChanged tick was what made these sliders feel heavy.
 --
 -- CDC-SliderRow's edit box deliberately fires BOTH OnValueChanged and

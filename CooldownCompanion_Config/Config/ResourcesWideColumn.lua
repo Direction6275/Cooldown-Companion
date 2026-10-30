@@ -132,19 +132,18 @@ local function CollectBarsOffCanvasChipItems(rendered)
     local items = {}
     if CS.barsEntrySelected and CS.barWorkspaceKind ~= "resources" then
         if CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target" then
-            -- Either frame's preview target opens the complete shared page.
-            if not (rendered["frame:player"] or rendered["frame:target"]) then
-                local item = CS.barWorkspaceKind
-                items[#items + 1] = {
-                    key = "frames",
-                    label = "Unit Frames",
-                    selected = true,
-                    onClick = function()
-                        ST._OpenBarWorkspace(item)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                }
-            end
+            -- The canvas draws no unit-frame targets, so the chip opens the
+            -- shared Unit Frames page.
+            local item = CS.barWorkspaceKind
+            items[#items + 1] = {
+                key = "frames",
+                label = "Unit Frames",
+                selected = true,
+                onClick = function()
+                    ST._OpenBarWorkspace(item)
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            }
         end
         return items
     end

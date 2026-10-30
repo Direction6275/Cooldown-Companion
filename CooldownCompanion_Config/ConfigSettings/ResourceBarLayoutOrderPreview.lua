@@ -253,10 +253,10 @@ local function AcquireContainer(preview, parent)
         frame:SetClipsChildren(false)
         pool[index] = frame
     end
-    -- Containers shift roles between builds (a placeholder pass slides the
-    -- lane indices), so acquire must strip everything a previous role set:
-    -- the icon-panel click shield's scripts + mouse capture, and any visible
-    -- backdrop. Consumers that want either re-apply after acquiring.
+    -- Containers are pooled across builds and change roles (the content
+    -- frame, the lanes), so acquire clears the scripts, mouse capture and
+    -- backdrop an earlier tenant set. Consumers that want them re-apply
+    -- after acquiring.
     frame:EnableMouse(false)
     frame:SetScript("OnEnter", nil)
     frame:SetScript("OnLeave", nil)
@@ -2205,7 +2205,8 @@ function ST._BuildLayoutOrderPanel(container)
     -- Only Independent bars are drawn here. A module on a panel is moved to
     -- that panel's workspace before every full refresh (_NormalizeBarWorkspace),
     -- and unit frames are never Independent, so a module awaiting a panel, or
-    -- a rebuild that runs before the move, shows its anchor status.
+    -- a rebuild that runs before the move, shows its anchor status (blank
+    -- while that panel is fine).
     if ST._GetBarWorkspacePlacement(workspaceKind) ~= "independent" then
         FinishPreviewWithMessage(preview, CooldownCompanion:GetModuleAnchorStatusText(
             CooldownCompanion:ResolveModulePanel(workspaceKind)))

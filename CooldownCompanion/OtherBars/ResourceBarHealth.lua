@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local LSM = LibStub("LibSharedMedia-3.0")
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
@@ -168,15 +169,22 @@ function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
     return effectBar
 end
 
+-- A saved effect texture the media library does not know this session (a
+-- disabled media pack) draws as the default, as the settings page shows it,
+-- and stays saved.
+local function ResolveEffectTexture(config, textureKey)
+    local texture = config and config[textureKey]
+    if type(texture) ~= "string" or texture == "" or not LSM:IsValid("statusbar", texture) then
+        texture = HEALTH_EFFECTS.texture
+    end
+    return texture
+end
+
 function HealthBar.ApplyEffectStyle(effectBar, config, colorKey, defaultColor, textureKey)
     if not effectBar then return end
 
     local color = HealthBar.GetColor(config, colorKey, defaultColor)
-    local texture = config and config[textureKey]
-    if type(texture) ~= "string" or texture == "" then
-        texture = HEALTH_EFFECTS.texture
-    end
-    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(ResolveEffectTexture(config, textureKey)))
     effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
 end
 
@@ -209,11 +217,8 @@ end
 function HealthBar.ApplyLowHealthAlertStyle(effectBar, config)
     if not effectBar then return end
 
-    local texture = config and config.healthLowHealthAlertTexture
-    if type(texture) ~= "string" or texture == "" then
-        texture = HEALTH_EFFECTS.texture
-    end
-    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(
+        ResolveEffectTexture(config, "healthLowHealthAlertTexture")))
     effectBar:SetMinMaxValues(0, 1)
     SetStatusBarImmediateValue(effectBar, 1)
 end
