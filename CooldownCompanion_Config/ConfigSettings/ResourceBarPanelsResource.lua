@@ -18,9 +18,7 @@ local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
 local BuildAlphaControls = ST._BuildAlphaControls
-local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local tabInfoButtons = CS.tabInfoButtons
 
@@ -55,6 +53,18 @@ local ROW_SECTION = { leftAligned = true }
 -- sliders everywhere, only the store differs.
 local AddGlowSliderRows = ST._AddGlowSliderRows
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
+-- Size and speed mean different things per border style (border px vs dash
+-- length; lap seconds), so a style switch resets the per-style keys to that
+-- style's defaults, like every glow dropdown. Both border kinds name their
+-- keys in a table with size, speed, lines and thickness fields.
+local function ResetBorderStyleKeys(target, keys, style)
+    local pixel = style == "pixel"
+    target[keys.size] = pixel and 12 or 2
+    target[keys.speed] = pixel and 2 or 0.5
+    target[keys.lines] = pixel and 5 or 2
+    target[keys.thickness] = pixel and 3 or 4
+end
+
 local AURA_BORDER_SLIDER_KEYS = {
     size = "auraBorderSize",
     thickness = "auraBorderThickness",
@@ -151,12 +161,6 @@ local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
 local WriteSpecOverrideKey = RBP.WriteSpecOverrideKey
-local GetSafeRGBConfig = RBP.GetSafeRGBConfig
-local GetSafeRGBAConfig = RBP.GetSafeRGBAConfig
-local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
-local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
-local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
-local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 local ResolveTrackedAuraSpellIDFromText = RBP.ResolveTrackedAuraSpellIDFromText
@@ -1261,94 +1265,13 @@ local function BuildResourceBarPositioningPanel(container)
 
         if not stackPosCollapsed then
             EnsureResourceLayoutAnchor(settings, layout)
-            local anchor = layout.independentAnchor
-
-            local function refreshResourceBarAnchor()
-                applyBars()
-            end
-
-            -- A frame name needs the whole 140px control column to stay
-            -- readable, so Pick does not share it: the editbox row takes a
-            -- grid of its own and Pick sits at the head of that grid's right
-            -- column, immediately across the 16px gutter.
-            local targetLeft, targetRight = BeginRowGrid(container)
-            BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
-                pickContainer = targetRight,
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.frame,
-            })
-
-            -- LEFT column: how the stack is placed - the drag toggle and the
-            -- two points that have to be read together (mine, then the
-            -- target's). RIGHT column: its size and the offset applied on top
-            -- of those points.
-            local stackLeft, stackRight = BeginRowGrid(container)
-
-            AddCheckboxRow(stackLeft, {
-                label = "Unlock Placement",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.unlock,
-                value = not layout.independentAnchorLocked,
-                onChange = function(val)
-                    layout.independentAnchorLocked = not val
-                    applyBars()
-                    if not val then
-                        CooldownCompanion:CheckArrangeModeAutoExit()
-                    end
-                end,
-            })
-
-            AddAnchorDropdown(stackLeft, anchor, "point", "CENTER",
-                refreshResourceBarAnchor, "Anchor Point", {
-                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                        and RESOURCE_FINDER.primary.anchor.point,
-                })
-            AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER",
-                refreshResourceBarAnchor, "Relative Point", {
-                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                        and RESOURCE_FINDER.primary.anchor.relativePoint,
-                })
-
-            -- The canvas sizes an independent stack's slots from this value.
-            AddMirrorFirstSliderRow(stackRight, {
-                label = "Bar Width",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.width,
-                min = 20, max = 600, step = 0.1,
-                value = layout.independentWidth or settings.independentWidth or 200,
-                set = function(val) layout.independentWidth = val end,
-                apply = function()
-                    applyBars()
-                end,
-                stateOwner = layout,
-                stateKeys = "independentWidth",
-            })
-
-            -- The two offsets below place the stack on SCREEN, which the canvas
-            -- does not draw. Store during the drag and move the live stack once
-            -- on release.
-            AddSliderRow(stackRight, {
-                label = "X Offset",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.x,
-                min = -2000, max = 2000, step = 0.1,
-                value = anchor.x or 0,
-                onRelease = function(val)
-                    anchor.x = val
-                    applyBars()
-                end,
-            })
-
-            AddSliderRow(stackRight, {
-                label = "Y Offset",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.y,
-                min = -2000, max = 2000, step = 0.1,
-                value = anchor.y or 0,
-                onRelease = function(val)
-                    anchor.y = val
-                    applyBars()
-                end,
+            ST._BuildIndependentAnchorRows(container, {
+                anchor = layout.independentAnchor,
+                owner = layout,
+                widthLabel = "Bar Width",
+                widthValue = layout.independentWidth or settings.independentWidth or 200,
+                finder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor,
+                apply = function() applyBars() end,
             })
         end
     end
@@ -1652,46 +1575,14 @@ local function AddThresholdTickEnableCheckbox(container, settings, powerType, sp
     return checkbox, enabled, function() SetEnabled(true) end
 end
 
+-- The runtime's own list rules (RB.ResolveThresholdEntries / ResolveTickEntries),
+-- for the spec the page edits.
 local function GetConfigSegmentedThresholdEntries(settings, powerType, specID)
-    local rawEntries, cleared = ResolveSpecEntryList(settings.resources and settings.resources[powerType], specID, "segThresholdEntries", "segThresholdEntriesCleared")
-    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
-    if #entries == 0
-        and not cleared
-        and ReadSpecOverrideKey(settings, powerType, specID, "segThresholdEnabled", false) == true then
-        entries[1] = {
-            value = GetSegmentedThresholdValueConfig({
-                segThresholdValue = ReadSpecOverrideKey(settings, powerType, specID, "segThresholdValue", nil),
-            }),
-            color = GetSafeRGBConfig(ReadSpecOverrideKey(settings, powerType, specID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR),
-        }
-    end
-    return entries
+    return RB.ResolveThresholdEntries(settings.resources and settings.resources[powerType], specID)
 end
 
 local function GetConfigContinuousTickEntries(settings, powerType, specID, mode)
-    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
-    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
-    local rawEntries, cleared = ResolveSpecEntryList(settings.resources and settings.resources[powerType], specID, entriesKey, clearedKey)
-    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
-    if #entries == 0
-        and not cleared
-        and ReadSpecOverrideKey(settings, powerType, specID, "continuousTickEnabled", false) == true then
-        local value
-        if mode == "absolute" then
-            value = GetContinuousTickAbsoluteConfig({
-                continuousTickAbsolute = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickAbsolute", nil),
-            })
-        else
-            value = GetContinuousTickPercentConfig({
-                continuousTickPercent = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickPercent", nil),
-            })
-        end
-        entries[1] = {
-            value = value,
-            color = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, powerType, specID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR),
-        }
-    end
-    return entries
+    return RB.ResolveTickEntries(settings.resources and settings.resources[powerType], specID, mode)
 end
 
 local function WriteThresholdTickEntries(settings, powerType, specID, entriesKey, clearedKey, entries)
@@ -2220,13 +2111,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                     local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
                     if not target then return end
                     target.auraBorderStyle = value
-                    -- Size and speed change meaning per style (border px vs dash
-                    -- length; lap seconds), so a style switch resets the per-style
-                    -- keys to that style's defaults, like every glow dropdown.
-                    target.auraBorderSize = value == "pixel" and 12 or 2
-                    target.auraBorderSpeed = value == "pixel" and 2 or 0.5
-                    target.auraBorderLines = value == "pixel" and 5 or 2
-                    target.auraBorderThickness = value == "pixel" and 3 or 4
+                    ResetBorderStyleKeys(target, AURA_BORDER_SLIDER_KEYS, value)
                     refresh()
                 end,
             })
@@ -2314,11 +2199,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 onChange = function(value)
                     if value ~= "solid" and value ~= "pixel" then return end
                     resource[keys.style] = value
-                    -- Per-style key resets, like every glow dropdown.
-                    resource[keys.size] = value == "pixel" and 12 or 2
-                    resource[keys.speed] = value == "pixel" and 2 or 0.5
-                    resource[keys.lines] = value == "pixel" and 5 or 2
-                    resource[keys.thickness] = value == "pixel" and 3 or 4
+                    ResetBorderStyleKeys(resource, keys, value)
                     applyRows("style-settings-soon")
                 end,
             })
@@ -2766,9 +2647,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             end,
                         })
 
-                        local tickMode = GetContinuousTickModeConfig({
-                            continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", nil),
-                        })
+                        local tickMode = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", nil)
+                        if tickMode ~= "percent" and tickMode ~= "absolute" then
+                            tickMode = DEFAULT_CONTINUOUS_TICK_MODE
+                        end
                         AddDropdownRow(panel, {
                             label = "Tick Mode",
                             setting = RESOURCE_FINDER.detail
@@ -2841,7 +2723,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds.width,
                             tooltip = { tickWidthLabel },
-                            min = 1, max = 10, step = 1,
+                            min = 1, max = 10, step = 0.1,
                             value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
                             set = function(val)
                                 tickFields.continuousTickWidth = val

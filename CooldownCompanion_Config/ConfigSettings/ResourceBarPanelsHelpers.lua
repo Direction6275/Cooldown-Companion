@@ -496,62 +496,6 @@ local function ResolveTrackedAuraSpellIDFromText(text)
     return ResolveAuraColorSpellIDFromText(cleaned)
 end
 
-local function GetSafeRGBConfig(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
-
--- Identical to GetSafeRGBConfig; alias kept for call-site clarity (RGB vs RGBA intent)
-local GetSafeRGBAConfig = GetSafeRGBConfig
-
-local function GetSegmentedThresholdValueConfig(resource)
-    local value = tonumber(resource and resource.segThresholdValue)
-    if not value then
-        return 1
-    end
-    value = math.floor(value)
-    if value < 1 then
-        value = 1
-    elseif value > 99 then
-        value = 99
-    end
-    return value
-end
-
-local function GetContinuousTickModeConfig(resource)
-    local mode = resource and resource.continuousTickMode
-    if mode == "percent" or mode == "absolute" then
-        return mode
-    end
-    return DEFAULT_CONTINUOUS_TICK_MODE
-end
-
-local function GetContinuousTickPercentConfig(resource)
-    local value = tonumber(resource and resource.continuousTickPercent)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_PERCENT
-    end
-    if value < 0 then
-        value = 0
-    elseif value > 100 then
-        value = 100
-    end
-    return value
-end
-
-local function GetContinuousTickAbsoluteConfig(resource)
-    local value = tonumber(resource and resource.continuousTickAbsolute)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_ABSOLUTE
-    end
-    if value < 0 then
-        value = 0
-    end
-    return value
-end
-
 -- Simple queries
 ------------------------------------------------------------------------
 
@@ -602,8 +546,8 @@ local function RefreshResourcesCanvas(mirrorReuse)
 end
 
 -- The drag tick asks for mirror reuse; nothing else does. A bar value cannot
--- change the icon panel the lanes wrap, so the mirror inside the canvas is
--- still correct and only the lanes need redrawing.
+-- change the icon panel the buttons view's mirror draws, so only the bars
+-- need redrawing.
 local function RefreshResourcesCanvasForDrag()
     RefreshResourcesCanvas(true)
 end
@@ -640,6 +584,89 @@ local function AddMirrorFirstSliderRow(container, opts)
     end
     return ST._AddSliderRow(container, opts)
 end
+
+------------------------------------------------------------------------
+-- Independent Anchor Settings rows
+------------------------------------------------------------------------
+-- The rows the Independent Resources stack and the Independent Cast Bar
+-- share: anchor frame and Pick, Unlock Placement, the two points, the width
+-- and the screen offsets. Each page keeps its own section, collapse key and
+-- width label.
+--   opts.anchor      the independentAnchor table the rows edit
+--   opts.owner       carries independentAnchorLocked and independentWidth
+--   opts.widthLabel, opts.widthValue
+--   opts.finder      Settings Finder settings: frame, unlock, point,
+--                    relativePoint, width, x, y
+--   opts.apply()     re-applies the bar
+local function BuildIndependentAnchorRows(container, opts)
+    local anchor, owner, apply = opts.anchor, opts.owner, opts.apply
+    local finder = opts.finder or {}
+
+    -- A frame name needs the whole 140px control column to stay readable, so
+    -- Pick does not share it: the editbox row takes a grid of its own and Pick
+    -- sits at the head of that grid's right column, immediately across the
+    -- 16px gutter.
+    local targetLeft, targetRight = ST._BeginRowGrid(container)
+    ST._BuildIndependentAnchorTargetRow(targetLeft, anchor, apply, {
+        pickContainer = targetRight,
+        setting = finder.frame,
+    })
+
+    -- LEFT column: how the bar is placed - the drag toggle and the two points
+    -- that have to be read together (mine, then the target's). RIGHT column:
+    -- its size and the offset applied on top of those points.
+    local left, right = ST._BeginRowGrid(container)
+    ST._AddCheckboxRow(left, {
+        label = "Unlock Placement",
+        setting = finder.unlock,
+        value = not owner.independentAnchorLocked,
+        onChange = function(val)
+            owner.independentAnchorLocked = not val
+            apply()
+            if not val then
+                CooldownCompanion:CheckArrangeModeAutoExit()
+            end
+        end,
+    })
+    ST._AddAnchorDropdown(left, anchor, "point", "CENTER", apply, "Anchor Point", { setting = finder.point })
+    ST._AddAnchorDropdown(left, anchor, "relativePoint", "CENTER", apply, "Relative Point", { setting = finder.relativePoint })
+
+    -- The canvas sizes the bar from this value while it drags.
+    AddMirrorFirstSliderRow(right, {
+        label = opts.widthLabel,
+        setting = finder.width,
+        min = 20, max = 600, step = 0.1,
+        value = opts.widthValue,
+        set = function(val) owner.independentWidth = val end,
+        apply = apply,
+        stateOwner = owner,
+        stateKeys = "independentWidth",
+    })
+
+    -- The offsets place the bar on SCREEN, which the canvas does not draw.
+    -- Store during the drag and move the live bar once on release.
+    ST._AddSliderRow(right, {
+        label = "X Offset",
+        setting = finder.x,
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.x or 0,
+        onRelease = function(val)
+            anchor.x = val
+            apply()
+        end,
+    })
+    ST._AddSliderRow(right, {
+        label = "Y Offset",
+        setting = finder.y,
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.y or 0,
+        onRelease = function(val)
+            anchor.y = val
+            apply()
+        end,
+    })
+end
+ST._BuildIndependentAnchorRows = BuildIndependentAnchorRows
 
 local function OpenResourceBarConflictChooser(force)
     local classKey = CooldownCompanion._unifiedPanelConversionError
@@ -711,12 +738,6 @@ ST._RBP = {
     GetPlayerSpecOptionsConfig = GetPlayerSpecOptionsConfig,
     ResolveAuraColorSpellIDFromText = ResolveAuraColorSpellIDFromText,
     ResolveTrackedAuraSpellIDFromText = ResolveTrackedAuraSpellIDFromText,
-    GetSafeRGBConfig = GetSafeRGBConfig,
-    GetSafeRGBAConfig = GetSafeRGBAConfig,
-    GetSegmentedThresholdValueConfig = GetSegmentedThresholdValueConfig,
-    GetContinuousTickModeConfig = GetContinuousTickModeConfig,
-    GetContinuousTickPercentConfig = GetContinuousTickPercentConfig,
-    GetContinuousTickAbsoluteConfig = GetContinuousTickAbsoluteConfig,
     ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
     BuildTrackedAuraAutocompleteCache = BuildTrackedAuraAutocompleteCache,

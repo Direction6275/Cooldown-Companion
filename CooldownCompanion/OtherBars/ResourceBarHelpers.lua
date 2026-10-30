@@ -1277,6 +1277,38 @@ local function ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
     return resource and resource[entriesKey], resource and resource[clearedKey] == true
 end
 
+-- The threshold or tick list one spec shows: its saved entries, else the old
+-- single entry while the feature is turned on and the list was never cleared.
+-- The runtime also gates the whole list on the turned-on flag; the editors
+-- list it either way.
+local function ResolveThresholdEntries(resource, specID)
+    if type(resource) ~= "table" then
+        return GetNormalizedSegmentedThresholdEntriesFromConfig(nil)
+    end
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
+    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
+    if #entries == 0 and not cleared
+        and ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled") == true then
+        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
+    end
+    return entries
+end
+
+local function ResolveTickEntries(resource, specID, mode)
+    if type(resource) ~= "table" then
+        return GetNormalizedContinuousTickEntriesFromConfig(nil, mode)
+    end
+    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
+    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
+    if #entries == 0 and not cleared
+        and ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled") == true then
+        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
+    end
+    return entries
+end
+
 -- Resources counted in stacks: Maelstrom Weapon, the segmented power types
 -- and every aura-stack family member. They take threshold colours instead of
 -- tick markers, and their text counts stacks unless the bar is drawn
@@ -1304,13 +1336,7 @@ local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     if enabled ~= true then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
-
-    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
-    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
-    if #entries == 0 and not cleared then
-        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
-    end
-    return true, entries
+    return true, ResolveThresholdEntries(resource, specID)
 end
 
 -- `holder` is optional and is the applied bar frame when the caller has one.
@@ -1372,13 +1398,7 @@ local function GetContinuousTickEntriesConfig(powerType, settings)
         mode = DEFAULT_CONTINUOUS_TICK_MODE
     end
 
-    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
-    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
-    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
-    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
-    if #entries == 0 and not cleared then
-        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
-    end
+    local entries = ResolveTickEntries(resource, specID, mode)
 
     local tickWidth = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickWidth")) or DEFAULT_CONTINUOUS_TICK_WIDTH
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
@@ -1610,6 +1630,8 @@ RB.ClampContinuousTickAbsoluteValue = ClampContinuousTickAbsoluteValue
 RB.GetNormalizedSegmentedThresholdEntriesFromConfig = GetNormalizedSegmentedThresholdEntriesFromConfig
 RB.GetNormalizedContinuousTickEntriesFromConfig = GetNormalizedContinuousTickEntriesFromConfig
 RB.ResolveSpecEntryList = ResolveSpecEntryList
+RB.ResolveThresholdEntries = ResolveThresholdEntries
+RB.ResolveTickEntries = ResolveTickEntries
 RB.GetSegmentedThresholdColorForValue = GetSegmentedThresholdColorForValue
 RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
 RB.IsStackCountedResource = IsStackCountedResource
