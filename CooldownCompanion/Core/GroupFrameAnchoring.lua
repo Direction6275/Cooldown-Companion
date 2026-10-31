@@ -774,9 +774,16 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     end
 
     local targetKind = ParseAddonAnchorFrameName(targetFrameName)
-    if not targetKind and WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame) then
-        self:Print("Cannot anchor: target frame depends on a Cooldown Companion frame.")
-        return false
+    if not targetKind then
+        local unsafe, reason = WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame)
+        if unsafe then
+            if reason == "secret" then
+                self:Print("Cannot anchor: the game is hiding that frame's position.")
+            else
+                self:Print("Cannot anchor: target frame depends on a Cooldown Companion frame.")
+            end
+            return false
+        end
     end
 
     -- Panel anchored to its own container: reset to default position

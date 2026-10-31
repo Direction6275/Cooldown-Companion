@@ -41,6 +41,9 @@ local function GetFrameSizeInUIParentSpace(frame)
     end
 
     local width, height = frame:GetSize()
+    if issecretvalue(width) or issecretvalue(height) then
+        return nil, nil
+    end
     if not (width and height) then
         return width, height
     end
@@ -138,7 +141,10 @@ function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
         local rw, rh = GetFrameSizeInUIParentSpace(relativeFrame)
         local ucx, ucy = UIParent:GetCenter()
 
-        if not (rcx and rcy and rw and rh and ucx and ucy) then
+        -- A hidden (secret) target position defers like a missing one: no
+        -- arithmetic on it, and the anchor is not converted.
+        if issecretvalue(rcx) or issecretvalue(rcy)
+            or not (rcx and rcy and rw and rh and ucx and ucy) then
             normalized.x = newX
             normalized.y = newY
             return normalized, changed, true
