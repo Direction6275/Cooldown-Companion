@@ -50,8 +50,9 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
 
--- Shared click-through helpers from Utils.lua
+-- Shared click-through and hover helpers from ClickThrough.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local ShowsTooltipHover = ST.ShowsTooltipHover
 
 local function IsCursorAnchoredButton(button)
     return button
@@ -1135,7 +1136,7 @@ function CooldownCompanion:UpdateButtonInteraction(button, style)
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips or entry pings are on
     local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local showTooltips = ShowsTooltipHover(style, cursorAnchored)
     local allowPings = style.allowPings == true and not cursorAnchored
         and IsEntryPingEligible(button.buttonData)
         and not IsIndicatorSourceButton(button)

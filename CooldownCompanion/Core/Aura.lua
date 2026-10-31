@@ -1264,18 +1264,16 @@ function ST._ApplyShellVisualsForButton(button, buttonData)
 end
 
 
-function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, options)
+function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
-
-    options = options or {}
 
     if buttonData.isPassive == true then
         return true
     end
 
-    if options.trustExplicitAuraLabel ~= false and buttonData.addedAs == "aura" then
+    if buttonData.addedAs == "aura" then
         return true
     end
 
@@ -1292,14 +1290,12 @@ function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, op
     return false
 end
 
-function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, options)
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, options)
-    local isAuraOnlyEntry = recoverLegacyAura
-    if not isAuraOnlyEntry then
+    if not self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData) then
         return false
     end
 

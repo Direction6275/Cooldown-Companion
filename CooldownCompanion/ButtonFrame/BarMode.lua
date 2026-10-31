@@ -43,8 +43,11 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
 
--- Shared click-through helpers from Utils.lua
+-- Shared click-through and hover helpers from ClickThrough.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local ShowsTooltipHover = ST.ShowsTooltipHover
+
+-- Shared status bar helpers from Utils.lua
 local SetStatusBarImmediateRange = ST.SetStatusBarImmediateRange
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -714,8 +717,7 @@ function CooldownCompanion:UpdateBarInteraction(button, newStyle)
     local showIcon = newStyle.showBarIcon ~= false
     -- Update click-through
     local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
-    local iconTooltips = showTooltips and showIcon
+    local iconTooltips = ShowsTooltipHover(newStyle, cursorAnchored, showIcon)
     -- Pings share the icon-only hover surface; the bar body stays pass-through.
     local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
         and IsEntryPingEligible(button.buttonData)

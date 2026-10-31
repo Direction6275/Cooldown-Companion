@@ -342,8 +342,7 @@ end
 
 
 local function CopyBarVisualState(button, bar, context)
-    local isFreshBarSnapshot = ((context and context.displayMode == "bars") or button._isBar == true)
-        and context
+    local isFreshBarSnapshot = button._isBar == true
         and context.phase == "post-dispatch"
         and not IsTrue(button._visibilityHidden)
     bar.colorReason = isFreshBarSnapshot and button._barColorReason or nil

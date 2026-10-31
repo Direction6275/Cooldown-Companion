@@ -1095,6 +1095,17 @@ local function IsUnitPowerMaxSecret(unit, powerType)
     return false
 end
 
+-- A segmented resource's maximum, whole, or nil while the game hides it.
+-- Runes always have six. Every segment count reads it here: the renderer, the
+-- max-power reconcile and the settings canvas.
+local function ReadSegmentedMaximum(powerType)
+    if powerType == 5 then return 6 end
+    if IsUnitPowerMaxSecret("player", powerType) then return nil end
+    local maximum = UnitPowerMax("player", powerType)
+    if issecretvalue and issecretvalue(maximum) then return nil end
+    return math_floor(maximum)
+end
+
 ------------------------------------------------------------------------
 -- Color/Config Helpers
 ------------------------------------------------------------------------
@@ -1606,6 +1617,7 @@ RB.AddHealthResource = AddHealthResource
 RB.GetResourceColors = GetResourceColors
 RB.IsUnitPowerSecret = IsUnitPowerSecret
 RB.IsUnitPowerMaxSecret = IsUnitPowerMaxSecret
+RB.ReadSegmentedMaximum = ReadSegmentedMaximum
 RB.GetSafeRGBColor = GetSafeRGBColor
 RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = MAX_RESOURCE_THRESHOLD_TICK_ENTRIES
 RB.ClampSegmentedThresholdValue = ClampSegmentedThresholdValue

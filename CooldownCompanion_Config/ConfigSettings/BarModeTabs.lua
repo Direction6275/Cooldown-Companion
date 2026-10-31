@@ -189,14 +189,15 @@ local function BarsIconShown(_, style)
 end
 
 -- Show Tooltips is the one row in the icon-gated States block that is NOT
--- icon-bound on an Aura Panel. An ordinary bar hangs its tooltip off the icon
--- square alone (BarMode.lua: `iconTooltips = showTooltips and showIcon`, hover
--- surface `_iconBounds`), so hiding the icon really does take the setting's
--- effect with it. An Aura Panel cell has no CC button under it at all: the aura
--- host frame is the whole cell and the only surface a tooltip can hang off, so
--- BindFlowGroup (AuraDisplay.lua) enables its mouse motion straight from
--- style.showTooltips with the bar icon nowhere in the expression. Left behind
--- the icon gate, hiding the icon there hid a control that was still live.
+-- icon-bound on an Aura Panel. A bar's tooltip belongs to its icon
+-- (ST.ShowsTooltipHover): an ordinary bar hangs it off the icon square
+-- (BarMode.lua, hover surface `_iconBounds`), and a collapsing attached aura
+-- bar takes hover only while its icon shows (BindFlowGroup, AuraDisplay.lua),
+-- so hiding the icon really does take the setting's effect with it. An Aura
+-- Panel cell has no CC button under it at all: the aura host frame is the
+-- whole cell and the only surface a tooltip can hang off, so its hover ignores
+-- the bar icon. Left behind the icon gate, hiding the icon there hid a control
+-- that was still live.
 local function BarsTooltipRowShown(group, style)
     return ST.IsAuraPanelGroup(group) or BarsIconShown(group, style)
 end

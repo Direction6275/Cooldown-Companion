@@ -79,6 +79,7 @@ local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
+local ReadSegmentedMaximum = RB.ReadSegmentedMaximum
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local IsResourceEnabled = RB.IsResourceEnabled
 local IsStackCountedResource = RB.IsStackCountedResource
@@ -1588,17 +1589,10 @@ function ResourceBars.ResolveRenderer(powerType, settings)
         if style == "continuous" then return style, "stackaura_continuous" end
         return "segments", "stackaura_segments", RB.GetAuraStackResourceMax(powerType)
     elseif SEGMENTED_TYPES[powerType] then
-        if powerType == 5 then return "segments", "segmented", 6 end
-        -- Guarded as RefreshResourceBarMaximums guards it. An unreadable
-        -- maximum returns no count, and Acquire keeps the built one.
-        local count
-        if not IsUnitPowerMaxSecret("player", powerType) then
-            local maximum = UnitPowerMax("player", powerType)
-            if not (issecretvalue and issecretvalue(maximum)) then
-                count = math_max(maximum, 1)
-            end
-        end
-        return "segments", "segmented", count
+        -- An unreadable maximum returns no count, and Acquire keeps the
+        -- built one.
+        local maximum = ReadSegmentedMaximum(powerType)
+        return "segments", "segmented", maximum and math_max(maximum, 1)
     end
     return "continuous", "continuous"
 end
@@ -1611,8 +1605,9 @@ function ResourceBars.Acquire(powerType, settings, parent)
     end
     local shape, barType, count = ResourceBars.ResolveRenderer(powerType, settings)
     local frame = barInfo.renderers[shape]
-    -- An unreadable maximum keeps the built count, or builds one segment;
-    -- RefreshResourceBarMaximums re-segments once the maximum reads.
+    -- An unreadable maximum keeps the built count, or builds one segment. The
+    -- next player UNIT_MAXPOWER (RefreshResourceBarMaximums) or full apply
+    -- re-segments once the maximum reads.
     if barType == "segmented" and count == nil then
         count = frame and frame._numSegments or 1
     end
@@ -2116,19 +2111,14 @@ function CooldownCompanion:RefreshResourceBarMaximums()
     end
 
     -- Scan the active native resources, not the event's power token: either
-    -- maximum event previously reconciled the entire applied set. Runes have
-    -- six slots regardless of UnitPowerMax; aura-stack maxima have other owners.
+    -- maximum event previously reconciled the entire applied set. Aura-stack
+    -- maxima have other owners.
     for _, barInfo in ipairs(resourceBarFrames) do
-        local powerType = barInfo.powerType
-        if barInfo.barType == "segmented" and powerType ~= 5
-            and not IsUnitPowerMaxSecret("player", powerType) then
-            local maximum = UnitPowerMax("player", powerType)
-            if not (issecretvalue and issecretvalue(maximum)) then
-                local count = math_max(math_floor(maximum), 1)
-                if count ~= barInfo.frame._activeSegments then
-                    self:ApplyResourceBars()
-                    return
-                end
+        if barInfo.barType == "segmented" then
+            local maximum = ReadSegmentedMaximum(barInfo.powerType)
+            if maximum and math_max(maximum, 1) ~= barInfo.frame._activeSegments then
+                self:ApplyResourceBars()
+                return
             end
         end
     end

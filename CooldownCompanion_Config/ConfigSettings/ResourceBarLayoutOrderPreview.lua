@@ -1030,17 +1030,9 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             RB.StyleSegmentedText(barInfo.frame, slot.powerType, rbSettings, appearance)
         end
     elseif SEGMENTED_TYPES[slot.powerType] then
-        -- Guarded as the live bar guards it. An unreadable maximum falls
-        -- back to the default count below.
-        local maxValue
-        if slot.powerType == 5 then
-            maxValue = 6
-        elseif not RB.IsUnitPowerMaxSecret("player", slot.powerType) then
-            maxValue = UnitPowerMax("player", slot.powerType)
-            if issecretvalue and issecretvalue(maxValue) then
-                maxValue = nil
-            end
-        end
+        -- The live bar's read. An unreadable maximum falls back to the
+        -- default count below.
+        local maxValue = RB.ReadSegmentedMaximum(slot.powerType)
         if not maxValue or maxValue < 1 then
             maxValue = 5
         end

@@ -1830,7 +1830,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     end
 
     if buttonType == "spell" and forceAura ~= false then
-        self:NormalizeStandaloneAuraButtonData(newButton, { trustExplicitAuraLabel = true })
+        self:NormalizeStandaloneAuraButtonData(newButton)
     end
 
     -- An aura joining spell or item sources becomes the display

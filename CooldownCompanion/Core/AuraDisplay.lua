@@ -3929,8 +3929,10 @@ end
 -- groupSpacing before the next group, so a nonzero pair doubles every gap
 -- between consecutive single-frame groups (seen in game 2026-08-08).
 -- groupSpacing carries the spacing along the line. Aura Panels and aura
--- sections also pass lineSpacing; attached blocks leave it nil, which keeps
--- their table exactly what it was.
+-- sections also pass the spacing across lines, as both lineSpacing and
+-- groupLineSpacing: a wrap advances by whichever belongs to the step that
+-- triggers it, and Blizzard fills an unset groupLineSpacing with 0, not
+-- lineSpacing. Attached blocks never wrap and leave both nil.
 local function FlowGroupLayout(entry, layoutIndex)
     return {
         layoutIndex = layoutIndex,
@@ -3939,6 +3941,7 @@ local function FlowGroupLayout(entry, layoutIndex)
         elementSpacing = 0,
         groupSpacing = entry.spacing,
         lineSpacing = entry.lineSpacing,
+        groupLineSpacing = entry.lineSpacing,
     }
 end
 
@@ -4032,6 +4035,19 @@ local function BindFlowGroup(group, entry)
     -- explicit: only a whole Aura Panel suppresses a retained entry-owned base
     -- bar color, so attached bars and aura sections stay false.
     local wholeAuraPanel = record.wholeAuraPanel == true
+    -- Tooltips: this frame is the only surface a tooltip can hang off (an
+    -- Aura Panel cell has no CC button, and an attached aura bar's own button
+    -- stays hidden outside unlock), so the CC hover rule applies to it
+    -- (ST.ShowsTooltipHover). An attached aura bar takes hover only while its
+    -- bar icon shows, like an ordinary attached bar, but over its whole cell:
+    -- the hover surface is Blizzard's aura frame, which CC can only switch on
+    -- or off. A whole Aura Panel cell hovers with or without the icon.
+    local barIconShown
+    if group.isBar and not wholeAuraPanel then
+        barIconShown = group.iconShown == true
+    end
+    local tooltipMotion = ST.ShowsTooltipHover(entry.style,
+        CooldownCompanion:IsGroupCursorAnchored(panelId), barIconShown)
     local countAtOne, countPolicy, countKey = ResolveApplicationCount(entry.buttonData)
     for index, host in HostsToStyle(group.hosts, entry.buttonData, panelId) do
         ApplyPanelHostGeometry(group, host)
@@ -4050,13 +4066,9 @@ local function BindFlowGroup(group, entry)
         if index < #group.hosts then
             HoldPooledSpareStill(host, entry.buttonData, panelId)
         end
-        -- Tooltips: this frame is the only surface a tooltip can hang off (an
-        -- Aura Panel cell has no CC button, and an attached aura bar's own
-        -- button stays hidden outside unlock), so every flow surface honors
-        -- the panel's own Show Tooltips setting rather than forcing motion off
-        -- the way the click-through resource holders do. Pooled frames are
-        -- reused across entries, so all three are converged every bind.
-        host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
+        -- Pooled frames are reused across entries, so all three tooltip
+        -- settings are converged every bind.
+        host.frame:SetMouseMotionEnabled(tooltipMotion)
         host.frame:SetTooltipAnchorPoint(
             AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
         -- Same expression the slot path uses for a non-texture host: the panel
