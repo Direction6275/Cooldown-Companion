@@ -475,7 +475,7 @@ local auraSettings = ST._DefineSettingRoute({
 
 local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
     local isStandalone = buttonData.addedAs == "aura"
-    -- An Aura Panel cell is structurally SINGLE-UNIT: BindPanelGroup never
+    -- An Aura Panel cell is structurally SINGLE-UNIT: BindFlowGroup never
     -- passes groupScoped, so the group-scope rows below have nothing to act on
     -- there (owner ruling 2026-08-15).
     --

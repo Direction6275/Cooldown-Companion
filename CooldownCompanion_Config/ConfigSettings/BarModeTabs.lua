@@ -194,7 +194,7 @@ end
 -- surface `_iconBounds`), so hiding the icon really does take the setting's
 -- effect with it. An Aura Panel cell has no CC button under it at all: the aura
 -- host frame is the whole cell and the only surface a tooltip can hang off, so
--- BindPanelGroup (AuraDisplay.lua) enables its mouse motion straight from
+-- BindFlowGroup (AuraDisplay.lua) enables its mouse motion straight from
 -- style.showTooltips with the bar icon nowhere in the expression. Left behind
 -- the icon gate, hiding the icon there hid a control that was still live.
 local function BarsTooltipRowShown(group, style)

@@ -1782,7 +1782,7 @@ function ST._NormalizeAuraPanelEntries(group)
     end
 
     -- First occurrence of a key owns it; a later entry repeating it has no aura
-    -- group of its own (EnsurePanelGroup would hand it the first entry's) and is
+    -- group of its own (EnsureFlowGroup would hand it the first entry's) and is
     -- renumbered, exactly like a keyless one.
     local nextKey = math.max(maxKey + 1, tonumber(group.nextAuraKey) or 1)
     local used = {}
