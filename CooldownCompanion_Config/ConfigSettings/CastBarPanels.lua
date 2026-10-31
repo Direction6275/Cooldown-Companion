@@ -485,13 +485,6 @@ local function BuildCastBarPositioningPanel(container)
         return
     end
 
-    -- The anchor table is a stored setting, not a rendered control, so it is
-    -- seeded whether or not the section below is expanded.
-    if type(settings.independentAnchor) ~= "table" then
-        settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
-    end
-    local anchor = settings.independentAnchor
-
     -- ================================================================
     -- Anchor Settings (independent mode only)
     -- ================================================================
@@ -502,7 +495,11 @@ local function BuildCastBarPositioningPanel(container)
 
     local independent = CASTBAR_FINDER.independent or {}
     ST._BuildIndependentAnchorRows(container, {
-        anchor = anchor,
+        anchor = type(settings.independentAnchor) == "table" and settings.independentAnchor or nil,
+        ensureAnchor = function()
+            ST.EnsureIndependentCastBarConfig(settings)
+            return settings.independentAnchor
+        end,
         owner = settings,
         widthLabel = "Cast Bar Width",
         widthValue = settings.independentWidth or 200,

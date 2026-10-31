@@ -2095,8 +2095,6 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         layoutDrag.draggedSlotData = nil
-        local geometryPanel = ST.GetModuleGeometryHost(preview.standaloneCast and "castbar" or "resources")
-        if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
         preview.draggedSlotExtent = nil
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)

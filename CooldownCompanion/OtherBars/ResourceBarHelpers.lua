@@ -1403,27 +1403,47 @@ local function IsContinuousResourceShape(settings, powerType, specID)
     return SEGMENTED_TYPES[powerType] ~= true
 end
 
--- The value text rules, which follow the bar's shape. Maelstrom Weapon drawn
--- Continuous takes the continuous rules: text on unless turned off, Percent,
--- no Hide at 0. An aura-stack bar keeps the stack rules in either shape but
--- offers Percent when Continuous, since Percent needs a fill to measure. Runes
--- and Essence count stacks but are not offered Hide at 0.
-local function IsMWContinuous(settings, powerType, specID)
-    return powerType == RESOURCE_MAELSTROM_WEAPON
-        and GetMWDisplayStyle(settings, specID) == "continuous"
-end
-
+-- The value text rules, which follow the bar's shape. The settings page
+-- offers them and the bars draw by them. Maelstrom Weapon drawn Continuous
+-- takes the continuous rules: text on unless turned off, Percent, no Hide at
+-- 0. An aura-stack bar keeps the stack rules in either shape but offers
+-- Percent when Continuous, since Percent needs a fill to measure. Runes and
+-- Essence count stacks but are not offered Hide at 0.
 local function GetResourceTextContract(settings, powerType, specID)
     settings = settings or RB.GetResourceBarSettings()
-    local mwContinuous = IsMWContinuous(settings, powerType, specID)
+    local continuous = IsContinuousResourceShape(settings, powerType, specID)
+    local mwContinuous = powerType == RESOURCE_MAELSTROM_WEAPON and continuous
     local stackText = IsStackCountedResource(powerType) and not mwContinuous
     return {
         stackText = stackText,
         offersPercent = not stackText
-            or (RB.AURA_STACK_RESOURCES[powerType] ~= nil
-                and GetAuraStackDisplayStyle(settings, powerType, specID) == "continuous"),
+            or (RB.AURA_STACK_RESOURCES[powerType] ~= nil and continuous),
         offersHideAtZero = RB.HIDE_AT_ZERO_ELIGIBLE[powerType] == true and not mwContinuous,
     }
+end
+
+-- A resource's value text format, shown state and Hide at 0 under its text
+-- contract, for the bars and the Text page alike: a stack-counted resource
+-- keeps the stack rules in either shape (off unless turned on, Hide at 0
+-- where offered); every other bar, Maelstrom Weapon drawn Continuous and
+-- Stagger included, shows text unless turned off. Percent is kept only where
+-- the contract offers it. Health has its own text rules (HealthBar.Style).
+local function ResolveResourceTextRules(resourceConfig, settings, powerType, specID)
+    local contract = GetResourceTextContract(settings, powerType, specID)
+    local textFormat = resourceConfig and resourceConfig.textFormat or RB.DEFAULT_RESOURCE_TEXT_FORMAT
+    if textFormat ~= "current" and textFormat ~= "current_max"
+        and not (textFormat == "percent" and contract.offersPercent) then
+        textFormat = RB.DEFAULT_RESOURCE_TEXT_FORMAT
+    end
+    local showText = resourceConfig and resourceConfig.showText
+    if contract.stackText then
+        showText = showText == true
+    else
+        showText = showText ~= false
+    end
+    local hideAtZero = contract.offersHideAtZero and resourceConfig
+        and resourceConfig.hideTextAtZero and true or false
+    return textFormat, showText, hideAtZero
 end
 
 -- Runes alone show recharge duration text.
@@ -1601,6 +1621,7 @@ RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
 RB.IsStackCountedResource = IsStackCountedResource
 RB.IsContinuousResourceShape = IsContinuousResourceShape
 RB.GetResourceTextContract = GetResourceTextContract
+RB.ResolveResourceTextRules = ResolveResourceTextRules
 RB.HasRechargeText = HasRechargeText
 RB.WriteResourceValueText = WriteResourceValueText
 RB.ApplyResourceTextStyle = ApplyResourceTextStyle

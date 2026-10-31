@@ -82,6 +82,7 @@ local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local IsResourceEnabled = RB.IsResourceEnabled
 local IsStackCountedResource = RB.IsStackCountedResource
+local ResolveResourceTextRules = RB.ResolveResourceTextRules
 local WriteResourceValueText = RB.WriteResourceValueText
 local ApplyResourceTextStyle = RB.ApplyResourceTextStyle
 local ClearSegmentedText = RB.ClearSegmentedText
@@ -1917,30 +1918,14 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, a
         bar.tickLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
     end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
-    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
-    if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
-        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-    end
+    local textFormat, showText, hideAtZero = ResolveResourceTextRules(resourceConfig, settings, powerType)
     ApplyResourceTextStyle(bar.text, bar, resourceConfig)
 
-    -- Continuous bars show text by default. The aura-stack family is the one
-    -- exception: its members are stack-text resources everywhere else text is
-    -- resolved — the config offers them the segmented contract (off unless
-    -- explicitly enabled, plus Hide at 0) — and choosing the continuous SHAPE
-    -- must not quietly change what the readout is. So they resolve exactly as
-    -- StyleSegmentedText resolves them. Every other continuous bar, Maelstrom
-    -- Weapon and Stagger included, keeps the default-on contract it shipped
-    -- with. Restyling writes _hideTextAtZero explicitly on both paths.
-    local showText = true
-    bar._hideTextAtZero = false
-    if RB.AURA_STACK_RESOURCES[powerType] then
-        showText = resourceConfig and resourceConfig.showText == true
-        bar._hideTextAtZero = resourceConfig and resourceConfig.hideTextAtZero or false
-        if not showText then
-            bar.text:SetText("")
-        end
-    elseif resourceConfig and resourceConfig.showText == false then
-        showText = false
+    -- Hidden text is cleared, as StyleSegmentedText clears it. Restyling
+    -- writes _hideTextAtZero every time.
+    bar._hideTextAtZero = hideAtZero
+    if not showText then
+        bar.text:SetText("")
     end
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
@@ -1973,17 +1958,12 @@ local function StyleSegmentedText(holder, powerType, settings, appearance)
     end
 
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
-    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
-    if textFormat ~= "current" and textFormat ~= "current_max" then
-        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-    end
+    local textFormat, showText, hideAtZero = ResolveResourceTextRules(resourceConfig, settings, powerType)
     ApplyResourceTextStyle(holder.text, holder, resourceConfig)
 
-    -- Segmented resources are off by default unless explicitly enabled.
-    local showText = resourceConfig and resourceConfig.showText == true
     holder.text:SetShown(showText)
     holder._textFormat = textFormat
-    holder._hideTextAtZero = resourceConfig and resourceConfig.hideTextAtZero or false
+    holder._hideTextAtZero = hideAtZero
     if not showText then
         ClearSegmentedText(holder)
     end
@@ -2052,6 +2032,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
 end
 
 RB.StyleContinuousBar = StyleContinuousBar
+RB.EnsureIndependentStackConfig = EnsureIndependentStackConfig
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 

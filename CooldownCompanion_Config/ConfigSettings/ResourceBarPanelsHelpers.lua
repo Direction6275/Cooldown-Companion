@@ -14,9 +14,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Shared constants from ResourceBarConstants (eliminates _CONFIG duplicates)
 local RB = ST._RB
-local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
-local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
-local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES_CONFIG = RB.CLASS_RESOURCES_CONFIG
 local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
@@ -160,10 +157,6 @@ end
 -- Collapsed section state
 ------------------------------------------------------------------------
 local resourceBarCollapsedSections = {}
-
-local function CopyTableValue(value)
-    return type(value) == "table" and CopyTable(value) or value
-end
 
 local function GetCurrentConfigSpecID()
     local specIdx = C_SpecializationInfo.GetSpecialization()
@@ -593,15 +586,35 @@ end
 -- share: anchor frame and Pick, Unlock Placement, the two points, the width
 -- and the screen offsets. Each page keeps its own section, collapse key and
 -- width label.
---   opts.anchor      the independentAnchor table the rows edit
+--   opts.anchor      the saved independentAnchor table, or nil before it
+--                    exists
+--   opts.readAnchor  optional: what a missing anchor reads as
+--   opts.ensureAnchor() creates the saved anchor and returns it; only an
+--                    edit calls it (rule Q1)
 --   opts.owner       carries independentAnchorLocked and independentWidth
 --   opts.widthLabel, opts.widthValue
 --   opts.finder      Settings Finder settings: frame, unlock, point,
 --                    relativePoint, width, x, y
 --   opts.apply()     re-applies the bar
 local function BuildIndependentAnchorRows(container, opts)
-    local anchor, owner, apply = opts.anchor, opts.owner, opts.apply
+    local owner, apply = opts.owner, opts.apply
     local finder = opts.finder or {}
+    -- The rows edit through this view. Clearing a key on an anchor that does
+    -- not exist yet changes nothing, so it creates nothing.
+    local saved = opts.anchor
+    local anchor = setmetatable({}, {
+        __index = function(_, key)
+            local source = saved or opts.readAnchor
+            return source and source[key]
+        end,
+        __newindex = function(_, key, value)
+            if not saved then
+                if value == nil then return end
+                saved = opts.ensureAnchor()
+            end
+            saved[key] = value
+        end,
+    })
 
     -- A frame name needs the whole 140px control column to stay readable, so
     -- Pick does not share it: the editbox row takes a grid of its own and Pick
@@ -727,7 +740,6 @@ end
 
 ST._RBP = {
     collapsedSections = resourceBarCollapsedSections,
-    CopyTableValue = CopyTableValue,
     GetConfigActiveResources = GetConfigActiveResources,
     GetConfigEditableResources = GetConfigEditableResources,
     GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,

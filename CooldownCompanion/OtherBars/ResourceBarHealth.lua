@@ -19,10 +19,8 @@ local issecretvalue = issecretvalue
 local RB = ST._RB
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
-local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
-local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
-local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
-local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
+-- The shipped Health record (Core/Defaults.lua).
+local HEALTH_DEFAULTS = ST._defaults.profile.resourceBars.resources[RESOURCE_HEALTH]
 
 local GetResourceBarSettings = RB.GetResourceBarSettings
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
@@ -76,6 +74,16 @@ HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorb
 
 function HealthBar.GetConfig(settings, appearance)
     return GetResourceDisplayConfig(settings, RESOURCE_HEALTH, appearance)
+end
+
+-- Whether an effect switch (showAbsorbs and its siblings) is on. Per-class
+-- resource records are not AceDB-backed, so a switch a record never saved
+-- reads as its shipped default. The bar and the settings page both read the
+-- switches through this.
+function HealthBar.IsEffectOn(config, key)
+    local value = config and config[key]
+    if value == nil then value = HEALTH_DEFAULTS[key] end
+    return value == true
 end
 
 function HealthBar.GetColor(config, key, fallback)
@@ -457,7 +465,7 @@ local function WantsEffect(previewKey, settingKey)
     if effectPassCanvasMode then
         return effectPassPreview[previewKey] == true
     end
-    return effectPassConfig[settingKey] == true
+    return HealthBar.IsEffectOn(effectPassConfig, settingKey)
 end
 
 -- An effect's styling (texture fetch plus colour) is a pure function of the

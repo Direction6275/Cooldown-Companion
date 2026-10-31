@@ -835,7 +835,7 @@ end
 -- resource table on every call, and all four health gates want the same
 -- answer.
 local function HealthEffectEnabled(healthConfig, settingKey)
-    return healthConfig ~= nil and healthConfig[settingKey] == true
+    return healthConfig ~= nil and RB.HealthBar.IsEffectOn(healthConfig, settingKey)
 end
 
 -- Does this resource have an overlay that would render? The same three
@@ -2223,12 +2223,9 @@ local function UpdateResourcesPreviewCommandCenter(host)
     -- object still carries its own enablement gate below (CollectObject-
     -- Controls), so a disabled module contributes nothing.
     --
-    -- The cast bar qualifies only when THIS canvas actually draws a cast
-    -- lane. Testing "the cast bar is attached" was not enough: an
-    -- independent resource stack drops the cast slot from the canvas even
-    -- with the cast bar attached, and the control then named a preview that
-    -- repainted a cast-free canvas and visibly did nothing.
-    -- The bars canvas draws the Independent stack only.
+    -- The bars canvas draws only Independent bars: the cast bar qualifies
+    -- only on the Cast Bar workspace (_ResourcesPreviewRendersCastSlot), and
+    -- the health bar and the resource overlays only on the Resources one.
     local onBarsWorkspace = CS.barsEntrySelected == true and CS.barWorkspaceKind == "resources"
         and ST._GetBarWorkspacePlacement("resources") == "independent"
     local objects = {

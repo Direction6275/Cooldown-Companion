@@ -43,7 +43,6 @@ local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
-local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceColors = RB.GetResourceColors
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local SetSegmentedText = RB.SetSegmentedText

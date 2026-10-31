@@ -196,6 +196,8 @@ local function ApplyIndependentCastBarCoordinates(frame, x, y)
     SaveIndependentCastBarAnchor(true)
 end
 
+ST.EnsureIndependentCastBarConfig = EnsureIndependentCastBarConfig
+
 function ST.LockIndependentCastBarFromMover(frame)
     frame = frame or independentMoverFrame
     if not frame then return end

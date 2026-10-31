@@ -56,10 +56,11 @@ local AddAuraCandidateRow = ST._AddAuraCandidateRow
 -- Size and speed mean different things per border style (border px vs dash
 -- length; lap seconds), so a style switch resets the per-style keys to that
 -- style's defaults, like every glow dropdown. Both border kinds name their
--- keys in a table with size, speed, lines and thickness fields.
+-- keys in a table with size, speed, lines and thickness fields and a
+-- solidSizeDefault.
 local function ResetBorderStyleKeys(target, keys, style)
     local pixel = style == "pixel"
-    target[keys.size] = pixel and 12 or 2
+    target[keys.size] = pixel and 12 or keys.solidSizeDefault
     target[keys.speed] = pixel and 2 or 0.5
     target[keys.lines] = pixel and 5 or 2
     target[keys.thickness] = pixel and 3 or 4
@@ -106,9 +107,6 @@ local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRI
 local ClampSegmentedThresholdValue = RB.ClampSegmentedThresholdValue
 local ClampContinuousTickPercentValue = RB.ClampContinuousTickPercentValue
 local ClampContinuousTickAbsoluteValue = RB.ClampContinuousTickAbsoluteValue
-local GetNormalizedSegmentedThresholdEntriesFromConfig = RB.GetNormalizedSegmentedThresholdEntriesFromConfig
-local GetNormalizedContinuousTickEntriesFromConfig = RB.GetNormalizedContinuousTickEntriesFromConfig
-local ResolveSpecEntryList = RB.ResolveSpecEntryList
 local DEFAULT_HEALTH_BAR_COLOR = RB.DEFAULT_HEALTH_BAR_COLOR
 local DEFAULT_HEALTH_BAR_OPACITY = RB.DEFAULT_HEALTH_BAR_OPACITY
 local DEFAULT_HEALTH_BAR_FULL_COLOR = RB.DEFAULT_HEALTH_BAR_FULL_COLOR
@@ -175,23 +173,6 @@ function RESOURCE_FINDER.FillDirectionSettingKey(settings, specID)
     if health and health.enabled == true then return "healthVerticalFill" end
 end
 
-local function EnsureResourceLayoutAnchor(settings, layout)
-    if type(layout.independentAnchor) ~= "table" then
-        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor)
-            or { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
-    end
-    layout.independentAnchor.point = layout.independentAnchor.point or "CENTER"
-    layout.independentAnchor.relativePoint = layout.independentAnchor.relativePoint or "CENTER"
-    layout.independentAnchor.x = tonumber(layout.independentAnchor.x) or 0
-    layout.independentAnchor.y = tonumber(layout.independentAnchor.y) or 0
-    if layout.independentAnchorLocked == nil then
-        layout.independentAnchorLocked = settings.independentAnchorLocked
-    end
-    if layout.independentWidth == nil then
-        layout.independentWidth = settings.independentWidth
-    end
-end
-
 local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
     if type(specSettings) == "table" and specSettings[key] ~= nil then
         return specSettings[key]
@@ -218,7 +199,7 @@ end
 
 -- The four Health Effects in page order. One list drives the page rows and
 -- their Settings Finder routes.
-local HEALTH_EFFECTS = {
+local HEALTH_EFFECT_ROWS = {
     { key = "absorbs", name = "Absorbs", enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
         colorKey = "healthAbsorbColor", textureKey = "healthAbsorbTexture",
         colorLabel = "Absorb Color", textureLabel = "Absorb Texture",
@@ -287,7 +268,7 @@ function HealthResource.AddEffectTextureDropdown(container, health, key, label, 
 end
 
 function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
-    local enabled = health[options.enabledKey] == true
+    local enabled = RB.HealthBar.IsEffectOn(health, options.enabledKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll. The toggle these belong to
     -- lives back on the tab, so neither indents.
@@ -351,7 +332,6 @@ local function BuildResourceTextControls(container, settings, powerType, display
     local capturedPt = powerType
     local isHealthResource = capturedPt == HealthResource.ID
     local textContract = RB.GetResourceTextContract(settings, capturedPt, displaySpecID)
-    local isSegmentedResource = textContract.stackText
     local offersPercent = textContract.offersPercent
     -- Reads fall from the spec to the shared values; writes go to the spec.
     local baseSettings = settings.resources and settings.resources[capturedPt]
@@ -362,12 +342,13 @@ local function BuildResourceTextControls(container, settings, powerType, display
         or RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
             and RESOURCE_FINDER.detail[capturedPt].text
 
-    local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
+    -- The bars' own rules (RB.ResolveResourceTextRules); Health keeps its own.
     local showTextEnabled
-    if isHealthResource or isSegmentedResource then
-        showTextEnabled = showTextValue == true
+    if isHealthResource then
+        showTextEnabled = ReadDisplaySetting(baseSettings, resSettings, "showText", nil) == true
     else
-        showTextEnabled = showTextValue ~= false
+        local _, shown = RB.ResolveResourceTextRules(resSettings, settings, capturedPt, displaySpecID)
+        showTextEnabled = shown
     end
 
     -- LEFT column: the resource's own value text. RIGHT column: the recharge
@@ -429,13 +410,14 @@ local function BuildResourceTextControls(container, settings, powerType, display
             }
             textFormatOrder = { "current", "current_max", "percent" }
         end
-        local textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
+        local textFormatValue
         if isHealthResource then
+            textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", "percent")
             if not IsHealthTextFormat(textFormatValue) then
                 textFormatValue = "percent"
             end
-        elseif not textFormatOptions[textFormatValue] then
-            textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
+        else
+            textFormatValue = RB.ResolveResourceTextRules(resSettings, settings, capturedPt, displaySpecID)
         end
         AddDropdownRow(panel, {
             label = "Text Format",
@@ -712,14 +694,14 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     local effectsLeft, effectsRight = BeginRowGrid(container)
     local finderShow = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
     local finderAdvanced = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-    for _, effect in ipairs(HEALTH_EFFECTS) do
+    for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
         local column = effect.column == "left" and effectsLeft or effectsRight
         local enabledKey = effect.enabledKey
         local advancedFinder = finderAdvanced and finderAdvanced[effect.key]
         local checkbox = AddCheckboxRow(column, {
             label = "Show " .. effect.name,
             setting = finderShow and finderShow[effect.key],
-            value = health[enabledKey] == true,
+            value = RB.HealthBar.IsEffectOn(health, enabledKey),
             onChange = function(val)
                 health[enabledKey] = val == true
                 applyBars("style-settings")
@@ -964,19 +946,6 @@ local function BuildResourceBarAnchoringPanel(container)
                         settings.resources[pt] = {}
                     end
                     settings.resources[pt].enabled = val
-                    -- Turning Health on is the player's edit (rule Q1): a record
-                    -- that never had its effect switches starts from the shipped
-                    -- defaults, which the bars otherwise read as off.
-                    local healthDefaults = pt == HealthResource.ID and val == true
-                        and ST._defaults and ST._defaults.profile.resourceBars
-                        and ST._defaults.profile.resourceBars.resources[HealthResource.ID]
-                    if healthDefaults then
-                        for _, effect in ipairs(HEALTH_EFFECTS) do
-                            if settings.resources[pt][effect.enabledKey] == nil then
-                                settings.resources[pt][effect.enabledKey] = healthDefaults[effect.enabledKey]
-                            end
-                        end
-                    end
                     applyBars("style-settings")
                 end,
             })
@@ -1150,9 +1119,14 @@ local function BuildResourceBarPositioningPanel(container)
         local _, stackPosCollapsed = BuildCollapsibleSection(container, "Anchor Settings", stackPosKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not stackPosCollapsed then
-            EnsureResourceLayoutAnchor(settings, layout)
             ST._BuildIndependentAnchorRows(container, {
-                anchor = layout.independentAnchor,
+                anchor = type(layout.independentAnchor) == "table" and layout.independentAnchor or nil,
+                -- The stack inherits the global anchor until its spec has one.
+                readAnchor = type(settings.independentAnchor) == "table" and settings.independentAnchor or nil,
+                ensureAnchor = function()
+                    RB.EnsureIndependentStackConfig(settings, layout)
+                    return layout.independentAnchor
+                end,
                 owner = layout,
                 widthLabel = "Bar Width",
                 widthValue = layout.independentWidth or settings.independentWidth or 200,
@@ -3304,12 +3278,12 @@ if ST._DefineSettingRoute then
             applies = healthApplies,
         })
         local showSettings = {}
-        for _, effect in ipairs(HEALTH_EFFECTS) do
+        for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
             showSettings[effect.key] = { label = "Show " .. effect.name }
         end
         RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings(showSettings)
         RESOURCE_FINDER.primary.healthEffectAdvanced = {}
-        for _, effect in ipairs(HEALTH_EFFECTS) do
+        for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
             local captured = effect
             RESOURCE_FINDER.primary.healthEffectAdvanced[captured.key] = ST._DefineSettingRoute({
                 idPrefix = "resources.health.effects." .. captured.key,

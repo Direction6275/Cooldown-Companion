@@ -21,7 +21,6 @@ local RB = ST._RB
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 local DEFAULT_CONTINUOUS_TICK_COLOR = RB.DEFAULT_CONTINUOUS_TICK_COLOR
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
-local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetCurrentSpecID = RB.GetCurrentSpecID
 local GetResourceColors = RB.GetResourceColors
 local GetContinuousTickEntriesConfig = RB.GetContinuousTickEntriesConfig
