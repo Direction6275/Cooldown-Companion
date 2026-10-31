@@ -784,9 +784,12 @@ local function BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbac
 end
 
 -- The one memoized entrance to candidate resolution: every resolver below
--- routes through it, so one rebind pass resolves each (entry, constrain flag)
--- pair exactly once no matter how many surfaces ask. With no pass open this is
--- a plain call through to the builder, so nothing outside a pass changes.
+-- routes through it, so one rebind pass builds each list exactly once no
+-- matter how many surfaces ask. A spell entry has two lists (plain and
+-- constrained). An Aura entry has one: its branch of the builder never reads
+-- the constrain flag, so every asker for it shares the constrained slot. With
+-- no pass open this is a plain call through to the builder, so nothing
+-- outside a pass changes.
 --
 -- The memo keys on the entry TABLE, so it is only valid while that table's
 -- candidate-relevant fields (type, id, addedAs, auraSpellID, auraUnit,
@@ -796,7 +799,8 @@ local function ResolveOrderedAuraCandidateIDs(buttonData, constrainImplicitFallb
     if not (type(buttonData) == "table" and IsAuraCandidatePassActive()) then
         return BuildOrderedAuraCandidateIDs(buttonData, constrainImplicitFallbacks)
     end
-    local memo = constrainImplicitFallbacks and candidateMemoConstrained or candidateMemoPlain
+    local memo = (constrainImplicitFallbacks or buttonData.addedAs == "aura")
+        and candidateMemoConstrained or candidateMemoPlain
     local cached = memo[buttonData]
     if not cached then
         local orderedCandidateIDs, candidateIDs, orderedCandidateSet =
@@ -1260,23 +1264,20 @@ function ST._ApplyShellVisualsForButton(button, buttonData)
 end
 
 
-function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
+function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
-
-    options = options or {}
 
     if buttonData.isPassive == true then
         return true
     end
 
-    if options.trustExplicitAuraLabel ~= false and buttonData.addedAs == "aura" then
+    if buttonData.addedAs == "aura" then
         return true
     end
 
     local hasAuraMarkers = buttonData.auraTracking == true
-        or buttonData.auraIndicatorEnabled == true
         or buttonData.auraSpellID ~= nil
     if not hasAuraMarkers then
         return false
@@ -1289,14 +1290,12 @@ function CooldownCompanion:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, si
     return false
 end
 
-function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, siblingButtons, options)
+function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData)
     if not (buttonData and buttonData.type == "spell") then
         return false
     end
 
-    local recoverLegacyAura = self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData, siblingButtons, options)
-    local isAuraOnlyEntry = recoverLegacyAura
-    if not isAuraOnlyEntry then
+    if not self:ShouldRecoverLegacyStandaloneAuraEntry(buttonData) then
         return false
     end
 
@@ -1310,11 +1309,6 @@ function CooldownCompanion:NormalizeStandaloneAuraButtonData(buttonData, sibling
     -- they remain aura-only even when CDM is temporarily not ready.
     if buttonData.auraTracking ~= true then
         buttonData.auraTracking = true
-        changed = true
-    end
-
-    if buttonData.auraIndicatorEnabled == nil then
-        buttonData.auraIndicatorEnabled = true
         changed = true
     end
 

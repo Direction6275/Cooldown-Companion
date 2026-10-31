@@ -43,8 +43,11 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
 
--- Shared click-through helpers from Utils.lua
+-- Shared click-through and hover helpers from ClickThrough.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local ShowsTooltipHover = ST.ShowsTooltipHover
+
+-- Shared status bar helpers from Utils.lua
 local SetStatusBarImmediateRange = ST.SetStatusBarImmediateRange
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
@@ -115,40 +118,6 @@ local function SetBarIconTooltipScripts(button, enable)
     end
 end
 
-local function ShouldStoreBarVisualState()
-    return type(AreButtonVisualStateSnapshotsEnabled) == "function"
-        and AreButtonVisualStateSnapshotsEnabled() == true
-end
-
-local function EnsureBarVisualTable(button, fieldName)
-    local target = button[fieldName]
-    if target then
-        wipe(target)
-    else
-        target = {}
-        button[fieldName] = target
-    end
-    return target
-end
-
-local function ClearBarVisualState(button)
-    if button then
-        button._barVisualIntent = nil
-        button._barVisualApplied = nil
-    end
-end
-
-local function StoreBarDisplayVisualState(button, details)
-    local intent = EnsureBarVisualTable(button, "_barVisualIntent")
-    intent.domain = details.domain
-    intent.colorReason = details.colorReason
-    intent.gcdSuppressed = button._barGCDSuppressed == true
-
-    local applied = EnsureBarVisualTable(button, "_barVisualApplied")
-    applied.colorReason = details.colorReason
-    applied.gcdSuppressed = button._barGCDSuppressed == true
-end
-
 -- Manual text helpers unbind native duration text before writing fallback text.
 local function SetBarTimeText(button, text)
     UnbindDurationText(button.timeText)
@@ -166,7 +135,12 @@ local function UpdateBarFill(button)
     local onCooldown = false
     local itemRemaining = 0
 
-    if button._durationObj and not button._barGCDSuppressed then
+    -- _durationObj only ever holds a real cooldown or an active charge
+    -- recharge, never a GCD-only duration (CooldownUpdate stores it only in
+    -- the COOLDOWN state or from the recharge DurationObject), so bars ignore
+    -- the GCD without a flag of their own. A GCD-only item cooldown is stored
+    -- as a zero _itemCdDuration, so the item branch below ignores it too.
+    if button._durationObj then
         onCooldown = true
         SetStatusBarSmoothRange(button.statusBar, 0, 1)
         if not SetStatusBarElapsedDuration(button.statusBar, button._durationObj) then
@@ -185,7 +159,6 @@ local function UpdateBarFill(button)
         local durationMs = (button._itemCdDuration or 0) * 1000
         local now = GetTime() * 1000
         onCooldown = durationMs > 0
-        if onCooldown and button._barGCDSuppressed then onCooldown = false end
         if onCooldown then
             local elapsed = now - startMs
             itemRemaining = (durationMs - elapsed) / 1000
@@ -289,10 +262,6 @@ end
 -- Bar fill + time text are handled by the per-button OnUpdate for smooth interpolation.
 local function UpdateBarDisplay(button)
     local style = button.style
-    local shouldStoreBarVisualState = ShouldStoreBarVisualState()
-    if not shouldStoreBarVisualState and (button._barVisualIntent or button._barVisualApplied) then
-        ClearBarVisualState(button)
-    end
 
     -- "On cooldown" for bar color/ready text follows canonical state.
     local itemUsesResolvedCooldownState = IsEntryItemLike(button.buttonData)
@@ -354,15 +323,9 @@ local function UpdateBarDisplay(button)
     -- Loss of control overlay on bar icon
     UpdateLossOfControl(button)
 
-    if shouldStoreBarVisualState then
-        local colorReason = cdColorReason or "ready"
-        StoreBarDisplayVisualState(button, {
-            domain = colorReason,
-            onCooldown = onCooldown,
-            chargeState = chargeState,
-            colorReason = colorReason,
-            color = wantCdColor or style.barColor or DEFAULT_BAR_COLOR,
-        })
+    -- Bug-report snapshot only (VisualState CopyBarVisualState).
+    if AreButtonVisualStateSnapshotsEnabled() then
+        button._barColorReason = cdColorReason or "ready"
     end
 
     ST.ChargeBarSegments.PaintPanel(button, button._chargeRenderCount,
@@ -754,8 +717,7 @@ function CooldownCompanion:UpdateBarInteraction(button, newStyle)
     local showIcon = newStyle.showBarIcon ~= false
     -- Update click-through
     local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = newStyle.showTooltips == true and not cursorAnchored
-    local iconTooltips = showTooltips and showIcon
+    local iconTooltips = ShowsTooltipHover(newStyle, cursorAnchored, showIcon)
     -- Pings share the icon-only hover surface; the bar body stays pass-through.
     local iconPings = newStyle.allowPings == true and not cursorAnchored and showIcon
         and IsEntryPingEligible(button.buttonData)

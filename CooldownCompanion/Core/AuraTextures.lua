@@ -877,13 +877,11 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
             or hasAuraClause
         if shouldAuraTrack then
             buttonData.auraTracking = true
-            buttonData.auraIndicatorEnabled = true
             if buttonData.addedAs ~= "aura" and buttonData.isPassive == true then
                 buttonData.addedAs = "aura"
             end
         else
             buttonData.auraTracking = false
-            buttonData.auraIndicatorEnabled = false
         end
     end
 

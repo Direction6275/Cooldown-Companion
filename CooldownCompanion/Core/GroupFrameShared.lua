@@ -604,6 +604,10 @@ local function ApplyUnsafeAnchorVisualFallback(frame, anchor, relativeFrame)
 
     local rcx, rcy = relativeFrame:GetCenter()
     local rw, rh = relativeFrame:GetSize()
+    -- A hidden (secret) target position takes the caller's screen fallback.
+    if IsSecretValue(rcx) or IsSecretValue(rcy) or IsSecretValue(rw) or IsSecretValue(rh) then
+        return false
+    end
     if not (rcx and rcy and rw and rh) then
         return false
     end
@@ -641,12 +645,17 @@ local function WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKi
     local pointIndex = 1
     while true do
         local point, relativeFrame = targetFrame:GetPoint(pointIndex)
+        -- A hidden (secret) anchor can't be walked: unsafe, as FrameAnchoring's
+        -- walker treats it. The reason lets SetGroupAnchor say so.
+        if IsSecretValue(point) or IsSecretValue(relativeFrame) then return true, "secret" end
         if not point then break end
         if relativeFrame
             and relativeFrame ~= targetFrame
-            and relativeFrame.GetPoint
-            and WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind, relativeFrame, visited, depth + 1) then
-            return true
+            and relativeFrame.GetPoint then
+            local unsafe, reason = WouldFrameDependencyCreateCircularAnchor(self, sourceId, sourceKind, relativeFrame, visited, depth + 1)
+            if unsafe then
+                return true, reason
+            end
         end
         pointIndex = pointIndex + 1
     end

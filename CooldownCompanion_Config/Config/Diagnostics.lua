@@ -478,7 +478,7 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                 if row.visuals.iconFillIntentReason and row.visuals.iconFillIntentReason ~= "inactive" then
                     parts[#parts + 1] = "fillReason=" .. tostring(row.visuals.iconFillIntentReason)
                 end
-                local showGlowDiagnostics = row.displayMode == "icons" and row.phase == "post-dispatch"
+                local showGlowDiagnostics = (row.displayMode == "icons" or row.displayMode == "bars") and row.phase == "post-dispatch"
                 if showGlowDiagnostics then
                     local procGlowReason = row.visuals.procGlowReason
                     if row.visuals.procGlowActive
@@ -509,17 +509,8 @@ local function AddVisualStateDiagnosticsLines(add, visualStateDiagnostics)
                     end
                 end
             end
-            local hasBarSignals = row.bar and (row.bar.intentAvailable == true
-                or row.bar.gcdSuppressed == true
-                or (row.displayMode == "bars" and row.phase == "post-dispatch"))
-            if hasBarSignals then
-                parts[#parts + 1] = "bar=" .. tostring(row.bar.domain or "missing")
-                if row.bar.colorReason then
-                    parts[#parts + 1] = "barColor=" .. tostring(row.bar.colorReason)
-                end
-                if row.bar.gcdSuppressed then
-                    parts[#parts + 1] = "barGCDSuppressed=true"
-                end
+            if row.bar and row.bar.colorReason then
+                parts[#parts + 1] = "barColor=" .. tostring(row.bar.colorReason)
             end
             if type(row.mismatches) == "table" and #row.mismatches > 0 then
                 parts[#parts + 1] = "mismatch=" .. table.concat(row.mismatches, ",")

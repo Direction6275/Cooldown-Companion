@@ -176,7 +176,7 @@ local function ClearCooldownWidget(widget)
 end
 
 -- Shared by a resolved spell and the assistant's empty recommendation state.
-local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, procOverlayActive)
+local function ApplyButtonVisibility(button, buttonData, buttonGroup, floorFailOpen, procOverlayActive)
     -- Per-button visibility evaluation (after charge tracking)
     button._procOverlayActive = procOverlayActive
     EvaluateButtonVisibility(button, buttonData, procOverlayActive)
@@ -246,7 +246,6 @@ local function ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisp
             visualStateContext = {}
             button._visualStateContext = visualStateContext
         end
-        visualStateContext.displayMode = buttonDisplayMode
     end
     -- Track visibility/force-visible state changes for compact layout reflow.
     local visibilityChanged = button._visibilityHidden ~= button._prevVisibilityHidden
@@ -342,7 +341,6 @@ local function ClearRotationAssistantMissingState(button, buttonData, style)
     button._desatCooldownActive = false
     button._spellOutOfRange = nil
     button._procOverlayActive = false
-    button._auraActive = false
     button._visibilityHidden = false
     button._visibilityAlphaOverride = nil
     button._visibilityReasonBits = 0
@@ -646,8 +644,9 @@ local function NoteButtonTimeState(button, now, floorFailOpen)
 
     if forced then
         CooldownCompanion:PinCooldownTicker()
-        -- Forcing attribution (dev-gated, observe-only): name the term(s) that
-        -- pinned this walk. Inert without the CC_DevBridge dev addon.
+        -- Forcing attribution (observe-only): name the term(s) that pinned
+        -- this walk. Runs only while refresh telemetry is on
+        -- (/run CooldownCompanion:GetRefreshTelemetry().enabled = true).
         if telemetryOn then
             if charge then RefreshTelemetry:CountForce("charge") end
             if readyGlow then RefreshTelemetry:CountForce("ready-glow") end
@@ -671,7 +670,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     local desatWasActive = button._desatCooldownActive == true
     local buttonGroup = button._groupId and CooldownCompanion.db and CooldownCompanion.db.profile
         and CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[button._groupId] or nil
-    local buttonDisplayMode = buttonGroup and (buttonGroup.displayMode or "icons") or "icons"
     -- Combat ticker floor fail-open gate ("hide-unusable" / nil; any truthy
     -- value forces). An item-like or Rotation Assistant hideWhileUnusable entry
     -- must keep the ticker walking whether the button is shown or hidden: no
@@ -692,7 +690,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
         or nil
     if buttonData._rotationAssistantVirtual == true and buttonData._rotationAssistantMissing == true then
         ClearRotationAssistantMissingState(button, buttonData, style)
-        ApplyButtonVisibility(button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, false)
+        ApplyButtonVisibility(button, buttonData, buttonGroup, floorFailOpen, false)
         return
     end
 
@@ -809,6 +807,8 @@ function CooldownCompanion:UpdateButtonCooldown(button)
 
     -- Clear per-tick DurationObject; set below if a cooldown is active.
     -- Read by bar fill and time text, icon fill and Indicator readouts.
+    -- Only a real cooldown or an active charge recharge may be stored here,
+    -- never a GCD-only duration: bar fill (BarMode UpdateBarFill) relies on it.
     button._durationObj = nil
     button._cooldownDeferred = nil
     button._cooldownState = COOLDOWN_STATE_READY
@@ -934,13 +934,6 @@ function CooldownCompanion:UpdateButtonCooldown(button)
                 end
             end
         end
-    end
-
-    -- Bar mode: suppress GCD-only display in bars (checked by UpdateBarFill OnUpdate).
-    -- Skip for charge spells: their _durationObj is the recharge cycle, never the GCD.
-    if button._isBar then
-        button._barGCDSuppressed = fetchOk and isGCDOnly
-            and not usesChargeBehavior and not buttonData.isPassive
     end
 
     -- Bar mode icon-only GCD swipe.
@@ -1188,7 +1181,7 @@ function CooldownCompanion:UpdateButtonCooldown(button)
     end
 
     local visible, group, shouldCaptureVisualState, visualStateContext = ApplyButtonVisibility(
-        button, buttonData, buttonGroup, buttonDisplayMode, floorFailOpen, procOverlayActive)
+        button, buttonData, buttonGroup, floorFailOpen, procOverlayActive)
     if not visible then return end
 
     -- Mode-specific visual dispatch

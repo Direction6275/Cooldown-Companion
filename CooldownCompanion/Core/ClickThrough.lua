@@ -8,6 +8,16 @@ local ADDON_NAME, ST = ...
 local InCombatLockdown = InCombatLockdown
 local select = select
 
+-- The one tooltip-hover rule for CC icons, CC bars and aura cells: Show
+-- Tooltips is on, the panel does not follow the cursor (it would sit under the
+-- pointer), and a bar whose tooltip belongs to its icon shows that icon.
+-- barIconShown is true or false for such a bar (CC bars, collapsing attached
+-- aura bars) and nil where the icon does not gate hover (icons, and whole Aura
+-- Panel cells, whose host frame is the whole cell).
+function ST.ShowsTooltipHover(style, cursorAnchored, barIconShown)
+    return style.showTooltips == true and not cursorAnchored and barIconShown ~= false
+end
+
 -- Helper function to make a frame click-through
 -- disableClicks: prevent LMB/RMB clicks (allows camera movement pass-through)
 -- disableMotion: prevent OnEnter/OnLeave hover events (disables tooltips)
