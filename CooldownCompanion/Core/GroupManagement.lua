@@ -1772,12 +1772,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
     if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
-        group.buttons[buttonIndex].auraIndicatorEnabled = true
     elseif forceAura == nil then
         -- Force aura tracking for passive/proc spells
         if isPassive then
             group.buttons[buttonIndex].auraTracking = true
-            group.buttons[buttonIndex].auraIndicatorEnabled = true
         end
 
         -- Auto-detect aura tracking for spells with viewer aura frames
@@ -1804,12 +1802,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if hasViewerFrame
                 and IsDistinctAuraViewerFrameForSpell(newButton, viewerFrame) then
                 newButton.auraTracking = false
-                newButton.auraIndicatorEnabled = false
                 hasViewerFrame = false
             end
             if hasViewerFrame then
                 newButton.auraTracking = true
-                newButton.auraIndicatorEnabled = true
             end
         end
     end
@@ -1828,11 +1824,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     end
 
     if buttonType == "spell" and forceAura ~= false then
-        self:NormalizeStandaloneAuraButtonData(
-            newButton,
-            group.buttons,
-            { trustExplicitAuraLabel = true }
-        )
+        self:NormalizeStandaloneAuraButtonData(newButton, { trustExplicitAuraLabel = true })
     end
 
     -- An aura joining spell or item sources becomes the display

@@ -788,7 +788,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                         value = stackStyle,
                         onChange = function(value)
                             CooldownCompanion:SetBarPanelAuraStackDisplayMode(buttonData, value)
-                            CooldownCompanion:RequestAuraRebind("config")
                             RefreshAuraConfig()
                         end,
                     })
@@ -833,7 +832,7 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
                 refresh = RefreshAuraConfig,
                 commit = function()
                     ST._RefreshSelectedButtonsPreview()
-                    CooldownCompanion:RequestAuraRebind("config")
+                    CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                 end,
             })
     end

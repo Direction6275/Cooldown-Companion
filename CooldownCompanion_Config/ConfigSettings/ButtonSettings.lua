@@ -417,8 +417,8 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
             onChange = function(val)
                 CooldownCompanion:SetButtonSoundAlertEvent(buttonData, eventKey, val)
                 if isAuraEvent then
-                    -- The registration lives on the aura display binding.
-                    CooldownCompanion:RequestAuraRebind("config")
+                    -- The registration lives on this panel's aura display binding.
+                    CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
                 end
                 -- Sound status feeds the mirror slot and identity strip badges.
                 if ST._RefreshButtonsPreviewMirror then
@@ -459,7 +459,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
             value = cfg and tonumber(cfg.auraSoundGap) or 0,
             onRelease = function(val)
                 CooldownCompanion:GetButtonSoundAlertConfig(buttonData, true).auraSoundGap = val > 0 and val or nil
-                CooldownCompanion:RequestAuraRebind("config")
+                CooldownCompanion:RequestAuraRebind("config", CS.selectedGroup)
             end,
         })
     end
