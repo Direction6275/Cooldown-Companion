@@ -18,9 +18,7 @@ local ApplyLeftAlignedHeading = ST._ApplyLeftAlignedHeading
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateInfoButton = ST._CreateInfoButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
 local BuildAlphaControls = ST._BuildAlphaControls
-local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local AnchorLeftAlignedHeadingRule = ST._AnchorLeftAlignedHeadingRule
 local tabInfoButtons = CS.tabInfoButtons
 
@@ -55,6 +53,19 @@ local ROW_SECTION = { leftAligned = true }
 -- sliders everywhere, only the store differs.
 local AddGlowSliderRows = ST._AddGlowSliderRows
 local AddAuraCandidateRow = ST._AddAuraCandidateRow
+-- Size and speed mean different things per border style (border px vs dash
+-- length; lap seconds), so a style switch resets the per-style keys to that
+-- style's defaults, like every glow dropdown. Both border kinds name their
+-- keys in a table with size, speed, lines and thickness fields and a
+-- solidSizeDefault.
+local function ResetBorderStyleKeys(target, keys, style)
+    local pixel = style == "pixel"
+    target[keys.size] = pixel and 12 or keys.solidSizeDefault
+    target[keys.speed] = pixel and 2 or 0.5
+    target[keys.lines] = pixel and 5 or 2
+    target[keys.thickness] = pixel and 3 or 4
+end
+
 local AURA_BORDER_SLIDER_KEYS = {
     size = "auraBorderSize",
     thickness = "auraBorderThickness",
@@ -75,21 +86,13 @@ local MEDIA_PULLOUT_WIDTH = 300
 local RB = ST._RB
 local POWER_NAMES = RB.POWER_NAMES
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
-local HIDE_AT_ZERO_ELIGIBLE = RB.HIDE_AT_ZERO_ELIGIBLE
 
--- Maelstrom Weapon drawn as one continuous bar takes the continuous text
--- contract the runtime gives it (ResourceBar's continuous styling): text on
--- unless turned off, Percent offered, and no Hide at 0.
-local function IsMWContinuous(powerType, settings, specID)
-    return powerType == 100
-        and RB.GetMWDisplayStyle(settings or RB.GetResourceBarSettings(), specID) == "continuous"
-end
 local DEFAULT_POWER_COLORS = RB.DEFAULT_POWER_COLORS
 local DEFAULT_MW_BASE_COLOR = RB.DEFAULT_MW_BASE_COLOR
 local DEFAULT_MW_OVERLAY_COLOR = RB.DEFAULT_MW_OVERLAY_COLOR
 local DEFAULT_MW_MAX_COLOR = RB.DEFAULT_MW_MAX_COLOR
 local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
-local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+local IsStackCountedResource = RB.IsStackCountedResource
 local ClassifyAuraSpellUnit = ST._ClassifyAuraSpellUnit
 local DEFAULT_RESOURCE_TEXT_FORMAT = RB.DEFAULT_RESOURCE_TEXT_FORMAT
 local DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED = RB.DEFAULT_RESOURCE_RECHARGE_TEXT_ENABLED
@@ -104,9 +107,6 @@ local MAX_RESOURCE_THRESHOLD_TICK_ENTRIES = RB.MAX_RESOURCE_THRESHOLD_TICK_ENTRI
 local ClampSegmentedThresholdValue = RB.ClampSegmentedThresholdValue
 local ClampContinuousTickPercentValue = RB.ClampContinuousTickPercentValue
 local ClampContinuousTickAbsoluteValue = RB.ClampContinuousTickAbsoluteValue
-local GetNormalizedSegmentedThresholdEntriesFromConfig = RB.GetNormalizedSegmentedThresholdEntriesFromConfig
-local GetNormalizedContinuousTickEntriesFromConfig = RB.GetNormalizedContinuousTickEntriesFromConfig
-local ResolveSpecEntryList = RB.ResolveSpecEntryList
 local DEFAULT_HEALTH_BAR_COLOR = RB.DEFAULT_HEALTH_BAR_COLOR
 local DEFAULT_HEALTH_BAR_OPACITY = RB.DEFAULT_HEALTH_BAR_OPACITY
 local DEFAULT_HEALTH_BAR_FULL_COLOR = RB.DEFAULT_HEALTH_BAR_FULL_COLOR
@@ -142,9 +142,7 @@ local DEFAULT_ARCANE_MAX_COLOR = RB.DEFAULT_ARCANE_MAX_COLOR
 local DEFAULT_ESSENCE_READY_COLOR = RB.DEFAULT_ESSENCE_READY_COLOR
 local DEFAULT_ESSENCE_RECHARGING_COLOR = RB.DEFAULT_ESSENCE_RECHARGING_COLOR
 local DEFAULT_ESSENCE_MAX_COLOR = RB.DEFAULT_ESSENCE_MAX_COLOR
-local GetResourceSpecOverrideTable = RB.GetResourceSpecOverrideTable
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
-local RESOURCE_HEALTH_DISPLAY_KEYS = RB.RESOURCE_HEALTH_DISPLAY_KEYS
 local resourceSpecCopyButton
 local resourceSpecCopyMenu
 local thresholdTickDraftRows = {}
@@ -153,18 +151,11 @@ local thresholdTickEditorErrors = {}
 -- Imports from ResourceBarPanelsHelpers
 local RBP = ST._RBP
 local resourceBarCollapsedSections = RBP.collapsedSections
-local CopyTableValue = RBP.CopyTableValue
 local BuildResourceBarConflictGate = RBP.BuildResourceBarConflictGate
 local GetConfigActiveResources = RBP.GetConfigActiveResources
 local GetCurrentConfigSpecID = RBP.GetCurrentConfigSpecID
 local ReadSpecOverrideKey = RBP.ReadSpecOverrideKey
 local WriteSpecOverrideKey = RBP.WriteSpecOverrideKey
-local GetSafeRGBConfig = RBP.GetSafeRGBConfig
-local GetSafeRGBAConfig = RBP.GetSafeRGBAConfig
-local GetSegmentedThresholdValueConfig = RBP.GetSegmentedThresholdValueConfig
-local GetContinuousTickModeConfig = RBP.GetContinuousTickModeConfig
-local GetContinuousTickPercentConfig = RBP.GetContinuousTickPercentConfig
-local GetContinuousTickAbsoluteConfig = RBP.GetContinuousTickAbsoluteConfig
 local IsResourceBarVerticalConfig = RBP.IsResourceBarVerticalConfig
 local GetResourceGapFieldConfig = RBP.GetResourceGapFieldConfig
 local ResolveTrackedAuraSpellIDFromText = RBP.ResolveTrackedAuraSpellIDFromText
@@ -180,37 +171,6 @@ function RESOURCE_FINDER.FillDirectionSettingKey(settings, specID)
     if not ST.GetModuleGeometryHost("resources", specID) then return "verticalFill" end
     local health = settings and settings.resources and settings.resources[RESOURCE_HEALTH]
     if health and health.enabled == true then return "healthVerticalFill" end
-end
-
-local function EnsureResourceLayoutAnchor(settings, layout)
-    if type(layout.independentAnchor) ~= "table" then
-        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor)
-            or { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
-    end
-    layout.independentAnchor.point = layout.independentAnchor.point or "CENTER"
-    layout.independentAnchor.relativePoint = layout.independentAnchor.relativePoint or "CENTER"
-    layout.independentAnchor.x = tonumber(layout.independentAnchor.x) or 0
-    layout.independentAnchor.y = tonumber(layout.independentAnchor.y) or 0
-    if layout.independentAnchorLocked == nil then
-        layout.independentAnchorLocked = settings.independentAnchorLocked
-    end
-    if layout.independentWidth == nil then
-        layout.independentWidth = settings.independentWidth
-    end
-end
-
-local function SeedSpecResourceDisplaySettings(settings, powerType, specID, keys)
-    local specSettings = GetResourceSpecOverrideTable(settings, powerType, specID, true)
-    local baseSettings = settings and settings.resources and settings.resources[powerType]
-    if not specSettings then return baseSettings end
-    if type(baseSettings) == "table" and type(keys) == "table" then
-        for _, key in ipairs(keys) do
-            if specSettings[key] == nil and baseSettings[key] ~= nil then
-                specSettings[key] = CopyTableValue(baseSettings[key])
-            end
-        end
-    end
-    return specSettings
 end
 
 local function ReadDisplaySetting(baseSettings, specSettings, key, fallback)
@@ -237,79 +197,35 @@ function HealthResource.GetEffectTextureOptions()
     return options, order
 end
 
-function HealthResource.NormalizeEffectTexture(health, key)
-    if type(health[key]) ~= "string"
-        or health[key] == ""
-        or not LSM:IsValid("statusbar", health[key]) then
-        health[key] = DEFAULT_HEALTH_EFFECT_TEXTURE
-    end
-end
-
-function HealthResource.EnsureSettings(settings)
-    settings.resources = settings.resources or {}
-    if type(settings.resources[HealthResource.ID]) ~= "table" then
-        settings.resources[HealthResource.ID] = { enabled = false }
-    elseif settings.resources[HealthResource.ID].enabled == nil then
-        settings.resources[HealthResource.ID].enabled = false
-    end
-    local health = settings.resources[HealthResource.ID]
-    if health.showAbsorbs == nil then health.showAbsorbs = true end
-    if health.showHealAbsorbs == nil then health.showHealAbsorbs = true end
-    if health.showIncomingHeals == nil then health.showIncomingHeals = true end
-    if health.showLowHealthAlert == nil then health.showLowHealthAlert = false end
-    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = false end
-    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = DEFAULT_HEALTH_ABSORB_COLOR end
-    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR end
-    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR end
-    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR end
-    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
-    return settings.resources[HealthResource.ID]
-end
-
-function HealthResource.EnsureDisplaySettings(settings, specID)
-    local base = HealthResource.EnsureSettings(settings)
-    local health = SeedSpecResourceDisplaySettings(settings, HealthResource.ID, specID, RESOURCE_HEALTH_DISPLAY_KEYS)
-    if not health then return base end
-    if health.showAbsorbs == nil then health.showAbsorbs = base.showAbsorbs ~= false end
-    if health.showHealAbsorbs == nil then health.showHealAbsorbs = base.showHealAbsorbs ~= false end
-    if health.showIncomingHeals == nil then health.showIncomingHeals = base.showIncomingHeals ~= false end
-    if health.showLowHealthAlert == nil then health.showLowHealthAlert = base.showLowHealthAlert == true end
-    if health.healthLowHealthAlertMissingHealthOnly == nil then health.healthLowHealthAlertMissingHealthOnly = base.healthLowHealthAlertMissingHealthOnly == true end
-    if type(health.healthAbsorbColor) ~= "table" then health.healthAbsorbColor = CopyTableValue(base.healthAbsorbColor or DEFAULT_HEALTH_ABSORB_COLOR) end
-    if type(health.healthHealAbsorbColor) ~= "table" then health.healthHealAbsorbColor = CopyTableValue(base.healthHealAbsorbColor or DEFAULT_HEALTH_HEAL_ABSORB_COLOR) end
-    if type(health.healthIncomingHealColor) ~= "table" then health.healthIncomingHealColor = CopyTableValue(base.healthIncomingHealColor or DEFAULT_HEALTH_INCOMING_HEAL_COLOR) end
-    if type(health.healthLowHealthAlertColor) ~= "table" then health.healthLowHealthAlertColor = CopyTableValue(base.healthLowHealthAlertColor or DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR) end
-    HealthResource.NormalizeEffectTexture(health, "healthAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthHealAbsorbTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthIncomingHealTexture")
-    HealthResource.NormalizeEffectTexture(health, "healthLowHealthAlertTexture")
-    return health
-end
-
-local function EnsureResourceSettings(settings, powerType)
-    if type(settings.resources) ~= "table" then
-        settings.resources = {}
-    end
-
-    if powerType == HealthResource.ID then
-        return HealthResource.EnsureSettings(settings)
-    end
-
-    if type(settings.resources[powerType]) ~= "table" then
-        settings.resources[powerType] = {}
-    end
-    return settings.resources[powerType]
-end
+-- The four Health Effects in page order. One list drives the page rows and
+-- their Settings Finder routes.
+local HEALTH_EFFECT_ROWS = {
+    { key = "absorbs", name = "Absorbs", enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
+        colorKey = "healthAbsorbColor", textureKey = "healthAbsorbTexture",
+        colorLabel = "Absorb Color", textureLabel = "Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR, column = "left" },
+    { key = "healingAbsorbs", name = "Healing Absorbs", enabledKey = "showHealAbsorbs", advancedKey = "healthHealAbsorbs",
+        colorKey = "healthHealAbsorbColor", textureKey = "healthHealAbsorbTexture",
+        colorLabel = "Healing Absorb Color", textureLabel = "Healing Absorb Texture",
+        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR, column = "left" },
+    { key = "incomingHeals", name = "Incoming Heals", enabledKey = "showIncomingHeals", advancedKey = "healthIncomingHeals",
+        colorKey = "healthIncomingHealColor", textureKey = "healthIncomingHealTexture",
+        colorLabel = "Incoming Heal Color", textureLabel = "Incoming Heal Texture",
+        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR, column = "right" },
+    { key = "lowHealth", name = "Low Health Alert", enabledKey = "showLowHealthAlert", advancedKey = "healthLowHealthAlert",
+        colorKey = "healthLowHealthAlertColor", textureKey = "healthLowHealthAlertTexture",
+        colorLabel = "Low Health Alert Color", textureLabel = "Low Health Alert Texture",
+        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR, column = "right",
+        missingOnly = true,
+        info = "Blizzard sets the low-health threshold to 35%. This cannot be configured." },
+}
 
 local function IsResourceEnabled(settings, powerType)
-    local res = EnsureResourceSettings(settings, powerType)
+    local res = settings.resources and settings.resources[powerType]
     if powerType == HealthResource.ID then
-        return res.enabled == true
+        return type(res) == "table" and res.enabled == true
     end
-    return res.enabled ~= false
+    return not (type(res) == "table" and res.enabled == false)
 end
 
 -- Row grammar has no percent readout (the value box is the readout, and the
@@ -332,13 +248,18 @@ end
 
 function HealthResource.AddEffectTextureDropdown(container, health, key, label, applyBars, setting)
     local textureOptions, textureOrder = HealthResource.GetEffectTextureOptions()
+    -- A name the media library does not know this session (a disabled media
+    -- pack) shows as the default and stays saved.
+    local saved = health[key]
+    local shown = type(saved) == "string" and saved ~= "" and LSM:IsValid("statusbar", saved)
+        and saved or DEFAULT_HEALTH_EFFECT_TEXTURE
     return AddDropdownRow(container, {
         label = label,
         setting = setting,
         pulloutWidth = MEDIA_PULLOUT_WIDTH,
         list = textureOptions,
         order = textureOrder,
-        value = health[key] or DEFAULT_HEALTH_EFFECT_TEXTURE,
+        value = shown,
         onChange = function(val)
             health[key] = val or DEFAULT_HEALTH_EFFECT_TEXTURE
             applyBars()
@@ -347,7 +268,7 @@ function HealthResource.AddEffectTextureDropdown(container, health, key, label, 
 end
 
 function HealthResource.AddEffectStyleControls(container, checkbox, health, options, applyBars)
-    local enabled = health[options.enabledKey] == true
+    local enabled = RB.HealthBar.IsEffectOn(health, options.enabledKey)
     -- Single rail (AdvancedSettingsPanel.lua): a panel is one narrow column, so
     -- both rows go straight onto the panel scroll. The toggle these belong to
     -- lives back on the tab, so neither indents.
@@ -410,21 +331,10 @@ local function BuildResourceTextControls(container, settings, powerType, display
 
     local capturedPt = powerType
     local isHealthResource = capturedPt == HealthResource.ID
-    local mwContinuous = IsMWContinuous(capturedPt, settings, displaySpecID)
-    local isSegmentedResource = (SEGMENTED_TYPES[capturedPt] == true) or (capturedPt == 100 and not mwContinuous)
-        or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
-    -- Percent needs a fill to measure: every continuous resource, and an
-    -- aura-stack bar drawn Continuous, as Maelstrom Weapon already is.
-    local offersPercent = not isSegmentedResource
-        or (RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
-            and RB.GetAuraStackDisplayStyle(settings, capturedPt, displaySpecID) == "continuous")
-    if isHealthResource then
-        HealthResource.EnsureSettings(settings)
-    else
-        EnsureResourceSettings(settings, capturedPt)
-    end
-    local baseSettings = settings.resources[capturedPt]
-    SeedSpecResourceDisplaySettings(settings, capturedPt, displaySpecID, RB.RESOURCE_TEXT_DISPLAY_KEYS)
+    local textContract = RB.GetResourceTextContract(settings, capturedPt, displaySpecID)
+    local offersPercent = textContract.offersPercent
+    -- Reads fall from the spec to the shared values; writes go to the spec.
+    local baseSettings = settings.resources and settings.resources[capturedPt]
     local resSettings = displaySpecID and ST._ResourceSpecFields(container, settings, capturedPt, displaySpecID) or baseSettings
     local name = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
     local finderText = isHealthResource
@@ -432,12 +342,13 @@ local function BuildResourceTextControls(container, settings, powerType, display
         or RESOURCE_FINDER.detail and RESOURCE_FINDER.detail[capturedPt]
             and RESOURCE_FINDER.detail[capturedPt].text
 
-    local showTextValue = ReadDisplaySetting(baseSettings, resSettings, "showText", nil)
+    -- The bars' own rules (RB.ResolveResourceTextRules); Health keeps its own.
     local showTextEnabled
-    if isHealthResource or isSegmentedResource then
-        showTextEnabled = showTextValue == true
+    if isHealthResource then
+        showTextEnabled = ReadDisplaySetting(baseSettings, resSettings, "showText", nil) == true
     else
-        showTextEnabled = showTextValue ~= false
+        local _, shown = RB.ResolveResourceTextRules(resSettings, settings, capturedPt, displaySpecID)
+        showTextEnabled = shown
     end
 
     -- LEFT column: the resource's own value text. RIGHT column: the recharge
@@ -445,7 +356,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     -- and an empty column takes no height.
     local textLeft, textRight = BeginRowGrid(container)
     ST._AddSettingsSubheading(textLeft, name .. " Value Text")
-    if capturedPt == 5 then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
+    if RB.HasRechargeText(capturedPt) then ST._AddSettingsSubheading(textRight, "Recharge Duration Text") end
 
     local cb = AddCheckboxRow(textLeft, {
         label = "Show " .. name .. " Text",
@@ -499,13 +410,14 @@ local function BuildResourceTextControls(container, settings, powerType, display
             }
             textFormatOrder = { "current", "current_max", "percent" }
         end
-        local textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", isHealthResource and "percent" or DEFAULT_RESOURCE_TEXT_FORMAT)
+        local textFormatValue
         if isHealthResource then
+            textFormatValue = ReadDisplaySetting(baseSettings, resSettings, "textFormat", "percent")
             if not IsHealthTextFormat(textFormatValue) then
                 textFormatValue = "percent"
             end
-        elseif not textFormatOptions[textFormatValue] then
-            textFormatValue = DEFAULT_RESOURCE_TEXT_FORMAT
+        else
+            textFormatValue = RB.ResolveResourceTextRules(resSettings, settings, capturedPt, displaySpecID)
         end
         AddDropdownRow(panel, {
             label = "Text Format",
@@ -540,7 +452,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
             previewRefresh = RefreshLayoutOrderPreviewForDrag,
         })
 
-        if HIDE_AT_ZERO_ELIGIBLE[capturedPt] and not mwContinuous then
+        if textContract.offersHideAtZero then
             AddCheckboxRow(panel, {
                 label = "Hide at 0",
                 setting = finderText and finderText.advanced and finderText.advanced.hideAtZero,
@@ -580,7 +492,7 @@ local function BuildResourceTextControls(container, settings, powerType, display
     })
 
     ST._BuildModuleBarStyleRows(textLeft, "resources", capturedPt, displaySpecID, "barValueTypography")
-    if capturedPt ~= 5 then
+    if not RB.HasRechargeText(capturedPt) then
         return
     end
 
@@ -675,9 +587,8 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
         container:AddChild(label)
         return
     end
-    local health = HealthResource.EnsureDisplaySettings(settings, specID)
     ST._BuildModuleBarStyle(container, "resources", HealthResource.ID, specID, "appearance")
-    health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID)
+    local health = ST._ResourceSpecFields(container, settings, HealthResource.ID, specID)
     local fillGradientEnabled = health.healthBarGradient
     if fillGradientEnabled == nil then
         fillGradientEnabled = DEFAULT_HEALTH_BAR_GRADIENT
@@ -781,118 +692,53 @@ function HealthResource.BuildColorControls(container, settings, applyBars)
     -- LEFT column: the two shield-shaped effects drawn over the fill. RIGHT
     -- column: the incoming-heal preview and the alert that recolors the bar.
     local effectsLeft, effectsRight = BeginRowGrid(container)
-
-    local absorbsCb = AddCheckboxRow(effectsLeft, {
-        label = "Show Absorbs",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.absorbs,
-        value = health.showAbsorbs == true,
-        onChange = function(val)
-            health.showAbsorbs = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsLeft, absorbsCb, health, {
-        enabledKey = "showAbsorbs",
-        enableLabel = "Enable Absorbs",
-        advancedKey = "healthAbsorbs",
-        colorKey = "healthAbsorbColor",
-        textureKey = "healthAbsorbTexture",
-        colorLabel = "Absorb Color",
-        textureLabel = "Absorb Texture",
-        defaultColor = DEFAULT_HEALTH_ABSORB_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.absorbs,
-    }, applyBars)
-
-    local healAbsorbsCb = AddCheckboxRow(effectsLeft, {
-        label = "Show Healing Absorbs",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.healingAbsorbs,
-        value = health.showHealAbsorbs == true,
-        onChange = function(val)
-            health.showHealAbsorbs = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsLeft, healAbsorbsCb, health, {
-        enabledKey = "showHealAbsorbs",
-        enableLabel = "Enable Healing Absorbs",
-        advancedKey = "healthHealAbsorbs",
-        colorKey = "healthHealAbsorbColor",
-        textureKey = "healthHealAbsorbTexture",
-        colorLabel = "Healing Absorb Color",
-        textureLabel = "Healing Absorb Texture",
-        defaultColor = DEFAULT_HEALTH_HEAL_ABSORB_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.healingAbsorbs,
-    }, applyBars)
-
-    local incomingHealsCb = AddCheckboxRow(effectsRight, {
-        label = "Show Incoming Heals",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.incomingHeals,
-        value = health.showIncomingHeals == true,
-        onChange = function(val)
-            health.showIncomingHeals = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsRight, incomingHealsCb, health, {
-        enabledKey = "showIncomingHeals",
-        enableLabel = "Enable Incoming Heals",
-        advancedKey = "healthIncomingHeals",
-        colorKey = "healthIncomingHealColor",
-        textureKey = "healthIncomingHealTexture",
-        colorLabel = "Incoming Heal Color",
-        textureLabel = "Incoming Heal Texture",
-        defaultColor = DEFAULT_HEALTH_INCOMING_HEAL_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.incomingHeals,
-    }, applyBars)
-
-    local lowHealthAlertCb = AddCheckboxRow(effectsRight, {
-        label = "Show Low Health Alert",
-        setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
-            and RESOURCE_FINDER.primary.healthEffects.lowHealth,
-        value = health.showLowHealthAlert == true,
-        onChange = function(val)
-            health.showLowHealthAlert = val == true
-            applyBars("style-settings")
-        end,
-    })
-    HealthResource.AddEffectStyleControls(effectsRight, lowHealthAlertCb, health, {
-        enabledKey = "showLowHealthAlert",
-        enableLabel = "Enable Low Health Alert",
-        advancedKey = "healthLowHealthAlert",
-        colorKey = "healthLowHealthAlertColor",
-        textureKey = "healthLowHealthAlertTexture",
-        colorLabel = "Low Health Alert Color",
-        textureLabel = "Low Health Alert Texture",
-        defaultColor = DEFAULT_HEALTH_LOW_HEALTH_ALERT_COLOR,
-        settings = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
-            and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth,
-        buildExtra = function(panel)
-            AddCheckboxRow(panel, {
-                label = "Pulse Missing Health Only",
-                setting = RESOURCE_FINDER.primary
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth
-                    and RESOURCE_FINDER.primary.healthEffectAdvanced.lowHealth.missingOnly,
-                value = health.healthLowHealthAlertMissingHealthOnly == true,
-                onChange = function(val)
-                    health.healthLowHealthAlertMissingHealthOnly = val == true
-                    applyBars()
-                end,
-            })
-        end,
-    }, applyBars)
-    -- Second badge after the gear: the anchor args below are a placeholder -
-    -- AnchorRowBadge re-points the button behind the chained gear.
-    AnchorRowBadge(lowHealthAlertCb, CreateInfoButton(lowHealthAlertCb.frame, lowHealthAlertCb.frame, "LEFT", "LEFT", 0, 0, {
-        "Low Health Alert",
-        {"Blizzard sets the low-health threshold to 35%. This cannot be configured.", 1, 1, 1, true},
-    }, lowHealthAlertCb))
+    local finderShow = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffects
+    local finderAdvanced = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.healthEffectAdvanced
+    for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
+        local column = effect.column == "left" and effectsLeft or effectsRight
+        local enabledKey = effect.enabledKey
+        local advancedFinder = finderAdvanced and finderAdvanced[effect.key]
+        local checkbox = AddCheckboxRow(column, {
+            label = "Show " .. effect.name,
+            setting = finderShow and finderShow[effect.key],
+            value = RB.HealthBar.IsEffectOn(health, enabledKey),
+            onChange = function(val)
+                health[enabledKey] = val == true
+                applyBars("style-settings")
+            end,
+        })
+        HealthResource.AddEffectStyleControls(column, checkbox, health, {
+            enabledKey = enabledKey,
+            enableLabel = "Enable " .. effect.name,
+            advancedKey = effect.advancedKey,
+            colorKey = effect.colorKey,
+            textureKey = effect.textureKey,
+            colorLabel = effect.colorLabel,
+            textureLabel = effect.textureLabel,
+            defaultColor = effect.defaultColor,
+            settings = advancedFinder,
+            buildExtra = effect.missingOnly and function(panel)
+                AddCheckboxRow(panel, {
+                    label = "Pulse Missing Health Only",
+                    setting = advancedFinder and advancedFinder.missingOnly,
+                    value = health.healthLowHealthAlertMissingHealthOnly == true,
+                    onChange = function(val)
+                        health.healthLowHealthAlertMissingHealthOnly = val == true
+                        applyBars()
+                    end,
+                })
+            end or nil,
+        }, applyBars)
+        if effect.info then
+            -- Second badge after the gear: the anchor args below are a
+            -- placeholder - AnchorRowBadge re-points the button behind the
+            -- chained gear.
+            AnchorRowBadge(checkbox, CreateInfoButton(checkbox.frame, checkbox.frame, "LEFT", "LEFT", 0, 0, {
+                effect.name,
+                {effect.info, 1, 1, 1, true},
+            }, checkbox))
+        end
+    end
 end
 
 local function AddResourceSpecCopyButton(enableCb)
@@ -1273,95 +1119,19 @@ local function BuildResourceBarPositioningPanel(container)
         local _, stackPosCollapsed = BuildCollapsibleSection(container, "Anchor Settings", stackPosKey, resourceBarCollapsedSections, nil, ROW_SECTION)
 
         if not stackPosCollapsed then
-            EnsureResourceLayoutAnchor(settings, layout)
-            local anchor = layout.independentAnchor
-
-            local function refreshResourceBarAnchor()
-                applyBars()
-            end
-
-            -- A frame name needs the whole 140px control column to stay
-            -- readable, so Pick does not share it: the editbox row takes a
-            -- grid of its own and Pick sits at the head of that grid's right
-            -- column, immediately across the 16px gutter.
-            local targetLeft, targetRight = BeginRowGrid(container)
-            BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshResourceBarAnchor, {
-                pickContainer = targetRight,
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.frame,
-            })
-
-            -- LEFT column: how the stack is placed - the drag toggle and the
-            -- two points that have to be read together (mine, then the
-            -- target's). RIGHT column: its size and the offset applied on top
-            -- of those points.
-            local stackLeft, stackRight = BeginRowGrid(container)
-
-            AddCheckboxRow(stackLeft, {
-                label = "Unlock Placement",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.unlock,
-                value = not layout.independentAnchorLocked,
-                onChange = function(val)
-                    layout.independentAnchorLocked = not val
-                    applyBars()
-                    if not val then
-                        CooldownCompanion:CheckArrangeModeAutoExit()
-                    end
+            ST._BuildIndependentAnchorRows(container, {
+                anchor = type(layout.independentAnchor) == "table" and layout.independentAnchor or nil,
+                -- The stack inherits the global anchor until its spec has one.
+                readAnchor = type(settings.independentAnchor) == "table" and settings.independentAnchor or nil,
+                ensureAnchor = function()
+                    RB.EnsureIndependentStackConfig(settings, layout)
+                    return layout.independentAnchor
                 end,
-            })
-
-            AddAnchorDropdown(stackLeft, anchor, "point", "CENTER",
-                refreshResourceBarAnchor, "Anchor Point", {
-                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                        and RESOURCE_FINDER.primary.anchor.point,
-                })
-            AddAnchorDropdown(stackLeft, anchor, "relativePoint", "CENTER",
-                refreshResourceBarAnchor, "Relative Point", {
-                    setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                        and RESOURCE_FINDER.primary.anchor.relativePoint,
-                })
-
-            -- The canvas sizes an independent stack's slots from this value.
-            AddMirrorFirstSliderRow(stackRight, {
-                label = "Bar Width",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.width,
-                min = 20, max = 600, step = 0.1,
-                value = layout.independentWidth or settings.independentWidth or 200,
-                set = function(val) layout.independentWidth = val end,
-                apply = function()
-                    applyBars()
-                end,
-                stateOwner = layout,
-                stateKeys = "independentWidth",
-            })
-
-            -- The two offsets below place the stack on SCREEN, which the canvas
-            -- does not draw. Store during the drag and move the live stack once
-            -- on release.
-            AddSliderRow(stackRight, {
-                label = "X Offset",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.x,
-                min = -2000, max = 2000, step = 0.1,
-                value = anchor.x or 0,
-                onRelease = function(val)
-                    anchor.x = val
-                    applyBars()
-                end,
-            })
-
-            AddSliderRow(stackRight, {
-                label = "Y Offset",
-                setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor
-                    and RESOURCE_FINDER.primary.anchor.y,
-                min = -2000, max = 2000, step = 0.1,
-                value = anchor.y or 0,
-                onRelease = function(val)
-                    anchor.y = val
-                    applyBars()
-                end,
+                owner = layout,
+                widthLabel = "Bar Width",
+                widthValue = layout.independentWidth or settings.independentWidth or 200,
+                finder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor,
+                apply = function() applyBars() end,
             })
         end
     end
@@ -1665,46 +1435,14 @@ local function AddThresholdTickEnableCheckbox(container, settings, powerType, sp
     return checkbox, enabled, function() SetEnabled(true) end
 end
 
+-- The runtime's own list rules (RB.ResolveThresholdEntries / ResolveTickEntries),
+-- for the spec the page edits.
 local function GetConfigSegmentedThresholdEntries(settings, powerType, specID)
-    local rawEntries, cleared = ResolveSpecEntryList(settings.resources and settings.resources[powerType], specID, "segThresholdEntries", "segThresholdEntriesCleared")
-    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
-    if #entries == 0
-        and not cleared
-        and ReadSpecOverrideKey(settings, powerType, specID, "segThresholdEnabled", false) == true then
-        entries[1] = {
-            value = GetSegmentedThresholdValueConfig({
-                segThresholdValue = ReadSpecOverrideKey(settings, powerType, specID, "segThresholdValue", nil),
-            }),
-            color = GetSafeRGBConfig(ReadSpecOverrideKey(settings, powerType, specID, "segThresholdColor", nil), DEFAULT_SEG_THRESHOLD_COLOR),
-        }
-    end
-    return entries
+    return RB.ResolveThresholdEntries(settings.resources and settings.resources[powerType], specID)
 end
 
 local function GetConfigContinuousTickEntries(settings, powerType, specID, mode)
-    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
-    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
-    local rawEntries, cleared = ResolveSpecEntryList(settings.resources and settings.resources[powerType], specID, entriesKey, clearedKey)
-    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
-    if #entries == 0
-        and not cleared
-        and ReadSpecOverrideKey(settings, powerType, specID, "continuousTickEnabled", false) == true then
-        local value
-        if mode == "absolute" then
-            value = GetContinuousTickAbsoluteConfig({
-                continuousTickAbsolute = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickAbsolute", nil),
-            })
-        else
-            value = GetContinuousTickPercentConfig({
-                continuousTickPercent = ReadSpecOverrideKey(settings, powerType, specID, "continuousTickPercent", nil),
-            })
-        end
-        entries[1] = {
-            value = value,
-            color = GetSafeRGBAConfig(ReadSpecOverrideKey(settings, powerType, specID, "continuousTickColor", nil), DEFAULT_CONTINUOUS_TICK_COLOR),
-        }
-    end
-    return entries
+    return RB.ResolveTickEntries(settings.resources and settings.resources[powerType], specID, mode)
 end
 
 local function WriteThresholdTickEntries(settings, powerType, specID, entriesKey, clearedKey, entries)
@@ -2093,7 +1831,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             -- 2026-08-02: separate systems, any combination). It only exists where
             -- the runtime can draw the lane; the stored key stays
             -- auraColorTrackingMode ("stacks"/"active") so no config migrates.
-            if SupportsResourceAuraStackMode(powerType) then
+            if IsStackCountedResource(powerType) then
                 local laneOn = RB.GetResourceOverlayTrackingMode(entry, powerType) == "stacks"
 
                 local laneRow = AddCheckboxRow(panel, {
@@ -2233,13 +1971,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                     local target = GetResourceAuraOverlayEntry(settings, powerType, specID)
                     if not target then return end
                     target.auraBorderStyle = value
-                    -- Size and speed change meaning per style (border px vs dash
-                    -- length; lap seconds), so a style switch resets the per-style
-                    -- keys to that style's defaults, like every glow dropdown.
-                    target.auraBorderSize = value == "pixel" and 12 or 2
-                    target.auraBorderSpeed = value == "pixel" and 2 or 0.5
-                    target.auraBorderLines = value == "pixel" and 5 or 2
-                    target.auraBorderThickness = value == "pixel" and 3 or 4
+                    ResetBorderStyleKeys(target, AURA_BORDER_SLIDER_KEYS, value)
                     refresh()
                 end,
             })
@@ -2327,11 +2059,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
                 onChange = function(value)
                     if value ~= "solid" and value ~= "pixel" then return end
                     resource[keys.style] = value
-                    -- Per-style key resets, like every glow dropdown.
-                    resource[keys.size] = value == "pixel" and 12 or 2
-                    resource[keys.speed] = value == "pixel" and 2 or 0.5
-                    resource[keys.lines] = value == "pixel" and 5 or 2
-                    resource[keys.thickness] = value == "pixel" and 3 or 4
+                    ResetBorderStyleKeys(resource, keys, value)
                     applyRows("style-settings-soon")
                 end,
             })
@@ -2461,9 +2189,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         -- Weapon among them — get threshold colours, every other real power
         -- type gets tick markers, and the two invented ids (Stagger, Health)
         -- get neither. The section shows if either half applies.
-        local isSegmented = SEGMENTED_TYPES[resourceSettingsPowerType] == true
-            or resourceSettingsPowerType == 100
-            or RB.AURA_STACK_RESOURCES[resourceSettingsPowerType] ~= nil
+        local isSegmented = IsStackCountedResource(resourceSettingsPowerType)
         showThresholdsTicks = isSegmented
             or (resourceSettingsPowerType ~= 101 and resourceSettingsPowerType ~= healthResourceID)
     end
@@ -2671,8 +2397,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             local resourceEntry = settings.resources[capturedPt]
             if not (resourceEntry and resourceEntry.enabled == false) then
                 local resourceName = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
-                local isSegmented = SEGMENTED_TYPES[capturedPt] == true or capturedPt == 100
-                    or RB.AURA_STACK_RESOURCES[capturedPt] ~= nil
+                local isSegmented = IsStackCountedResource(capturedPt)
 
                 if isSegmented then
                     local thresholdAdvKey = "rbSegThreshold_" .. capturedPt .. "_" .. tostring(displaySpecID)
@@ -2782,9 +2507,10 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             end,
                         })
 
-                        local tickMode = GetContinuousTickModeConfig({
-                            continuousTickMode = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", nil),
-                        })
+                        local tickMode = ReadSpecOverrideKey(settings, capturedPt, displaySpecID, "continuousTickMode", nil)
+                        if tickMode ~= "percent" and tickMode ~= "absolute" then
+                            tickMode = DEFAULT_CONTINUOUS_TICK_MODE
+                        end
                         AddDropdownRow(panel, {
                             label = "Tick Mode",
                             setting = RESOURCE_FINDER.detail
@@ -2857,7 +2583,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds
                                 and RESOURCE_FINDER.detail[capturedPt].thresholds.width,
                             tooltip = { tickWidthLabel },
-                            min = 1, max = 10, step = 1,
+                            min = 1, max = 10, step = 0.1,
                             value = tonumber(_tickWidthVal) or DEFAULT_CONTINUOUS_TICK_WIDTH,
                             set = function(val)
                                 tickFields.continuousTickWidth = val
@@ -2920,7 +2646,7 @@ local function BuildResourceSettingsPanel(container, powerType, specID)
         container:AddChild(label)
         return
     end
-    local segmented = ST._RB.SupportsResourceAuraStackMode(numericPowerType)
+    local segmented = ST._RB.IsStackCountedResource(numericPowerType)
         and not ST._RB.IsContinuousResourceShape(CooldownCompanion:GetResourceBarSettings(), numericPowerType, numericSpecID)
     ST._BuildModuleGeometrySummary(container, "resources", numericPowerType, numericSpecID)
     ST._BuildModuleBarStyle(container, "resources", numericPowerType, numericSpecID, "appearance",
@@ -3551,35 +3277,16 @@ if ST._DefineSettingRoute then
             collapseStore = "resource",
             applies = healthApplies,
         })
-        RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings({
-            absorbs = { label = "Show Absorbs" },
-            healingAbsorbs = { label = "Show Healing Absorbs" },
-            incomingHeals = { label = "Show Incoming Heals" },
-            lowHealth = { label = "Show Low Health Alert" },
-        })
+        local showSettings = {}
+        for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
+            showSettings[effect.key] = { label = "Show " .. effect.name }
+        end
+        RESOURCE_FINDER.primary.healthEffects = effectsRoute:Settings(showSettings)
         RESOURCE_FINDER.primary.healthEffectAdvanced = {}
-        local effectSpecs = {
-            absorbs = {
-                enabledKey = "showAbsorbs", advancedKey = "healthAbsorbs",
-                color = "Absorb Color", texture = "Absorb Texture",
-            },
-            healingAbsorbs = {
-                enabledKey = "showHealAbsorbs", advancedKey = "healthHealAbsorbs",
-                color = "Healing Absorb Color", texture = "Healing Absorb Texture",
-            },
-            incomingHeals = {
-                enabledKey = "showIncomingHeals", advancedKey = "healthIncomingHeals",
-                color = "Incoming Heal Color", texture = "Incoming Heal Texture",
-            },
-            lowHealth = {
-                enabledKey = "showLowHealthAlert", advancedKey = "healthLowHealthAlert",
-                color = "Low Health Alert Color", texture = "Low Health Alert Texture",
-            },
-        }
-        for key, spec in pairs(effectSpecs) do
-            local captured = spec
-            RESOURCE_FINDER.primary.healthEffectAdvanced[key] = ST._DefineSettingRoute({
-                idPrefix = "resources.health.effects." .. key,
+        for _, effect in ipairs(HEALTH_EFFECT_ROWS) do
+            local captured = effect
+            RESOURCE_FINDER.primary.healthEffectAdvanced[captured.key] = ST._DefineSettingRoute({
+                idPrefix = "resources.health.effects." .. captured.key,
                 scope = "resources",
                 rowScope = "primary",
                 tab = "health",
@@ -3595,9 +3302,9 @@ if ST._DefineSettingRoute then
                 -- opens read-only behind its Turn On footer).
                 applies = healthApplies,
             }):Settings({
-                color = { label = captured.color },
-                texture = { label = captured.texture },
-                missingOnly = key == "lowHealth"
+                color = { label = captured.colorLabel },
+                texture = { label = captured.textureLabel },
+                missingOnly = captured.missingOnly
                     and { label = "Pulse Missing Health Only" } or nil,
             })
         end
@@ -3643,10 +3350,7 @@ if ST._DefineSettingRoute then
                 })
             end
 
-            if capturedPowerType == 100
-                or RB.AURA_STACK_RESOURCES[capturedPowerType]
-                or SEGMENTED_TYPES[capturedPowerType] == true
-            then
+            if IsStackCountedResource(capturedPowerType) then
                 local stackSection = capturedPowerType == 100 and "rb_mw_stack_display"
                     or RB.AURA_STACK_RESOURCES[capturedPowerType] and "rb_stack_display"
                     or "rb_max_stack_border"
@@ -3794,12 +3498,11 @@ if ST._DefineSettingRoute then
                     -- The spec the resource page builds for, not the player's.
                     applies = function(context)
                         local specID = context and tonumber(context.resourceSpecID) or GetCurrentConfigSpecID()
-                        return HIDE_AT_ZERO_ELIGIBLE[capturedPowerType] == true
-                            and not IsMWContinuous(capturedPowerType, nil, specID)
+                        return RB.GetResourceTextContract(nil, capturedPowerType, specID).offersHideAtZero
                     end,
                 },
             })
-            if capturedPowerType == 5 then
+            if RB.HasRechargeText(capturedPowerType) then
                 detail.text.recharge = textBase:Setting({
                     key = "show_recharge",
                     label = "Show " .. name .. " Recharge Text",
@@ -3829,9 +3532,7 @@ if ST._DefineSettingRoute then
             end
 
             -- RESOURCE FINDER DETAIL THRESHOLD ROUTES
-            local segmented = SEGMENTED_TYPES[capturedPowerType] == true
-                or capturedPowerType == 100
-                or RB.AURA_STACK_RESOURCES[capturedPowerType] ~= nil
+            local segmented = IsStackCountedResource(capturedPowerType)
             if segmented or capturedPowerType ~= 101 then
                 local thresholdRoute = ST._DefineSettingRoute({
                     idPrefix = "resource." .. tostring(capturedPowerType) .. ".thresholds",
@@ -4037,7 +3738,7 @@ if ST._DefineSettingRoute then
                 key = "stack_lane",
                 label = "Stack Lane",
                 applies = function()
-                    return SupportsResourceAuraStackMode(capturedPowerType)
+                    return IsStackCountedResource(capturedPowerType)
                 end,
             })
             detail.aura.laneColor = auraControls:Setting({
@@ -4045,7 +3746,7 @@ if ST._DefineSettingRoute then
                 label = "Lane Color",
                 applies = function(context)
                     local entry = RESOURCE_FINDER.AuraEntry(context)
-                    return SupportsResourceAuraStackMode(capturedPowerType)
+                    return IsStackCountedResource(capturedPowerType)
                         and entry
                         and RB.GetResourceOverlayTrackingMode(
                             entry, capturedPowerType) == "stacks"
@@ -4156,7 +3857,7 @@ ST._ResourceSegmentGapSetting = ST._DefineSettingRoute({
     applies = function(context)
         local settings = RESOURCE_FINDER.Settings(context)
         local powerType = context.resourcePowerType
-        return ST._RB.SupportsResourceAuraStackMode(powerType)
+        return ST._RB.IsStackCountedResource(powerType)
             and not ST._RB.IsContinuousResourceShape(settings, powerType, context.resourceSpecID)
     end,
 }):Setting({ key = "segmentGap", label = "Segment Gap", aliases = { "segment spacing", "stack spacing" } })

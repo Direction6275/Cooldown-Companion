@@ -18,7 +18,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
     local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
     local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
     local GetResourceAuraTrackingMode = RB.GetResourceAuraTrackingMode
-    local SupportsResourceAuraStackMode = RB.SupportsResourceAuraStackMode
+    local IsStackCountedResource = RB.IsStackCountedResource
     local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
     local DEFAULT_RESOURCE_AURA_ACTIVE_COLOR = RB.DEFAULT_RESOURCE_AURA_ACTIVE_COLOR
 
@@ -260,7 +260,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
             shapes.border = true
         end
         if GetResourceAuraTrackingMode(entry) == "stacks"
-            and SupportsResourceAuraStackMode(powerType) then
+            and IsStackCountedResource(powerType) then
             shapes.stackLane = true
         end
         -- Only the collector passes barType (the live bar's shape); the
@@ -394,6 +394,9 @@ function RB.CreateResourceBarAuraHostModule(deps)
         local settings = GetResourceBarSettings()
         local collectedResources
         if settings and settings.enabled then
+            -- The panel the bars take their shared look from, looked up once
+            -- for every bar (false: none).
+            local styleHost = ST.GetModuleGeometryHost("resources") or false
             for _, barInfo in ipairs(resourceBarFrames) do
                 -- Resource overlay leg (Phase 2): one want per shown
                 -- resource bar whose resource has a current-spec entry.
@@ -427,7 +430,7 @@ function RB.CreateResourceBarAuraHostModule(deps)
                         end
 
                         -- One shared-appearance resolve per bar feeds the inset and the style adapter.
-                        local appearance = { style = ST.ResolveModuleBarStyle("resources", settings, powerType) }
+                        local appearance = { style = ST.ResolveModuleBarStyle("resources", settings, powerType, nil, styleHost) }
                         local holder = EnsureResourceHolder(powerType)
                         AnchorHolderToBar(holder, frame,
                             GetResourceHolderInset(barInfo, GetResourceBarBorderInset(settings, powerType, appearance)),

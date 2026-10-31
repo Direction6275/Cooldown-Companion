@@ -334,7 +334,7 @@ local function SetChannelTickMark(frame, settings, index, elapsedPortion, isLast
     local highlight = settings.highlightPenultimateChannelTick == true and isLast
     local color = highlight and (settings.penultimateChannelTickColor or DEFAULT_HIGHLIGHT_COLOR)
         or (settings.channelTickColor or DEFAULT_TICK_COLOR)
-    local width = math.min(math.max(tonumber(settings.channelTickWidth) or 1, 1), 5)
+    local width = math.min(math.max(tonumber(settings.channelTickWidth) or 1, 1), 10)
     mark:SetColorTexture(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
     mark:ClearAllPoints()
     local offset = frame.fillWidth * elapsedPortion

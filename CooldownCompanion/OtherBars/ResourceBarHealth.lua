@@ -5,6 +5,7 @@
 
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
+local LSM = LibStub("LibSharedMedia-3.0")
 local SetStatusBarImmediateValue = ST.SetStatusBarImmediateValue
 local SetStatusBarSmoothRange = ST.SetStatusBarSmoothRange
 local SetStatusBarSmoothValue = ST.SetStatusBarSmoothValue
@@ -18,10 +19,8 @@ local issecretvalue = issecretvalue
 local RB = ST._RB
 local PERCENT_SCALE_CURVE = RB.PERCENT_SCALE_CURVE
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
-local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
-local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
-local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
-local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
+-- The shipped Health record (Core/Defaults.lua).
+local HEALTH_DEFAULTS = ST._defaults.profile.resourceBars.resources[RESOURCE_HEALTH]
 
 local GetResourceBarSettings = RB.GetResourceBarSettings
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
@@ -75,6 +74,16 @@ HEALTH_EFFECTS.absorbOverflowCalc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorb
 
 function HealthBar.GetConfig(settings, appearance)
     return GetResourceDisplayConfig(settings, RESOURCE_HEALTH, appearance)
+end
+
+-- Whether an effect switch (showAbsorbs and its siblings) is on. Per-class
+-- resource records are not AceDB-backed, so a switch a record never saved
+-- reads as its shipped default. The bar and the settings page both read the
+-- switches through this.
+function HealthBar.IsEffectOn(config, key)
+    local value = config and config[key]
+    if value == nil then value = HEALTH_DEFAULTS[key] end
+    return value == true
 end
 
 function HealthBar.GetColor(config, key, fallback)
@@ -168,15 +177,22 @@ function HealthBar.EnsureEffectBar(bar, key, color, frameLevelOffset)
     return effectBar
 end
 
+-- A saved effect texture the media library does not know this session (a
+-- disabled media pack) draws as the default, as the settings page shows it,
+-- and stays saved.
+local function ResolveEffectTexture(config, textureKey)
+    local texture = config and config[textureKey]
+    if type(texture) ~= "string" or texture == "" or not LSM:IsValid("statusbar", texture) then
+        texture = HEALTH_EFFECTS.texture
+    end
+    return texture
+end
+
 function HealthBar.ApplyEffectStyle(effectBar, config, colorKey, defaultColor, textureKey)
     if not effectBar then return end
 
     local color = HealthBar.GetColor(config, colorKey, defaultColor)
-    local texture = config and config[textureKey]
-    if type(texture) ~= "string" or texture == "" then
-        texture = HEALTH_EFFECTS.texture
-    end
-    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(ResolveEffectTexture(config, textureKey)))
     effectBar:SetStatusBarColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
 end
 
@@ -209,11 +225,8 @@ end
 function HealthBar.ApplyLowHealthAlertStyle(effectBar, config)
     if not effectBar then return end
 
-    local texture = config and config.healthLowHealthAlertTexture
-    if type(texture) ~= "string" or texture == "" then
-        texture = HEALTH_EFFECTS.texture
-    end
-    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(texture))
+    effectBar:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(
+        ResolveEffectTexture(config, "healthLowHealthAlertTexture")))
     effectBar:SetMinMaxValues(0, 1)
     SetStatusBarImmediateValue(effectBar, 1)
 end
@@ -452,7 +465,7 @@ local function WantsEffect(previewKey, settingKey)
     if effectPassCanvasMode then
         return effectPassPreview[previewKey] == true
     end
-    return effectPassConfig[settingKey] == true
+    return HealthBar.IsEffectOn(effectPassConfig, settingKey)
 end
 
 -- An effect's styling (texture fetch plus colour) is a pure function of the
@@ -822,29 +835,33 @@ function HealthBar.Update(bar, settings)
 
     if bar.text and bar.text:IsShown() then
         local textFormat = bar._textFormat
-        if textFormat == "current" then
-            bar.text:SetFormattedText("%s", AbbreviateNumbers(currentHealth))
-        elseif textFormat == "current_max" then
-            bar.text:SetFormattedText("%s / %s", AbbreviateNumbers(currentHealth), AbbreviateNumbers(maxHealth))
-        elseif textFormat == "current_percent" then
-            bar.text:SetFormattedText(
-                "%s | %.0f%%",
-                AbbreviateNumbers(currentHealth),
-                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
-            )
-        elseif textFormat == "current_percent_no_sign" then
-            bar.text:SetFormattedText(
-                "%s | %.0f",
-                AbbreviateNumbers(currentHealth),
-                UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
-            )
-        elseif textFormat == "percent_no_sign" then
-            bar.text:SetFormattedText("%.0f", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
-        else
-            bar.text:SetFormattedText("%.0f%%", UnitHealthPercent("player", true, PERCENT_SCALE_CURVE))
+        local percent
+        if textFormat ~= "current" and textFormat ~= "current_max" then
+            percent = UnitHealthPercent("player", true, PERCENT_SCALE_CURVE)
         end
+        HealthBar.WriteText(bar.text, textFormat, currentHealth, maxHealth, percent)
     end
 
+end
+
+-- The six Health text formats, for the live bar and its config preview. The
+-- values go straight to SetFormattedText and AbbreviateNumbers, which accept
+-- secret values; the caller works out `percent` only for a format that shows
+-- it.
+function HealthBar.WriteText(fontString, textFormat, current, max, percent)
+    if textFormat == "current" then
+        fontString:SetFormattedText("%s", AbbreviateNumbers(current))
+    elseif textFormat == "current_max" then
+        fontString:SetFormattedText("%s / %s", AbbreviateNumbers(current), AbbreviateNumbers(max))
+    elseif textFormat == "current_percent" then
+        fontString:SetFormattedText("%s | %.0f%%", AbbreviateNumbers(current), percent)
+    elseif textFormat == "current_percent_no_sign" then
+        fontString:SetFormattedText("%s | %.0f", AbbreviateNumbers(current), percent)
+    elseif textFormat == "percent_no_sign" then
+        fontString:SetFormattedText("%.0f", percent)
+    else
+        fontString:SetFormattedText("%.0f%%", percent)
+    end
 end
 
 function HealthBar.Style(bar, settings, appearance)
@@ -899,22 +916,7 @@ function HealthBar.Style(bar, settings, appearance)
         and textFormat ~= "current_percent_no_sign" then
         textFormat = "percent"
     end
-    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
-    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-    local textOutline = ST.GetEffectiveFontOutline(resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
-        textColor = DEFAULT_RESOURCE_TEXT_COLOR
-    end
-
-    bar.text:SetFont(CooldownCompanion:FetchFont(textFontName), textSize, textOutline)
-    ST.ApplyFontShadowForOutline(bar.text, textOutline)
-    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
-    ST.TextAnchorLayout.Apply(bar.text, bar,
-        resourceConfig and resourceConfig.textAnchor or "CENTER",
-        resourceConfig and resourceConfig.textXOffset or 0,
-        resourceConfig and resourceConfig.textYOffset or 0
-    )
+    RB.ApplyResourceTextStyle(bar.text, bar, resourceConfig)
     bar.text:SetShown(resourceConfig and resourceConfig.showText == true)
     bar._textFormat = textFormat
 end

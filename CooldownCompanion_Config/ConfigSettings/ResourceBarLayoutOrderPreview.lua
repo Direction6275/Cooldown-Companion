@@ -1,6 +1,7 @@
 --[[
     CooldownCompanion - ResourceBarLayoutOrderPreview
-    Dedicated layout/order preview renderer for attached resource bars.
+    The bars workspace canvas (Independent Resources stack and Cast Bar)
+    and the resource and cast painters the panel module preview reuses.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -40,18 +41,15 @@ local StyleSegmentedBar = RB.StyleSegmentedBar
 local ApplyPreviewBarState = RB.ApplyPreviewBarState
 local GetMWMaxStacks = RB.GetMWMaxStacks
 
--- The bars workspace draws ONE canvas for every object it configures: the
--- resource stack, the attached cast bar, and the unit-frame badges. Its
--- composition does not depend on the selection — selecting an object moves
--- the highlight and swaps the settings below, nothing else. Outside the
--- workspace this same renderer draws the buttons view's unified anchor
--- preview, which owns its own selection model.
+-- The bars workspace canvas draws an Independent Resources stack or an
+-- Independent Cast Bar. A module on a panel is drawn in that panel's
+-- workspace instead, by the panel module preview at the end of this file,
+-- which reuses this file's resource and cast painters.
 local function IsBarsWorkspaceActive()
     return CS.barsEntrySelected == true
 end
 
 local LAYOUT_PREVIEW_PADDING = 12
-local LAYOUT_PREVIEW_SECTION_GAP = 18
 local LAYOUT_PREVIEW_GAP = 4
 local LAYOUT_PREVIEW_DRAG_KIND = "layout-slot"
 local LAYOUT_PREVIEW_ICON_FALLBACK = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -211,10 +209,6 @@ local function EnsurePreviewState(host)
 end
 
 local function ResetPreviewState(preview)
-    if preview.panelHost then
-        ST._ReleaseButtonPanelPreview(preview.panelHost)
-        preview.panelHost:Hide()
-    end
     preview.used.containers = 0
     preview.used.slots = 0
     preview.used.gaps = 0
@@ -259,10 +253,10 @@ local function AcquireContainer(preview, parent)
         frame:SetClipsChildren(false)
         pool[index] = frame
     end
-    -- Containers shift roles between builds (a placeholder pass slides the
-    -- lane indices), so acquire must strip everything a previous role set:
-    -- the icon-panel click shield's scripts + mouse capture, and any visible
-    -- backdrop. Consumers that want either re-apply after acquiring.
+    -- Containers are pooled across builds and change roles (the content
+    -- frame, the lanes), so acquire clears the scripts, mouse capture and
+    -- backdrop an earlier tenant set. Consumers that want them re-apply
+    -- after acquiring.
     frame:EnableMouse(false)
     frame:SetScript("OnEnter", nil)
     frame:SetScript("OnLeave", nil)
@@ -343,19 +337,11 @@ local function AcquireGap(preview, parent)
     return frame
 end
 
--- The bars workspace's pills. One visual family for two kinds of item:
--- the unit-frame badges, which are canvas objects riding under the bar
--- stack as part of the composition, and the module-enable pills pinned to
--- the pane's bottom-right corner. Everything else this workspace can
--- configure but is not drawing right now goes to the quiet text-chip strip
--- in the editing surface, not here.
+-- The bars workspace's module-enable pills, pinned to the pane's
+-- bottom-right corner. Everything else this workspace can configure but is
+-- not drawing right now goes to the quiet text-chip strip in the editing
+-- surface, not here.
 --
--- The badges are deliberately not facsimile unit frames. The frame
--- anchoring module re-anchors the player's real unit frames and draws
--- nothing of its own, so a mocked-up health bar would promise a look
--- Cooldown Companion never renders. A badge promises only what it is: a
--- handle on that frame's anchoring settings.
-local BARS_PILL_HEIGHT = 26
 local BARS_PILL_MIN_WIDTH = 112
 local BARS_PILL_GAP = 10
 local BARS_PILL_LINE_GAP = 6
@@ -369,17 +355,11 @@ local BARS_PILL_NEUTRAL_ACCENT = { 0.46, 0.48, 0.53 }
 local BARS_PILL_ENABLE_ACCENT = { 0.36, 0.72, 0.45 }
 -- Selection border: the same blue the canvas slots use for hover/selection.
 local BARS_PILL_SELECTED_BORDER = { 0.38, 0.60, 0.92, 1 }
-local BARS_PILL_TARGET_ICON = "groupfinder-icon-friend"
-
--- The badge pair sits under the bar stack with a modest gap, inside the
--- content block and therefore inside the fit-to-host scale.
-local BARS_BADGE_GAP = 15
 
 -- The module-enable cluster mirrors the preview command center across the
 -- pane: same bottom band, same insets off its own corner, so the two read
 -- as one line of chrome framing the canvas. Matching that band is why
--- these pills are the bar's height rather than the badges' - level with
--- the command center matters more here than a shared pill height.
+-- these pills are the bar's height.
 -- Its lines stack upward when the pane is too narrow for one row.
 local BARS_CORNER_PILL_HEIGHT = 20
 local BARS_CORNER_BOTTOM_INSET = 3
@@ -512,131 +492,6 @@ GetLayoutPreviewIcon = function(buttonData)
     return icon or LAYOUT_PREVIEW_ICON_FALLBACK
 end
 
-local function GetConfiguredPreviewIconSize(group)
-    local style = group and group.style or {}
-
-    if style.maintainAspectRatio then
-        local size = style.buttonSize or ST.BUTTON_SIZE or 36
-        return size, size
-    end
-
-    local width = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE or 36
-    local height = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE or 36
-    return width, height
-end
-
-local function GetSavedPreviewButtons(group)
-
-
-    local buttons = {}
-    local fallbackButtons = {}
-
-    for _, buttonData in ipairs(group.buttons or {}) do
-        if buttonData and buttonData.enabled ~= false then
-            fallbackButtons[#fallbackButtons + 1] = { buttonData = buttonData }
-            if not CooldownCompanion.IsButtonUsable or CooldownCompanion:IsButtonUsable(buttonData, group) then
-                buttons[#buttons + 1] = { buttonData = buttonData }
-            end
-        end
-    end
-
-    if #buttons == 0 then
-        buttons = fallbackButtons
-    end
-
-    local maxVisibleButtons = tonumber(group.maxVisibleButtons) or 0
-    if maxVisibleButtons > 0 and #buttons > maxVisibleButtons then
-        local trimmed = {}
-        for i = 1, maxVisibleButtons do
-            trimmed[#trimmed + 1] = buttons[i]
-        end
-        buttons = trimmed
-    end
-
-    return buttons
-end
-
--- Two questions, and only two: is there an icon panel worth wrapping (and if
--- not, which message says so), and which panel is it. The canvas used to draw
--- its own facsimile of that panel from this table, so it carried a full grid
--- description; every owner now lends the real read-only mirror instead and
--- builds it from `groupId` alone. `iconHeight` survives that as the fallback
--- bar thickness for the one case with no configured resource thickness to
--- read - the configured size rather than the live frame's measured one,
--- which is also what the mirror lays itself out from.
-local function BuildSourcePanelData(groupId, group, visibleButtons)
-    if not group or not CooldownCompanion:IsIconLikeDisplayMode(group.displayMode) then
-        return nil, "The current attached anchor panel is not an icon-like panel, so there is no icon row to mirror."
-    end
-
-    if #visibleButtons == 0 then
-        return nil, "The current anchor panel has no saved icon buttons to mirror."
-    end
-
-    local _, iconHeight = GetConfiguredPreviewIconSize(group)
-
-    return {
-        groupId = groupId,
-        iconHeight = iconHeight,
-    }
-end
-
-local function IsGroupConfigAvailableForPreview(groupId, checkLoadConditions)
-    local group = CooldownCompanion.db.profile.groups and CooldownCompanion.db.profile.groups[groupId]
-    if not group then return false end
-    if not group.parentContainerId then return false end
-    -- Mirrors IsGroupAvailableForAnchoring: Aura and Totem Panels never host,
-    -- so this preview never mirrors one.
-    if not ST.PanelSupportsAttachedBars(group) then return false end
-    if group.anchorEligible == false then return false end
-    if CooldownCompanion.DoesAnchorTargetReachCursorRoot
-        and CooldownCompanion:DoesAnchorTargetReachCursorRoot("CooldownCompanionGroup" .. tostring(groupId)) then
-        return false
-    end
-
-    if not CooldownCompanion:IsContainerAutoAnchorEligible(CooldownCompanion:GetParentContainer(group)) then
-        return false
-    end
-
-    return CooldownCompanion:IsGroupActive(groupId, {
-        group = group,
-        requireButtons = true,
-        checkCharVisibility = true,
-        checkLoadConditions = checkLoadConditions,
-    })
-end
-
-local function GetFirstConfiguredAnchorGroup()
-    local db = CooldownCompanion.db and CooldownCompanion.db.profile
-    local groups = db and db.groups
-    local containers = db and db.groupContainers
-    if not groups or not containers then return nil end
-
-    local specId = CooldownCompanion._currentSpecId
-    local orderedContainers = {}
-
-    for containerId, container in pairs(containers) do
-        orderedContainers[#orderedContainers + 1] = {
-            id = containerId,
-            order = CooldownCompanion:GetOrderForSpec(container, specId, containerId),
-        }
-    end
-    table_sort(orderedContainers, function(a, b)
-        return a.order < b.order
-    end)
-
-    for _, containerInfo in ipairs(orderedContainers) do
-        local panels = CooldownCompanion:GetPanels(containerInfo.id)
-        for _, panelInfo in ipairs(panels) do
-            if IsGroupConfigAvailableForPreview(panelInfo.groupId, false) then
-                return panelInfo.groupId
-            end
-        end
-    end
-
-    return nil
-end
-
 local function GetPreviewPanelId()
     if not IsBarsWorkspaceActive() and CS.selectedGroup then return CS.selectedGroup end
     local kind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or "resources"
@@ -651,30 +506,6 @@ local function ModuleBelongsToPreview(kind, panelId, forSettings, settings)
     local target = CooldownCompanion:ResolveModulePanel(kind)
     return target.group ~= nil and target.panelId == panelId and target.mode ~= "independent"
 end
-
-local function ResolveLayoutPreviewSourcePanel(panelId)
-    panelId = panelId or GetPreviewPanelId()
-    if not panelId then
-        local kind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or "resources"
-        local selected = CooldownCompanion:GetModuleAttachment(kind)
-        if selected.mode == "auto" then panelId = GetFirstConfiguredAnchorGroup() end
-    end
-    if not panelId or not CooldownCompanion:CanModuleAnchorToPanel(panelId) then
-        return nil, "No supported anchor panel is selected. Choose a panel in Anchoring Mode."
-    end
-    local group = CooldownCompanion.db.profile.groups[panelId]
-    local liveFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[panelId]
-    if liveFrame and liveFrame:IsShown() then
-        local buttons = {}
-        for _, button in ipairs(liveFrame.buttons or {}) do
-            if button and button:IsShown() and button.buttonData then table_insert(buttons, button) end
-        end
-        if #buttons > 0 then return BuildSourcePanelData(panelId, group, buttons) end
-    end
-    local savedButtons = GetSavedPreviewButtons(group)
-    return BuildSourcePanelData(panelId, group, savedButtons or {})
-end
-
 
 -- Both resource lists keep listing BOTH halves of a mutually exclusive pair
 -- (the runtime filter that drops the hidden half lives in ApplyResourceBars),
@@ -868,42 +699,6 @@ local function CompareStackRank(a, b, reversed)
         return aRank > bRank
     end
     return aRank < bRank
-end
-
-local function SortSlotsForSide(slots, side, reversed)
-    local out = {}
-    for _, slot in ipairs(slots) do
-        if slot.getPos() == side then
-            table_insert(out, slot)
-        end
-    end
-    table_sort(out, function(a, b)
-        local rankResult = CompareStackRank(a, b, reversed)
-        if rankResult ~= nil then
-            return rankResult
-        end
-        local aOrder = a.getOrder()
-        local bOrder = b.getOrder()
-        if aOrder ~= bOrder then
-            if reversed then
-                return aOrder > bOrder
-            end
-            return aOrder < bOrder
-        end
-        -- Saved orders collide (a duplicated bar takes source order + 1), so a
-        -- tie has to break on the same key CompareBarOrder uses in
-        -- OtherBars/ResourceBar.lua or the canvas can draw a tied pair the
-        -- other way round from the stack it is supposed to mirror. A reversed
-        -- lane runs the ascending live sequence backwards, so the tie-break
-        -- follows the primary comparison's direction.
-        local aKey = tostring(a.powerType or "")
-        local bKey = tostring(b.powerType or "")
-        if reversed then
-            return aKey > bKey
-        end
-        return aKey < bKey
-    end)
-    return out
 end
 
 local function SortSlotsForIndependentStack(slots, firstSide, secondSide, preview)
@@ -1171,7 +966,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     CreateSegmentedBar, frame.previewCanvas, mwMaxStacks)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
             local baseColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, mwMaxStacks do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -1184,7 +979,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                     CreateOverlayBar, frame.previewCanvas, halfSegments)
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, nil, nil, slot.powerType, appearance)
+            LayoutOverlaySegments(barInfo.frame, width, height, segmentGap, rbSettings, halfSegments, slot.powerType, appearance)
             local baseColor, overlayColor = GetResourceColors(RESOURCE_MAELSTROM_WEAPON, rbSettings)
             for i = 1, halfSegments do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -1227,7 +1022,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
                 barInfo.powerType = slot.powerType
             end
             RB.SetResourceBarSize(barInfo.frame, width, height)
-            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+            LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
             local baseColor = GetResourceColors(slot.powerType, rbSettings)
             for i = 1, stackMax do
                 barInfo.frame.segments[i]:SetStatusBarColor(baseColor[1], baseColor[2], baseColor[3], 1)
@@ -1253,7 +1048,7 @@ local function EnsureResourcePreview(frame, slot, preview, width, height)
             barInfo.powerType = slot.powerType
         end
         RB.SetResourceBarSize(barInfo.frame, width, height)
-        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, nil, nil, slot.powerType, appearance)
+        LayoutSegments(barInfo.frame, width, height, segmentGap, rbSettings, slot.powerType, appearance)
         StyleSegmentedBar(barInfo.frame, slot.powerType, rbSettings, appearance)
     else
         if not barInfo or barInfo.barType ~= "continuous" then
@@ -1385,91 +1180,6 @@ local function ConfigureGhostSlotPreview(frame, slot, preview, width, height)
     for index = #preview.animated, enrolled + 1, -1 do
         preview.animated[index] = nil
     end
-end
-
--- This canvas arranges BARS; the icon row inside it is scenery. Every frame
--- that stands in for that row - the real button-panel mirror an owner lends
--- us, or the placeholder rect below when there is nothing to lend - wears the
--- same refusal, so the answer to "can I drag an icon here" never depends on
--- which one happens to be on screen.
-local function ApplyIconPanelClickShield(frame)
-    frame:EnableMouse(true)
-    frame:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Icons stay in place.", 1, 1, 1)
-        GameTooltip:AddLine("Drag the attached bars around the icon row instead.", 0.75, 0.82, 0.92, true)
-        GameTooltip:Show()
-    end)
-    frame:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    frame:SetScript("OnMouseDown", function()
-        if UIErrorsFrame and UIErrorsFrame.AddMessage then
-            UIErrorsFrame:AddMessage("Icons are fixed. Drag the bars around them.", 1, 0.25, 0.25, 1)
-        end
-    end)
-end
-
--- The defensive leg, NOT a supported render mode. The lanes have to wrap
--- something, and every owner that reaches this renderer has already agreed
--- there is a panel worth wrapping, so an owner that answers "no frame" has
--- disagreed with the canvas about an emptied panel between one build and the
--- next. There is nothing honest to draw for that, so this draws nothing:
--- a neutral rect at the buttons view's message-state minimum, wearing the
--- same click refusal a real mirror wears, that the lanes size themselves to.
--- Degenerate by design - the next build that is not a reuse recovers.
-local LAYOUT_PREVIEW_PLACEHOLDER_WIDTH = 220
-local LAYOUT_PREVIEW_PLACEHOLDER_HEIGHT = 90
-
-local function RenderPanelPlaceholder(preview, parent)
-    local frame = AcquireContainer(preview, parent)
-    ApplyBackdrop(frame, preview.skin.slotBg, preview.skin.slotBorder, 1)
-    frame:SetSize(LAYOUT_PREVIEW_PLACEHOLDER_WIDTH, LAYOUT_PREVIEW_PLACEHOLDER_HEIGHT)
-    ApplyIconPanelClickShield(frame)
-    return frame
-end
-
--- Lent panel frames belong to whoever handed them over, not to this canvas's
--- pools, so FinalizePreviewState cannot put them away. Every build therefore
--- starts by hiding what the last build borrowed: the message-only states
--- render no panel at all, and a lent frame left showing would float over the
--- message.
-local function ReleaseLentPanelFrames(preview)
-    local lent = preview.lentPanelFrames
-    if not lent then
-        preview.lentPanelFrames = {}
-        return
-    end
-    for index = #lent, 1, -1 do
-        lent[index]:Hide()
-        lent[index] = nil
-    end
-end
-
--- Panel-frame injection, and the only way this canvas gets an icon panel to
--- wrap. An owner lends the REAL read-only button-panel mirror, so the
--- previewed panel width - and every attached bar that inherits it - matches
--- the panel the bars actually anchor to. Instance 1 is the panel the primary
--- lanes wrap; instance 2 is the second copy the vertical layout's cast
--- section draws its own lane around, because one frame cannot sit in two
--- places.
---
--- The owner lends frames through `opts.panelFrameProvider(index, panelData)`,
--- asked once per instance. The provider is called from the render path that
--- wraps a panel and nowhere else, which is the point of it: a message-only
--- build asks for nothing, so an owner never pays to mirror a panel this
--- canvas was not going to wrap. Returning nil is the defensive leg only (see
--- RenderPanelPlaceholder).
-local function AcquirePanelFrame(preview, parent, panelData, index)
-    local external = preview.panelFrameProvider and preview.panelFrameProvider(index, panelData)
-    if external then
-        external:SetParent(parent)
-        external:Show()
-        local lent = preview.lentPanelFrames
-        lent[#lent + 1] = external
-        return external
-    end
-    return RenderPanelPlaceholder(preview, parent)
 end
 
 -- Bars are not all the same thickness: the layout supports a per-slot
@@ -1773,8 +1483,8 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
         slotWidth = slotWidth,
         slotHeight = slotHeight,
         -- Along-axis fallback for a slot with no resolved thickness; the
-        -- cross-axis size stays uniform (attached bars stretch to the
-        -- anchor, exactly as the live stack does).
+        -- cross-axis size stays uniform (every bar spans the stack's
+        -- width, exactly as the live stack does).
         defaultExtent = axis == "x" and slotWidth or slotHeight,
         slotGap = preview.slotGap or LAYOUT_PREVIEW_GAP,
         baseExtent = axis == "x" and width or height,
@@ -1863,11 +1573,8 @@ local function BuildLane(preview, parent, layoutDrag, title, width, height, axis
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(slotModel.label or "Bar", 1, 1, 1)
-            if lane.placementLabel then GameTooltip:AddLine(lane.placementLabel, 0.8, 0.8, 0.8) end
             local dragHelp = preview.standaloneCast and "Click to edit."
-                or preview.independentResources
-                and "Click to edit. Drag to reorder this independent bar."
-                or "Click to edit. Drag to reorder this attached bar."
+                or "Click to edit. Drag to reorder this independent bar."
             GameTooltip:AddLine(dragHelp, 0.75, 0.82, 0.92, true)
             GameTooltip:Show()
         end)
@@ -1908,42 +1615,6 @@ local function GetLaneExtent(preview, slots, slotSize)
         BuildSlotExtents(slots, slotSize),
         preview.slotGap or LAYOUT_PREVIEW_GAP,
         slotSize)
-end
-
-local function RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel, slots, slotHeight, panelIndex, acceptedCategory)
-    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, panelIndex or 1)
-    local panelWidth, panelHeight = panelFrame:GetWidth(), panelFrame:GetHeight()
-    local group = CooldownCompanion.db.profile.groups[sourcePanel.groupId]
-    for _, slot in ipairs(slots) do slot.anchorGroup = group end
-    local labels, destinations = RB.GetBarPlacementOptions(group)
-    local gap = ST.PanelSupportsAttachedBars(group) and ST.ResolveBarGeometry(group).distance
-        or RB.GetResourceAnchorGap(preview.rbSettings or {}, preview.layout, "horizontal")
-    local boxes, top, bottom = {}, 0, panelHeight
-    for _, destination in ipairs(destinations) do
-        local above = RB.GetBarLaneSide(destination) == "above"
-        local members = SortSlotsForSide(slots, destination, above)
-        local x, y, width, height = ST._GetAttachedBarPreviewRect(panelFrame, destination)
-        local extent = GetLaneExtent(preview, members, slotHeight)
-        local laneY = above and (y - gap - extent) or (y + height + gap)
-        boxes[#boxes + 1] = { side = destination, above = above, members = members,
-            x = x, y = laneY, width = width, extent = extent }
-        top, bottom = math_min(top, laneY), math_max(bottom, laneY + extent)
-    end
-    panelFrame:ClearAllPoints()
-    panelFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, top)
-    for _, box in ipairs(boxes) do
-        local lane = BuildLane(preview, content, layoutDrag, nil, box.width, box.extent,
-            "y", box.side, box.above, box.members, box.width, slotHeight, acceptedCategory)
-        lane.placementLabel = labels[box.side]
-        lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", box.x, -(box.y - top))
-        lane.setPreviewOverflow = function(extra)
-            lane.frame:ClearAllPoints()
-            lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", box.x,
-                -(box.y - top) + (box.above and extra or 0))
-            lane.frame:SetSize(box.width, box.extent + extra)
-        end
-    end
-    return panelWidth, bottom - top, panelHeight / 2 - top
 end
 
 local function RenderIndependentHorizontalLayout(preview, content, layoutDrag, slots, slotWidth, slotHeight)
@@ -1993,64 +1664,6 @@ local function RenderIndependentVerticalLayout(preview, content, layoutDrag, slo
     lane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
 
     return stackWidth, slotHeight
-end
-
-local function RenderVerticalLayout(preview, content, layoutDrag, sourcePanel, primarySlots, castSlots, horizontalBarHeight, verticalBarWidth)
-    if #primarySlots == 0 and #castSlots > 0 then
-        return RenderHorizontalLayout(preview, content, layoutDrag, sourcePanel,
-            castSlots, horizontalBarHeight, 1, "cast")
-    end
-
-    local panelFrame = AcquirePanelFrame(preview, content, sourcePanel, 1)
-    local panelWidth = panelFrame:GetWidth()
-    local panelHeight = panelFrame:GetHeight()
-    local leftSlots = SortSlotsForSide(primarySlots, "left", true)
-    local rightSlots = SortSlotsForSide(primarySlots, "right", false)
-    local leftWidth = GetLaneExtent(preview, leftSlots, verticalBarWidth)
-    local rightWidth = GetLaneExtent(preview, rightSlots, verticalBarWidth)
-    local verticalBarHeight = panelHeight
-
-    local leftLane = BuildLane(preview, content, layoutDrag, nil, leftWidth, panelHeight, "x", "left", true, leftSlots, verticalBarWidth, verticalBarHeight, "primary")
-    leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-
-    leftLane.setPreviewOverflow = function(extra)
-        leftLane.frame:ClearAllPoints()
-        leftLane.frame:SetPoint("TOPLEFT", content, "TOPLEFT", -extra, 0)
-        leftLane.frame:SetSize((leftLane.baseWidth or leftWidth) + extra, leftLane.baseHeight or panelHeight)
-    end
-    leftLane.setPreviewOverflow(0)
-
-    panelFrame:ClearAllPoints()
-    panelFrame:SetPoint("TOPLEFT", leftLane.frame, "TOPRIGHT", LAYOUT_PREVIEW_GAP, 0)
-
-    local rightLane = BuildLane(preview, content, layoutDrag, nil, rightWidth, panelHeight, "x", "right", false, rightSlots, verticalBarWidth, verticalBarHeight, "primary")
-    rightLane.frame:SetPoint("TOPLEFT", panelFrame, "TOPRIGHT", LAYOUT_PREVIEW_GAP, 0)
-
-    local totalWidth = leftWidth + panelWidth + rightWidth + (LAYOUT_PREVIEW_GAP * 2)
-    local totalHeight = panelHeight
-
-    if #castSlots > 0 then
-        local castContent = AcquireContainer(preview, content)
-        local width, height = RenderHorizontalLayout(preview, castContent, layoutDrag,
-            sourcePanel, castSlots, horizontalBarHeight, 2, "cast")
-        castContent:SetSize(width, height)
-        castContent:SetPoint("TOPLEFT", content, "TOPLEFT", leftWidth + LAYOUT_PREVIEW_GAP,
-            -(panelHeight + LAYOUT_PREVIEW_SECTION_GAP))
-        totalHeight = panelHeight + LAYOUT_PREVIEW_SECTION_GAP + height
-        totalWidth = math_max(totalWidth, leftWidth + LAYOUT_PREVIEW_GAP + width)
-    end
-
-    local iconCenterOffsetY = panelHeight / 2
-    return totalWidth, totalHeight, iconCenterOffsetY
-end
-
-local function SelectPreviewCastFramesItem(item)
-    if ST._SelectConfigCastFramesItem then
-        ST._SelectConfigCastFramesItem(item)
-    else
-        CS.castFramesSelectedItem = item
-    end
-    CooldownCompanion:RefreshConfigPanel()
 end
 
 local function ConfigureBarsPill(preview, frame, item)
@@ -2104,111 +1717,6 @@ local function GetBarsPillWidth(frame, item)
     local width = BARS_PILL_ACCENT_WIDTH + lead
         + math_floor((frame.label:GetStringWidth() or 0) + 0.5) + BARS_PILL_INSET
     return math_max(BARS_PILL_MIN_WIDTH, width)
-end
-
--- Lays the items out as centered lines, wrapping onto another line when
--- `maxWidth` runs out, and returns the row plus its measured size. A single
--- item wider than `maxWidth` keeps its line to itself rather than being
--- clipped; the caller's fit-to-host scale absorbs the overflow.
-local function BuildBarsPillRow(preview, parent, items, maxWidth)
-    local row = AcquireContainer(preview, parent)
-    row:ClearAllPoints()
-
-    local frames = {}
-    local widths = {}
-    for index, item in ipairs(items) do
-        local frame = AcquireBarsPill(preview, row)
-        ConfigureBarsPill(preview, frame, item)
-        frames[index] = frame
-        widths[index] = GetBarsPillWidth(frame, item)
-    end
-
-    local lines = {}
-    local current = { width = 0, first = 1, last = 0 }
-    for index = 1, #frames do
-        local candidate = current.width > 0
-            and (current.width + BARS_PILL_GAP + widths[index])
-            or widths[index]
-        if current.width > 0 and candidate > maxWidth then
-            lines[#lines + 1] = current
-            current = { width = widths[index], first = index, last = index }
-        else
-            current.width = candidate
-            current.last = index
-        end
-    end
-    if current.last >= current.first then
-        lines[#lines + 1] = current
-    end
-
-    local rowWidth = 0
-    for _, line in ipairs(lines) do
-        rowWidth = math_max(rowWidth, line.width)
-    end
-
-    local top = 0
-    for lineIndex, line in ipairs(lines) do
-        local x = math_floor((rowWidth - line.width) / 2)
-        for index = line.first, line.last do
-            local frame = frames[index]
-            frame:SetSize(widths[index], BARS_PILL_HEIGHT)
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", row, "TOPLEFT", x, -top)
-            x = x + widths[index] + BARS_PILL_GAP
-        end
-        top = top + BARS_PILL_HEIGHT
-            + (lineIndex < #lines and BARS_PILL_LINE_GAP or 0)
-    end
-
-    row:SetSize(math_max(1, rowWidth), math_max(1, top))
-    return row, rowWidth, top
-end
-
--- The two unit-frame badges: canvas objects, so their selection keys
--- register as rendered. Called only when frame anchoring is on; the
--- caller has already tested that, since it also decides whether the
--- composition has anything at all to draw.
-local function BuildBarsUnitFrameBadgeItems(preview)
-    local items = {}
-    local accent = BARS_PILL_NEUTRAL_ACCENT
-    local _, classKey = UnitClass("player")
-    local classColor = classKey and C_ClassColor.GetClassColor(classKey)
-    if classColor then
-        accent = { classColor.r, classColor.g, classColor.b }
-    end
-
-    local anchoringNote = "Stands in for your real unit frame, which "
-        .. "Cooldown Companion re-anchors rather than draws."
-
-    items[#items + 1] = {
-        label = "Player Frame",
-        icon = classKey and ("classicon-" .. string.lower(classKey)) or BARS_PILL_TARGET_ICON,
-        accent = accent,
-        selected = CS.castFramesSelectedItem == "player",
-        tooltip = "Player Frame",
-        tooltipLine = "Click to edit this frame's anchoring.",
-        tooltipNote = anchoringNote,
-        onClick = function()
-            SelectPreviewCastFramesItem("player")
-        end,
-    }
-    preview.renderedSelectionKeys["frame:player"] = true
-
-    items[#items + 1] = {
-        label = "Target Frame",
-        icon = BARS_PILL_TARGET_ICON,
-        accent = BARS_PILL_NEUTRAL_ACCENT,
-        selected = CS.castFramesSelectedItem == "target",
-        tooltip = "Target Frame",
-        tooltipLine = "Click to edit this frame's anchoring.",
-        tooltipNote = anchoringNote,
-        onClick = function()
-            SelectPreviewCastFramesItem("target")
-        end,
-    }
-    preview.renderedSelectionKeys["frame:target"] = true
-
-    return items
 end
 
 -- The module-enable cluster, pinned to the pane's bottom-right corner: one
@@ -2328,26 +1836,6 @@ end
 local function FinishPreviewWithMessage(preview, message)
     SetPreviewMessage(preview, message)
     FinalizePreviewState(preview)
-end
-
-local function GetLayoutOrderForInsertion(laneSlots, reversed, insertIndex)
-    local beforeSlot = laneSlots[insertIndex - 1]
-    local afterSlot = laneSlots[insertIndex]
-    if beforeSlot and afterSlot then
-        local beforeOrder = beforeSlot.getOrder()
-        local afterOrder = afterSlot.getOrder()
-        if beforeOrder == afterOrder then
-            return beforeOrder + (reversed and -0.5 or 0.5)
-        end
-        return (beforeOrder + afterOrder) / 2
-    end
-    if beforeSlot then
-        return beforeSlot.getOrder() + (reversed and -1 or 1)
-    end
-    if afterSlot then
-        return afterSlot.getOrder() + (reversed and 1 or -1)
-    end
-    return 1
 end
 
 -- The cursor's raw landing spot, CLAMPED into the positions the drop is
@@ -2607,8 +2095,6 @@ local function CreateLayoutDragModel(preview)
     layoutDrag.onCancel = function()
         layoutDrag.draggedSlotId = nil
         layoutDrag.draggedSlotData = nil
-        local geometryPanel = ST.GetModuleGeometryHost(preview.standaloneCast and "castbar" or "resources")
-        if geometryPanel then preview.slotGap = ST.ResolveBarGeometry(geometryPanel).spacing end
         preview.draggedSlotExtent = nil
         for _, lane in ipairs(layoutDrag.lanes) do
             ResetLanePreview(preview, lane)
@@ -2638,52 +2124,20 @@ local function CreateLayoutDragModel(preview)
         -- last point that can guarantee it.
         local adjustedIndex = ClampLaneInsertIndex(lane, slotData, filtered,
             math_max(1, math_min(#filtered + 1, dropTarget.insertIndex or 1)))
+        -- The Independent Resources stack is the only drag source (the
+        -- standalone cast slot never starts one), and it is one continuous
+        -- stack: normalize every rendered slot to the chosen lane so the saved
+        -- runtime layout matches the order shown after a drop.
         local changed = false
-        if preview.independentResources then
-            -- Independent Resources is one continuous stack. Normalize every
-            -- rendered slot to the chosen lane so the saved runtime layout
-            -- matches the order shown after a drop.
-            table_insert(filtered, adjustedIndex, slotData)
-            local slotCount = #filtered
-            for index, slot in ipairs(filtered) do
-                local normalizedOrder = lane.reversed and (slotCount - index + 1) or index
-                if slot.getPos() ~= lane.side or slot.getOrder() ~= normalizedOrder then
-                    changed = true
-                end
-                slot.setPos(lane.side)
-                slot.setOrder(normalizedOrder)
+        table_insert(filtered, adjustedIndex, slotData)
+        local slotCount = #filtered
+        for index, slot in ipairs(filtered) do
+            local normalizedOrder = lane.reversed and (slotCount - index + 1) or index
+            if slot.getPos() ~= lane.side or slot.getOrder() ~= normalizedOrder then
+                changed = true
             end
-        else
-            local oldPos = slotData.getPos()
-            local oldOrder = slotData.getOrder()
-            -- Sections are the anchor regions plus the cast bar, and order
-            -- values can interleave across a section boundary, so the new
-            -- order has to be midpointed against the dropped slot's OWN
-            -- section. Measured against the whole lane, a move could land on
-            -- another section's order and re-render on the wrong side of it.
-            local peers = filtered
-            local peerIndex = adjustedIndex
-            do
-                local rank = GetSlotStackRank(slotData, 0)
-                local section = {}
-                local sectionIndex = 0
-                for index, slot in ipairs(filtered) do
-                    if GetSlotStackRank(slot) == rank then
-                        table_insert(section, slot)
-                        if index < adjustedIndex then
-                            sectionIndex = #section
-                        end
-                    end
-                end
-                peers = section
-                peerIndex = sectionIndex + 1
-            end
-            local newOrder = (#peers == 0 and oldPos == lane.side)
-                and oldOrder
-                or GetLayoutOrderForInsertion(peers, lane.reversed, peerIndex)
-            local placementChanged = slotData.setPos(lane.side)
-            slotData.setOrder(newOrder)
-            changed = placementChanged or oldPos ~= lane.side or oldOrder ~= newOrder
+            slot.setPos(lane.side)
+            slot.setOrder(normalizedOrder)
         end
 
         if changed then
@@ -2695,32 +2149,26 @@ local function CreateLayoutDragModel(preview)
     return layoutDrag
 end
 
-function ST._BuildLayoutOrderPanel(container, opts)
+function ST._BuildLayoutOrderPanel(container)
     if CS.dragState and CS.dragState.kind == LAYOUT_PREVIEW_DRAG_KIND and CancelDrag then
         CancelDrag()
     end
 
     local preview = EnsurePreviewState(container)
     preview.host = container
-    -- Panel-frame injection (see AcquirePanelFrame): the caller stands ready
-    -- to build the real button-panel mirror per instance the render path asks
-    -- for. Everything lent is hidden up front and re-shown only by the render
-    -- path that uses it, so message-only builds don't leave a mirror floating.
-    preview.anchorPanelId = opts and opts.anchorPanelId or GetPreviewPanelId()
-    preview.panelFrameProvider = opts and opts.panelFrameProvider or nil
-    ReleaseLentPanelFrames(preview)
     preview.rbSettings = CooldownCompanion:GetResourceBarSettings()
     preview.cbSettings = CooldownCompanion:GetCastBarSettings()
-    local workspaceKind = IsBarsWorkspaceActive() and CS.barWorkspaceKind or nil
+    local rbSettings = preview.rbSettings
+    local cbSettings = preview.cbSettings
+    local workspaceKind = CS.barWorkspaceKind
     local standaloneCast = workspaceKind == "castbar"
     local standaloneResources = workspaceKind == "resources"
     local layout = CooldownCompanion:GetSpecLayoutOrder()
     if standaloneCast and not layout then layout = {} end
-    preview.isVerticalLayout = not standaloneCast
-        and (standaloneResources or (not workspaceKind and ModuleBelongsToPreview("resources", preview.anchorPanelId)))
-        and preview.rbSettings
-        and preview.rbSettings.enabled == true
-        and IsResourceBarVerticalConfig(preview.rbSettings, layout)
+    local resourceBarsEnabled = standaloneResources and rbSettings and rbSettings.enabled == true
+    local castBarEnabled = standaloneCast and cbSettings and cbSettings.enabled == true
+    preview.isVerticalLayout = resourceBarsEnabled
+        and IsResourceBarVerticalConfig(rbSettings, layout)
         or false
 
     ResetPreviewState(preview)
@@ -2732,33 +2180,19 @@ function ST._BuildLayoutOrderPanel(container, opts)
     BuildBarsEnableCluster(preview)
     ApplyHostBottomReserve(container, preview.root)
     preview.layout = layout
-    -- The real spacing between stacked bars. Horizontal attached destinations
-    -- also use GetResourceAnchorGap for the distance from their icon body.
+    -- The real spacing between stacked bars.
     preview.slotGap = math_max(0, tonumber(layout and layout.barSpacing)
-        or tonumber(preview.rbSettings and preview.rbSettings.barSpacing)
+        or tonumber(rbSettings and rbSettings.barSpacing)
         or LAYOUT_PREVIEW_GAP)
     preview.draggedSlotExtent = nil
     HidePreviewMessage(preview)
-    if not preview.anchorStatus then
-        preview.anchorStatus = preview.root:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        preview.anchorStatus:SetPoint("TOP", preview.root, "TOP", 0, -4)
-    end
-    local anchorFrame = preview.anchorPanelId and CooldownCompanion.groupFrames[preview.anchorPanelId]
-    preview.anchorUnavailable = preview.anchorPanelId ~= nil
-        and (not anchorFrame or not anchorFrame:IsShown()
-            or not CooldownCompanion:IsGroupActive(preview.anchorPanelId))
-    preview.anchorStatus:SetText(preview.anchorUnavailable and "Panel unavailable - showing saved layout" or "")
 
-    local rbSettings = preview.rbSettings
-    local cbSettings = preview.cbSettings
-    local resourceBarsEnabled = (standaloneResources or (not workspaceKind and ModuleBelongsToPreview("resources", preview.anchorPanelId))) and rbSettings and rbSettings.enabled == true
-    local castBarEnabled = (standaloneCast or (not workspaceKind and ModuleBelongsToPreview("castbar", preview.anchorPanelId))) and cbSettings and cbSettings.enabled == true
     local frameAnchoringSettings = CooldownCompanion.GetFrameAnchoringSettings
         and CooldownCompanion:GetFrameAnchoringSettings()
-    local hasUnitFrameBadges = (workspaceKind == "player" or workspaceKind == "target")
+    local unitFramesEnabled = (workspaceKind == "player" or workspaceKind == "target")
         and frameAnchoringSettings
         and frameAnchoringSettings.enabled == true
-    if not (resourceBarsEnabled or castBarEnabled or hasUnitFrameBadges) then
+    if not (resourceBarsEnabled or castBarEnabled or unitFramesEnabled) then
         FinishPreviewWithMessage(preview,
             workspaceKind == "resources" and "Enable Resource Bars below to start."
                 or workspaceKind == "castbar" and "Enable Cast Bar below to start."
@@ -2766,174 +2200,61 @@ function ST._BuildLayoutOrderPanel(container, opts)
         return
     end
 
-    -- A virtual destination can also be an attached module awaiting an
-    -- eligible panel. Never portray that missing attachment as independent.
-    if workspaceKind and ST._GetBarWorkspacePlacement(workspaceKind) == "unplaced" then
+    -- Only Independent bars are drawn here. A module on a panel is moved to
+    -- that panel's workspace before every full refresh (_NormalizeBarWorkspace),
+    -- and unit frames are never Independent, so a module awaiting a panel, or
+    -- a rebuild that runs before the move, shows its anchor status (blank
+    -- while that panel is fine).
+    if ST._GetBarWorkspacePlacement(workspaceKind) ~= "independent" then
         FinishPreviewWithMessage(preview, CooldownCompanion:GetModuleAnchorStatusText(
             CooldownCompanion:ResolveModulePanel(workspaceKind)))
         return
     end
 
-    local independentResourcesPreview = standaloneResources and resourceBarsEnabled
-        and CooldownCompanion:IsResourceBarAnchorIndependent()
-    local attachedPanel = preview.anchorPanelId and CooldownCompanion.db.profile.groups[preview.anchorPanelId]
-    local attachedWorkspace = (standaloneResources and resourceBarsEnabled and not independentResourcesPreview)
-        or (standaloneCast and castBarEnabled and not CooldownCompanion:IsModuleAnchorIndependent("castbar"))
-    if attachedWorkspace and ST.PanelSupportsAttachedBars(attachedPanel) then
-        -- The same composition owns fitted dimensions and block placement in
-        -- both workspaces. Do not wrap another set of bars around its bounds.
-        local inner = preview.panelHost
-        if not inner then
-            inner = CreateFrame("Frame", nil, preview.root)
-            inner:SetAllPoints(preview.root)
-            preview.panelHost = inner
-        end
-        inner:Show()
-        ST._BuildButtonPanelPreview(inner, preview.anchorPanelId, { bannerHost = container })
-        FinalizePreviewState(preview)
-        return
-    end
-    local standalonePreview = independentResourcesPreview or (standaloneCast and castBarEnabled)
     preview.standaloneCast = standaloneCast
-    preview.independentResources = independentResourcesPreview == true
-    local supportsAttachedResourceBars = resourceBarsEnabled
-        and not (layout and CooldownCompanion:IsResourceBarAnchorIndependent())
-    local hasAttachedCastBar = castBarEnabled and not CooldownCompanion:IsModuleAnchorIndependent("castbar")
-    local includeResourceSlots = supportsAttachedResourceBars or independentResourcesPreview
-    local includeCastSlots = castBarEnabled and not independentResourcesPreview
-    local hasAttachedBarContext = not standalonePreview
-        and (includeResourceSlots or hasAttachedCastBar)
-    local hasBarContext = standalonePreview or hasAttachedBarContext
-    if not hasBarContext and not hasUnitFrameBadges then
-        FinishPreviewWithMessage(preview,
-            "Nothing is anchored to a panel right now. Pick an object below to edit it.")
-        return
-    end
-
-    if hasBarContext and not layout then
+    preview.independentResources = resourceBarsEnabled == true
+    if not layout then
         FinishPreviewWithMessage(preview, "Specialization data loading...")
         return
     end
 
-    local primarySlots = {}
-    local castSlots = {}
-    local sourcePanel
-    local sourceMessage
-    if hasBarContext then
-        primarySlots, castSlots = CollectPreviewSlots(
-            rbSettings,
-            includeCastSlots and cbSettings or nil,
-            layout,
-            preview.isVerticalLayout,
-            includeResourceSlots,
-            independentResourcesPreview == true
-        )
-        if not preview.isVerticalLayout then
-            for _, castSlot in ipairs(castSlots) do
-                table_insert(primarySlots, castSlot)
-            end
-        end
-
-        if hasAttachedBarContext and (#primarySlots > 0 or #castSlots > 0) then
-            sourcePanel, sourceMessage = ResolveLayoutPreviewSourcePanel(preview.anchorPanelId)
-            if not sourcePanel and not hasUnitFrameBadges then
-                FinishPreviewWithMessage(preview, sourceMessage)
-                return
-            end
-            if not sourcePanel then
-                wipe(primarySlots)
-                wipe(castSlots)
-            end
-        end
+    local slots, castSlots = CollectPreviewSlots(
+        rbSettings,
+        castBarEnabled and cbSettings or nil,
+        layout,
+        preview.isVerticalLayout,
+        resourceBarsEnabled,
+        resourceBarsEnabled
+    )
+    for _, castSlot in ipairs(castSlots) do
+        table_insert(slots, castSlot)
     end
-
-    if #primarySlots == 0 and #castSlots == 0 and not hasUnitFrameBadges then
-        if independentResourcesPreview then
-            FinishPreviewWithMessage(preview,
-                "No active resources to order. Enable a resource first.")
-        else
-            FinishPreviewWithMessage(preview,
-                "No active bars to order. Enable Resources or the cast bar first.")
-        end
+    if #slots == 0 then
+        FinishPreviewWithMessage(preview, resourceBarsEnabled
+            and "No active resources to order. Enable a resource first."
+            or "No active bars to order. Enable Resources or the cast bar first.")
         return
     end
 
-    local layoutDrag
-    if #primarySlots > 0 or #castSlots > 0 then
-        layoutDrag = CreateLayoutDragModel(preview)
-        preview.layoutDrag = layoutDrag
-    end
+    local layoutDrag = CreateLayoutDragModel(preview)
+    preview.layoutDrag = layoutDrag
 
     local root = preview.root
-    -- Two frames, not one: `block` is everything the pane centers and
-    -- scales, `content` is the bar composition alone. The unit-frame badges
-    -- are the other member of the block, and nesting is what keeps a badge
-    -- pair wider than the bar stack from dragging the stack off the pane's
-    -- axis - each member centers inside the block, and the block centers on
-    -- the pane.
-    local block = AcquireContainer(preview, root)
-    block:SetClipsChildren(false)
-    local content = AcquireContainer(preview, block)
+    local content = AcquireContainer(preview, root)
     content:SetClipsChildren(false)
 
-    local contentWidth = 0
-    local contentHeight = 0
-    if standalonePreview and layoutDrag then
-        local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
-        local independentLength = math_max(
-            20,
-            tonumber(standaloneCast and cbSettings.independentWidth or layout.independentWidth or rbSettings.independentWidth) or 200
-        )
-        if preview.isVerticalLayout then
-            contentWidth, contentHeight = RenderIndependentVerticalLayout(
-                preview,
-                content,
-                layoutDrag,
-                primarySlots,
-                independentLength,
-                resourceThickness
-            )
-        else
-            contentWidth, contentHeight = RenderIndependentHorizontalLayout(
-                preview,
-                content,
-                layoutDrag,
-                primarySlots,
-                independentLength,
-                resourceThickness
-            )
-        end
-    elseif sourcePanel and layoutDrag then
-        local resourceThickness = (rbSettings and tonumber(GetResourceGlobalThickness(rbSettings)))
-            or math_floor(sourcePanel.iconHeight * 0.56)
-        -- Fallback thickness only: every slot now carries its own (the cast
-        -- bar its configured height, resources their
-        -- per-slot override). This used to be one max across both, which
-        -- clamped every bar up to whichever was tallest.
-        local horizontalBarHeight = math_max(8, math_floor(resourceThickness))
-        local verticalBarWidth = math_max(8, math_floor(resourceThickness))
-
-        if preview.isVerticalLayout then
-            contentWidth, contentHeight = RenderVerticalLayout(
-                preview,
-                content,
-                layoutDrag,
-                sourcePanel,
-                primarySlots,
-                castSlots,
-                horizontalBarHeight,
-                verticalBarWidth
-            )
-        else
-            contentWidth, contentHeight = RenderHorizontalLayout(
-                preview,
-                content,
-                layoutDrag,
-                sourcePanel,
-                primarySlots,
-                horizontalBarHeight
-            )
-        end
+    local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
+    local independentLength = math_max(
+        20,
+        tonumber(standaloneCast and cbSettings.independentWidth or layout.independentWidth or rbSettings.independentWidth) or 200
+    )
+    local contentWidth, contentHeight
+    if preview.isVerticalLayout then
+        contentWidth, contentHeight = RenderIndependentVerticalLayout(
+            preview, content, layoutDrag, slots, independentLength, resourceThickness)
+    else
+        contentWidth, contentHeight = RenderIndependentHorizontalLayout(
+            preview, content, layoutDrag, slots, independentLength, resourceThickness)
     end
 
     local hostWidth = container:GetWidth() or 0
@@ -2941,39 +2262,15 @@ function ST._BuildLayoutOrderPanel(container, opts)
     if hostWidth < 40 then hostWidth = 340 end
     if hostHeight < 40 then hostHeight = 520 end
     local maxWidth = math_max(120, hostWidth - (LAYOUT_PREVIEW_PADDING * 2))
-    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2) - (preview.anchorUnavailable and 20 or 0))
+    local maxHeight = math_max(120, hostHeight - (LAYOUT_PREVIEW_PADDING * 2))
 
-    content:SetSize(contentWidth, contentHeight)
+    content:SetSize(math_max(1, contentWidth), math_max(1, contentHeight))
+    -- Centered in the pane so dead space stays symmetric. The root already
+    -- stops short of the host's bottom band, so this stays a zero anchor
+    -- offset - which is what keeps it exact under the fit-to-host scale.
+    content:SetScale(math_min(1, maxWidth / math_max(1, contentWidth), maxHeight / math_max(1, contentHeight)))
     content:ClearAllPoints()
-    content:SetPoint("TOP", block, "TOP", 0, 0)
-
-    -- The badges join the composition rather than docking to the pane: they
-    -- are objects this canvas draws, so they belong inside the block that
-    -- gets measured, scaled and centered with the bars.
-    local blockWidth = contentWidth
-    local blockHeight = contentHeight
-    if hasUnitFrameBadges then
-        local badgeRow, badgeWidth, badgeHeight = BuildBarsPillRow(
-            preview, block, BuildBarsUnitFrameBadgeItems(preview), maxWidth)
-        local gap = contentHeight > 0 and BARS_BADGE_GAP or 0
-        badgeRow:ClearAllPoints()
-        badgeRow:SetPoint("TOP", content, "BOTTOM", 0, -gap)
-        blockWidth = math_max(blockWidth, badgeWidth)
-        blockHeight = blockHeight + gap + badgeHeight
-    end
-
-    block:SetSize(math_max(1, blockWidth), math_max(1, blockHeight))
-
-    local scale = math_min(1, maxWidth / math_max(1, blockWidth), maxHeight / math_max(1, blockHeight))
-
-    -- Center the whole visual block in the pane so dead space stays
-    -- symmetric regardless of how bars split across their configured
-    -- sides. The root already stops short of the host's bottom band, so
-    -- this stays a zero anchor offset - which is what keeps it exact under
-    -- the scale above.
-    block:SetScale(scale)
-    block:ClearAllPoints()
-    block:SetPoint("CENTER", root, "CENTER", 0, 0)
+    content:SetPoint("CENTER", root, "CENTER", 0, 0)
 
     -- Charge borders use the real physical-pixel inset. The fit is only known
     -- after building the lanes; repaint those bars at their final scale.
@@ -3032,53 +2329,27 @@ function ST._HasAttachedBarLanesToRender(panelId)
     return #primarySlots > 0 or #castSlots > 0
 end
 
--- Does the Resources / Cast Bar canvas actually draw a cast lane right now?
--- The command center asks before offering the cast preview, because "the
--- cast bar is attached" is not the same question: an INDEPENDENT resource
--- stack drops the cast slot from this home entirely (includeCastSlots
--- below), and offering a preview whose destination is not on screen means
--- pressing play visibly does nothing.
+-- Does the bars canvas draw a cast slot right now? The command center asks
+-- before offering the cast preview: offering a preview whose destination is
+-- not on screen means pressing play visibly does nothing. Only the Cast Bar
+-- workspace's Independent Cast Bar is a cast slot here.
 --
 -- Answered by re-deriving the build's own preconditions rather than by
 -- reporting what the last build drew: the command center runs BEFORE the
 -- renderer on every rebuild (it owns the host's bottom reserve, which the
 -- renderer then measures), so a recorded answer would always be one change
--- stale. The source-panel resolve is the same one _BuildLayoutOrderPreview-
--- Panel makes and _HasAttachedBarLanesToRender already pays for; config
--- time, once per rebuild.
+-- stale.
 --
 -- Deliberately an OFFER test only. It must not feed the stranded-preview
 -- stop: `layout` is briefly nil across a spec change, and stopping on that
 -- would kill a running preview for a transient live condition.
 function ST._ResourcesPreviewRendersCastSlot()
-    if IsBarsWorkspaceActive() then
-        local settings = CooldownCompanion:GetCastBarSettings()
-        return CS.barWorkspaceKind == "castbar" and settings and settings.enabled == true
-            and ST._GetBarWorkspacePlacement("castbar") ~= "unplaced" or false
-    end
-    local cbSettings = CooldownCompanion:GetCastBarSettings()
-    if not (cbSettings and cbSettings.enabled == true) then
+    if not IsBarsWorkspaceActive() or CS.barWorkspaceKind ~= "castbar" then
         return false
     end
-    if CooldownCompanion:IsModuleAnchorIndependent("castbar") then
-        return false
-    end
-    local layout = CooldownCompanion:GetSpecLayoutOrder()
-    if not layout then
-        -- "Specialization data loading..." - the canvas is a message.
-        return false
-    end
-    local rbSettings = CooldownCompanion:GetResourceBarSettings()
-    local independentResourcesPreview = IsBarsWorkspaceActive()
-        and rbSettings and rbSettings.enabled == true
-        and CooldownCompanion:IsResourceBarAnchorIndependent()
-    if independentResourcesPreview then
-        return false
-    end
-    -- An attached cast lane is drawn around the mirrored icon panel, so no
-    -- resolvable panel means no lane: either the canvas is a message, or the
-    -- unit-frame-proxy path wiped the slots and rendered proxies alone.
-    return ModuleBelongsToPreview("castbar", GetPreviewPanelId()) and ResolveLayoutPreviewSourcePanel() ~= nil
+    local settings = CooldownCompanion:GetCastBarSettings()
+    return settings and settings.enabled == true
+        and ST._GetBarWorkspacePlacement("castbar") == "independent" or false
 end
 
 -- Which resource power types the canvas draws lanes for right now: the SAME
@@ -3097,9 +2368,14 @@ end
 -- the pair, and offering the hidden half a resource-aura toggle pointed at a
 -- lane that is not on screen.
 function ST._ResourcesPreviewResourceLanePowerTypes()
-    if IsBarsWorkspaceActive() and (CS.barWorkspaceKind ~= "resources"
-        or ST._GetBarWorkspacePlacement("resources") == "unplaced") then return {} end
-    if not IsBarsWorkspaceActive() and not ModuleBelongsToPreview("resources", GetPreviewPanelId()) then return {} end
+    local workspace = IsBarsWorkspaceActive()
+    if workspace then
+        -- The bars canvas draws the Independent stack only.
+        if CS.barWorkspaceKind ~= "resources"
+            or ST._GetBarWorkspacePlacement("resources") ~= "independent" then return {} end
+    elseif not ModuleBelongsToPreview("resources", GetPreviewPanelId()) then
+        return {}
+    end
     local rbSettings = CooldownCompanion:GetResourceBarSettings()
     if not (rbSettings and rbSettings.enabled == true) then
         return {}
@@ -3110,12 +2386,8 @@ function ST._ResourcesPreviewResourceLanePowerTypes()
         return {}
     end
     local powerTypes
-    if IsBarsWorkspaceActive() or CooldownCompanion:IsResourceBarAnchorIndependent() then
-        -- An independent stack is drawn on the bars workspace alone, and
-        -- from the runtime-eligible list; anywhere else it has no lanes.
-        if not IsBarsWorkspaceActive() then
-            return {}
-        end
+    if workspace then
+        -- The Independent stack draws from the runtime-eligible list.
         powerTypes = RB.DetermineActiveResources and RB.DetermineActiveResources(rbSettings) or {}
     else
         powerTypes = GetConfigActiveResources()
@@ -3142,20 +2414,11 @@ function ST._GetLayoutPreviewRenderedSelectionKeys(host)
     end
     local preview = host and host._cdcLayoutPreview
     if not (preview and preview.root and preview.root:IsVisible()) then return end
-    local inner = preview.panelHost
-    if inner and inner:IsVisible() then
-        return PanelKeys(inner._cdcPanelPreview)
-    end
     return preview.renderedSelectionKeys
 end
 
 -- Config-safe icon identity is also used by the button preview family.
 ST._GetLayoutPreviewIcon = GetLayoutPreviewIcon
-
--- Owners that lend this canvas a real mirror wear the same "icons stay in
--- place" refusal the canvas's own placeholder wears, so the strings have one
--- home.
-ST._ApplyLayoutPreviewIconPanelClickShield = ApplyIconPanelClickShield
 
 local PanelHasConfiguredModuleBars
 

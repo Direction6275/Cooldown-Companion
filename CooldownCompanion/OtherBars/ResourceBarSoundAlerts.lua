@@ -8,8 +8,7 @@ local samplingHolder, samplingPower, observedValue, observedMax
 local tickSettings, tickSpec, tickAllowed, tickCombat
 
 function Sounds.Supports(powerType)
-    return RB.SEGMENTED_TYPES[powerType] == true or powerType == 100
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
+    return RB.IsStackCountedResource(powerType)
 end
 
 local function IsNumber(value)

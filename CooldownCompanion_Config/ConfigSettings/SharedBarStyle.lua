@@ -68,10 +68,10 @@ local function Allowed(group, id)
     if context and context.kind then
         if not ST.CanModuleUseBarStyleSection(context.kind, id) then return false end
         if id == "barSmoothing" then
-            return ST._RB.SupportsResourceAuraStackMode(context.powerType)
+            return ST._RB.IsStackCountedResource(context.powerType)
                 and not ST._RB.IsContinuousResourceShape(context.settings, context.powerType, context.spec)
         end
-        if id == "barDurationTypography" and context.kind == "resources" then return context.powerType == 5 end
+        if id == "barDurationTypography" and context.kind == "resources" then return ST._RB.HasRechargeText(context.powerType) end
         if (id == "barDirection" or id == "barBgColor") and context.powerType == ST._RB.RESOURCE_HEALTH then return false end
         return true
     end

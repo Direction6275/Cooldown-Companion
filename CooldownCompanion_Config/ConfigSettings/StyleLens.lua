@@ -103,7 +103,7 @@ local function CanButtonUseConfigOverrideSection(buttonData, sectionId, group)
     if buttonData and buttonData._barGeometryKind then
         if sectionId == "barCharges" and buttonData._barGeometryKind == "resources" then
             local context = buttonData._geometryContext
-            return ST._RB.SupportsResourceAuraStackMode(context.powerType)
+            return ST._RB.IsStackCountedResource(context.powerType)
                 and not ST._RB.IsContinuousResourceShape(context.settings, context.powerType, context.spec), "entryType"
         end
         if sectionId == "barThickness" then return true, "entryType" end

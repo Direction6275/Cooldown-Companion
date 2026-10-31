@@ -132,19 +132,18 @@ local function CollectBarsOffCanvasChipItems(rendered)
     local items = {}
     if CS.barsEntrySelected and CS.barWorkspaceKind ~= "resources" then
         if CS.barWorkspaceKind == "player" or CS.barWorkspaceKind == "target" then
-            -- Either frame's preview target opens the complete shared page.
-            if not (rendered["frame:player"] or rendered["frame:target"]) then
-                local item = CS.barWorkspaceKind
-                items[#items + 1] = {
-                    key = "frames",
-                    label = "Unit Frames",
-                    selected = true,
-                    onClick = function()
-                        ST._OpenBarWorkspace(item)
-                        CooldownCompanion:RefreshConfigPanel()
-                    end,
-                }
-            end
+            -- The canvas draws no unit-frame targets, so the chip opens the
+            -- shared Unit Frames page.
+            local item = CS.barWorkspaceKind
+            items[#items + 1] = {
+                key = "frames",
+                label = "Unit Frames",
+                selected = true,
+                onClick = function()
+                    ST._OpenBarWorkspace(item)
+                    CooldownCompanion:RefreshConfigPanel()
+                end,
+            }
         end
         return items
     end
@@ -378,128 +377,6 @@ local function GetResourceSettingsSpecTabs(powerType)
     return tabs
 end
 
-------------------------------------------------------------------------
--- Icon-panel mirrors lent to the pinned canvas
-------------------------------------------------------------------------
-
--- The canvas used to draw its own stand-in for the icon panel the bars
--- anchor to, capped at four icons plus a "+x" tile - so the previewed panel
--- width, and every attached bar that inherits it, was wrong for any panel
--- wider than that. It now borrows the REAL read-only button-panel mirror
--- instead, one instance per copy of the panel it draws (the vertical layout
--- draws a second copy for the cast section).
---
--- Built on demand, from the canvas's own render path: it hands us the panel
--- data it resolved, so this side re-derives nothing and cannot drift from
--- the states where the canvas actually wraps a panel. Every message state
--- and the independent-stack path simply never ask.
-local RESOURCES_MIRROR_MEASURE_SIZE = 4000
-
-local function AcquireResourcesMirrorHost(host, index)
-    local hosts = host._cdcResourcesMirrorHosts
-    if not hosts then
-        hosts = {}
-        host._cdcResourcesMirrorHosts = hosts
-    end
-    local inner = hosts[index]
-    if not inner then
-        inner = CreateFrame("Frame", nil, host)
-        inner:SetClipsChildren(false)
-        -- This canvas arranges bars; the icon row is scenery here, so the
-        -- mirror wears the canvas's own "icons stay in place" refusal. Wired
-        -- once - the frame is reused by every later rebuild.
-        if ST._ApplyLayoutPreviewIconPanelClickShield then
-            ST._ApplyLayoutPreviewIconPanelClickShield(inner)
-        end
-        hosts[index] = inner
-    end
-    return inner
-end
-
-local function ReleaseResourcesMirrorHost(host, index)
-    local hosts = host and host._cdcResourcesMirrorHosts
-    local inner = hosts and hosts[index]
-    if not inner then
-        return
-    end
-    -- Hosts are retained for reuse. Buttons-view selection refreshes call the
-    -- resources teardown defensively, so an already released hidden host must
-    -- not walk its preview pools again on every entry click.
-    if inner._cdcMirrorPanelId == nil and not inner:IsShown() then
-        return
-    end
-    if ST._ReleaseReadOnlyPanelPreview then
-        ST._ReleaseReadOnlyPanelPreview(inner)
-    end
-    -- The reuse guard's only ticket. Cleared here so a released host can
-    -- never be handed back as a live mirror.
-    inner._cdcMirrorPanelId = nil
-    inner:Hide()
-end
-
-local function ReleaseResourcesPanelMirrors(host)
-    local hosts = host and host._cdcResourcesMirrorHosts
-    if not hosts then
-        return
-    end
-    for index in pairs(hosts) do
-        ReleaseResourcesMirrorHost(host, index)
-    end
-end
-
--- Oversized measuring rect first so the mirror builds at scale 1, then the
--- host shrinks to the mirror content's natural size and the lanes wrap it
--- exactly. Same trick the buttons view's unified preview uses.
---
--- `mirrorReuse` is the canvas-value edit ticket (see RefreshResourcesLayoutPreview):
--- a dragged bar slider repaints this canvas on every OnValueChanged tick, and
--- nothing a resource or cast bar setting can change reaches the
--- ICON panel - so rebuilding the mirror per tick is pure cost, doubled in the
--- vertical layout, which draws a second copy for its cast section. It is an
--- explicit ticket rather than a staleness guess: only the mirror-first slider
--- path passes it, and only a host still carrying a built mirror for THIS panel
--- honours it. Every other build path (workspace switch, RefreshConfigPanel,
--- selection change, resize) rebuilds exactly as before.
-local function BuildResourcesPanelMirror(host, index, panelData, mirrorReuse)
-    local panelId = panelData and panelData.groupId
-    if not (panelId and ST._BuildReadOnlyPanelPreview) then
-        return nil
-    end
-
-    local inner = AcquireResourcesMirrorHost(host, index)
-
-    if mirrorReuse and inner._cdcMirrorPanelId == panelId then
-        local built = inner._cdcPanelPreview
-        local builtContent = built and built.content
-        -- The previous build already sized this host to the mirror's natural
-        -- rect and nothing released it since, so re-showing it is the whole
-        -- job. (ReleaseLentPanelFrames hides the host between builds; the
-        -- mirror inside keeps its own shown state.)
-        if builtContent and builtContent:IsShown() then
-            inner:Show()
-            return inner
-        end
-    end
-
-    inner:SetSize(RESOURCES_MIRROR_MEASURE_SIZE, RESOURCES_MIRROR_MEASURE_SIZE)
-    inner:Show()
-    ST._BuildReadOnlyPanelPreview(inner, panelId)
-
-    local mirror = inner._cdcPanelPreview
-    local content = mirror and mirror.content
-    if not (content and content:IsShown()) then
-        -- The mirror had nothing to draw (it renders from saved settings, so
-        -- it can disagree with the canvas about an emptied panel). Releasing
-        -- clears the reuse stamp, so the next build starts clean; the canvas
-        -- wraps its neutral placeholder for this one pass.
-        ReleaseResourcesMirrorHost(host, index)
-        return nil
-    end
-    inner:SetSize(math.max(1, content:GetWidth() or 1), math.max(1, content:GetHeight() or 1))
-    inner._cdcMirrorPanelId = panelId
-    return inner
-end
-
 -- Hides every surface this file owns and releases the resources preview
 -- registration. Called from every view branch that takes col3 over (buttons wide view, cast frames, the normal fall-through,
 -- the talent picker) and at the top of this view's own refresh.
@@ -515,7 +392,6 @@ local function HideResourcesWideSurfaces(col3, preserveFinderState, preservePrev
     if col3._barWorkspaceIntroPane then col3._barWorkspaceIntroPane:Hide() end
     local host = col3._resourcesPreviewHost
     if host and not preservePreview then
-        ReleaseResourcesPanelMirrors(host)
         if ST._ClearActiveWidePreview then
             ST._ClearActiveWidePreview(col3, host)
         end
@@ -558,30 +434,11 @@ end
 -- before the renderer measures itself; routing every rebuild through here
 -- keeps the two in step without a second hook, and refreshes the bar on
 -- resizes and workspace switches alike.
-local function BuildResourcesLayoutPreview(host, mirrorReuse)
+local function BuildResourcesLayoutPreview(host)
     if ST._UpdateResourcesPreviewCommandCenter then
         ST._UpdateResourcesPreviewCommandCenter(host)
     end
-
-    -- Only the instances this build actually asked for stay live; a layout
-    -- that stops needing the second copy (vertical to horizontal) puts it
-    -- away rather than leaving a built mirror parked behind a hidden frame.
-    local used = {}
-    ST._BuildLayoutOrderPanel(host, {
-        panelFrameProvider = function(index, panelData)
-            local mirror = BuildResourcesPanelMirror(host, index, panelData, mirrorReuse)
-            used[index] = mirror ~= nil
-            return mirror
-        end,
-    })
-    local hosts = host._cdcResourcesMirrorHosts
-    if hosts then
-        for index in pairs(hosts) do
-            if not used[index] then
-                ReleaseResourcesMirrorHost(host, index)
-            end
-        end
-    end
+    ST._BuildLayoutOrderPanel(host)
     local col3 = CS.configFrame and CS.configFrame.col3
     if col3 and col3._resourcesPreviewHost == host then
         SetBarsOffCanvasChips(col3)
@@ -624,13 +481,14 @@ end
 --
 -- `mirrorReuse` marks the caller as a canvas-value edit - the mirror-first
 -- slider drag, which repaints on every tick and cannot touch the icon panel.
--- Everything else omits it and gets a full rebuild, mirror included.
+-- Only the buttons view's panel mirror honours it; the bars canvas draws no
+-- panel.
 local function RefreshResourcesLayoutPreview(mirrorReuse)
     if CS.barsEntrySelected then
         local col3 = CS.configFrame and CS.configFrame.col3
         local host = col3 and col3._resourcesPreviewHost
         if host and host:IsShown() then
-            BuildResourcesLayoutPreview(host, mirrorReuse)
+            BuildResourcesLayoutPreview(host)
             return true
         end
         return false

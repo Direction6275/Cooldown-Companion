@@ -43,7 +43,6 @@ local IsResourceAuraOverlayEnabled = RB.IsResourceAuraOverlayEnabled
 local GetActiveResourceAuraEntry = RB.GetActiveResourceAuraEntry
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local IsVerticalResourceLayout = RB.IsVerticalResourceLayout
-local IsVerticalFillReversed = RB.IsVerticalFillReversed
 local GetResourceColors = RB.GetResourceColors
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local SetSegmentedText = RB.SetSegmentedText
@@ -267,9 +266,8 @@ function RB.CreateResourceBarPreviewModule(deps)
             layer.lane:SetStatusBarTexture(CooldownCompanion:FetchStatusBar(
                 ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid", barInfo.powerType, appearance))))
             layer.lane:SetOrientation(vertical and "VERTICAL" or "HORIZONTAL")
-            local reverseFill = appearance and appearance.style.barReverseFill
-            if reverseFill == nil then reverseFill = vertical and IsVerticalFillReversed(settings) == true or false end
-            layer.lane:SetReverseFill(reverseFill)
+            -- The shared style always gives resources a true/false fill direction.
+            layer.lane:SetReverseFill(appearance.style.barReverseFill == true)
             -- Own colour per system: the lane resolves its key with the
             -- border-colour fallback, exactly as the runtime adapter does.
             local laneColor = GetResourceOverlayLaneColor(auraEntry)
@@ -284,14 +282,7 @@ function RB.CreateResourceBarPreviewModule(deps)
         -- unit, because the bar being rendered is full by construction.
         local function SetFullBarText(bar, maxValue)
             if not (bar.text and bar.text:IsShown()) then return end
-            local textFormat = bar._textFormat
-            if textFormat == "current" then
-                bar.text:SetFormattedText("%d", maxValue)
-            elseif textFormat == "percent" then
-                bar.text:SetFormattedText("%d", 100)
-            else
-                bar.text:SetFormattedText("%d / %d", maxValue, maxValue)
-            end
+            RB.WriteResourceValueText(bar.text, bar._textFormat, maxValue, maxValue, 100)
         end
 
         if barInfo.barType == "continuous" then
@@ -326,22 +317,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             HealthBar.ApplyBackgroundColor(barInfo.frame, config, fraction)
             HealthBar.UpdateEffectBars(barInfo.frame, config, maxHealth, staticPreview and {} or ST._ConfigPreview.GetHealthEffects())
             if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                local textFormat = barInfo.frame._textFormat
-                local abbreviated = AbbreviateNumbers(health)
-                local percent = fraction * 100
-                if textFormat == "current" then
-                    barInfo.frame.text:SetFormattedText("%s", abbreviated)
-                elseif textFormat == "current_max" then
-                    barInfo.frame.text:SetFormattedText("%s / %s", abbreviated, AbbreviateNumbers(maxHealth))
-                elseif textFormat == "current_percent" then
-                    barInfo.frame.text:SetFormattedText("%s | %d%%", abbreviated, percent)
-                elseif textFormat == "current_percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%s | %d", abbreviated, percent)
-                elseif textFormat == "percent_no_sign" then
-                    barInfo.frame.text:SetFormattedText("%d", percent)
-                else
-                    barInfo.frame.text:SetFormattedText("%d%%", percent)
-                end
+                HealthBar.WriteText(barInfo.frame.text, barInfo.frame._textFormat, health, maxHealth, fraction * 100)
             end
         elseif barInfo.barType == "segmented" then
             local n = #barInfo.frame.segments
@@ -366,16 +342,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             local _, _, redColor = GetResourceColors(101, settings)
             barInfo.frame:SetStatusBarColor(redColor[1], redColor[2], redColor[3], 1)
             barInfo.frame.brightnessOverlay:Hide()
-            if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                local textFormat = barInfo.frame._textFormat
-                if textFormat == "current" then
-                    barInfo.frame.text:SetFormattedText("%d", maxHealth)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
-                else
-                    barInfo.frame.text:SetFormattedText("%d / %d", maxHealth, maxHealth)
-                end
-            end
+            SetFullBarText(barInfo.frame, maxHealth)
         elseif barInfo.barType == "mw_segmented" then
             local half = #barInfo.frame.segments
             local maxStacks = GetMWMaxStacks()
@@ -413,16 +380,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             if barInfo.frame.brightnessOverlay then
                 barInfo.frame.brightnessOverlay:Hide()
             end
-            if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                local textFormat = barInfo.frame._textFormat
-                if textFormat == "current" then
-                    barInfo.frame.text:SetFormattedText("%d", maxStacks)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
-                else
-                    barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
-                end
-            end
+            SetFullBarText(barInfo.frame, maxStacks)
             RB.UpdateMaxStackBorder(barInfo.frame, settings, true, 100)
         elseif barInfo.barType == "stackaura_segments" then
             -- Aura-stack family, one segment per stack: full at rest, in the
@@ -445,16 +403,7 @@ function RB.CreateResourceBarPreviewModule(deps)
             if barInfo.frame.brightnessOverlay then
                 barInfo.frame.brightnessOverlay:Hide()
             end
-            if barInfo.frame.text and barInfo.frame.text:IsShown() then
-                local textFormat = barInfo.frame._textFormat
-                if textFormat == "current" then
-                    barInfo.frame.text:SetFormattedText("%d", maxStacks)
-                elseif textFormat == "percent" then
-                    barInfo.frame.text:SetFormattedText("%d", 100)
-                else
-                    barInfo.frame.text:SetFormattedText("%d / %d", maxStacks, maxStacks)
-                end
-            end
+            SetFullBarText(barInfo.frame, maxStacks)
             RB.UpdateMaxStackBorder(barInfo.frame, settings, true, barInfo.powerType)
         end
 

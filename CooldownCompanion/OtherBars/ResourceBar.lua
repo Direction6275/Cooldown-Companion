@@ -81,7 +81,10 @@ local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local IsResourceEnabled = RB.IsResourceEnabled
-local IsSegmentedTextResource = RB.IsSegmentedTextResource
+local IsStackCountedResource = RB.IsStackCountedResource
+local ResolveResourceTextRules = RB.ResolveResourceTextRules
+local WriteResourceValueText = RB.WriteResourceValueText
+local ApplyResourceTextStyle = RB.ApplyResourceTextStyle
 local ClearSegmentedText = RB.ClearSegmentedText
 local SetSegmentedText = RB.SetSegmentedText
 
@@ -684,18 +687,16 @@ local function UpdateContinuousBar(bar, powerType, settings)
 
     UpdateContinuousTickMarker(bar, powerType, settings, maxPower, maxPowerIsSecret)
 
-    -- Text: pass directly to C-level SetFormattedText — accepts secrets
+    -- Text: passed straight to the C-level SetFormattedText, which accepts secrets.
     if bar.text and bar.text:IsShown() then
         local textFormat = bar._textFormat
-        if textFormat == "current" then
-            bar.text:SetFormattedText("%d", currentPower)
-        elseif textFormat == "percent" then
+        local percent
+        if textFormat == "percent" then
             -- UnitPowerPercent returns a 0..1 value by default; evaluate through a curve
             -- to get 0..100 without Lua arithmetic (secret-safe in combat).
-            bar.text:SetFormattedText("%.0f", UnitPowerPercent("player", powerType, false, PERCENT_SCALE_CURVE))
-        else
-            bar.text:SetFormattedText("%d / %d", currentPower, maxPower)
+            percent = UnitPowerPercent("player", powerType, false, PERCENT_SCALE_CURVE)
         end
+        WriteResourceValueText(bar.text, textFormat, currentPower, maxPower, percent)
     end
 
 end
@@ -746,14 +747,7 @@ local function UpdateStaggerBar(bar, settings)
         if isSecret then
             bar.text:SetText("")
         else
-            local textFormat = bar._textFormat
-            if textFormat == "current" then
-                bar.text:SetFormattedText("%d", staggerAmount)
-            elseif textFormat == "percent" then
-                bar.text:SetFormattedText("%.0f", percent)
-            else
-                bar.text:SetFormattedText("%d / %d", staggerAmount, maxHealth)
-            end
+            WriteResourceValueText(bar.text, bar._textFormat, staggerAmount, maxHealth, percent)
         end
     end
 end
@@ -809,7 +803,7 @@ local function StyleRechargeTexts(holder, powerType, settings, appearance)
     if not (holder and holder.rechargeTexts) then return end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
     local enabled = resourceConfig and resourceConfig.showRechargeText == true
-    if not enabled or powerType ~= 5 then
+    if not enabled or not RB.HasRechargeText(powerType) then
         holder._showRechargeText = false
         HideRechargeTexts(holder)
         return
@@ -1209,7 +1203,7 @@ end
 function UpdateMaxStackBorder(holder, settings, isMax, powerType)
     local style, color, resource, keys
     if isMax then
-        style, color, resource, keys = GetMaxStackBorderConfig(settings, powerType or RESOURCE_MAELSTROM_WEAPON)
+        style, color, resource, keys = GetMaxStackBorderConfig(settings, powerType)
     end
     local pool = holder._ccMWMaxBorder
     if not style then
@@ -1358,13 +1352,9 @@ local function UpdateMaelstromWeaponBar(holder, settings, barType)
         end
         if holder.text and holder.text:IsShown() then
             local textFormat = holder._textFormat
-            if textFormat == "current" then
-                holder.text:SetFormattedText("%d", stacks)
-            elseif textFormat == "percent" then
-                holder.text:SetFormattedText("%.0f", (stacks / mwMaxStacks) * 100)
-            else
-                holder.text:SetFormattedText("%d / %d", stacks, mwMaxStacks)
-            end
+            local percent
+            if textFormat == "percent" then percent = (stacks / mwMaxStacks) * 100 end
+            WriteResourceValueText(holder.text, textFormat, stacks, mwMaxStacks, percent)
         end
         return
     end
@@ -1504,13 +1494,9 @@ local function UpdateAuraStackResourceBar(holder, settings, barType, powerType)
                 holder.text:SetText("")
             else
                 local textFormat = holder._textFormat
-                if textFormat == "current" then
-                    holder.text:SetFormattedText("%d", stacks)
-                elseif textFormat == "percent" then
-                    holder.text:SetFormattedText("%.0f", (stacks / maxStacks) * 100)
-                else
-                    holder.text:SetFormattedText("%d / %d", stacks, maxStacks)
-                end
+                local percent
+                if textFormat == "percent" then percent = (stacks / maxStacks) * 100 end
+                WriteResourceValueText(holder.text, textFormat, stacks, maxStacks, percent)
             end
         end
         return
@@ -1879,8 +1865,8 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, a
         or ST.ResolveModuleBarStyle and ST.ResolveModuleBarStyle("resources", settings, powerType)
     local texName = ST.GetEffectiveBarTextureName(GetResourceDisplayValue(settings, "barTexture", "Solid", powerType, appearance))
     local isVertical = IsVerticalResourceLayout(settings)
-    local reverseFill = shared and shared.barReverseFill
-    if reverseFill == nil then reverseFill = IsVerticalFillReversed(settings) end
+    -- The shared style always gives resources a true/false fill direction.
+    local reverseFill = shared.barReverseFill == true
     bar._effectiveBarTextureName = texName
 
     if texName == "blizzard_class" then
@@ -1932,47 +1918,14 @@ local function StyleContinuousBar(bar, powerType, settings, skipLiveFillColor, a
         bar.tickLayer:SetFrameLevel(bar:GetFrameLevel() + RB.RESOURCE_TICK_LAYER_LEVEL)
     end
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
-    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
-    if textFormat ~= "current" and textFormat ~= "current_max" and textFormat ~= "percent" then
-        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-    end
-    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
-    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-    local textOutline = ST.GetEffectiveFontOutline(resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
-        textColor = DEFAULT_RESOURCE_TEXT_COLOR
-    end
+    local textFormat, showText, hideAtZero = ResolveResourceTextRules(resourceConfig, settings, powerType)
+    ApplyResourceTextStyle(bar.text, bar, resourceConfig)
 
-    local textFont = CooldownCompanion:FetchFont(textFontName)
-    bar.text:SetFont(textFont, textSize, textOutline)
-    ST.ApplyFontShadowForOutline(bar.text, textOutline)
-    bar.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
-
-    ST.TextAnchorLayout.Apply(bar.text, bar,
-        resourceConfig and resourceConfig.textAnchor or "CENTER",
-        resourceConfig and resourceConfig.textXOffset or 0,
-        resourceConfig and resourceConfig.textYOffset or 0
-    )
-
-    -- Continuous bars show text by default. The aura-stack family is the one
-    -- exception: its members are stack-text resources everywhere else text is
-    -- resolved — the config offers them the segmented contract (off unless
-    -- explicitly enabled, plus Hide at 0) — and choosing the continuous SHAPE
-    -- must not quietly change what the readout is. So they resolve exactly as
-    -- StyleSegmentedText resolves them. Every other continuous bar, Maelstrom
-    -- Weapon and Stagger included, keeps the default-on contract it shipped
-    -- with. Restyling writes _hideTextAtZero explicitly on both paths.
-    local showText = true
-    bar._hideTextAtZero = false
-    if RB.AURA_STACK_RESOURCES[powerType] then
-        showText = resourceConfig and resourceConfig.showText == true
-        bar._hideTextAtZero = resourceConfig and resourceConfig.hideTextAtZero or false
-        if not showText then
-            bar.text:SetText("")
-        end
-    elseif resourceConfig and resourceConfig.showText == false then
-        showText = false
+    -- Hidden text is cleared, as StyleSegmentedText clears it. Restyling
+    -- writes _hideTextAtZero every time.
+    bar._hideTextAtZero = hideAtZero
+    if not showText then
+        bar.text:SetText("")
     end
     bar.text:SetShown(showText)
     bar._textFormat = textFormat
@@ -1997,7 +1950,7 @@ end
 
 local function StyleSegmentedText(holder, powerType, settings, appearance)
     if not holder or not holder.text then return end
-    if not IsSegmentedTextResource(powerType) then
+    if not IsStackCountedResource(powerType) then
         holder.text:SetShown(false)
         holder._textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
         ClearSegmentedText(holder)
@@ -2005,34 +1958,12 @@ local function StyleSegmentedText(holder, powerType, settings, appearance)
     end
 
     local resourceConfig = GetResourceDisplayConfig(settings, powerType, appearance)
-    local textFormat = resourceConfig and resourceConfig.textFormat or DEFAULT_RESOURCE_TEXT_FORMAT
-    if textFormat ~= "current" and textFormat ~= "current_max" then
-        textFormat = DEFAULT_RESOURCE_TEXT_FORMAT
-    end
-    local textFontName = resourceConfig and resourceConfig.textFont or DEFAULT_RESOURCE_TEXT_FONT
-    local textSize = tonumber(resourceConfig and resourceConfig.textFontSize) or DEFAULT_RESOURCE_TEXT_SIZE
-    local textOutline = ST.GetEffectiveFontOutline(resourceConfig and resourceConfig.textFontOutline or DEFAULT_RESOURCE_TEXT_OUTLINE)
-    local textColor = resourceConfig and resourceConfig.textFontColor or DEFAULT_RESOURCE_TEXT_COLOR
-    if type(textColor) ~= "table" or textColor[1] == nil or textColor[2] == nil or textColor[3] == nil then
-        textColor = DEFAULT_RESOURCE_TEXT_COLOR
-    end
+    local textFormat, showText, hideAtZero = ResolveResourceTextRules(resourceConfig, settings, powerType)
+    ApplyResourceTextStyle(holder.text, holder, resourceConfig)
 
-    local textFont = CooldownCompanion:FetchFont(textFontName)
-    holder.text:SetFont(textFont, textSize, textOutline)
-    ST.ApplyFontShadowForOutline(holder.text, textOutline)
-    holder.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] ~= nil and textColor[4] or 1)
-
-    ST.TextAnchorLayout.Apply(holder.text, holder,
-        resourceConfig and resourceConfig.textAnchor or "CENTER",
-        resourceConfig and resourceConfig.textXOffset or 0,
-        resourceConfig and resourceConfig.textYOffset or 0
-    )
-
-    -- Segmented resources are off by default unless explicitly enabled.
-    local showText = resourceConfig and resourceConfig.showText == true
     holder.text:SetShown(showText)
     holder._textFormat = textFormat
-    holder._hideTextAtZero = resourceConfig and resourceConfig.hideTextAtZero or false
+    holder._hideTextAtZero = hideAtZero
     if not showText then
         ClearSegmentedText(holder)
     end
@@ -2101,6 +2032,7 @@ local function ApplySegmentedPreviewColors(holder, powerType, settings, previewV
 end
 
 RB.StyleContinuousBar = StyleContinuousBar
+RB.EnsureIndependentStackConfig = EnsureIndependentStackConfig
 RB.StyleSegmentedText = StyleSegmentedText
 RB.StyleSegmentedBar = StyleSegmentedBar
 
@@ -2403,10 +2335,10 @@ function CooldownCompanion:ApplyResourceBars(opts)
             local stackCounted = powerType == RESOURCE_MAELSTROM_WEAPON or RB.AURA_STACK_RESOURCES[powerType]
             StyleContinuousBar(frame, powerType, settings, stackCounted and sameVisibleRenderer, appearance)
         elseif barInfo.shape == "overlay" then
-            LayoutOverlaySegments(frame, width, height, segmentGap, settings, 5, nil, nil, powerType, appearance)
+            LayoutOverlaySegments(frame, width, height, segmentGap, settings, 5, powerType, appearance)
             StyleSegmentedText(frame, powerType, settings, appearance)
         else
-            LayoutSegments(frame, width, height, segmentGap, settings, nil, nil, powerType, appearance)
+            LayoutSegments(frame, width, height, segmentGap, settings, powerType, appearance)
             if barInfo.barType == "segmented" then
                 StyleSegmentedBar(frame, powerType, settings, appearance)
             else

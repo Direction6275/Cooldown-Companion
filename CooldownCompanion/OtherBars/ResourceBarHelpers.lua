@@ -51,50 +51,6 @@ local RESOURCE_DISPLAY_PROFILE_KEYS = {
     "segmentedSmoothing",
 }
 
--- Fonts are not listed: resource text styling lives in the resource
--- slot's Value/Duration Text customization (BarStyle.lua).
-local RESOURCE_TEXT_DISPLAY_KEYS = {
-    "showText",
-    "textFormat",
-    "textAnchor",
-    "textXOffset",
-    "textYOffset",
-    "hideTextAtZero",
-    "showRechargeText",
-    "rechargeTextMode",
-    "rechargeTextAnchor",
-    "rechargeTextXOffset",
-    "rechargeTextYOffset",
-}
-
-local RESOURCE_HEALTH_DISPLAY_KEYS = {
-    "healthBarColor",
-    "healthBarOpacity",
-    "healthBarGradient",
-    "healthBarFullColor",
-    "healthBarHalfColor",
-    "healthBarLowColor",
-    "healthBackgroundColor",
-    "healthBackgroundGradient",
-    "healthBackgroundFullColor",
-    "healthBackgroundHalfColor",
-    "healthBackgroundLowColor",
-    "healthBackgroundOpacity",
-    "showAbsorbs",
-    "showHealAbsorbs",
-    "showIncomingHeals",
-    "showLowHealthAlert",
-    "healthAbsorbColor",
-    "healthAbsorbTexture",
-    "healthHealAbsorbColor",
-    "healthHealAbsorbTexture",
-    "healthIncomingHealColor",
-    "healthIncomingHealTexture",
-    "healthLowHealthAlertColor",
-    "healthLowHealthAlertTexture",
-    "healthLowHealthAlertMissingHealthOnly",
-}
-
 ------------------------------------------------------------------------
 -- Layout Helpers
 ------------------------------------------------------------------------
@@ -252,20 +208,6 @@ end
 function RB.SetBarLane(slot, lane)
     slot.position = RB.GetBarLaneSide(lane)
     slot.anchorRegion = (lane == "aboveMain" or lane == "belowMain") and "main" or "panel"
-end
-
-function RB.GetBarPlacementOptions(group)
-    local list, order = {}, {}
-    for _, side in ipairs({ "above", "below" }) do
-        local label = side == "above" and "Above" or "Below"
-        list[side .. "Main"] = label .. " Main Icons"
-        order[#order + 1] = side .. "Main"
-        if RB.HasBarSectionOnSide(group, side) then
-            list[side] = label .. " Entire Panel"
-            order[#order + 1] = side
-        end
-    end
-    return list, order
 end
 
 -- Only the collapsed destination needs this tie-break. It follows the fixed /
@@ -898,29 +840,6 @@ local function GetResourceDisplayConfig(settings, powerType, appearance)
     return resolved
 end
 
-local function GetResourceSpecOverrideTable(settings, powerType, specID, create)
-    if type(settings) ~= "table" or not specID then return nil end
-    specID = tonumber(specID) or specID
-    if type(settings.resources) ~= "table" then
-        if not create then return nil end
-        settings.resources = {}
-    end
-    if type(settings.resources[powerType]) ~= "table" then
-        if not create then return nil end
-        settings.resources[powerType] = {}
-    end
-    local resource = settings.resources[powerType]
-    if type(resource.specOverrides) ~= "table" then
-        if not create then return nil end
-        resource.specOverrides = {}
-    end
-    if type(resource.specOverrides[specID]) ~= "table" then
-        if not create then return nil end
-        resource.specOverrides[specID] = {}
-    end
-    return resource.specOverrides[specID]
-end
-
 local GetAnchorOffset = ST._GetPanelAnchorOffset
 
 ------------------------------------------------------------------------
@@ -1291,12 +1210,49 @@ local function ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
     return resource and resource[entriesKey], resource and resource[clearedKey] == true
 end
 
+-- The threshold or tick list one spec shows: its saved entries, else the old
+-- single entry while the feature is turned on and the list was never cleared.
+-- The runtime also gates the whole list on the turned-on flag; the editors
+-- list it either way.
+local function ResolveThresholdEntries(resource, specID)
+    if type(resource) ~= "table" then
+        return GetNormalizedSegmentedThresholdEntriesFromConfig(nil)
+    end
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
+    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
+    if #entries == 0 and not cleared
+        and ResolveSpecOverrideKey(resource, specID, "segThresholdEnabled") == true then
+        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
+    end
+    return entries
+end
+
+local function ResolveTickEntries(resource, specID, mode)
+    if type(resource) ~= "table" then
+        return GetNormalizedContinuousTickEntriesFromConfig(nil, mode)
+    end
+    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
+    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
+    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
+    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
+    if #entries == 0 and not cleared
+        and ResolveSpecOverrideKey(resource, specID, "continuousTickEnabled") == true then
+        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
+    end
+    return entries
+end
+
+-- Resources counted in stacks: Maelstrom Weapon, the segmented power types
+-- and every aura-stack family member. They take threshold colours instead of
+-- tick markers, and their text follows the stack rules, except Maelstrom
+-- Weapon drawn Continuous (GetResourceTextContract).
+local function IsStackCountedResource(powerType)
+    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
+        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
+end
+
 local function GetSegmentedThresholdEntriesConfig(powerType, settings)
-    -- Stack-counted resources get threshold colours alongside the real
-    -- segmented power types: Maelstrom Weapon and every aura-stack family
-    -- member.
-    if powerType ~= RESOURCE_MAELSTROM_WEAPON and SEGMENTED_TYPES[powerType] ~= true
-        and RB.AURA_STACK_RESOURCES[powerType] == nil then
+    if not IsStackCountedResource(powerType) then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
     if not settings or not settings.resources then
@@ -1313,13 +1269,7 @@ local function GetSegmentedThresholdEntriesConfig(powerType, settings)
     if enabled ~= true then
         return false, EMPTY_THRESHOLD_TICK_ENTRIES
     end
-
-    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, "segThresholdEntries", "segThresholdEntriesCleared")
-    local entries = GetNormalizedSegmentedThresholdEntriesFromConfig(rawEntries)
-    if #entries == 0 and not cleared then
-        entries[1] = BuildLegacySegmentedThresholdEntry(resource, specID)
-    end
-    return true, entries
+    return true, ResolveThresholdEntries(resource, specID)
 end
 
 -- `holder` is optional and is the applied bar frame when the caller has one.
@@ -1358,8 +1308,7 @@ local function GetSegmentedThresholdColorForValue(powerType, settings, currentVa
 end
 
 local function GetContinuousTickEntriesConfig(powerType, settings)
-    if SEGMENTED_TYPES[powerType] or powerType == RESOURCE_MAELSTROM_WEAPON
-        or RB.AURA_STACK_RESOURCES[powerType] then
+    if IsStackCountedResource(powerType) then
         return false, nil, EMPTY_THRESHOLD_TICK_ENTRIES, nil, nil
     end
     if not settings or not settings.resources then
@@ -1382,13 +1331,7 @@ local function GetContinuousTickEntriesConfig(powerType, settings)
         mode = DEFAULT_CONTINUOUS_TICK_MODE
     end
 
-    local entriesKey = mode == "absolute" and "continuousTickAbsoluteEntries" or "continuousTickPercentEntries"
-    local clearedKey = mode == "absolute" and "continuousTickAbsoluteEntriesCleared" or "continuousTickPercentEntriesCleared"
-    local rawEntries, cleared = ResolveSpecEntryList(resource, specID, entriesKey, clearedKey)
-    local entries = GetNormalizedContinuousTickEntriesFromConfig(rawEntries, mode)
-    if #entries == 0 and not cleared then
-        entries[1] = BuildLegacyContinuousTickEntry(resource, specID, mode)
-    end
+    local entries = ResolveTickEntries(resource, specID, mode)
 
     local tickWidth = tonumber(ResolveSpecOverrideKey(resource, specID, "continuousTickWidth")) or DEFAULT_CONTINUOUS_TICK_WIDTH
     if tickWidth < 1 then tickWidth = 1 elseif tickWidth > 10 then tickWidth = 10 end
@@ -1436,11 +1379,6 @@ function RB.CompileResourceBarConfig(holder, powerType, settings)
     holder._ccTickPowerType = powerType
 end
 
-local function SupportsResourceAuraStackMode(powerType)
-    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
-end
-
 -- Whether this resource renders as ONE continuous StatusBar under the
 -- current settings. Mirrors the ApplyResourceBars shape dispatch, so the
 -- config panel and the preview stand-in can answer "can the aura fill
@@ -1463,6 +1401,88 @@ local function IsContinuousResourceShape(settings, powerType, specID)
         return GetAuraStackDisplayStyle(settings, powerType, specID) == "continuous"
     end
     return SEGMENTED_TYPES[powerType] ~= true
+end
+
+-- The value text rules, which follow the bar's shape. The settings page
+-- offers them and the bars draw by them. Maelstrom Weapon drawn Continuous
+-- takes the continuous rules: text on unless turned off, Percent, no Hide at
+-- 0. An aura-stack bar keeps the stack rules in either shape but offers
+-- Percent when Continuous, since Percent needs a fill to measure. Runes and
+-- Essence count stacks but are not offered Hide at 0.
+local function GetResourceTextContract(settings, powerType, specID)
+    settings = settings or RB.GetResourceBarSettings()
+    local continuous = IsContinuousResourceShape(settings, powerType, specID)
+    local mwContinuous = powerType == RESOURCE_MAELSTROM_WEAPON and continuous
+    local stackText = IsStackCountedResource(powerType) and not mwContinuous
+    return {
+        stackText = stackText,
+        offersPercent = not stackText
+            or (RB.AURA_STACK_RESOURCES[powerType] ~= nil and continuous),
+        offersHideAtZero = RB.HIDE_AT_ZERO_ELIGIBLE[powerType] == true and not mwContinuous,
+    }
+end
+
+-- A resource's value text format, shown state and Hide at 0 under its text
+-- contract, for the bars and the Text page alike: a stack-counted resource
+-- keeps the stack rules in either shape (off unless turned on, Hide at 0
+-- where offered); every other bar, Maelstrom Weapon drawn Continuous and
+-- Stagger included, shows text unless turned off. Percent is kept only where
+-- the contract offers it. Health has its own text rules (HealthBar.Style).
+local function ResolveResourceTextRules(resourceConfig, settings, powerType, specID)
+    local contract = GetResourceTextContract(settings, powerType, specID)
+    local textFormat = resourceConfig and resourceConfig.textFormat or RB.DEFAULT_RESOURCE_TEXT_FORMAT
+    if textFormat ~= "current" and textFormat ~= "current_max"
+        and not (textFormat == "percent" and contract.offersPercent) then
+        textFormat = RB.DEFAULT_RESOURCE_TEXT_FORMAT
+    end
+    local showText = resourceConfig and resourceConfig.showText
+    if contract.stackText then
+        showText = showText == true
+    else
+        showText = showText ~= false
+    end
+    local hideAtZero = contract.offersHideAtZero and resourceConfig
+        and resourceConfig.hideTextAtZero and true or false
+    return textFormat, showText, hideAtZero
+end
+
+-- Runes alone show recharge duration text.
+local function HasRechargeText(powerType)
+    return powerType == 5
+end
+
+-- A resource's value text: "current", "percent", else "current / max". The
+-- values go straight to SetFormattedText, which accepts secret values, and are
+-- never tested here; the caller works out `percent` only for the percent
+-- format, so a secret percent is never read for nothing.
+local function WriteResourceValueText(fontString, textFormat, current, max, percent)
+    if textFormat == "current" then
+        fontString:SetFormattedText("%d", current)
+    elseif textFormat == "percent" then
+        fontString:SetFormattedText("%.0f", percent)
+    else
+        fontString:SetFormattedText("%d / %d", current, max)
+    end
+end
+
+-- Font, colour and anchor of a resource's value text from its resolved
+-- display config. Each caller keeps its own format allow-list and show rule.
+local function ApplyResourceTextStyle(fontString, parent, config)
+    local fontName = config and config.textFont or RB.DEFAULT_RESOURCE_TEXT_FONT
+    local size = tonumber(config and config.textFontSize) or RB.DEFAULT_RESOURCE_TEXT_SIZE
+    local outline = ST.GetEffectiveFontOutline(config and config.textFontOutline or RB.DEFAULT_RESOURCE_TEXT_OUTLINE)
+    local color = config and config.textFontColor or RB.DEFAULT_RESOURCE_TEXT_COLOR
+    if type(color) ~= "table" or color[1] == nil or color[2] == nil or color[3] == nil then
+        color = RB.DEFAULT_RESOURCE_TEXT_COLOR
+    end
+    fontString:SetFont(CooldownCompanion:FetchFont(fontName), size, outline)
+    ST.ApplyFontShadowForOutline(fontString, outline)
+    fontString:SetTextColor(color[1], color[2], color[3], color[4] ~= nil and color[4] or 1)
+    ST.TextAnchorLayout.Apply(fontString, parent,
+        config and config.textAnchor or "CENTER",
+        config and config.textXOffset or 0,
+        config and config.textYOffset or 0
+    )
 end
 
 ------------------------------------------------------------------------
@@ -1494,11 +1514,6 @@ end
 ------------------------------------------------------------------------
 -- Segmented Text Helpers
 ------------------------------------------------------------------------
-
-local function IsSegmentedTextResource(powerType)
-    return powerType == RESOURCE_MAELSTROM_WEAPON or SEGMENTED_TYPES[powerType] == true
-        or RB.AURA_STACK_RESOURCES[powerType] ~= nil
-end
 
 local function FormatSegmentedTextNumber(value)
     local n = tonumber(value) or 0
@@ -1582,9 +1597,6 @@ RB.IsInVoidMetamorphosis = IsInVoidMetamorphosis
 RB.GetCanonicalPowerType = GetCanonicalPowerType
 RB.GetPlacementRenderPowerType = GetPlacementRenderPowerType
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
-RB.GetResourceSpecOverrideTable = GetResourceSpecOverrideTable
-RB.RESOURCE_TEXT_DISPLAY_KEYS = RESOURCE_TEXT_DISPLAY_KEYS
-RB.RESOURCE_HEALTH_DISPLAY_KEYS = RESOURCE_HEALTH_DISPLAY_KEYS
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
 RB.IsBarsConfigActive = IsBarsConfigActive
@@ -1602,11 +1614,17 @@ RB.ClampContinuousTickAbsoluteValue = ClampContinuousTickAbsoluteValue
 RB.GetNormalizedSegmentedThresholdEntriesFromConfig = GetNormalizedSegmentedThresholdEntriesFromConfig
 RB.GetNormalizedContinuousTickEntriesFromConfig = GetNormalizedContinuousTickEntriesFromConfig
 RB.ResolveSpecEntryList = ResolveSpecEntryList
+RB.ResolveThresholdEntries = ResolveThresholdEntries
+RB.ResolveTickEntries = ResolveTickEntries
 RB.GetSegmentedThresholdColorForValue = GetSegmentedThresholdColorForValue
 RB.GetContinuousTickEntriesConfig = GetContinuousTickEntriesConfig
-RB.SupportsResourceAuraStackMode = SupportsResourceAuraStackMode
+RB.IsStackCountedResource = IsStackCountedResource
 RB.IsContinuousResourceShape = IsContinuousResourceShape
+RB.GetResourceTextContract = GetResourceTextContract
+RB.ResolveResourceTextRules = ResolveResourceTextRules
+RB.HasRechargeText = HasRechargeText
+RB.WriteResourceValueText = WriteResourceValueText
+RB.ApplyResourceTextStyle = ApplyResourceTextStyle
 RB.IsResourceEnabled = IsResourceEnabled
-RB.IsSegmentedTextResource = IsSegmentedTextResource
 RB.ClearSegmentedText = ClearSegmentedText
 RB.SetSegmentedText = SetSegmentedText

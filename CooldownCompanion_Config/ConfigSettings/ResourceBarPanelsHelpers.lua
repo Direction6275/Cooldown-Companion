@@ -14,9 +14,6 @@ local AceGUI = LibStub("AceGUI-3.0")
 
 -- Shared constants from ResourceBarConstants (eliminates _CONFIG duplicates)
 local RB = ST._RB
-local DEFAULT_CONTINUOUS_TICK_MODE = RB.DEFAULT_CONTINUOUS_TICK_MODE
-local DEFAULT_CONTINUOUS_TICK_PERCENT = RB.DEFAULT_CONTINUOUS_TICK_PERCENT
-local DEFAULT_CONTINUOUS_TICK_ABSOLUTE = RB.DEFAULT_CONTINUOUS_TICK_ABSOLUTE
 local RESOURCE_HEALTH = RB.RESOURCE_HEALTH
 local CLASS_RESOURCES_CONFIG = RB.CLASS_RESOURCES_CONFIG
 local SPEC_RESOURCES_CONFIG = RB.SPEC_RESOURCES_CONFIG
@@ -160,10 +157,6 @@ end
 -- Collapsed section state
 ------------------------------------------------------------------------
 local resourceBarCollapsedSections = {}
-
-local function CopyTableValue(value)
-    return type(value) == "table" and CopyTable(value) or value
-end
 
 local function GetCurrentConfigSpecID()
     local specIdx = C_SpecializationInfo.GetSpecialization()
@@ -496,62 +489,6 @@ local function ResolveTrackedAuraSpellIDFromText(text)
     return ResolveAuraColorSpellIDFromText(cleaned)
 end
 
-local function GetSafeRGBConfig(color, fallback)
-    if type(color) == "table" and color[1] ~= nil and color[2] ~= nil and color[3] ~= nil then
-        return color
-    end
-    return fallback
-end
-
--- Identical to GetSafeRGBConfig; alias kept for call-site clarity (RGB vs RGBA intent)
-local GetSafeRGBAConfig = GetSafeRGBConfig
-
-local function GetSegmentedThresholdValueConfig(resource)
-    local value = tonumber(resource and resource.segThresholdValue)
-    if not value then
-        return 1
-    end
-    value = math.floor(value)
-    if value < 1 then
-        value = 1
-    elseif value > 99 then
-        value = 99
-    end
-    return value
-end
-
-local function GetContinuousTickModeConfig(resource)
-    local mode = resource and resource.continuousTickMode
-    if mode == "percent" or mode == "absolute" then
-        return mode
-    end
-    return DEFAULT_CONTINUOUS_TICK_MODE
-end
-
-local function GetContinuousTickPercentConfig(resource)
-    local value = tonumber(resource and resource.continuousTickPercent)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_PERCENT
-    end
-    if value < 0 then
-        value = 0
-    elseif value > 100 then
-        value = 100
-    end
-    return value
-end
-
-local function GetContinuousTickAbsoluteConfig(resource)
-    local value = tonumber(resource and resource.continuousTickAbsolute)
-    if not value then
-        return DEFAULT_CONTINUOUS_TICK_ABSOLUTE
-    end
-    if value < 0 then
-        value = 0
-    end
-    return value
-end
-
 -- Simple queries
 ------------------------------------------------------------------------
 
@@ -574,9 +511,10 @@ end
 --
 -- While a slider on a resources surface is DRAGGED, the candidate value is
 -- exposed only for the workspace's pinned canvas render, then restored. The
--- saved value and live display update once, on release. The canvas wraps the
--- real read-only panel mirror, so it is an
--- honest stand-in for the edit - and driving the live bars from every
+-- saved value and live display update once, on release. The canvas paints with
+-- the live bars' own painters (the Independent stack on the bars workspace,
+-- the panel preview in the buttons view), so it is an honest stand-in for the
+-- edit - and driving the live bars from every
 -- OnValueChanged tick was what made these sliders feel heavy.
 --
 -- CDC-SliderRow's edit box deliberately fires BOTH OnValueChanged and
@@ -602,8 +540,8 @@ local function RefreshResourcesCanvas(mirrorReuse)
 end
 
 -- The drag tick asks for mirror reuse; nothing else does. A bar value cannot
--- change the icon panel the lanes wrap, so the mirror inside the canvas is
--- still correct and only the lanes need redrawing.
+-- change the icon panel the buttons view's mirror draws, so only the bars
+-- need redrawing.
 local function RefreshResourcesCanvasForDrag()
     RefreshResourcesCanvas(true)
 end
@@ -640,6 +578,109 @@ local function AddMirrorFirstSliderRow(container, opts)
     end
     return ST._AddSliderRow(container, opts)
 end
+
+------------------------------------------------------------------------
+-- Independent Anchor Settings rows
+------------------------------------------------------------------------
+-- The rows the Independent Resources stack and the Independent Cast Bar
+-- share: anchor frame and Pick, Unlock Placement, the two points, the width
+-- and the screen offsets. Each page keeps its own section, collapse key and
+-- width label.
+--   opts.anchor      the saved independentAnchor table, or nil before it
+--                    exists
+--   opts.readAnchor  optional: what a missing anchor reads as
+--   opts.ensureAnchor() creates the saved anchor and returns it; only an
+--                    edit calls it (rule Q1)
+--   opts.owner       carries independentAnchorLocked and independentWidth
+--   opts.widthLabel, opts.widthValue
+--   opts.finder      Settings Finder settings: frame, unlock, point,
+--                    relativePoint, width, x, y
+--   opts.apply()     re-applies the bar
+local function BuildIndependentAnchorRows(container, opts)
+    local owner, apply = opts.owner, opts.apply
+    local finder = opts.finder or {}
+    -- The rows edit through this view. Clearing a key on an anchor that does
+    -- not exist yet changes nothing, so it creates nothing.
+    local saved = opts.anchor
+    local anchor = setmetatable({}, {
+        __index = function(_, key)
+            local source = saved or opts.readAnchor
+            return source and source[key]
+        end,
+        __newindex = function(_, key, value)
+            if not saved then
+                if value == nil then return end
+                saved = opts.ensureAnchor()
+            end
+            saved[key] = value
+        end,
+    })
+
+    -- A frame name needs the whole 140px control column to stay readable, so
+    -- Pick does not share it: the editbox row takes a grid of its own and Pick
+    -- sits at the head of that grid's right column, immediately across the
+    -- 16px gutter.
+    local targetLeft, targetRight = ST._BeginRowGrid(container)
+    ST._BuildIndependentAnchorTargetRow(targetLeft, anchor, apply, {
+        pickContainer = targetRight,
+        setting = finder.frame,
+    })
+
+    -- LEFT column: how the bar is placed - the drag toggle and the two points
+    -- that have to be read together (mine, then the target's). RIGHT column:
+    -- its size and the offset applied on top of those points.
+    local left, right = ST._BeginRowGrid(container)
+    ST._AddCheckboxRow(left, {
+        label = "Unlock Placement",
+        setting = finder.unlock,
+        value = not owner.independentAnchorLocked,
+        onChange = function(val)
+            owner.independentAnchorLocked = not val
+            apply()
+            if not val then
+                CooldownCompanion:CheckArrangeModeAutoExit()
+            end
+        end,
+    })
+    ST._AddAnchorDropdown(left, anchor, "point", "CENTER", apply, "Anchor Point", { setting = finder.point })
+    ST._AddAnchorDropdown(left, anchor, "relativePoint", "CENTER", apply, "Relative Point", { setting = finder.relativePoint })
+
+    -- The canvas sizes the bar from this value while it drags.
+    AddMirrorFirstSliderRow(right, {
+        label = opts.widthLabel,
+        setting = finder.width,
+        min = 20, max = 600, step = 0.1,
+        value = opts.widthValue,
+        set = function(val) owner.independentWidth = val end,
+        apply = apply,
+        stateOwner = owner,
+        stateKeys = "independentWidth",
+    })
+
+    -- The offsets place the bar on SCREEN, which the canvas does not draw.
+    -- Store during the drag and move the live bar once on release.
+    ST._AddSliderRow(right, {
+        label = "X Offset",
+        setting = finder.x,
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.x or 0,
+        onRelease = function(val)
+            anchor.x = val
+            apply()
+        end,
+    })
+    ST._AddSliderRow(right, {
+        label = "Y Offset",
+        setting = finder.y,
+        min = -2000, max = 2000, step = 0.1,
+        value = anchor.y or 0,
+        onRelease = function(val)
+            anchor.y = val
+            apply()
+        end,
+    })
+end
+ST._BuildIndependentAnchorRows = BuildIndependentAnchorRows
 
 local function OpenResourceBarConflictChooser(force)
     local classKey = CooldownCompanion._unifiedPanelConversionError
@@ -699,7 +740,6 @@ end
 
 ST._RBP = {
     collapsedSections = resourceBarCollapsedSections,
-    CopyTableValue = CopyTableValue,
     GetConfigActiveResources = GetConfigActiveResources,
     GetConfigEditableResources = GetConfigEditableResources,
     GetResourceApplicableSpecIDs = GetResourceApplicableSpecIDs,
@@ -711,12 +751,6 @@ ST._RBP = {
     GetPlayerSpecOptionsConfig = GetPlayerSpecOptionsConfig,
     ResolveAuraColorSpellIDFromText = ResolveAuraColorSpellIDFromText,
     ResolveTrackedAuraSpellIDFromText = ResolveTrackedAuraSpellIDFromText,
-    GetSafeRGBConfig = GetSafeRGBConfig,
-    GetSafeRGBAConfig = GetSafeRGBAConfig,
-    GetSegmentedThresholdValueConfig = GetSegmentedThresholdValueConfig,
-    GetContinuousTickModeConfig = GetContinuousTickModeConfig,
-    GetContinuousTickPercentConfig = GetContinuousTickPercentConfig,
-    GetContinuousTickAbsoluteConfig = GetContinuousTickAbsoluteConfig,
     ResolveAuraBarAutocompleteEntry = ResolveAuraBarAutocompleteEntry,
     BuildAuraBarAutocompleteCache = BuildAuraBarAutocompleteCache,
     BuildTrackedAuraAutocompleteCache = BuildTrackedAuraAutocompleteCache,
@@ -754,18 +788,3 @@ function ST._ConfigureAttachedBarPreviewSlot(slot, ensureLayout)
     end
 end
 
-function ST._GetAttachedBarPreviewRect(panelFrame, lane)
-    local w, h = panelFrame:GetWidth(), panelFrame:GetHeight()
-    if lane ~= "aboveMain" and lane ~= "belowMain" then return 0, 0, w, h end
-    local mirror = panelFrame._cdcPanelPreview
-    local rect = mirror and mirror.barBaseRect
-    if not rect then return 0, 0, w, h end
-    local scale = mirror.content:GetScale()
-    -- The measuring host is sized before the composition anchors it. Its
-    -- two-point mirror root may not have a resolved rect on the first build;
-    -- derive that root's height from the host and its reserved bottom band.
-    local rootHeight = h - (panelFrame._cdcPreviewReserveBottom or 0)
-    return (w - mirror.content:GetWidth() * scale) / 2 + rect.x * scale,
-        (rootHeight - mirror.content:GetHeight() * scale) / 2 + rect.y * scale,
-        rect.width * scale, rect.height * scale
-end

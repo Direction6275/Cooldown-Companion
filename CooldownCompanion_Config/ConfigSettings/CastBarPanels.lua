@@ -7,8 +7,6 @@ local CS = ST._configState
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local AddAdvancedToggle = ST._AddAdvancedToggle
 local CreateCharacterCopyButton = ST._CreateCharacterCopyButton
-local AddAnchorDropdown = ST._AddAnchorDropdown
-local BuildIndependentAnchorTargetRow = ST._BuildIndependentAnchorTargetRow
 local AddBorderRenderModeDropdown = ST._AddBorderRenderModeDropdown
 
 -- Imports from RowWidgets.lua (the row grammar). The rules every row-grammar
@@ -487,13 +485,6 @@ local function BuildCastBarPositioningPanel(container)
         return
     end
 
-    -- The anchor table is a stored setting, not a rendered control, so it is
-    -- seeded whether or not the section below is expanded.
-    if type(settings.independentAnchor) ~= "table" then
-        settings.independentAnchor = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
-    end
-    local anchor = settings.independentAnchor
-
     -- ================================================================
     -- Anchor Settings (independent mode only)
     -- ================================================================
@@ -502,79 +493,26 @@ local function BuildCastBarPositioningPanel(container)
 
     if anchorCollapsed then return end
 
-    local function refreshCastBarAnchor()
-        CooldownCompanion:ApplyCastBarSettings()
-    end
-
-    -- A frame name needs the whole 140px control column to stay readable, so
-    -- Pick does not share it: the editbox row takes a grid of its own and
-    -- Pick sits at the head of that grid's right column, immediately across
-    -- the 16px gutter.
-    local targetLeft, targetRight = BeginRowGrid(container)
-    BuildIndependentAnchorTargetRow(targetLeft, anchor, refreshCastBarAnchor, {
-        pickContainer = targetRight,
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorFrame,
-    })
-
-    -- LEFT column: how the bar is placed - the drag toggle and the two points
-    -- that have to be read together (mine, then the target's). RIGHT column:
-    -- its size and the offset applied on top of those points.
-    local anchorLeft, anchorRight = BeginRowGrid(container)
-
-    AddCheckboxRow(anchorLeft, {
-        label = "Unlock Placement",
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.unlock,
-        value = not settings.independentAnchorLocked,
-        onChange = function(val)
-            settings.independentAnchorLocked = not val
-            CooldownCompanion:ApplyCastBarSettings()
-            if not val then
-                CooldownCompanion:CheckArrangeModeAutoExit()
-            end
+    local independent = CASTBAR_FINDER.independent or {}
+    ST._BuildIndependentAnchorRows(container, {
+        anchor = type(settings.independentAnchor) == "table" and settings.independentAnchor or nil,
+        ensureAnchor = function()
+            ST.EnsureIndependentCastBarConfig(settings)
+            return settings.independentAnchor
         end,
-    })
-
-    AddAnchorDropdown(anchorLeft, anchor, "point", "CENTER", refreshCastBarAnchor, "Anchor Point", {
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.anchorPoint,
-    })
-    AddAnchorDropdown(anchorLeft, anchor, "relativePoint", "CENTER", refreshCastBarAnchor, "Relative Point", {
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.relativePoint,
-    })
-
-    AddSliderRow(anchorRight, {
-        label = "Cast Bar Width",
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.width,
-        min = 20, max = 600, step = 0.1,
-        value = settings.independentWidth or 200,
-        onChange = function(val)
-            ST._PreviewScalarSetting(settings, "independentWidth", val, RefreshBarsCanvasForDrag)
-        end,
-        onRelease = function(val)
-            settings.independentWidth = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end,
-    })
-
-    AddSliderRow(anchorRight, {
-        label = "X Offset",
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.xOffset,
-        min = -2000, max = 2000, step = 0.1,
-        value = anchor.x or 0,
-        onRelease = function(val)
-            anchor.x = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end,
-    })
-
-    AddSliderRow(anchorRight, {
-        label = "Y Offset",
-        setting = CASTBAR_FINDER.independent and CASTBAR_FINDER.independent.yOffset,
-        min = -2000, max = 2000, step = 0.1,
-        value = anchor.y or 0,
-        onRelease = function(val)
-            anchor.y = val
-            CooldownCompanion:ApplyCastBarSettings()
-        end,
+        owner = settings,
+        widthLabel = "Cast Bar Width",
+        widthValue = settings.independentWidth or 200,
+        finder = {
+            frame = independent.anchorFrame,
+            unlock = independent.unlock,
+            point = independent.anchorPoint,
+            relativePoint = independent.relativePoint,
+            width = independent.width,
+            x = independent.xOffset,
+            y = independent.yOffset,
+        },
+        apply = function() CooldownCompanion:ApplyCastBarSettings() end,
     })
 end
 
@@ -766,7 +704,7 @@ local function BuildCastBarStylingPanel(container)
                 label = "Icon Border Thickness",
                 setting = CASTBAR_FINDER.icon and CASTBAR_FINDER.icon.borderSize,
                 indent = true,
-                min = 0, max = 4, step = 0.1,
+                min = 0, max = 5, step = 0.1,
                 value = settings.iconBorderSize or 1,
                 disabled = borderThicknessLocked,
                 set = function(val)
@@ -826,7 +764,7 @@ local function BuildCastBarStylingPanel(container)
         AddMirrorFirstSliderRow(panel, {
             label = "Tick Mark Width",
             setting = CASTBAR_FINDER.ticks and CASTBAR_FINDER.ticks.width,
-            min = 1, max = 5, step = 0.1,
+            min = 1, max = 10, step = 0.1,
             value = settings.channelTickWidth or 1,
             set = function(val) settings.channelTickWidth = val end,
             apply = applyCastBar,

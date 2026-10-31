@@ -243,12 +243,7 @@ local function HandleCopyCustomizationClick(panelId, index, buttonData)
 end
 
 local function EnsureCopyCustomizationBanner(preview)
-    -- A caller that builds the mirror into an inner host (the bars
-    -- workspace's Layout & Order preview) passes its outer host, so the strip
-    -- reads at the top of the whole preview instead of over the entries.
-    -- Re-anchored on every ensure: the same preview state can build with or
-    -- without an outer host.
-    local bannerHost = preview.copyBannerHost or preview.root
+    local bannerHost = preview.root
     local banner = preview.copyBanner
     if banner then
         banner:SetParent(bannerHost)
@@ -335,7 +330,7 @@ local function UpdateCopyCustomizationBanner(preview)
         text = text .. "  |cff99e6a3" .. state.lastAppliedText .. "|r"
     end
     banner.text:SetText(text)
-    banner:SetFrameLevel((preview.copyBannerHost or preview.root):GetFrameLevel() + 40)
+    banner:SetFrameLevel(preview.root:GetFrameLevel() + 40)
     banner:Show()
 end
 

@@ -171,7 +171,7 @@ local POWER_ATLAS_INFO = {
     [18] = { atlas = "_DemonHunter-DemonicPainBar" },
 }
 
--- Power types eligible for "hide at zero" config option (config UI only)
+-- Power types offered the Hide at 0 text option (RB.GetResourceTextContract)
 local HIDE_AT_ZERO_ELIGIBLE = {
     [4]  = true, [7]  = true, [9]  = true,
     [12] = true, [16] = true, [100] = true,
