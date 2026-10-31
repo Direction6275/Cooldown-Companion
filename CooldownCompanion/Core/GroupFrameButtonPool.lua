@@ -197,8 +197,6 @@ local function ClearReusableButtonRuntime(button)
     button._itemCount = nil
     button._auraSpellID = nil
     button._auraUnit = nil
-    button._auraActive = false
-    button._auraTrackingReady = nil
     button._bindingKeyInfos = nil
     button._keyPressHighlightActive = nil
     button._visibilityHidden = false
@@ -214,12 +212,9 @@ local function ClearReusableButtonRuntime(button)
     button._rawVisibilityReasonBits = nil
     button._lastVisAlpha = 1
     button._desaturated = nil
-    button._iconDesaturationIntent = nil
     button._iconTintIntent = nil
     button._iconFillIntent = nil
     button._iconGlowIntent = nil
-    button._barVisualIntent = nil
-    button._barVisualApplied = nil
     button._desatCooldownActive = nil
     button._unusableTintActive = nil
     button._iconFillActive = nil
@@ -234,7 +229,6 @@ local function ClearReusableButtonRuntime(button)
     button._readyGlowMaxChargesStartTime = nil
     button._readyGlowMaxChargesActive = nil
     button._readyGlowMaxChargesSpellID = nil
-    button._barGCDSuppressed = nil
     button._barCdColor = nil
     button._barReadyTextColor = nil
     button._barTextMode = nil
@@ -277,7 +271,6 @@ local function ResolveReusableButtonEntryState(button, buttonData)
         and CooldownCompanion:ResolveAuraSpellID(buttonData)
         or nil
     button._auraUnit = buttonData and buttonData.auraUnit or "player"
-    button._auraTrackingReady = nil
 end
 
 local function DeactivatePooledButton(self, groupId, button)

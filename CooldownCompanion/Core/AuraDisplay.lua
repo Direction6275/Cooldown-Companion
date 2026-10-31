@@ -3917,37 +3917,47 @@ local function HoldPooledSpareStill(host, buttonData, groupId)
     end
 end
 
+-- One set of aura group functions serves every flow surface: attached aura
+-- bar blocks, whole Aura Panels and aura sections. What differs per surface
+-- rides the entry (cell size and spacing, bar and icon-square geometry, fill
+-- inset, lineSpacing) or the record (the owning panel id, the whole-panel
+-- flag), so a fix to this path lands once.
+--
 -- SetAuraGroupLayout REPLACES the whole options table, so every field the
 -- group needs is written every time. elementSpacing must stay 0: the flow
 -- layout advances the cursor by elementSpacing after an element AND adds
 -- groupSpacing before the next group, so a nonzero pair doubles every gap
 -- between consecutive single-frame groups (seen in game 2026-08-08).
--- groupSpacing alone carries the stack's own spacing.
-local function BlockGroupLayout(entry, layoutIndex)
+-- groupSpacing carries the spacing along the line. Aura Panels and aura
+-- sections also pass the spacing across lines, as both lineSpacing and
+-- groupLineSpacing: a wrap advances by whichever belongs to the step that
+-- triggers it, and Blizzard fills an unset groupLineSpacing with 0, not
+-- lineSpacing. Attached blocks never wrap and leave both nil.
+local function FlowGroupLayout(entry, layoutIndex)
     return {
         layoutIndex = layoutIndex,
         elementWidth = entry.width,
         elementHeight = entry.height,
         elementSpacing = 0,
         groupSpacing = entry.spacing,
+        lineSpacing = entry.lineSpacing,
+        groupLineSpacing = entry.lineSpacing,
     }
 end
 
-local function SetAttachedBlockGeometry(group, entry)
-    group.isBar = true
-    group.inset = BarCellInset(entry.style)
-    group.iconShown, group.iconSize, group.iconOffset, group.iconReverse =
-        ST._GetAuraPanelBarIconGeometry(entry.style, true, entry.vertical, entry.width, entry.height)
-end
-
-local function EnsureBlockGroup(record, entry, layoutIndex)
+local function EnsureFlowGroup(record, entry, layoutIndex)
     local group = record.groups[entry.id]
     if group then
         group.frameWidth = entry.width
         group.frameHeight = entry.height
         group.isVertical = entry.vertical
-        SetAttachedBlockGeometry(group, entry)
-        record.container:SetAuraGroupLayout(entry.id, BlockGroupLayout(entry, layoutIndex))
+        group.isBar = entry.isBar
+        group.iconShown = entry.iconShown
+        group.iconSize = entry.iconSize
+        group.iconOffset = entry.iconOffset
+        group.iconReverse = entry.iconReverse
+        group.inset = entry.inset
+        record.container:SetAuraGroupLayout(entry.id, FlowGroupLayout(entry, layoutIndex))
         return group
     end
     group = {
@@ -3959,15 +3969,23 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
         frameWidth = entry.width,
         frameHeight = entry.height,
         isVertical = entry.vertical,
+        isBar = entry.isBar,
+        -- Set BEFORE AddAuraGroup below: initializeFrame runs inside it, and
+        -- the host geometry it stamps reads these.
+        iconShown = entry.iconShown,
+        iconSize = entry.iconSize,
+        iconOffset = entry.iconOffset,
+        iconReverse = entry.iconReverse,
+        inset = entry.inset,
     }
-    SetAttachedBlockGeometry(group, entry)
-    -- maxFrameCount 1 is structural, not a display choice: a group that could
-    -- outgrow its pre-created batch would run AcquireFrame -> CreateFrameBatch
-    -- -> initializeFrame IN COMBAT, from tainted code, on a forbidden subtree.
-    -- Born switched off like a slot; the bind below writes the real contract.
+    -- maxFrameCount 1 is structural, not a display choice: one entry is one
+    -- aura, and a group that could outgrow its pre-created batch would run
+    -- AcquireFrame -> CreateFrameBatch -> initializeFrame IN COMBAT, from
+    -- tainted code, on a forbidden subtree. Born switched off like a slot; the
+    -- bind below writes the real contract.
     record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
         maxFrameCount = 1,
-        layout = BlockGroupLayout(entry, layoutIndex),
+        layout = FlowGroupLayout(entry, layoutIndex),
         initializeFrame = function(frame)
             BuildPanelGroupHost(group, frame)
         end,
@@ -3978,11 +3996,14 @@ local function EnsureBlockGroup(record, entry, layoutIndex)
     return group
 end
 
--- Park = switch the group off, the group analog of ParkDisplay. The container
--- is hidden by the pass when a side keeps nothing; a side that still renders
--- something cannot hide its container, so switching the group off is what
--- keeps a retired entry dark inside a live one.
-local function ParkBlockGroup(group)
+-- Park = switch the group off, the group analog of ParkDisplay. A switched-off
+-- group leaves the flow layout, so it also stops consuming spacing: the entries
+-- around it close up exactly as if it were gone. That is what makes "retire an
+-- entry" and "the aura is not up" render identically, which they must, because
+-- CC can never tell the two apart. The pass hides a container that keeps
+-- nothing; one that still renders something cannot hide, so switching the
+-- group off is what keeps a retired entry dark inside a live one.
+local function ParkFlowGroup(group)
     if group.parked then return end
     group.parked = true
     group.boundEntry = nil
@@ -3992,8 +4013,9 @@ local function ParkBlockGroup(group)
     container:SetAuraGroupEnabled(group.key, false)
 end
 
-local function BindBlockGroup(group, entry)
-    local container = group.record.container
+local function BindFlowGroup(group, entry)
+    local record = group.record
+    local container = record.container
     container:SetAuraGroupEnabled(group.key, true)
     -- Converge the whole contract every bind, exactly like the slot path: the
     -- filter string and the candidate set come from one source, so they can
@@ -4005,13 +4027,33 @@ local function BindBlockGroup(group, entry)
     -- Style every owned frame the group could hand out, not just the one shown:
     -- initializeFrame ran once per pooled frame at group creation, and each
     -- stays a complete fallback. Only the last one animates, and spares are
-    -- restyled only on a change (HoldPooledSpareStill).
-    local owner = group.record.owner
-    local ownerId = owner and owner.groupId
+    -- restyled only on a change (HoldPooledSpareStill). Spare epochs are keyed
+    -- by the owning panel: Aura Panel and aura section records carry its id,
+    -- an attached block reaches it through its owner.
+    local panelId = record.groupId or (record.owner and record.owner.groupId)
+    -- Every flow surface uses the auraPanel host kit. Keep the distinction
+    -- explicit: only a whole Aura Panel suppresses a retained entry-owned base
+    -- bar color, so attached bars and aura sections stay false.
+    local wholeAuraPanel = record.wholeAuraPanel == true
+    -- Tooltips: this frame is the only surface a tooltip can hang off (an
+    -- Aura Panel cell has no CC button, and an attached aura bar's own button
+    -- stays hidden outside unlock), so the CC hover rule applies to it
+    -- (ST.ShowsTooltipHover). An attached aura bar takes hover only while its
+    -- bar icon shows, like an ordinary attached bar, but over its whole cell:
+    -- the hover surface is Blizzard's aura frame, which CC can only switch on
+    -- or off. A whole Aura Panel cell hovers with or without the icon.
+    local barIconShown
+    if group.isBar and not wholeAuraPanel then
+        barIconShown = group.iconShown == true
+    end
+    local tooltipMotion = ST.ShowsTooltipHover(entry.style,
+        CooldownCompanion:IsGroupCursorAnchored(panelId), barIconShown)
     local countAtOne, countPolicy, countKey = ResolveApplicationCount(entry.buttonData)
-    for index, host in HostsToStyle(group.hosts, entry.buttonData, ownerId) do
+    for index, host in HostsToStyle(group.hosts, entry.buttonData, panelId) do
         ApplyPanelHostGeometry(group, host)
-        host.proxy._ccWholeAuraPanel = false
+        host.proxy._ccWholeAuraPanel = wholeAuraPanel
+        -- Before StyleSlotKit: the styler reads the square's texture and crop
+        -- for the occluding cover and the aura icon's own texcoords.
         ApplyPanelHostIcon(group, host, entry.buttonData, entry.style)
         ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
         ConvergeApplicationCount(host.frame, host.kit, countAtOne, countPolicy, countKey)
@@ -4022,13 +4064,16 @@ local function BindBlockGroup(group, entry)
             boundStackMax = entry.stackBarMax,
         }, host.proxy, entry.buttonData, entry.style)
         if index < #group.hosts then
-            HoldPooledSpareStill(host, entry.buttonData, ownerId)
+            HoldPooledSpareStill(host, entry.buttonData, panelId)
         end
-        -- Attached entries honor panel tooltip settings. Converge reused
-        -- frames every bind.
-        host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
+        -- Pooled frames are reused across entries, so all three tooltip
+        -- settings are converged every bind.
+        host.frame:SetMouseMotionEnabled(tooltipMotion)
         host.frame:SetTooltipAnchorPoint(
             AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
+        -- Same expression the slot path uses for a non-texture host: the panel
+        -- owns a real Show Tooltips setting, so the combat-hide setting beside
+        -- it has to be the one that answers here too.
         host.frame:SetHideTooltipInCombat(entry.style.tooltipHideInCombat == true)
     end
     RegisterSlotAuraSounds(group, entry.buttonData, entry.spellSet)
@@ -4060,7 +4105,14 @@ local function BindBlockBucket(side, unit, entries, anchorRecord, owner)
     local layoutIndex = 0
     for _, entry in ipairs(entries) do
         layoutIndex = layoutIndex + 1
-        BindBlockGroup(EnsureBlockGroup(record, entry, layoutIndex), entry)
+        -- Attached cells are always bars. Stamp the geometry EnsureFlowGroup
+        -- copies onto this runtime entry (LayoutAttachedBars rebuilds it every
+        -- pass). PanelBarIconGeometry is defined below, so reach it through ST.
+        entry.isBar = true
+        entry.inset = BarCellInset(entry.style)
+        entry.iconShown, entry.iconSize, entry.iconOffset, entry.iconReverse =
+            ST._GetAuraPanelBarIconGeometry(entry.style, true, entry.vertical, entry.width, entry.height)
+        BindFlowGroup(EnsureFlowGroup(record, entry, layoutIndex), entry)
     end
     record.container:Show()
     record.shown = true
@@ -4079,7 +4131,7 @@ local function RebindAttachedAuraBlocks(self, owners, retireIds)
             or owners[owner.groupId] == owner.parent)) then
             record.configured = nil
             for _, group in ipairs(record.groupList) do
-                ParkBlockGroup(group)
+                ParkFlowGroup(group)
             end
             record.container:Hide()
             record.shown = false
@@ -4440,6 +4492,9 @@ local function EnsurePanelContainer(groupId, unit, hostFrame, surfaceKey, chrome
         -- nil for a whole panel; the section's anchor otherwise. Diagnostics
         -- only -- the key above is what identity is actually decided by.
         anchor = surfaceKey,
+        -- Only a whole Aura Panel suppresses a retained entry-owned base bar
+        -- color (BindFlowGroup). Block records never carry this field.
+        wholeAuraPanel = surfaceKey == nil,
         container = container,
         visibilityRoot = visibilityRoot,
         -- Identity of the frame this container is welded to. Compared, never
@@ -4600,7 +4655,7 @@ end
 -- AddAuraGroup and runs this for each, so every frame the group can ever assign
 -- leaves here with a finished kit — nothing is built later, in combat, or on a
 -- frame CC has not seen. maxFrameCount 1 keeps the group inside that batch
--- forever (see EnsurePanelGroup).
+-- forever (see EnsureFlowGroup).
 --
 -- The proxy is the host descriptor the kit vocabulary needs, living UNDER the
 -- group frame because the frame's position is Blizzard-owned and secret: a
@@ -4666,144 +4721,6 @@ BuildPanelGroupHost = function(pgroup, frame)
     pgroup.hosts[#pgroup.hosts + 1] = host
 end
 
--- SetAuraGroupLayout REPLACES the whole options table, so every field the group
--- needs is written every time. elementSpacing must stay 0 for the same reason
--- the blocks keep it there: the flow layout advances the cursor by
--- elementSpacing after an element AND adds groupSpacing before the next group,
--- so a nonzero pair doubles every gap between consecutive single-frame groups.
--- groupSpacing carries the panel's own spacing along the line; lineSpacing
--- carries it across lines (groupLineSpacing defaults to lineSpacing, which
--- covers the wrap that groupSpacing itself triggers).
-local function PanelGroupLayout(entry, layoutIndex)
-    return {
-        layoutIndex = layoutIndex,
-        elementWidth = entry.width,
-        elementHeight = entry.height,
-        elementSpacing = 0,
-        groupSpacing = entry.spacing,
-        lineSpacing = entry.spacing,
-    }
-end
-
-local function EnsurePanelGroup(record, entry, layoutIndex)
-    local pgroup = record.groups[entry.id]
-    if pgroup then
-        pgroup.frameWidth = entry.width
-        pgroup.frameHeight = entry.height
-        pgroup.isVertical = entry.vertical
-        pgroup.isBar = entry.isBar
-        pgroup.iconShown = entry.iconShown
-        pgroup.iconSize = entry.iconSize
-        pgroup.iconOffset = entry.iconOffset
-        pgroup.iconReverse = entry.iconReverse
-        pgroup.inset = entry.inset
-        record.container:SetAuraGroupLayout(entry.id, PanelGroupLayout(entry, layoutIndex))
-        return pgroup
-    end
-    pgroup = {
-        key = entry.id,
-        record = record,
-        unit = record.unit,
-        hosts = {},
-        parked = true,
-        frameWidth = entry.width,
-        frameHeight = entry.height,
-        isVertical = entry.vertical,
-        isBar = entry.isBar,
-        -- Set BEFORE AddAuraGroup below: initializeFrame runs inside it, and
-        -- the host geometry it stamps reads these.
-        iconShown = entry.iconShown,
-        iconSize = entry.iconSize,
-        iconOffset = entry.iconOffset,
-        iconReverse = entry.iconReverse,
-        inset = entry.inset,
-    }
-    -- maxFrameCount 1 is structural, not a display choice: one entry is one
-    -- aura, and a group that could outgrow its pre-created batch would run
-    -- AcquireFrame -> CreateFrameBatch -> initializeFrame IN COMBAT, from
-    -- tainted code, on a forbidden subtree. Born switched off like a slot; the
-    -- bind below writes the real contract.
-    record.container:AddAuraGroup(entry.id, SlotContract(record.unit).filter, {
-        maxFrameCount = 1,
-        layout = PanelGroupLayout(entry, layoutIndex),
-        initializeFrame = function(frame)
-            BuildPanelGroupHost(pgroup, frame)
-        end,
-    })
-    record.container:SetAuraGroupEnabled(entry.id, false)
-    record.groups[entry.id] = pgroup
-    record.groupList[#record.groupList + 1] = pgroup
-    return pgroup
-end
-
--- Park = switch the group off. A switched-off group leaves the flow layout, so it also stops consuming
--- spacing: the entries around it close up exactly as if it were gone. That is
--- what makes "retire an entry" and "the aura is not up" render identically,
--- which they must, because CC can never tell the two apart.
-local function ParkPanelGroup(pgroup)
-    if pgroup.parked then return end
-    pgroup.parked = true
-    pgroup.boundEntry = nil
-    pgroup.boundStackMax = nil
-    ReleaseSlotAuraSounds(pgroup)
-    local container = pgroup.record.container
-    container:SetAuraGroupEnabled(pgroup.key, false)
-end
-
-local function BindPanelGroup(pgroup, entry)
-    local container = pgroup.record.container
-    container:SetAuraGroupEnabled(pgroup.key, true)
-    -- Converge the whole contract every bind, exactly like the slot and block
-    -- paths: the filter string and the candidate set come from one source, so
-    -- they can never drift apart.
-    container:SetAuraGroupFilterString(pgroup.key, SlotContract(pgroup.unit).filter)
-    container:SetAuraGroupCandidateFilters(pgroup.key,
-        BuildCandidateFilters(pgroup.unit, entry.spellSet))
-    pgroup.boundStackMax = entry.stackBarMax
-    -- Style every owned frame the group could hand out, not just the one shown:
-    -- initializeFrame ran once per pooled frame at group creation, and each
-    -- stays a complete fallback. Only the last one animates, and spares are
-    -- restyled only on a change (HoldPooledSpareStill).
-    local panelId = pgroup.record.groupId
-    local countAtOne, countPolicy, countKey = ResolveApplicationCount(entry.buttonData)
-    for index, host in HostsToStyle(pgroup.hosts, entry.buttonData, panelId) do
-        ApplyPanelHostGeometry(pgroup, host)
-        -- Both whole Aura Panels and ordinary-panel aura sections use the
-        -- auraPanel host kit. Preserve the distinction explicitly: only the
-        -- whole panel suppresses a retained entry-owned base bar color.
-        host.proxy._ccWholeAuraPanel = pgroup.record.anchor == nil
-        -- Before StyleSlotKit: the styler reads the square's texture and crop
-        -- for the occluding cover and the aura icon's own texcoords.
-        ApplyPanelHostIcon(pgroup, host, entry.buttonData, entry.style)
-        ConvergeApplicationBar(host.frame, host.kit, entry.buttonData, entry.stackBarMax, entry.style)
-        ConvergeApplicationCount(host.frame, host.kit, countAtOne, countPolicy, countKey)
-        StyleSlotKit({
-            kit = host.kit,
-            slotButton = host.frame,
-            unit = pgroup.unit,
-            boundStackMax = entry.stackBarMax,
-        }, host.proxy, entry.buttonData, entry.style)
-        if index < #pgroup.hosts then
-            HoldPooledSpareStill(host, entry.buttonData, panelId)
-        end
-        -- Tooltips: an Aura Panel cell has no CC button under it, so this frame
-        -- is the ONLY surface a tooltip could hang off — panels therefore honor
-        -- the panel's own Show Tooltips setting rather than forcing motion off
-        -- the way the click-through resource holders do. Pooled frames are
-        -- reused across entries, so all three are converged every bind.
-        host.frame:SetMouseMotionEnabled(entry.style.showTooltips == true)
-        host.frame:SetTooltipAnchorPoint(
-            AURA_TOOLTIP_ANCHORS[entry.style.tooltipAnchor] or "ANCHOR_NONE", 0, 0)
-        -- Same expression the slot path uses for a non-texture host: the panel
-        -- owns a real Show Tooltips setting, so the combat-hide setting beside
-        -- it has to be the one that answers here too.
-        host.frame:SetHideTooltipInCombat(entry.style.tooltipHideInCombat == true)
-    end
-    RegisterSlotAuraSounds(pgroup, entry.buttonData, entry.spellSet)
-    pgroup.parked = nil
-    pgroup.boundEntry = entry.buttonData
-end
-
 -- Bind one panel's container. Returns nothing; every refusal leaves the
 -- container parked from the pass's park-all phase, which is the safe state.
 local function BindAuraPanel(self, groupId, group, frame)
@@ -4857,7 +4774,7 @@ local function BindAuraPanel(self, groupId, group, frame)
     record.container:SetFlowLayoutMaximumLineSize(maximumLineSize)
 
     local layoutIndex = 0
-    -- Keyed exactly the way EnsurePanelGroup keys record.groups, so "seen
+    -- Keyed exactly the way EnsureFlowGroup keys record.groups, so "seen
     -- before" here and "reuses an existing group" there are the same question.
     local seenKeys
     for _, buttonData in ipairs(group.buttons or {}) do
@@ -4897,7 +4814,7 @@ local function BindAuraPanel(self, groupId, group, frame)
                         stackBarMax = self:GetAuraStackBarMax(buttonData, true)
                     end
                     -- Counted at the moment the reuse actually happens: an
-                    -- entry refused above never reaches EnsurePanelGroup, so a
+                    -- entry refused above never reaches EnsureFlowGroup, so a
                     -- key it shares with a later entry collides with nothing.
                     -- Counting only -- the second bind winning is left alone.
                     seenKeys = seenKeys or {}
@@ -4918,6 +4835,7 @@ local function BindAuraPanel(self, groupId, group, frame)
                         width = cellWidth,
                         height = cellHeight,
                         spacing = spacing,
+                        lineSpacing = spacing,
                         isBar = isBar,
                         vertical = isVertical,
                         stackBarMax = stackBarMax,
@@ -4927,7 +4845,7 @@ local function BindAuraPanel(self, groupId, group, frame)
                         iconReverse = iconReverse,
                         inset = isBar and BarCellInset(style) or 0,
                     }
-                    BindPanelGroup(EnsurePanelGroup(record, entry, layoutIndex), entry)
+                    BindFlowGroup(EnsureFlowGroup(record, entry, layoutIndex), entry)
                 end
             end
         end
@@ -5067,10 +4985,11 @@ local function BindAuraSection(self, groupId, group, frame, anchor, info)
                         width = info.width,
                         height = info.height,
                         spacing = info.spacing,
+                        lineSpacing = info.spacing,
                         isBar = false,
                         vertical = false,
                     }
-                    BindPanelGroup(EnsurePanelGroup(record, entry, layoutIndex), entry)
+                    BindFlowGroup(EnsureFlowGroup(record, entry, layoutIndex), entry)
                 end
             end
         end
@@ -5105,7 +5024,7 @@ local function RebindAuraPanels(self, panelIds)
     for _, record in ipairs(panelRecords) do
         if not panelIds or panelIds[record.groupId] then
             for _, pgroup in ipairs(record.groupList) do
-                ParkPanelGroup(pgroup)
+                ParkFlowGroup(pgroup)
             end
             record.container:Hide()
             record.shown = false
@@ -5689,7 +5608,7 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     ScheduleAuraRebind()
 end
 
--- Read-only status for validation/DevBridge (module state is otherwise local).
+-- Read-only status for validation (module state is otherwise local).
 function CooldownCompanion:GetAuraDisplayStatus()
     local auraSoundCount = 0
     for _ in pairs(auraSounds) do

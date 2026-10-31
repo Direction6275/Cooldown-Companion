@@ -106,7 +106,8 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         row.buttonName = buttonData.name
     end
 
-    row.displayMode = GetDisplayMode(addon, groupId, button, frame)
+    row.displayMode = button and button._isBar == true and "bars"
+        or GetDisplayMode(addon, groupId, button, frame)
 
     local state = button and button._visualState
     if type(state) ~= "table" then
@@ -119,7 +120,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     row.phase = state.phase
 
     local cooldown = state.cooldown or {}
-    local presentation = state.presentation or {}
     local charges = state.charges or {}
     local visibility = state.visibility or {}
     local desaturation = state.desaturation or {}
@@ -167,15 +167,11 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
         readyGlowMaxCharges = glows.readyMaxCharges,
     }
     row.bar = {
-        intentAvailable = bar.intentAvailable,
-        domain = bar.domain,
         colorReason = bar.colorReason,
-        gcdSuppressed = bar.gcdSuppressed,
     }
     CompareValue(row, "cooldown.state", cooldown.state, button._cooldownState)
     CompareValue(row, "cooldown.active", cooldown.active, button._cooldownState == STATE_COOLDOWN)
     CompareValue(row, "cooldown.visualActive", state.cooldownVisualActive, IsTrue(button._desatCooldownActive))
-    CompareValue(row, "presentation.barGCDSuppressed", presentation.barGCDSuppressed, IsTrue(button._barGCDSuppressed))
     CompareValue(row, "charges.state", charges.state, button._chargeState)
     CompareValue(row, "visibility.hidden", visibility.hidden, IsTrue(button._visibilityHidden))
     CompareValue(row, "visibility.alphaOverride", visibility.alphaOverride, button._visibilityAlphaOverride)
@@ -183,7 +179,7 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     CompareValue(row, "visibility.rawMode", visibility.rawMode, button._rawVisibilityReasonMode or ResolveVisibilityMode(button._rawVisibilityHidden, button._rawVisibilityAlphaOverride))
     CompareValue(row, "visibility.overrideSource", visibility.overrideSource, button._visibilityOverrideSource)
     CompareValue(row, "visibility.indicatorSourceSuppressed", visibility.indicatorSourceSuppressed, IsTrue(button._visibilityIndicatorSourceSuppressed))
-    local compareVisibleIconIntent = row.displayMode == "icons"
+    local compareVisibleIconIntent = (row.displayMode == "icons" or row.displayMode == "bars")
         and row.phase == "post-dispatch"
         and visibility.hidden ~= true
     if compareVisibleIconIntent then
@@ -207,19 +203,6 @@ local function BuildRow(addon, groupId, frame, button, fallbackIndex, source)
     if compareVisibleIconIntent and glows.intentAvailable == true then
         CompareValue(row, "glows.proc.intent", glows.procIntentActive, glows.procActive)
         CompareValue(row, "glows.ready.intent", glows.readyIntentActive, glows.readyActive)
-    end
-    local compareVisibleBarIntent = row.displayMode == "bars"
-        and row.phase == "post-dispatch"
-        and visibility.hidden ~= true
-    if compareVisibleBarIntent then
-        if bar.intentAvailable ~= true then
-            AddMismatch(row, "bar.intent.missing")
-        elseif bar.appliedAvailable ~= true then
-            AddMismatch(row, "bar.applied.missing")
-        else
-            CompareValue(row, "bar.colorReason", bar.appliedColorReason, bar.colorReason)
-            CompareValue(row, "bar.gcdSuppressed", bar.appliedGcdSuppressed, bar.gcdSuppressed)
-        end
     end
     return row
 end

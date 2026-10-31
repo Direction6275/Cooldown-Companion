@@ -41,6 +41,9 @@ local function GetFrameSizeInUIParentSpace(frame)
     end
 
     local width, height = frame:GetSize()
+    if issecretvalue(width) or issecretvalue(height) then
+        return nil, nil
+    end
     if not (width and height) then
         return width, height
     end
@@ -138,7 +141,10 @@ function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
         local rw, rh = GetFrameSizeInUIParentSpace(relativeFrame)
         local ucx, ucy = UIParent:GetCenter()
 
-        if not (rcx and rcy and rw and rh and ucx and ucy) then
+        -- A hidden (secret) target position defers like a missing one: no
+        -- arithmetic on it, and the anchor is not converted.
+        if issecretvalue(rcx) or issecretvalue(rcy)
+            or not (rcx and rcy and rw and rh and ucx and ucy) then
             normalized.x = newX
             normalized.y = newY
             return normalized, changed, true
@@ -1772,12 +1778,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     -- Aura tracking: forceAura overrides auto-detection for dual-CDM spells
     if forceAura == true then
         group.buttons[buttonIndex].auraTracking = true
-        group.buttons[buttonIndex].auraIndicatorEnabled = true
     elseif forceAura == nil then
         -- Force aura tracking for passive/proc spells
         if isPassive then
             group.buttons[buttonIndex].auraTracking = true
-            group.buttons[buttonIndex].auraIndicatorEnabled = true
         end
 
         -- Auto-detect aura tracking for spells with viewer aura frames
@@ -1804,12 +1808,10 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
             if hasViewerFrame
                 and IsDistinctAuraViewerFrameForSpell(newButton, viewerFrame) then
                 newButton.auraTracking = false
-                newButton.auraIndicatorEnabled = false
                 hasViewerFrame = false
             end
             if hasViewerFrame then
                 newButton.auraTracking = true
-                newButton.auraIndicatorEnabled = true
             end
         end
     end
@@ -1828,11 +1830,7 @@ function CooldownCompanion:AddButtonToGroup(groupId, buttonType, id, name, isPet
     end
 
     if buttonType == "spell" and forceAura ~= false then
-        self:NormalizeStandaloneAuraButtonData(
-            newButton,
-            group.buttons,
-            { trustExplicitAuraLabel = true }
-        )
+        self:NormalizeStandaloneAuraButtonData(newButton)
     end
 
     -- An aura joining spell or item sources becomes the display

@@ -29,7 +29,6 @@ local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
-local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 local ResolveIconFillIntent = ST._ResolveIconFillIntent
 local ResolveIconGlowIntent = ST._ResolveIconGlowIntent
 
@@ -51,8 +50,9 @@ local UpdateLossOfControl = ST._UpdateLossOfControl
 local UpdateIconTint = ST._UpdateIconTint
 local EvaluateDesaturation = ST._EvaluateDesaturation
 
--- Shared click-through helpers from Utils.lua
+-- Shared click-through and hover helpers from ClickThrough.lua
 local SetFrameClickThroughRecursive = ST.SetFrameClickThroughRecursive
+local ShowsTooltipHover = ST.ShowsTooltipHover
 
 local function IsCursorAnchoredButton(button)
     return button
@@ -938,26 +938,6 @@ function CooldownCompanion:UpdateButtonIcon(button, totemTexture)
     end
 end
 
-local function ApplyIconDesaturationIntent(button, buttonData, style)
-    if type(ResolveIconDesaturationIntent) ~= "function" then
-        EvaluateDesaturation(button, buttonData, style)
-        return
-    end
-
-    local intent = button._iconDesaturationIntent
-    if type(intent) ~= "table" then
-        intent = {}
-        button._iconDesaturationIntent = intent
-    end
-
-    ResolveIconDesaturationIntent(button, buttonData, style, intent)
-
-    if button._desaturated ~= intent.active then
-        button._desaturated = intent.active
-        button.icon:SetDesaturated(intent.active)
-    end
-end
-
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -1077,7 +1057,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    ApplyIconDesaturationIntent(button, buttonData, style)
+    EvaluateDesaturation(button, buttonData, style)
 
     UpdateIconTint(button, buttonData, style)
 end
@@ -1156,7 +1136,7 @@ function CooldownCompanion:UpdateButtonInteraction(button, style)
     -- Click-through is always enabled (clicks always pass through for camera movement)
     -- Motion (hover) is only enabled when tooltips or entry pings are on
     local cursorAnchored = IsCursorAnchoredButton(button)
-    local showTooltips = style.showTooltips == true and not cursorAnchored
+    local showTooltips = ShowsTooltipHover(style, cursorAnchored)
     local allowPings = style.allowPings == true and not cursorAnchored
         and IsEntryPingEligible(button.buttonData)
         and not IsIndicatorSourceButton(button)
@@ -1242,7 +1222,6 @@ local function ResetIconStyleState(button)
 
     ST.ResetButtonFullStyleState(button)
     -- Invalidate cached widget state so next tick reapplies everything
-    button._iconDesaturationIntent = nil
     button._iconFillIntent = nil
     button._iconGlowIntent = nil
     button._hideCooldownChargesActive = nil

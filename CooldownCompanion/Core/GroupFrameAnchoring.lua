@@ -646,12 +646,22 @@ local function RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     end
 end
 
+-- Aura cells read the cursor anchor for their hover at bind time
+-- (BindFlowGroup), so a panel moving to or from the cursor rebinds them.
+local function RebindAuraHoverOnCursorChange(self, groupId, group, wasCursorAnchored, cursorAnchored)
+    if (wasCursorAnchored == true) ~= (cursorAnchored == true)
+        and self:PanelNeedsAuraRebind(groupId, group) then
+        self:RequestAuraRebind("style", groupId)
+    end
+end
+
 local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
     self:AnchorGroupFrame(frame, group.anchor)
     self:RebuildPanelAlphaDependencyTargets()
     RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     self:RefreshCursorAnchorTicker()
     local cursorAnchored = IsCursorAnchor(group.anchor)
+    RebindAuraHoverOnCursorChange(self, groupId, group, wasCursorAnchored, cursorAnchored)
     if wasCursorAnchored or cursorAnchored then
         local preview = self._cursorAnchorLayoutPreview
         local selectedGroupId = self._arrangeSelectedPanelId
@@ -760,6 +770,7 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         self:AnchorGroupFrame(frame, group.anchor, forceCenter)
         self:RebuildPanelAlphaDependencyTargets()
         RefreshGroupAnchorInteractionState(self, groupId, frame, group)
+        RebindAuraHoverOnCursorChange(self, groupId, group, wasCursorAnchored, false)
         self:RefreshCursorAnchorTicker()
         if wasCursorAnchored and self.EvaluateBarsAndFramesRuntime then
             self:EvaluateBarsAndFramesRuntime("cursor-anchor-changed")
@@ -774,9 +785,16 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
     end
 
     local targetKind = ParseAddonAnchorFrameName(targetFrameName)
-    if not targetKind and WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame) then
-        self:Print("Cannot anchor: target frame depends on a Cooldown Companion frame.")
-        return false
+    if not targetKind then
+        local unsafe, reason = WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame)
+        if unsafe then
+            if reason == "secret" then
+                self:Print("Cannot anchor: the game is hiding that frame's position.")
+            else
+                self:Print("Cannot anchor: target frame depends on a Cooldown Companion frame.")
+            end
+            return false
+        end
     end
 
     -- Panel anchored to its own container: reset to default position

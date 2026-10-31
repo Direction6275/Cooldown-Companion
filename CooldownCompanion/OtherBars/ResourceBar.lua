@@ -79,6 +79,7 @@ local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
 local IsUnitPowerSecret = RB.IsUnitPowerSecret
 local IsUnitPowerMaxSecret = RB.IsUnitPowerMaxSecret
+local ReadSegmentedMaximum = RB.ReadSegmentedMaximum
 local GetSegmentedThresholdColorForValue = RB.GetSegmentedThresholdColorForValue
 local IsResourceEnabled = RB.IsResourceEnabled
 local IsStackCountedResource = RB.IsStackCountedResource
@@ -1588,8 +1589,10 @@ function ResourceBars.ResolveRenderer(powerType, settings)
         if style == "continuous" then return style, "stackaura_continuous" end
         return "segments", "stackaura_segments", RB.GetAuraStackResourceMax(powerType)
     elseif SEGMENTED_TYPES[powerType] then
-        local count = powerType == 5 and 6 or UnitPowerMax("player", powerType)
-        return "segments", "segmented", math_max(count, 1)
+        -- An unreadable maximum returns no count, and Acquire keeps the
+        -- built one.
+        local maximum = ReadSegmentedMaximum(powerType)
+        return "segments", "segmented", maximum and math_max(maximum, 1)
     end
     return "continuous", "continuous"
 end
@@ -1602,6 +1605,12 @@ function ResourceBars.Acquire(powerType, settings, parent)
     end
     local shape, barType, count = ResourceBars.ResolveRenderer(powerType, settings)
     local frame = barInfo.renderers[shape]
+    -- An unreadable maximum keeps the built count, or builds one segment. The
+    -- next player UNIT_MAXPOWER (RefreshResourceBarMaximums) or full apply
+    -- re-segments once the maximum reads.
+    if barType == "segmented" and count == nil then
+        count = frame and frame._numSegments or 1
+    end
     local sameVisibleRenderer = frame ~= nil and frame == barInfo.frame and frame:IsShown()
     if barInfo.frame and barInfo.frame ~= frame then ResourceBars.Park(barInfo.frame) end
     if not frame then
@@ -2102,19 +2111,14 @@ function CooldownCompanion:RefreshResourceBarMaximums()
     end
 
     -- Scan the active native resources, not the event's power token: either
-    -- maximum event previously reconciled the entire applied set. Runes have
-    -- six slots regardless of UnitPowerMax; aura-stack maxima have other owners.
+    -- maximum event previously reconciled the entire applied set. Aura-stack
+    -- maxima have other owners.
     for _, barInfo in ipairs(resourceBarFrames) do
-        local powerType = barInfo.powerType
-        if barInfo.barType == "segmented" and powerType ~= 5
-            and not IsUnitPowerMaxSecret("player", powerType) then
-            local maximum = UnitPowerMax("player", powerType)
-            if not (issecretvalue and issecretvalue(maximum)) then
-                local count = math_max(math_floor(maximum), 1)
-                if count ~= barInfo.frame._activeSegments then
-                    self:ApplyResourceBars()
-                    return
-                end
+        if barInfo.barType == "segmented" then
+            local maximum = ReadSegmentedMaximum(barInfo.powerType)
+            if maximum and math_max(maximum, 1) ~= barInfo.frame._activeSegments then
+                self:ApplyResourceBars()
+                return
             end
         end
     end
@@ -2474,16 +2478,24 @@ function CooldownCompanion:ApplyResourceBars(opts)
         panelAlphaSyncActive = true
 
         local groupAlpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
-        containerFrameAbove:SetAlpha(groupAlpha)
-        containerFrameBelow:SetAlpha(groupAlpha)
-        RB._barContainers.aboveMain:SetAlpha(groupAlpha)
-        RB._barContainers.belowMain:SetAlpha(groupAlpha)
+        -- An unreadable (secret or nil) alpha is skipped, as every other
+        -- GetEffectiveAlpha reader skips it: the bars keep their opacity and
+        -- the first readable tick below writes.
+        if (issecretvalue and issecretvalue(groupAlpha)) or groupAlpha == nil then
+            groupAlpha = nil
+        end
         -- Aura host root rides the same alpha writes: the kit visuals fade
         -- with the bars they decorate (plain CC frame; alpha propagates
         -- down through the holders into the slot subtrees engine-side).
         -- Captured as a local: the sync closure below shadows `self`.
         local auraHostRoot = self:GetResourceAuraHostRoot()
-        auraHostRoot:SetAlpha(groupAlpha)
+        if groupAlpha ~= nil then
+            containerFrameAbove:SetAlpha(groupAlpha)
+            containerFrameBelow:SetAlpha(groupAlpha)
+            RB._barContainers.aboveMain:SetAlpha(groupAlpha)
+            RB._barContainers.belowMain:SetAlpha(groupAlpha)
+            auraHostRoot:SetAlpha(groupAlpha)
+        end
 
         if not alphaSyncFrame then
             alphaSyncFrame = CreateFrame("Frame")
@@ -2497,6 +2509,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
             accumulator = 0
             if not groupFrame then return end
             local alpha = groupFrame._naturalAlpha or groupFrame:GetEffectiveAlpha()
+            if (issecretvalue and issecretvalue(alpha)) or alpha == nil then return end
             if alpha ~= lastAlpha then
                 lastAlpha = alpha
                 if containerFrameAbove then containerFrameAbove:SetAlpha(alpha) end

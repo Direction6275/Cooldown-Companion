@@ -202,7 +202,7 @@ local function DescribeButton(button)
         tostring(buttonData and (buttonData.id or buttonData.itemSlot)))
 end
 
--- SV-safe scalar summary (DevBridge snapshots copy this table verbatim).
+-- Scalar-only summary, read with /dump (see Diagnostics in the header above).
 function CooldownCompanion:GetSpellButtonIndexDiagnostics()
     local spellKeys, itemKeys, slotKeys, maxBucket = 0, 0, 0, 0
     for _, bucket in pairs(index.spell) do
