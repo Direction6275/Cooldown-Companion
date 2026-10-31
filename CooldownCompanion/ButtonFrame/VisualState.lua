@@ -28,37 +28,6 @@ local function EnsureSection(parent, key)
     return section
 end
 
-local function CopyFieldList(target, source, fields)
-    for _, fieldName in ipairs(fields) do
-        local value = nil
-        if source then
-            value = source[fieldName]
-        end
-        target[fieldName] = value
-    end
-end
-
-local function CopyFieldMap(target, source, fieldMap)
-    for targetField, sourceField in pairs(fieldMap) do
-        local value = nil
-        if source then
-            value = source[sourceField]
-        end
-        target[targetField] = value
-    end
-end
-
-local BAR_INTENT_FIELDS = {
-    "domain",
-    "colorReason",
-    "gcdSuppressed",
-}
-
-local BAR_APPLIED_FIELDS = {
-    appliedColorReason = "colorReason",
-    appliedGcdSuppressed = "gcdSuppressed",
-}
-
 local function ResolveVisibilityMode(hidden, alphaOverride)
     if IsTrue(hidden) then
         return "hidden"
@@ -373,25 +342,11 @@ end
 
 
 local function CopyBarVisualState(button, bar, context)
-    local isBarSnapshot = (context and context.displayMode == "bars") or button._isBar == true
-    local barSidecarsAreFresh = isBarSnapshot
+    local isFreshBarSnapshot = ((context and context.displayMode == "bars") or button._isBar == true)
         and context
         and context.phase == "post-dispatch"
         and not IsTrue(button._visibilityHidden)
-    local intent = barSidecarsAreFresh and button._barVisualIntent or nil
-    local hasIntent = type(intent) == "table"
-
-    bar.intentAvailable = hasIntent
-    CopyFieldList(bar, hasIntent and intent or nil, BAR_INTENT_FIELDS)
-    if not hasIntent then
-        bar.domain = nil
-        bar.gcdSuppressed = IsTrue(button._barGCDSuppressed)
-    end
-
-    local applied = barSidecarsAreFresh and button._barVisualApplied or nil
-    local hasApplied = type(applied) == "table"
-    bar.appliedAvailable = hasApplied
-    CopyFieldMap(bar, hasApplied and applied or nil, BAR_APPLIED_FIELDS)
+    bar.colorReason = isFreshBarSnapshot and button._barColorReason or nil
 end
 
 local function ClearButtonVisualState(button)
@@ -399,8 +354,7 @@ local function ClearButtonVisualState(button)
         button._visualState = nil
         button._visualStateContext = nil
         button._iconGlowIntent = nil
-        button._barVisualIntent = nil
-        button._barVisualApplied = nil
+        button._barColorReason = nil
     end
 end
 
@@ -435,9 +389,6 @@ local function RefreshButtonVisualState(button, context)
     local cooldown = EnsureSection(state, "cooldown")
     cooldown.state = button._cooldownState
     cooldown.active = cooldownActive
-
-    local presentation = EnsureSection(state, "presentation")
-    presentation.barGCDSuppressed = IsTrue(button._barGCDSuppressed)
 
     local aura = EnsureSection(state, "aura")
     aura.unit = button._auraUnit

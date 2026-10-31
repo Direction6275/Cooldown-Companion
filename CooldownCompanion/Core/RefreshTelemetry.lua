@@ -1,7 +1,9 @@
 --[[
     CooldownCompanion - Core/RefreshTelemetry.lua: dev-gated, observe-only
-    telemetry for the cooldown refresh scheduler. Active only when the
-    CC_DevBridge dev addon is loaded (checked at PLAYER_LOGIN). Records:
+    telemetry for the cooldown refresh scheduler. Off by default. It turns on
+    at PLAYER_LOGIN when the CC_DevBridge dev addon is loaded, or for the
+    session with /run CooldownCompanion:GetRefreshTelemetry().enabled = true
+    (a /reload turns it off again). Records:
     - dirty-mark counts by source
     - queue request counts by source, plus per-flush source history
     - every UpdateAllCooldowns pass: time, source, detail, queue history,
@@ -256,8 +258,10 @@ function CooldownCompanion:ResetRefreshTelemetry()
     -- ignored by readers (passTotal + passCursor define the valid window).
 end
 
--- Gate: enable only when the CC_DevBridge dev addon is present. Checked at
--- PLAYER_LOGIN because addon load order is not guaranteed at file-load time.
+-- Gate: turn on at login when the CC_DevBridge dev addon is present. Checked
+-- at PLAYER_LOGIN because addon load order is not guaranteed at file-load
+-- time. Without it, /run CooldownCompanion:GetRefreshTelemetry().enabled = true
+-- turns telemetry on for the session; every reader checks T.enabled per call.
 local gateFrame = CreateFrame("Frame")
 gateFrame:RegisterEvent("PLAYER_LOGIN")
 gateFrame:SetScript("OnEvent", function(frame)

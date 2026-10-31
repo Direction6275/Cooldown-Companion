@@ -148,7 +148,6 @@ function CooldownCompanion:ClearRotationAssistantButtonRuntime(button)
     button._lastTextureCheckAt = nil
     ST.EntryRuntime.ClearSpellTraitCaches(button)
     button._spellOutOfRange = nil
-    button._auraActive = false
     button._procOverlayActive = false
 end
 

@@ -5596,7 +5596,7 @@ function CooldownCompanion:RequestAuraRebind(reason, groupId, previousGroupId)
     ScheduleAuraRebind()
 end
 
--- Read-only status for validation/DevBridge (module state is otherwise local).
+-- Read-only status for validation (module state is otherwise local).
 function CooldownCompanion:GetAuraDisplayStatus()
     local auraSoundCount = 0
     for _ in pairs(auraSounds) do

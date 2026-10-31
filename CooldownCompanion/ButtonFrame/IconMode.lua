@@ -29,7 +29,6 @@ local ResolveViewerChildForSpellDisplay = ST.ResolveViewerChildForSpellDisplay
 
 -- Imports from VisualState
 local ClearButtonVisualState = ST._ClearButtonVisualState
-local ResolveIconDesaturationIntent = ST._ResolveIconDesaturationIntent
 local ResolveIconFillIntent = ST._ResolveIconFillIntent
 local ResolveIconGlowIntent = ST._ResolveIconGlowIntent
 
@@ -938,26 +937,6 @@ function CooldownCompanion:UpdateButtonIcon(button, totemTexture)
     end
 end
 
-local function ApplyIconDesaturationIntent(button, buttonData, style)
-    if type(ResolveIconDesaturationIntent) ~= "function" then
-        EvaluateDesaturation(button, buttonData, style)
-        return
-    end
-
-    local intent = button._iconDesaturationIntent
-    if type(intent) ~= "table" then
-        intent = {}
-        button._iconDesaturationIntent = intent
-    end
-
-    ResolveIconDesaturationIntent(button, buttonData, style, intent)
-
-    if button._desaturated ~= intent.active then
-        button._desaturated = intent.active
-        button.icon:SetDesaturated(intent.active)
-    end
-end
-
 -- Update icon-mode visuals: GCD suppression, cooldown text, desaturation, and vertex color.
 local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD, isGCDOnly)
     -- GCD suppression (isOnGCD is NeverSecret, always readable)
@@ -1077,7 +1056,7 @@ local function UpdateIconModeVisuals(button, buttonData, style, fetchOk, isOnGCD
         end
     end
 
-    ApplyIconDesaturationIntent(button, buttonData, style)
+    EvaluateDesaturation(button, buttonData, style)
 
     UpdateIconTint(button, buttonData, style)
 end
@@ -1242,7 +1221,6 @@ local function ResetIconStyleState(button)
 
     ST.ResetButtonFullStyleState(button)
     -- Invalidate cached widget state so next tick reapplies everything
-    button._iconDesaturationIntent = nil
     button._iconFillIntent = nil
     button._iconGlowIntent = nil
     button._hideCooldownChargesActive = nil
