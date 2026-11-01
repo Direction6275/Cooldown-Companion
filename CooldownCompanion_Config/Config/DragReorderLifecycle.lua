@@ -1,6 +1,6 @@
 --[[
     CooldownCompanion - Config/DragReorderLifecycle
-    Drag lifecycle, drop application, and public drag exports.
+    Drag lifecycle, Group drop planning and application, and public drag exports.
 ]]
 
 local ADDON_NAME, ST = ...
@@ -23,7 +23,6 @@ local HideDragIndicator = DR.HideDragIndicator
 local ShowCol1DropIndicator = DR.ShowCol1DropIndicator
 local ShowRailPanelDropIndicator = DR.ShowRailPanelDropIndicator
 local GetCol1DropTarget = DR.GetCol1DropTarget
-local IsCol1GroupDropNoOp = DR.IsCol1GroupDropNoOp
 local IsUnloadedTopLevelDrop = DR.IsUnloadedTopLevelDrop
 local IsCol1MixedDragSource = DR.IsCol1MixedDragSource
 local ShouldIncludeCol1TopLevelOrderRow = DR.ShouldIncludeCol1TopLevelOrderRow
@@ -127,13 +126,163 @@ local function ApplyContainerSection(containerId, container, targetSection)
 end
 
 ------------------------------------------------------------------------
--- Apply a Navigator Group drop result
+-- Plan a Navigator Group drop
 ------------------------------------------------------------------------
-local function ApplyCol1Drop(state)
-    local dropTarget = state.dropTarget
-    if not dropTarget then return end
+-- One section's Groups in one run (loaded or unloaded), in the order the
+-- Navigator draws them: the list as it stands, and the same list with the
+-- Groups in hand taken out, which is the list a drop inserts into.
+local function CollectCol1TopLevelBucket(renderedRows, section, includeUnloaded, isSource)
+    local current, remaining = {}, {}
+    for _, row in ipairs(renderedRows) do
+        if row.section == section and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+            current[#current + 1] = row.id
+            if not isSource[row.id] then
+                remaining[#remaining + 1] = row.id
+            end
+        end
+    end
+    return current, remaining
+end
+
+local function InsertCol1GroupIds(list, insertPos, ids)
+    for index, id in ipairs(ids) do
+        table.insert(list, insertPos + index - 1, id)
+    end
+end
+
+-- One answer to "where does this Group drop land", like BuildRailPanelFinalOrder
+-- for panels: per run, the order the Navigator shows now and the order the drop
+-- writes. ShowCol1DropIndicator hides the line when they match, FinishCol1GroupDrag
+-- skips the drop then, and ApplyCol1Drop writes the final lists.
+--
+-- Insert defaults are today's: the unloaded divider means the top of the
+-- unloaded run for an unloaded drop and the end otherwise; a target not found
+-- means the end; a mixed selection's unloaded part goes to the top of the
+-- unloaded run unless the target is in that run.
+--
+-- nil means nothing to drop: no target, an action that is not a reorder (the
+-- line hides for those too), no rows, a vanished source, or a target on a
+-- Group in hand (GetCol1DropTarget never returns one; this keeps a stray one
+-- from sending the selection to the end).
+local function BuildCol1GroupDropPlan(state, dropTarget)
+    local targetRow = dropTarget and dropTarget.targetRow
+    local renderedRows = state and state.col1RenderedRows
+    if not (targetRow and renderedRows)
+        or (dropTarget.action ~= "reorder-before" and dropTarget.action ~= "reorder-after")
+    then
+        return nil
+    end
 
     local db = CooldownCompanion.db.profile
+    local specId = CooldownCompanion._currentSpecId
+    local targetSection = targetRow.section or state.sourceSection
+    local isSource
+    local selected, sectionChanges = {}, {}
+
+    if state.kind == "group" then
+        if not db.groupContainers[state.sourceGroupId] then
+            return nil
+        end
+        isSource = { [state.sourceGroupId] = true }
+        selected[1] = state.sourceGroupId
+        if targetSection ~= state.sourceSection then
+            sectionChanges[1] = state.sourceGroupId
+        end
+    elseif state.kind == "multi-group" and state.sourceGroupIds then
+        isSource = state.sourceGroupIds
+        -- The selection keeps the order the Navigator draws it in: saved
+        -- per-spec order, then id (BuildOrderedContainerItems). Sorting on order
+        -- alone left tied Groups in table order, so a drop could swap them.
+        local orderById = {}
+        for cid in pairs(isSource) do
+            local container = db.groupContainers[cid]
+            if container then
+                selected[#selected + 1] = cid
+                orderById[cid] = CooldownCompanion:GetOrderForSpec(container, specId, cid)
+                if GetContainerSection(container) ~= targetSection then
+                    sectionChanges[#sectionChanges + 1] = cid
+                end
+            end
+        end
+        table.sort(selected, function(a, b)
+            if orderById[a] == orderById[b] then
+                return a < b
+            end
+            return orderById[a] < orderById[b]
+        end)
+    else
+        return nil
+    end
+
+    if targetRow.kind == "container" and isSource[targetRow.id] then
+        return nil
+    end
+
+    local buckets = {}
+    if state.kind == "multi-group" and IsCol1MixedDragSource(state.sourceLoadBucket) then
+        local selectedLoaded, selectedUnloaded = PartitionSelectedContainersByLoadBucket(selected, renderedRows)
+        local loadedCurrent, loadedFinal = CollectCol1TopLevelBucket(renderedRows, targetSection, false, isSource)
+        local unloadedCurrent, unloadedFinal = CollectCol1TopLevelBucket(renderedRows, targetSection, true, isSource)
+        local loadedInsertPos, unloadedInsertPos
+        if targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded" then
+            loadedInsertPos = #loadedFinal + 1
+            unloadedInsertPos = FindCol1TopLevelInsertPos(unloadedFinal, targetRow, dropTarget.action, 1)
+        else
+            loadedInsertPos = FindCol1TopLevelInsertPos(loadedFinal, targetRow, dropTarget.action, #loadedFinal + 1)
+            unloadedInsertPos = 1
+        end
+        InsertCol1GroupIds(loadedFinal, loadedInsertPos, selectedLoaded)
+        InsertCol1GroupIds(unloadedFinal, unloadedInsertPos, selectedUnloaded)
+        buckets[1] = { current = loadedCurrent, final = loadedFinal }
+        buckets[2] = { current = unloadedCurrent, final = unloadedFinal }
+    else
+        local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
+        local current, final = CollectCol1TopLevelBucket(renderedRows, targetSection, includeUnloaded, isSource)
+        local defaultPos = #final + 1
+        if includeUnloaded and targetRow.kind == "unloaded-divider" then
+            defaultPos = 1
+        end
+        InsertCol1GroupIds(final, FindCol1TopLevelInsertPos(final, targetRow, dropTarget.action, defaultPos), selected)
+        buckets[1] = { current = current, final = final }
+    end
+
+    return {
+        targetSection = targetSection,
+        sectionChanges = sectionChanges,
+        buckets = buckets,
+    }
+end
+
+-- True when releasing changes nothing: no plan, no section change, and every
+-- run's final order equals the order shown now.
+local function IsCol1GroupDropPlanNoOp(plan)
+    if not plan then
+        return true
+    end
+    if plan.sectionChanges[1] then
+        return false
+    end
+    for _, bucket in ipairs(plan.buckets) do
+        if #bucket.final ~= #bucket.current then
+            return false
+        end
+        for index, id in ipairs(bucket.current) do
+            if bucket.final[index] ~= id then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+------------------------------------------------------------------------
+-- Apply a Navigator Group drop result
+------------------------------------------------------------------------
+local function ApplyCol1Drop(state, plan)
+    if not plan then return end
+
+    local db = CooldownCompanion.db.profile
+    local targetSection = plan.targetSection
     -- A section change can load or unload panels; the tail rebuilds for it.
     local scopeChanged = false
 
@@ -143,57 +292,20 @@ local function ApplyCol1Drop(state)
         local container = db.groupContainers[sourceContainerId]
         if not container then return end
 
-        if dropTarget.action == "reorder-before" or dropTarget.action == "reorder-after" then
-            local targetRow = dropTarget.targetRow
-            local targetSection = targetRow.section or state.sourceSection
-            if not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
+        if not IsCol1OwnershipMoveAllowed(state.sourceSection, targetSection) then
+            return
+        end
+
+        -- Cross-section move: toggle global/character status
+        if plan.sectionChanges[1] then
+            if not ApplyContainerSection(sourceContainerId, container, targetSection) then
                 return
             end
-
-            -- Cross-section move: toggle global/character status
-            if targetSection ~= state.sourceSection then
-                if not ApplyContainerSection(sourceContainerId, container, targetSection) then
-                    return
-                end
-                scopeChanged = true
-            end
-            local renderedRows = state.col1RenderedRows
-            if renderedRows then
-                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
-                local orderItems = {}
-                for _, row in ipairs(renderedRows) do
-                    if row.section == targetSection
-                        and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded)
-                        and row.id ~= sourceContainerId
-                    then
-                        table.insert(orderItems, { kind = row.kind, id = row.id })
-                    end
-                end
-
-                local insertPos = includeUnloaded and 1 or (#orderItems + 1)
-                if dropTarget.targetRow.kind ~= "unloaded-divider" then
-                    insertPos = FindCol1TopLevelInsertPos(
-                        orderItems,
-                        dropTarget.targetRow,
-                        dropTarget.action,
-                        #orderItems + 1
-                    )
-                end
-                table.insert(orderItems, insertPos, { kind = "group", id = sourceContainerId })
-                local specId = CooldownCompanion._currentSpecId
-                for i, item in ipairs(orderItems) do
-                    if db.groupContainers[item.id] then
-                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
-                    end
-                end
-            end
+            scopeChanged = true
         end
     elseif state.kind == "multi-group" then
         local sourceContainerIds = state.sourceGroupIds
         if not sourceContainerIds then return end
-
-        local targetRow = dropTarget.targetRow
-        local targetSection = targetRow.section or state.sourceSection
 
         -- Every Group is checked before any moves: a confirm popup can land
         -- after the selection changed, and a refusal part-way through would
@@ -207,97 +319,21 @@ local function ApplyCol1Drop(state)
                 return
             end
         end
-        for cid in pairs(sourceContainerIds) do
+        for _, cid in ipairs(plan.sectionChanges) do
             local container = db.groupContainers[cid]
-            if container and GetContainerSection(container) ~= targetSection then
+            if container then
                 ApplyContainerSection(cid, container, targetSection)
                 scopeChanged = true
             end
         end
+    end
 
-        -- Sort selected containers by current per-spec order to preserve relative ordering
-        local specId = CooldownCompanion._currentSpecId
-        local sortedSelected = {}
-        for cid in pairs(sourceContainerIds) do
-            local c = db.groupContainers[cid]
-            if c then
-                table.insert(sortedSelected, { id = cid, order = CooldownCompanion:GetOrderForSpec(c, specId, cid) })
-            end
-        end
-        table.sort(sortedSelected, function(a, b) return a.order < b.order end)
-
-        -- Rebuild order for target section
-        local renderedRows = state.col1RenderedRows
-        if renderedRows then
-            if IsCol1MixedDragSource(state.sourceLoadBucket) then
-                local selectedLoaded, selectedUnloaded = PartitionSelectedContainersByLoadBucket(sourceContainerIds, renderedRows, specId, db)
-                local loadedOrderItems = {}
-                local unloadedOrderItems = {}
-                for _, row in ipairs(renderedRows) do
-                    if row.section == targetSection and not sourceContainerIds[row.id] then
-                        if ShouldIncludeCol1TopLevelOrderRow(row, false) then
-                            table.insert(loadedOrderItems, { kind = row.kind, id = row.id })
-                        elseif ShouldIncludeCol1TopLevelOrderRow(row, true) then
-                            table.insert(unloadedOrderItems, { kind = row.kind, id = row.id })
-                        end
-                    end
-                end
-
-                local targetIsUnloaded = targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded"
-                local loadedInsertPos
-                local unloadedInsertPos
-                if targetIsUnloaded then
-                    loadedInsertPos = #loadedOrderItems + 1
-                    unloadedInsertPos = FindCol1TopLevelInsertPos(unloadedOrderItems, targetRow, dropTarget.action, 1)
-                else
-                    loadedInsertPos = FindCol1TopLevelInsertPos(loadedOrderItems, targetRow, dropTarget.action, #loadedOrderItems + 1)
-                    unloadedInsertPos = 1
-                end
-
-                for i, item in ipairs(selectedLoaded) do
-                    table.insert(loadedOrderItems, loadedInsertPos + i - 1, { kind = item.kind, id = item.id })
-                end
-                for i, item in ipairs(selectedUnloaded) do
-                    table.insert(unloadedOrderItems, unloadedInsertPos + i - 1, { kind = item.kind, id = item.id })
-                end
-
-                local nextOrder = AssignCol1TopLevelOrders(loadedOrderItems, db, specId, 1)
-                AssignCol1TopLevelOrders(unloadedOrderItems, db, specId, nextOrder)
-            else
-                -- Top-level ordering
-                local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
-                local orderItems = {}
-                for _, row in ipairs(renderedRows) do
-                    if row.section == targetSection then
-                        if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
-                            if not sourceContainerIds[row.id] then
-                                table.insert(orderItems, { kind = row.kind, id = row.id })
-                            end
-                        end
-                    end
-                end
-
-                local insertPos = includeUnloaded and 1 or (#orderItems + 1)
-                if targetRow.kind ~= "unloaded-divider" then
-                    insertPos = #orderItems + 1
-                    for idx, item in ipairs(orderItems) do
-                        if item.kind == targetRow.kind and item.id == targetRow.id then
-                            insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                            break
-                        end
-                    end
-                end
-                -- Insert all selected containers at the position
-                for i, item in ipairs(sortedSelected) do
-                    table.insert(orderItems, insertPos + i - 1, { kind = "group", id = item.id })
-                end
-                for i, item in ipairs(orderItems) do
-                    if db.groupContainers[item.id] then
-                        CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, i)
-                    end
-                end
-            end
-        end
+    -- The plan's final lists are the order the line promised. A mixed
+    -- selection's unloaded run numbers on from its loaded run.
+    local specId = CooldownCompanion._currentSpecId
+    local nextOrder = 1
+    for _, bucket in ipairs(plan.buckets) do
+        nextOrder = AssignCol1TopLevelOrders(bucket.final, db, specId, nextOrder)
     end
 
     -- A section change rebuilds every panel, as the menu's move does (that
@@ -561,10 +597,6 @@ end
 
 local function FinishCol1GroupDrag(state)
     local dropTarget = state.dropTarget
-    local changed = true
-    if dropTarget and state.kind == "group" then
-        changed = not IsCol1GroupDropNoOp(state)
-    end
 
     if dropTarget and state.kind == "group" then
         local targetSection = dropTarget.targetRow and dropTarget.targetRow.section
@@ -579,7 +611,7 @@ local function FinishCol1GroupDrag(state)
            and GroupsHaveForeignSpecs({ sourceContainer }, false) then
             ShowUnglobalGroupsPopup(sourceContainer.name, function()
                 if CooldownCompanion.db.profile.groupContainers[state.sourceGroupId] then
-                    ApplyCol1Drop(state)
+                    ApplyCol1Drop(state, BuildCol1GroupDropPlan(state, state.dropTarget))
                     CooldownCompanion:RefreshConfigPanel()
                 end
             end)
@@ -608,7 +640,7 @@ local function FinishCol1GroupDrag(state)
             end
             if GroupsHaveForeignSpecs(groupList, true) then
                 ShowUnglobalGroupsPopup(nil, function()
-                    ApplyCol1Drop(state)
+                    ApplyCol1Drop(state, BuildCol1GroupDropPlan(state, state.dropTarget))
                     CooldownCompanion:RefreshConfigPanel()
                 end)
                 return
@@ -616,8 +648,12 @@ local function FinishCol1GroupDrag(state)
         end
     end
 
-    if changed then
-        ApplyCol1Drop(state)
+    -- The line asked this same plan, so a release it drew no line for changes
+    -- nothing here either. The popups above only open for a section change,
+    -- which is never a no-op.
+    local plan = BuildCol1GroupDropPlan(state, dropTarget)
+    if not IsCol1GroupDropPlanNoOp(plan) then
+        ApplyCol1Drop(state, plan)
     end
     CooldownCompanion:RefreshConfigPanel()
 end
@@ -696,11 +732,13 @@ local function AssignPanelOrder(containerId, orderedPanelIds)
     end
 end
 
--- Published on DR so the drop indicator can ask exactly the question the drop
--- itself asks. DragReorderTargets loads first, so it reaches these through DR
--- at call time rather than capturing them as upvalues.
+-- Published on DR so the drop indicators can ask exactly the question each
+-- drop itself asks. DragReorderTargets loads first, so it reaches these
+-- through DR at call time rather than capturing them as upvalues.
 DR.BuildRailPanelFinalOrder = BuildRailPanelFinalOrder
 DR.RailPanelDropIsNoOp = RailPanelDropIsNoOp
+DR.BuildCol1GroupDropPlan = BuildCol1GroupDropPlan
+DR.IsCol1GroupDropPlanNoOp = IsCol1GroupDropPlanNoOp
 
 local function FinishRailPanelDrag(state)
     local dropTarget = state.dropTarget
@@ -1008,7 +1046,9 @@ local function StartDragTracking()
                     CS.dragState.scrollWidget,
                     CS.dragState.col1RenderedRows,
                     CS.dragState.sourceSection,
-                    CS.dragState.sourceLoadBucket
+                    CS.dragState.sourceLoadBucket,
+                    CS.dragState.sourceGroupId,
+                    CS.dragState.sourceGroupIds
                 )
                 CS.dragState.dropTarget = dropTarget
                 ShowCol1DropIndicator(CS.dragState)
