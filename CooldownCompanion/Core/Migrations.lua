@@ -2994,9 +2994,8 @@ local function MigrateOnePandemicOverride(buttonData, group)
 
     if destination and ST.CanButtonUseOverrideSection
         and not ST.CanButtonUseOverrideSection(buttonData, destination) then
-        -- PruneDisallowedOverrideSections would delete the flag and the keys
-        -- on the next GetEffectiveStyle anyway; drop them rather than hand it
-        -- a section to tear down.
+        -- The entry prune later in this run would delete the flag and the
+        -- keys anyway; drop them rather than hand it a section to tear down.
         destination = nil
     end
 
@@ -3158,8 +3157,8 @@ local function MigrateOneWhileAuraActiveOverride(buttonData, group)
         buttonData.auraKeepSpellCooldownSwipe = nil
         -- Where the section cannot live the flag was already inert by design
         -- (the row hides and no host reads it), so dropping it IS the whole
-        -- migration -- and writing a section PruneDisallowedOverrideSections
-        -- would tear down on the next GetEffectiveStyle is worse than nothing.
+        -- migration -- and writing a section the entry prune later in this
+        -- run would tear down is worse than nothing.
         if keepSwipe == true and allowed then
             local overrides = rawget(buttonData, "styleOverrides")
             if type(overrides) ~= "table" then
@@ -3233,8 +3232,8 @@ local function MigrateOneWhileAuraActiveIconOverride(buttonData, group)
             buttonData[field] = nil
             -- Where the section cannot live the flag was already inert by
             -- design, so dropping it IS the whole migration -- and writing a
-            -- section PruneDisallowedOverrideSections would tear down on the
-            -- next GetEffectiveStyle is worse than nothing.
+            -- section the entry prune later in this run would tear down is
+            -- worse than nothing.
             if stored == true and allowed then
                 local overrides = rawget(buttonData, "styleOverrides")
                 if type(overrides) ~= "table" then
@@ -3439,9 +3438,8 @@ local function MigrateOnePandemicSwitch(buttonData, group)
     if marker ~= nil then
         buttonData.pandemicMarker = nil
         -- Where the section cannot live the field was already inert by design,
-        -- so dropping it IS the whole migration -- and writing a section
-        -- PruneDisallowedOverrideSections would tear down on the next
-        -- GetEffectiveStyle is worse than nothing.
+        -- so dropping it IS the whole migration -- and writing a section the
+        -- entry prune later in this run would tear down is worse than nothing.
         --
         -- Under a killed panel the kill switch outranked the checkbox, so only
         -- an explicit ON is dropped: seeding it would light a marker the panel
@@ -3696,6 +3694,22 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     ST.UpgradeLegacyPanelTemplates(originalStore)
 end
 
+-- LOGIN AND IMPORT CONVERSION (rule Q1): deletes the override sections an
+-- entry can never use (ST.CanButtonUseOverrideSection), and their keys.
+-- Strip-only and unconditional, so a re-run changes nothing and it needs no
+-- sentinel (every import re-runs the chain). Prints nothing. Walks only
+-- the live entry lists, never backup snapshots or templates.
+local function PruneDisallowedEntrySections(profile)
+    if type(profile) ~= "table" or type(profile.groups) ~= "table" then return end
+    for _, group in pairs(profile.groups) do
+        if type(group) == "table" and type(group.buttons) == "table" then
+            for _, buttonData in ipairs(group.buttons) do
+                if type(buttonData) == "table" then ST.PruneDisallowedOverrideSections(buttonData) end
+            end
+        end
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -3799,7 +3813,14 @@ function CooldownCompanion:RunAllMigrations()
     -- Unified conversion can replace Resources stores. Prepare their final
     -- identities, including the legacy fallback when a conflict stays unresolved.
     self:PrepareResourceBarSettings()
-    if not unifiedOK then return false end
+    if not unifiedOK then
+        -- Every door reaching this return prunes too: the import doors still
+        -- build frames after it. A stopped conversion changed nothing, and a
+        -- later successful one only adds entries or sets isPassive, so it
+        -- never allows a section deleted here.
+        PruneDisallowedEntrySections(self.db.profile)
+        return false
+    end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
     -- Cast Bar and Unit Frames are shared per class (owner ruling Q40): class
     -- records come from the upgraded per-character ones, then the current
@@ -3808,6 +3829,13 @@ function CooldownCompanion:RunAllMigrations()
     self:PrepareScopedBarSettings()
     self:RunIndicatorMigration()
     self:MigrateRotationAssistantPanels(self.db.profile)
+    -- After every pass that can change what an entry is (addedAs, isPassive,
+    -- type or rotationAssistant: NormalizePassiveCooldownButtons,
+    -- MigrateAuraTrackingRebuild, RunUnifiedPanelMigration,
+    -- MigrateRotationAssistantPanels) or write a section the entry cannot use
+    -- (the backfills and conversions above). A new pass that does either goes
+    -- above this line.
+    PruneDisallowedEntrySections(self.db.profile)
     -- After every conversion above (MigrateSharedBarStyle fills the bar fonts
     -- first): older panels' bar styles are saved in full.
     for _, group in pairs(self.db.profile.groups or {}) do ST.CompleteAttachedBarStyle(group) end

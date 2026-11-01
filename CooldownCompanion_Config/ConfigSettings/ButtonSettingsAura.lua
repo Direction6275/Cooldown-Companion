@@ -348,9 +348,8 @@ local function GetAuraTrackingCatalogState(context)
         end
     end
 
-    -- GetEffectiveStyle prunes disallowed SavedVariable sections as a side
-    -- effect. Finder preparation is observational, so resolve this one gate
-    -- with the same active-section precedence without calling the mutator.
+    -- Resolves this one gate with GetEffectiveStyle's active-section
+    -- precedence over the panel style, reading the saved override with rawget.
     local groupStyle = group.style or {}
     local showAuraStackText = groupStyle.showAuraStackText
     if buttonData.overrideSections and buttonData.overrideSections.auraStackText
