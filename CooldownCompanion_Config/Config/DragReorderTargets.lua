@@ -12,6 +12,8 @@ ST._DragReorder = DR
 local COL1_HIT_X_PAD = 6
 local FindCol1SectionDividerTarget
 local activeCol1DropSourceSection
+local activeCol1DropSourceGroupId
+local activeCol1DropSourceGroupIds
 
 local function IsCol1OwnershipMoveAllowed(sourceSection, targetSection)
     if not targetSection or sourceSection == targetSection then
@@ -268,102 +270,6 @@ local function ShowDragIndicator(anchorFrame, anchorAbove, parentScrollWidget)
 end
 
 ------------------------------------------------------------------------
--- Navigator drop no-op helpers
-------------------------------------------------------------------------
-
-local IsUnloadedTopLevelDrop
-local ShouldIncludeCol1TopLevelOrderRow
-
-local function FindCol1GroupSourcePosition(renderedRows, section, sourceContainerId, includeUnloaded)
-    local pos = 0
-    for _, row in ipairs(renderedRows or {}) do
-        if row.section == section and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
-            pos = pos + 1
-            if row.id == sourceContainerId then
-                return pos
-            end
-        end
-    end
-    return nil
-end
-
-local function BuildCol1GroupOrderItems(renderedRows, section, sourceContainerId, includeUnloaded)
-    local orderItems = {}
-    for _, row in ipairs(renderedRows or {}) do
-        if row.section == section and ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
-            if row.id ~= sourceContainerId then
-                table.insert(orderItems, { kind = row.kind, id = row.id })
-            end
-        end
-    end
-    return orderItems
-end
-
-local function ResolveCol1GroupInsertPos(orderItems, dropTarget, includeUnloaded)
-    local targetRow = dropTarget and dropTarget.targetRow
-    local insertPos = includeUnloaded and 1 or (#orderItems + 1)
-    if targetRow and targetRow.kind ~= "unloaded-divider" then
-        insertPos = #orderItems + 1
-        for idx, item in ipairs(orderItems) do
-            if item.kind == targetRow.kind and item.id == targetRow.id then
-                insertPos = dropTarget.action == "reorder-after" and idx + 1 or idx
-                break
-            end
-        end
-    end
-    return insertPos
-end
-
-local function IsCol1GroupDropNoOp(state)
-    local dropTarget = state and state.dropTarget
-    if not dropTarget then
-        return true
-    end
-
-    local targetRow = dropTarget.targetRow
-    local targetSection = (targetRow and targetRow.section) or state.sourceSection
-    if targetSection ~= state.sourceSection then
-        return false
-    end
-
-    if dropTarget.action ~= "reorder-before"
-        and dropTarget.action ~= "reorder-after"
-    then
-        return false
-    end
-
-    if targetRow and targetRow.kind == "container" and targetRow.id == state.sourceGroupId then
-        return true
-    end
-
-    local renderedRows = state.col1RenderedRows
-    if not renderedRows then
-        return false
-    end
-
-    local includeUnloaded = IsUnloadedTopLevelDrop(state, dropTarget)
-    local sourcePos = FindCol1GroupSourcePosition(
-        renderedRows,
-        targetSection,
-        state.sourceGroupId,
-        includeUnloaded
-    )
-    if not sourcePos then
-        return false
-    end
-
-    local orderItems = BuildCol1GroupOrderItems(
-        renderedRows,
-        targetSection,
-        state.sourceGroupId,
-        includeUnloaded
-    )
-    local insertPos = ResolveCol1GroupInsertPos(orderItems, dropTarget, includeUnloaded)
-    return insertPos == sourcePos
-end
-
-
-------------------------------------------------------------------------
 -- Navigator Group drop targeting
 ------------------------------------------------------------------------
 local function GetCol1DropFrame(rowMeta)
@@ -400,7 +306,36 @@ local function IsCursorWithinHorizontalBounds(cursorX, left, right, pad)
     return cursorX >= (left + pad) and cursorX <= (right - pad)
 end
 
-local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
+-- The Groups in hand are never a drop target, the way a rail panel drag skips
+-- its own panel rows: each pass in GetCol1DropTarget refuses them, the section
+-- finders walk past them, and CanonicalizeCol1IndicatorTarget never draws
+-- against one. BuildCol1GroupDropPlan takes the selection out of the list it
+-- inserts into, so a target on one would have no position. A dragged Group's
+-- panel rows count as the Group: they dim with it.
+--
+-- Set per call by GetCol1DropTarget, like activeCol1DropSourceSection.
+local function IsCol1DraggedGroupId(id)
+    if id == nil then
+        return false
+    end
+    if id == activeCol1DropSourceGroupId then
+        return true
+    end
+    return activeCol1DropSourceGroupIds ~= nil and activeCol1DropSourceGroupIds[id] ~= nil
+end
+
+local function IsCol1DraggedGroupRow(rowMeta)
+    return rowMeta.kind == "container" and IsCol1DraggedGroupId(rowMeta.id)
+end
+
+local function IsCol1DraggedGroupBlockRow(rowMeta)
+    if rowMeta.kind == "aux-block" then
+        return rowMeta.ownerKind == "container" and IsCol1DraggedGroupId(rowMeta.ownerId)
+    end
+    return IsCol1DraggedGroupRow(rowMeta)
+end
+
+local function BuildCol1DropResult(action, rowIndex, rowMeta)
     local frame = GetCol1DropFrame(rowMeta)
     if not (rowMeta and frame and frame:IsShown()) then
         return nil
@@ -411,18 +346,12 @@ local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
         return nil
     end
 
-    local result = {
+    return {
         action = action,
         rowIndex = rowIndex,
         targetRow = rowMeta,
         anchorFrame = frame,
     }
-    if extra then
-        for key, value in pairs(extra) do
-            result[key] = value
-        end
-    end
-    return result
 end
 
 FindCol1SectionDividerTarget = function(renderedRows, section)
@@ -441,7 +370,7 @@ local function FindFirstCol1UnloadedTargetInSection(renderedRows, section, start
             if rowMeta.section then
                 break
             end
-        elseif rowMeta.loadBucket == "unloaded" and rowMeta.kind == "container" then
+        elseif rowMeta.loadBucket == "unloaded" and rowMeta.kind == "container" and not IsCol1DraggedGroupRow(rowMeta) then
             return BuildCol1DropResult("reorder-before", i, rowMeta)
         end
     end
@@ -455,7 +384,7 @@ local function FindLastCol1UnloadedTargetInSection(renderedRows, section, startI
             if rowMeta.section then
                 break
             end
-        elseif rowMeta.loadBucket == "unloaded" and rowMeta.kind == "container" then
+        elseif rowMeta.loadBucket == "unloaded" and rowMeta.kind == "container" and not IsCol1DraggedGroupRow(rowMeta) then
             return BuildCol1DropResult("reorder-after", i, rowMeta)
         end
     end
@@ -480,7 +409,7 @@ local function FindFirstCol1DropTargetInSection(renderedRows, section, startInde
             end
         elseif rowMeta.kind == "unloaded-divider" then
             return BuildCol1DropResult("reorder-before", i, rowMeta)
-        elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+        elseif (rowMeta.kind == "phantom" or rowMeta.acceptsDrop) and not IsCol1DraggedGroupRow(rowMeta) then
             return BuildCol1DropResult("reorder-before", i, rowMeta)
         end
     end
@@ -494,7 +423,7 @@ local function FindLastCol1DropTargetInSection(renderedRows, section, startIndex
             if rowMeta.section then
                 break
             end
-        elseif rowMeta.kind == "phantom" or rowMeta.acceptsDrop then
+        elseif (rowMeta.kind == "phantom" or rowMeta.acceptsDrop) and not IsCol1DraggedGroupRow(rowMeta) then
             return BuildCol1DropResult("reorder-after", i, rowMeta)
         end
     end
@@ -505,14 +434,24 @@ local function ResolveCol1AuxBlockTarget(renderedRows, rowIndex, rowMeta, source
     if not rowMeta then
         return nil
     end
+    -- A Group's panel rows are its lower half: "before the next Group", or
+    -- "after this one" when nothing but Groups in hand follows it. An Unloaded
+    -- drag over panel rows outside the Unloaded run gets the divider, the top
+    -- of that run.
     if sourceLoadBucket == "unloaded" then
-        return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, rowIndex + 1)
+        return FindFirstCol1UnloadedTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
+            or FindLastCol1UnloadedTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+            or FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
     end
-    local nextTarget = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
-    if nextTarget then
-        return nextTarget
+    local target = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
+        or FindLastCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+    -- A loaded drag cannot join the Unloaded run, so an Unloaded Group's panel
+    -- rows mean the end of the loaded run, the divider, as its own row does.
+    -- A mixed selection's unloaded part does land beside that Group.
+    if target and sourceLoadBucket ~= "mixed" and target.targetRow.loadBucket == "unloaded" then
+        return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
     end
-    return FindLastCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+    return target
 end
 
 local function IsCol1UnloadedDragSource(sourceLoadBucket)
@@ -536,6 +475,7 @@ local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, so
     if targetSection == sourceSection then
         if rowMeta.kind == "section-header" then
             return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+                or BuildCol1DropResult("reorder-after", rowIndex - 1, rowMeta)
         end
         if rowMeta.kind == "unloaded-divider" then
             return FindCol1SectionDividerTarget(renderedRows, targetSection)
@@ -557,13 +497,19 @@ local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, so
         return FindCol1SectionDividerTarget(renderedRows, targetSection)
     end
 
-    return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+    local target = FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
         or FindCol1SectionDividerTarget(renderedRows, targetSection)
+    if not target and rowMeta.kind == "section-header" then
+        return BuildCol1DropResult("reorder-after", rowIndex - 1, rowMeta)
+    end
+    return target
 end
 
-local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceSection, sourceLoadBucket)
+local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceSection, sourceLoadBucket, sourceGroupId, sourceGroupIds)
     if not renderedRows or #renderedRows == 0 then return nil end
     activeCol1DropSourceSection = sourceSection
+    activeCol1DropSourceGroupId = sourceGroupId
+    activeCol1DropSourceGroupIds = sourceGroupIds
     local sourceIsMixed = IsCol1MixedDragSource(sourceLoadBucket)
     local sourceIsUnloaded = IsCol1UnloadedDragSource(sourceLoadBucket)
     local contentLeft, contentRight = GetCol1HorizontalBounds(scrollWidget, renderedRows)
@@ -582,6 +528,10 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                 and cursorY <= top
                 and cursorY >= bottom
             then
+                -- Over a Group in hand, or one of its panel rows: no target.
+                if IsCol1DraggedGroupBlockRow(rowMeta) then
+                    return nil
+                end
                 if rowMeta.kind == "aux-block" then
                     return ResolveCol1AuxBlockTarget(renderedRows, i, rowMeta, sourceLoadBucket)
                 elseif rowMeta.kind == "section-header" then
@@ -591,7 +541,10 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                     if sourceIsUnloaded then
                         return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
                     end
+                    -- With every loaded Group of the section in hand, the
+                    -- heading itself is the top of the section.
                     return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                        or BuildCol1DropResult("reorder-after", i, rowMeta)
                 elseif rowMeta.kind == "unloaded-divider" then
                     if sourceIsMixed then
                         return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
@@ -648,6 +601,11 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
         if frame and frame:IsShown() then
             local top = frame:GetTop()
             if top and cursorY > top then
+                -- The gap just above a Group in hand, or inside its block, reads
+                -- as that Group, as in the hit pass: no target.
+                if IsCol1DraggedGroupBlockRow(rowMeta) then
+                    return nil
+                end
                 if rowMeta.kind == "section-header" then
                     if sourceIsMixed then
                         return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i + 1, sourceSection, "reorder-before")
@@ -656,6 +614,7 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                         return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
                     end
                     return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                        or BuildCol1DropResult("reorder-after", i, rowMeta)
                 elseif rowMeta.kind == "aux-block" then
                     return ResolveCol1AuxBlockTarget(renderedRows, i, rowMeta, sourceLoadBucket)
                 elseif rowMeta.kind == "unloaded-divider" then
@@ -692,6 +651,10 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
         local rowMeta = renderedRows[i]
         local frame = GetCol1DropFrame(rowMeta)
         if frame and frame:IsShown() then
+            -- The bottom Group is in hand: no target, as the other passes decide.
+            if IsCol1DraggedGroupRow(rowMeta) then
+                return nil
+            end
             if rowMeta.kind == "unloaded-divider" or rowMeta.loadBucket == "unloaded" then
                 if sourceIsMixed then
                     return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-after")
@@ -710,14 +673,14 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                 if sourceIsUnloaded then
                     return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i, true)
                 end
-                return BuildCol1DropResult("reorder-after", i, rowMeta, { isBelowAll = true })
+                return BuildCol1DropResult("reorder-after", i, rowMeta)
             end
         end
     end
     return nil
 end
 
-IsUnloadedTopLevelDrop = function(state, dropTarget)
+local function IsUnloadedTopLevelDrop(state, dropTarget)
     if not IsCol1UnloadedDragSource(state and state.sourceLoadBucket) then
         return false
     end
@@ -725,7 +688,7 @@ IsUnloadedTopLevelDrop = function(state, dropTarget)
     return targetRow and (targetRow.kind == "unloaded-divider" or targetRow.loadBucket == "unloaded")
 end
 
-ShouldIncludeCol1TopLevelOrderRow = function(row, includeUnloaded)
+local function ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded)
     if not row then
         return false
     end
@@ -738,58 +701,50 @@ ShouldIncludeCol1TopLevelOrderRow = function(row, includeUnloaded)
     return row.loadBucket ~= "unloaded"
 end
 
-local function FindCol1TopLevelInsertPos(orderItems, targetRow, action, defaultPos)
-    local insertPos = defaultPos or (#orderItems + 1)
-    if not targetRow or targetRow.kind == "unloaded-divider" then
+-- Where a drop on targetRow lands in an id list the Groups in hand were taken
+-- out of. The divider, a phantom row or a target not found mean defaultPos.
+local function FindCol1TopLevelInsertPos(ids, targetRow, action, defaultPos)
+    local insertPos = defaultPos or (#ids + 1)
+    if not targetRow or targetRow.kind ~= "container" then
         return insertPos
     end
-    for idx, item in ipairs(orderItems) do
-        if item.kind == targetRow.kind and item.id == targetRow.id then
-            insertPos = action == "reorder-after" and idx + 1 or idx
-            break
+    for idx, id in ipairs(ids) do
+        if id == targetRow.id then
+            return action == "reorder-after" and idx + 1 or idx
         end
     end
     return insertPos
 end
 
-local function AssignCol1TopLevelOrders(orderItems, db, specId, startOrder)
+local function AssignCol1TopLevelOrders(ids, db, specId, startOrder)
     local nextOrder = startOrder or 1
-    for _, item in ipairs(orderItems) do
-        if db.groupContainers[item.id] then
-            CooldownCompanion:SetOrderForSpec(db.groupContainers[item.id], specId, nextOrder)
+    for _, id in ipairs(ids) do
+        local container = db.groupContainers[id]
+        if container then
+            CooldownCompanion:SetOrderForSpec(container, specId, nextOrder)
             nextOrder = nextOrder + 1
         end
     end
     return nextOrder
 end
 
-local function PartitionSelectedContainersByLoadBucket(sourceContainerIds, renderedRows, specId, db)
-    local loadBucketById = {}
+-- Split the selection, already in the order it keeps, by the run its rows are
+-- drawn in. A selected Group with no drawn row goes with the loaded ones.
+local function PartitionSelectedContainersByLoadBucket(orderedIds, renderedRows)
+    local isUnloaded = {}
     for _, row in ipairs(renderedRows or {}) do
-        if row.kind == "container" and sourceContainerIds[row.id] then
-            loadBucketById[row.id] = row.loadBucket
+        if row.kind == "container" and row.loadBucket == "unloaded" then
+            isUnloaded[row.id] = true
         end
     end
-
     local loaded, unloaded = {}, {}
-    for cid in pairs(sourceContainerIds or {}) do
-        local container = db.groupContainers[cid]
-        if container then
-            local item = {
-                kind = "group",
-                id = cid,
-                order = CooldownCompanion:GetOrderForSpec(container, specId, cid),
-            }
-            if loadBucketById[cid] == "unloaded" then
-                table.insert(unloaded, item)
-            else
-                table.insert(loaded, item)
-            end
+    for _, cid in ipairs(orderedIds) do
+        if isUnloaded[cid] then
+            unloaded[#unloaded + 1] = cid
+        else
+            loaded[#loaded + 1] = cid
         end
     end
-
-    table.sort(loaded, function(a, b) return a.order < b.order end)
-    table.sort(unloaded, function(a, b) return a.order < b.order end)
     return loaded, unloaded
 end
 
@@ -856,26 +811,26 @@ end
 -- the cursor happened to be over when it resolved.
 --
 -- Collapse them to one canonical spelling -- always the row BELOW the gap -- so
--- a given destination always draws the line in exactly one place.
+-- a given gap always draws the line in exactly one place.
 --
 -- The equivalence is true BY CONSTRUCTION, not by assumption: the row this
--- returns is the next row that ShouldIncludeCol1TopLevelOrderRow admits, i.e.
--- the next entry in the very ordering the drop is computed against. "After item
--- N" and "before item N+1" are the same index.
+-- returns is the next row that ShouldIncludeCol1TopLevelOrderRow admits and
+-- that is not in hand, i.e. the next entry in the very list
+-- BuildCol1GroupDropPlan inserts into (the Groups in hand are taken out of it
+-- first). "After item N" and "before item N+1" are the same index.
 --
--- Running off the end of the ordering does NOT mean there is only one spelling.
--- For a loaded source, "after the last loaded group" and "before the unloaded
--- divider" are the same boundary, and the divider is the form the gap pass and
--- the below-all pass both already produce -- so it is the canonical one, and
--- pass 1 has to be brought into line with it. Without this, dropping past the
--- last loaded group draws the line under that group's shell while merely moving
--- a few pixels further draws it above the "Unloaded Groups" heading instead.
+-- Running off the end of the ordering: for a loaded source, "after the last
+-- loaded group" and "before the unloaded divider" are the same boundary, so
+-- when the section's own divider is the next row drawn, the line is drawn
+-- there. Column 1 draws every section's Unloaded run after all the loaded
+-- sections, so a walk that reaches another section first keeps the line under
+-- the hovered group: the divider would sit far below where the group lands.
 --
 -- Gated on a loaded source: an unloaded-source drag orders within the unloaded
 -- run, which the divider sits ABOVE, not below.
 --
--- Gated on a SINGLE-BUCKET source too. A mixed selection is applied through
--- PartitionSelectedContainersByLoadBucket and its targets come from
+-- Gated on a SINGLE-BUCKET source too. A mixed selection is planned as two runs
+-- (BuildCol1GroupDropPlan) and its targets come from
 -- ResolveCol1MixedSectionTarget, neither of which shares the "after item N ==
 -- before item N+1" identity the rewrite depends on -- so for a mixed drag the
 -- rewritten line could point somewhere the drop will not land, which is exactly
@@ -904,15 +859,10 @@ local function CanonicalizeCol1IndicatorTarget(state, dropTarget)
         if row.section ~= section then
             break
         end
-        if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) then
+        if (ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) and not IsCol1DraggedGroupRow(row))
+            or (not includeUnloaded and row.kind == "unloaded-divider")
+        then
             return BuildCol1DropResult("reorder-before", i, row) or dropTarget
-        end
-    end
-
-    if not includeUnloaded then
-        local dividerTarget = FindCol1SectionDividerTarget(renderedRows, section)
-        if dividerTarget then
-            return dividerTarget
         end
     end
 
@@ -928,25 +878,26 @@ local function ShowCol1DropIndicator(state)
         return
     end
 
-    -- The slots directly above and below a group resolve to a valid target that
-    -- would land it exactly where it already sits. Releasing there does nothing,
-    -- so the line must not advertise it. This is the SAME predicate
-    -- FinishCol1GroupDrag uses to decide whether to do any work, so the line and
-    -- the outcome cannot disagree.
+    -- The slots right beside where the Groups in hand already sit resolve to a
+    -- valid target that would land them exactly where they are. Releasing there
+    -- does nothing, so the line must not advertise it. This asks the SAME plan
+    -- FinishCol1GroupDrag builds to decide whether to do any work, so the line
+    -- and the outcome cannot disagree, for a whole selection too, mixed loaded
+    -- and unloaded ones included.
     --
-    -- Single-group only: IsCol1GroupDropNoOp reasons about one sourceGroupId,
-    -- and a multi-group drag carries only the row you grabbed there, so it
-    -- cannot answer for the whole selection.
+    -- BuildCol1GroupDropPlan and IsCol1GroupDropPlanNoOp live in
+    -- DragReorderLifecycle, which loads AFTER this file, so they are reached
+    -- through DR at call time rather than captured as upvalues.
     --
-    -- Memoised: this runs on every tracker tick and the predicate rebuilds the
-    -- whole top-level order list and rescans for the source position each time.
+    -- Memoised: this runs on every tracker tick and the plan rebuilds the
+    -- section's order lists each time.
     --
     -- Keyed on action/targetRow/rowIndex rather than on the dropTarget table,
     -- which GetCol1DropTarget rebuilds every tick and would therefore never
     -- match. targetRow IS stable -- it is the rowMeta out of col1RenderedRows --
     -- and a Column 1 rebuild replaces those tables, so the key invalidates
     -- itself exactly when the geometry it was computed against goes away.
-    if state.kind == "group" then
+    if state.kind == "group" or state.kind == "multi-group" then
         if state._cdcNoOpAction ~= dropTarget.action
             or state._cdcNoOpRow ~= dropTarget.targetRow
             or state._cdcNoOpIndex ~= dropTarget.rowIndex
@@ -954,7 +905,12 @@ local function ShowCol1DropIndicator(state)
             state._cdcNoOpAction = dropTarget.action
             state._cdcNoOpRow = dropTarget.targetRow
             state._cdcNoOpIndex = dropTarget.rowIndex
-            state._cdcNoOpResult = IsCol1GroupDropNoOp(state)
+
+            local isNoOp = false
+            if DR.BuildCol1GroupDropPlan and DR.IsCol1GroupDropPlanNoOp then
+                isNoOp = DR.IsCol1GroupDropPlanNoOp(DR.BuildCol1GroupDropPlan(state, dropTarget))
+            end
+            state._cdcNoOpResult = isNoOp
         end
         if state._cdcNoOpResult then
             HideDragIndicator()
@@ -1217,7 +1173,6 @@ DR.ShowCol1DropIndicator = ShowCol1DropIndicator
 DR.ShowRailPanelDropIndicator = ShowRailPanelDropIndicator
 DR.GetCol1DropTarget = GetCol1DropTarget
 DR.IsCol1OwnershipMoveAllowed = IsCol1OwnershipMoveAllowed
-DR.IsCol1GroupDropNoOp = IsCol1GroupDropNoOp
 DR.IsUnloadedTopLevelDrop = IsUnloadedTopLevelDrop
 DR.ShouldIncludeCol1TopLevelOrderRow = ShouldIncludeCol1TopLevelOrderRow
 DR.IsCol1MixedDragSource = IsCol1MixedDragSource

@@ -692,7 +692,7 @@ function ST.AttachMoverWidthResize(frame, opts)
         CancelCoordinateEdit(coordLabel)
         CancelCoordinateEdit(sizeLabel)
         addon:BeginMoverChromeWheelFade(frame)
-        -- One notch steps both dimensions together, matching icon panels.
+        -- One notch steps both dimensions together, like every panel's wheel.
         local step = delta > 0 and 1 or -1
         local changed = false
         local currentWidth = ClampWidth(opts.getWidth())
@@ -712,7 +712,9 @@ function ST.AttachMoverWidthResize(frame, opts)
         if changed then
             opts.apply()
             UpdateSizeLabelText()
-            RefreshConfigPanelIfShown()
+            -- The settings window catches up once the wheel stops (owner
+            -- ruling R-STEP), like the panel wheel.
+            addon:MarkMoverWheelSizeChanged()
         end
     end)
 

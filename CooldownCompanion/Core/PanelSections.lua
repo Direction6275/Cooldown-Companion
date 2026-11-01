@@ -1230,8 +1230,10 @@ end
 -- selected overlay's outward corner and scales the section's cells.
 ------------------------------------------------------------------
 
+-- The panel-size accessor's section range, in tenths like the section
+-- sliders. Looked up at call time: GroupFrameShared.lua loads after this file.
 local function ClampSectionSize(value)
-    return math_max(10, math_min(150, ST.RoundToTenths(tonumber(value) or 10)))
+    return ST.ClampPanelSize("section", value)
 end
 
 local function ResolveOverlaySection(overlay)

@@ -1564,8 +1564,7 @@ function DropGhost.Show(host, spec, target, owner)
             SectionDrag.HideLandingTrail(preview)
         end
     else
-        -- The mirror's OWN host (the unified inner frame, or `host` itself):
-        -- the fit is measured against the box the mirror was built in.
+        -- The host the mirror was built in: the fit is measured against its box.
         DropGhost.PlaceEmpty(preview, preview.root:GetParent(), group, mode, cell, stub)
     end
     DropGhost.StyleCell(cell, stub, group, mode, preview.panelId)

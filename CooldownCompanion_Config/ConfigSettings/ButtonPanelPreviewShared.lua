@@ -246,7 +246,7 @@ local function ResolveBarPreviewVisibility(buttonData, group, previewState)
     -- Cooldown Text draws only the countdown, but a countdown still claims
     -- the cooldown situation, so the hide rules project it like the full
     -- state preview always was.
-    if kind == "cooldown" or kind == "cooldown_text" then
+    if kind == "cooldown_text" then
         onCooldown = true
     end
 
@@ -670,13 +670,7 @@ end
 
 -- Saved-design identity and visibility stay here; the body recipe is shared
 -- with live icons. Only this preview slot's dimensions are read.
-local function StylePreviewIcon(slot, buttonData, group, style)
-    if not style then
-        style = group and group.style or {}
-        if buttonData and CooldownCompanion.GetEffectiveStyle then
-            style = CooldownCompanion:GetEffectiveStyle(style, buttonData) or style
-        end
-    end
+local function StylePreviewIcon(slot, buttonData, style)
     IconVisuals.Layout(slot, style)
     local width, height = slot:GetSize()
     local borderSize, borderMode, borderAlpha = IconVisuals.Paint(slot, style, width, height)
@@ -1543,7 +1537,7 @@ end
 -- attached bars but no entries.
 local EMPTY_ENTRY_GUIDANCE_BAND = 44
 
-local function GetPanelPreviewNaturalSize(group, includeSections, modules)
+local function GetPanelPreviewNaturalSize(group, modules)
     modules = modules or {}
     group = ST.GetPanelLayoutGroup(group)
     if ST.IsTotemPanelGroup(group) then
@@ -1583,9 +1577,9 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
         rows = math_min(count, perRow)
         cols = math_ceil(count / perRow)
     end
-    -- Content-sized overview cards need the complete footprint, matching
-    -- the read-only renderer's section layout rather than the base grid.
-    local sections = includeSections and ST.GetSectionsForLayout(group)
+    -- Every tile caller (Group overview, Export, Import) needs the footprint
+    -- the read-only renderer draws, sections included, not the base grid.
+    local sections = ST.GetSectionsForLayout(group)
     local width = (cols - 1) * (geo.entryWidth + geo.spacing) + geo.entryWidth
     local height = (rows - 1) * (geo.entryHeight + geo.spacing) + geo.entryHeight
     if hasAttachedBars and count == 0 then width, height = 1, 1 end
@@ -1598,7 +1592,7 @@ local function GetPanelPreviewNaturalSize(group, includeSections, modules)
         local lists = ST.PartitionPanelSectionMembers(group, entries)
         local layout = ST.BuildPanelSectionLayout(group, sections, lists,
             geo.entryWidth, geo.entryHeight, geo.spacing)
-        width, height = math_max(1, layout.totalWidth), math_max(1, layout.totalHeight)
+        width, height = math_max(1, layout.footprintWidth), math_max(1, layout.footprintHeight)
         base = { x = layout.baseOffsetX, y = layout.baseOffsetY,
             width = layout.baseWidth, height = layout.baseHeight }
     end

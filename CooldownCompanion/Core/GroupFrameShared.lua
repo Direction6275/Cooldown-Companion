@@ -10,10 +10,12 @@ local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
 local math_floor = math.floor
 local math_min = math.min
+local math_max = math.max
 local select = select
 
 -- Utils.lua
 local GetUnlockedPanelAlpha = ST.GetUnlockedPanelAlpha
+local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
 
 local GF = {}
 ST._GroupFrame = GF
@@ -354,24 +356,136 @@ local function UpdateCoordLabel(frame, x, y)
     end
 end
 
+------------------------------------------------------------------------
+-- Panel size: the one reader and writer of a panel's size keys for the
+-- Unlock size controls -- the corner grip and mouse wheel
+-- (GroupFrameMovers.lua), the typed size label (GroupFrame.lua), the readout
+-- below, and the section grabber's range (PanelSections.lua). Values come in
+-- one order: bar = length, thickness; square = size; icon = width, height.
+------------------------------------------------------------------------
+
+-- The config sliders' ranges.
+local PANEL_SIZE_RANGES = {
+    icon = { 10, 150 },
+    length = { 10, 500 },
+    thickness = { 5, 100 },
+    section = { 10, 150 },
+}
+
+-- Per kind: first key, its range, second key, its range.
+local PANEL_SIZE_FIELDS = {
+    bar = { "barLength", "length", "barHeight", "thickness" },
+    square = { "buttonSize", "icon" },
+    icon = { "iconWidth", "icon", "iconHeight", "icon" },
+}
+
+-- A square panel's section keeps its one size in iconWidth
+-- (ResolvePanelSectionGeometry).
+local SECTION_SIZE_FIELDS = {
+    square = { "iconWidth", "section" },
+    icon = { "iconWidth", "section", "iconHeight", "section" },
+}
+
+-- Rounds to whole numbers (grip, wheel) or tenths (typed input, section
+-- grabber), then clamps to the named range. A missing value reads as the
+-- range's minimum.
+function ST.ClampPanelSize(range, value, whole)
+    local limits = PANEL_SIZE_RANGES[range]
+    value = tonumber(value) or limits[1]
+    if whole then
+        value = math_floor(value + 0.5)
+    else
+        value = ST.RoundToTenths(value)
+    end
+    return math_max(limits[1], math_min(limits[2], value))
+end
+
+-- "bar", "square" or "icon" for a layout or sizing view. A bar-only panel's
+-- views report displayMode "bars".
+function ST.GetPanelSizeKind(view)
+    if view.displayMode == "bars" then
+        return "bar"
+    end
+    return view.style.maintainAspectRatio and "square" or "icon"
+end
+
+-- kind, primary, secondary (nil for square). While a section of this panel
+-- is selected, a non-bar panel answers with that section's size, resolved the
+-- way ResolvePanelSectionGeometry resolves it, unless baseOnly (the corner
+-- grip, which drives the base cluster in every state). Reads the layout view,
+-- which never writes saved data. Nil when the panel has no style.
+function ST.ReadPanelSize(groupId, baseOnly)
+    local owner = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local view = owner and ST.GetPanelLayoutGroup(owner)
+    local style = view and view.style
+    if not style then
+        return nil
+    end
+    local kind = ST.GetPanelSizeKind(view)
+    local size = style.buttonSize or ST.BUTTON_SIZE
+    if kind ~= "bar" and not baseOnly then
+        local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+        if section then
+            if kind == "square" then
+                return kind, tonumber(section.iconWidth) or tonumber(section.iconHeight) or size
+            end
+            return kind, tonumber(section.iconWidth) or style.iconWidth or size,
+                tonumber(section.iconHeight) or style.iconHeight or size
+        end
+    end
+    if kind == "bar" then
+        return kind, style.barLength or 180, style.barHeight or 20
+    elseif kind == "square" then
+        return kind, size
+    end
+    return kind, style.iconWidth or size, style.iconHeight or size
+end
+
+-- Writes a size given in ReadPanelSize's order; returns whether a saved key
+-- changed. whole: whole numbers (grip, wheel), else tenths (typed input).
+-- Follows the selected section like ReadPanelSize unless baseOnly.
+-- sizingGroup: the sizing view the grip resolved at mouse-down and checks
+-- every frame, so nothing is resolved per frame. Otherwise the sizing view,
+-- which can complete a bar-only panel's saved bar style, is resolved only
+-- once a base value really changes (rule Q1).
+function ST.WritePanelSize(groupId, primary, secondary, whole, baseOnly, sizingGroup)
+    local owner = groupId and CooldownCompanion.db.profile.groups[groupId]
+    local view = sizingGroup or (owner and ST.GetPanelLayoutGroup(owner))
+    local style = view and view.style
+    if not style then
+        return false
+    end
+    local kind = ST.GetPanelSizeKind(view)
+    local fields, target = PANEL_SIZE_FIELDS[kind], style
+    if kind ~= "bar" and not baseOnly then
+        local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
+        if section then
+            fields, target = SECTION_SIZE_FIELDS[kind], section
+        end
+    end
+    local first = ST.ClampPanelSize(fields[2], primary, whole)
+    local second = fields[3] and ST.ClampPanelSize(fields[4], secondary, whole)
+    if target[fields[1]] == first and (not fields[3] or target[fields[3]] == second) then
+        return false
+    end
+    if target == style and not sizingGroup then
+        target = ST.GetPanelSizingGroup(owner).style
+    end
+    target[fields[1]] = first
+    if fields[3] then
+        target[fields[3]] = second
+    end
+    return true
+end
+
 function ST.UpdateGroupSizeLabel(frame)
     if not (frame and frame.sizeLabel) then
         return
     end
 
-    local group = ST.GetPanelLayoutGroup(frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId])
-    local style = group and group.style
-    if not style then
+    local kind, primary, secondary = ST.ReadPanelSize(frame.groupId)
+    if not kind then
         return
-    end
-
-    local kind
-    if group.displayMode == "bars" then
-        kind = "bar"
-    elseif style.maintainAspectRatio then
-        kind = "square"
-    else
-        kind = "icon"
     end
 
     if frame.sizeLabel._editing then
@@ -383,43 +497,20 @@ function ST.UpdateGroupSizeLabel(frame)
     end
     frame.sizeLabel._sizeKind = kind
 
-    -- With a section selected, the ONE chrome kit speaks for THAT section
-    -- (owner ruling 2026-08-29: no second chrome surface -- the gold tint is
-    -- the signal): same fields, same kinds (a sectioned panel is an icon
-    -- panel by definition), values resolved with the layout's own fallbacks.
-    local sectionAnchor, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(frame.groupId)
-    if sectionAnchor and kind ~= "bar" then
-        if kind == "square" then
-            local size = ST.RoundToTenths(tonumber(section.iconWidth)
-                or tonumber(section.iconHeight)
-                or style.buttonSize or ST.BUTTON_SIZE)
-            ST.ConfigureEditableCoordLabel(frame.sizeLabel, "size:", nil, true)
-            frame.sizeLabel.text:SetText(("size:%.1f"):format(size))
-        else
-            local width = ST.RoundToTenths(tonumber(section.iconWidth)
-                or style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
-            local height = ST.RoundToTenths(tonumber(section.iconHeight)
-                or style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
-            ST.ConfigureEditableCoordLabel(frame.sizeLabel, "w:", "h:", false)
-            frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(width, height))
-        end
-        return
-    end
-
+    -- With a section selected, ReadPanelSize answers for THAT section: the ONE
+    -- chrome kit speaks for it (owner ruling 2026-08-29: no second chrome
+    -- surface -- the gold tint is the signal), with the same fields, since a
+    -- sectioned panel is an icon panel.
+    primary = ST.RoundToTenths(primary)
     if kind == "bar" then
-        local length = ST.RoundToTenths(style.barLength or 180)
-        local height = ST.RoundToTenths(style.barHeight or 20)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "l:", "h:", false)
-        frame.sizeLabel.text:SetText(("l:%.1f, h:%.1f"):format(length, height))
+        frame.sizeLabel.text:SetText(("l:%.1f, h:%.1f"):format(primary, ST.RoundToTenths(secondary)))
     elseif kind == "square" then
-        local size = ST.RoundToTenths(style.buttonSize or ST.BUTTON_SIZE)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "size:", nil, true)
-        frame.sizeLabel.text:SetText(("size:%.1f"):format(size))
+        frame.sizeLabel.text:SetText(("size:%.1f"):format(primary))
     else
-        local width = ST.RoundToTenths(style.iconWidth or style.buttonSize or ST.BUTTON_SIZE)
-        local height = ST.RoundToTenths(style.iconHeight or style.buttonSize or ST.BUTTON_SIZE)
         ST.ConfigureEditableCoordLabel(frame.sizeLabel, "w:", "h:", false)
-        frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(width, height))
+        frame.sizeLabel.text:SetText(("w:%.1f, h:%.1f"):format(primary, ST.RoundToTenths(secondary)))
     end
 end
 
@@ -761,6 +852,22 @@ local function GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, g
     return nil
 end
 
+-- The point a panel's frame holds still while it resizes: the centered
+-- growth edge (never on an Aura Panel), else compact mode's fixed corner,
+-- else nil (the panel's own anchor point). SizeGroupFrame pins it and the
+-- resize grip measures its travel from it, so the two cannot disagree.
+local function GetPanelResizeFixedPoint(groupId, group, style, orientation)
+    local fixedPoint
+    if not ST.IsAuraPanelGroup(group) then
+        fixedPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
+    end
+    if not fixedPoint and CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) then
+        fixedPoint = GetCompactAnchorFixedPoint(orientation,
+            NormalizeCompactGrowthDirection(group.compactGrowthDirection), style.growthOrigin)
+    end
+    return fixedPoint
+end
+
 local function GetCompactSlotForIndex(visibleIndex, visibleCount, buttonsPerRow, orientation, compactGrowthDirection)
     local slotIndex = visibleIndex - 1
     if orientation == "horizontal" then
@@ -902,7 +1009,7 @@ GF.IsCursorAnchorLayoutPreviewSelected = IsCursorAnchorLayoutPreviewSelected
 GF.UpdateCoordLabel = UpdateCoordLabel
 GF.CURSOR_ANCHOR_X = CURSOR_ANCHOR_X
 GF.CURSOR_ANCHOR_Y = CURSOR_ANCHOR_Y
-GF.GetCompactAnchorFixedPoint = GetCompactAnchorFixedPoint
+GF.GetPanelResizeFixedPoint = GetPanelResizeFixedPoint
 GF.GetContainerPreviewSelectionState = GetContainerPreviewSelectionState
 GF.IsAlphaSyncActive = IsAlphaSyncActive
 GF.SetPanelPreviewMarks = SetPanelPreviewMarks

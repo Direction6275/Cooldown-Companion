@@ -222,77 +222,24 @@ function GF.EnsureMoverChrome(frame)
     CreateEditableCoordLabel(
         frame.sizeLabel,
         function()
-            local currentGroup = ST.GetPanelLayoutGroup(CooldownCompanion.db.profile.groups[groupId])
-            local style = currentGroup and currentGroup.style
-            if not style then
-                return 0, 0
-            end
-            -- A selected section answers with ITS resolved size; the write
-            -- half below mirrors the same branch.
-            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
-            if section and currentGroup.displayMode ~= "bars" then
-                if style.maintainAspectRatio then
-                    return tonumber(section.iconWidth) or tonumber(section.iconHeight)
-                        or style.buttonSize or ST.BUTTON_SIZE
-                end
-                return tonumber(section.iconWidth) or style.iconWidth
-                        or style.buttonSize or ST.BUTTON_SIZE,
-                    tonumber(section.iconHeight) or style.iconHeight
-                        or style.buttonSize or ST.BUTTON_SIZE
-            end
-            if currentGroup.displayMode == "bars" then
-                return style.barLength or 180, style.barHeight or 20
-            elseif style.maintainAspectRatio then
-                return style.buttonSize or ST.BUTTON_SIZE
-            end
-            return style.iconWidth or style.buttonSize or ST.BUTTON_SIZE,
-                style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
+            -- The readout's own answer (ST.ReadPanelSize), selected section
+            -- included; the write half below follows the same branch.
+            local _, primary, secondary = ST.ReadPanelSize(groupId)
+            return primary or 0, secondary or 0
         end,
         function(primary, secondary)
-            local currentGroup = ST.GetPanelSizingGroup(CooldownCompanion.db.profile.groups[groupId])
-            local style = currentGroup and currentGroup.style
-            if not style then
+            local kind = ST.ReadPanelSize(groupId)
+            if not kind or kind ~= frame.sizeLabel._sizeKind
+                or (kind ~= "square" and secondary == nil) then
                 return
             end
-            local currentKind
-            if currentGroup.displayMode == "bars" then
-                currentKind = "bar"
-            elseif style.maintainAspectRatio then
-                currentKind = "square"
-            else
-                currentKind = "icon"
-            end
-            if currentKind ~= frame.sizeLabel._sizeKind
-                or (currentKind ~= "square" and secondary == nil) then
-                return
-            end
-            -- The section branch of the getter's answer, committed to the
-            -- section's own keys. Selection is re-read at commit time, so an
-            -- edit that outlived its selection falls through to the panel.
-            local _, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
-            if section and currentKind ~= "bar" then
-                if currentKind == "square" then
-                    section.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
-                else
-                    section.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
-                    section.iconHeight = math_max(10, math_min(150, ST.RoundToTenths(secondary)))
-                end
+            -- Tenths, like the config sliders. Selection is re-read at commit
+            -- time, so an edit that outlived its section selection lands on
+            -- the panel.
+            if ST.WritePanelSize(groupId, primary, secondary) then
                 CooldownCompanion:UpdateGroupStyle(groupId)
                 RefreshConfigPanelIfShown()
-                ST.UpdateGroupSizeLabel(frame)
-                return
             end
-            if currentKind == "bar" then
-                style.barLength = math_max(10, math_min(500, ST.RoundToTenths(primary)))
-                style.barHeight = math_max(5, math_min(100, ST.RoundToTenths(secondary)))
-            elseif currentKind == "square" then
-                style.buttonSize = math_max(10, math_min(150, ST.RoundToTenths(primary)))
-            else
-                style.iconWidth = math_max(10, math_min(150, ST.RoundToTenths(primary)))
-                style.iconHeight = math_max(10, math_min(150, ST.RoundToTenths(secondary)))
-            end
-            CooldownCompanion:UpdateGroupStyle(groupId)
-            RefreshConfigPanelIfShown()
             ST.UpdateGroupSizeLabel(frame)
         end,
         function()

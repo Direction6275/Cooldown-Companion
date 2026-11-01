@@ -576,8 +576,8 @@ local function RenderExportModeSummary(col3)
                         tile = AcquireExportPreviewTile(tileIndex),
                         panelId = panelInfo.groupId,
                         name = panelInfo.group.name or ("Panel " .. tostring(panelInfo.groupId)),
-                        -- Same rule as the overview: horizontal allocation
-                        -- follows saved-design width, not area.
+                        -- Horizontal allocation follows the panel's drawn
+                        -- saved-design width (sections included), not area.
                         weight = math.max(1, tonumber(naturalWidth) or 220),
                     }
                 end
