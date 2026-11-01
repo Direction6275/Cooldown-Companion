@@ -95,6 +95,8 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
     end
 end
 
+-- Writes the given table in place: for player edits, the finalize conversion
+-- and detached import data only. Reads use GetContainerAnchorView.
 function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     local normalized = type(anchor) == "table" and anchor or {}
     local point = normalized.point or "CENTER"
@@ -167,6 +169,31 @@ function CooldownCompanion:NormalizeContainerAnchor(anchor, resolveAddonFrames)
     return normalized, changed, false
 end
 
+-- Read-only (rule Q1): what NormalizeContainerAnchor would make of anchor,
+-- built in a copy (into, when given, is reused as that copy), with the same
+-- returns. The saved anchor is never written, even when it is passed as into.
+function CooldownCompanion:GetContainerAnchorView(anchor, resolveAddonFrames, into)
+    local point, relativeTo, relativePoint, x, y
+    if type(anchor) == "table" then
+        point, relativeTo, relativePoint = anchor.point, anchor.relativeTo, anchor.relativePoint
+        x, y = anchor.x, anchor.y
+    end
+    local view = into ~= anchor and into or {}
+    wipe(view)
+    view.point, view.relativeTo, view.relativePoint = point, relativeTo, relativePoint
+    view.x, view.y = x, y
+    return self:NormalizeContainerAnchor(view, resolveAddonFrames)
+end
+
+local finalizeViewScratch = {}
+
+-- ONE-TIME CONVERSION (rule Q1): a visible Group's saved anchor becomes a
+-- CENTER/UIParent screen offset in tenths (the default when missing) the first
+-- time its target can be measured. It needs built frames, so it is not in
+-- RunAllMigrations: it runs at login (OnEnable), on every full refresh
+-- (RefreshAllGroups), on a visibility refresh that changes which frames exist,
+-- and after Groups are duplicated. It writes only when it converts, so a
+-- re-run over converted anchors changes nothing.
 function CooldownCompanion:FinalizeContainerAnchorsToScreenOffsets()
     local containers = self.db and self.db.profile and self.db.profile.groupContainers
     if not containers then return end
@@ -180,14 +207,12 @@ function CooldownCompanion:FinalizeContainerAnchorsToScreenOffsets()
                 and self:GetContainerAnchorTargetState(containerId, relativeTo) == "unsafe"
 
             if not skipFinalize then
-                local normalized, changed, deferred = self:NormalizeContainerAnchor(container.anchor, true)
-                if not deferred then
-                    container.anchor = normalized
-                    if changed then
-                        local frame = self.containerFrames and self.containerFrames[containerId]
-                        if frame then
-                            self:AnchorContainerFrame(frame, container.anchor)
-                        end
+                local _, changed, deferred = self:GetContainerAnchorView(container.anchor, true, finalizeViewScratch)
+                if changed and not deferred then
+                    container.anchor = self:NormalizeContainerAnchor(container.anchor, true)
+                    local frame = self.containerFrames and self.containerFrames[containerId]
+                    if frame then
+                        self:AnchorContainerFrame(frame, container.anchor)
                     end
                 end
             end
