@@ -18,9 +18,6 @@ local InCombatLockdown = InCombatLockdown
 local GetCursorPosition = GetCursorPosition
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
 
--- Utils.lua
-local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
-
 local GF = ST._GroupFrame
 
 -- GroupFrameShared.lua
@@ -31,7 +28,7 @@ local UpdateCoordLabel = GF.UpdateCoordLabel
 local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
 local GetPanelUnlockState = GF.GetPanelUnlockState
-local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
+local GetPanelResizeFixedPoint = GF.GetPanelResizeFixedPoint
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local ApplySectionSelectionTint = GF.ApplySectionSelectionTint
 
@@ -39,6 +36,11 @@ local moverChromeFadeState = {
     active = false,
     activeMover = nil,
     generation = 0,
+    -- Mouse-wheel resizes. Every notch bumps wheelGeneration, so only the
+    -- last notch's timer sees its own number; wheelSizeChanged says a notch
+    -- in the burst wrote a saved size.
+    wheelGeneration = 0,
+    wheelSizeChanged = false,
 }
 
 function CooldownCompanion:ApplyMoverChromeFadeToFrames(header, coordLabel, nudger, resizeGrip, sizeLabel)
@@ -187,14 +189,32 @@ function CooldownCompanion:ResetMoverChromeFade()
     self:ApplyMoverChromeFadeState()
 end
 
+-- A wheel burst ends 0.5 s after its last notch: the chrome fades back in
+-- and, if a notch changed a saved size, an open settings window catches up
+-- once (owner ruling R-STEP, "update once you stop"). The refresh checks the
+-- wheel's own generation, not the fade's: hovering the nudger or grabbing a
+-- grip mid-burst starts a newer fade, and the window must still catch up.
 function CooldownCompanion:BeginMoverChromeWheelFade(activeMover)
     self:BeginMoverChromeFade(activeMover)
     local generation = moverChromeFadeState.generation
+    moverChromeFadeState.wheelGeneration = moverChromeFadeState.wheelGeneration + 1
+    local wheelGeneration = moverChromeFadeState.wheelGeneration
     C_Timer.After(0.5, function()
         if moverChromeFadeState.active and moverChromeFadeState.generation == generation then
             CooldownCompanion:EndMoverChromeFade(activeMover)
         end
+        if moverChromeFadeState.wheelGeneration == wheelGeneration
+            and moverChromeFadeState.wheelSizeChanged then
+            moverChromeFadeState.wheelSizeChanged = false
+            ST.RefreshConfigPanelIfShown()
+        end
     end)
+end
+
+-- A wheel notch that wrote a saved size: the panel wheel below and the Cast
+-- Bar / Resource Bars kit wheel (EditableCoordLabel.lua).
+function CooldownCompanion:MarkMoverWheelSizeChanged()
+    moverChromeFadeState.wheelSizeChanged = true
 end
 
 -- 16 fits the corner-bracket glyph at the size it reads well (12px art +
@@ -328,10 +348,6 @@ local function CanUsePanelResizeInteractions(groupId, group)
     return previewActive and selected or false
 end
 
-local function RoundAndClampPanelSize(value, minValue, maxValue)
-    return math_max(minValue, math_min(maxValue, math_floor(value + 0.5)))
-end
-
 local function GetPanelResizeCursorPosition()
     if not (GetCursorPosition and UIParent) then
         return nil, nil
@@ -380,15 +396,10 @@ local function GetPanelResizeBasis(frame, groupId, group, basis)
         basis.cols = math_max(1, math_ceil(numButtons / buttonsPerRow))
     end
 
-    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local factorPoint
-    if not ST.IsAuraPanelGroup(group) then
-        factorPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
-    end
-    if not factorPoint and CooldownCompanion:IsGroupCompactLayoutActive(groupId, group) then
-        factorPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
-    end
-    factorPoint = factorPoint or ((group.anchor and group.anchor.point) or "CENTER")
+    -- The point SizeGroupFrame holds still sets how far the grip corner
+    -- travels per unit of size; without one, the anchor point does.
+    local factorPoint = GetPanelResizeFixedPoint(groupId, group, style, orientation)
+        or (group.anchor and group.anchor.point) or "CENTER"
     if factorPoint:find("LEFT", 1, true) then
         basis.kX = 1
     elseif factorPoint:find("RIGHT", 1, true) then
@@ -426,7 +437,7 @@ local function GetPanelResizeBasis(frame, groupId, group, basis)
         end
     end
 
-    basis.kind = group.displayMode == "bars" and "bar" or style.maintainAspectRatio and "square" or "icon"
+    basis.kind = ST.GetPanelSizeKind(group)
     basis.barFillVertical = basis.kind == "bar" and style.barFillVertical == true
     basis.displayMode = group.displayMode or "icons"
     basis.orientation = orientation
@@ -469,56 +480,27 @@ local function ApplyPanelResizeFromCursor(grip)
         return false
     end
 
-    local style = group.style
-    if not style then
-        return false
-    end
-
     local basis = grip._resizeBasis
     local dx = (cursorX - grip._resizeStartX) * (basis.signX or 1)
     local dy = (cursorY - grip._resizeStartY) * (basis.signY or 1)
     local perButtonDW = basis.cols > 0 and dx / (basis.cols * basis.kX) or 0
     local perButtonDH = basis.rows > 0 and -dy / (basis.rows * basis.kY) or 0
-    local changed = false
 
+    -- In ST.ReadPanelSize's order. A vertical-fill bar's length runs along
+    -- Y and its thickness along X.
+    local primary, secondary
     if basis.kind == "square" then
-        local newSize = RoundAndClampPanelSize(grip._resizeStartPrimary + ((perButtonDW + perButtonDH) / 2), 10, 150)
-        if style.buttonSize ~= newSize then
-            style.buttonSize = newSize
-            changed = true
-        end
-    elseif basis.kind == "icon" then
-        local newWidth = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 150)
-        local newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 10, 150)
-        if style.iconWidth ~= newWidth then
-            style.iconWidth = newWidth
-            changed = true
-        end
-        if style.iconHeight ~= newHeight then
-            style.iconHeight = newHeight
-            changed = true
-        end
-    elseif basis.kind == "bar" then
-        local newLength
-        local newHeight
-        if basis.barFillVertical then
-            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDH, 10, 500)
-            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDW, 5, 100)
-        else
-            newLength = RoundAndClampPanelSize(grip._resizeStartPrimary + perButtonDW, 10, 500)
-            newHeight = RoundAndClampPanelSize(grip._resizeStartSecondary + perButtonDH, 5, 100)
-        end
-        if style.barLength ~= newLength then
-            style.barLength = newLength
-            changed = true
-        end
-        if style.barHeight ~= newHeight then
-            style.barHeight = newHeight
-            changed = true
-        end
+        primary = grip._resizeStartPrimary + ((perButtonDW + perButtonDH) / 2)
+    elseif basis.barFillVertical then
+        primary = grip._resizeStartPrimary + perButtonDH
+        secondary = grip._resizeStartSecondary + perButtonDW
+    else
+        primary = grip._resizeStartPrimary + perButtonDW
+        secondary = grip._resizeStartSecondary + perButtonDH
     end
-
-    return changed
+    -- Whole numbers, base cluster only, into the style held since mouse-down
+    -- (identity-checked above), so nothing is resolved per frame.
+    return ST.WritePanelSize(groupId, primary, secondary, true, true, group)
 end
 
 local RefreshConfigPanelIfShown = ST.RefreshConfigPanelIfShown
@@ -624,16 +606,11 @@ local function BeginPanelResizeGesture(grip)
     grip._resizeRestylePending = nil
 
     grip._resizeBasis = GetPanelResizeBasis(frame, groupId, group, {})
-    if group.displayMode == "bars" then
-        grip._resizeStartPrimary = style.barLength or 180
-        grip._resizeStartSecondary = style.barHeight or 20
-    elseif style.maintainAspectRatio then
-        grip._resizeStartPrimary = style.buttonSize or ST.BUTTON_SIZE
-        grip._resizeStartSecondary = nil
-    else
-        grip._resizeStartPrimary = style.iconWidth or style.buttonSize or ST.BUTTON_SIZE
-        grip._resizeStartSecondary = style.iconHeight or style.buttonSize or ST.BUTTON_SIZE
-    end
+    -- The base cluster's size as every size control reads it; the grip
+    -- never follows a selected section.
+    local _, startPrimary, startSecondary = ST.ReadPanelSize(groupId, true)
+    grip._resizeStartPrimary = startPrimary
+    grip._resizeStartSecondary = startSecondary
 
     grip._resizeActive = true
     CooldownCompanion:BeginMoverChromeFade(grip)
@@ -686,97 +663,37 @@ end
 
 local function OnUnlockedPanelMouseWheel(frame, delta)
     local groupId = frame.groupId
-    local group = ST.GetPanelSizingGroup(groupId and CooldownCompanion.db.profile.groups[groupId])
-    if not group
-        or not CanUsePanelResizeInteractions(groupId, group)
+    local owner = groupId and CooldownCompanion.db.profile.groups[groupId]
+    if not owner
+        or not CanUsePanelResizeInteractions(groupId, owner)
         or not delta
         or delta == 0 then
         return
     end
 
-    local style = group.style
-    if not style then
+    local _, primary, secondary = ST.ReadPanelSize(groupId)
+    if not primary then
         return
     end
 
     CancelCoordinateEdit(frame.coordLabel)
     CancelCoordinateEdit(frame.sizeLabel)
     CooldownCompanion:BeginMoverChromeWheelFade(frame)
+    -- One notch moves every dimension by 1 from what is on screen, within
+    -- the ranges: a bar panel's length and thickness together (owner ruling
+    -- R63-a, like icon panels and the Cast Bar and Resource Bars). A selected
+    -- section takes the notch instead of the panel (owner ruling 2026-08-28:
+    -- panel-level resize drives the base cluster only); Read and Write both
+    -- follow it.
     local step = delta > 0 and 1 or -1
-    local changed = false
-
-    -- A selected SECTION captures the wheel: the panel's own size keys stay
-    -- untouched and the section's stored icon size moves instead (owner
-    -- ruling 2026-08-28: panel-level resize drives the base cluster only).
-    -- Current values resolve exactly the way ResolvePanelSectionGeometry
-    -- resolves them, so the first wheel tick moves from what is on screen.
-    local sectionAnchor, section = CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)
-    if sectionAnchor and group.displayMode ~= "bars" then
-        if style.maintainAspectRatio then
-            local current = math_floor((tonumber(section.iconWidth)
-                or tonumber(section.iconHeight)
-                or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-            local newSize = RoundAndClampPanelSize(current + step, 10, 150)
-            if section.iconWidth ~= newSize then
-                section.iconWidth = newSize
-                changed = true
-            end
-        else
-            local currentWidth = math_floor((tonumber(section.iconWidth)
-                or style.iconWidth or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-            local currentHeight = math_floor((tonumber(section.iconHeight)
-                or style.iconHeight or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-            local newWidth = RoundAndClampPanelSize(currentWidth + step, 10, 150)
-            local newHeight = RoundAndClampPanelSize(currentHeight + step, 10, 150)
-            if section.iconWidth ~= newWidth then
-                section.iconWidth = newWidth
-                changed = true
-            end
-            if section.iconHeight ~= newHeight then
-                section.iconHeight = newHeight
-                changed = true
-            end
-        end
-        if changed then
-            CooldownCompanion:UpdateGroupStyle(groupId)
-        end
-        ST.UpdateGroupSizeLabel(frame)
-        return
+    primary = math_floor(primary + 0.5) + step
+    if secondary then
+        secondary = math_floor(secondary + 0.5) + step
     end
-
-    if group.displayMode == "bars" then
-        -- barHeight is thickness: screen height for horizontal fill and screen
-        -- width after GetButtonDimensions transposes a vertical-fill bar.
-        local current = math_floor((style.barHeight or 20) + 0.5)
-        local newHeight = RoundAndClampPanelSize(current + step, 5, 100)
-        if style.barHeight ~= newHeight then
-            style.barHeight = newHeight
-            changed = true
-        end
-    elseif style.maintainAspectRatio then
-        local current = math_floor((style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-        local newSize = RoundAndClampPanelSize(current + step, 10, 150)
-        if style.buttonSize ~= newSize then
-            style.buttonSize = newSize
-            changed = true
-        end
-    else
-        local currentWidth = math_floor((style.iconWidth or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-        local currentHeight = math_floor((style.iconHeight or style.buttonSize or ST.BUTTON_SIZE) + 0.5)
-        local newWidth = RoundAndClampPanelSize(currentWidth + step, 10, 150)
-        local newHeight = RoundAndClampPanelSize(currentHeight + step, 10, 150)
-        if style.iconWidth ~= newWidth then
-            style.iconWidth = newWidth
-            changed = true
-        end
-        if style.iconHeight ~= newHeight then
-            style.iconHeight = newHeight
-            changed = true
-        end
-    end
-
-    if changed then
+    if ST.WritePanelSize(groupId, primary, secondary, true) then
         CooldownCompanion:UpdateGroupStyle(groupId)
+        -- The settings window catches up once the wheel stops (R-STEP).
+        CooldownCompanion:MarkMoverWheelSizeChanged()
     end
     ST.UpdateGroupSizeLabel(frame)
 end

@@ -29,7 +29,7 @@ local GF = ST._GroupFrame
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local GetGrowthMultipliers = GF.GetGrowthMultipliers
 local PropagateFrameStrata = GF.PropagateFrameStrata
-local GetCompactAnchorFixedPoint = GF.GetCompactAnchorFixedPoint
+local GetPanelResizeFixedPoint = GF.GetPanelResizeFixedPoint
 local UpdateCoordLabel = GF.UpdateCoordLabel
 local GetCompactSlotForIndex = GF.GetCompactSlotForIndex
 
@@ -718,18 +718,11 @@ local function SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
 
     frame:SetSize(targetWidth, targetHeight)
 
-    local compactGrowthDirection = NormalizeCompactGrowthDirection(group.compactGrowthDirection)
-    local fixedPoint
-    if not ST.IsAuraPanelGroup(group) then
-        -- Centered growth pins the edge midpoint so the panel's primary-axis
-        -- center holds still as the frame resizes, the same compensation
-        -- compact mode runs for its fixed corner. It wins over the compact
-        -- start/center/end alignment, which it supersedes.
-        fixedPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)
-    end
-    if not fixedPoint and self:IsGroupCompactLayoutActive(groupId, group) then
-        fixedPoint = GetCompactAnchorFixedPoint(orientation, compactGrowthDirection, style.growthOrigin)
-    end
+    -- Centered growth pins the edge midpoint so the panel's primary-axis
+    -- center holds still as the frame resizes (it wins over compact mode's
+    -- start/center/end alignment); otherwise compact mode's fixed corner.
+    -- The resize grip measures its travel from the same point.
+    local fixedPoint = GetPanelResizeFixedPoint(groupId, group, style, orientation)
     local anchorX, anchorY = ST.UpdatePanelBaseAnchor(frame, group, sectionLayout,
         fixedPoint, targetWidth, targetHeight)
     if anchorX then UpdateCoordLabel(frame, anchorX, anchorY) end
