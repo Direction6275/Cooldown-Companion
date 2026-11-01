@@ -899,8 +899,8 @@ function ST._RefreshButtonPanelPreviewSelection(host, panelId)
     return true
 end
 
--- Saved-design mirror used by Group Panel Overview tiles. The overview owns
--- the only mouse surface; this renderer supplies visuals and natural geometry.
+-- Saved-design mirror for Group overview and Export tiles: the tile owns the
+-- mouse surface; this renderer supplies visuals and natural geometry.
 function ST._GetReadOnlyPanelPreviewNaturalSize(panelId, modules)
     local group = panelId and CooldownCompanion.db.profile.groups[panelId]
     return GetPanelPreviewNaturalSize(group, modules)

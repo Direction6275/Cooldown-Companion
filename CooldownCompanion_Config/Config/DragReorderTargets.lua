@@ -309,9 +309,9 @@ end
 -- The Groups in hand are never a drop target, the way a rail panel drag skips
 -- its own panel rows: each pass in GetCol1DropTarget refuses them, the section
 -- finders walk past them, and CanonicalizeCol1IndicatorTarget never draws
--- against one. A drop aimed at one used to miss it in the order list (the
--- selection is taken out first) and land at the end of its run. A dragged
--- Group's panel rows count as the Group: they dim with it.
+-- against one. BuildCol1GroupDropPlan takes the selection out of the list it
+-- inserts into, so a target on one would have no position. A dragged Group's
+-- panel rows count as the Group: they dim with it.
 --
 -- Set per call by GetCol1DropTarget, like activeCol1DropSourceSection.
 local function IsCol1DraggedGroupId(id)
@@ -335,7 +335,7 @@ local function IsCol1DraggedGroupBlockRow(rowMeta)
     return IsCol1DraggedGroupRow(rowMeta)
 end
 
-local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
+local function BuildCol1DropResult(action, rowIndex, rowMeta)
     local frame = GetCol1DropFrame(rowMeta)
     if not (rowMeta and frame and frame:IsShown()) then
         return nil
@@ -346,18 +346,12 @@ local function BuildCol1DropResult(action, rowIndex, rowMeta, extra)
         return nil
     end
 
-    local result = {
+    return {
         action = action,
         rowIndex = rowIndex,
         targetRow = rowMeta,
         anchorFrame = frame,
     }
-    if extra then
-        for key, value in pairs(extra) do
-            result[key] = value
-        end
-    end
-    return result
 end
 
 FindCol1SectionDividerTarget = function(renderedRows, section)
@@ -440,20 +434,24 @@ local function ResolveCol1AuxBlockTarget(renderedRows, rowIndex, rowMeta, source
     if not rowMeta then
         return nil
     end
-    -- A Group's panel rows are its lower half: "before the next Unloaded
-    -- Group", or "after this one" when nothing but Groups in hand follows it,
-    -- as the loaded branch below does. The divider (top of the run) is only
-    -- for panel rows outside the Unloaded run.
+    -- A Group's panel rows are its lower half: "before the next Group", or
+    -- "after this one" when nothing but Groups in hand follows it. An Unloaded
+    -- drag over panel rows outside the Unloaded run gets the divider, the top
+    -- of that run.
     if sourceLoadBucket == "unloaded" then
         return FindFirstCol1UnloadedTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
             or FindLastCol1UnloadedTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
             or FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
     end
-    local nextTarget = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
-    if nextTarget then
-        return nextTarget
+    local target = FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex + 1)
+        or FindLastCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+    -- A loaded drag cannot join the Unloaded run, so an Unloaded Group's panel
+    -- rows mean the end of the loaded run, the divider, as its own row does.
+    -- A mixed selection's unloaded part does land beside that Group.
+    if target and sourceLoadBucket ~= "mixed" and target.targetRow.loadBucket == "unloaded" then
+        return FindCol1SectionDividerTarget(renderedRows, rowMeta.section)
     end
-    return FindLastCol1DropTargetInSection(renderedRows, rowMeta.section, rowIndex - 1)
+    return target
 end
 
 local function IsCol1UnloadedDragSource(sourceLoadBucket)
@@ -477,6 +475,7 @@ local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, so
     if targetSection == sourceSection then
         if rowMeta.kind == "section-header" then
             return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+                or BuildCol1DropResult("reorder-after", rowIndex - 1, rowMeta)
         end
         if rowMeta.kind == "unloaded-divider" then
             return FindCol1SectionDividerTarget(renderedRows, targetSection)
@@ -498,8 +497,12 @@ local function ResolveCol1MixedSectionTarget(renderedRows, rowMeta, rowIndex, so
         return FindCol1SectionDividerTarget(renderedRows, targetSection)
     end
 
-    return FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
+    local target = FindFirstCol1DropTargetInSection(renderedRows, targetSection, rowIndex)
         or FindCol1SectionDividerTarget(renderedRows, targetSection)
+    if not target and rowMeta.kind == "section-header" then
+        return BuildCol1DropResult("reorder-after", rowIndex - 1, rowMeta)
+    end
+    return target
 end
 
 local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, sourceSection, sourceLoadBucket, sourceGroupId, sourceGroupIds)
@@ -538,7 +541,10 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                     if sourceIsUnloaded then
                         return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
                     end
+                    -- With every loaded Group of the section in hand, the
+                    -- heading itself is the top of the section.
                     return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                        or BuildCol1DropResult("reorder-after", i, rowMeta)
                 elseif rowMeta.kind == "unloaded-divider" then
                     if sourceIsMixed then
                         return ResolveCol1MixedSectionTarget(renderedRows, rowMeta, i, sourceSection, "reorder-before")
@@ -608,6 +614,7 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                         return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i + 1)
                     end
                     return FindFirstCol1DropTargetInSection(renderedRows, rowMeta.section, i + 1)
+                        or BuildCol1DropResult("reorder-after", i, rowMeta)
                 elseif rowMeta.kind == "aux-block" then
                     return ResolveCol1AuxBlockTarget(renderedRows, i, rowMeta, sourceLoadBucket)
                 elseif rowMeta.kind == "unloaded-divider" then
@@ -666,7 +673,7 @@ local function GetCol1DropTarget(cursorX, cursorY, scrollWidget, renderedRows, s
                 if sourceIsUnloaded then
                     return ResolveCol1UnloadedSectionTarget(renderedRows, rowMeta.section, i, true)
                 end
-                return BuildCol1DropResult("reorder-after", i, rowMeta, { isBelowAll = true })
+                return BuildCol1DropResult("reorder-after", i, rowMeta)
             end
         end
     end
@@ -804,7 +811,7 @@ end
 -- the cursor happened to be over when it resolved.
 --
 -- Collapse them to one canonical spelling -- always the row BELOW the gap -- so
--- a given destination always draws the line in exactly one place.
+-- a given gap always draws the line in exactly one place.
 --
 -- The equivalence is true BY CONSTRUCTION, not by assumption: the row this
 -- returns is the next row that ShouldIncludeCol1TopLevelOrderRow admits and
@@ -812,13 +819,12 @@ end
 -- BuildCol1GroupDropPlan inserts into (the Groups in hand are taken out of it
 -- first). "After item N" and "before item N+1" are the same index.
 --
--- Running off the end of the ordering does NOT mean there is only one spelling.
--- For a loaded source, "after the last loaded group" and "before the unloaded
--- divider" are the same boundary, and the divider is the form the gap pass and
--- the below-all pass both already produce -- so it is the canonical one, and
--- pass 1 has to be brought into line with it. Without this, dropping past the
--- last loaded group draws the line under that group's shell while merely moving
--- a few pixels further draws it above the "Unloaded Groups" heading instead.
+-- Running off the end of the ordering: for a loaded source, "after the last
+-- loaded group" and "before the unloaded divider" are the same boundary, so
+-- when the section's own divider is the next row drawn, the line is drawn
+-- there. Column 1 draws every section's Unloaded run after all the loaded
+-- sections, so a walk that reaches another section first keeps the line under
+-- the hovered group: the divider would sit far below where the group lands.
 --
 -- Gated on a loaded source: an unloaded-source drag orders within the unloaded
 -- run, which the divider sits ABOVE, not below.
@@ -853,15 +859,10 @@ local function CanonicalizeCol1IndicatorTarget(state, dropTarget)
         if row.section ~= section then
             break
         end
-        if ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) and not IsCol1DraggedGroupRow(row) then
+        if (ShouldIncludeCol1TopLevelOrderRow(row, includeUnloaded) and not IsCol1DraggedGroupRow(row))
+            or (not includeUnloaded and row.kind == "unloaded-divider")
+        then
             return BuildCol1DropResult("reorder-before", i, row) or dropTarget
-        end
-    end
-
-    if not includeUnloaded then
-        local dividerTarget = FindCol1SectionDividerTarget(renderedRows, section)
-        if dividerTarget then
-            return dividerTarget
         end
     end
 

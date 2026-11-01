@@ -155,10 +155,10 @@ end
 -- writes. ShowCol1DropIndicator hides the line when they match, FinishCol1GroupDrag
 -- skips the drop then, and ApplyCol1Drop writes the final lists.
 --
--- Insert defaults are today's: the unloaded divider means the top of the
--- unloaded run for an unloaded drop and the end otherwise; a target not found
--- means the end; a mixed selection's unloaded part goes to the top of the
--- unloaded run unless the target is in that run.
+-- Insert defaults: the unloaded divider means the top of the unloaded run for
+-- an unloaded drop and the end otherwise; a target not found means the end; a
+-- mixed selection's unloaded part goes to the top of the unloaded run unless
+-- the target is in that run.
 --
 -- nil means nothing to drop: no target, an action that is not a reorder (the
 -- line hides for those too), no rows, a vanished source, or a target on a
@@ -190,9 +190,16 @@ local function BuildCol1GroupDropPlan(state, dropTarget)
         end
     elseif state.kind == "multi-group" and state.sourceGroupIds then
         isSource = state.sourceGroupIds
-        -- The selection keeps the order the Navigator draws it in: saved
-        -- per-spec order, then id (BuildOrderedContainerItems). Sorting on order
-        -- alone left tied Groups in table order, so a drop could swap them.
+        -- The selection keeps the order the Navigator draws it in, across
+        -- sections too. A selected Group with no drawn row goes after the
+        -- drawn ones, by saved per-spec order and then id, as
+        -- BuildOrderedContainerItems sorts.
+        local drawnIndex = {}
+        for index, row in ipairs(renderedRows) do
+            if row.kind == "container" and drawnIndex[row.id] == nil then
+                drawnIndex[row.id] = index
+            end
+        end
         local orderById = {}
         for cid in pairs(isSource) do
             local container = db.groupContainers[cid]
@@ -205,6 +212,10 @@ local function BuildCol1GroupDropPlan(state, dropTarget)
             end
         end
         table.sort(selected, function(a, b)
+            local drawnA, drawnB = drawnIndex[a] or math.huge, drawnIndex[b] or math.huge
+            if drawnA ~= drawnB then
+                return drawnA < drawnB
+            end
             if orderById[a] == orderById[b] then
                 return a < b
             end
