@@ -471,7 +471,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
         chargePresentationKind = "charge_full"
     end
 
-    if (kind == "cooldown" or kind == "cooldown_active" or kind == "cooldown_text" or IsAuraDurationTextKind(kind))
+    if (kind == "cooldown_active" or kind == "cooldown_text" or IsAuraDurationTextKind(kind))
         and slot.timeText then
         slot.timeText:SetText("")
     end
@@ -530,7 +530,7 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
             slot._cdcAuraPandemicActive = pandemicActive and true or false
             slot._cdcAuraPanel = isAuraPanel
         end
-    elseif (kind == "cooldown" or kind == "cooldown_active") and GetConditionalPreviewTiming then
+    elseif kind == "cooldown_active" and GetConditionalPreviewTiming then
         local startTime, duration, remaining = GetConditionalPreviewTiming(state, now)
         if startTime then
             if not buttonData.isPassive then
@@ -609,11 +609,14 @@ local function ApplyBarSlotConditionalPreview(slot, buttonData, group, panelId, 
                 -- Charge previews have no live recharge object. Use a stable
                 -- local 12-second sample with 8 seconds remaining so the Bar
                 -- mirror still demonstrates runtime-equivalent fill and text.
+                -- Its kind, charge_recharge, exists only on this slot sample:
+                -- BarSlotFillOnUpdate fills it upward and the bar ticker in
+                -- ButtonPanelPreviewEffects.lua counts its text.
                 local rechargeDuration = 12
                 local rechargeRemaining = 8
                 local rechargeElapsed = rechargeDuration - rechargeRemaining
                 local rechargeState = {
-                    kind = "cooldown",
+                    kind = "charge_recharge",
                     duration = rechargeDuration,
                     startTime = state.startedAt - rechargeElapsed,
                     loop = true,

@@ -1505,14 +1505,13 @@ function ST._BuildGroupPanelOverview(host, containerId)
     overview.pickerScrollOffset = nil
 
     local records = {}
-    local includeSections = true
     -- The Navigator's lock rule, so a tile, its menu and its row agree.
     local canToggleAnchorLock = ST._CanChangeLock(containerId)
     for index, panelInfo in ipairs(panels) do
         local tile = EnsureTile(overview, index)
         local modules = ST._GetPanelAttachmentPreviewModules(panelInfo.groupId, { groupOverview = true })
         local naturalWidth, naturalHeight =
-            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId, includeSections, modules)
+            ST._GetReadOnlyPanelPreviewNaturalSize(panelInfo.groupId, modules)
         local record = {
             tile = tile,
             containerId = containerId,

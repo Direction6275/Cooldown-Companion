@@ -1237,7 +1237,26 @@ local function ForceSectionOpen(collapseKey, lens, group)
     end
 end
 
+-- The shared end of both "go to this setting" entrances (the Customizations
+-- links and the Live Preview gear), run once every navigation write is made:
+-- queue the advanced panel unless it is already up on that key (nothing here
+-- means "toggle"), rebuild, then fire the highlight the rebuild recorded.
+local function FinishSettingsNavigation(queueKey)
+    if queueKey
+        and CS.QueueAdvancedSettingsPanelOpen
+        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(queueKey)) then
+        CS.QueueAdvancedSettingsPanelOpen(queueKey)
+    end
+    CooldownCompanion:RefreshConfigPanel()
+    if ST._ScheduleNavSettingHighlight then
+        ST._ScheduleNavSettingHighlight()
+    end
+end
+
 local function NavigateToSectionHome(sectionId, opts)
+    -- Commit a pending color pick and clear edit focus before leaving, as the
+    -- Live Preview gear does.
+    if ST._FlushSettingsEdits then ST._FlushSettingsEdits() end
     local _, group = ResolveContext()
     if not group then
         return false
@@ -1285,20 +1304,7 @@ local function NavigateToSectionHome(sectionId, opts)
         ForceSectionOpen(home and home.collapseKey, lens, group)
     end
 
-    -- Every write above is made; the rebuild below is what consumes this. The
-    -- already-open guard is the gear route's, for the same reason: a panel still
-    -- up on this key would be re-opened through the queue rather than left
-    -- alone, and nothing here means "toggle".
-    if advancedKey
-        and CS.QueueAdvancedSettingsPanelOpen
-        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(advancedKey)) then
-        CS.QueueAdvancedSettingsPanelOpen(advancedKey)
-    end
-
-    CooldownCompanion:RefreshConfigPanel()
-    if ST._ScheduleNavSettingHighlight then
-        ST._ScheduleNavSettingHighlight()
-    end
+    FinishSettingsNavigation(advancedKey)
     return true
 end
 
@@ -1474,20 +1480,9 @@ local function NavigateToPreviewSettings(bar)
     ApplyGearRoute(route, queueKey, sectionId, running)
 
     -- Queued last, with every navigation write already made, so the context
-    -- it snapshots is the one the rebuild will consume it under. The
-    -- Navigation ensures the editor is open, including repeated clicks.
-    -- An already open editor is rebound by the page build below.
-    if settingsKey
-        and not suppressQueue
-        and CS.QueueAdvancedSettingsPanelOpen
-        and not (CS.IsAdvancedSettingsPanelOpen and CS.IsAdvancedSettingsPanelOpen(settingsKey)) then
-        CS.QueueAdvancedSettingsPanelOpen(settingsKey)
-    end
-
-    CooldownCompanion:RefreshConfigPanel()
-    if ST._ScheduleNavSettingHighlight then
-        ST._ScheduleNavSettingHighlight()
-    end
+    -- it snapshots is the one the rebuild will consume it under. An already
+    -- open editor is rebound by the page build.
+    FinishSettingsNavigation(not suppressQueue and settingsKey or nil)
 end
 
 -- The command center offers the one-click shortcut whenever one selected entry
@@ -1571,12 +1566,9 @@ local function ReconcileRunningPreview(panelId, group, buttonIndex)
         if not ST.IsTotemPanelGroup(group) then Preview.Stop() end
         return
     end
-    local targets = ResolvePreviewTargets(control, panelId, buttonIndex)
-    if not targets and not ControlApplies(control, group, group.displayMode or "icons", buttonIndex) then
-        Preview.Stop()
-        return
-    end
-    Preview.Retarget(buttonIndex, targets)
+    -- A panel command always resolves to a target table (empty when nothing
+    -- qualifies), and Retarget stops the preview on an empty one.
+    Preview.Retarget(buttonIndex, ResolvePreviewTargets(control, panelId, buttonIndex))
 end
 
 function ST._ReconcileConfigPreviewSelection()
@@ -2153,12 +2145,23 @@ end
 -- change, panel switch, resize, preview toggle) and - critically -
 -- BEFORE the mirror measures itself, since it owns the host's bottom
 -- reserve.
+-- A slider or color drag tick is the one exception (see below).
 ------------------------------------------------------------------------
 
 local TOTEM_ACTIVE_CONTROL = ST._TotemPreviewCommand
 
 local function UpdatePreviewCommandCenter(host)
     if not host then
+        return
+    end
+
+    -- A slider or color drag tick (owner ruling R-STEP, Q73-1 A): keep this
+    -- bar exactly as the last build outside a drag left it (its offers, its
+    -- selection and the host's bottom reserve). The next build outside a
+    -- drag, normally the release's own rebuild, runs this in full. Safe only
+    -- while no offer test reads a slider or color value; an offer gate that
+    -- starts to must remove this return.
+    if CS.settingsPreviewInProgress then
         return
     end
 

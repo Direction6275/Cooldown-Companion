@@ -251,8 +251,7 @@ local function EnsureConditionalTicker(preview)
                             slot.style or {}, slot.buttonData, slot._cdcAuraLowTime, duration))
                     end
                     local widget
-                    if state.kind == "cooldown"
-                        or state.kind == "cooldown_active"
+                    if state.kind == "cooldown_active"
                         or state.kind == "cooldown_text"
                         or state.kind == "cooldown_swipe" then
                         widget = slot.cooldown
@@ -268,7 +267,7 @@ local function EnsureConditionalTicker(preview)
                         -- cooldown_swipe keeps its numbers hidden across
                         -- re-arms (a widget flag, not a region style), so
                         -- only the text-bearing kinds restyle here.
-                        if state.kind == "cooldown" or state.kind == "cooldown_text" or state.kind == "cooldown_active" then
+                        if state.kind == "cooldown_text" or state.kind == "cooldown_active" then
                             StyleSlotCooldownText(slot, slot.style or {})
                         end
                     end
@@ -287,14 +286,14 @@ local function EnsureConditionalTicker(preview)
                 if startTime then
                     if state.kind == "aura_active" then UpdateCombinedBarAuraEffects(slot, state, now) end
                     if slot.timeText
-                        and (state.kind == "cooldown"
+                        and (state.kind == "charge_recharge"
                             or state.kind == "cooldown_active"
                             or state.kind == "cooldown_text"
                             or IsAuraDurationTextKind(state.kind)) then
                         local style = slot.style or {}
                         local showText = (IsAuraDurationTextKind(state.kind)
                                 and style.showAuraText ~= false)
-                            or ((state.kind == "cooldown" or state.kind == "cooldown_text" or state.kind == "cooldown_active")
+                            or ((state.kind == "charge_recharge" or state.kind == "cooldown_text" or state.kind == "cooldown_active")
                                 and style.showCooldownText)
                         if showText then
                             if IsAuraDurationTextKind(state.kind) then

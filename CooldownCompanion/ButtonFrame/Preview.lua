@@ -119,7 +119,6 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
     aura_active = { kind = "aura_active", duration = 12, remaining = 8, loop = true,
         auraActive = true, stackText = "3" },
     aura_missing = { kind = "aura_missing", auraActive = false },
-    cooldown = { kind = "cooldown", duration = 12, remaining = 8, loop = true },
     -- The icons/bars split of the cooldown state (owner ruling 2026-08-08):
     -- _text renders the countdown text alone on an otherwise resting button;
     -- _swipe renders everything else the state carries (swipe or icon fill,
@@ -148,7 +147,7 @@ local CONDITIONAL_VISUAL_PREVIEW_DEFAULTS = {
 }
 
 local function BuildConditionalVisualPreviewState(previewKind)
-    local base = CONDITIONAL_VISUAL_PREVIEW_DEFAULTS[previewKind] or CONDITIONAL_VISUAL_PREVIEW_DEFAULTS.cooldown
+    local base = CONDITIONAL_VISUAL_PREVIEW_DEFAULTS[previewKind] or CONDITIONAL_VISUAL_PREVIEW_DEFAULTS.cooldown_active
     local state = {}
     for key, value in pairs(base) do
         state[key] = value

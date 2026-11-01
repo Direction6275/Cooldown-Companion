@@ -31,7 +31,7 @@ local function StyleIconEntry(slot, buttonData, group, effectiveStyle)
             style = CooldownCompanion:GetEffectiveStyle(style, buttonData, group) or style
         end
     end
-    StylePreviewIcon(slot, buttonData, group, style)
+    StylePreviewIcon(slot, buttonData, style)
 
     -- Keybind label: live icon buttons pin this above every layer so it stays
     -- readable whatever is drawn over the icon (IconMode.lua). Same font keys,
@@ -384,10 +384,10 @@ local function ApplySlotConditionalPreview(slot, buttonData, group, panelId, ind
         forceDesat = true
     end
 
-    -- The cooldown family: "cooldown" is the full state; "cooldown_swipe" is that state with
+    -- The cooldown family: "cooldown_active" is the full state; "cooldown_swipe" is that state with
     -- the countdown numbers withheld; "cooldown_text" is the countdown text
     -- alone on an otherwise resting slot (no fill, no desaturation, no tint).
-    if (kind == "cooldown" or kind == "cooldown_swipe" or kind == "cooldown_text" or kind == "cooldown_active")
+    if (kind == "cooldown_swipe" or kind == "cooldown_text" or kind == "cooldown_active")
         and GetConditionalPreviewTiming then
         local startTime, duration = GetConditionalPreviewTiming(state, now)
         if startTime then
