@@ -236,6 +236,24 @@ local function EnsureIndependentStackConfig(settings, layout)
     end
 end
 
+-- The anchor and width the stack is placed with: what
+-- EnsureIndependentStackConfig would save, read without writing. Only an edit
+-- saves them (rule Q1).
+local function ResolveIndependentStackPlacement(settings, layout)
+    layout = layout or settings
+    local source = type(layout.independentAnchor) == "table" and layout.independentAnchor
+        or type(settings.independentAnchor) == "table" and settings.independentAnchor or {}
+    local relativeTo = source.relativeTo
+    if relativeTo ~= nil and type(relativeTo) ~= "string" then relativeTo = nil end
+    return {
+        point = source.point or "CENTER",
+        relativePoint = source.relativePoint or "CENTER",
+        x = tonumber(source.x) or 0,
+        y = tonumber(source.y) or 0,
+        relativeTo = relativeTo,
+    }, ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
+end
+
 local function SaveIndependentStackAnchor(refreshConfig)
     if not independentWrapperFrame then return end
     local settings = GetResourceBarSettings()
@@ -386,9 +404,8 @@ local function EnsureIndependentStackMoverChrome(frame)
         getWidth = function()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)
-            return placementSettings and placementSettings.independentWidth
-                or (settings and settings.independentWidth)
-                or 200
+            return ClampIndependentDimension(placementSettings and placementSettings.independentWidth
+                or (settings and settings.independentWidth), 200)
         end,
         setWidth = function(width)
             local settings = GetResourceBarSettings()
@@ -468,6 +485,8 @@ local function EnsureIndependentStackMoverChrome(frame)
         CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
             return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
         end)
+        -- A drag is an edit: it saves the anchor its coordinates are read against.
+        EnsureIndependentStackConfig(settings, placementSettings)
         StartIndependentCoordUpdates(frame, placementSettings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
@@ -594,7 +613,7 @@ end
 
 --- Re-anchor drag handle and coord label to frame the bar content.
 --- Called after containers are positioned and RelayoutBars() completes.
-local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings, primaryLength, gap, aboveThickness, belowThickness)
+local function UpdateIndependentStackChrome(isVerticalLayout, anchor, primaryLength, gap, aboveThickness, belowThickness)
     if not independentWrapperFrame then return end
     if not containerFrameAbove or not containerFrameBelow then return end
     local frame = independentWrapperFrame
@@ -640,16 +659,7 @@ local function UpdateIndependentStackChrome(isVerticalLayout, placementSettings,
         coordLabel:ClearAllPoints()
         coordLabel:SetPoint("TOPLEFT", snapRect, "BOTTOMLEFT", 0, -2)
         coordLabel:SetPoint("TOPRIGHT", snapRect, "BOTTOMRIGHT", 0, -2)
-
-        local settings = GetResourceBarSettings()
-        placementSettings = placementSettings or (settings and GetSpecLayoutOrder(settings)) or settings
-        if placementSettings and placementSettings.independentAnchor then
-            UpdateIndependentCoordLabel(
-                frame,
-                placementSettings.independentAnchor.x,
-                placementSettings.independentAnchor.y
-            )
-        end
+        UpdateIndependentCoordLabel(frame, anchor.x, anchor.y)
     end
 end
 
@@ -2250,10 +2260,9 @@ function CooldownCompanion:ApplyResourceBars(opts)
     lastAppliedOrientation = GetResourceLayoutOrientation(settings)
     lastAppliedLayout = layout
     lastAppliedIndependentStack = isIndependentStack
-    local totalPrimaryLength
+    local totalPrimaryLength, independentAnchor
     if isIndependentStack then
-        EnsureIndependentStackConfig(settings, layout)
-        totalPrimaryLength = layout.independentWidth
+        independentAnchor, totalPrimaryLength = ResolveIndependentStackPlacement(settings, layout)
     else
         -- Keep the union length for the vertical stack and lifecycle state.
         -- Horizontal slots and containers resolve their own destination body.
@@ -2384,7 +2393,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
     if isIndependentStack then
         -- Independent mode: create wrapper frame at saved position, anchor containers to it
         CreateIndependentWrapperFrame()
-        local anchor = layout.independentAnchor
+        local anchor = independentAnchor
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
             relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
@@ -2436,7 +2445,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
 
     -- Anchor drag chrome to frame the content (after containers are sized)
     if isIndependentStack then
-        UpdateIndependentStackChrome(isVerticalLayout, layout, totalPrimaryLength, gap, aboveThickness, belowThickness)
+        UpdateIndependentStackChrome(isVerticalLayout, independentAnchor, totalPrimaryLength, gap, aboveThickness, belowThickness)
     end
 
     -- Enable OnUpdate

@@ -1129,7 +1129,7 @@ local function BuildResourceBarPositioningPanel(container)
                 end,
                 owner = layout,
                 widthLabel = "Bar Width",
-                widthValue = layout.independentWidth or settings.independentWidth or 200,
+                widthValue = RB.ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200),
                 finder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor,
                 apply = function() applyBars() end,
             })

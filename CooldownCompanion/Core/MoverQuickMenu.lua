@@ -111,6 +111,15 @@ local function ApplyExternalAnchor(descriptor, target)
         CooldownCompanion:Print("Frame '" .. tostring(target) .. "' not found.")
         return false
     end
+    -- Anchoring to a frame is an edit: it saves the anchor first.
+    if descriptor.kind == "cast" then
+        local settings = CooldownCompanion:GetCastBarSettings()
+        if settings then ST.EnsureIndependentCastBarConfig(settings) end
+    else
+        local settings = CooldownCompanion:GetResourceBarSettings()
+        local layout = settings and CooldownCompanion:GetSpecLayoutOrder()
+        if layout then ST._RB.EnsureIndependentStackConfig(settings, layout) end
+    end
     local anchor = GetExternalAnchor(descriptor)
     if type(anchor) ~= "table" then return false end
     if not target or target == "" or target == "UIParent" then

@@ -2246,10 +2246,10 @@ function ST._BuildLayoutOrderPanel(container)
     content:SetClipsChildren(false)
 
     local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
-    local independentLength = math_max(
-        20,
-        tonumber(standaloneCast and cbSettings.independentWidth or layout.independentWidth or rbSettings.independentWidth) or 200
-    )
+    -- The width the bar draws with (the apply clamps it the same way).
+    local independentLength = math_max(20, standaloneCast
+        and RB.ClampIndependentDimension(cbSettings.independentWidth, 200, 20)
+        or RB.ClampIndependentDimension(layout.independentWidth or rbSettings.independentWidth, 200))
     local contentWidth, contentHeight
     if preview.isVerticalLayout then
         contentWidth, contentHeight = RenderIndependentVerticalLayout(

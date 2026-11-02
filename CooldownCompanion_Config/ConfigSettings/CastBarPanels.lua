@@ -502,7 +502,7 @@ local function BuildCastBarPositioningPanel(container)
         end,
         owner = settings,
         widthLabel = "Cast Bar Width",
-        widthValue = settings.independentWidth or 200,
+        widthValue = ST._RB.ClampIndependentDimension(settings.independentWidth, 200, 20),
         finder = {
             frame = independent.anchorFrame,
             unlock = independent.unlock,
