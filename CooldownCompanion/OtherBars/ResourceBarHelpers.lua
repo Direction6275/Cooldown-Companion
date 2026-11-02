@@ -1,8 +1,10 @@
 --[[
     CooldownCompanion - ResourceBarHelpers
-    Pure query/helper functions with no mutable state writes (aside from
-    auto-vivification of config tables and a power-type secrecy memoization
-    cache). Used by both ResourceBar.lua and ResourceBarVisuals.lua at runtime.
+    Query/helper functions used by both ResourceBar.lua and
+    ResourceBarVisuals.lua at runtime. Reads never write saved data: a spec's
+    layout and display profile are looked up, never created. The Ensure*
+    functions and PrepareSpecResourceLayout are the only writers; the one
+    other mutable state is a power-type secrecy memoization cache.
 
     All functions are added to ST._RB so consuming files can alias them to
     locals at load time.
@@ -582,37 +584,48 @@ local function CreateDefaultLayoutOrder(settings)
     }, settings)
 end
 
+-- Spec stores hold numeric keys; a string key is read the same way, as
+-- ST.ResolveModuleBarStyle and ScopedSettings read it.
+local function GetSpecKeyedTable(store, specID)
+    if type(store) ~= "table" then return nil end
+    local value = store[tonumber(specID) or specID]
+    if type(value) ~= "table" then value = store[tostring(specID)] end
+    return type(value) == "table" and value or nil
+end
+
+-- The spec's layout, or nil when it has none. Never writes: the current
+-- spec of the current record is prepared at login, profile change, import
+-- and spec change (CooldownCompanion:PrepareResourceBarSettings), and an
+-- edit to another spec makes its layout through EnsureSpecLayoutOrder.
 GetSpecLayoutOrder = function(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()
     if not specID then return nil end
-    specID = tonumber(specID) or specID
-    if not settings.layoutOrder then settings.layoutOrder = {} end
-    if type(settings.layoutOrder[specID]) ~= "table" then
-        settings.layoutOrder[specID] = CreateDefaultLayoutOrder(settings)
-    else
-        SeedResourceLayoutFromGlobal(settings.layoutOrder[specID], settings)
-    end
-    return settings.layoutOrder[specID]
+    return GetSpecKeyedTable(settings.layoutOrder, specID)
 end
 
--- Seeding only fills nils and normalizes one key, and every key it touches is
--- non-nil once it has run, so a second pass over the same profile table can
--- never change the result. It is therefore first-touch: the write-back below
--- lands in SavedVariables, and GetSpecResourceDisplayProfile is read at the
--- poll cadence. Weak keys so a profile table dropped by a profile switch,
--- import or spec copy is not pinned here — and a replaced table is a new
--- table, which seeds again.
-local seededResourceDisplayProfiles = setmetatable({}, { __mode = "k" })
+-- The spec's layout, made from the record's own values when missing and
+-- nil-filled when present. Only the prepare step and a player's edit call it.
+local function EnsureSpecLayoutOrder(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
+    if not specID then return nil end
+    local layout = GetSpecKeyedTable(settings.layoutOrder, specID)
+    if layout then
+        return SeedResourceLayoutFromGlobal(layout, settings)
+    end
+    if type(settings.layoutOrder) ~= "table" then settings.layoutOrder = {} end
+    layout = CreateDefaultLayoutOrder(settings)
+    settings.layoutOrder[tonumber(specID) or specID] = layout
+    return layout
+end
 
+-- Seeding only fills nils and writes a normalized smoothing value only when
+-- it differs, so a second pass over the same profile changes nothing.
 local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if type(profile) ~= "table" or type(settings) ~= "table" then
         return profile
     end
-    if seededResourceDisplayProfiles[profile] then
-        return profile
-    end
-    seededResourceDisplayProfiles[profile] = true
     for _, key in ipairs(RESOURCE_DISPLAY_PROFILE_KEYS) do
         if profile[key] == nil then
             local value = settings[key]
@@ -626,22 +639,49 @@ local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if profile.borderSize == nil then profile.borderSize = 1 end
     if profile.borderRenderMode == nil then profile.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM end
     if profile.classBarBrightness == nil then profile.classBarBrightness = 1.3 end
-    profile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(profile.segmentedSmoothing)
+    local smoothing = ST.NormalizeSegmentedSmoothing(profile.segmentedSmoothing)
+    if profile.segmentedSmoothing ~= smoothing then
+        profile.segmentedSmoothing = smoothing
+    end
     return profile
 end
 
+-- What the fill makes for a spec from the record's own values, unsaved.
+local function CreateSeededDisplayProfile(settings)
+    return SeedResourceDisplayProfileFromGlobal({}, settings)
+end
+
+-- The spec's display profile, or nil when it has none. Never writes.
 local function GetSpecResourceDisplayProfile(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()
     if not specID then return nil end
-    specID = tonumber(specID) or specID
-    if type(settings.displayProfiles) ~= "table" then
-        settings.displayProfiles = {}
+    return GetSpecKeyedTable(settings.displayProfiles, specID)
+end
+
+-- The spec's display profile, made when missing and nil-filled from the
+-- record's own values. Only the prepare step and a player's edit call it.
+local function EnsureSpecResourceDisplayProfile(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
+    if not specID then return nil end
+    local profile = GetSpecKeyedTable(settings.displayProfiles, specID)
+    if not profile then
+        if type(settings.displayProfiles) ~= "table" then settings.displayProfiles = {} end
+        profile = {}
+        settings.displayProfiles[tonumber(specID) or specID] = profile
     end
-    if type(settings.displayProfiles[specID]) ~= "table" then
-        settings.displayProfiles[specID] = {}
-    end
-    return SeedResourceDisplayProfileFromGlobal(settings.displayProfiles[specID], settings)
+    return SeedResourceDisplayProfileFromGlobal(profile, settings)
+end
+
+-- Owner ruling R76: the one fill of a spec's Resources layout and display
+-- profile, run only at the current-class prepare step, the spec-transition
+-- hook and a player's edit. Nil-only and idempotent.
+local function PrepareSpecResourceLayout(settings, specID)
+    specID = specID or GetCurrentSpecID()
+    if type(settings) ~= "table" or not specID then return end
+    EnsureSpecLayoutOrder(settings, specID)
+    EnsureSpecResourceDisplayProfile(settings, specID)
 end
 
 local function GetResourceDisplayValue(settings, key, fallback, powerType, appearance)
@@ -1446,6 +1486,9 @@ local function ResolveResourceTextRules(resourceConfig, settings, powerType, spe
         and not (textFormat == "percent" and contract.offersPercent) then
         textFormat = RB.DEFAULT_RESOURCE_TEXT_FORMAT
     end
+    -- Owner ruling Q-C2 (leave as is): a setting an older setup never saved
+    -- keeps its old behaviour, so Stagger text stays on here, and an
+    -- Independent stack first chosen on an older setup comes up unlocked.
     local showText = resourceConfig and resourceConfig.showText
     if contract.stackText then
         showText = showText == true
@@ -1597,7 +1640,12 @@ RB.BuildResourcesSetupSection = BuildResourcesSetupSection
 RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
+RB.EnsureSpecLayoutOrder = EnsureSpecLayoutOrder
+RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
+RB.EnsureSpecResourceDisplayProfile = EnsureSpecResourceDisplayProfile
+RB.CreateSeededDisplayProfile = CreateSeededDisplayProfile
+RB.PrepareSpecResourceLayout = PrepareSpecResourceLayout
 RB.GetResourceDisplayValue = GetResourceDisplayValue
 RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
 RB.GetMWDisplayStyle = GetMWDisplayStyle

@@ -214,12 +214,12 @@ end
 local RESOURCE_TEXT_ROLES = { { "text", "barValue", "barValueTypography" },
     { "rechargeText", "barDuration", "barDurationTypography" } }
 
--- Spec layouts belong to RB.GetSpecLayoutOrder, so a spec first created by a
--- migration matches one created by a visit (including its cast bar slot).
+-- A spec first created by a conversion matches one made at the prepare step
+-- or by an edit (RB.EnsureSpecLayoutOrder), including its cast bar slot.
 local function MigrationSpecLayout(settings, spec)
     local layout = settings.layoutOrder and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)])
     if layout then return layout end
-    if ST._RB and ST._RB.GetSpecLayoutOrder then return ST._RB.GetSpecLayoutOrder(settings, spec) end
+    if ST._RB and ST._RB.EnsureSpecLayoutOrder then return ST._RB.EnsureSpecLayoutOrder(settings, spec) end
     settings.layoutOrder = settings.layoutOrder or {}
     settings.layoutOrder[spec] = {}
     return settings.layoutOrder[spec]

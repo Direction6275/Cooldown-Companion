@@ -274,14 +274,15 @@ local function ModuleStyleContext(kind, powerType, spec, resourceWide)
     -- An independent cast bar, and independent Resources as a whole, are
     -- their own appearance owners: these rows edit their saved settings as a
     -- panel's rows edit the panel. Saved per-bar customizations stay put.
-    local store
+    -- The spec's display profile is made at the first edit, not on open.
+    local Store
     if resourceWide then
         context.resourceWide = true
-        store = ST._RB.GetSpecResourceDisplayProfile(context.settings, context.spec)
+        Store = function() return ST._RB.EnsureSpecResourceDisplayProfile(context.settings, context.spec) end
     elseif kind == "castbar" and not context.owner then
-        store = context.settings
+        Store = function() return context.settings end
     end
-    if store then
+    if Store then
         context.mode, context.entry = "panel", nil
         local keys = {}
         for localKey, sharedKey in pairs(ST.MODULE_BAR_STYLE_MAPS[kind]) do
@@ -294,14 +295,23 @@ local function ModuleStyleContext(kind, powerType, spec, resourceWide)
         context.group.style = setmetatable({}, {
             __index = function(_, key) return context:ReadStyle()[key] end,
             __newindex = function(_, key, value)
-                if context:IsCurrent() and keys[key] then store[keys[key]] = value end
+                if context:IsCurrent() and keys[key] then Store()[keys[key]] = value end
             end,
             _settingsPreviewTarget = {
                 isCurrent = function() return context:IsCurrent() end,
                 capture = function(sharedKeys)
                     local localKeys = {}
                     for _, key in ipairs(sharedKeys) do if keys[key] then localKeys[#localKeys + 1] = keys[key] end end
-                    return ST._CaptureRawSettingsFields(store, localKeys)
+                    if not resourceWide then return ST._CaptureRawSettingsFields(Store(), localKeys) end
+                    -- A preview also removes a display profile it had to make;
+                    -- only a committed edit keeps it.
+                    local settings, spec = context.settings, context.spec
+                    local restores = {
+                        ST._CaptureRawSettingsFields(ST._RB.GetSpecResourceDisplayProfile(settings, spec), localKeys),
+                        ST._CaptureRawSettingsFields(settings.displayProfiles, { tonumber(spec) or spec }),
+                        ST._CaptureRawSettingsFields(settings, { "displayProfiles" }),
+                    }
+                    return function() for _, restore in ipairs(restores) do restore() end end
                 end,
             },
         })

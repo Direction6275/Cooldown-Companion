@@ -1056,11 +1056,27 @@ end
 -- Shared with the Panel Template import (PanelTemplates.lua).
 ST._DeepEqual = DeepEqual
 
+local function WithoutPreparedSpecEntries(store, prepared)
+    if type(store) ~= "table" then
+        return store
+    end
+    local kept = {}
+    for specID, entry in pairs(store) do
+        if not DeepEqual(entry, prepared) then
+            kept[specID] = entry
+        end
+    end
+    return kept
+end
+
 -- Migration stamps (_barGeometryVersion, _barSegmentGapVersion,
 -- _sharedBarStyleVersion and any later _...Version) record what the addon
 -- converted, never what the player chose, so a real setting must never be
 -- stored under that key shape.
-local function IsDefaultResourceBarClassSettings(settings, classKey)
+-- options.ignorePreparedSpecs: a spec layout or display profile holding only
+-- what the R76 fill makes from this record's own values is bookkeeping for a
+-- spec played, not a player's setup, and is left out of the comparison.
+local function IsDefaultResourceBarClassSettings(settings, classKey, options)
     if type(settings) ~= "table" then
         return false
     end
@@ -1069,6 +1085,12 @@ local function IsDefaultResourceBarClassSettings(settings, classKey)
         if not (type(key) == "string" and key:match("^_%w+Version$")) then
             comparable[key] = value
         end
+    end
+    if options and options.ignorePreparedSpecs then
+        comparable.layoutOrder = WithoutPreparedSpecEntries(settings.layoutOrder,
+            ST._RB.CreateDefaultLayoutOrder(settings))
+        comparable.displayProfiles = WithoutPreparedSpecEntries(settings.displayProfiles,
+            ST._RB.CreateSeededDisplayProfile(settings))
     end
     if comparable.keepSpecResourcesInAllForms == nil then
         comparable.keepSpecResourcesInAllForms = false
@@ -1178,7 +1200,8 @@ local function SeedCurrentLegacyResourceBarBucket(addon, profile)
     local classKey = GetCurrentResourceBarClassKey(addon)
     local classStore = type(profile) == "table" and rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY) or nil
     local classSettings = type(classStore) == "table" and classStore[classKey] or nil
-    if type(classSettings) == "table" and not IsDefaultResourceBarClassSettings(classSettings, classKey) then
+    if type(classSettings) == "table"
+        and not IsDefaultResourceBarClassSettings(classSettings, classKey, { ignorePreparedSpecs = true }) then
         ClearLegacyResourceBarSeed(profile)
         return
     end
@@ -1618,7 +1641,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
     if type(classStore[classKey]) == "table" then
         NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
         SanitizeResourceBarAnchors(classStore[classKey], classKey)
-        if IsDefaultResourceBarClassSettings(classStore[classKey], classKey) then
+        if IsDefaultResourceBarClassSettings(classStore[classKey], classKey, { ignorePreparedSpecs = true }) then
             classStore[classKey] = nil
         else
             local hasDifferingCandidate = false
@@ -2088,6 +2111,7 @@ function CooldownCompanion:PrepareResourceBarSettings()
         return nil
     end
 
+    local settings
     local conflict = GetResourceBarConflict(profile, classKey)
     if conflict then
         local currentCharKey = self.db and self.db.keys and self.db.keys.char
@@ -2095,22 +2119,30 @@ function CooldownCompanion:PrepareResourceBarSettings()
         local currentLegacy = type(legacyStore) == "table" and legacyStore[currentCharKey] or nil
         if type(currentLegacy) == "table" then
             NormalizeResourceBarSettingsForClass(currentLegacy, classKey)
-            return currentLegacy
+            settings = currentLegacy
+        else
+            settings = PrepareFallbackResourceBarSettings(self, classKey)
         end
-        return PrepareFallbackResourceBarSettings(self, classKey)
-    end
-
-    local classStore = EnsureResourceBarClassStore(profile)
-    local settings = classStore[classKey]
-    if type(settings) ~= "table" then
-        settings = CreateResourceBarSettings()
-        NormalizeResourceBarSettingsForClass(settings, classKey)
-        SanitizeResourceBarAnchors(settings, classKey)
-        classStore[classKey] = settings
     else
-        NormalizeResourceBarSettingsForClass(settings, classKey)
+        local classStore = EnsureResourceBarClassStore(profile)
+        settings = classStore[classKey]
+        if type(settings) ~= "table" then
+            settings = CreateResourceBarSettings()
+            NormalizeResourceBarSettingsForClass(settings, classKey)
+            SanitizeResourceBarAnchors(settings, classKey)
+            classStore[classKey] = settings
+        else
+            NormalizeResourceBarSettingsForClass(settings, classKey)
+        end
     end
 
+    -- Owner ruling R76: the current spec's layout and display profile are
+    -- filled here, at the spec transition (CompleteResourceBarSpecMigration)
+    -- and by a spec copy; another spec gets its own only at an edit. Readers
+    -- rely on it: once the spec is known, the current spec of the current
+    -- record always has a layout.
+    -- A new path that replaces the current record must end in RunAllMigrations.
+    ST._RB.PrepareSpecResourceLayout(settings)
     return settings
 end
 
@@ -2139,18 +2171,21 @@ function CooldownCompanion:GetResourceBarSettings()
 end
 
 -- Legacy unscoped aura data cannot be assigned until a real spec is selected.
--- Retry at the existing spec transition, leaving all current entry objects alone.
+-- Retry at the existing spec transition, leaving all current entry objects
+-- alone, and fill the new spec's layout and display profile (owner ruling R76).
 function CooldownCompanion:CompleteResourceBarSpecMigration()
     -- CacheCurrentSpec also runs before initial migration. Do not touch raw or
     -- unsupported profiles until the activation boundary has prepared them.
     if self._resourceBarSettingsProfile ~= (self.db and self.db.profile)
         or self._unsupportedLegacyProfile then return end
-    NormalizeResourceAuraOverlayEntriesForClass(self:GetResourceBarSettings(),
-        GetCurrentResourceBarClassKey(self), true)
+    local settings = self:GetResourceBarSettings()
+    NormalizeResourceAuraOverlayEntriesForClass(settings, GetCurrentResourceBarClassKey(self), true)
+    ST._RB.PrepareSpecResourceLayout(settings)
 end
 
--- True when the class has a saved Resources bucket that differs from defaults.
--- Read-only: never creates a bucket. This is the "does the importer have a
+-- True when the class has a saved Resources bucket that differs from defaults;
+-- spec entries holding only the R76 fill do not count. Read-only: never
+-- creates a bucket. This is the "does the importer have a
 -- Resources setup to lose" predicate for setup imports.
 function CooldownCompanion:IsResourceBarClassConfigured(classKey)
     local profile = self.db and self.db.profile
@@ -2163,7 +2198,7 @@ function CooldownCompanion:IsResourceBarClassConfigured(classKey)
     if type(settings) ~= "table" then
         return false
     end
-    return not IsDefaultResourceBarClassSettings(settings, classKey)
+    return not IsDefaultResourceBarClassSettings(settings, classKey, { ignorePreparedSpecs = true })
 end
 
 -- Replaces the class's whole Resources bucket with imported settings. The
@@ -2498,6 +2533,8 @@ function CooldownCompanion:CopyResourceBarSpecSettings(sourceSpecID, targetSpecI
     CopyResourceSpecOverrides(settings, sourceSpecID, targetSpecID)
 
     SanitizeCopiedOrSeededScopedBarSettings("resourceBars", settings)
+    -- Fill what the source spec never saved, as the target's next read used to.
+    ST._RB.PrepareSpecResourceLayout(settings, targetSpecID)
 
     return true
 end

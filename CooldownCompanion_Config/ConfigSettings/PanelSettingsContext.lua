@@ -353,7 +353,7 @@ function ST._CreateModuleSettingsContext(kind, powerType, spec)
         if kind ~= "resources" then return nil end
         local layout = settings.layoutOrder and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)])
         if not layout and create then
-            layout = ST._RB.GetSpecLayoutOrder(settings, spec)
+            layout = ST._RB.EnsureSpecLayoutOrder(settings, spec)
         end
         return layout
     end

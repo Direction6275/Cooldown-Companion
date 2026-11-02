@@ -236,7 +236,12 @@ end
 local function HasAttachedModuleForUnlock(self, groupId, group)
     if not ST.PanelSupportsAttachedBars(group) or not self.ResolveModulePanel then return false end
     for _, kind in ipairs({ "resources", "castbar" }) do
-        local settings = ST.GetConfiguredModuleBarSettings(kind)
+        local settings
+        if kind == "resources" then
+            settings = self:GetResourceBarSettings()
+        else
+            settings = self:GetCastBarSettings()
+        end
         local feature = kind == "resources" and "resourceBars" or "castBar"
         if settings and settings.enabled == true and self:IsBarsAndFramesRuntimeFeatureEnabled(feature) then
             -- Configured resolution never re-enters unlock visibility and does

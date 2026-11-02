@@ -656,6 +656,9 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             slot.anchorGroup = geometryHost or CooldownCompanion:ResolveModulePanel(slot.kind == "cast" and "castbar" or "resources").group
             if not independent and (slot.kind == "cast" or not isVerticalLayout) then
                 ST._ConfigureAttachedBarPreviewSlot(slot, function()
+                    if slot.kind == "cast" then return layout.castBar end
+                    return layout.resources[RB.GetCanonicalPowerType(slot.powerType)]
+                end, function()
                     if slot.kind == "cast" then
                         layout.castBar = layout.castBar or { position = "below", order = 2000 }
                         return layout.castBar
@@ -2445,11 +2448,11 @@ end
 PanelHasConfiguredModuleBars = function(panelId, kind)
     local group = CooldownCompanion.db.profile.groups[panelId]
     if not ST.PanelSupportsAttachedBars(group) then return false end
-    local cast = ST.GetConfiguredModuleBarSettings("castbar")
+    local cast = CooldownCompanion:GetCastBarSettings()
     if kind ~= "resources" and cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
         and ModuleBelongsToPreview("castbar", panelId, true, cast) then return true end
     if kind == "castbar" then return false end
-    local saved = ST.GetConfiguredModuleBarSettings("resources")
+    local saved = CooldownCompanion:GetResourceBarSettings()
     if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
     -- Read-only on the live settings: module attachment falls back to their
     -- own independentAnchorEnabled, exactly what layout seeding writes.
@@ -2467,10 +2470,10 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
     local settings, cast, layout
     if overview then
         if CS.otherClassLibraryActive then return {} end
-        local saved = ST.GetConfiguredModuleBarSettings("resources")
+        local saved = CooldownCompanion:GetResourceBarSettings()
         if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return {} end
-        -- Layout/default normalization and slot collection may fill nils. Keep
-        -- all of those writes on the same detached snapshot used by painting.
+        -- Slot collection fills nils and its drag setters write into the record
+        -- and layout it is given. Keep those on the detached snapshot painting uses.
         settings = CopyTable(saved)
         layout = RB.GetSpecLayoutOrder(settings)
     else

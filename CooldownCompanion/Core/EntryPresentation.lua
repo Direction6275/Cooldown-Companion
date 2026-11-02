@@ -31,18 +31,6 @@ function ST.ResolveBarGeometry(group, options)
     }
 end
 
--- Read-only availability checks must not create a module setup as a side
--- effect of opening an ordinary Panel's settings.
-function ST.GetConfiguredModuleBarSettings(kind)
-    local profile = Addon.db and Addon.db.profile
-    if not profile then return nil end
-    local classKey = Addon._playerClassFilename
-    if kind == "resources" then
-        return profile.resourceBarsByClass and profile.resourceBarsByClass[classKey]
-    end
-    return profile.castBarByClass and profile.castBarByClass[classKey]
-end
-
 -- The panel a module's bars take their shared geometry from, or nil when
 -- Independent. Every host is an ordinary icon panel (CanModuleAnchorToPanel).
 -- target: an already resolved runtime ResolveModulePanel(kind) result, so a

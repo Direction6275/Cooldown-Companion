@@ -2195,7 +2195,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     local displaySpecID = opts and tonumber(opts.specID) or GetCurrentConfigSpecID()
     local displayProfile = displaySpecID and RB.GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
-    if not displaySpecID or not displayProfile then
+    if not displaySpecID then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
@@ -2205,7 +2205,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     local localBarTextureName = showResourceSettings
         and ST.ResolveModuleBarStyle("resources", settings, resourceSettingsPowerType, displaySpecID).barTexture
-        or displayProfile.barTexture or settings.barTexture or "Solid"
+        or (displayProfile and displayProfile.barTexture) or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
 
     if showResourceSettings then
@@ -2344,13 +2344,23 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
                         and RESOURCE_FINDER.primary.size.segmentGap,
                     min = 0, max = 20, step = 0.1,
-                    value = layout.segmentGap or settings.segmentGap or 4,
-                    set = function(val) layout.segmentGap = val end,
+                    value = (layout and layout.segmentGap) or settings.segmentGap or 4,
+                    set = function(val) ST._RB.EnsureSpecLayoutOrder(settings, displaySpecID).segmentGap = val end,
                     apply = function()
                         applyBars()
                     end,
-                    stateOwner = layout,
-                    stateKeys = "segmentGap",
+                    -- A drag tick puts the saved value back and removes a
+                    -- layout the tick had to make; only the release keeps it.
+                    captureState = function()
+                        return {
+                            ST._CaptureRawSettingsFields(ST._RB.GetSpecLayoutOrder(settings, displaySpecID), { "segmentGap" }),
+                            ST._CaptureRawSettingsFields(settings.layoutOrder, { displaySpecID }),
+                            ST._CaptureRawSettingsFields(settings, { "layoutOrder" }),
+                        }
+                    end,
+                    restoreState = function(restores)
+                        for _, restore in ipairs(restores) do restore() end
+                    end,
                 })
                 ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
             end
