@@ -1668,25 +1668,6 @@ local function BlockImportForResourceBarConflict(classKey)
     return true
 end
 
--- LEGACY CONVERSION ONLY: a standalone Custom Bars export string. Custom Bars
--- no longer exist; the payload is converted into panel entries and applied as
--- an ordinary group import. Kept for parked legacy stores in profile import.
-local function ApplyCustomBarsImportData(data, options)
-    if type(data) ~= "table" or data.type ~= "customBars" then
-        if RejectUnsupportedImportPayload(data, "custom bars import") then
-            return false
-        end
-        CooldownCompanion:Print("Import failed: this is not a Custom Bars export.")
-        return false
-    end
-    if RejectUnsupportedImportPayload(data, "custom bars import") then
-        return false
-    end
-    local converted, report = ST._ConvertUnifiedPanelImport(data)
-    if not converted then CooldownCompanion:Print(report); return false end
-    return ApplyGroupImportData(ST._FilterConvertedPanelImport(converted), options)
-end
-
 -- Class identity of any class-tagged payload or setup section (setup
 -- sections, and legacy standalone Custom Bars payloads, tagged the same way).
 local function GetSetupSectionClassKey(section)
@@ -1727,12 +1708,11 @@ local function RemapImportedIndependentAnchor(anchor, panelIds, containerIdMap)
     end
 end
 
--- Applies a `setup` payload: groups additively, then the Resources section as
--- a whole-bucket replace for its class, then any Panel Templates beside the
--- player's own. Legacy Custom Bars sections were
--- converted into panel entries by _ConvertUnifiedPanelImport above. Order
--- matters: groups first so the Resources anchor can remap
--- onto the groups imported from the same string.
+-- Applies a reviewed `setup` payload: groups additively, then the Resources
+-- section as a whole-bucket replace for its class, then any Panel Templates
+-- beside the player's own. The review already converted legacy sections
+-- (ClassifyImportReviewText, the only caller). Order matters: groups first so
+-- the Resources anchor can remap onto the groups imported from the same string.
 local function ApplySetupImportData(data, existingPanelIds)
     if type(data) ~= "table" or data.type ~= "setup" then
         CooldownCompanion:Print("Import failed: this is not a setup export.")
@@ -1742,10 +1722,10 @@ local function ApplySetupImportData(data, existingPanelIds)
         return false
     end
 
-    local converted, conversionError = ST._ConvertUnifiedPanelImport(data)
-    if not converted then CooldownCompanion:Print(conversionError); return false end
+    -- A freshness re-check against the profile as it is now; the filter
+    -- works on a copy, so the review's data stays as reviewed.
     local replayPanelIds
-    data, replayPanelIds = ST._FilterConvertedPanelImport(converted)
+    data, replayPanelIds = ST._FilterConvertedPanelImport(data)
 
     local hasContainers = type(data.containers) == "table" and #data.containers > 0
     local resourcesSection = type(data.resources) == "table"
@@ -1908,8 +1888,6 @@ local function ApplySetupImportData(data, existingPanelIds)
     return applied and migrationOk
 end
 
-ST._BlockImportForResourceBarConflict = BlockImportForResourceBarConflict
-ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 ST._ApplySetupImportData = ApplySetupImportData
 
 StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {

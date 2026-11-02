@@ -1471,6 +1471,17 @@ function Addon:GetUnifiedPanelConversionContext()
     return context
 end
 
+-- The one chat line for a finished conversion, printed at login and when an
+-- old import string lands (owner ruling R62b). nil when nothing converted.
+function Migration.ConversionChatLine(report)
+    if type(report) ~= "table" then return nil end
+    if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
+        return ("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
+            :format(report.panels, report.bars, report.createdPanels)
+    end
+    return nil
+end
+
 function Addon:RunUnifiedPanelMigration()
     local profile = self.db and self.db.profile
     if not profile then return false end
@@ -1481,10 +1492,8 @@ function Addon:RunUnifiedPanelMigration()
         return false
     end
     self._unifiedPanelConversionError = nil
-    if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
-        self:Print(("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
-            :format(report.panels, report.bars, report.createdPanels))
-    end
+    local line = Migration.ConversionChatLine(report)
+    if line then self:Print(line) end
     for _, notice in ipairs(report.notices) do self:Print(notice) end
     return true
 end

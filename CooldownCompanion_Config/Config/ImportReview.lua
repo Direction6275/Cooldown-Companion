@@ -122,7 +122,7 @@ local function CountContainerPanels(containers)
     return panelCount
 end
 
-local function BuildProfileSummaryLines(profile, heading, customBarCount, templateCount)
+local function BuildProfileSummaryLines(profile, heading, templateCount)
     local lines = {}
     AddLine(lines, heading or "Full profile")
     AddLine(lines, FormatCount("Groups", CountPairs(profile and profile.groupContainers)))
@@ -130,11 +130,6 @@ local function BuildProfileSummaryLines(profile, heading, customBarCount, templa
     templateCount = templateCount or 0
     if templateCount > 0 then
         AddLine(lines, FormatCount("Panel Templates", templateCount))
-    end
-
-    customBarCount = customBarCount or 0
-    if customBarCount > 0 then
-        AddLine(lines, FormatCount("Custom Bars", customBarCount))
     end
 
     local classScoped = {}
@@ -218,9 +213,6 @@ local function BuildSelectedPiecesSummaryLines(review, selectedCount)
     AddLine(lines, FormatCount("Selected pieces", selectedCount or RecountSelectedPieces(review)))
     if pieces and pieces.disabledCount and pieces.disabledCount > 0 then
         AddLine(lines, FormatCount("Hidden incompatible pieces", pieces.disabledCount))
-    end
-    if pieces and pieces.customBarCount and pieces.customBarCount > 0 then
-        AddLine(lines, FormatCount("Custom Bars", pieces.customBarCount))
     end
     AddCharacterEligibilityNotice(lines, review and (review.diagnostic or review.data))
     return lines
@@ -421,17 +413,6 @@ local function BuildContainersSummaryLines(data)
     return lines
 end
 
-local function BuildLegacyGroupBundleSummaryLines(data)
-    local containers = type(data.containers) == "table" and data.containers or {}
-    local lines = {
-        "Legacy group bundle",
-        FormatCount("Groups", #containers),
-        FormatCount("Panels", CountContainerPanels(containers)),
-    }
-    AddCharacterEligibilityNotice(lines, data)
-    return lines
-end
-
 local function BuildBlockedImportSummary(data, isDiagnostic)
     if isDiagnostic or data.reportKind == "bugReport" then
         return BuildProfileSummaryLines(type(data.profile) == "table" and data.profile or {}, "Diagnostic export")
@@ -444,7 +425,7 @@ local function BuildBlockedImportSummary(data, isDiagnostic)
     elseif data.type == "containers" or data.type == "folder" then
         return BuildContainersSummaryLines(data)
     end
-    return BuildProfileSummaryLines(data, "Profile backup export", nil,
+    return BuildProfileSummaryLines(data, "Profile backup export",
         type(data._panelTemplates) == "table" and #data._panelTemplates or 0)
 end
 
@@ -475,8 +456,7 @@ local function ClassifyProfilePayload(data)
         includeTemplates = true,
     }) or nil
 
-    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and pieces.customBarCount,
-        pieces and #(pieces.templates or {}))
+    local lines = BuildProfileSummaryLines(data, "Profile backup export", pieces and #(pieces.templates or {}))
     AddCharacterEligibilityNotice(lines, data)
 
     return BuildReview("profile", data, "Profile Backup", "Restore Backup",
@@ -507,8 +487,7 @@ local function ClassifyDiagnosticPayload(data)
         exporterCharKey = meta and meta.charKey,
         sourceCharacterInfo = BuildDiagnosticSourceCharacterInfo(meta),
     }) or nil
-    local lines = BuildProfileSummaryLines(data.profile, "Diagnostic profile attachment",
-        pieces and pieces.customBarCount)
+    local lines = BuildProfileSummaryLines(data.profile, "Diagnostic profile attachment")
     if meta and meta.charName then
         table.insert(lines, 2, "Source: " .. tostring(meta.charName))
     end
@@ -525,15 +504,15 @@ local function ClassifyDiagnosticPayload(data)
 end
 
 -- Receives converted data only: legacy Custom Bars payloads have already
--- become containers/setup payloads (see _ConvertUnifiedPanelImport).
+-- become containers/setup payloads (see _ConvertUnifiedPanelImport). These
+-- reviews render as tiles (ImportMode), so they carry no summary lines.
 local function ClassifyEntityPayload(data)
     if data.type == "setup" then
         local hasContainers, customBars, resources, templates, castBar = GetSetupSections(data)
         if not hasContainers and not customBars and not resources and not templates and not castBar then
             return BuildError("empty_setup", "Import failed: this setup export is empty.")
         end
-        return BuildReview("setup", data, "Setup Import", "Import Setup",
-            BuildSetupSummaryLines(data, hasContainers, customBars, resources, templates, castBar))
+        return BuildReview("setup", data, "Setup Import", "Import Setup")
     end
 
     if data.type == "group" and data.group then
@@ -550,8 +529,7 @@ local function ClassifyEntityPayload(data)
         if #data.containers == 0 then
             return BuildError("empty_groups", "Import failed: this export contains no groups.")
         end
-        return BuildReview("groups", data, "Groups Import",
-            "Import Groups", BuildContainersSummaryLines(data))
+        return BuildReview("groups", data, "Groups Import", "Import Groups")
     end
 
     if data.type == "folder" and type(data.folder) == "table" then
@@ -561,13 +539,11 @@ local function ClassifyEntityPayload(data)
         if type(data.containers) ~= "table" or #data.containers == 0 then
             return BuildError("empty_groups", "Import failed: this export contains no groups.")
         end
-        return BuildReview("groups", data, "Group Import",
-            "Import Groups", BuildLegacyGroupBundleSummaryLines(data))
+        return BuildReview("groups", data, "Group Import", "Import Groups")
     end
 
     if data.type == "container" and type(data.container) == "table" and type(data.panels) == "table" then
-        return BuildReview("group", data, "Group Import",
-            "Import Group", BuildContainerSummaryLines(data))
+        return BuildReview("group", data, "Group Import", "Import Group")
     end
 
     return BuildError("unknown_type", "Import failed: unrecognized export type.")
@@ -644,19 +620,15 @@ function CooldownCompanion:ClassifyImportReviewText(text)
         return BuildError("already_imported", "These entries have already been imported. No duplicates were added.")
     end
     review.existingPanelIds = existingPanelIds
-    if review.ok and conversionReport then
-        if conversionReport.bars > 0 or conversionReport.panels > 0 then
-            AddLine(review.summaryLines, ("Converted %d Custom Bars and %d Bar Panels to ordinary panel entries.")
-                :format(conversionReport.bars, conversionReport.panels))
-        end
-        for _, notice in ipairs(conversionReport.notices or {}) do AddLine(review.summaryLines, notice) end
-    end
+    -- An old string says what it converted once, in chat, when it lands
+    -- (owner ruling R62b); no import view lists conversion notes.
+    review.conversionLine = ST.UnifiedPanelMigration.ConversionChatLine(conversionReport)
     return review
 end
 
 -- Appliers rebuild the runtime only; the caller (ImportMode's
 -- ApplyImportModeReview) repaints config once afterwards.
-function CooldownCompanion:ApplyReviewedImport(review)
+local function ApplyReview(self, review)
     if type(review) ~= "table" or review.ok ~= true or review.blockedReason then
         return false
     end
@@ -705,6 +677,14 @@ function CooldownCompanion:ApplyReviewedImport(review)
 
     self:Print("Import failed: unrecognized export type.")
     return false
+end
+
+function CooldownCompanion:ApplyReviewedImport(review)
+    local applied = ApplyReview(self, review)
+    if applied and review.conversionLine then
+        self:Print(review.conversionLine)
+    end
+    return applied
 end
 
 local function GetDestructiveConfirmText(review)
