@@ -297,7 +297,6 @@ local PROFILE_DEFAULT_KEYS = {
     profileWideBarTextureName = "profileWideBarTextureName",
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",
-    locked = "locked",
     resourceBarMigration = "resourceBarMigration",
     resourceBars = "resourceBars",
     castBar = "castBar",
@@ -310,6 +309,8 @@ local RETIRED_PROFILE_KEYS = {
     cdmHidden = true,
     -- Panel setting presets, retired by Copy Panel Settings and Templates.
     groupSettingPresets = true,
+    -- The old profile-wide lock flag; nothing reads it.
+    locked = true,
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {

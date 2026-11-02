@@ -192,6 +192,12 @@ local function IsOrdinaryBars(group)
         and not ST.IsAuraPanelGroup(group) and not ST.IsTotemPanelGroup(group)
 end
 
+-- Per-call options for ST._NormalizeBarStyleForPanelConversion: a Bar Panel's
+-- own style leaves its entries-first steps to the chain, and bar styles get
+-- the chain's bar rule.
+local PANEL_STYLE_CONVERSION = { panelStyle = true }
+local BAR_STYLE_CONVERSION = { bar = true }
+
 local function ConvertPanels(profile, report, context)
     for _, id in ipairs(Keys(profile.groups)) do
         local group = profile.groups[id]
@@ -205,7 +211,7 @@ local function ConvertPanels(profile, report, context)
                 group.anchorEligible = false
             end
             ST._NormalizePanelOrientationKeys(group)
-            ST._NormalizeBarStyleForPanelConversion(group.style)
+            ST._NormalizeBarStyleForPanelConversion(group.style, PANEL_STYLE_CONVERSION)
             local style = Copy(ST._defaults.profile.globalStyle)
             for key, value in pairs(group.style or {}) do style[key] = Copy(value) end
             group.attachedBarStyle = style
@@ -214,7 +220,7 @@ local function ConvertPanels(profile, report, context)
             report.panels = report.panels + 1
         end
         if ST.PanelSupportsAttachedBars(group) then
-            ST._NormalizeBarStyleForPanelConversion(group.attachedBarStyle)
+            ST._NormalizeBarStyleForPanelConversion(group.attachedBarStyle, BAR_STYLE_CONVERSION)
         end
     end
 end

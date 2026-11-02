@@ -338,12 +338,13 @@ local defaults = {
             barTexture = "Solid",
             durationFormat = "clock",
         },
-        locked = false,
         resourceBarsByClass = {},
         resourceBarMigration = {
             conflicts = {},
             unsafeCharKeys = {},
         },
+        -- Retired single stores (resourceBars, castBar, frameAnchoring): never live settings, only
+        -- creation templates and the legacy baseline. ExportCodec refills them on profile imports and restores.
         resourceBars = {
             enabled = false,
             anchorGroupId = nil,

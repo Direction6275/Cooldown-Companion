@@ -564,34 +564,16 @@ end
 -- Deliberately NOT a value-preserving migration: the owner accepted the reset
 -- when the set changed from 6 layers to 8 (the aura display replaced a slot
 -- that never rendered, and two new layers joined).
-local function ClearInvalidStrataOrders(profile)
-    if type(profile) ~= "table" then
-        return false
+local function ClearInvalidStrataOrderFromStyle(style)
+    if type(style) ~= "table" then return end
+    local order = style.strataOrder
+    -- An empty table is the config's mid-edit state (some layers still
+    -- unassigned) and must survive. Anything else is judged by the
+    -- renderer's own test, so this cannot drift from what actually gets
+    -- honored: a right-length order carrying a retired key is stale too.
+    if type(order) == "table" and #order > 0 and not ST._IsUsableStrataOrder(order) then
+        style.strataOrder = nil
     end
-    local changed = false
-
-    local function clear(styleTable)
-        if type(styleTable) ~= "table" then return end
-        local order = styleTable.strataOrder
-        -- An empty table is the config's mid-edit state (some layers still
-        -- unassigned) and must survive. Anything else is judged by the
-        -- renderer's own test, so this cannot drift from what actually gets
-        -- honored: a right-length order carrying a retired key is stale too.
-        if type(order) == "table" and #order > 0 and not ST._IsUsableStrataOrder(order) then
-            styleTable.strataOrder = nil
-            changed = true
-        end
-    end
-
-    clear(profile.globalStyle)
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                clear(group.style)
-            end
-        end
-    end
-    return changed
 end
 
 local function NormalizePassiveCooldownButtons(profile)
@@ -664,7 +646,7 @@ local function BackfillUnusableVisualOverrideModes(profile)
 end
 
 local AURA_DURATION_SWIPE_STYLE_MIRRORS = {
-    -- Retired by RetireSwipeFill: carried only as a fill-off for it to convert.
+    -- Retired by RetireSwipeFillFromStyle: carried only as a fill-off for it to convert.
     { auraKey = "showAuraDurationSwipeFill", cooldownKey = "showCooldownSwipeFill", default = true, retired = true },
     { auraKey = "auraDurationSwipeReverse", cooldownKey = "cooldownSwipeReverse", default = false },
     { auraKey = "auraDurationSwipeAlpha", cooldownKey = "cooldownSwipeAlpha", default = 0.8 },
@@ -830,29 +812,6 @@ local function StripRetiredSwipeEdgeKeysFromStyle(style)
     end
 end
 
-local function StripRetiredSwipeEdgeKeys(profile)
-    if type(profile) ~= "table" then
-        return
-    end
-
-    StripRetiredSwipeEdgeKeysFromStyle(profile.globalStyle)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                StripRetiredSwipeEdgeKeysFromStyle(group.style)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table" then
-                            StripRetiredSwipeEdgeKeysFromStyle(buttonData.styleOverrides)
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
 -- Swipe fill retirement: Show Cooldown Swipe and Show Aura Duration Swipe draw
 -- the fill themselves, so the separate fill toggles are gone (no enabled swipe
 -- can draw nothing). A saved fill-off keeps its look: with the edge on it
@@ -887,22 +846,6 @@ local function RetireSwipeFillFromStyle(style, fallback, fields)
     end
 end
 
-local function RetireSwipeFill(profile)
-    if type(profile) ~= "table" then return end
-    RetireSwipeFillFromStyle(profile.globalStyle)
-    for _, group in pairs(type(profile.groups) == "table" and profile.groups or {}) do
-        if type(group) == "table" then
-            -- Entries first: they read the panel's values as saved.
-            for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
-                if type(buttonData) == "table" then
-                    RetireSwipeFillFromStyle(buttonData.styleOverrides, group.style)
-                end
-            end
-            RetireSwipeFillFromStyle(group.style)
-        end
-    end
-end
-
 -- 12.1 icon-fill aura-color retirement: the aura leg of the icon fill was
 -- removed with the AuraContainer rework (aura visuals are Blizzard-driven),
 -- so iconFillAuraColor has no runtime reader, no picker, and no seed left.
@@ -911,29 +854,6 @@ end
 local function StripRetiredIconFillAuraColorFromStyle(style)
     if type(style) == "table" and rawget(style, "iconFillAuraColor") ~= nil then
         style.iconFillAuraColor = nil
-    end
-end
-
-local function StripRetiredIconFillAuraColor(profile)
-    if type(profile) ~= "table" then
-        return
-    end
-
-    StripRetiredIconFillAuraColorFromStyle(profile.globalStyle)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                StripRetiredIconFillAuraColorFromStyle(group.style)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table" then
-                            StripRetiredIconFillAuraColorFromStyle(buttonData.styleOverrides)
-                        end
-                    end
-                end
-            end
-        end
     end
 end
 
@@ -973,62 +893,25 @@ end
 -- import-driven re-runs can never resurrect a size the layout no longer obeys.
 local RETIRED_TEXT_SIZE_KEYS = { "textWidth", "textHeight" }
 
--- Only a value the user actually moved earns the notice; the shipped defaults
--- materialize into every profile and every exported string, so treating those
--- as a change would print for people who never touched the sliders.
-local RETIRED_TEXT_SIZE_DEFAULTS = { textWidth = 200, textHeight = 20 }
-
 local function StripRetiredTextSizeKeysFromStyle(style)
-    if type(style) ~= "table" then
-        return false
-    end
-    local hadCustomSize = false
+    if type(style) ~= "table" then return end
     for _, key in ipairs(RETIRED_TEXT_SIZE_KEYS) do
-        local value = rawget(style, key)
-        if value ~= nil then
-            if value ~= RETIRED_TEXT_SIZE_DEFAULTS[key] then
-                hadCustomSize = true
-            end
+        if rawget(style, key) ~= nil then
             style[key] = nil
         end
     end
-    return hadCustomSize
 end
 
-local function StripRetiredTextSizeKeys(profile)
-    if type(profile) ~= "table" then
-        return false
-    end
+-- Dead entry keys, stripped so profiles and exports stop carrying them:
+-- _totemEntry, the totem-phase learned flag an early build of the totem
+-- duration phase stamped so the config lane could widen its aura gates (the
+-- totem phase was removed entirely, #680), and the derived effective-style
+-- cache older builds saved on entries (no reader or writer since 030ef97c;
+-- ExportCodec strips it only from diagnostics). Strip-only, so every re-run
+-- is a no-op.
+local RETIRED_ENTRY_KEYS = { "_totemEntry", "_effectiveStyleGroupStyle", "_effectiveStyleOverrides" }
 
-    local hadCustomSize = StripRetiredTextSizeKeysFromStyle(profile.globalStyle)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                if StripRetiredTextSizeKeysFromStyle(group.style) then
-                    hadCustomSize = true
-                end
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table"
-                            and StripRetiredTextSizeKeysFromStyle(buttonData.styleOverrides) then
-                            hadCustomSize = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return hadCustomSize
-end
-
--- Totem-phase learned-flag retirement: an early build of the totem duration
--- phase stamped buttonData._totemEntry so the config lane could widen its aura
--- gates. The totem phase was later removed entirely (#680), so nothing reads
--- or writes the flag any more. Strip every stored copy so profiles and exports
--- stop carrying a dead key. Deleting keeps this pass a no-op on migrated data.
-local function StripRetiredTotemEntryFlag(profile)
+local function StripRetiredEntryKeys(profile)
     if type(profile) ~= "table" then
         return
     end
@@ -1037,8 +920,12 @@ local function StripRetiredTotemEntryFlag(profile)
         for _, group in pairs(profile.groups) do
             if type(group) == "table" and type(group.buttons) == "table" then
                 for _, buttonData in ipairs(group.buttons) do
-                    if type(buttonData) == "table" and rawget(buttonData, "_totemEntry") ~= nil then
-                        buttonData._totemEntry = nil
+                    if type(buttonData) == "table" then
+                        for _, key in ipairs(RETIRED_ENTRY_KEYS) do
+                            if rawget(buttonData, key) ~= nil then
+                                buttonData[key] = nil
+                            end
+                        end
                     end
                 end
             end
@@ -1046,11 +933,12 @@ local function StripRetiredTotemEntryFlag(profile)
     end
 end
 
+-- locked was the old profile-wide lock flag; nothing reads it.
 -- configPreviewSplit was the stacked config layout's preview/settings split.
 -- groupSettingPresets was the panel settings preset store, retired by Copy
 -- Panel Settings and Panel Templates; nothing has read it since. Clearing it
 -- here, ahead of every style pass, is what lets those passes skip it.
-local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden", "configPreviewSplit", "groupSettingPresets" }
+local RETIRED_PROFILE_FLAGS = { "autoAddPrefs", "cdmHidden", "configPreviewSplit", "groupSettingPresets", "locked" }
 
 local function ClearRetiredProfileFlags(profile)
     if type(profile) ~= "table" then
@@ -1558,6 +1446,10 @@ local AURA_GLOW_SENTINEL = {
     current = "_cdcAuraGlow3Migrated",
     retired = { "_cdcAuraGlowMigrated", "_cdcAuraGlow2Migrated" },
 }
+-- LibCustomGlow removal: single generation, claimed through the shared helper.
+local LCG_GLOW_SENTINEL = {
+    current = "_cdcLcgGlowMigrated",
+}
 -- pandemic override ownership: the pandemicMarker* keys leaving the auraText
 -- override section for the pandemic ones, when the config grew a Pandemic
 -- section. Claimed through the shared helper so a future generation bump is
@@ -1646,6 +1538,7 @@ local MIGRATION_SENTINELS = {
     AURA_REBUILD_SENTINEL,
     BAR_AURA_EFFECT_SENTINEL,
     AURA_GLOW_SENTINEL,
+    LCG_GLOW_SENTINEL,
     PANDEMIC_OVERRIDE_SENTINEL,
     WHILE_AURA_ACTIVE_SENTINEL,
     WHILE_AURA_ACTIVE_ICON_SENTINEL,
@@ -1655,7 +1548,6 @@ local MIGRATION_SENTINELS = {
     -- group-scope pass stamps conditionally on talent data being ready);
     -- registered so ClearMigrationSentinels iterates them.
     { current = "_cdcAuraGroupScopeMigrated" },
-    { current = "_cdcLcgGlowMigrated" },
     { current = "_cdcPerModeOrientationMigrated" },
     { current = "_cdcAuraPanelIntegrityMigrated" },
     DURATION_LOW_TIME_AURAS_SENTINEL,
@@ -2307,51 +2199,6 @@ local function MigrateAuraGlowStyleTable(styleTable, counts)
     styleTable.auraGlowLines = nil
 end
 
--- The pandemic section is OFFERED as a per-entry override again on 12.1
--- (owner ruling), so live-era promotions carry forward as visible, revertible
--- overrides — the style-value sanitizers above run on styleOverrides too, and
--- the dead-key strip lives inside them (PANDEMIC_DEAD_STYLE_KEYS, every style
--- scope). MigratePandemicOverrideOwnership below renames the two retired
--- section ids those promotions were stored under.
-local function MigrateAuraGlowRebuild(self, profile)
-    if type(profile) ~= "table" or not ClaimMigrationPass(profile, AURA_GLOW_SENTINEL) then return end
-    local counts = { invert = 0, combatOnly = 0, textFormat = 0 }
-
-    MigrateAuraGlowStyleTable(profile.globalStyle, counts)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                MigrateAuraGlowStyleTable(group.style, counts)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table" then
-                            MigrateAuraGlowStyleTable(buttonData.styleOverrides, counts)
-                            -- Per-entry format strings carry the same
-                            -- retired text token as the style tables.
-                            local fmt, scrubbed = ScrubPandemicTextFormat(rawget(buttonData, "textFormat"))
-                            if scrubbed then
-                                buttonData.textFormat = fmt
-                                counts.textFormat = counts.textFormat + 1
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    profile[AURA_GLOW_SENTINEL.current] = true
-    local dropped = {}
-    if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
-    if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end
-    if counts.textFormat > 0 then dropped[#dropped + 1] = ("pandemic text tokens (x%d)"):format(counts.textFormat) end
-    if #dropped > 0 then
-        self:Print("Aura glow updated for 12.1. Dropped settings with no 12.1 equivalent: "
-            .. table.concat(dropped, ", ") .. ".")
-    end
-end
-
 -- LibCustomGlow was removed: lcgButton (Action Button Glow) folds into the
 -- built-in "glow" style (its modern Blizzard successor), lcgAutoCast
 -- (Autocast Shine) becomes the CC-rendered "autocast" style with identical
@@ -2386,36 +2233,6 @@ local function MigrateLcgStyleTable(styleTable, counts)
         if style == "lcgButton" or style == "lcgAutoCast" or style == "lcgProc" then
             styleTable[styleKey] = "solid"
         end
-    end
-end
-
-local function MigrateLcgGlowStyles(self, profile)
-    if type(profile) ~= "table" or profile._cdcLcgGlowMigrated then return end
-    local counts = { buttonGlow = 0, autocast = 0 }
-
-    MigrateLcgStyleTable(profile.globalStyle, counts)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                MigrateLcgStyleTable(group.style, counts)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table" then
-                            MigrateLcgStyleTable(buttonData.styleOverrides, counts)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    profile._cdcLcgGlowMigrated = true
-    local changed = {}
-    if counts.buttonGlow > 0 then changed[#changed + 1] = ("Action Button Glow entries now use the standard Glow (x%d)"):format(counts.buttonGlow) end
-    if counts.autocast > 0 then changed[#changed + 1] = ("Autocast Shine is now addon-rendered (x%d)"):format(counts.autocast) end
-    if #changed > 0 then
-        self:Print("Glow styles updated: " .. table.concat(changed, "; ") .. ".")
     end
 end
 
@@ -2493,34 +2310,6 @@ local function SeedProcReadyGlowColor2(buttonData, groupStyle)
     end
 end
 
-local function MigrateProcReadyPixelGlows(self, profile)
-    if type(profile) ~= "table" or not ClaimMigrationPass(profile, PROC_READY_DASHES_SENTINEL) then return end
-    local counts = { converted = 0, snapped = 0 }
-
-    MigrateProcReadyPixelGlowTable(profile.globalStyle, nil, nil, counts)
-    for _, group in pairs(type(profile.groups) == "table" and profile.groups or {}) do
-        if type(group) == "table" then
-            -- Entries first: they read the panel's values as saved.
-            for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
-                if type(buttonData) == "table" then
-                    MigrateProcReadyPixelGlowTable(rawget(buttonData, "styleOverrides"), group.style, nil, counts)
-                    SeedProcReadyGlowColor2(buttonData, group.style)
-                end
-            end
-            MigrateProcReadyPixelGlowTable(group.style, nil, nil, counts)
-        end
-    end
-
-    profile[PROC_READY_DASHES_SENTINEL.current] = true
-    if counts.converted > 0 then
-        local message = ("Glow styles updated: Proc and Ready Glow's Pixel Glow is now Pixel Dashes (x%d)"):format(counts.converted)
-        if counts.snapped > 0 then
-            message = message .. ("; %d adjusted to fit its ranges"):format(counts.snapped)
-        end
-        self:Print(message .. ".")
-    end
-end
-
 -- The bar aura effect now renders through the aura kit (barActiveAura
 -- wiring), offering border styles only: remap stored values from the
 -- retired renderers to that vocabulary. "pixel" becomes its dashes
@@ -2529,8 +2318,9 @@ end
 -- kept: border px); "glow" and the removed LibCustomGlow values become the
 -- pulse border with their overhang/scale sizes cleared so the border
 -- default applies; pixel-scale speeds (10..200) clear so the style default
--- in seconds applies.
-local function MigrateBarAuraEffectTable(styleTable, counts)
+-- in seconds applies. With opts.onlyRemapped the speed clears only on a
+-- table this call remapped.
+local function MigrateBarAuraEffectTable(styleTable, counts, opts)
     if type(styleTable) ~= "table" then return end
 
     -- The pandemicBarEffect* family no longer remaps here: it retired
@@ -2562,7 +2352,7 @@ local function MigrateBarAuraEffectTable(styleTable, counts)
                 styleTable[keys.lines] = 8
             end
         end
-        if style ~= nil then
+        if style ~= nil and not (opts and opts.onlyRemapped and not mapped) then
             local speed = rawget(styleTable, keys.speed)
             if style ~= "autocast" and type(speed) == "number" and speed > 3 then
                 styleTable[keys.speed] = nil
@@ -2793,61 +2583,6 @@ local function MigrateCustomBarEntries(self, settings, counts)
     if type(settings) ~= "table" then return end
     ForEachStoredCustomBarEntry(self, settings.customBars, counts)
     ForEachStoredCustomBarEntry(self, settings.customAuraBars, counts)
-end
-
-local function MigrateBarAuraEffectStyles(self, profile)
-    -- Generation history lives on BAR_AURA_EFFECT_SENTINEL beside the
-    -- registry. Already-stamped profiles re-run it once (idempotent).
-    if type(profile) ~= "table" or not ClaimMigrationPass(profile, BAR_AURA_EFFECT_SENTINEL) then return end
-    local counts = {
-        remapped = 0, cabOptions = 0, cabSoundForm = 0,
-        cabMixed = 0, cabUnit = 0, cabCurated = 0,
-    }
-
-    MigrateBarAuraEffectTable(profile.globalStyle, counts)
-
-    if type(profile.groups) == "table" then
-        for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                MigrateBarAuraEffectTable(group.style, counts)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        if type(buttonData) == "table" then
-                            MigrateBarAuraEffectTable(buttonData.styleOverrides, counts)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Every scope of the resource-bar stores can hold custom-bar entries.
-    -- legacyResourceBarsSeed is a frozen profile-level copy that the
-    -- class-scope migration re-injects into the character and class stores
-    -- AFTER this pass stamps, so skipping it would reintroduce un-migrated
-    -- entries that are never revisited.
-    MigrateCustomBarEntries(self, profile.resourceBars, counts)
-    MigrateCustomBarEntries(self, profile.legacyResourceBarsSeed, counts)
-    for _, storeKey in ipairs({ "resourceBarsByChar", "resourceBarsByClass" }) do
-        local store = profile[storeKey]
-        if type(store) == "table" then
-            for _, settings in pairs(store) do
-                MigrateCustomBarEntries(self, settings, counts)
-            end
-        end
-    end
-
-    profile[BAR_AURA_EFFECT_SENTINEL.current] = true
-    local changed = {}
-    if counts.remapped > 0 then changed[#changed + 1] = ("effect styles moved to the new renderer (x%d)"):format(counts.remapped) end
-    if counts.cabOptions > 0 then changed[#changed + 1] = ("custom bar options with no 12.1 equivalent (x%d)"):format(counts.cabOptions) end
-    if counts.cabSoundForm > 0 then changed[#changed + 1] = ("custom bar aura sounds needing a file-based sound (x%d)"):format(counts.cabSoundForm) end
-    if counts.cabMixed > 0 then changed[#changed + 1] = ("custom bar mixed buff/debuff aura lists trimmed (x%d)"):format(counts.cabMixed) end
-    if counts.cabUnit > 0 then changed[#changed + 1] = ("custom bar tracked-unit pins released to automatic (x%d)"):format(counts.cabUnit) end
-    if counts.cabCurated > 0 then changed[#changed + 1] = ("custom bar wrong game-data aura IDs removed (x%d)"):format(counts.cabCurated) end
-    if #changed > 0 then
-        self:Print("Bar aura effects updated for 12.1: " .. table.concat(changed, "; ") .. ".")
-    end
 end
 
 ------------------------------------------------------------------------
@@ -3464,21 +3199,222 @@ local function MigrateOnePandemicSwitch(buttonData, group)
     end
 end
 
+------------------------------------------------------------------------
+-- STYLE STEPS
+--
+-- One ordered list of the per-style-table vocabulary steps. Every load,
+-- import, template store and old-string conversion runs it
+-- (RunAllMigrations, NormalizePanelTemplateStore,
+-- ST._NormalizeBarStyleForPanelConversion), and it reaches globalStyle, every
+-- panel style, every attached bar style and every entry's styleOverrides. New
+-- style vocabulary goes here, never into a hand walk. A step that rewrites
+-- values must take `fields` and mark every key it writes before it may set
+-- current = true.
+--
+-- A step's phase is "early" (right after both backfills), "late" (after the
+-- aura panel passes) or "pandemicSwitch" (only inside
+-- MigratePandemicSwitchOwnership). table(style, fallback, fields, counts,
+-- kind) runs once per style table; entries also runs it on each entry's
+-- styleOverrides, with the panel style as fallback; current also runs it on
+-- version 3/4 templates; sentinel runs it once per profile or template store;
+-- newCounts makes its counts; entry(buttonData, group, counts) runs right
+-- after that entry's table call; extra(self, profile, counts) runs after the
+-- walk, and notice(self, counts) last. The list order is the run order.
+------------------------------------------------------------------------
+
+-- Bar styles are saved in full from the live defaults (barAuraEffect
+-- "color", speed 50), so only a remapped old style proves its speed is
+-- pixel-scale.
+local BAR_VISIT_RULE = { onlyRemapped = true }
+
+local STYLE_STEPS = {
+    { id = "strata", phase = "early", current = true,
+        table = ClearInvalidStrataOrderFromStyle },
+    { id = "swipeFill", phase = "early", entries = true, current = true,
+        table = RetireSwipeFillFromStyle },
+    { id = "swipeEdge", phase = "early", entries = true, current = true,
+        table = StripRetiredSwipeEdgeKeysFromStyle },
+    { id = "iconFillAuraColor", phase = "early", entries = true, current = true,
+        table = StripRetiredIconFillAuraColorFromStyle },
+    { id = "textSize", phase = "early", entries = true, current = true,
+        table = StripRetiredTextSizeKeysFromStyle },
+    -- The pandemic section is OFFERED as a per-entry override again on 12.1
+    -- (owner ruling), so live-era promotions carry forward as visible,
+    -- revertible overrides — the style-value sanitizers run on styleOverrides
+    -- too, and the dead-key strip lives inside them (PANDEMIC_DEAD_STYLE_KEYS,
+    -- every style scope). MigratePandemicOverrideOwnership renames the two
+    -- retired section ids those promotions were stored under.
+    { id = "auraGlow", phase = "late", sentinel = AURA_GLOW_SENTINEL, entries = true,
+        newCounts = function() return { invert = 0, combatOnly = 0, textFormat = 0 } end,
+        table = function(style, _, _, counts) MigrateAuraGlowStyleTable(style, counts) end,
+        -- Per-entry format strings carry the same retired text token as the
+        -- style tables.
+        entry = function(buttonData, _, counts)
+            local fmt, scrubbed = ScrubPandemicTextFormat(rawget(buttonData, "textFormat"))
+            if scrubbed then
+                buttonData.textFormat = fmt
+                counts.textFormat = counts.textFormat + 1
+            end
+        end,
+        notice = function(self, counts)
+            local dropped = {}
+            if counts.invert > 0 then dropped[#dropped + 1] = ("glow-while-missing (x%d)"):format(counts.invert) end
+            if counts.combatOnly > 0 then dropped[#dropped + 1] = ("combat-only aura glow (x%d)"):format(counts.combatOnly) end
+            if counts.textFormat > 0 then dropped[#dropped + 1] = ("pandemic text tokens (x%d)"):format(counts.textFormat) end
+            if #dropped > 0 then
+                self:Print("Aura glow updated for 12.1. Dropped settings with no 12.1 equivalent: "
+                    .. table.concat(dropped, ", ") .. ".")
+            end
+        end },
+    { id = "lcg", phase = "late", sentinel = LCG_GLOW_SENTINEL, entries = true,
+        newCounts = function() return { buttonGlow = 0, autocast = 0 } end,
+        table = function(style, _, _, counts) MigrateLcgStyleTable(style, counts) end,
+        notice = function(self, counts)
+            local changed = {}
+            if counts.buttonGlow > 0 then changed[#changed + 1] = ("Action Button Glow entries now use the standard Glow (x%d)"):format(counts.buttonGlow) end
+            if counts.autocast > 0 then changed[#changed + 1] = ("Autocast Shine is now addon-rendered (x%d)"):format(counts.autocast) end
+            if #changed > 0 then
+                self:Print("Glow styles updated: " .. table.concat(changed, "; ") .. ".")
+            end
+        end },
+    -- Entries read their panel's values as saved, so a Bar Panel's own style
+    -- converts in the chain, after its entries (panelStyleViaChain).
+    { id = "pixelDashes", phase = "late", sentinel = PROC_READY_DASHES_SENTINEL, entries = true, current = true,
+        panelStyleViaChain = true,
+        newCounts = function() return { converted = 0, snapped = 0 } end,
+        table = MigrateProcReadyPixelGlowTable,
+        entry = function(buttonData, group) SeedProcReadyGlowColor2(buttonData, group.style) end,
+        notice = function(self, counts)
+            if counts.converted > 0 then
+                local message = ("Glow styles updated: Proc and Ready Glow's Pixel Glow is now Pixel Dashes (x%d)"):format(counts.converted)
+                if counts.snapped > 0 then
+                    message = message .. ("; %d adjusted to fit its ranges"):format(counts.snapped)
+                end
+                self:Print(message .. ".")
+            end
+        end },
+    -- Generation history lives on BAR_AURA_EFFECT_SENTINEL.
+    { id = "barAuraEffect", phase = "late", sentinel = BAR_AURA_EFFECT_SENTINEL, entries = true,
+        newCounts = function()
+            return {
+                remapped = 0, cabOptions = 0, cabSoundForm = 0,
+                cabMixed = 0, cabUnit = 0, cabCurated = 0,
+            }
+        end,
+        table = function(style, _, _, counts, kind)
+            MigrateBarAuraEffectTable(style, counts, kind == "bar" and BAR_VISIT_RULE or nil)
+        end,
+        extra = function(self, profile, counts)
+            -- Every scope of the resource-bar stores can hold custom-bar entries.
+            -- legacyResourceBarsSeed is a frozen profile-level copy that the
+            -- class-scope migration re-injects into the character and class stores
+            -- AFTER this step stamps, so skipping it would reintroduce un-migrated
+            -- entries that are never revisited.
+            MigrateCustomBarEntries(self, profile.resourceBars, counts)
+            MigrateCustomBarEntries(self, profile.legacyResourceBarsSeed, counts)
+            for _, storeKey in ipairs({ "resourceBarsByChar", "resourceBarsByClass" }) do
+                local store = profile[storeKey]
+                if type(store) == "table" then
+                    for _, settings in pairs(store) do
+                        MigrateCustomBarEntries(self, settings, counts)
+                    end
+                end
+            end
+        end,
+        notice = function(self, counts)
+            local changed = {}
+            if counts.remapped > 0 then changed[#changed + 1] = ("effect styles moved to the new renderer (x%d)"):format(counts.remapped) end
+            if counts.cabOptions > 0 then changed[#changed + 1] = ("custom bar options with no 12.1 equivalent (x%d)"):format(counts.cabOptions) end
+            if counts.cabSoundForm > 0 then changed[#changed + 1] = ("custom bar aura sounds needing a file-based sound (x%d)"):format(counts.cabSoundForm) end
+            if counts.cabMixed > 0 then changed[#changed + 1] = ("custom bar mixed buff/debuff aura lists trimmed (x%d)"):format(counts.cabMixed) end
+            if counts.cabUnit > 0 then changed[#changed + 1] = ("custom bar tracked-unit pins released to automatic (x%d)"):format(counts.cabUnit) end
+            if counts.cabCurated > 0 then changed[#changed + 1] = ("custom bar wrong game-data aura IDs removed (x%d)"):format(counts.cabCurated) end
+            if #changed > 0 then
+                self:Print("Bar aura effects updated for 12.1: " .. table.concat(changed, "; ") .. ".")
+            end
+        end },
+    -- After MigratePandemicOverrideOwnership, which decides marker-key
+    -- ownership by the old names.
+    { id = "pandemicMarkerMode", phase = "pandemicSwitch",
+        table = MigratePandemicMarkerModeStyle },
+}
+
+-- visit(style, fallback, fields, kind, buttonData, group, current) for each
+-- style table; kind is "global", "entry", "style" or "bar". A panel's entries
+-- come before its style: they read the panel's values as saved. Only these
+-- fixed keys are entered, never a backup snapshot or any other profile key.
+-- With opts.templates the profile is the template store: version 3/4
+-- templates (current, with their capturedFields, no entries) and nil/1/2
+-- (legacy); any other version stays untouched until a compatible addon can
+-- read it.
+local function ForEachStyleStore(profile, visit, opts)
+    local templates = opts and opts.templates
+    if not templates then
+        visit(profile.globalStyle, nil, nil, "global")
+    end
+    for _, group in pairs(type(profile.groups) == "table" and profile.groups or {}) do
+        if type(group) == "table" then
+            local version = group.templateVersion
+            local current = templates and (version == 3 or version == 4)
+            if not templates or current or version == nil or version == 1 or version == 2 then
+                local captured = current and type(group.capturedFields) == "table" and group.capturedFields or nil
+                if not current then
+                    for _, buttonData in ipairs(type(group.buttons) == "table" and group.buttons or {}) do
+                        if type(buttonData) == "table" then
+                            visit(rawget(buttonData, "styleOverrides"), group.style, nil, "entry", buttonData, group)
+                        end
+                    end
+                end
+                visit(group.style, nil, captured and captured.style, "style", nil, group, current)
+                visit(group.attachedBarStyle, nil, captured and captured.attachedBarStyle, "bar", nil, group, current)
+            end
+        end
+    end
+end
+
+local function RunStep(self, profile, step, opts)
+    if step.sentinel and not ClaimMigrationPass(profile, step.sentinel) then return end
+    local counts = step.newCounts and step.newCounts()
+    -- Bar styles are a widened reach (owner ruling R77a): their own counts,
+    -- which never feed the notice.
+    local barCounts = step.newCounts and step.newCounts()
+    ForEachStyleStore(profile, function(style, fallback, fields, kind, buttonData, group, current)
+        if (kind == "entry" and not step.entries) or (current and not step.current) then return end
+        local stepCounts = kind == "bar" and barCounts or counts
+        step.table(style, fallback, fields, stepCounts, kind)
+        if kind == "entry" and step.entry then
+            step.entry(buttonData, group, stepCounts)
+        end
+    end, opts)
+    if step.extra then step.extra(self, profile, counts) end
+    if step.sentinel then profile[step.sentinel.current] = true end
+    if step.notice then step.notice(self, counts) end
+end
+
+local function RunStyleSteps(self, profile, phase, opts)
+    if type(profile) ~= "table" then return end
+    for _, step in ipairs(STYLE_STEPS) do
+        if step.phase == phase then
+            RunStep(self, profile, step, opts)
+        end
+    end
+end
+
 -- Re-run safe (every import clears the sentinels): a second pass finds the
 -- entry fields already gone and every style table already speaking the enum.
-local function MigratePandemicSwitchOwnership(self, profile)
+local function MigratePandemicSwitchOwnership(self, profile, opts)
     if type(profile) ~= "table" or not ClaimMigrationPass(profile, PANDEMIC_SWITCH_SENTINEL) then return end
 
-    MigratePandemicMarkerModeStyle(profile.globalStyle)
+    -- The style tables' key swap first: MigrateOnePandemicSwitch reads
+    -- either key name.
+    RunStyleSteps(self, profile, "pandemicSwitch", opts)
 
-    if type(profile.groups) == "table" then
+    -- Templates have no entries.
+    if not (opts and opts.templates) and type(profile.groups) == "table" then
         for _, group in pairs(profile.groups) do
-            if type(group) == "table" then
-                MigratePandemicMarkerModeStyle(group.style)
-                if type(group.buttons) == "table" then
-                    for _, buttonData in ipairs(group.buttons) do
-                        MigrateOnePandemicSwitch(buttonData, group)
-                    end
+            if type(group) == "table" and type(group.buttons) == "table" then
+                for _, buttonData in ipairs(group.buttons) do
+                    MigrateOnePandemicSwitch(buttonData, group)
                 end
             end
         end
@@ -3562,19 +3498,23 @@ end
 
 -- Imports convert ordinary Bar Panels before the profile migration passes
 -- run. Normalize their style vocabulary before it moves into attachedBarStyle,
--- and repair that bundle on earlier converted profiles. Reuse the same
--- idempotent table migrations without consuming profile migration sentinels.
-function ST._NormalizeBarStyleForPanelConversion(style)
+-- and repair that bundle on earlier converted profiles: the whole STYLE_STEPS
+-- list on this one table, in list order, without consuming profile migration
+-- sentinels and without notices.
+-- opts.panelStyle (a Bar Panel's own style): the chain converts that style
+-- after its entries, which read it as their fallback, so the steps marked
+-- panelStyleViaChain are left to it (owner ruling R77a). Swipe fill still
+-- converts the panel's style here, ahead of its entries; deferring it would
+-- change what imported entries save.
+-- opts.bar (an attached bar style): steps get the "bar" kind, as in the chain.
+function ST._NormalizeBarStyleForPanelConversion(style, opts)
     if type(style) ~= "table" then return end
-    ClearInvalidStrataOrders({ globalStyle = style })
-    StripRetiredSwipeEdgeKeysFromStyle(style)
-    RetireSwipeFillFromStyle(style)
-    StripRetiredIconFillAuraColorFromStyle(style)
-    StripRetiredTextSizeKeysFromStyle(style)
-    MigrateAuraGlowStyleTable(style, { invert = 0, combatOnly = 0, textFormat = 0 })
-    MigrateLcgStyleTable(style, { buttonGlow = 0, autocast = 0 })
-    MigrateBarAuraEffectTable(style, { remapped = 0 })
-    MigratePandemicMarkerModeStyle(style)
+    local kind = opts and opts.bar and "bar" or nil
+    for _, step in ipairs(STYLE_STEPS) do
+        if not (opts and opts.panelStyle and step.panelStyleViaChain) then
+            step.table(style, nil, nil, step.newCounts and step.newCounts(), kind)
+        end
+    end
 end
 
 -- Panel templates (db.global.panelTemplates) are an account-wide store of
@@ -3592,33 +3532,35 @@ end
 -- two-level presets loop by hand, and it was a store the one-shot passes never
 -- reached at all until each grew that loop, which is exactly why a1871266 had
 -- to add an inline expander on the apply path. A template IS a group inside a
--- profile-shaped table, so the passes' existing profile.groups walks already
--- reach it: this runs the style passes over the store as their `profile`
--- argument, in the order RunAllMigrations runs them on the real profile. Each
--- one-shot pass stamps its sentinel on the STORE ROOT (they all write
--- profile[sentinel.current]), so the store re-runs a pass only on a generation
--- bump, exactly like a profile does. ClearMigrationSentinels is profile-only:
--- a door that ever installs templates wholesale has to bring them through here
--- itself. ImportPanelTemplates (Core/PanelTemplates.lua) is that door: it runs
--- this on a private store, and on a comparison mirror, before anything lands.
+-- profile-shaped table, so the profile walks already reach it: this runs the
+-- style steps over the store as their `profile` argument, in the order
+-- RunAllMigrations runs them on the real profile. Each one-shot step stamps
+-- its sentinel on the STORE ROOT (they all write profile[sentinel.current]),
+-- so the store re-runs a step only on a generation bump, exactly like a
+-- profile does. ClearMigrationSentinels is profile-only: a door that ever
+-- installs templates wholesale has to bring them through here itself.
+-- ImportPanelTemplates (Core/PanelTemplates.lua) is that door: it runs this
+-- on a private store, and on a comparison mirror, before anything lands.
 --
--- Only passes that read or write groups[*].style belong here. Entry, folder,
--- flag, cast-bar, totem and resource passes would find nothing (empty
--- buttons, no stores), and three are unsafe on a template: the group-scope
--- pass reads C_ClassTalents unconditionally, the cursor-anchor sanitizer
--- expects the relativeTo a template anchor deliberately lacks, and the alpha
--- inheritance normalizer validates against the live profile's containers.
+-- The STYLE_STEPS list reaches every template's style and attachedBarStyle:
+-- legacy templates fully, version 3/4 templates only through the steps
+-- marked current, which strip keys or keep capturedFields in step. The
+-- hand-kept legacy passes are the aura swipe handling and per-mode
+-- orientation. Entry, folder, flag, cast-bar, totem and resource passes would
+-- find nothing (empty buttons, no stores), and three are unsafe on a
+-- template: the group-scope pass reads C_ClassTalents unconditionally, the
+-- cursor-anchor sanitizer expects the relativeTo a template anchor
+-- deliberately lacks, and the alpha inheritance normalizer validates against
+-- the live profile's containers.
 --
 -- Silent by design. The notices these passes print are worded for the
 -- player's profile, and a template nobody has applied yet is not news, so
 -- the shim swallows Print and forwards everything else to the addon.
 --
--- MAINTENANCE RULE: a new pass that rewrites groups[*].style vocabulary must
--- be added here the same day it is added to RunAllMigrations. Otherwise
--- templates become the unreached store presets used to be, and applying one
--- hands a panel keys the runtime no longer reads. After the conversion the
--- legacy population is normally empty, so a new pass must convert version 4
--- values and their coverage together.
+-- MAINTENANCE RULE: style vocabulary goes into STYLE_STEPS, never into a hand
+-- walk, and so reaches profiles, bar styles, entries, templates and old
+-- strings at once. A step that rewrites values must take `fields` and mark
+-- every key it writes before it may be marked current.
 function CooldownCompanion:NormalizePanelTemplateStore(store)
     if type(store) ~= "table" or type(store.groups) ~= "table" then return end
     local quiet = setmetatable({ Print = function() end }, { __index = self })
@@ -3638,14 +3580,12 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
             end
         end
     end
-    ClearInvalidStrataOrders({ groups = currentGroups })
     local originalStore = store
     store = setmetatable({ groups = legacyGroups }, {
         __index = originalStore,
         __newindex = function(_, key, value) originalStore[key] = value end,
     })
 
-    ClearInvalidStrataOrders(store)
     -- Aura swipe keys are icons-only vocabulary: the backfill walks just the
     -- icons templates (a throwaway map of references; the pass mutates in
     -- place), and every other template is stripped of the five keys.
@@ -3666,23 +3606,11 @@ function CooldownCompanion:NormalizePanelTemplateStore(store)
     -- fall back to: a missing aura swipe key resolves to the shipped default,
     -- which is the right baseline for a template.
     BackfillAuraDurationSwipeSettings(iconsTemplates, nil)
-    RetireSwipeFill(store)
-    -- Current snapshots convert their values and captured coverage together.
-    for _, template in pairs(currentGroups) do
-        local fields = type(template.capturedFields) == "table" and template.capturedFields.style or nil
-        RetireSwipeFillFromStyle(template.style, nil, fields)
-        MigrateProcReadyPixelGlowTable(template.style, nil, fields)
-    end
-    StripRetiredSwipeEdgeKeys(store)
-    StripRetiredIconFillAuraColor(store)
-    -- Return discarded: its notice is profile-worded.
-    StripRetiredTextSizeKeys(store)
+    local TEMPLATES = { templates = true }
+    RunStyleSteps(quiet, originalStore, "early", TEMPLATES)
     MigratePerModeOrientation(quiet, store)
-    MigrateAuraGlowRebuild(quiet, store)
-    MigrateLcgGlowStyles(quiet, store)
-    MigrateProcReadyPixelGlows(quiet, store)
-    MigrateBarAuraEffectStyles(quiet, store)
-    MigratePandemicSwitchOwnership(quiet, store)
+    RunStyleSteps(quiet, originalStore, "late", TEMPLATES)
+    MigratePandemicSwitchOwnership(quiet, originalStore, TEMPLATES)
     ST.IndicatorMigration.ApplyTemplates(originalStore)
     if ST.MigrateSharedBarStyleTemplates then ST.MigrateSharedBarStyleTemplates(originalStore) end
     -- Bar-only arrangement blocks retired with Collapsing Stack (2026-10-19).
@@ -3764,15 +3692,13 @@ function CooldownCompanion:RunAllMigrations()
         self:Print("Updated for 12.1: " .. table.concat(parts, "; ") .. ".")
     end
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
-    ClearInvalidStrataOrders(self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
-    RetireSwipeFill(self.db and self.db.profile)
-    StripRetiredSwipeEdgeKeys(self.db and self.db.profile)
-    StripRetiredIconFillAuraColor(self.db and self.db.profile)
+    -- After both backfills: the aura swipe one leaves fill-offs for the swipe
+    -- fill step to convert.
+    RunStyleSteps(self, self.db and self.db.profile, "early")
     StripRetiredCastBarStylingKey(self.db and self.db.profile)
-    StripRetiredTotemEntryFlag(self.db and self.db.profile)
-    StripRetiredTextSizeKeys(self.db and self.db.profile)
+    StripRetiredEntryKeys(self.db and self.db.profile)
     MigratePerModeOrientation(self, self.db and self.db.profile)
     MigrateAuraTrackingRebuild(self, self.db and self.db.profile)
     -- After the aura vocabulary rebuild so the repair walks entries whose
@@ -3782,10 +3708,7 @@ function CooldownCompanion:RunAllMigrations()
     -- normalizer's header).
     MigrateAuraPanelIntegrity(self, self.db and self.db.profile)
     MigrateAuraGroupScopeIdentity(self, self.db and self.db.profile)
-    MigrateAuraGlowRebuild(self, self.db and self.db.profile)
-    MigrateLcgGlowStyles(self, self.db and self.db.profile)
-    MigrateProcReadyPixelGlows(self, self.db and self.db.profile)
-    MigrateBarAuraEffectStyles(self, self.db and self.db.profile)
+    RunStyleSteps(self, self.db and self.db.profile, "late")
     -- After the style-table passes above: they strip dead keys from entry
     -- override tables too, so this one compares cleaned data.
     MigratePandemicOverrideOwnership(self, self.db and self.db.profile)
