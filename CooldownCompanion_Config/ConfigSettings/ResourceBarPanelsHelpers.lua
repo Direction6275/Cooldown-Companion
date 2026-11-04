@@ -351,34 +351,43 @@ end
 function ST._ResourceSpecFields(container, settings, powerType, specID)
     local context = ST._GetSettingsWidgetContext(container)
     assert(context and context.kind == "resources" and context.settings == settings, "Missing resource edit context")
-    local resources = rawget(settings, "resources")
-    local resource = resources and rawget(resources, powerType)
+    -- Building a page saves nothing, so another row's edit can make these
+    -- records after this adapter was built. Always work from the saved ones.
+    local function SavedRecords()
+        local saved = rawget(settings, "resources")
+        return saved, saved and rawget(saved, powerType)
+    end
+    local resources, resource = SavedRecords()
+    -- A record this adapter saw must still be the saved one; a record it never
+    -- saw may have been made since.
     local function IsCurrent()
-        return context:IsCurrent() and rawget(settings, "resources") == resources
-            and (not resources or rawget(resources, powerType) == resource)
+        local savedResources, savedResource = SavedRecords()
+        return context:IsCurrent() and (not resources or savedResources == resources)
+            and (not resource or savedResource == resource)
     end
     local fields = setmetatable({}, {
         __index = function(_, key)
             local spec = GetSpecOverrideTable(settings, powerType, specID, false)
             if spec and spec[key] ~= nil then return spec[key] end
-            if resource then return resource[key] end
+            local _, saved = SavedRecords()
+            if saved then return saved[key] end
         end,
         __newindex = function(_, key, value)
             if not IsCurrent() then return end
             WriteSpecOverrideKey(settings, powerType, specID, key, value)
-            resources = rawget(settings, "resources")
-            resource = resources and rawget(resources, powerType)
+            resources, resource = SavedRecords()
         end,
     })
     getmetatable(fields)._settingsPreviewTarget = {
         isCurrent = IsCurrent,
         capture = function(keys)
             local oldResources, oldResource = resources, resource
-            local specs = resource and rawget(resource, "specOverrides")
+            local savedResources, savedResource = SavedRecords()
+            local specs = savedResource and rawget(savedResource, "specOverrides")
             local spec = specs and rawget(specs, specID)
             local restoreRoot = ST._CaptureRawSettingsFields(settings, { "resources" })
-            local restoreResource = ST._CaptureRawSettingsFields(resources, { powerType })
-            local restoreSpecs = ST._CaptureRawSettingsFields(resource, { "specOverrides" })
+            local restoreResource = ST._CaptureRawSettingsFields(savedResources, { powerType })
+            local restoreSpecs = ST._CaptureRawSettingsFields(savedResource, { "specOverrides" })
             local restoreSpec = ST._CaptureRawSettingsFields(specs, { specID })
             local restoreFields = ST._CaptureRawSettingsFields(spec, keys)
             return function()

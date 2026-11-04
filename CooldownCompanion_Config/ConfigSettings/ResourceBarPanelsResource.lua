@@ -220,6 +220,16 @@ local HEALTH_EFFECT_ROWS = {
         info = "Blizzard sets the low-health threshold to 35%. This cannot be configured." },
 }
 
+-- Only an edit makes a saved resource entry (rule Q1); building a page reads
+-- through a missing one.
+local function EnsureResourceEntry(settings, powerType)
+    if type(settings.resources) ~= "table" then settings.resources = {} end
+    if type(settings.resources[powerType]) ~= "table" then
+        settings.resources[powerType] = {}
+    end
+    return settings.resources[powerType]
+end
+
 local function IsResourceEnabled(settings, powerType)
     local res = settings.resources and settings.resources[powerType]
     if powerType == HealthResource.ID then
@@ -927,7 +937,6 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     if not settings.enabled then return end
-    if not settings.resources then settings.resources = {} end
 
     if togglesRight then
         -- Per-resource enable/disable
@@ -942,10 +951,7 @@ local function BuildResourceBarAnchoringPanel(container)
                     and RESOURCE_FINDER.primary.showResource[pt],
                 value = enabled,
                 onChange = function(val)
-                    if not settings.resources[pt] then
-                        settings.resources[pt] = {}
-                    end
-                    settings.resources[pt].enabled = val
+                    EnsureResourceEntry(settings, pt).enabled = val
                     applyBars("style-settings")
                 end,
             })
@@ -1275,9 +1281,6 @@ end
 local function BuildResourceColorControls(container, settings, powerType, specID, effectiveBarTextureName, applyBars)
     if not specID then
         return false
-    end
-    if not settings.resources[powerType] then
-        settings.resources[powerType] = {}
     end
 
     local descriptors = GetResourceColorDescriptors(powerType, effectiveBarTextureName)
@@ -1650,10 +1653,7 @@ end
 local function EnsureResourceAuraOverlayEntry(settings, powerType, specID)
     specID = tonumber(specID)
     if not specID then return nil end
-    if type(settings.resources[powerType]) ~= "table" then
-        settings.resources[powerType] = {}
-    end
-    local resource = settings.resources[powerType]
+    local resource = EnsureResourceEntry(settings, powerType)
     if type(resource.auraOverlayEntries) ~= "table" then
         resource.auraOverlayEntries = {}
     end
@@ -2026,10 +2026,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
         setting = finderStack and finderStack.maxBorder,
         value = borderOn,
         onChange = function(value)
-            if type(settings.resources[powerType]) ~= "table" then
-                settings.resources[powerType] = {}
-            end
-            settings.resources[powerType][keys.enabled] = value == true or nil
+            EnsureResourceEntry(settings, powerType)[keys.enabled] = value == true or nil
             applyRows("style-settings-soon")
         end,
     })
@@ -2040,12 +2037,12 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
 
     ST._AddAdvancedToggle(borderToggleRow, "rbMaxStackBorder_" .. tostring(finderPowerType), {}, true, {
         unlock = not borderOn and { enable = { label = "Enable Max Stack Border", run = function()
-            settings.resources = settings.resources or {}
-            settings.resources[powerType] = settings.resources[powerType] or {}
-            settings.resources[powerType][keys.enabled] = true
+            EnsureResourceEntry(settings, powerType)[keys.enabled] = true
             applyRows("style-settings")
         end } } or nil,
         build = function(panel)
+            -- No saved entry means the border is off, so these rows are locked
+            -- and the blank table never takes an edit.
             local resource = resource or {}
 
             local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
@@ -2404,7 +2401,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             local thresholdLeft = BeginRowGrid(container)
             local rbThresholdTickAdvBtns = {}
             local capturedPt = resourceSettingsPowerType
-            local resourceEntry = settings.resources[capturedPt]
+            local resourceEntry = settings.resources and settings.resources[capturedPt]
             if not (resourceEntry and resourceEntry.enabled == false) then
                 local resourceName = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
                 local isSegmented = IsStackCountedResource(capturedPt)
