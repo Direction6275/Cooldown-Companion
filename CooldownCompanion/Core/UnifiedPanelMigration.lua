@@ -193,8 +193,9 @@ local function IsOrdinaryBars(group)
 end
 
 -- Per-call options for ST._NormalizeBarStyleForPanelConversion: a Bar Panel's
--- own style leaves its entries-first steps to the chain, and bar styles get
--- the chain's bar rule.
+-- own style leaves its Pixel Dashes step to the chain, which converts it after
+-- its entries (swipe fill still converts it here first); bar styles get the
+-- chain's bar rule.
 local PANEL_STYLE_CONVERSION = { panelStyle = true }
 local BAR_STYLE_CONVERSION = { bar = true }
 
@@ -641,7 +642,6 @@ local function RepairConvertedDestinations(profile, context, report)
         group.buttons[#group.buttons + 1] = entry
     end
     if repaired > 0 then
-        report.repairedBars = repaired
         report.notices[#report.notices + 1] = repaired .. " migrated bar entries moved to their corrected saved attachment destinations."
     end
     return true
@@ -777,7 +777,6 @@ local function RepairConvertedEntryContracts(profile, context, report)
         group.buttons = entries
     end
     if repaired > 0 then
-        report.repairedEntries = repaired
         report.notices[#report.notices + 1] = repaired .. " migrated bar entries restored their original aura tracking or enabled state."
     end
     return true
@@ -1475,7 +1474,7 @@ end
 -- old import string lands (owner ruling R62b). nil when nothing converted.
 function Migration.ConversionChatLine(report)
     if type(report) ~= "table" then return nil end
-    if report.panels > 0 or report.bars > 0 or (report.repairedBars or 0) > 0 or (report.repairedEntries or 0) > 0 then
+    if report.panels > 0 or report.bars > 0 or report.createdPanels > 0 then
         return ("Updated Panels: %d Bar Panels and %d Custom Bars converted; %d panels created.")
             :format(report.panels, report.bars, report.createdPanels)
     end

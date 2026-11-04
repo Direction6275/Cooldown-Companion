@@ -3,8 +3,9 @@
     Query/helper functions used by both ResourceBar.lua and
     ResourceBarVisuals.lua at runtime. Reads never write saved data: a spec's
     layout and display profile are looked up, never created. The Ensure*
-    functions and PrepareSpecResourceLayout are the only writers; the one
-    other mutable state is a power-type secrecy memoization cache.
+    functions, PrepareSpecResourceLayout and SetBarLane (at a player's drag)
+    are the only writers. The session caches are the player class
+    id and the power-type secrecy memoization.
 
     All functions are added to ST._RB so consuming files can alias them to
     locals at load time.
@@ -447,19 +448,15 @@ local function CreateDefaultLayoutOrder(settings)
     }, settings)
 end
 
--- Spec stores hold numeric keys; a string key is read the same way, as
--- ST.ResolveModuleBarStyle and ScopedSettings read it.
-local function GetSpecKeyedTable(store, specID)
-    if type(store) ~= "table" then return nil end
-    local value = store[tonumber(specID) or specID]
-    if type(value) ~= "table" then value = store[tostring(specID)] end
-    return type(value) == "table" and value or nil
-end
+-- Spec stores hold numeric keys; ScopedSettings' lookup (it loads first)
+-- also reads a string key.
+local GetSpecKeyedTable = ST._GetSpecKeyedTable
 
 -- The spec's layout, or nil when it has none. Never writes: the current
--- spec of the current record is prepared at login, profile change, import
--- and spec change (CooldownCompanion:PrepareResourceBarSettings), and an
--- edit to another spec makes its layout through EnsureSpecLayoutOrder.
+-- spec of the current record is prepared at login, profile change and import
+-- (CooldownCompanion:PrepareResourceBarSettings), at a spec change
+-- (CompleteResourceBarSpecMigration) and by a spec copy, and an edit to
+-- another spec makes its layout through EnsureSpecLayoutOrder.
 GetSpecLayoutOrder = function(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()
@@ -468,7 +465,8 @@ GetSpecLayoutOrder = function(settings, specID)
 end
 
 -- The spec's layout, made from the record's own values when missing and
--- nil-filled when present. Only the prepare step and a player's edit call it.
+-- nil-filled when present. Only the prepare step, a player's edit and the
+-- shared bar style conversion (BarStyle.lua MigrationSpecLayout) call it.
 local function EnsureSpecLayoutOrder(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()

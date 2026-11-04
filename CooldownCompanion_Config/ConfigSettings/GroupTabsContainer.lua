@@ -214,7 +214,8 @@ local function BuildContainerGeneralTab(scroll, containerId)
 
     if not layoutCollapsed then
         -- Opening the section reads a view; a slider edit normalizes the saved
-        -- anchor before writing, as a drag does.
+        -- anchor before writing, as a drag does, and moves it by as much as the
+        -- slider moved, in case that normalize converted it after the section opened.
         local anchorView = CooldownCompanion:GetContainerAnchorView(container.anchor)
         local committedOffsets = {
             x = tonumber(anchorView.x) or 0,
@@ -223,7 +224,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
         local function ApplyContainerOffset(axis, value)
             local oldValue = committedOffsets[axis] or 0
             container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
-            container.anchor[axis] = value
+            container.anchor[axis] = ST.RoundToTenths((tonumber(container.anchor[axis]) or 0) + (value - oldValue))
             committedOffsets[axis] = value
 
             local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]

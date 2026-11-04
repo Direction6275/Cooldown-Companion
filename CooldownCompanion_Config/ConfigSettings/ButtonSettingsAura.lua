@@ -348,18 +348,8 @@ local function GetAuraTrackingCatalogState(context)
         end
     end
 
-    -- Resolves this one gate with GetEffectiveStyle's active-section
-    -- precedence over the panel style, reading the saved override with rawget.
-    local groupStyle = group.style or {}
-    local showAuraStackText = groupStyle.showAuraStackText
-    if buttonData.overrideSections and buttonData.overrideSections.auraStackText
-        and buttonData.styleOverrides
-        and (not ST.CanButtonUseOverrideSection
-            or ST.CanButtonUseOverrideSection(buttonData, "auraStackText")) then
-        local override = rawget(buttonData.styleOverrides, "showAuraStackText")
-        if override ~= nil then showAuraStackText = override end
-    end
-    state.stackTextVisible = showAuraStackText ~= false
+    -- Same read as BuildAuraTrackingSection's stack-text gate and the renderer.
+    state.stackTextVisible = CooldownCompanion:GetEntryEffectiveStyle(group, buttonData).showAuraStackText ~= false
     state.showCountAtOne = CooldownCompanion:IsAuraStackCountAtOneEnabled(buttonData)
     state.threshold = CooldownCompanion:GetAuraStackThresholdValue(buttonData)
     state.maxColor = CooldownCompanion:IsAuraStackMaxColorEnabled(buttonData)

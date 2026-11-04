@@ -310,6 +310,11 @@ local function ApplyImportModeReview(review)
         applyReview = { ok = true, kind = review.kind, data = data,
             existingPanelIds = review.existingPanelIds, conversionLine = review.conversionLine }
     end
+    -- A session started after Import Mode opened: a full import replaces the
+    -- profile with no AceDB callback, so its snapshot ends here.
+    if CooldownCompanion:IsArrangeModeActive() then
+        CooldownCompanion:ExitArrangeMode()
+    end
     local applied = CooldownCompanion:ApplyReviewedImport(applyReview)
     if applied then
         ExitImportMode({ skipRefresh = true })

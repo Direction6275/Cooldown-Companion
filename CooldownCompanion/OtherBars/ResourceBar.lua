@@ -217,28 +217,8 @@ end
 -- Independent Stack Anchoring (entire resource bar stack to UIParent)
 ------------------------------------------------------------------------
 
-local function EnsureIndependentStackConfig(settings, layout)
-    layout = layout or GetSpecLayoutOrder(settings) or settings
-    if type(layout.independentAnchor) ~= "table" then
-        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor) or {}
-    end
-    local anchor = layout.independentAnchor
-    anchor.point = anchor.point or "CENTER"
-    anchor.relativePoint = anchor.relativePoint or "CENTER"
-    anchor.x = tonumber(anchor.x) or 0
-    anchor.y = tonumber(anchor.y) or 0
-    if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
-        anchor.relativeTo = nil
-    end
-    layout.independentWidth = ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
-    if layout.independentAnchorLocked == nil then
-        layout.independentAnchorLocked = settings.independentAnchorLocked
-    end
-end
-
--- The anchor and width the stack is placed with: what
--- EnsureIndependentStackConfig would save, read without writing. Only an edit
--- saves them (rule Q1).
+-- The anchor and width the stack is placed with, read without writing. Only
+-- an edit saves them, through EnsureIndependentStackConfig (rule Q1).
 local function ResolveIndependentStackPlacement(settings, layout)
     layout = layout or settings
     local source = type(layout.independentAnchor) == "table" and layout.independentAnchor
@@ -252,6 +232,22 @@ local function ResolveIndependentStackPlacement(settings, layout)
         y = tonumber(source.y) or 0,
         relativeTo = relativeTo,
     }, ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
+end
+
+-- Saves the placement ResolveIndependentStackPlacement reads.
+local function EnsureIndependentStackConfig(settings, layout)
+    layout = layout or GetSpecLayoutOrder(settings) or settings
+    local view, width = ResolveIndependentStackPlacement(settings, layout)
+    if type(layout.independentAnchor) ~= "table" then
+        layout.independentAnchor = type(settings.independentAnchor) == "table" and CopyTable(settings.independentAnchor) or {}
+    end
+    local anchor = layout.independentAnchor
+    anchor.point, anchor.relativePoint = view.point, view.relativePoint
+    anchor.x, anchor.y, anchor.relativeTo = view.x, view.y, view.relativeTo
+    layout.independentWidth = width
+    if layout.independentAnchorLocked == nil then
+        layout.independentAnchorLocked = settings.independentAnchorLocked
+    end
 end
 
 local function SaveIndependentStackAnchor(refreshConfig)

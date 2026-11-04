@@ -141,24 +141,8 @@ function CooldownCompanion:CancelIndependentCastBarDrag()
     UpdateIndependentCastBarDragState(GetCastBarSettings())
 end
 
-local function EnsureIndependentCastBarConfig(settings)
-    if type(settings.independentAnchor) ~= "table" then
-        settings.independentAnchor = {}
-    end
-    local anchor = settings.independentAnchor
-    anchor.point = anchor.point or "CENTER"
-    anchor.relativePoint = anchor.relativePoint or "CENTER"
-    anchor.x = tonumber(anchor.x) or 0
-    anchor.y = tonumber(anchor.y) or 0
-    if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
-        anchor.relativeTo = nil
-    end
-    settings.independentWidth = ClampCastBarDimension(settings.independentWidth, 200)
-end
-
--- The anchor and width the mover is placed with: what
--- EnsureIndependentCastBarConfig would save, read without writing. Only an
--- edit saves them (rule Q1).
+-- The anchor and width the mover is placed with, read without writing. Only
+-- an edit saves them, through EnsureIndependentCastBarConfig (rule Q1).
 local function ResolveIndependentCastBarPlacement(settings)
     local source = type(settings.independentAnchor) == "table" and settings.independentAnchor or {}
     local relativeTo = source.relativeTo
@@ -170,6 +154,18 @@ local function ResolveIndependentCastBarPlacement(settings)
         y = tonumber(source.y) or 0,
         relativeTo = relativeTo,
     }, ClampCastBarDimension(settings.independentWidth, 200)
+end
+
+-- Saves the placement ResolveIndependentCastBarPlacement reads.
+local function EnsureIndependentCastBarConfig(settings)
+    local view, width = ResolveIndependentCastBarPlacement(settings)
+    if type(settings.independentAnchor) ~= "table" then
+        settings.independentAnchor = {}
+    end
+    local anchor = settings.independentAnchor
+    anchor.point, anchor.relativePoint = view.point, view.relativePoint
+    anchor.x, anchor.y, anchor.relativeTo = view.x, view.y, view.relativeTo
+    settings.independentWidth = width
 end
 
 local IsBarsConfigActive = RB.IsBarsConfigActive

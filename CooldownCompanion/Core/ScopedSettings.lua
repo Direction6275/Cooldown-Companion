@@ -165,6 +165,9 @@ local function GetSpecKeyedTable(source, specID)
 
     return nil
 end
+-- Shared with ResourceBarHelpers.lua and BarStyle.lua, which loads earlier
+-- and reads this at call time.
+ST._GetSpecKeyedTable = GetSpecKeyedTable
 
 local function ClearSpecKeyedValue(source, specID)
     if type(source) ~= "table" then
@@ -1073,10 +1076,10 @@ end
 -- _sharedBarStyleVersion and any later _...Version) record what the addon
 -- converted, never what the player chose, so a real setting must never be
 -- stored under that key shape.
--- options.ignorePreparedSpecs: a spec layout or display profile holding only
--- what the R76 fill makes from this record's own values is bookkeeping for a
--- spec played, not a player's setup, and is left out of the comparison.
-local function IsDefaultResourceBarClassSettings(settings, classKey, options)
+-- A spec layout or display profile holding only what the R76 fill makes from
+-- this record's own values is bookkeeping for a spec played, not a player's
+-- setup, so it is always left out of the comparison.
+local function IsDefaultResourceBarClassSettings(settings, classKey)
     if type(settings) ~= "table" then
         return false
     end
@@ -1086,12 +1089,10 @@ local function IsDefaultResourceBarClassSettings(settings, classKey, options)
             comparable[key] = value
         end
     end
-    if options and options.ignorePreparedSpecs then
-        comparable.layoutOrder = WithoutPreparedSpecEntries(settings.layoutOrder,
-            ST._RB.CreateDefaultLayoutOrder(settings))
-        comparable.displayProfiles = WithoutPreparedSpecEntries(settings.displayProfiles,
-            ST._RB.CreateSeededDisplayProfile(settings))
-    end
+    comparable.layoutOrder = WithoutPreparedSpecEntries(settings.layoutOrder,
+        ST._RB.CreateDefaultLayoutOrder(settings))
+    comparable.displayProfiles = WithoutPreparedSpecEntries(settings.displayProfiles,
+        ST._RB.CreateSeededDisplayProfile(settings))
     if comparable.keepSpecResourcesInAllForms == nil then
         comparable.keepSpecResourcesInAllForms = false
     end
@@ -1200,8 +1201,7 @@ local function SeedCurrentLegacyResourceBarBucket(addon, profile)
     local classKey = GetCurrentResourceBarClassKey(addon)
     local classStore = type(profile) == "table" and rawget(profile, RESOURCE_BAR_CLASS_STORE_KEY) or nil
     local classSettings = type(classStore) == "table" and classStore[classKey] or nil
-    if type(classSettings) == "table"
-        and not IsDefaultResourceBarClassSettings(classSettings, classKey, { ignorePreparedSpecs = true }) then
+    if type(classSettings) == "table" and not IsDefaultResourceBarClassSettings(classSettings, classKey) then
         ClearLegacyResourceBarSeed(profile)
         return
     end
@@ -1641,7 +1641,7 @@ local function MigrateResourceBarClass(profile, classStore, state, classKey, can
     if type(classStore[classKey]) == "table" then
         NormalizeResourceBarSettingsForClass(classStore[classKey], classKey)
         SanitizeResourceBarAnchors(classStore[classKey], classKey)
-        if IsDefaultResourceBarClassSettings(classStore[classKey], classKey, { ignorePreparedSpecs = true }) then
+        if IsDefaultResourceBarClassSettings(classStore[classKey], classKey) then
             classStore[classKey] = nil
         else
             local hasDifferingCandidate = false
@@ -2198,7 +2198,7 @@ function CooldownCompanion:IsResourceBarClassConfigured(classKey)
     if type(settings) ~= "table" then
         return false
     end
-    return not IsDefaultResourceBarClassSettings(settings, classKey, { ignorePreparedSpecs = true })
+    return not IsDefaultResourceBarClassSettings(settings, classKey)
 end
 
 -- Replaces the class's whole Resources bucket with imported settings. The

@@ -787,10 +787,20 @@ function CooldownCompanion:FinalizeNonPanelGroupAnchors()
     end
 end
 
-function CooldownCompanion:RefreshAllGroups(reason)
+-- opts.reanchorContainers: the profile was replaced (profile change, copy,
+-- reset or full import), so every Group frame is marked to be placed from
+-- the current profile's saved anchor: by this refresh when shown, later when
+-- it is next shown, or by the layout tick after a combat deferral. Other
+-- refreshes re-place a kept frame only while it is still marked.
+function CooldownCompanion:RefreshAllGroups(reason, opts)
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
+    end
+    if opts and opts.reanchorContainers and self.containerFrames then
+        for _, frame in pairs(self.containerFrames) do
+            frame._anchorDirty = true
+        end
     end
 
     -- Defer entire refresh during combat — protected frame operations
@@ -815,12 +825,16 @@ function CooldownCompanion:RefreshAllGroups(reason)
             end
         end
         -- Ensure all current-profile containers have frames
-        for containerId, _ in pairs(containers) do
+        for containerId, container in pairs(containers) do
             if self:IsContainerVisibleToCurrentChar(containerId) then
                 if not self.containerFrames[containerId] then
                     self:CreateContainerFrame(containerId)
                 else
-                    self.containerFrames[containerId]:Show()
+                    local frame = self.containerFrames[containerId]
+                    if frame._anchorDirty then
+                        self:AnchorContainerFrame(frame, container.anchor)
+                    end
+                    frame:Show()
                 end
             else
                 if self.containerFrames[containerId] then

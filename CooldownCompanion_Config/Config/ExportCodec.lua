@@ -1208,14 +1208,6 @@ local function CompactDiagnosticSnapshot(snapshot, formatVersion)
 
     if type(compact.profile) == "table" then
         compact.profile = CompactProfile(compact.profile, formatVersion)
-        -- Older builds stored this derived cache on entries. StyleOverrides.lua
-        -- now owns it in a weak-key table; these are not user settings.
-        for _, panel in pairs(compact.profile.groups or {}) do
-            for _, button in ipairs(panel.buttons or {}) do
-                button._effectiveStyleGroupStyle = nil
-                button._effectiveStyleOverrides = nil
-            end
-        end
     end
 
     if type(compact.runtime) == "table" then

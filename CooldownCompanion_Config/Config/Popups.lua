@@ -1414,9 +1414,10 @@ end
 --     the chain and would judge them before FinishGroupImportBatch remaps
 --     them, detaching imported groups to the screen root — so it is
 --     deferred, and the batch sanitizes once anchors are correct.
---   * A multi-section import (setup, pieces) would otherwise walk the whole
---     profile once per section. Those doors pass options.deferMigrations and
---     take one run themselves after finishing their batch. Deferral is a
+--   * The setup door would otherwise walk the whole profile once per
+--     section, and the pieces door's run would come before its batch remaps
+--     anchors. Those doors pass options.deferMigrations and take one run
+--     themselves after finishing their batch. Deferral is a
 --     per-call argument, deliberately not shared state: an earlier version
 --     used a module-level counter, and a Lua error thrown between its
 --     increment and decrement left it raised for the rest of the session,
@@ -1441,9 +1442,9 @@ local function RunPostImportMigrations()
     return ok
 end
 
--- Exported for the pieces door, the other multi-section import: it lives in
--- ProfileImportPieces.lua, defers its sections the same way, and so needs to
--- take the single run itself.
+-- Exported for the pieces door in ProfileImportPieces.lua, which defers its
+-- containers section the same way and so takes the single run itself after
+-- closing its batch.
 ST._RunPostImportMigrations = RunPostImportMigrations
 
 local function ApplyGroupImportData(data, options)
@@ -1643,14 +1644,10 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
--- classKey defaults to the current class. Setup imports pass the class the
--- payload targets, so a cross-class import respects THAT class's pending
--- conflict, not the importing character's.
+-- The setup door passes the class its Resources section targets, so a
+-- cross-class import respects THAT class's pending conflict, not the
+-- importing character's.
 local function BlockImportForResourceBarConflict(classKey)
-    classKey = classKey
-        or (CooldownCompanion.GetCurrentResourceBarClassKey
-            and CooldownCompanion:GetCurrentResourceBarClassKey())
-        or nil
     local conflict = CooldownCompanion.GetResourceBarConflict
         and CooldownCompanion:GetResourceBarConflict(classKey)
         or nil
@@ -1710,9 +1707,10 @@ end
 
 -- Applies a reviewed `setup` payload: groups additively, then the Resources
 -- section as a whole-bucket replace for its class, then any Panel Templates
--- beside the player's own. The review already converted legacy sections
--- (ClassifyImportReviewText, the only caller). Order matters: groups first so
--- the Resources anchor can remap onto the groups imported from the same string.
+-- beside the player's own. ClassifyImportReviewText already converted legacy
+-- sections; ApplyReview (ImportReview.lua) is the only caller. Order matters:
+-- groups first so the Resources anchor can remap onto the groups imported from
+-- the same string.
 local function ApplySetupImportData(data, existingPanelIds)
     if type(data) ~= "table" or data.type ~= "setup" then
         CooldownCompanion:Print("Import failed: this is not a setup export.")

@@ -417,9 +417,9 @@ local function AddContainerEntry(entries, containerInfo, selectedPanels, deselec
     end
 end
 
--- Both sections defer their migration run to the single one this door takes
--- after finishing its batch, the same contract the setup door uses. Without
--- it each section walked the whole profile again on one click.
+-- The containers section defers its migration run to the single one this
+-- door takes after finishing its batch, the same contract the setup door
+-- uses, so the run sees remapped anchors.
 local DEFER_TO_PIECES_RUN = { deferMigrations = true }
 
 local function ApplyPayload(payload)
@@ -543,7 +543,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
 
     FinishImportBatch(batchToken, applied)
 
-    -- The single migration run for every section this click inserted, taken
+    -- The single migration run for what this click inserted, taken
     -- once the batch has remapped anchors and before the refresh below, so
     -- the frames that refresh builds come from migrated entries.
     if applied then

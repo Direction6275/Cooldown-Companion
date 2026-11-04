@@ -692,13 +692,10 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
         exportedCharInfo = data._characterInfo
     end
 
-    -- The review already converted this payload (ClassifyImportReviewText,
-    -- the only caller). The copy keeps the active profile from sharing
-    -- tables with the review's data.
-    local candidate = CopyTable(data)
-    candidate._exporterCharKey = exporterCharKey
-    candidate._characterInfo = exportedCharInfo
-    data = candidate
+    -- ClassifyImportReviewText already converted this payload; ApplyReview
+    -- (ImportReview.lua) is the only caller. The copy keeps the active
+    -- profile from sharing tables with the review's data.
+    data = CopyTable(data)
 
     local strippedCharacterEligibility = tonumber(data._cdcCharacterEligibilityStripped) or 0
     CopyProfileDataIntoActiveProfile(db.profile, data)
@@ -777,7 +774,7 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     end
 
     if self.RefreshAllGroups then
-        self:RefreshAllGroups(options.runtimeReason or "profile-import")
+        self:RefreshAllGroups(options.runtimeReason or "profile-import", { reanchorContainers = true })
     end
     if strippedCharacterEligibility > 0 and self.Print then
         self:Print("Character eligibility is local and was not imported.")

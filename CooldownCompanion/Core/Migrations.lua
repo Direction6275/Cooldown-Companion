@@ -906,9 +906,8 @@ end
 -- _totemEntry, the totem-phase learned flag an early build of the totem
 -- duration phase stamped so the config lane could widen its aura gates (the
 -- totem phase was removed entirely, #680), and the derived effective-style
--- cache older builds saved on entries (no reader or writer since 030ef97c;
--- ExportCodec strips it only from diagnostics). Strip-only, so every re-run
--- is a no-op.
+-- cache older builds saved on entries (no reader or writer since 030ef97c).
+-- Strip-only, so every re-run is a no-op.
 local RETIRED_ENTRY_KEYS = { "_totemEntry", "_effectiveStyleGroupStyle", "_effectiveStyleOverrides" }
 
 local function StripRetiredEntryKeys(profile)
@@ -1544,12 +1543,12 @@ local MIGRATION_SENTINELS = {
     WHILE_AURA_ACTIVE_ICON_SENTINEL,
     DESAT_MISSING_SENTINEL,
     PANDEMIC_SWITCH_SENTINEL,
-    -- Single-generation passes keep their own inline guard and stamp (the
-    -- group-scope pass stamps conditionally on talent data being ready);
+    -- Single-generation passes keep their own inline guard and stamp;
     -- registered so ClearMigrationSentinels iterates them.
     { current = "_cdcAuraGroupScopeMigrated" },
     { current = "_cdcPerModeOrientationMigrated" },
     { current = "_cdcAuraPanelIntegrityMigrated" },
+    -- Claimed through ClaimMigrationPass or a STYLE_STEPS entry.
     DURATION_LOW_TIME_AURAS_SENTINEL,
     DURATION_TEXT_VISIBILITY_SENTINEL,
     PROC_READY_DASHES_SENTINEL,
@@ -3547,11 +3546,10 @@ end
 -- marked current, which strip keys or keep capturedFields in step. The
 -- hand-kept legacy passes are the aura swipe handling and per-mode
 -- orientation. Entry, folder, flag, cast-bar, totem and resource passes would
--- find nothing (empty buttons, no stores), and three are unsafe on a
--- template: the group-scope pass reads C_ClassTalents unconditionally, the
--- cursor-anchor sanitizer expects the relativeTo a template anchor
--- deliberately lacks, and the alpha inheritance normalizer validates against
--- the live profile's containers.
+-- find nothing (empty buttons, no stores), and two are unsafe on a
+-- template: the cursor-anchor sanitizer expects the relativeTo a template
+-- anchor deliberately lacks, and the alpha inheritance normalizer validates
+-- against the live profile's containers.
 --
 -- Silent by design. The notices these passes print are worded for the
 -- player's profile, and a template nobody has applied yet is not news, so

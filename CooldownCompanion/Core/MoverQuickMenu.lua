@@ -192,8 +192,11 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
             self:RefreshConfigPanel()
         end
     elseif descriptor.kind == "cast" or descriptor.kind == "resource" then
+        -- The placement view drops a relativeTo that is not a string, so Reset
+        -- does too and goes to the screen, where the bar draws.
         local anchor = GetExternalAnchor(descriptor)
-        ApplyExternalAnchor(descriptor, type(anchor) == "table" and anchor.relativeTo)
+        local target = type(anchor) == "table" and anchor.relativeTo or nil
+        ApplyExternalAnchor(descriptor, type(target) == "string" and target or nil)
     end
 end
 

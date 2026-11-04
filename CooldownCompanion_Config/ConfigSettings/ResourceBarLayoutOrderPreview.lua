@@ -535,10 +535,15 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     local castSlots = {}
     local resourceBarsEnabled = includeResourceSlots and rbSettings and rbSettings.enabled
 
-    if includeResourceSlots then
+    -- Collection only reads; a drag makes the saved slot (rule Q1).
+    local function ReadLayoutResource(powerType)
+        return layout.resources and layout.resources[powerType]
+    end
+
+    local function EnsureLayoutResourceSlot(powerType)
         layout.resources = layout.resources or {}
-        rbSettings = rbSettings or {}
-        rbSettings.resources = rbSettings.resources or {}
+        layout.resources[powerType] = layout.resources[powerType] or {}
+        return layout.resources[powerType]
     end
 
     local function ResolveSlotThickness(powerType)
@@ -559,11 +564,6 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         local showResource = resourceBarsEnabled and RB.IsResourceEnabled(renderType, rbSettings)
 
         if showResource then
-            local function EnsureLayoutResource()
-                layout.resources[powerType] = layout.resources[powerType] or {}
-                return layout.resources[powerType]
-            end
-
             table_insert(primarySlots, {
                 -- Keyed by what the slot DRAWS, not by where it stores: the
                 -- id is a per-build handle (drag identity, frame map, and
@@ -578,7 +578,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 label = POWER_NAMES[renderType] or ("Power " .. renderType),
                 thickness = ResolveSlotThickness(powerType),
                 getPos = function()
-                    local slot = layout.resources[powerType]
+                    local slot = ReadLayoutResource(powerType)
                     if isVerticalLayout then
                         local pos = slot and slot.verticalPosition
                         if pos == "left" or pos == "right" then
@@ -589,14 +589,14 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     return (slot and slot.position) or "below"
                 end,
                 getOrder = function()
-                    local slot = layout.resources[powerType]
+                    local slot = ReadLayoutResource(powerType)
                     if isVerticalLayout then
                         return (slot and slot.verticalOrder) or (slot and slot.order) or (900 + powerType)
                     end
                     return (slot and slot.order) or (900 + powerType)
                 end,
                 setPos = function(value)
-                    local slot = EnsureLayoutResource()
+                    local slot = EnsureLayoutResourceSlot(powerType)
                     if isVerticalLayout then
                         slot.verticalPosition = value
                     else
@@ -604,7 +604,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     end
                 end,
                 setOrder = function(value)
-                    local slot = EnsureLayoutResource()
+                    local slot = EnsureLayoutResourceSlot(powerType)
                     if isVerticalLayout then
                         slot.verticalOrder = value
                     else
@@ -657,15 +657,13 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             if not independent and (slot.kind == "cast" or not isVerticalLayout) then
                 ST._ConfigureAttachedBarPreviewSlot(slot, function()
                     if slot.kind == "cast" then return layout.castBar end
-                    return layout.resources[RB.GetCanonicalPowerType(slot.powerType)]
+                    return ReadLayoutResource(RB.GetCanonicalPowerType(slot.powerType))
                 end, function()
                     if slot.kind == "cast" then
                         layout.castBar = layout.castBar or { position = "below", order = 2000 }
                         return layout.castBar
                     end
-                    local pt = RB.GetCanonicalPowerType(slot.powerType)
-                    layout.resources[pt] = layout.resources[pt] or {}
-                    return layout.resources[pt]
+                    return EnsureLayoutResourceSlot(RB.GetCanonicalPowerType(slot.powerType))
                 end)
             end
         end
@@ -2246,7 +2244,7 @@ function ST._BuildLayoutOrderPanel(container)
     content:SetClipsChildren(false)
 
     local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
-    -- The width the bar draws with (the apply clamps it the same way).
+    -- The clamped width the bar draws with; the canvas itself stops at 20.
     local independentLength = math_max(20, standaloneCast
         and RB.ClampIndependentDimension(cbSettings.independentWidth, 200, 20)
         or RB.ClampIndependentDimension(layout.independentWidth or rbSettings.independentWidth, 200))
@@ -2472,8 +2470,8 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
         if CS.otherClassLibraryActive then return {} end
         local saved = CooldownCompanion:GetResourceBarSettings()
         if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return {} end
-        -- Slot collection fills nils and its drag setters write into the record
-        -- and layout it is given. Keep those on the detached snapshot painting uses.
+        -- Overview tiles are read-only and never drag; they paint from this
+        -- detached snapshot, so their slots' layout setters stay off saved data.
         settings = CopyTable(saved)
         layout = RB.GetSpecLayoutOrder(settings)
     else

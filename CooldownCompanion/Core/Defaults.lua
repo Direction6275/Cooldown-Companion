@@ -343,8 +343,9 @@ local defaults = {
             conflicts = {},
             unsafeCharKeys = {},
         },
-        -- Retired single stores (resourceBars, castBar, frameAnchoring): never live settings, only
-        -- creation templates and the legacy baseline. ExportCodec refills them on profile imports and restores.
+        -- Retired single stores (resourceBars, castBar, frameAnchoring): never saved as live settings. They are
+        -- the creation template, the getters' unsaved fallback (and the Health switch fallback), and the legacy
+        -- baseline. ExportCodec refills them on profile imports and restores.
         resourceBars = {
             enabled = false,
             anchorGroupId = nil,
