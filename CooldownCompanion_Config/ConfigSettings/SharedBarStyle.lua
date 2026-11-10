@@ -274,11 +274,15 @@ local function ModuleStyleContext(kind, powerType, spec, resourceWide)
     -- An independent cast bar, and independent Resources as a whole, are
     -- their own appearance owners: these rows edit their saved settings as a
     -- panel's rows edit the panel. Saved per-bar customizations stay put.
-    -- The spec's display profile is made at the first edit, not on open.
+    -- The spec's display profile is made at the first edit, not on open; an
+    -- existing one is edited as it is.
     local Store
     if resourceWide then
         context.resourceWide = true
-        Store = function() return ST._RB.EnsureSpecResourceDisplayProfile(context.settings, context.spec) end
+        Store = function()
+            return ST._RB.GetSpecResourceDisplayProfile(context.settings, context.spec)
+                or ST._RB.EnsureSpecResourceDisplayProfile(context.settings, context.spec)
+        end
     elseif kind == "castbar" and not context.owner then
         Store = function() return context.settings end
     end
@@ -305,13 +309,7 @@ local function ModuleStyleContext(kind, powerType, spec, resourceWide)
                     if not resourceWide then return ST._CaptureRawSettingsFields(Store(), localKeys) end
                     -- A preview also removes a display profile it had to make;
                     -- only a committed edit keeps it.
-                    local settings, spec = context.settings, context.spec
-                    local restores = {
-                        ST._CaptureRawSettingsFields(ST._RB.GetSpecResourceDisplayProfile(settings, spec), localKeys),
-                        ST._CaptureRawSettingsFields(settings.displayProfiles, { tonumber(spec) or spec }),
-                        ST._CaptureRawSettingsFields(settings, { "displayProfiles" }),
-                    }
-                    return function() for _, restore in ipairs(restores) do restore() end end
+                    return ST._CaptureSpecKeyedFields(context.settings, "displayProfiles", context.spec, localKeys)
                 end,
             },
         })

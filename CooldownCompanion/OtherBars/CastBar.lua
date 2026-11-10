@@ -144,16 +144,8 @@ end
 -- The anchor and width the mover is placed with, read without writing. Only
 -- an edit saves them, through EnsureIndependentCastBarConfig (rule Q1).
 local function ResolveIndependentCastBarPlacement(settings)
-    local source = type(settings.independentAnchor) == "table" and settings.independentAnchor or {}
-    local relativeTo = source.relativeTo
-    if relativeTo ~= nil and type(relativeTo) ~= "string" then relativeTo = nil end
-    return {
-        point = source.point or "CENTER",
-        relativePoint = source.relativePoint or "CENTER",
-        x = tonumber(source.x) or 0,
-        y = tonumber(source.y) or 0,
-        relativeTo = relativeTo,
-    }, ClampCastBarDimension(settings.independentWidth, 200)
+    return RB.ResolveIndependentAnchorView(settings.independentAnchor),
+        ClampCastBarDimension(settings.independentWidth, 200)
 end
 
 -- Saves the placement ResolveIndependentCastBarPlacement reads.

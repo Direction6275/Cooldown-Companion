@@ -65,6 +65,7 @@ local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
 local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
+local ResolveIndependentAnchorView = RB.ResolveIndependentAnchorView
 local UpdateIndependentStackDragState
 
 local CancelCoordinateEdit = ST.CancelCoordinateEdit
@@ -222,16 +223,9 @@ end
 local function ResolveIndependentStackPlacement(settings, layout)
     layout = layout or settings
     local source = type(layout.independentAnchor) == "table" and layout.independentAnchor
-        or type(settings.independentAnchor) == "table" and settings.independentAnchor or {}
-    local relativeTo = source.relativeTo
-    if relativeTo ~= nil and type(relativeTo) ~= "string" then relativeTo = nil end
-    return {
-        point = source.point or "CENTER",
-        relativePoint = source.relativePoint or "CENTER",
-        x = tonumber(source.x) or 0,
-        y = tonumber(source.y) or 0,
-        relativeTo = relativeTo,
-    }, ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
+        or settings.independentAnchor
+    return ResolveIndependentAnchorView(source),
+        ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200)
 end
 
 -- Saves the placement ResolveIndependentStackPlacement reads.

@@ -760,6 +760,24 @@ local function ClampIndependentDimension(value, fallback, minVal)
     return dim
 end
 
+-- How an Independent bar's saved anchor is drawn, read without writing: CENTER
+-- points by default, numeric offsets, and a relativeTo that is not a frame
+-- name dropped so the bar goes to the screen. The Resources stack and the
+-- Cast Bar place from it, their Ensure functions save it, and the mover
+-- menu's Reset follows its relativeTo.
+local function ResolveIndependentAnchorView(source)
+    source = type(source) == "table" and source or {}
+    local relativeTo = source.relativeTo
+    if relativeTo ~= nil and type(relativeTo) ~= "string" then relativeTo = nil end
+    return {
+        point = source.point or "CENTER",
+        relativePoint = source.relativePoint or "CENTER",
+        x = tonumber(source.x) or 0,
+        y = tonumber(source.y) or 0,
+        relativeTo = relativeTo,
+    }
+end
+
 ------------------------------------------------------------------------
 -- Independent Drag Coordinates (cast bar and resource stack movers)
 ------------------------------------------------------------------------
@@ -1518,6 +1536,7 @@ RB.GetPlacementRenderPowerType = GetPlacementRenderPowerType
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
+RB.ResolveIndependentAnchorView = ResolveIndependentAnchorView
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources

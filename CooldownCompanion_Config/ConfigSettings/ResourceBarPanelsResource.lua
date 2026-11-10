@@ -2342,22 +2342,21 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                         and RESOURCE_FINDER.primary.size.segmentGap,
                     min = 0, max = 20, step = 0.1,
                     value = (layout and layout.segmentGap) or settings.segmentGap or 4,
-                    set = function(val) ST._RB.EnsureSpecLayoutOrder(settings, displaySpecID).segmentGap = val end,
+                    -- An existing layout is edited as it is; a missing one is made.
+                    set = function(val)
+                        local target = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
+                            or ST._RB.EnsureSpecLayoutOrder(settings, displaySpecID)
+                        target.segmentGap = val
+                    end,
                     apply = function()
                         applyBars()
                     end,
                     -- A drag tick puts the saved value back and removes a
                     -- layout the tick had to make; only the release keeps it.
                     captureState = function()
-                        return {
-                            ST._CaptureRawSettingsFields(ST._RB.GetSpecLayoutOrder(settings, displaySpecID), { "segmentGap" }),
-                            ST._CaptureRawSettingsFields(settings.layoutOrder, { displaySpecID }),
-                            ST._CaptureRawSettingsFields(settings, { "layoutOrder" }),
-                        }
+                        return ST._CaptureSpecKeyedFields(settings, "layoutOrder", displaySpecID, { "segmentGap" })
                     end,
-                    restoreState = function(restores)
-                        for _, restore in ipairs(restores) do restore() end
-                    end,
+                    restoreState = function(restore) restore() end,
                 })
                 ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
             end

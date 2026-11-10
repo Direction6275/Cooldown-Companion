@@ -787,20 +787,26 @@ function CooldownCompanion:FinalizeNonPanelGroupAnchors()
     end
 end
 
--- opts.reanchorContainers: the profile was replaced (profile change, copy,
--- reset or full import), so every Group frame is marked to be placed from
--- the current profile's saved anchor: by this refresh when shown, later when
--- it is next shown, or by the layout tick after a combat deferral. Other
--- refreshes re-place a kept frame only while it is still marked.
+-- opts.profileReplaced: the profile was replaced under the live frames.
+-- Every door that replaces it passes this (profile change, copy, reset, full
+-- import). Every Group frame is marked to be placed from the current
+-- profile's saved anchor: by this refresh when shown, later when it is next
+-- shown, or by the layout tick after a combat deferral. Other refreshes
+-- re-place a kept frame only while it is still marked. Any Arrange session
+-- ends here too (EndArrangeForReplacedProfile), after the marking, so its
+-- own refresh already places the frames.
 function CooldownCompanion:RefreshAllGroups(reason, opts)
+    if opts and opts.profileReplaced then
+        if self.containerFrames then
+            for _, frame in pairs(self.containerFrames) do
+                frame._anchorDirty = true
+            end
+        end
+        self:EndArrangeForReplacedProfile()
+    end
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
-    end
-    if opts and opts.reanchorContainers and self.containerFrames then
-        for _, frame in pairs(self.containerFrames) do
-            frame._anchorDirty = true
-        end
     end
 
     -- Defer entire refresh during combat — protected frame operations

@@ -14,7 +14,7 @@ local CONFIG_ADDON_NAME = ADDON_NAME .. "_Config"
 local SETTINGS_CATEGORY_NAME = "Cooldown Companion"
 local SETTINGS_LAUNCHER_TEXT = "Open Cooldown Companion"
 -- Profile change, copy and reset replace the profile under the live frames.
-local PROFILE_REPLACED_REFRESH = { reanchorContainers = true }
+local PROFILE_REPLACED_REFRESH = { profileReplaced = true }
 
 local function SetConfigPrimaryModeWrapper(mode, opts)
     if ST._SetConfigPrimaryModeImpl then
@@ -227,14 +227,6 @@ local function ResetLoadedConfigForProfileChange(addon)
     end
 end
 
--- Arrange Mode's Cancel snapshot and its unlocks name the profile the session
--- started on, so the session ends with that profile, as Import and Export do.
-local function EndArrangeForProfileReplace(addon)
-    if addon:IsArrangeModeActive() then
-        addon:ExitArrangeMode()
-    end
-end
-
 local function RestampCharacterScopedProfileOwnership(addon)
     local db = addon.db
     local profile = db and db.profile
@@ -265,6 +257,10 @@ function CooldownCompanion:RunProfileMigrationAndRefresh(reason, refreshOpts)
     addon:ForgetArrangeHidden()
     if not addon:RunAllMigrations() then
         addon:ClearUnsupportedProfileRuntime()
+        -- No refresh follows, so a replaced profile's Arrange session ends here.
+        if refreshOpts and refreshOpts.profileReplaced then
+            addon:EndArrangeForReplacedProfile()
+        end
         addon:RefreshConfigPanel()
         return
     end
@@ -332,7 +328,7 @@ function CooldownCompanion:SetupConfig()
 
     -- Before the switch, so the outgoing profile gets its locks back.
     self.db.RegisterCallback(self, "OnProfileShutdown", function()
-        EndArrangeForProfileReplace(CooldownCompanion)
+        CooldownCompanion:EndArrangeForReplacedProfile()
     end)
     self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
         ResetLoadedConfigForProfileChange(CooldownCompanion)
@@ -361,14 +357,11 @@ function CooldownCompanion:SetupConfig()
         end
 
         CooldownCompanion:RunProfileMigrationAndRefresh("profile-copied", PROFILE_REPLACED_REFRESH)
-        -- Copy and reset replace the profile in place, with no shutdown callback.
-        EndArrangeForProfileReplace(CooldownCompanion)
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
         CooldownCompanion._allowMissingMigrationCheckpointOnce = true
         CooldownCompanion:RunProfileMigrationAndRefresh("profile-reset", PROFILE_REPLACED_REFRESH)
-        EndArrangeForProfileReplace(CooldownCompanion)
     end)
     self.db.RegisterCallback(self, "OnProfileDeleted", function()
         CooldownCompanion:RefreshConfigPanel()

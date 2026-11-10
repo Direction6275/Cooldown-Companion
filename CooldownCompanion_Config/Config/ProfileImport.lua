@@ -767,6 +767,8 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     self._resourceBarImportCharacterInfo = nil
     self._resourceBarImportExporterCharKey = nil
     if not migrationsOk then
+        -- No refresh follows, but the profile was replaced.
+        self:EndArrangeForReplacedProfile()
         return false
     end
     if self.SanitizeCursorAnchorPolicy then
@@ -774,7 +776,7 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     end
 
     if self.RefreshAllGroups then
-        self:RefreshAllGroups(options.runtimeReason or "profile-import", { reanchorContainers = true })
+        self:RefreshAllGroups(options.runtimeReason or "profile-import", { profileReplaced = true })
     end
     if strippedCharacterEligibility > 0 and self.Print then
         self:Print("Character eligibility is local and was not imported.")

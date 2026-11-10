@@ -2470,9 +2470,9 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
         if CS.otherClassLibraryActive then return {} end
         local saved = CooldownCompanion:GetResourceBarSettings()
         if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return {} end
-        -- Overview tiles are read-only and never drag; they paint from this
-        -- detached snapshot, so their slots' layout setters stay off saved data.
-        settings = CopyTable(saved)
+        -- Overview tiles never drag, so they paint from the saved record: slot
+        -- collection and painting only read it.
+        settings = saved
         layout = RB.GetSpecLayoutOrder(settings)
     else
         settings, cast = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()

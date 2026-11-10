@@ -1551,6 +1551,18 @@ function CooldownCompanion:ExitArrangeMode(opts)
     end
 end
 
+-- Arrange's Cancel snapshot and unlocks belong to the profile the session
+-- started on, so the session ends when that profile goes: at
+-- OnProfileShutdown before a switch (the outgoing profile gets its locks
+-- back), and when a copy, reset or full import replaces it in place
+-- (RefreshAllGroups with opts.profileReplaced, or the door itself when it
+-- stops before that refresh).
+function CooldownCompanion:EndArrangeForReplacedProfile()
+    if self:IsArrangeModeActive() then
+        self:ExitArrangeMode()
+    end
+end
+
 function CooldownCompanion:CancelArrangeMode()
     if not self._arrangeModeActive then
         return
