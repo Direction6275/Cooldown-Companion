@@ -621,13 +621,25 @@ function CooldownCompanion:ClassifyImportReviewText(text)
     end
     review.existingPanelIds = existingPanelIds
     -- An old string says what it converted once, in chat, when it lands
-    -- (owner ruling R62b); no import view lists conversion notes.
-    review.conversionLine = ST.UnifiedPanelMigration.ConversionChatLine(conversionReport)
+    -- (owner ruling R62b), counting only what that import wrote; no import
+    -- view lists conversion notes.
+    review.conversionReport = conversionReport
     return review
 end
 
+-- Runs one additive door: whether it applied, then the share of the string's
+-- conversion report that belongs to the panels the door wrote.
+local function RunAdditiveDoor(review, apply, ...)
+    if not apply then
+        return false
+    end
+    local ok, landed = apply(...)
+    return ok == true, ST._LandedPanelConversionReport(review.conversionReport, landed)
+end
+
 -- Appliers rebuild the runtime only; the caller (ImportMode's
--- ApplyImportModeReview) repaints config once afterwards.
+-- ApplyImportModeReview) repaints config once afterwards. Returns whether
+-- the import applied, then the conversion report for what it wrote.
 local function ApplyReview(self, review)
     if type(review) ~= "table" or review.ok ~= true or review.blockedReason then
         return false
@@ -638,7 +650,7 @@ local function ApplyReview(self, review)
             return false
         end
         if ReviewUsesSelectedPieces(review) then
-            return ApplyProfileImportPieces and ApplyProfileImportPieces(review.data, review.pieces) == true
+            return RunAdditiveDoor(review, ApplyProfileImportPieces, review.data, review.pieces)
         end
 
         local options = {
@@ -664,15 +676,16 @@ local function ApplyReview(self, review)
                 self:ImportPanelTemplates(review.data._panelTemplates)
             end
         end
-        return imported == true
+        -- A restore lands the whole converted payload, so its report stands.
+        return imported == true, review.conversionReport
     end
 
     if review.kind == "setup" then
-        return ApplySetupImportData and ApplySetupImportData(review.data, review.existingPanelIds) == true
+        return RunAdditiveDoor(review, ApplySetupImportData, review.data, review.existingPanelIds)
     end
 
     if review.kind == "group" or review.kind == "groups" then
-        return ApplyGroupImportData and ApplyGroupImportData(review.data) == true
+        return RunAdditiveDoor(review, ApplyGroupImportData, review.data)
     end
 
     self:Print("Import failed: unrecognized export type.")
@@ -680,9 +693,10 @@ local function ApplyReview(self, review)
 end
 
 function CooldownCompanion:ApplyReviewedImport(review)
-    local applied = ApplyReview(self, review)
-    if applied and review.conversionLine then
-        self:Print(review.conversionLine)
+    local applied, converted = ApplyReview(self, review)
+    local line = applied and ST.UnifiedPanelMigration.ConversionChatLine(converted)
+    if line then
+        self:Print(line)
     end
     return applied
 end

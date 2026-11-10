@@ -793,8 +793,9 @@ end
 -- profile's saved anchor: by this refresh when shown, later when it is next
 -- shown, or by the layout tick after a combat deferral. Other refreshes
 -- re-place a kept frame only while it is still marked. Any Arrange session
--- ends here too (EndArrangeForReplacedProfile), after the marking, so its
--- own refresh already places the frames.
+-- ends here too (EndArrangeForReplacedProfile), after the marking; its
+-- lock-all then runs this refresh with this reason, so every Group is
+-- rebuilt once.
 function CooldownCompanion:RefreshAllGroups(reason, opts)
     if opts and opts.profileReplaced then
         if self.containerFrames then
@@ -802,7 +803,9 @@ function CooldownCompanion:RefreshAllGroups(reason, opts)
                 frame._anchorDirty = true
             end
         end
-        self:EndArrangeForReplacedProfile()
+        if self:EndArrangeForReplacedProfile({ refreshReason = reason }) then
+            return
+        end
     end
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()

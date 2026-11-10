@@ -219,6 +219,7 @@ local function ConvertPanels(profile, report, context)
             group.displayMode = "icons"
             for _, entry in ipairs(group.buttons or {}) do entry.displayAs = "bars" end
             report.panels = report.panels + 1
+            report.ids.panels[id] = true
         end
         if ST.PanelSupportsAttachedBars(group) then
             ST._NormalizeBarStyleForPanelConversion(group.attachedBarStyle, BAR_STYLE_CONVERSION)
@@ -311,6 +312,7 @@ local function NewDestination(profile, classKey, spec, settings, layout, context
         profile.groups[id][key] = Copy(settings[key])
     end
     report.createdPanels = report.createdPanels + 1
+    report.ids.createdPanels[id] = true
     return id
 end
 
@@ -596,6 +598,7 @@ local function RepairConvertedDestinations(profile, context, report)
         profile.groupContainers[cid], profile.groups[groupId] = container, group
         installed[id] = groupId
         report.createdPanels = report.createdPanels + 1
+        report.ids.createdPanels[groupId] = true
         return groupId
     end
     local moves, repaired = {}, 0
@@ -1208,7 +1211,11 @@ local function BuildConversion(source, context)
         -- create a new class-scope conflict on the next import/activation.
         profile.legacyResourceBarsSeed, profile.resourceBars = nil, nil
     end
-    local report = { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
+    -- ids names what each count is made of, so an import can count the share
+    -- that landed: source panel IDs for panels and createdPanels, import keys
+    -- for bars.
+    local report = { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {},
+        ids = { panels = {}, bars = {}, createdPanels = {} } }
     ReportParkedResources(profile, context, report)
     local repaired, repairError = RepairConvertedDestinations(profile, context, report)
     if not repaired then return nil, repairError end
@@ -1327,6 +1334,7 @@ local function BuildConversion(source, context)
         while used[tostring(group.nextAuraKey)] do group.nextAuraKey = group.nextAuraKey + 1 end
         entry._auraKey, group.nextAuraKey = tostring(group.nextAuraKey), group.nextAuraKey + 1
         report.bars = report.bars + 1
+        if entry._legacyBarImportKey then report.ids.bars[entry._legacyBarImportKey] = true end
     end
     -- Class normalization has already selected/merged these legacy buckets.
     -- Retain their resource settings, but prevent them from reseeding old bars.
@@ -1384,7 +1392,8 @@ local function NeedsConversion(profile, context)
 end
 
 local function EmptyReport()
-    return { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {} }
+    return { panels = 0, bars = 0, createdPanels = 0, regrouped = 0, notices = {},
+        ids = { panels = {}, bars = {}, createdPanels = {} } }
 end
 
 function Migration.Build(source, context)

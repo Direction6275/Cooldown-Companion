@@ -1619,7 +1619,9 @@ local function ApplyGroupImportData(data, options)
     if not deferAnchorRemap then
         PrintImportSanitizerNotes(rootImportState)
     end
-    return migrationOk
+    -- Second value: the payload this call wrote, after the already-imported
+    -- filter, for a caller that reports on what landed.
+    return migrationOk, data
 end
 
 ST._ApplyGroupImportData = ApplyGroupImportData
@@ -1759,6 +1761,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     local applied = false
     local failed = false
     local containersApplied = false
+    local landedContainers
 
     -- One migration run owns this whole click: each section would otherwise
     -- walk the entire profile again, and the runs nested inside the open
@@ -1774,7 +1777,9 @@ local function ApplySetupImportData(data, existingPanelIds)
             _cdcImportCheckpoint = data._cdcImportCheckpoint,
         }
         ST._AttachGroupImportBatch(containersPayload, batchToken)
-        containersApplied = ApplyGroupImportData(containersPayload, deferToSetupRun) == true
+        local containersOk
+        containersOk, landedContainers = ApplyGroupImportData(containersPayload, deferToSetupRun)
+        containersApplied = containersOk == true
         applied = containersApplied or applied
         failed = failed or not containersApplied
     end
@@ -1883,7 +1888,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     -- A failed final migration is a failed import even though the sections
     -- landed: the caller uses this to decide whether to leave Import mode,
     -- and treating unmigrated data as a clean import is how it ships.
-    return applied and migrationOk
+    return applied and migrationOk, landedContainers
 end
 
 ST._ApplySetupImportData = ApplySetupImportData

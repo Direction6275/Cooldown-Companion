@@ -257,9 +257,11 @@ function CooldownCompanion:RunProfileMigrationAndRefresh(reason, refreshOpts)
     addon:ForgetArrangeHidden()
     if not addon:RunAllMigrations() then
         addon:ClearUnsupportedProfileRuntime()
-        -- No refresh follows, so a replaced profile's Arrange session ends here.
+        -- No refresh follows, so a replaced profile's Arrange session ends
+        -- here. The profile was refused, so no lock is saved into it and no
+        -- lock line is printed.
         if refreshOpts and refreshOpts.profileReplaced then
-            addon:EndArrangeForReplacedProfile()
+            addon:EndArrangeForReplacedProfile({ keepSavedLocks = true, silent = true })
         end
         addon:RefreshConfigPanel()
         return

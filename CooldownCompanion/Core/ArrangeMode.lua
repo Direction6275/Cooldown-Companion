@@ -1395,21 +1395,26 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     end
 end
 
-function CooldownCompanion:LockAllFrames()
+-- opts.keepSavedLocks: the profile was refused, so no lock is saved into it;
+-- the session's frames and toolbar still come down.
+-- opts.refreshReason: the reason for the RefreshAllGroups below.
+function CooldownCompanion:LockAllFrames(opts)
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
     self:ForgetArrangeHidden()
-    -- Lock every container, including containers hidden for this character.
-    -- Write the bulk state directly: SetContainerLocked refreshes that
-    -- container's panels, while the single RefreshAllGroups below reconciles
-    -- the complete runtime once after every lock value is settled.
-    for _, container in pairs(self.db.profile.groupContainers or {}) do
-        container.locked = true
-    end
-    -- Also lock any individually-unlocked panels
-    for groupId, group in pairs(self.db.profile.groups) do
-        if group.locked == false then
-            group.locked = nil
+    if not (opts and opts.keepSavedLocks) then
+        -- Lock every container, including containers hidden for this character.
+        -- Write the bulk state directly: SetContainerLocked refreshes that
+        -- container's panels, while the single RefreshAllGroups below reconciles
+        -- the complete runtime once after every lock value is settled.
+        for _, container in pairs(self.db.profile.groupContainers or {}) do
+            container.locked = true
+        end
+        -- Also lock any individually-unlocked panels
+        for groupId, group in pairs(self.db.profile.groups) do
+            if group.locked == false then
+                group.locked = nil
+            end
         end
     end
     if self.ClearCursorAnchorLayoutPreview then
@@ -1431,7 +1436,7 @@ function CooldownCompanion:LockAllFrames()
             self:UpdateContainerDragHandle(containerId, true)
         end
     end
-    self:RefreshAllGroups()
+    self:RefreshAllGroups(opts and opts.refreshReason)
     self:RefreshUnlockToolbar()
 end
 
@@ -1529,12 +1534,13 @@ function CooldownCompanion:ExitArrangeMode(opts)
     self._arrangePanelSuppressed = nil
     self._arrangeContainerSuppressed = nil
     CancelActiveMoverGestures(self)
-    -- LockAllFrames tears down cursor previews after clearing saved unlocks.
-    self:LockAllFrames()
-    if self.SetIndependentCastBarLocked then
+    -- LockAllFrames also tears down cursor previews.
+    self:LockAllFrames(opts)
+    local saveLocks = not (opts and opts.keepSavedLocks)
+    if saveLocks and self.SetIndependentCastBarLocked then
         self:SetIndependentCastBarLocked(true)
     end
-    if self.SetIndependentResourceStackLocked then
+    if saveLocks and self.SetIndependentResourceStackLocked then
         self:SetIndependentResourceStackLocked(true)
     end
     if self._arrangeModePill then
@@ -1555,12 +1561,20 @@ end
 -- started on, so the session ends when that profile goes: at
 -- OnProfileShutdown before a switch (the outgoing profile gets its locks
 -- back), and when a copy, reset or full import replaces it in place
--- (RefreshAllGroups with opts.profileReplaced, or the door itself when it
--- stops before that refresh).
-function CooldownCompanion:EndArrangeForReplacedProfile()
-    if self:IsArrangeModeActive() then
-        self:ExitArrangeMode()
+-- (RefreshAllGroups with opts.profileReplaced, or the door itself when the
+-- new profile was refused).
+-- opts go to ExitArrangeMode:
+--   refreshReason: the reason for the session's own RefreshAllGroups.
+--   keepSavedLocks: the new profile was refused, so the session ends without
+--   saving a lock into it.
+-- Returns true when a session ended; its lock-all has then run
+-- RefreshAllGroups.
+function CooldownCompanion:EndArrangeForReplacedProfile(opts)
+    if not self:IsArrangeModeActive() then
+        return false
     end
+    self:ExitArrangeMode(opts)
+    return true
 end
 
 function CooldownCompanion:CancelArrangeMode()

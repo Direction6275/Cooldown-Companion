@@ -82,3 +82,24 @@ function ST._FilterConvertedPanelImport(data)
     end
     return result, existingPanelIds, removedEntries
 end
+
+-- The share of a string's conversion report that one additive import wrote.
+-- `landed` is the payload its door applied, after the player's exclusions and
+-- the already-imported filter. The report names each converted Bar Panel and
+-- created panel by source panel ID and each converted Custom Bar by its
+-- import key. Reads only.
+function ST._LandedPanelConversionReport(report, landed)
+    if type(report) ~= "table" then return nil end
+    local counts = { panels = 0, bars = 0, createdPanels = 0 }
+    for _, packet in ipairs(type(landed) == "table" and (landed.containers or { landed }) or {}) do
+        for _, panel in ipairs(packet.panels or {}) do
+            local id = panel._originalGroupId
+            if report.ids.panels[id] then counts.panels = counts.panels + 1 end
+            if report.ids.createdPanels[id] then counts.createdPanels = counts.createdPanels + 1 end
+            for _, entry in ipairs(panel.buttons or {}) do
+                if report.ids.bars[entry._legacyBarImportKey] then counts.bars = counts.bars + 1 end
+            end
+        end
+    end
+    return counts
+end

@@ -767,8 +767,9 @@ function CooldownCompanion:ApplyFullProfileImport(data, options)
     self._resourceBarImportCharacterInfo = nil
     self._resourceBarImportExporterCharKey = nil
     if not migrationsOk then
-        -- No refresh follows, but the profile was replaced.
-        self:EndArrangeForReplacedProfile()
+        -- No refresh follows, but the profile was replaced. It was refused,
+        -- so no lock is saved into it and no lock line is printed.
+        self:EndArrangeForReplacedProfile({ keepSavedLocks = true, silent = true })
         return false
     end
     if self.SanitizeCursorAnchorPolicy then

@@ -2493,8 +2493,7 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
             if not block then
                 local region = RB.GetResourceBlockRegion(layout, side, vertical)
                 block = { kind = "resources", side = side, region = region == "main" and "main" or "outer",
-                    slots = {}, thickness = 0, spacing = spacing, layout = layout,
-                    resourceSettings = overview and settings or nil }
+                    slots = {}, thickness = 0, spacing = spacing, layout = layout }
                 sides[side], modules[#modules + 1] = block, block
             end
             block.slots[#block.slots + 1] = slot
@@ -2554,16 +2553,12 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
     state.root:SetScript("OnUpdate", nil)
     state.skin = ResolvePreviewSkin(preview.root:GetParent())
     state.readOnly = preview.readOnly == true
-    -- Only overview modules carry detached settings. Read-only drag ghosts
-    -- still use the focused preview's resource and cast configuration.
-    if preview.groupOverview then
-        state.rbSettings = positions[1].module.resourceSettings
-        state.cbSettings = nil
-        state.layout = positions[1].module.layout
-    else
-        state.rbSettings, state.cbSettings = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
-        state.layout = CooldownCompanion:GetSpecLayoutOrder()
-    end
+    -- Every panel preview paints resources from the saved Resources record
+    -- and the current spec's layout. Group overview tiles collect no Cast Bar
+    -- slot, so they hold no Cast Bar settings.
+    state.rbSettings = CooldownCompanion:GetResourceBarSettings()
+    state.cbSettings = not preview.groupOverview and CooldownCompanion:GetCastBarSettings() or nil
+    state.layout = CooldownCompanion:GetSpecLayoutOrder()
     state.anchorPanelId = panelId
     state.used.slots = 0
     if not animate then state.framesBySlot = {} end

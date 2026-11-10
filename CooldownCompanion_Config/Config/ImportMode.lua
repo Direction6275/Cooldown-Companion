@@ -308,7 +308,7 @@ local function ApplyImportModeReview(review)
             return false
         end
         applyReview = { ok = true, kind = review.kind, data = data,
-            existingPanelIds = review.existingPanelIds, conversionLine = review.conversionLine }
+            existingPanelIds = review.existingPanelIds, conversionReport = review.conversionReport }
     end
     local applied = CooldownCompanion:ApplyReviewedImport(applyReview)
     if applied then

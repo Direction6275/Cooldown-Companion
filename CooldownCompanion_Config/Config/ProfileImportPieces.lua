@@ -422,9 +422,14 @@ end
 -- uses, so the run sees remapped anchors.
 local DEFER_TO_PIECES_RUN = { deferMigrations = true }
 
+-- Returns whether the payload applied, then the payload the group door wrote.
 local function ApplyPayload(payload)
     local apply = ST._ApplyGroupImportData
-    return apply and apply(payload, DEFER_TO_PIECES_RUN) == true
+    if not apply then
+        return false
+    end
+    local ok, landed = apply(payload, DEFER_TO_PIECES_RUN)
+    return ok == true, landed
 end
 
 local function AddCheckpoint(payload, profile)
@@ -532,8 +537,10 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
         end
     end
 
+    local landed
     if #looseEntries > 0 then
-        local ok = ApplyProfilePiecePayload(profile, {
+        local ok
+        ok, landed = ApplyProfilePiecePayload(profile, {
             type = "containers",
             containers = looseEntries,
         }, batchToken)
@@ -577,7 +584,7 @@ function CooldownCompanion:ApplyProfileImportPieces(profile, model)
     else
         self:Print("Import failed: selected profile pieces could not be imported.")
     end
-    return applied
+    return applied, landed
 end
 
 ST._BuildProfileImportPiecesReview = function(profile, options)
