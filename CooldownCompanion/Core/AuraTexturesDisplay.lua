@@ -605,7 +605,6 @@ local function LockAuraIndicatorFromMover(host)
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end
-    CooldownCompanion:Print((group.name or "Indicator") .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 

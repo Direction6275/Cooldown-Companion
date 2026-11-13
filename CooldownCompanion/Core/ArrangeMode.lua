@@ -1492,7 +1492,7 @@ function CooldownCompanion:EnterArrangeMode()
     -- unlock scrolled to the top.
     pill._listScrollOffset = 0
     self:RefreshUnlockToolbar()
-    self:Print("All frames unlocked. Drag to move.")
+    self:Print("All frames unlocked.")
 end
 
 -- Ends the session itself: its Cancel snapshot, selection and suppression

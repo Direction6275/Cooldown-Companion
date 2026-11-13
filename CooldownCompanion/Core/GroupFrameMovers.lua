@@ -225,16 +225,8 @@ local PANEL_RESIZE_GRIP_SIZE = 16
 local PANEL_RESIZE_REFRESH_INTERVAL = 0
 
 local function CreateNudger(frame, groupId)
-    local function IsCursorPreviewNudge()
-        local group = CooldownCompanion.db.profile.groups[groupId]
-        return group
-            and IsCursorAnchor(group.anchor)
-            and IsCursorAnchorLayoutPreviewSelected(CooldownCompanion, groupId)
-            or false
-    end
-
-    -- A section nudge moves stored offsets, not the frame, so the anchor-side
-    -- save on release has nothing to persist.
+    -- A section nudge moves the selected section's stored offsets, not the
+    -- panel; the arrows are gold while one is selected.
     local function IsSectionNudge()
         return (CooldownCompanion:GetArrangeSelectedSectionAnchor(groupId)) ~= nil
     end
@@ -288,14 +280,11 @@ local function CreateNudger(frame, groupId)
 
             gFrame:AdjustPointsOffset(dx, dy)
             -- Save the base-grid position, not the outer frame offsets. The
-            -- save also refreshes the parent Group's wrapper.
-            CooldownCompanion:SaveGroupPosition(groupId)
+            -- save also refreshes the parent Group's outline; the settings
+            -- window waits for the release.
+            CooldownCompanion:SaveGroupPosition(groupId, true)
         end
-    end, function()
-        if not IsCursorPreviewNudge() and not IsSectionNudge() then
-            CooldownCompanion:SaveGroupPosition(groupId)
-        end
-    end)
+    end, ST.RefreshConfigPanelIfShown)
     nudger:SetFrameStrata(frame.dragHandle:GetFrameStrata())
     nudger:SetFrameLevel(frame.dragHandle:GetFrameLevel() + 5)
 
@@ -719,7 +708,6 @@ function ST.LockPanelFromMover(groupId)
     CooldownCompanion:SetPanelLocked(groupId, true)
     CooldownCompanion:CaptureArrangePanelRecord(groupId)
     CooldownCompanion:RefreshConfigPanel()
-    CooldownCompanion:Print(group.name .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
