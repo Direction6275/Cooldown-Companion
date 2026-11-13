@@ -165,7 +165,9 @@ local function GetIndicatorTextureCommitCallback(group, groupId)
             liveSettings.height = nil
         end
 
-        liveSettings.enabled = nil
+        -- The pick is the edit that keeps the saved texture settings
+        -- complete, the derived enabled flag included.
+        ST._AT.NormalizeAuraTextureSettings(liveSettings)
 
         CooldownCompanion:RefreshAllAuraTextureVisuals()
         RequestAuraIndicatorRestyle(group, groupId)
@@ -437,8 +439,8 @@ end
 -- Combat: their effects always run while Blizzard shows the aura, since
 -- nothing in the aura slot may start or stop once bound, and their edits
 -- reach the native kit only through an aura restyle. While Missing keeps Only
--- In Combat (CC draws it) but never Animate When, which the store drops on
--- read (Indicator.NormalizeEffectsForFamily).
+-- In Combat (CC draws it) but never Animate When: the runtime runs every
+-- enabled effect while the Indicator is shown.
 local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     local config = effects and effects[effectKey]
     local def = INDICATOR_EFFECT_DEFS[effectKey]
@@ -450,13 +452,18 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     -- While Missing and aura lists are drawn by CC: they keep Only In Combat, but Animate When
     -- would follow the aura entry's own spell state, so the row is hidden.
     local missingSource = ST.Indicator.UsesPresence(group)
-    -- An aura effect runs as Always outside combat too. Enabling one clears
-    -- any rule it kept from a condition source, which it could not run and
-    -- would otherwise refuse to copy with no visible control to fix it.
+    -- The one door that turns an effect on. Where Animate When cannot run it
+    -- starts as Always: a native aura also runs outside combat, so it drops
+    -- Only In Combat too. Otherwise the effect would keep a rule from a
+    -- condition source that it cannot run and would refuse to copy, with no
+    -- visible control to fix it. A turned-off effect keeps its choice.
     local function SetEnabled(value)
         config.enabled = value == true
-        if auraSource and config.enabled then
+        if not config.enabled then return end
+        if auraSource then
             config.activation, config.combatOnly = nil, nil
+        elseif missingSource then
+            config.activation = nil
         end
     end
     local function RefreshRuntime()
@@ -524,20 +531,15 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     AddAdvancedToggle(enableCb, advKey, tabInfoButtons, true, {
         title = def.label .. " Advanced",
         build = BuildIndicatorEffectAdvanced,
-        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock): write-true plus
-        -- the trigger effects' restyle-then-rebuild refresh sequence. Aura
-        -- sources also restyle the native kit, so they run the row's own path.
-        unlock = not config.enabled and (auraSource and {
+        -- Non-lens lazy spec (ST._ResolveAdvancedUnlock). Every source runs
+        -- the row's own path, so SetEnabled stays the one door.
+        unlock = not config.enabled and {
             enable = { label = "Enable " .. def.label, run = function()
                 SetEnabled(true)
                 RefreshRuntime()
                 CooldownCompanion:RefreshConfigPanel()
             end },
-        } or {
-            target = config,
-            enable = { label = "Enable " .. def.label, key = "enabled" },
-            refreshKind = "auraTextures",
-        }) or nil,
+        } or nil,
     })
 end
 

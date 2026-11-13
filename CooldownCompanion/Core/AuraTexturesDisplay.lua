@@ -1264,7 +1264,7 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         local geometry = self:GetIndicatorTextureRenderGeometry(settings)
         width, height = geometry.boundsWidth, geometry.boundsHeight
     elseif display.displayType == "icon" then
-        width, height = self.GetIndicatorIconDimensions(resolvedIcon or self.NormalizeIndicatorIconSettings(display.icon))
+        width, height = self.GetIndicatorIconDimensions(resolvedIcon or ST.Indicator.IconSettings(group))
     else
         width, height = display.text.width or 180, display.text.height or 48
     end

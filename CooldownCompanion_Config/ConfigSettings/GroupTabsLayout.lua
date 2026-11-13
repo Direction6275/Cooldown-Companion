@@ -735,7 +735,6 @@ local function BuildLayoutTab(container)
             and CooldownCompanion:GetCursorAnchorTargetName()
             or ST.CURSOR_ANCHOR_TARGET
             or "CooldownCompanionCursor"
-        settings.relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= "" and settings.relativeTo or "UIParent"
         CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
         local anchorState = ResolveLayoutAnchorState(group, textureGroupId,
             CS.layoutAnchorTargetMode[textureGroupId], settings)

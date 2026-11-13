@@ -745,7 +745,7 @@ function I.StyleAura(slot, group, durationOptions, timerColor)
     local shown, width, height = I.StyleVisual(host, group)
     local settings = I.Settings(group)
     local source = I.Primary(group)
-    if settings.displayType == "icon" and not settings.icon.manualIcon and not (source and source.manualIcon) then
+    if settings.displayType == "icon" and not I.ChosenIcon(group) and not (source and source.manualIcon) then
         slot.slotButton:SetIcon(host.iconFrame.icon)
     end
     slot.slotButton:SetDurationText(host.indicatorReadouts.timer, durationOptions)

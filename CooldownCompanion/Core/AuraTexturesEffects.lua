@@ -829,13 +829,18 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
         return
     end
 
+    -- While Missing and aura lists have no Animate When: every enabled effect
+    -- runs while the Indicator is shown, and Only In Combat still applies. A
+    -- turned-off effect may keep a choice from a spell source; it is never
+    -- read here.
+    local alwaysShown = ST.Indicator.UsesPresence(group)
     local activeEffects = {}
     for key, config in pairs(effects) do
         if config.enabled then
             -- Detached config samples demonstrate enabled effects without live state.
             local active = previewEffects == true
             if not active then
-                local activation = config.activation or "always"
+                local activation = alwaysShown and "always" or config.activation or "always"
                 active = activation == "always" and (not config.combatOnly or InCombatLockdown())
                 if activation ~= "always" then
                     active = IsIndicatorActivationActive(button, activation, config)

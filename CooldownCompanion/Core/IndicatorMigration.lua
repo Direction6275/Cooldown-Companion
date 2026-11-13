@@ -172,6 +172,7 @@ local function ConvertOne(source, entry, defaults, entryOrigins)
     end
     I.SetEffects(group, effects)
     I.NormalizeSourceEnablement(group)
+    I.Prepare(group)
     return group
 end
 
@@ -180,6 +181,7 @@ function M.ConvertPanel(source, defaults)
         local group = CopyTable(source)
         if ST.IsIndicatorGroup(group) then
             I.Initialize(group); NormalizeSourceOrder(group); I.Effects(group); I.NormalizeSourceEnablement(group)
+            I.Prepare(group)
             group.indicatorSettings.legacyTextMetrics = nil
         end
         return {group}
@@ -256,6 +258,7 @@ function M.Apply(profile)
             NormalizeSourceOrder(group)
             I.Effects(group)
             I.NormalizeSourceEnablement(group)
+            I.Prepare(group)
             group.indicatorSettings.legacyTextMetrics = nil
         end
     end
@@ -306,6 +309,8 @@ function M.ConvertImport(data)
             if not value.templateVersion then I.Initialize(value); NormalizeSourceOrder(value) end
             I.Effects(value)
             I.NormalizeSourceEnablement(value)
+            -- A Panel Template captures presentation only and is never prepared.
+            if not value.templateVersion then I.Prepare(value) end
             if value.indicatorSettings then value.indicatorSettings.legacyTextMetrics = nil end
             return
         end

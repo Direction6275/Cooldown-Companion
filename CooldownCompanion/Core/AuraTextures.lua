@@ -198,8 +198,8 @@ local function CopyColor(color)
     return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
 end
 
--- CopyColor's values, written into the saved table itself, so the read-time
--- normalizers below do not allocate a fresh color on every render pass.
+-- CopyColor's values, written into the table it is given, so the saved-data
+-- normalizers below keep the color table an Indicator already has.
 local function FillColor(color)
     if type(color) ~= "table" then
         return nil
@@ -662,17 +662,16 @@ local ResolveGroup = ST.ResolveGroup
 
 AT.NormalizeAuraTextureSettings = NormalizeAuraTextureSettings
 
+-- The three Indicator getters return the saved tables as they are (rule Q1).
+-- ST.Indicator.Prepare keeps them complete at login, import, creation and copy.
 function CooldownCompanion:GetIndicatorTextureSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return NormalizeAuraTextureSettings(ST.Indicator.Initialize(group).signal) end
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.signal
 end
 
 function CooldownCompanion:GetIndicatorEffectSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if not ST.IsIndicatorGroup(group) then return end
-    ST.Indicator.Effects(group)
-    return ST.Indicator.NormalizeEffectsForFamily(group,
-        CooldownCompanion.NormalizeIndicatorEffectStore(ST.Indicator.Settings(group)))
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.effects
 end
 
 function CooldownCompanion:ResetTextureIndicatorRootState(host)
@@ -737,8 +736,8 @@ function CooldownCompanion:GetIndicatorDisplayType(groupOrId)
 end
 
 function CooldownCompanion:GetIndicatorIconSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeIndicatorIconSettings(ST.Indicator.Initialize(group).icon) end
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.icon
 end
 
 

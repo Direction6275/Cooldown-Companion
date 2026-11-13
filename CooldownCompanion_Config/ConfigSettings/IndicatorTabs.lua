@@ -994,7 +994,7 @@ local function BuildText(container, group, changed)
 end
 
 local function BuildAppearance(container, group, changed)
-    local settings = I.Initialize(group)
+    local settings = I.Settings(group)
     local _, displayCollapsed = Section(container,"Display","indicator_display")
     if not displayCollapsed then
         local column = ST._BeginRowGrid(container)
@@ -1052,7 +1052,6 @@ end
 
 function ST._BuildIndicatorTab(container, group, tab)
     local changed = MakeChanged(group)
-    I.Initialize(group)
     if tab == "loadconditions" then BuildWhenToShow(container,group,changed)
     elseif not I.Primary(group) then Hint(container,"Add spells, items, or auras in the field at the top.")
     elseif tab == "appearance" then BuildAppearance(container,group,changed)
