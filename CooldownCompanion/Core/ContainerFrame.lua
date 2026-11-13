@@ -1477,9 +1477,10 @@ EnsureContainerMoverChrome = function(frame)
     CreateEditableCoordLabel(
         frame.coordLabel,
         function()
+            -- The same view the label shows (AnchorContainerFrame).
             local currentContainer = CooldownCompanion.db.profile.groupContainers[containerId]
-            local anchor = currentContainer and currentContainer.anchor
-            return anchor and anchor.x or 0, anchor and anchor.y or 0
+            local view = CooldownCompanion:GetContainerAnchorView(currentContainer and currentContainer.anchor)
+            return view.x, view.y
         end,
         function(x, y)
             ApplyContainerCoordinates(frame, containerId, x, y)
@@ -1522,7 +1523,6 @@ function CooldownCompanion:CreateContainerFrame(containerId)
 
     local container = self.db.profile.groupContainers[containerId]
     if not container then return end
-    container.anchor = self:NormalizeContainerAnchor(container.anchor)
 
     local frameName = "CooldownCompanionContainer" .. containerId
     local frame = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
@@ -1550,6 +1550,8 @@ function CooldownCompanion:CreateContainerFrame(containerId)
     return frame
 end
 
+local anchorViewScratch = {}
+
 function CooldownCompanion:AnchorContainerFrame(frame, anchor)
     -- Deferred during combat — ClearAllPoints/SetPoint are protected.
     if InCombatLockdown() and frame:IsProtected() then
@@ -1557,14 +1559,13 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
         return
     end
     frame._anchorDirty = nil
-    local normalizedAnchor, _, deferred = self:NormalizeContainerAnchor(anchor)
-    if not deferred then
-        anchor = normalizedAnchor
-    else
-        local relativeTo = type(anchor) == "table" and anchor.relativeTo or nil
+    -- Positions from a normalized view; the saved anchor is written only by
+    -- edits and the finalize. The view's fields are read before any SetPoint.
+    local view, _, deferred = self:GetContainerAnchorView(anchor, nil, anchorViewScratch)
+    local point, relativeTo, relativePoint = view.point, view.relativeTo, view.relativePoint
+    local x, y = view.x, view.y
+    if deferred then
         local anchorState = self.GetContainerAnchorTargetState and self:GetContainerAnchorTargetState(frame.containerId, relativeTo) or nil
-        local rawX = tonumber(anchor and anchor.x) or 0
-        local rawY = tonumber(anchor and anchor.y) or 0
 
         if anchorState == "ok" then
             local relativeFrame = relativeTo and _G[relativeTo]
@@ -1572,28 +1573,28 @@ function CooldownCompanion:AnchorContainerFrame(frame, anchor)
                 frame:ClearAllPoints()
                 -- Same rule as a panel dependent: a sectioned panel's base row
                 -- is the body a container anchored to it hangs off.
-                frame:SetPoint(anchor.point or "CENTER", ST.GetPanelAnchorBodyFrame(relativeFrame),
-                    anchor.relativePoint or "CENTER", rawX, rawY)
-                UpdateCoordLabel(frame, rawX, rawY)
+                frame:SetPoint(point or "CENTER", ST.GetPanelAnchorBodyFrame(relativeFrame),
+                    relativePoint or "CENTER", x, y)
+                UpdateCoordLabel(frame, x, y)
                 return
             end
         elseif anchorState == "unsafe" then
             local unsafeFrame = relativeTo and _G[relativeTo]
-            if ApplyUnsafeAnchorVisualFallback(frame, anchor, unsafeFrame) then
-                UpdateCoordLabel(frame, rawX, rawY)
+            if ApplyUnsafeAnchorVisualFallback(frame, view, unsafeFrame) then
+                UpdateCoordLabel(frame, x, y)
                 return
             end
         elseif anchorState == "missing" then
             frame:ClearAllPoints()
-            frame:SetPoint(anchor.point or "CENTER", UIParent, anchor.relativePoint or "CENTER", rawX, rawY)
-            UpdateCoordLabel(frame, rawX, rawY)
+            frame:SetPoint(point or "CENTER", UIParent, relativePoint or "CENTER", x, y)
+            UpdateCoordLabel(frame, x, y)
             return
         end
     end
 
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
-    UpdateCoordLabel(frame, tonumber(anchor.x) or 0, tonumber(anchor.y) or 0)
+    frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    UpdateCoordLabel(frame, x, y)
 end
 
 function CooldownCompanion:SaveContainerPosition(containerId)

@@ -220,6 +220,16 @@ local HEALTH_EFFECT_ROWS = {
         info = "Blizzard sets the low-health threshold to 35%. This cannot be configured." },
 }
 
+-- Only an edit makes a saved resource entry (rule Q1); building a page reads
+-- through a missing one.
+local function EnsureResourceEntry(settings, powerType)
+    if type(settings.resources) ~= "table" then settings.resources = {} end
+    if type(settings.resources[powerType]) ~= "table" then
+        settings.resources[powerType] = {}
+    end
+    return settings.resources[powerType]
+end
+
 local function IsResourceEnabled(settings, powerType)
     local res = settings.resources and settings.resources[powerType]
     if powerType == HealthResource.ID then
@@ -927,7 +937,6 @@ local function BuildResourceBarAnchoringPanel(container)
     end
 
     if not settings.enabled then return end
-    if not settings.resources then settings.resources = {} end
 
     if togglesRight then
         -- Per-resource enable/disable
@@ -942,10 +951,7 @@ local function BuildResourceBarAnchoringPanel(container)
                     and RESOURCE_FINDER.primary.showResource[pt],
                 value = enabled,
                 onChange = function(val)
-                    if not settings.resources[pt] then
-                        settings.resources[pt] = {}
-                    end
-                    settings.resources[pt].enabled = val
+                    EnsureResourceEntry(settings, pt).enabled = val
                     applyBars("style-settings")
                 end,
             })
@@ -1129,7 +1135,7 @@ local function BuildResourceBarPositioningPanel(container)
                 end,
                 owner = layout,
                 widthLabel = "Bar Width",
-                widthValue = layout.independentWidth or settings.independentWidth or 200,
+                widthValue = RB.ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200),
                 finder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor,
                 apply = function() applyBars() end,
             })
@@ -1275,9 +1281,6 @@ end
 local function BuildResourceColorControls(container, settings, powerType, specID, effectiveBarTextureName, applyBars)
     if not specID then
         return false
-    end
-    if not settings.resources[powerType] then
-        settings.resources[powerType] = {}
     end
 
     local descriptors = GetResourceColorDescriptors(powerType, effectiveBarTextureName)
@@ -1650,10 +1653,7 @@ end
 local function EnsureResourceAuraOverlayEntry(settings, powerType, specID)
     specID = tonumber(specID)
     if not specID then return nil end
-    if type(settings.resources[powerType]) ~= "table" then
-        settings.resources[powerType] = {}
-    end
-    local resource = settings.resources[powerType]
+    local resource = EnsureResourceEntry(settings, powerType)
     if type(resource.auraOverlayEntries) ~= "table" then
         resource.auraOverlayEntries = {}
     end
@@ -2026,10 +2026,7 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
         setting = finderStack and finderStack.maxBorder,
         value = borderOn,
         onChange = function(value)
-            if type(settings.resources[powerType]) ~= "table" then
-                settings.resources[powerType] = {}
-            end
-            settings.resources[powerType][keys.enabled] = value == true or nil
+            EnsureResourceEntry(settings, powerType)[keys.enabled] = value == true or nil
             applyRows("style-settings-soon")
         end,
     })
@@ -2040,12 +2037,12 @@ local function BuildMaxStackBorderRows(column, settings, powerType, resourceName
 
     ST._AddAdvancedToggle(borderToggleRow, "rbMaxStackBorder_" .. tostring(finderPowerType), {}, true, {
         unlock = not borderOn and { enable = { label = "Enable Max Stack Border", run = function()
-            settings.resources = settings.resources or {}
-            settings.resources[powerType] = settings.resources[powerType] or {}
-            settings.resources[powerType][keys.enabled] = true
+            EnsureResourceEntry(settings, powerType)[keys.enabled] = true
             applyRows("style-settings")
         end } } or nil,
         build = function(panel)
+            -- No saved entry means the border is off, so these rows are locked
+            -- and the blank table never takes an edit.
             local resource = resource or {}
 
             local borderStyle = resource[keys.style] == "pixel" and "pixel" or "solid"
@@ -2195,7 +2192,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     local displaySpecID = opts and tonumber(opts.specID) or GetCurrentConfigSpecID()
     local displayProfile = displaySpecID and RB.GetSpecResourceDisplayProfile(settings, displaySpecID) or nil
-    if not displaySpecID or not displayProfile then
+    if not displaySpecID then
         local label = AceGUI:Create("Label")
         ST._ConfigureWrappedHelperLabel(label)
         label:SetText("Specialization data loading...")
@@ -2205,7 +2202,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     end
     local localBarTextureName = showResourceSettings
         and ST.ResolveModuleBarStyle("resources", settings, resourceSettingsPowerType, displaySpecID).barTexture
-        or displayProfile.barTexture or settings.barTexture or "Solid"
+        or (displayProfile and displayProfile.barTexture) or settings.barTexture or "Solid"
     local effectiveBarTextureName = ST.GetEffectiveBarTextureName(localBarTextureName)
 
     if showResourceSettings then
@@ -2344,13 +2341,22 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                     setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.size
                         and RESOURCE_FINDER.primary.size.segmentGap,
                     min = 0, max = 20, step = 0.1,
-                    value = layout.segmentGap or settings.segmentGap or 4,
-                    set = function(val) layout.segmentGap = val end,
+                    value = (layout and layout.segmentGap) or settings.segmentGap or 4,
+                    -- An existing layout is edited as it is; a missing one is made.
+                    set = function(val)
+                        local target = ST._RB.GetSpecLayoutOrder(settings, displaySpecID)
+                            or ST._RB.EnsureSpecLayoutOrder(settings, displaySpecID)
+                        target.segmentGap = val
+                    end,
                     apply = function()
                         applyBars()
                     end,
-                    stateOwner = layout,
-                    stateKeys = "segmentGap",
+                    -- A drag tick puts the saved value back and removes a
+                    -- layout the tick had to make; only the release keeps it.
+                    captureState = function()
+                        return ST._CaptureSpecKeyedFields(settings, "layoutOrder", displaySpecID, { "segmentGap" })
+                    end,
+                    restoreState = function(restore) restore() end,
                 })
                 ST._BuildModuleBarStyleRows(smoothingColumn, "resources", nil, displaySpecID, "barSmoothing", { resourceWide = true })
             end
@@ -2394,7 +2400,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
             local thresholdLeft = BeginRowGrid(container)
             local rbThresholdTickAdvBtns = {}
             local capturedPt = resourceSettingsPowerType
-            local resourceEntry = settings.resources[capturedPt]
+            local resourceEntry = settings.resources and settings.resources[capturedPt]
             if not (resourceEntry and resourceEntry.enabled == false) then
                 local resourceName = POWER_NAMES[capturedPt] or ("Power " .. capturedPt)
                 local isSegmented = IsStackCountedResource(capturedPt)

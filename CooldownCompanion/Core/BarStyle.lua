@@ -80,8 +80,7 @@ function ST.ResolveModuleBarStyle(kind, settings, powerType, spec, host)
     settings = settings or {}
     -- Same fallback as the resource helpers: the cached spec, else the live one.
     spec = spec or (ST._RB and ST._RB.GetCurrentSpecID and ST._RB.GetCurrentSpecID()) or Addon._currentSpecId
-    local layout = kind == "resources" and settings.layoutOrder
-        and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)]) or nil
+    local layout = kind == "resources" and ST._GetSpecKeyedTable(settings.layoutOrder, spec) or nil
     local canonical = ST._RB and ST._RB.GetCanonicalPowerType and powerType
         and ST._RB.GetCanonicalPowerType(powerType) or powerType
     local object = kind == "resources" and layout and layout.resources and layout.resources[canonical] or nil
@@ -90,8 +89,7 @@ function ST.ResolveModuleBarStyle(kind, settings, powerType, spec, host)
     if panel == nil then panel = ST.GetModuleGeometryHost(kind, spec) end
     if panel == false then panel = nil end
     local base = panel and ST.GetAttachedBarStyle(panel) or nil
-    local profile = kind == "resources" and settings.displayProfiles
-        and (settings.displayProfiles[spec] or settings.displayProfiles[tostring(spec)]) or settings
+    local profile = kind == "resources" and ST._GetSpecKeyedTable(settings.displayProfiles, spec) or settings
     local style = {}
     for key, panelKey in pairs(ST.MODULE_BAR_STYLE_MAPS[kind]) do
         local value = base and base[panelKey]
@@ -214,12 +212,12 @@ end
 local RESOURCE_TEXT_ROLES = { { "text", "barValue", "barValueTypography" },
     { "rechargeText", "barDuration", "barDurationTypography" } }
 
--- Spec layouts belong to RB.GetSpecLayoutOrder, so a spec first created by a
--- migration matches one created by a visit (including its cast bar slot).
+-- A spec first created by a conversion matches one made at the prepare step
+-- or by an edit (RB.EnsureSpecLayoutOrder), including its cast bar slot.
 local function MigrationSpecLayout(settings, spec)
-    local layout = settings.layoutOrder and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)])
+    local layout = ST._GetSpecKeyedTable(settings.layoutOrder, spec)
     if layout then return layout end
-    if ST._RB and ST._RB.GetSpecLayoutOrder then return ST._RB.GetSpecLayoutOrder(settings, spec) end
+    if ST._RB and ST._RB.EnsureSpecLayoutOrder then return ST._RB.EnsureSpecLayoutOrder(settings, spec) end
     settings.layoutOrder = settings.layoutOrder or {}
     settings.layoutOrder[spec] = {}
     return settings.layoutOrder[spec]
@@ -412,9 +410,9 @@ function ST.MigrateSharedBarStyle(profile)
             for spec in pairs(settings.displayProfiles or {}) do specs[tonumber(spec) or spec] = true end
             local classID = ST._GetClassIDFromResourceBarClassKey and ST._GetClassIDFromResourceBarClassKey(class)
             for spec in pairs(specs) do
-                local display = settings.displayProfiles and (settings.displayProfiles[spec] or settings.displayProfiles[tostring(spec)]) or settings
+                local display = ST._GetSpecKeyedTable(settings.displayProfiles, spec) or settings
                 if (display.barTexture or settings.barTexture) == "blizzard_class" then
-                    local layout = settings.layoutOrder and (settings.layoutOrder[spec] or settings.layoutOrder[tostring(spec)])
+                    local layout = ST._GetSpecKeyedTable(settings.layoutOrder, spec)
                     local catalog = ST._RB and ((ST._RB.SPEC_RESOURCES_CONFIG or {})[spec]
                         or (ST._RB.CLASS_RESOURCES_CONFIG or {})[classID]) or {}
                     local powerTypes = {}

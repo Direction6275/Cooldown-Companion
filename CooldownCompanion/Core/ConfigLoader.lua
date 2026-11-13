@@ -13,6 +13,8 @@ local next = next
 local CONFIG_ADDON_NAME = ADDON_NAME .. "_Config"
 local SETTINGS_CATEGORY_NAME = "Cooldown Companion"
 local SETTINGS_LAUNCHER_TEXT = "Open Cooldown Companion"
+-- Profile change, copy and reset replace the profile under the live frames.
+local PROFILE_REPLACED_REFRESH = { profileReplaced = true }
 
 local function SetConfigPrimaryModeWrapper(mode, opts)
     if ST._SetConfigPrimaryModeImpl then
@@ -247,13 +249,20 @@ local function RestampCharacterScopedProfileOwnership(addon)
     end
 end
 
-function CooldownCompanion:RunProfileMigrationAndRefresh(reason)
+-- refreshOpts: passed on to RefreshAllGroups.
+function CooldownCompanion:RunProfileMigrationAndRefresh(reason, refreshOpts)
     local addon = self
     -- Unlock-toolbar eyes are keyed by the old profile's ids; both paths
     -- below rebuild every panel.
     addon:ForgetArrangeHidden()
     if not addon:RunAllMigrations() then
         addon:ClearUnsupportedProfileRuntime()
+        -- No refresh follows, so a replaced profile's Arrange session ends
+        -- here. The profile was refused, so no lock is saved into it and no
+        -- lock line is printed.
+        if refreshOpts and refreshOpts.profileReplaced then
+            addon:EndArrangeForReplacedProfile({ keepSavedLocks = true, silent = true })
+        end
         addon:RefreshConfigPanel()
         return
     end
@@ -262,7 +271,7 @@ function CooldownCompanion:RunProfileMigrationAndRefresh(reason)
         addon:RefreshStableExternalAnchorCompactSuppression({ refreshAffected = false })
     end
     addon:RefreshConfigPanel()
-    addon:RefreshAllGroups(reason)
+    addon:RefreshAllGroups(reason, refreshOpts)
 end
 
 local function CreateSettingsLauncherFrame(addon)
@@ -319,6 +328,10 @@ function CooldownCompanion:SetupConfig()
 
     RegisterSettingsLauncher(self)
 
+    -- Before the switch, so the outgoing profile gets its locks back.
+    self.db.RegisterCallback(self, "OnProfileShutdown", function()
+        CooldownCompanion:EndArrangeForReplacedProfile()
+    end)
     self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
         ResetLoadedConfigForProfileChange(CooldownCompanion)
         -- Rename and Duplicate copy into this new profile next, and
@@ -328,7 +341,7 @@ function CooldownCompanion:SetupConfig()
         if type(rawProfile) ~= "table" or next(rawProfile) == nil then
             CooldownCompanion._allowMissingMigrationCheckpointOnce = true
         end
-        CooldownCompanion:RunProfileMigrationAndRefresh("profile-changed")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-changed", PROFILE_REPLACED_REFRESH)
     end)
     self.db.RegisterCallback(self, "OnProfileCopied", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
@@ -345,12 +358,12 @@ function CooldownCompanion:SetupConfig()
             RestampCharacterScopedProfileOwnership(CooldownCompanion)
         end
 
-        CooldownCompanion:RunProfileMigrationAndRefresh("profile-copied")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-copied", PROFILE_REPLACED_REFRESH)
     end)
     self.db.RegisterCallback(self, "OnProfileReset", function()
         ResetLoadedConfigForProfileChange(CooldownCompanion)
         CooldownCompanion._allowMissingMigrationCheckpointOnce = true
-        CooldownCompanion:RunProfileMigrationAndRefresh("profile-reset")
+        CooldownCompanion:RunProfileMigrationAndRefresh("profile-reset", PROFILE_REPLACED_REFRESH)
     end)
     self.db.RegisterCallback(self, "OnProfileDeleted", function()
         CooldownCompanion:RefreshConfigPanel()

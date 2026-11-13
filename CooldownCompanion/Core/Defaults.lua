@@ -338,12 +338,14 @@ local defaults = {
             barTexture = "Solid",
             durationFormat = "clock",
         },
-        locked = false,
         resourceBarsByClass = {},
         resourceBarMigration = {
             conflicts = {},
             unsafeCharKeys = {},
         },
+        -- Retired single stores (resourceBars, castBar, frameAnchoring): never saved as live settings. They are
+        -- the creation template, the getters' unsaved fallback (and the Health switch fallback), and the legacy
+        -- baseline. ExportCodec refills them on profile imports and restores.
         resourceBars = {
             enabled = false,
             anchorGroupId = nil,
@@ -1246,8 +1248,9 @@ ST.EQUIPMENT_SLOT_DENIED_OVERRIDE_SECTIONS = {
 }
 
 -- The plain-item twin of the list above (type == "item": potions, on-use
--- bag items). Entry type is as immutable as add intent, so the prune pass
--- may drop stored overrides for these sections just as it does above.
+-- bag items). Entry type is as immutable as add intent, so the login and
+-- import prune may drop stored overrides for these sections just as it does
+-- above.
 ST.ITEM_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     missingAuraIndicator = true,
     auraMissingBarColor = true,
@@ -1263,20 +1266,21 @@ ST.NO_COOLDOWN_DENIED_OVERRIDE_SECTIONS = {
 
 -- Standalone aura entries (addedAs == "aura") have no cast, cooldown, or
 -- charges, so the sections styling those mechanics can never apply. Add
--- intent is immutable, which makes it safe for GetEffectiveStyle's prune pass
--- to drop stored overrides for these sections. Gates that CAN toggle (aura
--- tracking on ordinary entries) must stay config-side only, or the prune pass
--- would delete saved overrides the moment the toggle turns off. NOT denied:
--- keybindText (custom keybind text renders on aura entries) and cooldownText
--- (its position keys place the aura duration text in shared-position mode).
+-- intent is immutable, which makes it safe for the login and import prune
+-- (PruneDisallowedEntrySections, Migrations.lua) to drop stored overrides for
+-- these sections. Gates that CAN toggle (aura tracking on ordinary entries)
+-- must stay config-side only, or the prune would delete saved overrides at the
+-- next login after the toggle turns off. NOT denied: keybindText (custom
+-- keybind text renders on aura entries) and cooldownText (its position keys
+-- place the aura duration text in shared-position mode).
 --
 -- A value may be a PREDICATE `function(buttonData) -> denied` instead of
 -- `true`, for a section only SOME standalone aura shapes are dead for. The
 -- shape it asks about must be as immutable as add intent is, because the
--- prune pass deletes on a false answer just the same. CanGroupUseOverrideSection
--- treats any predicate as a plain denial: an Aura Panel is judged by what its
--- whole population can share, and a section only some of its entries can use
--- is not a panel-wide default worth offering.
+-- login and import prune deletes on a false answer just the same.
+-- CanGroupUseOverrideSection treats any predicate as a plain denial: an Aura
+-- Panel is judged by what its whole population can share, and a section only
+-- some of its entries can use is not a panel-wide default worth offering.
 ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
     cooldownSwipe = true,
     showGCDSwipe = true,
@@ -1306,7 +1310,7 @@ ST.AURA_ENTRY_DENIED_OVERRIDE_SECTIONS = {
 -- them (owner ruling 2026-08-15).
 --
 -- CONFIG-SIDE ONLY, never a prune input: auraPanel is a flag a panel can in
--- principle be converted out of, and GetEffectiveStyle's prune pass deletes what
+-- principle be converted out of, and the login and import prune deletes what
 -- it is told is impossible. Add intent on an ENTRY is immutable, which is why
 -- that list may prune and this one may not.
 --

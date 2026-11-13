@@ -75,8 +75,9 @@ end
 
 -- Aura style sections only apply while an entry tracks an aura. This gate is
 -- config-visibility only, NOT part of ST.CanButtonUseOverrideSection: aura
--- tracking is a toggle, and the runtime check feeds GetEffectiveStyle's prune
--- pass, which would permanently delete the saved override on toggle-off.
+-- tracking is a toggle, and the runtime check feeds the login and import
+-- prune, which would delete the saved override at the next login after
+-- toggle-off.
 local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
     auraText = true,
     auraStackText = true,
@@ -94,8 +95,8 @@ local AURA_TRACKING_CONFIG_ONLY_SECTIONS = {
 -- no replica for an aura host (AuraDisplay.lua), and an Aura Only Section's
 -- members are exactly that. Config-visibility only, for the same reason the
 -- list above is: membership is POSITIONAL, an entry can be dragged back out to
--- the base grid, and the runtime gate feeds GetEffectiveStyle's prune pass,
--- which would delete the saved keybind override on the way in.
+-- the base grid, and the runtime gate feeds the login and import prune, which
+-- would delete the saved keybind override at the next login after it moved in.
 --
 -- `group` is optional: the runtime callers (prune, promote, migrations) never
 -- pass one and are unaffected, which is exactly the separation this gate wants.

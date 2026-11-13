@@ -308,7 +308,7 @@ local function ApplyImportModeReview(review)
             return false
         end
         applyReview = { ok = true, kind = review.kind, data = data,
-            existingPanelIds = review.existingPanelIds }
+            existingPanelIds = review.existingPanelIds, conversionReport = review.conversionReport }
     end
     local applied = CooldownCompanion:ApplyReviewedImport(applyReview)
     if applied then
@@ -784,29 +784,6 @@ local function RenderPieceRows(scroll, review)
         RenderImportModeReview()
         UpdateImportModePill()
     end)
-
-    -- LEGACY: Custom Bar pieces keep their checkboxes until #62 retires them.
-    local rows = pieces and type(pieces.rows) == "table" and pieces.rows or {}
-    for _, row in ipairs(rows) do
-        if row.kind == "customBar" and row.eligible then
-            visibleRows = visibleRows + 1
-            local cb = AceGUI:Create("CheckBox")
-            cb:SetFullWidth(true)
-            cb:SetLabel(row.label or "Profile piece")
-            cb:SetValue(row.selected == true)
-            cb:SetCallback("OnValueChanged", function(widget, event, value)
-                if ST._SetProfileImportPieceSelected then
-                    ST._SetProfileImportPieceSelected(pieces, row, value == true)
-                else
-                    row.selected = value == true
-                    row.userChanged = true
-                end
-                RenderImportModeReview()
-                UpdateImportModePill()
-            end)
-            scroll:AddChild(cb)
-        end
-    end
 
     if visibleRows == 0 then
         AddLine(scroll, "No pieces compatible with your current class are available.", 0.55, 0.55, 0.55)

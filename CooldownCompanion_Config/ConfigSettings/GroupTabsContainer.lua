@@ -213,14 +213,18 @@ local function BuildContainerGeneralTab(scroll, containerId)
     local _, layoutCollapsed = BuildCollapsibleSection(scroll, "Layout", "container_layout", nil, nil, ROW_SECTION)
 
     if not layoutCollapsed then
-        container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+        -- Opening the section reads a view; a slider edit normalizes the saved
+        -- anchor before writing, as a drag does, and moves it by as much as the
+        -- slider moved, in case that normalize converted it after the section opened.
+        local anchorView = CooldownCompanion:GetContainerAnchorView(container.anchor)
         local committedOffsets = {
-            x = tonumber(container.anchor.x) or 0,
-            y = tonumber(container.anchor.y) or 0,
+            x = tonumber(anchorView.x) or 0,
+            y = tonumber(anchorView.y) or 0,
         }
         local function ApplyContainerOffset(axis, value)
             local oldValue = committedOffsets[axis] or 0
-            container.anchor[axis] = value
+            container.anchor = CooldownCompanion:NormalizeContainerAnchor(container.anchor)
+            container.anchor[axis] = ST.RoundToTenths((tonumber(container.anchor[axis]) or 0) + (value - oldValue))
             committedOffsets[axis] = value
 
             local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
@@ -251,7 +255,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             label = "X Offset",
             setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.xOffset,
             min = -2000, max = 2000, step = 0.1,
-            value = container.anchor.x or 0,
+            value = anchorView.x or 0,
             onRelease = function(val)
                 ApplyContainerOffset("x", val)
             end,
@@ -261,7 +265,7 @@ local function BuildContainerGeneralTab(scroll, containerId)
             label = "Y Offset",
             setting = CONTAINER_FINDER.layout and CONTAINER_FINDER.layout.yOffset,
             min = -2000, max = 2000, step = 0.1,
-            value = container.anchor.y or 0,
+            value = anchorView.y or 0,
             onRelease = function(val)
                 ApplyContainerOffset("y", val)
             end,

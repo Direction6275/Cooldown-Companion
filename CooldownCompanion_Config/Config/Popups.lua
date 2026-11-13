@@ -1414,9 +1414,10 @@ end
 --     the chain and would judge them before FinishGroupImportBatch remaps
 --     them, detaching imported groups to the screen root — so it is
 --     deferred, and the batch sanitizes once anchors are correct.
---   * A multi-section import (setup, pieces) would otherwise walk the whole
---     profile once per section. Those doors pass options.deferMigrations and
---     take one run themselves after finishing their batch. Deferral is a
+--   * The setup door would otherwise walk the whole profile once per
+--     section, and the pieces door's run would come before its batch remaps
+--     anchors. Those doors pass options.deferMigrations and take one run
+--     themselves after finishing their batch. Deferral is a
 --     per-call argument, deliberately not shared state: an earlier version
 --     used a module-level counter, and a Lua error thrown between its
 --     increment and decrement left it raised for the rest of the session,
@@ -1441,9 +1442,9 @@ local function RunPostImportMigrations()
     return ok
 end
 
--- Exported for the pieces door, the other multi-section import: it lives in
--- ProfileImportPieces.lua, defers its sections the same way, and so needs to
--- take the single run itself.
+-- Exported for the pieces door in ProfileImportPieces.lua, which defers its
+-- containers section the same way and so takes the single run itself after
+-- closing its batch.
 ST._RunPostImportMigrations = RunPostImportMigrations
 
 local function ApplyGroupImportData(data, options)
@@ -1618,7 +1619,9 @@ local function ApplyGroupImportData(data, options)
     if not deferAnchorRemap then
         PrintImportSanitizerNotes(rootImportState)
     end
-    return migrationOk
+    -- Second value: the payload this call wrote, after the already-imported
+    -- filter, for a caller that reports on what landed.
+    return migrationOk, data
 end
 
 ST._ApplyGroupImportData = ApplyGroupImportData
@@ -1643,14 +1646,10 @@ StaticPopupDialogs["CDC_EXPORT_GROUP"] = {
     preferredIndex = 3,
 }
 
--- classKey defaults to the current class. Setup imports pass the class the
--- payload targets, so a cross-class import respects THAT class's pending
--- conflict, not the importing character's.
+-- The setup door passes the class its Resources section targets, so a
+-- cross-class import respects THAT class's pending conflict, not the
+-- importing character's.
 local function BlockImportForResourceBarConflict(classKey)
-    classKey = classKey
-        or (CooldownCompanion.GetCurrentResourceBarClassKey
-            and CooldownCompanion:GetCurrentResourceBarClassKey())
-        or nil
     local conflict = CooldownCompanion.GetResourceBarConflict
         and CooldownCompanion:GetResourceBarConflict(classKey)
         or nil
@@ -1666,25 +1665,6 @@ local function BlockImportForResourceBarConflict(classKey)
         ST._ShowResourceBarConflictChooser(classKey, { force = true })
     end
     return true
-end
-
--- LEGACY CONVERSION ONLY: a standalone Custom Bars export string. Custom Bars
--- no longer exist; the payload is converted into panel entries and applied as
--- an ordinary group import. Kept for parked legacy stores in profile import.
-local function ApplyCustomBarsImportData(data, options)
-    if type(data) ~= "table" or data.type ~= "customBars" then
-        if RejectUnsupportedImportPayload(data, "custom bars import") then
-            return false
-        end
-        CooldownCompanion:Print("Import failed: this is not a Custom Bars export.")
-        return false
-    end
-    if RejectUnsupportedImportPayload(data, "custom bars import") then
-        return false
-    end
-    local converted, report = ST._ConvertUnifiedPanelImport(data)
-    if not converted then CooldownCompanion:Print(report); return false end
-    return ApplyGroupImportData(ST._FilterConvertedPanelImport(converted), options)
 end
 
 -- Class identity of any class-tagged payload or setup section (setup
@@ -1727,12 +1707,12 @@ local function RemapImportedIndependentAnchor(anchor, panelIds, containerIdMap)
     end
 end
 
--- Applies a `setup` payload: groups additively, then the Resources section as
--- a whole-bucket replace for its class, then any Panel Templates beside the
--- player's own. Legacy Custom Bars sections were
--- converted into panel entries by _ConvertUnifiedPanelImport above. Order
--- matters: groups first so the Resources anchor can remap
--- onto the groups imported from the same string.
+-- Applies a reviewed `setup` payload: groups additively, then the Resources
+-- section as a whole-bucket replace for its class, then any Panel Templates
+-- beside the player's own. ClassifyImportReviewText already converted legacy
+-- sections; ApplyReview (ImportReview.lua) is the only caller. Order matters:
+-- groups first so the Resources anchor can remap onto the groups imported from
+-- the same string.
 local function ApplySetupImportData(data, existingPanelIds)
     if type(data) ~= "table" or data.type ~= "setup" then
         CooldownCompanion:Print("Import failed: this is not a setup export.")
@@ -1742,10 +1722,10 @@ local function ApplySetupImportData(data, existingPanelIds)
         return false
     end
 
-    local converted, conversionError = ST._ConvertUnifiedPanelImport(data)
-    if not converted then CooldownCompanion:Print(conversionError); return false end
+    -- A freshness re-check against the profile as it is now; the filter
+    -- works on a copy, so the review's data stays as reviewed.
     local replayPanelIds
-    data, replayPanelIds = ST._FilterConvertedPanelImport(converted)
+    data, replayPanelIds = ST._FilterConvertedPanelImport(data)
 
     local hasContainers = type(data.containers) == "table" and #data.containers > 0
     local resourcesSection = type(data.resources) == "table"
@@ -1781,6 +1761,7 @@ local function ApplySetupImportData(data, existingPanelIds)
     local applied = false
     local failed = false
     local containersApplied = false
+    local landedContainers
 
     -- One migration run owns this whole click: each section would otherwise
     -- walk the entire profile again, and the runs nested inside the open
@@ -1796,7 +1777,9 @@ local function ApplySetupImportData(data, existingPanelIds)
             _cdcImportCheckpoint = data._cdcImportCheckpoint,
         }
         ST._AttachGroupImportBatch(containersPayload, batchToken)
-        containersApplied = ApplyGroupImportData(containersPayload, deferToSetupRun) == true
+        local containersOk
+        containersOk, landedContainers = ApplyGroupImportData(containersPayload, deferToSetupRun)
+        containersApplied = containersOk == true
         applied = containersApplied or applied
         failed = failed or not containersApplied
     end
@@ -1905,11 +1888,9 @@ local function ApplySetupImportData(data, existingPanelIds)
     -- A failed final migration is a failed import even though the sections
     -- landed: the caller uses this to decide whether to leave Import mode,
     -- and treating unmigrated data as a clean import is how it ships.
-    return applied and migrationOk
+    return applied and migrationOk, landedContainers
 end
 
-ST._BlockImportForResourceBarConflict = BlockImportForResourceBarConflict
-ST._ApplyCustomBarsImportData = ApplyCustomBarsImportData
 ST._ApplySetupImportData = ApplySetupImportData
 
 StaticPopupDialogs["CDC_CONFIRM_CHARACTER_SCOPED_COPY"] = {

@@ -141,19 +141,23 @@ function CooldownCompanion:CancelIndependentCastBarDrag()
     UpdateIndependentCastBarDragState(GetCastBarSettings())
 end
 
+-- The anchor and width the mover is placed with, read without writing. Only
+-- an edit saves them, through EnsureIndependentCastBarConfig (rule Q1).
+local function ResolveIndependentCastBarPlacement(settings)
+    return RB.ResolveIndependentAnchorView(settings.independentAnchor),
+        ClampCastBarDimension(settings.independentWidth, 200)
+end
+
+-- Saves the placement ResolveIndependentCastBarPlacement reads.
 local function EnsureIndependentCastBarConfig(settings)
+    local view, width = ResolveIndependentCastBarPlacement(settings)
     if type(settings.independentAnchor) ~= "table" then
         settings.independentAnchor = {}
     end
     local anchor = settings.independentAnchor
-    anchor.point = anchor.point or "CENTER"
-    anchor.relativePoint = anchor.relativePoint or "CENTER"
-    anchor.x = tonumber(anchor.x) or 0
-    anchor.y = tonumber(anchor.y) or 0
-    if anchor.relativeTo ~= nil and type(anchor.relativeTo) ~= "string" then
-        anchor.relativeTo = nil
-    end
-    settings.independentWidth = ClampCastBarDimension(settings.independentWidth, 200)
+    anchor.point, anchor.relativePoint = view.point, view.relativePoint
+    anchor.x, anchor.y, anchor.relativeTo = view.x, view.y, view.relativeTo
+    settings.independentWidth = width
 end
 
 local IsBarsConfigActive = RB.IsBarsConfigActive
@@ -299,7 +303,7 @@ local function EnsureCastBarMoverChrome(frame)
         coordLabel = coordLabel,
         getWidth = function()
             local settings = GetCastBarSettings()
-            return settings and settings.independentWidth or 200
+            return ClampCastBarDimension(settings and settings.independentWidth, 200)
         end,
         setWidth = function(width)
             local settings = GetCastBarSettings()
@@ -356,6 +360,8 @@ local function EnsureCastBarMoverChrome(frame)
         CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
             return candidateFrame == frame
         end)
+        -- A drag is an edit: it saves the anchor its coordinates are read against.
+        EnsureIndependentCastBarConfig(settings)
         StartIndependentCoordUpdates(frame, settings.independentAnchor)
     end)
     dragHandle:SetScript("OnDragStop", function()
@@ -1522,16 +1528,15 @@ function CooldownCompanion:ApplyCastBarSettings(opts)
 
     if isIndependent then
         -- Independent mode: no group needed, set up mover frame
-        EnsureIndependentCastBarConfig(settings)
         CreateCastBarMoverFrame()
-        local anchor = settings.independentAnchor
+        local anchor, width = ResolveIndependentCastBarPlacement(settings)
         local relFrame = UIParent
         if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
             relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
         end
         independentMoverFrame:ClearAllPoints()
         independentMoverFrame:SetPoint(anchor.point, relFrame, anchor.relativePoint, anchor.x, anchor.y)
-        independentMoverFrame:SetSize(settings.independentWidth, GetCastBarHeight(settings, target))
+        independentMoverFrame:SetSize(width, GetCastBarHeight(settings, target))
         independentMoverFrame:Show()
         UpdateIndependentCastBarDragState(settings)
         UpdateIndependentCoordLabel(independentMoverFrame, anchor.x, anchor.y)

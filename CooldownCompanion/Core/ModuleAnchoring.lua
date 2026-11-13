@@ -59,7 +59,7 @@ function Addon:SetModuleAttachment(kind, mode, panelId, specId)
     local previous = self:GetModuleAttachment(kind, specId, settings)
     local record = { mode = mode, panelId = tonumber(panelId) or previous.panelId }
     if kind == "resources" then
-        local layout = ST._RB.GetSpecLayoutOrder(settings, specId)
+        local layout = ST._RB.EnsureSpecLayoutOrder(settings, specId)
         if not layout then return false end
         layout.attachment = record
     else

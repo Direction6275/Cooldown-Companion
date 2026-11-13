@@ -1,8 +1,11 @@
 --[[
     CooldownCompanion - ResourceBarHelpers
-    Pure query/helper functions with no mutable state writes (aside from
-    auto-vivification of config tables and a power-type secrecy memoization
-    cache). Used by both ResourceBar.lua and ResourceBarVisuals.lua at runtime.
+    Query/helper functions used by both ResourceBar.lua and
+    ResourceBarVisuals.lua at runtime. Reads never write saved data: a spec's
+    layout and display profile are looked up, never created. The Ensure*
+    functions, PrepareSpecResourceLayout and SetBarLane (at a player's drag)
+    are the only writers. The session caches are the player class
+    id and the power-type secrecy memoization.
 
     All functions are added to ST._RB so consuming files can alias them to
     locals at load time.
@@ -290,147 +293,10 @@ end
 -- LEGACY CONVERSION ONLY: retired Custom Bar records.
 -- Custom Bars no longer exist as a feature. The helpers below read old
 -- saved/imported custom-bar tables (`cab`) so ScopedSettings can normalize
--- them and UnifiedPanelMigration can convert them into panel entries, and so
--- profile import can list parked legacy stores. Nothing at runtime renders
--- them. Remove together with the converter when the data checkpoint moves.
+-- them and UnifiedPanelMigration can convert them into panel entries. Nothing
+-- at runtime renders them. Remove together with the converter when the data
+-- checkpoint moves.
 ------------------------------------------------------------------------
-local customBarContentFields = {
-    "spellID",
-    "trackingMode",
-    "displayMode",
-    "maxStacks",
-    "label",
-    "barColor",
-    "barCooldownColor",
-    "barChargeColor",
-    "overlayColor",
-    "barHeight",
-    "barWidth",
-    "soundAlerts",
-    "loadConditions",
-    "talentConditions",
-    "hideWhenInactive",
-    "auraShellDim",
-    "hideWhileOnCooldown",
-    "hideWhileNotOnCooldown",
-    "showOnlyAtZeroCharges",
-    "hideWhileZeroCharges",
-    "hideWhileAuraActive",
-    "hideAuraActiveExceptPandemic",
-    "auraTracking",
-    "auraTrackGroup",
-    "auraTrackPet",
-    "auraSpellID",
-    "auraUnitOverride",
-    "auraIDOverride",
-    "barAuraIndicatorEnabled",
-    "barAuraColor",
-    "barAuraEffect",
-    "barAuraEffectColor",
-    "barAuraEffectSize",
-    "barAuraEffectThickness",
-    "barAuraEffectSpeed",
-    "barAuraEffectLines",
-    "auraGlowCombatOnly",
-    "barAuraPulseEnabled",
-    "barAuraPulseSpeed",
-    "barAuraColorShiftEnabled",
-    "barAuraColorShiftSpeed",
-    "barAuraColorShiftColor",
-    "pandemicEffect",
-    "pandemicColor",
-    "pandemicMarker",
-    "pandemicMarkerText",
-    "pandemicMarkerColorMode",
-    "pandemicMarkerColor",
-    -- Retired pandemic families, kept ONLY so not-yet-migrated legacy
-    -- entries still count as configured content (the import/migration
-    -- passes strip the keys themselves; nothing renders them).
-    "showPandemicGlow",
-    "barPandemicColor",
-    "pandemicBarEffect",
-    "pandemicBarEffectColor",
-    "pandemicBarEffectSize",
-    "pandemicBarEffectThickness",
-    "pandemicBarEffectSpeed",
-    "pandemicBarEffectLines",
-    "pandemicGlowCombatOnly",
-    "pandemicBarPulseEnabled",
-    "pandemicBarPulseSpeed",
-    "pandemicBarColorShiftEnabled",
-    "pandemicBarColorShiftSpeed",
-    "pandemicBarColorShiftColor",
-    "thresholdColorEnabled",
-    "thresholdMaxColor",
-    "maxStacksGlowEnabled",
-    "maxStacksGlowStyle",
-    "maxStacksGlowColor",
-    "maxStacksGlowSize",
-    "maxStacksGlowSpeed",
-    "maxStacksGlowThickness",
-    "maxStacksGlowLines",
-    "maxStacksBarPulseEnabled",
-    "maxStacksBarPulseSpeed",
-    "maxStacksBarColorShiftEnabled",
-    "maxStacksBarColorShiftSpeed",
-    "maxStacksBarColorShiftColor",
-    "showDurationText",
-    "durationTextFont",
-    "durationTextFontSize",
-    "durationTextFontOutline",
-    "durationTextFontColor",
-    "durationFormat",
-    "durationLowTimeThreshold",
-    "durationLowTimeDecimals",
-    "durationLowTimeColor",
-    "durationLowTimeThreshold2",
-    "durationLowTimeColor2",
-    "durationLowTimeAuras",
-    "cooldownTextVisibilityThreshold",
-    "auraTextVisibilityThreshold",
-    "showStackText",
-    "showText",
-    "stackTextFormat",
-    "stackTextFont",
-    "stackTextFontSize",
-    "stackTextFontOutline",
-    "stackTextFontColor",
-    "auraUnit",
-    "hasCharges",
-    "maxCharges",
-    -- Stack text formatter options: the shared config rows keep these in an
-    -- auraBar subtable (panel key names), not flat on the entry.
-    "auraBar",
-}
-
-local function HasCustomBarContent(cab)
-    if type(cab) ~= "table" then
-        return false
-    end
-    if cab.enabled == true then
-        return true
-    end
-    for _, field in ipairs(customBarContentFields) do
-        local value = cab[field]
-        -- Table fields (auraBar) count only while they hold something: the
-        -- setters leave an empty {} behind when the last key clears, and an
-        -- empty shell must not make a stripped bar count as configured.
-        if value ~= nil and (type(value) ~= "table" or next(value) ~= nil) then
-            return true
-        end
-    end
-    return false
-end
-
-local function IsConfiguredCustomBar(cab)
-    return type(cab) == "table"
-        and (
-            HasCustomBarContent(cab)
-            or cab.entryType ~= nil
-            or cab.independentAnchorEnabled ~= nil
-        )
-end
-
 local function GetCustomBarEntryType(cab)
     if type(cab) == "table" and cab.entryType == "spell" then
         return "spell"
@@ -582,37 +448,45 @@ local function CreateDefaultLayoutOrder(settings)
     }, settings)
 end
 
+-- Spec stores hold numeric keys; ScopedSettings' lookup (it loads first)
+-- also reads a string key.
+local GetSpecKeyedTable = ST._GetSpecKeyedTable
+
+-- The spec's layout, or nil when it has none. Never writes: the current
+-- spec of the current record is prepared at login, profile change and import
+-- (CooldownCompanion:PrepareResourceBarSettings), at a spec change
+-- (CompleteResourceBarSpecMigration) and by a spec copy, and an edit to
+-- another spec makes its layout through EnsureSpecLayoutOrder.
 GetSpecLayoutOrder = function(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()
     if not specID then return nil end
-    specID = tonumber(specID) or specID
-    if not settings.layoutOrder then settings.layoutOrder = {} end
-    if type(settings.layoutOrder[specID]) ~= "table" then
-        settings.layoutOrder[specID] = CreateDefaultLayoutOrder(settings)
-    else
-        SeedResourceLayoutFromGlobal(settings.layoutOrder[specID], settings)
-    end
-    return settings.layoutOrder[specID]
+    return GetSpecKeyedTable(settings.layoutOrder, specID)
 end
 
--- Seeding only fills nils and normalizes one key, and every key it touches is
--- non-nil once it has run, so a second pass over the same profile table can
--- never change the result. It is therefore first-touch: the write-back below
--- lands in SavedVariables, and GetSpecResourceDisplayProfile is read at the
--- poll cadence. Weak keys so a profile table dropped by a profile switch,
--- import or spec copy is not pinned here — and a replaced table is a new
--- table, which seeds again.
-local seededResourceDisplayProfiles = setmetatable({}, { __mode = "k" })
+-- The spec's layout, made from the record's own values when missing and
+-- nil-filled when present. Only the prepare step, a player's edit and the
+-- shared bar style conversion (BarStyle.lua MigrationSpecLayout) call it.
+local function EnsureSpecLayoutOrder(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
+    if not specID then return nil end
+    local layout = GetSpecKeyedTable(settings.layoutOrder, specID)
+    if layout then
+        return SeedResourceLayoutFromGlobal(layout, settings)
+    end
+    if type(settings.layoutOrder) ~= "table" then settings.layoutOrder = {} end
+    layout = CreateDefaultLayoutOrder(settings)
+    settings.layoutOrder[tonumber(specID) or specID] = layout
+    return layout
+end
 
+-- Seeding only fills nils and writes a normalized smoothing value only when
+-- it differs, so a second pass over the same profile changes nothing.
 local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if type(profile) ~= "table" or type(settings) ~= "table" then
         return profile
     end
-    if seededResourceDisplayProfiles[profile] then
-        return profile
-    end
-    seededResourceDisplayProfiles[profile] = true
     for _, key in ipairs(RESOURCE_DISPLAY_PROFILE_KEYS) do
         if profile[key] == nil then
             local value = settings[key]
@@ -626,22 +500,49 @@ local function SeedResourceDisplayProfileFromGlobal(profile, settings)
     if profile.borderSize == nil then profile.borderSize = 1 end
     if profile.borderRenderMode == nil then profile.borderRenderMode = ST.BORDER_RENDER_MODE_CUSTOM end
     if profile.classBarBrightness == nil then profile.classBarBrightness = 1.3 end
-    profile.segmentedSmoothing = ST.NormalizeSegmentedSmoothing(profile.segmentedSmoothing)
+    local smoothing = ST.NormalizeSegmentedSmoothing(profile.segmentedSmoothing)
+    if profile.segmentedSmoothing ~= smoothing then
+        profile.segmentedSmoothing = smoothing
+    end
     return profile
 end
 
+-- What the fill makes for a spec from the record's own values, unsaved.
+local function CreateSeededDisplayProfile(settings)
+    return SeedResourceDisplayProfileFromGlobal({}, settings)
+end
+
+-- The spec's display profile, or nil when it has none. Never writes.
 local function GetSpecResourceDisplayProfile(settings, specID)
     if type(settings) ~= "table" then return nil end
     specID = specID or GetCurrentSpecID()
     if not specID then return nil end
-    specID = tonumber(specID) or specID
-    if type(settings.displayProfiles) ~= "table" then
-        settings.displayProfiles = {}
+    return GetSpecKeyedTable(settings.displayProfiles, specID)
+end
+
+-- The spec's display profile, made when missing and nil-filled from the
+-- record's own values. Only the prepare step and a player's edit call it.
+local function EnsureSpecResourceDisplayProfile(settings, specID)
+    if type(settings) ~= "table" then return nil end
+    specID = specID or GetCurrentSpecID()
+    if not specID then return nil end
+    local profile = GetSpecKeyedTable(settings.displayProfiles, specID)
+    if not profile then
+        if type(settings.displayProfiles) ~= "table" then settings.displayProfiles = {} end
+        profile = {}
+        settings.displayProfiles[tonumber(specID) or specID] = profile
     end
-    if type(settings.displayProfiles[specID]) ~= "table" then
-        settings.displayProfiles[specID] = {}
-    end
-    return SeedResourceDisplayProfileFromGlobal(settings.displayProfiles[specID], settings)
+    return SeedResourceDisplayProfileFromGlobal(profile, settings)
+end
+
+-- Owner ruling R76: the one fill of a spec's Resources layout and display
+-- profile, run only at the current-class prepare step, the spec-transition
+-- hook and a player's edit. Nil-only and idempotent.
+local function PrepareSpecResourceLayout(settings, specID)
+    specID = specID or GetCurrentSpecID()
+    if type(settings) ~= "table" or not specID then return end
+    EnsureSpecLayoutOrder(settings, specID)
+    EnsureSpecResourceDisplayProfile(settings, specID)
 end
 
 local function GetResourceDisplayValue(settings, key, fallback, powerType, appearance)
@@ -857,6 +758,24 @@ local function ClampIndependentDimension(value, fallback, minVal)
         dim = 1200
     end
     return dim
+end
+
+-- How an Independent bar's saved anchor is drawn, read without writing: CENTER
+-- points by default, numeric offsets, and a relativeTo that is not a frame
+-- name dropped so the bar goes to the screen. The Resources stack and the
+-- Cast Bar place from it, their Ensure functions save it, and the mover
+-- menu's Reset follows its relativeTo.
+local function ResolveIndependentAnchorView(source)
+    source = type(source) == "table" and source or {}
+    local relativeTo = source.relativeTo
+    if relativeTo ~= nil and type(relativeTo) ~= "string" then relativeTo = nil end
+    return {
+        point = source.point or "CENTER",
+        relativePoint = source.relativePoint or "CENTER",
+        x = tonumber(source.x) or 0,
+        y = tonumber(source.y) or 0,
+        relativeTo = relativeTo,
+    }
 end
 
 ------------------------------------------------------------------------
@@ -1446,6 +1365,9 @@ local function ResolveResourceTextRules(resourceConfig, settings, powerType, spe
         and not (textFormat == "percent" and contract.offersPercent) then
         textFormat = RB.DEFAULT_RESOURCE_TEXT_FORMAT
     end
+    -- Owner ruling Q-C2 (leave as is): a setting an older setup never saved
+    -- keeps its old behaviour, so Stagger text stays on here, and an
+    -- Independent stack first chosen on an older setup comes up unlocked.
     local showText = resourceConfig and resourceConfig.showText
     if contract.stackText then
         showText = showText == true
@@ -1594,10 +1516,14 @@ RB.GetVerticalSideFallback = GetVerticalSideFallback
 RB.GetCurrentSpecID = GetCurrentSpecID
 RB.GetPlayerClassID = GetPlayerClassID
 RB.BuildResourcesSetupSection = BuildResourcesSetupSection
-RB.IsConfiguredCustomBar = IsConfiguredCustomBar
 RB.EnsureCustomAuraBarAuraUnit = EnsureCustomAuraBarAuraUnit
 RB.GetSpecLayoutOrder = GetSpecLayoutOrder
+RB.EnsureSpecLayoutOrder = EnsureSpecLayoutOrder
+RB.CreateDefaultLayoutOrder = CreateDefaultLayoutOrder
 RB.GetSpecResourceDisplayProfile = GetSpecResourceDisplayProfile
+RB.EnsureSpecResourceDisplayProfile = EnsureSpecResourceDisplayProfile
+RB.CreateSeededDisplayProfile = CreateSeededDisplayProfile
+RB.PrepareSpecResourceLayout = PrepareSpecResourceLayout
 RB.GetResourceDisplayValue = GetResourceDisplayValue
 RB.GetResourceSegmentedSmoothing = GetResourceSegmentedSmoothing
 RB.GetMWDisplayStyle = GetMWDisplayStyle
@@ -1610,6 +1536,7 @@ RB.GetPlacementRenderPowerType = GetPlacementRenderPowerType
 RB.GetResourceDisplayConfig = GetResourceDisplayConfig
 RB.RoundToTenths = RoundToTenths
 RB.ClampIndependentDimension = ClampIndependentDimension
+RB.ResolveIndependentAnchorView = ResolveIndependentAnchorView
 RB.IsBarsConfigActive = IsBarsConfigActive
 RB.IsAstralPowerAvailableForCurrentDruidSpec = IsAstralPowerAvailableForCurrentDruidSpec
 RB.DetermineActiveResources = DetermineActiveResources

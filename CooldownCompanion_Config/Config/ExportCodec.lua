@@ -297,7 +297,6 @@ local PROFILE_DEFAULT_KEYS = {
     profileWideBarTextureName = "profileWideBarTextureName",
     auraTextureLibrary = "auraTextureLibrary",
     globalStyle = "globalStyle",
-    locked = "locked",
     resourceBarMigration = "resourceBarMigration",
     resourceBars = "resourceBars",
     castBar = "castBar",
@@ -310,6 +309,8 @@ local RETIRED_PROFILE_KEYS = {
     cdmHidden = true,
     -- Panel setting presets, retired by Copy Panel Settings and Templates.
     groupSettingPresets = true,
+    -- The old profile-wide lock flag; nothing reads it.
+    locked = true,
 }
 
 local OUTBOUND_ONLY_RETIRED_PROFILE_KEYS = {
@@ -1207,14 +1208,6 @@ local function CompactDiagnosticSnapshot(snapshot, formatVersion)
 
     if type(compact.profile) == "table" then
         compact.profile = CompactProfile(compact.profile, formatVersion)
-        -- Older builds stored this derived cache on entries. StyleOverrides.lua
-        -- now owns it in a weak-key table; these are not user settings.
-        for _, panel in pairs(compact.profile.groups or {}) do
-            for _, button in ipairs(panel.buttons or {}) do
-                button._effectiveStyleGroupStyle = nil
-                button._effectiveStyleOverrides = nil
-            end
-        end
     end
 
     if type(compact.runtime) == "table" then

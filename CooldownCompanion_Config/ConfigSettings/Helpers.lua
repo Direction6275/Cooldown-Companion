@@ -101,6 +101,23 @@ function ST._CaptureRawSettingsFields(tbl, keys)
     end
 end
 
+-- A preview's capture for a Resources spec store (rootKey "layoutOrder" or
+-- "displayProfiles"): the edited keys of the spec's saved table, its slot in
+-- the store and the store itself, so the restore also removes a table the
+-- preview had to make. Writers edit an existing spec table as it is, never
+-- nil-filling it, so the edited keys are all a restore needs.
+function ST._CaptureSpecKeyedFields(settings, rootKey, spec, keys)
+    local store = type(settings[rootKey]) == "table" and settings[rootKey] or nil
+    local restores = {
+        ST._CaptureRawSettingsFields(ST._GetSpecKeyedTable(store, spec), keys),
+        ST._CaptureRawSettingsFields(store, { tonumber(spec) or spec }),
+        ST._CaptureRawSettingsFields(settings, { rootKey }),
+    }
+    return function()
+        for _, restore in ipairs(restores) do restore() end
+    end
+end
+
 -- Resource controls with nested owners supply their own capture/restore pair;
 -- share the same exception boundary with ordinary settings transactions.
 function ST._RunSettingsPreview(apply, preview, restore, outcome)

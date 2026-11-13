@@ -535,10 +535,15 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
     local castSlots = {}
     local resourceBarsEnabled = includeResourceSlots and rbSettings and rbSettings.enabled
 
-    if includeResourceSlots then
+    -- Collection only reads; a drag makes the saved slot (rule Q1).
+    local function ReadLayoutResource(powerType)
+        return layout.resources and layout.resources[powerType]
+    end
+
+    local function EnsureLayoutResourceSlot(powerType)
         layout.resources = layout.resources or {}
-        rbSettings = rbSettings or {}
-        rbSettings.resources = rbSettings.resources or {}
+        layout.resources[powerType] = layout.resources[powerType] or {}
+        return layout.resources[powerType]
     end
 
     local function ResolveSlotThickness(powerType)
@@ -559,11 +564,6 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
         local showResource = resourceBarsEnabled and RB.IsResourceEnabled(renderType, rbSettings)
 
         if showResource then
-            local function EnsureLayoutResource()
-                layout.resources[powerType] = layout.resources[powerType] or {}
-                return layout.resources[powerType]
-            end
-
             table_insert(primarySlots, {
                 -- Keyed by what the slot DRAWS, not by where it stores: the
                 -- id is a per-build handle (drag identity, frame map, and
@@ -578,7 +578,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                 label = POWER_NAMES[renderType] or ("Power " .. renderType),
                 thickness = ResolveSlotThickness(powerType),
                 getPos = function()
-                    local slot = layout.resources[powerType]
+                    local slot = ReadLayoutResource(powerType)
                     if isVerticalLayout then
                         local pos = slot and slot.verticalPosition
                         if pos == "left" or pos == "right" then
@@ -589,14 +589,14 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     return (slot and slot.position) or "below"
                 end,
                 getOrder = function()
-                    local slot = layout.resources[powerType]
+                    local slot = ReadLayoutResource(powerType)
                     if isVerticalLayout then
                         return (slot and slot.verticalOrder) or (slot and slot.order) or (900 + powerType)
                     end
                     return (slot and slot.order) or (900 + powerType)
                 end,
                 setPos = function(value)
-                    local slot = EnsureLayoutResource()
+                    local slot = EnsureLayoutResourceSlot(powerType)
                     if isVerticalLayout then
                         slot.verticalPosition = value
                     else
@@ -604,7 +604,7 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
                     end
                 end,
                 setOrder = function(value)
-                    local slot = EnsureLayoutResource()
+                    local slot = EnsureLayoutResourceSlot(powerType)
                     if isVerticalLayout then
                         slot.verticalOrder = value
                     else
@@ -656,13 +656,14 @@ local function CollectPreviewSlots(rbSettings, cbSettings, layout, isVerticalLay
             slot.anchorGroup = geometryHost or CooldownCompanion:ResolveModulePanel(slot.kind == "cast" and "castbar" or "resources").group
             if not independent and (slot.kind == "cast" or not isVerticalLayout) then
                 ST._ConfigureAttachedBarPreviewSlot(slot, function()
+                    if slot.kind == "cast" then return layout.castBar end
+                    return ReadLayoutResource(RB.GetCanonicalPowerType(slot.powerType))
+                end, function()
                     if slot.kind == "cast" then
                         layout.castBar = layout.castBar or { position = "below", order = 2000 }
                         return layout.castBar
                     end
-                    local pt = RB.GetCanonicalPowerType(slot.powerType)
-                    layout.resources[pt] = layout.resources[pt] or {}
-                    return layout.resources[pt]
+                    return EnsureLayoutResourceSlot(RB.GetCanonicalPowerType(slot.powerType))
                 end)
             end
         end
@@ -2243,10 +2244,10 @@ function ST._BuildLayoutOrderPanel(container)
     content:SetClipsChildren(false)
 
     local resourceThickness = math_max(8, tonumber(GetResourceGlobalThickness(rbSettings)) or 12)
-    local independentLength = math_max(
-        20,
-        tonumber(standaloneCast and cbSettings.independentWidth or layout.independentWidth or rbSettings.independentWidth) or 200
-    )
+    -- The clamped width the bar draws with; the canvas itself stops at 20.
+    local independentLength = math_max(20, standaloneCast
+        and RB.ClampIndependentDimension(cbSettings.independentWidth, 200, 20)
+        or RB.ClampIndependentDimension(layout.independentWidth or rbSettings.independentWidth, 200))
     local contentWidth, contentHeight
     if preview.isVerticalLayout then
         contentWidth, contentHeight = RenderIndependentVerticalLayout(
@@ -2445,11 +2446,11 @@ end
 PanelHasConfiguredModuleBars = function(panelId, kind)
     local group = CooldownCompanion.db.profile.groups[panelId]
     if not ST.PanelSupportsAttachedBars(group) then return false end
-    local cast = ST.GetConfiguredModuleBarSettings("castbar")
+    local cast = CooldownCompanion:GetCastBarSettings()
     if kind ~= "resources" and cast and cast.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("castBar")
         and ModuleBelongsToPreview("castbar", panelId, true, cast) then return true end
     if kind == "castbar" then return false end
-    local saved = ST.GetConfiguredModuleBarSettings("resources")
+    local saved = CooldownCompanion:GetResourceBarSettings()
     if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return false end
     -- Read-only on the live settings: module attachment falls back to their
     -- own independentAnchorEnabled, exactly what layout seeding writes.
@@ -2467,11 +2468,11 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
     local settings, cast, layout
     if overview then
         if CS.otherClassLibraryActive then return {} end
-        local saved = ST.GetConfiguredModuleBarSettings("resources")
+        local saved = CooldownCompanion:GetResourceBarSettings()
         if not (saved and saved.enabled and CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars")) then return {} end
-        -- Layout/default normalization and slot collection may fill nils. Keep
-        -- all of those writes on the same detached snapshot used by painting.
-        settings = CopyTable(saved)
+        -- Overview tiles never drag, so they paint from the saved record: slot
+        -- collection and painting only read it.
+        settings = saved
         layout = RB.GetSpecLayoutOrder(settings)
     else
         settings, cast = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
@@ -2492,8 +2493,7 @@ function ST._GetPanelAttachmentPreviewModules(panelId, options)
             if not block then
                 local region = RB.GetResourceBlockRegion(layout, side, vertical)
                 block = { kind = "resources", side = side, region = region == "main" and "main" or "outer",
-                    slots = {}, thickness = 0, spacing = spacing, layout = layout,
-                    resourceSettings = overview and settings or nil }
+                    slots = {}, thickness = 0, spacing = spacing, layout = layout }
                 sides[side], modules[#modules + 1] = block, block
             end
             block.slots[#block.slots + 1] = slot
@@ -2553,16 +2553,12 @@ function ST._BuildPanelModulePreview(preview, panelId, positions, drag, animate)
     state.root:SetScript("OnUpdate", nil)
     state.skin = ResolvePreviewSkin(preview.root:GetParent())
     state.readOnly = preview.readOnly == true
-    -- Only overview modules carry detached settings. Read-only drag ghosts
-    -- still use the focused preview's resource and cast configuration.
-    if preview.groupOverview then
-        state.rbSettings = positions[1].module.resourceSettings
-        state.cbSettings = nil
-        state.layout = positions[1].module.layout
-    else
-        state.rbSettings, state.cbSettings = CooldownCompanion:GetResourceBarSettings(), CooldownCompanion:GetCastBarSettings()
-        state.layout = CooldownCompanion:GetSpecLayoutOrder()
-    end
+    -- Every panel preview paints resources from the saved Resources record
+    -- and the current spec's layout. Group overview tiles collect no Cast Bar
+    -- slot, so they hold no Cast Bar settings.
+    state.rbSettings = CooldownCompanion:GetResourceBarSettings()
+    state.cbSettings = not preview.groupOverview and CooldownCompanion:GetCastBarSettings() or nil
+    state.layout = CooldownCompanion:GetSpecLayoutOrder()
     state.anchorPanelId = panelId
     state.used.slots = 0
     if not animate then state.framesBySlot = {} end

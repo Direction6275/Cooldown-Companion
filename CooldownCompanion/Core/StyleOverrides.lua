@@ -19,6 +19,9 @@ local function FallBackTo(tbl, style)
     return setmetatable(tbl, { __index = style })
 end
 
+-- Deletes the override sections this entry can never use, and their keys.
+-- Called only by the login and import pass in RunAllMigrations
+-- (PruneDisallowedEntrySections, Migrations.lua); reads never call it (rule Q1).
 local function PruneDisallowedOverrideSections(buttonData)
     if not (buttonData and buttonData.overrideSections) then
         return
@@ -51,6 +54,8 @@ local function PruneDisallowedOverrideSections(buttonData)
     end
 end
 
+ST.PruneDisallowedOverrideSections = PruneDisallowedOverrideSections
+
 ------------------------------------------------------------------------
 -- EFFECTIVE STYLE UTILITIES
 ------------------------------------------------------------------------
@@ -58,8 +63,6 @@ end
 --- Compute the effective style for a button, merging per-button overrides
 --- with group defaults via metatable __index fallback.
 function CooldownCompanion:GetEffectiveStyle(groupStyle, buttonData, group)
-    PruneDisallowedOverrideSections(buttonData)
-
     local isBar = ST.ApplySharedBarTypography and group and ST.GetEntryPresentation(group, buttonData) == "bars"
     if isBar then
         local base = sharedBarBaseCache[groupStyle] or {}
@@ -239,6 +242,5 @@ end
 
 --- Check if a button has any active style overrides.
 function CooldownCompanion:HasStyleOverrides(buttonData)
-    PruneDisallowedOverrideSections(buttonData)
     return buttonData and buttonData.overrideSections and next(buttonData.overrideSections) ~= nil
 end

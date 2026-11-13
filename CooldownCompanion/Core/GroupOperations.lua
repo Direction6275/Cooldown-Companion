@@ -787,7 +787,26 @@ function CooldownCompanion:FinalizeNonPanelGroupAnchors()
     end
 end
 
-function CooldownCompanion:RefreshAllGroups(reason)
+-- opts.profileReplaced: the profile was replaced under the live frames.
+-- Every door that replaces it passes this (profile change, copy, reset, full
+-- import). Every Group frame is marked to be placed from the current
+-- profile's saved anchor: by this refresh when shown, later when it is next
+-- shown, or by the layout tick after a combat deferral. Other refreshes
+-- re-place a kept frame only while it is still marked. Any Arrange session
+-- ends here too (EndArrangeForReplacedProfile), after the marking; its
+-- lock-all then runs this refresh with this reason, so every Group is
+-- rebuilt once.
+function CooldownCompanion:RefreshAllGroups(reason, opts)
+    if opts and opts.profileReplaced then
+        if self.containerFrames then
+            for _, frame in pairs(self.containerFrames) do
+                frame._anchorDirty = true
+            end
+        end
+        if self:EndArrangeForReplacedProfile({ refreshReason = reason }) then
+            return
+        end
+    end
     if self._unsupportedLegacyProfile then
         self:ClearUnsupportedProfileRuntime()
         return
@@ -815,12 +834,16 @@ function CooldownCompanion:RefreshAllGroups(reason)
             end
         end
         -- Ensure all current-profile containers have frames
-        for containerId, _ in pairs(containers) do
+        for containerId, container in pairs(containers) do
             if self:IsContainerVisibleToCurrentChar(containerId) then
                 if not self.containerFrames[containerId] then
                     self:CreateContainerFrame(containerId)
                 else
-                    self.containerFrames[containerId]:Show()
+                    local frame = self.containerFrames[containerId]
+                    if frame._anchorDirty then
+                        self:AnchorContainerFrame(frame, container.anchor)
+                    end
+                    frame:Show()
                 end
             else
                 if self.containerFrames[containerId] then
