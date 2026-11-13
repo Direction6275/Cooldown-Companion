@@ -252,8 +252,8 @@ function GF.EnsureMoverChrome(frame)
     frame.sizeLabel._exclusiveEditLabel = frame.coordLabel
     ST.UpdateGroupSizeLabel(frame)
 
-    frame.dragHandle:EnableMouse(true)
-    frame.dragHandle:RegisterForDrag("LeftButton")
+    -- SetGroupDragControlsShown, the only caller, switches the handle's mouse
+    -- input and drag on when it shows it.
     frame.dragHandle:SetScript("OnDragStart", function() BeginPanelDrag(frame, false) end)
     frame.dragHandle:SetScript("OnDragStop", function() FinishPanelDrag(frame) end)
 end
@@ -554,6 +554,8 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     self:EndPanelAttachmentRefresh(attachmentOperation, true, "refresh-panel")
 end
 
+-- The panel body's mouse input only. The drag handle and nudger take the
+-- mouse exactly while SetGroupDragControlsShown shows them.
 function CooldownCompanion:UpdateGroupClickthrough(groupId)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
@@ -604,16 +606,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
         -- handler alongside the drag registration.
         frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
-        if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, false, false)
-            frame.dragHandle:EnableMouse(true)
-            frame.dragHandle:RegisterForDrag("LeftButton")
-            frame.dragHandle:SetScript("OnMouseUp", nil)
-        end
-        if frame.nudger then
-            SetFrameClickThrough(frame.nudger, false, false)
-            frame.nudger:EnableMouse(true)
-        end
         return
     end
 
@@ -627,12 +619,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
         -- handler alongside the drag registration.
         frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
-        if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, true, true)
-        end
-        if frame.nudger then
-            SetFrameClickThrough(frame.nudger, true, true)
-        end
         return
     end
 
@@ -641,24 +627,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
             SetFrameClickThrough(frame, true, false)
         else
             SetFrameClickThrough(frame, true, true)
-        end
-        if frame.dragHandle then
-            if isSelectedInContainer and not isIndicator and not isCursorAnchored then
-                SetFrameClickThrough(frame.dragHandle, false, false)
-                frame.dragHandle:EnableMouse(true)
-                frame.dragHandle:RegisterForDrag("LeftButton")
-                frame.dragHandle:SetScript("OnMouseUp", nil)
-            else
-                SetFrameClickThrough(frame.dragHandle, true, true)
-            end
-        end
-        if frame.nudger then
-            if isSelectedInContainer and not isIndicator and not isCursorAnchored then
-                SetFrameClickThrough(frame.nudger, false, false)
-                frame.nudger:EnableMouse(true)
-            else
-                SetFrameClickThrough(frame.nudger, true, true)
-            end
         end
         return
     end
@@ -669,26 +637,10 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- visible display host instead of the hidden 1x1 anchor frame.
     if isLocked or isIndicator or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
-        if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, true, true)
-        end
-        if frame.nudger then
-            SetFrameClickThrough(frame.nudger, true, true)
-        end
     else
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
         frame:SetScript("OnMouseUp", frame._arrangeSelectOnMouseUp)
-        if frame.dragHandle then
-            SetFrameClickThrough(frame.dragHandle, false, false)
-            frame.dragHandle:EnableMouse(true)
-            frame.dragHandle:RegisterForDrag("LeftButton")
-            frame.dragHandle:SetScript("OnMouseUp", nil)
-        end
-        if frame.nudger then
-            SetFrameClickThrough(frame.nudger, false, false)
-            frame.nudger:EnableMouse(true)
-        end
     end
 end
 

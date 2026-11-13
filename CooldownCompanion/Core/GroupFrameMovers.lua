@@ -820,6 +820,21 @@ function CooldownCompanion:RepositionPanelResizeGrip(frame)
     ST.ApplyCornerBracketGrip(grip, xSide, ySide)
 end
 
+-- Combat's forced lock switches a mover's mouse input off; showing the
+-- chrome again switches it back on. Hidden chrome takes no mouse, so nothing
+-- is switched off here.
+local function EnableChromeMouse(region)
+    region:EnableMouse(true)
+    if region.SetMouseClickEnabled then
+        region:SetMouseClickEnabled(true)
+    end
+    if region.SetMouseMotionEnabled then
+        region:SetMouseMotionEnabled(true)
+    end
+end
+
+-- The one owner of a panel's mover chrome: what is shown, and the drag
+-- handle's and nudger's mouse input. shown is forced false in combat.
 function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if not frame then
         return
@@ -832,6 +847,10 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     if frame.dragHandle then
         frame.dragHandle:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
         frame.dragHandle:SetShown(shown)
+        if shown then
+            EnableChromeMouse(frame.dragHandle)
+            frame.dragHandle:RegisterForDrag("LeftButton")
+        end
         if frame.dragHandle.lockButton then
             frame.dragHandle.lockButton:SetShown(shown)
         end
@@ -841,6 +860,9 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     end
     if frame.nudger then
         frame.nudger:SetShown(shown)
+        if shown then
+            EnableChromeMouse(frame.nudger)
+        end
     end
     -- Cursor panels resize through the positioning preview's selection gate,
     -- same as their drag; other panels keep the plain resizable check.
