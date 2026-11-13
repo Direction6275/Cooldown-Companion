@@ -485,7 +485,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
         if not missingSource then
         AddDropdownRow(panel, {
             label = "Animate When",
-            list = {always="Indicator Is Shown",proc="Proc Active",ready="Ready",unusable="Unusable",aura="Aura (Unavailable)"},
+            list = {always="Indicator Is Shown",proc="Proc Active",ready="Off Cooldown",unusable="Unusable",aura="Aura (Unavailable)"},
             order = {"always","proc","ready","unusable"}, value = config.activation or "always",
             setting = finder and finder.activation,
             onChange = function(value)

@@ -330,15 +330,18 @@ local function RuleValue(clause)
     return clause.state or (clause.expected == false and "false" or "true")
 end
 
--- nil for a saved rule this client cannot evaluate; it fails closed.
-local function RuleLabel(clause)
+-- nil for a saved rule the runtime cannot read on this source; it fails closed.
+local function RuleLabel(clause, entry)
     if clause.unavailable or not I.ConditionKeys[clause.key] then return end
+    if not ST._AT.CanReadTriggerRowCondition(entry, clause.key) then return end
     local labels = RULE_LABELS[clause.key]
     return labels and labels[RuleValue(clause)]
 end
 
 -- Every rule an entry offers, as one dropdown of "key:value" choices. A saved
--- rule the list no longer offers stays listed so it can be seen and replaced.
+-- rule the list no longer offers stays listed under its own name, with
+-- "(Unavailable)" when the runtime cannot read it, so it can be seen and
+-- replaced.
 local function RuleChoices(entry, clause)
     local keys = Addon:GetTriggerConditionTypeOptions(entry)
     local list, order = {}, {}
@@ -355,9 +358,17 @@ local function RuleChoices(entry, clause)
         end
     end
     local current = clause and (tostring(clause.key) .. ":" .. RuleValue(clause))
-    if current and (clause.unavailable or not list[current]) then
-        list[current] = "Unavailable: " .. tostring(clause.key)
-        table.insert(order, 1, current)
+    if current then
+        local label = RuleLabel(clause, entry)
+        if not label then
+            local names = RULE_LABELS[clause.key]
+            local name = names and names[RuleValue(clause)]
+            label = name and (name .. " (Unavailable)") or "Unavailable rule"
+        end
+        if not list[current] then
+            table.insert(order, 1, current)
+        end
+        list[current] = label
     end
     return list, order, current
 end
@@ -680,7 +691,7 @@ local function BuildSourceRules(container, group, entry, changed)
     end
     for clauseIndex, clause in ipairs(clauses) do
         local ci = clauseIndex
-        if not RuleLabel(clause) then
+        if not RuleLabel(clause, entry) then
             Hint(column, "This saved rule cannot match. Replace or remove it to enable this display.")
         end
         local list, order, current = RuleChoices(entry, clause)
@@ -760,7 +771,7 @@ function ST._GetIndicatorSourceControls(group)
             tostring(item.auraRule), tostring(item.auraRuleNever)}, ",")
         if not item.aura then
             for _, clause in ipairs(entry.triggerConditions or {}) do
-                local label = RuleLabel(clause)
+                local label = RuleLabel(clause, entry)
                 item.rules[#item.rules + 1] = {label=label, clause=clause}
                 key[#key + 1] = tostring(clause) .. "=" .. tostring(label)
             end

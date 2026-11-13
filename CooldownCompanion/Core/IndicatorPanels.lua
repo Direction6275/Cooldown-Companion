@@ -765,7 +765,6 @@ function I.OnSourceAdded(group, entry)
                 expected = entry.triggerExpected, state = entry.triggerState}}
         else
             entry.triggerConditions = {{key = "cooldownActive", expected = false}}
-            entry.triggerCondition, entry.triggerExpected = "cooldownActive", false
         end
     end
     return true, notice

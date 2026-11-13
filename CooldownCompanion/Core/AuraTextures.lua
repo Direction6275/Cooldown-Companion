@@ -848,7 +848,9 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
 
     local clauses = self:GetTriggerConditionClauses(buttonData)
     local primaryClause = clauses[1]
-    if primaryClause then
+    -- The singular keys are the legacy storage form; they are kept in step
+    -- only for an entry that has no clause list.
+    if primaryClause and type(buttonData.triggerConditions) ~= "table" then
         buttonData.triggerCondition = primaryClause.key
         if BOOLEAN_TRIGGER_CONDITIONS[primaryClause.key] then
             buttonData.triggerExpected = primaryClause.expected ~= false
