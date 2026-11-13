@@ -116,30 +116,9 @@ end
 -- Independent Cast Bar Anchor (proxy mover frame to avoid Blizzard taint)
 ------------------------------------------------------------------------
 
-local CAST_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
 local ClampCastBarDimension = function(value, fallback) return RB.ClampIndependentDimension(value, fallback, 20) end
-local RoundToTenths = RB.RoundToTenths
-
-local CancelCoordinateEdit = ST.CancelCoordinateEdit
-local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
 
 local UpdateIndependentCoordLabel = RB.UpdateIndependentCoordLabel
-local ComputeIndependentCoordinates = RB.ComputeIndependentCoordinates
-local StopIndependentCoordUpdates = RB.StopIndependentCoordUpdates
-local StartIndependentCoordUpdates = RB.StartIndependentCoordUpdates
-
-function CooldownCompanion:CancelIndependentCastBarDrag()
-    local frame = independentMoverFrame
-    if not frame then return end
-    if frame._dragInProgress then
-        frame._dragCancelPending = true
-        frame:StopMovingOrSizing()
-        frame._dragInProgress = nil
-        StopIndependentCoordUpdates(frame)
-        self:EndMoverChromeFade(frame)
-    end
-    UpdateIndependentCastBarDragState(GetCastBarSettings())
-end
 
 -- The anchor and width the mover is placed with, read without writing. Only
 -- an edit saves them, through EnsureIndependentCastBarConfig (rule Q1).
@@ -160,147 +139,23 @@ local function EnsureIndependentCastBarConfig(settings)
     settings.independentWidth = width
 end
 
-local IsBarsConfigActive = RB.IsBarsConfigActive
-
-local function SaveIndependentCastBarAnchor(refreshConfig)
-    if not independentMoverFrame then return end
-    local settings = GetCastBarSettings()
-    if not settings then return end
-    EnsureIndependentCastBarConfig(settings)
-
-    local frame = independentMoverFrame
-    local anchor = settings.independentAnchor
-
-    local x, y = ComputeIndependentCoordinates(frame, anchor)
-    if x == nil or y == nil then return end
-    anchor.x = x
-    anchor.y = y
-    UpdateIndependentCoordLabel(frame, x, y)
-
-    if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
-
-local function ApplyIndependentCastBarCoordinates(frame, x, y)
-    local settings = GetCastBarSettings()
-    if not settings then return end
-    EnsureIndependentCastBarConfig(settings)
-
-    local anchor = settings.independentAnchor
-    anchor.x = x
-    anchor.y = y
-    local relFrame = UIParent
-    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
-    end
-    frame:ClearAllPoints()
-    frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
-    UpdateIndependentCoordLabel(frame, x, y)
-    SaveIndependentCastBarAnchor(true)
-end
-
-ST.EnsureIndependentCastBarConfig = EnsureIndependentCastBarConfig
-
-function ST.LockIndependentCastBarFromMover(frame)
-    frame = frame or independentMoverFrame
-    if not frame then return end
-    local settings = GetCastBarSettings()
-    if not settings then return end
-    -- Locking the soloed mover would strand every other mover solo-hidden;
-    -- release the solo first (mirrors SetContainerLocked).
-    if CooldownCompanion._arrangeSoloContainerId == "cast"
-        and CooldownCompanion.SetArrangeSoloContainer then
-        CooldownCompanion:SetArrangeSoloContainer(nil)
-    end
-    settings.independentAnchorLocked = true
-    frame._dragInProgress = nil
-    StopIndependentCoordUpdates(frame)
-    frame:StopMovingOrSizing()
-    SaveIndependentCastBarAnchor(true)
-    CooldownCompanion:EndMoverChromeFade(frame)
-    UpdateIndependentCastBarDragState(settings)
-    CooldownCompanion:CaptureArrangeCastBarRecord()
-    if CooldownCompanion.RefreshUnlockToolbar then
-        CooldownCompanion:RefreshUnlockToolbar()
-    end
-    CooldownCompanion:CheckArrangeModeAutoExit()
-end
-
-local function CreateCastBarMoverFrame()
-    if independentMoverFrame then return end
-
-    local frame = CreateFrame("Frame", "CooldownCompanionCastBarMover", UIParent, "BackdropTemplate")
-    frame:SetFrameStrata("HIGH")
-    frame:SetSize(200, 15)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-
-    independentMoverFrame = frame
-end
-
-local function EnsureCastBarMoverChrome(frame)
-    if frame._dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
-    -- Drag handle (full-width, two-point anchored to mover frame)
-    local dragHandle = ST.MoverChrome.CreateHeader(frame, "Cast Bar", function()
-        ST.LockIndependentCastBarFromMover(frame)
-    end, function() return { kind = "cast", focusId = "cast" } end)
-    dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-    dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
-    dragHandle:EnableMouse(false)
-    dragHandle:RegisterForDrag()
-
-    -- Hovering the name bar reveals precise controls. Selection belongs to
-    -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
-    dragHandle:SetScript("OnEnter", function()
-        ST.BeginMoverChromeHoverReveal(frame, function()
-            CooldownCompanion:RefreshIndependentCastBarMoverChrome()
-        end)
-    end)
-    -- Nudger (4-direction pixel nudge, matches icon panel pattern)
-    local nudger = ST.MoverChrome.CreateNudger(dragHandle, CAST_NUDGE_BTN_SIZE, function(dx, dy)
-        CancelCoordinateEdit(frame._coordLabel)
-        CancelCoordinateEdit(frame._sizeLabel)
+-- The mover itself (RB.CreateIndependentMover): everything the player does to
+-- it. This file keeps the frame, the placement reader and Ensure writer, the
+-- lock setter and the stand-in cast.
+local castMover = RB.CreateIndependentMover({
+    focusId = "cast",
+    title = "Cast Bar",
+    getFrame = function() return independentMoverFrame end,
+    getSettings = function()
         local settings = GetCastBarSettings()
-        if not settings or settings.independentAnchorLocked then return end
-        frame:AdjustPointsOffset(dx, dy)
-        -- Write position per step and update coord label (GroupFrame pattern)
-        local _, _, _, x, y = frame:GetPoint()
-        if x and y then
-            EnsureIndependentCastBarConfig(settings)
-            settings.independentAnchor.x = RoundToTenths(x)
-            settings.independentAnchor.y = RoundToTenths(y)
-            UpdateIndependentCoordLabel(frame, x, y)
-        end
-    end, function() SaveIndependentCastBarAnchor(true) end)
-    nudger:EnableMouse(false)
-
-    -- Coordinate label (parented to mover frame, below bar content)
-    local coordLabel = ST.MoverChrome.CreateLabel(frame)
-    coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
-    coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
-    CreateEditableCoordLabel(
-        coordLabel,
-        function()
-            local settings = GetCastBarSettings()
-            local anchor = settings and settings.independentAnchor
-            return anchor and anchor.x or 0, anchor and anchor.y or 0
-        end,
-        function(x, y)
-            ApplyIndependentCastBarCoordinates(frame, x, y)
-        end,
-        function()
-            return frame._dragInProgress == true
-                or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
-        end
-    )
-
-    -- Width resize chrome (grip + wheel + typed label). Width is read from
-    -- and written to settings.independentWidth only; the bar frame itself is
-    -- never measured (see the FRAME RULES header).
-    ST.AttachMoverWidthResize(frame, {
-        dragHandle = dragHandle,
-        coordLabel = coordLabel,
+        return settings, settings
+    end,
+    ensureConfig = EnsureIndependentCastBarConfig,
+    refreshState = function(settings) UpdateIndependentCastBarDragState(settings) end,
+    captureRecord = function() CooldownCompanion:CaptureArrangeCastBarRecord() end,
+    -- Width is read from and written to settings.independentWidth only; the
+    -- bar frame itself is never measured (see the FRAME RULES header).
+    resize = {
         getWidth = function()
             local settings = GetCastBarSettings()
             return ClampCastBarDimension(settings and settings.independentWidth, 200)
@@ -334,64 +189,27 @@ local function EnsureCastBarMoverChrome(frame)
                 and not settings.independentAnchorLocked
                 and not CooldownCompanion._combatForcedLock
         end,
-        getAnchorPoint = function()
-            local settings = GetCastBarSettings()
-            local anchor = settings and settings.independentAnchor
-            return anchor and anchor.point or "CENTER"
-        end,
-    })
+    },
+})
 
-    -- Drag scripts
-    dragHandle:RegisterForDrag("LeftButton")
-    dragHandle:SetScript("OnDragStart", function()
-        CancelCoordinateEdit(coordLabel)
-        CancelCoordinateEdit(frame._sizeLabel)
-        local settings = GetCastBarSettings()
-        if not settings or settings.independentAnchorLocked then return end
-        if InCombatLockdown() then return end
-        -- Dragging solos this mover, mirroring container header drags.
-        if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
-            CooldownCompanion:SetArrangeSoloContainer("cast")
-        end
-        frame._dragCancelPending = nil
-        frame._dragInProgress = true
-        frame:StartMoving()
-        CooldownCompanion:BeginMoverChromeFade(frame)
-        CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
-            return candidateFrame == frame
-        end)
-        -- A drag is an edit: it saves the anchor its coordinates are read against.
-        EnsureIndependentCastBarConfig(settings)
-        StartIndependentCoordUpdates(frame, settings.independentAnchor)
-    end)
-    dragHandle:SetScript("OnDragStop", function()
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        frame:StopMovingOrSizing()
-        if not cancelSave then
-            CooldownCompanion:UpdateDragSnapSession(frame)
-        end
-        local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(frame, not cancelSave)
-        if snapDX ~= nil or snapDY ~= nil then
-            frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
-        end
-        StopIndependentCoordUpdates(frame)
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(frame)
-            return
-        end
-        SaveIndependentCastBarAnchor(true)
-        CooldownCompanion:EndMoverChromeFade(frame)
-    end)
+function CooldownCompanion:CancelIndependentCastBarDrag()
+    castMover.Cancel()
+end
 
-    frame._dragHandle = dragHandle
-    frame._nudger = nudger
-    frame._coordLabel = coordLabel
-    local settings = GetCastBarSettings()
-    local anchor = settings and settings.independentAnchor
-    UpdateIndependentCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
+ST.EnsureIndependentCastBarConfig = EnsureIndependentCastBarConfig
+
+ST.LockIndependentCastBarFromMover = castMover.Lock
+
+local function CreateCastBarMoverFrame()
+    if independentMoverFrame then return end
+
+    local frame = CreateFrame("Frame", "CooldownCompanionCastBarMover", UIParent, "BackdropTemplate")
+    frame:SetFrameStrata("HIGH")
+    frame:SetSize(200, 15)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+
+    independentMoverFrame = frame
 end
 
 UpdateIndependentCastBarDragState = function(settings)
@@ -403,11 +221,11 @@ UpdateIndependentCastBarDragState = function(settings)
         and not CooldownCompanion._combatForcedLock
         and not InCombatLockdown()
     if not unlocked and frame._dragInProgress then
-        CooldownCompanion:CancelIndependentCastBarDrag()
+        castMover.Cancel()
     end
 
     if unlocked and not CooldownCompanion:IsContainerArrangeChromeHidden("cast") then
-        EnsureCastBarMoverChrome(frame)
+        castMover.EnsureChrome(frame)
     end
     ST.MoverChrome.UpdateIndependent(frame, "cast", unlocked)
 
@@ -433,22 +251,7 @@ end
 
 local function HideIndependentCastBarMover()
     if not independentMoverFrame then return end
-    CooldownCompanion:CancelIndependentCastBarDrag()
-    independentMoverFrame._dragInProgress = nil
-    StopIndependentCoordUpdates(independentMoverFrame)
-    independentMoverFrame:Hide()
-    if independentMoverFrame._dragHandle then
-        independentMoverFrame._dragHandle:Hide()
-    end
-    if independentMoverFrame._nudger then
-        independentMoverFrame._nudger:Hide()
-    end
-    if independentMoverFrame._coordLabel then
-        independentMoverFrame._coordLabel:Hide()
-    end
-    if independentMoverFrame._sizeLabel then
-        independentMoverFrame._sizeLabel:Hide()
-    end
+    castMover.Hide()
     if independentMoverFrame._cdcUnlockAssist then
         independentMoverFrame._cdcUnlockAssist = false
         CooldownCompanion:StopCastBarUnlockAssist()

@@ -45,8 +45,6 @@ local DEFAULT_RESOURCE_TEXT_FONT = RB.DEFAULT_RESOURCE_TEXT_FONT
 local DEFAULT_RESOURCE_TEXT_SIZE = RB.DEFAULT_RESOURCE_TEXT_SIZE
 local DEFAULT_RESOURCE_TEXT_OUTLINE = RB.DEFAULT_RESOURCE_TEXT_OUTLINE
 local DEFAULT_RESOURCE_TEXT_COLOR = RB.DEFAULT_RESOURCE_TEXT_COLOR
-local INDEPENDENT_NUDGE_BTN_SIZE = RB.INDEPENDENT_NUDGE_BTN_SIZE
-local IsBarsConfigActive = RB.IsBarsConfigActive
 local SEGMENTED_TYPES = RB.SEGMENTED_TYPES
 local POWER_ATLAS_INFO = RB.POWER_ATLAS_INFO
 
@@ -63,18 +61,11 @@ local GetSpecLayoutOrder = RB.GetSpecLayoutOrder
 local GetResourceDisplayValue = RB.GetResourceDisplayValue
 local GetResourceSegmentedSmoothing = RB.GetResourceSegmentedSmoothing
 local GetResourceDisplayConfig = RB.GetResourceDisplayConfig
-local RoundToTenths = RB.RoundToTenths
 local ClampIndependentDimension = RB.ClampIndependentDimension
 local ResolveIndependentAnchorView = RB.ResolveIndependentAnchorView
 local UpdateIndependentStackDragState
 
-local CancelCoordinateEdit = ST.CancelCoordinateEdit
-local CreateEditableCoordLabel = ST.CreateEditableCoordLabel
-
 local UpdateIndependentCoordLabel = RB.UpdateIndependentCoordLabel
-local ComputeIndependentCoordinates = RB.ComputeIndependentCoordinates
-local StopIndependentCoordUpdates = RB.StopIndependentCoordUpdates
-local StartIndependentCoordUpdates = RB.StartIndependentCoordUpdates
 
 local DetermineActiveResources = RB.DetermineActiveResources
 local GetResourceColors = RB.GetResourceColors
@@ -179,20 +170,6 @@ function CooldownCompanion:SetIndependentResourceStackLocked(locked)
     end
 end
 
-function CooldownCompanion:CancelIndependentResourceStackDrag()
-    local frame = independentWrapperFrame
-    if not frame then return end
-    if frame._dragInProgress then
-        frame._dragCancelPending = true
-        frame:StopMovingOrSizing()
-        frame._dragInProgress = nil
-        StopIndependentCoordUpdates(frame)
-        self:EndMoverChromeFade(frame)
-    end
-    local settings = GetResourceBarSettings()
-    UpdateIndependentStackDragState(settings, settings and GetSpecLayoutOrder(settings))
-end
-
 local segmentedUpdateScratch = {}
 local HealthBar = RB.HealthBar
 local lifecycleModule = nil
@@ -244,153 +221,25 @@ local function EnsureIndependentStackConfig(settings, layout)
     end
 end
 
-local function SaveIndependentStackAnchor(refreshConfig)
-    if not independentWrapperFrame then return end
-    local settings = GetResourceBarSettings()
-    if not settings then return end
-    local placementSettings = GetSpecLayoutOrder(settings)
-    if not placementSettings then return end
-    EnsureIndependentStackConfig(settings, placementSettings)
-
-    local frame = independentWrapperFrame
-    local anchor = placementSettings.independentAnchor
-
-    local x, y = ComputeIndependentCoordinates(frame, anchor)
-    if x == nil or y == nil then return end
-    anchor.x = x
-    anchor.y = y
-    UpdateIndependentCoordLabel(frame, x, y)
-
-    if refreshConfig and IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
-        CooldownCompanion:RefreshConfigPanel()
-    end
-end
-
-local function ApplyIndependentStackCoordinates(frame, x, y)
-    local settings = GetResourceBarSettings()
-    if not settings then return end
-    local placementSettings = GetSpecLayoutOrder(settings)
-    if not placementSettings then return end
-    EnsureIndependentStackConfig(settings, placementSettings)
-
-    local anchor = placementSettings.independentAnchor
-    anchor.x = x
-    anchor.y = y
-    local relFrame = UIParent
-    if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
-        relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
-    end
-    frame:ClearAllPoints()
-    frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
-    UpdateIndependentCoordLabel(frame, x, y)
-    SaveIndependentStackAnchor(true)
-end
-
-function ST.LockIndependentResourceStackFromMover(frame)
-    frame = frame or independentWrapperFrame
-    if not frame then return end
-    local settings = GetResourceBarSettings()
-    if not settings then return end
-    local placementSettings = GetSpecLayoutOrder(settings)
-    if not placementSettings then return end
-    -- Locking the soloed mover would strand every other mover solo-hidden;
-    -- release the solo first (mirrors SetContainerLocked).
-    if CooldownCompanion._arrangeSoloContainerId == "resource"
-        and CooldownCompanion.SetArrangeSoloContainer then
-        CooldownCompanion:SetArrangeSoloContainer(nil)
-    end
-    placementSettings.independentAnchorLocked = true
-    frame._dragInProgress = nil
-    StopIndependentCoordUpdates(frame)
-    frame:StopMovingOrSizing()
-    SaveIndependentStackAnchor(true)
-    CooldownCompanion:EndMoverChromeFade(frame)
-    UpdateIndependentStackDragState(settings, placementSettings)
-    CooldownCompanion:CaptureArrangeResourceRecord()
-    if CooldownCompanion.RefreshUnlockToolbar then
-        CooldownCompanion:RefreshUnlockToolbar()
-    end
-    CooldownCompanion:CheckArrangeModeAutoExit()
-end
-
-local function CreateIndependentWrapperFrame()
-    if independentWrapperFrame then return end
-
-    local frame = CreateFrame("Frame", "CooldownCompanionResourceBarsIndependent", UIParent, "BackdropTemplate")
-    frame:SetFrameStrata("MEDIUM")
-    frame:SetSize(1, 1)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame._dragSnapRectFrame = CreateFrame("Frame", nil, frame)
-    frame._dragSnapRectFrame:Hide()
-
-    independentWrapperFrame = frame
-end
-
-local function EnsureIndependentStackMoverChrome(frame)
-    if frame._dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
-    -- Drag handle (full-width, anchored to containers by UpdateIndependentStackChrome)
-    local dragHandle = ST.MoverChrome.CreateHeader(frame, "Resource Bars", function()
-        ST.LockIndependentResourceStackFromMover(frame)
-    end, function() return { kind = "resource", focusId = "resource" } end)
-    dragHandle:EnableMouse(false)
-    dragHandle:RegisterForDrag()
-    dragHandle:Hide()
-
-    -- Hovering the name bar reveals precise controls. Selection belongs to
-    -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
-    dragHandle:SetScript("OnEnter", function()
-        ST.BeginMoverChromeHoverReveal(frame, function()
-            CooldownCompanion:RefreshIndependentResourceStackMoverChrome()
-        end)
-    end)
-    -- Nudger (4-direction pixel nudge)
-    local nudger = ST.MoverChrome.CreateNudger(dragHandle, INDEPENDENT_NUDGE_BTN_SIZE, function(dx, dy)
-        CancelCoordinateEdit(frame._coordLabel)
-        CancelCoordinateEdit(frame._sizeLabel)
+-- The mover itself (RB.CreateIndependentMover): everything the player does to
+-- it. This file keeps the wrapper pin and its snap rect, the placement reader
+-- and Ensure writer, the lock setter and what locking does to the stack.
+local stackMover = RB.CreateIndependentMover({
+    focusId = "resource",
+    title = "Resource Bars",
+    labelOnHeader = true,
+    getFrame = function() return independentWrapperFrame end,
+    -- The spec's layout or nil, never the class record: a spec with no layout
+    -- takes no mover edit.
+    getSettings = function()
         local settings = GetResourceBarSettings()
-        if not settings then return end
-        local placementSettings = GetSpecLayoutOrder(settings)
-        if not placementSettings then return end
-        if placementSettings.independentAnchorLocked then return end
-        frame:AdjustPointsOffset(dx, dy)
-        -- Write position per step and update coord label (GroupFrame pattern)
-        local _, _, _, x, y = frame:GetPoint()
-        if x and y then
-            EnsureIndependentStackConfig(settings, placementSettings)
-            placementSettings.independentAnchor.x = RoundToTenths(x)
-            placementSettings.independentAnchor.y = RoundToTenths(y)
-            UpdateIndependentCoordLabel(frame, x, y)
-        end
-    end, function() SaveIndependentStackAnchor(true) end)
-    nudger:EnableMouse(false)
-
-    -- Coordinate label (parented to dragHandle, anchored by UpdateIndependentStackChrome)
-    local coordLabel = ST.MoverChrome.CreateLabel(dragHandle)
-    CreateEditableCoordLabel(
-        coordLabel,
-        function()
-            local settings = GetResourceBarSettings()
-            local placementSettings = settings and GetSpecLayoutOrder(settings)
-            local anchor = placementSettings and placementSettings.independentAnchor
-            return anchor and anchor.x or 0, anchor and anchor.y or 0
-        end,
-        function(x, y)
-            ApplyIndependentStackCoordinates(frame, x, y)
-        end,
-        function()
-            return frame._dragInProgress == true
-                or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
-        end
-    )
-
-    -- Width resize chrome (grip + wheel + typed label). Writes go to the
-    -- per-spec layout table, mirroring the config slider; the grip anchors to
-    -- the snap rect because the wrapper itself is a 1x1 pin.
-    ST.AttachMoverWidthResize(frame, {
-        dragHandle = dragHandle,
-        coordLabel = coordLabel,
-        gripAnchor = frame._dragSnapRectFrame,
+        return settings, settings and GetSpecLayoutOrder(settings)
+    end,
+    ensureConfig = EnsureIndependentStackConfig,
+    refreshState = function(settings, placement) UpdateIndependentStackDragState(settings, placement) end,
+    captureRecord = function() CooldownCompanion:CaptureArrangeResourceRecord() end,
+    -- Writes go to the per-spec layout table, mirroring the config slider.
+    resize = {
         getWidth = function()
             local settings = GetResourceBarSettings()
             local placementSettings = settings and GetSpecLayoutOrder(settings)
@@ -446,72 +295,27 @@ local function EnsureIndependentStackMoverChrome(frame)
                 and not placementSettings.independentAnchorLocked
                 and not CooldownCompanion._combatForcedLock
         end,
-        getAnchorPoint = function()
-            local settings = GetResourceBarSettings()
-            local placementSettings = settings and GetSpecLayoutOrder(settings)
-            local anchor = placementSettings and placementSettings.independentAnchor
-            return anchor and anchor.point or "CENTER"
-        end,
-    })
+    },
+})
 
-    dragHandle:RegisterForDrag("LeftButton")
-    dragHandle:SetScript("OnDragStart", function()
-        CancelCoordinateEdit(coordLabel)
-        CancelCoordinateEdit(frame._sizeLabel)
-        local settings = GetResourceBarSettings()
-        if not settings then return end
-        local placementSettings = GetSpecLayoutOrder(settings)
-        if not placementSettings then return end
-        if placementSettings.independentAnchorLocked then return end
-        if InCombatLockdown() then return end
-        -- Dragging solos this mover, mirroring container header drags.
-        if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
-            CooldownCompanion:SetArrangeSoloContainer("resource")
-        end
-        frame._dragCancelPending = nil
-        frame._dragInProgress = true
-        frame:StartMoving()
-        CooldownCompanion:BeginMoverChromeFade(frame)
-        CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
-            return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
-        end)
-        -- A drag is an edit: it saves the anchor its coordinates are read against.
-        EnsureIndependentStackConfig(settings, placementSettings)
-        StartIndependentCoordUpdates(frame, placementSettings.independentAnchor)
-    end)
-    dragHandle:SetScript("OnDragStop", function()
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        frame:StopMovingOrSizing()
-        if not cancelSave then
-            CooldownCompanion:UpdateDragSnapSession(frame)
-        end
-        local snapDX, snapDY = CooldownCompanion:EndDragSnapSession(frame, not cancelSave)
-        if snapDX ~= nil or snapDY ~= nil then
-            frame:AdjustPointsOffset(snapDX or 0, snapDY or 0)
-        end
-        StopIndependentCoordUpdates(frame)
-        if cancelSave then
-            CooldownCompanion:EndMoverChromeFade(frame)
-            return
-        end
-        SaveIndependentStackAnchor(true)
-        CooldownCompanion:EndMoverChromeFade(frame)
-    end)
+function CooldownCompanion:CancelIndependentResourceStackDrag()
+    stackMover.Cancel()
+end
 
-    dragHandle:SetPoint("BOTTOMLEFT", frame._dragSnapRectFrame, "TOPLEFT", 0, 2)
-    dragHandle:SetPoint("BOTTOMRIGHT", frame._dragSnapRectFrame, "TOPRIGHT", 0, 2)
-    coordLabel:SetPoint("TOPLEFT", frame._dragSnapRectFrame, "BOTTOMLEFT", 0, -2)
-    coordLabel:SetPoint("TOPRIGHT", frame._dragSnapRectFrame, "BOTTOMRIGHT", 0, -2)
-    frame._dragHandle = dragHandle
-    frame._nudger = nudger
-    frame._coordLabel = coordLabel
-    local settings = GetResourceBarSettings()
-    local layout = settings and GetSpecLayoutOrder(settings)
-    local anchor = layout and layout.independentAnchor
-    UpdateIndependentCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
-    CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
+ST.LockIndependentResourceStackFromMover = stackMover.Lock
+
+local function CreateIndependentWrapperFrame()
+    if independentWrapperFrame then return end
+
+    local frame = CreateFrame("Frame", "CooldownCompanionResourceBarsIndependent", UIParent, "BackdropTemplate")
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetSize(1, 1)
+    frame:SetClampedToScreen(true)
+    frame:SetMovable(true)
+    frame._dragSnapRectFrame = CreateFrame("Frame", nil, frame)
+    frame._dragSnapRectFrame:Hide()
+
+    independentWrapperFrame = frame
 end
 
 local function IsIndependentStackUnlocked(placementSettings)
@@ -544,11 +348,11 @@ UpdateIndependentStackDragState = function(settings, placementSettings)
         CooldownCompanion:EnsureAlphaDriverArmed()
     end
     if not unlocked and frame._dragInProgress then
-        CooldownCompanion:CancelIndependentResourceStackDrag()
+        stackMover.Cancel()
     end
 
     if unlocked and not CooldownCompanion:IsContainerArrangeChromeHidden("resource") then
-        EnsureIndependentStackMoverChrome(frame)
+        stackMover.EnsureChrome(frame)
     end
     ST.MoverChrome.UpdateIndependent(frame, "resource", unlocked)
 
@@ -578,22 +382,7 @@ end
 
 local function HideIndependentWrapperFrame()
     if not independentWrapperFrame then return end
-    CooldownCompanion:CancelIndependentResourceStackDrag()
-    independentWrapperFrame._dragInProgress = nil
-    StopIndependentCoordUpdates(independentWrapperFrame)
-    independentWrapperFrame:Hide()
-    if independentWrapperFrame._dragHandle then
-        independentWrapperFrame._dragHandle:Hide()
-    end
-    if independentWrapperFrame._nudger then
-        independentWrapperFrame._nudger:Hide()
-    end
-    if independentWrapperFrame._coordLabel then
-        independentWrapperFrame._coordLabel:Hide()
-    end
-    if independentWrapperFrame._sizeLabel then
-        independentWrapperFrame._sizeLabel:Hide()
-    end
+    stackMover.Hide()
     if independentWrapperFrame._cdcUnlockAssist then
         independentWrapperFrame._cdcUnlockAssist = false
         CooldownCompanion:StopResourceBarUnlockAssist()
