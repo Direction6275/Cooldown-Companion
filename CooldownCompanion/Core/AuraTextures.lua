@@ -198,8 +198,8 @@ local function CopyColor(color)
     return { color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 }
 end
 
--- CopyColor's values, written into the saved table itself, so the read-time
--- normalizers below do not allocate a fresh color on every render pass.
+-- CopyColor's values, written into the table it is given, so the saved-data
+-- normalizers below keep the color table an Indicator already has.
 local function FillColor(color)
     if type(color) ~= "table" then
         return nil
@@ -662,17 +662,16 @@ local ResolveGroup = ST.ResolveGroup
 
 AT.NormalizeAuraTextureSettings = NormalizeAuraTextureSettings
 
+-- The three Indicator getters return the saved tables as they are (rule Q1).
+-- ST.Indicator.Prepare keeps them complete at login, import, creation and copy.
 function CooldownCompanion:GetIndicatorTextureSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return NormalizeAuraTextureSettings(ST.Indicator.Initialize(group).signal) end
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.signal
 end
 
 function CooldownCompanion:GetIndicatorEffectSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if not ST.IsIndicatorGroup(group) then return end
-    ST.Indicator.Effects(group)
-    return ST.Indicator.NormalizeEffectsForFamily(group,
-        CooldownCompanion.NormalizeIndicatorEffectStore(ST.Indicator.Settings(group)))
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.effects
 end
 
 function CooldownCompanion:ResetTextureIndicatorRootState(host)
@@ -708,6 +707,28 @@ function CooldownCompanion.IsValidIndicatorIconTexture(iconTexture)
     return resolvedTexture ~= nil
 end
 
+-- The size keys of an icon settings table, clamped, read without writing:
+-- square, button size, width, height.
+local function ResolveIndicatorIconSize(settings)
+    local buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
+    return settings.maintainAspectRatio ~= false, buttonSize,
+        Clamp(tonumber(settings.iconWidth) or buttonSize, 10, 150),
+        Clamp(tonumber(settings.iconHeight) or buttonSize, 10, 150)
+end
+
+-- An Icon display's width and height from its saved icon settings, without
+-- copying them: what GetIndicatorIconDimensions gives for the normalized copy.
+function CooldownCompanion.GetSavedIndicatorIconDimensions(settings)
+    if type(settings) ~= "table" then
+        return 36, 36
+    end
+    local square, buttonSize, width, height = ResolveIndicatorIconSize(settings)
+    if square then
+        return buttonSize, buttonSize
+    end
+    return width, height
+end
+
 function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     if type(settings) ~= "table" then
         return nil
@@ -716,11 +737,9 @@ function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     settings.manualIcon = CooldownCompanion.IsValidIndicatorIconTexture(settings.manualIcon)
             and settings.manualIcon
         or nil
-    settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
     settings.iconZoom = Clamp(tonumber(settings.iconZoom) or 0, 0, 50)
-    settings.buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
-    settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
-    settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
+    settings.maintainAspectRatio, settings.buttonSize, settings.iconWidth, settings.iconHeight =
+        ResolveIndicatorIconSize(settings)
     settings.borderSize = Clamp(tonumber(settings.borderSize) or 1, 0, 5)
     settings.borderRenderMode = ST.GetBorderRenderMode(settings)
     settings.borderColor = FillColor(settings.borderColor) or { 0, 0, 0, 1 }
@@ -737,8 +756,8 @@ function CooldownCompanion:GetIndicatorDisplayType(groupOrId)
 end
 
 function CooldownCompanion:GetIndicatorIconSettings(groupOrId)
-    local group = ResolveGroup(groupOrId)
-    if ST.IsIndicatorGroup(group) then return CooldownCompanion.NormalizeIndicatorIconSettings(ST.Indicator.Initialize(group).icon) end
+    local settings = ST.Indicator.Settings(ResolveGroup(groupOrId))
+    return settings and settings.icon
 end
 
 
@@ -848,7 +867,9 @@ function CooldownCompanion:NormalizeTriggerConditionRowData(buttonData)
 
     local clauses = self:GetTriggerConditionClauses(buttonData)
     local primaryClause = clauses[1]
-    if primaryClause then
+    -- The singular keys are the legacy storage form; they are kept in step
+    -- only for an entry that has no clause list.
+    if primaryClause and type(buttonData.triggerConditions) ~= "table" then
         buttonData.triggerCondition = primaryClause.key
         if BOOLEAN_TRIGGER_CONDITIONS[primaryClause.key] then
             buttonData.triggerExpected = primaryClause.expected ~= false

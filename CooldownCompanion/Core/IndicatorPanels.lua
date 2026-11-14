@@ -402,13 +402,12 @@ end
 -- artwork to tint on Text Only. A derived description keyed by effect, never
 -- a second saved store.
 local function CollectNativeEffects(group, skipCombatOnly)
-    I.Effects(group)
     local settings = I.Settings(group)
-    local store = Addon.NormalizeIndicatorEffectStore(settings)
+    local store = settings.effects or {}
     local effects = {}
     for _, key in ipairs(I.EffectOrder) do
         local effect = store[key]
-        if effect.enabled and not (key == "colorShift" and settings.displayType == "text")
+        if effect and effect.enabled == true and not (key == "colorShift" and settings.displayType == "text")
             and not (skipCombatOnly and effect.combatOnly) then
             effects[key] = {speed = effect.speed, color = effect.color and CopyTable(effect.color)}
         end
@@ -495,6 +494,32 @@ function I.Initialize(group)
     return settings
 end
 
+-- SAVED-DATA PASS (rule Q1) for one Indicator: fills what readers need (the
+-- defaults, the effect store's four sections, clamped texture settings).
+-- Runs at login, profile change and import (IndicatorMigration, and the
+-- stopped-conversion return in RunAllMigrations), when an Indicator is made
+-- (CreatePanel), and after a copy or template apply (ApplyPresentation).
+-- Reads never call it: they return the saved tables as they are. Idempotent
+-- and silent. Never for a Panel Template. The icon needs no pass:
+-- I.IconSettings normalizes a copy.
+function I.Prepare(group)
+    local settings = I.Initialize(group)
+    if not settings then return end
+    I.Effects(group)
+    Addon.NormalizeIndicatorEffectStore(settings)
+    -- Where Animate When cannot run (While Missing, aura lists), an enabled
+    -- effect never keeps a choice: the Effects tab clears it on enable. This
+    -- covers data that arrived another way. A turned-off effect keeps its own.
+    if group.buttons and I.UsesPresence(group) then
+        for _, key in ipairs(I.EffectOrder) do
+            local effect = settings.effects[key]
+            if effect.enabled then effect.activation = nil end
+        end
+    end
+    ST._AT.NormalizeAuraTextureSettings(settings.signal)
+    return settings
+end
+
 -- The Pandemic effect is on: the Icon glow, the Texture and Text recolor.
 function I.PandemicEffectOn(group)
     local settings = I.Settings(group)
@@ -574,9 +599,9 @@ local FAMILY_LIMITS = {
 }
 
 -- Adapts the enabled effects to `family` and adds each change's chat note to
--- `notes`. Disabled effects keep their saved rules; for While Missing the
--- store drops Animate When whenever it is read (I.NormalizeEffectsForFamily),
--- and native auras clear theirs when an effect is enabled (Effects tab).
+-- `notes`. Disabled effects keep their saved rules: where Animate When cannot
+-- run (While Missing, aura lists, native auras) the runtime never reads a
+-- choice, and the Effects tab clears it when the effect is turned on.
 local function AdaptEffects(settings, family, notes)
     local limits = FAMILY_LIMITS[family]
     local effects = settings.effects or {}
@@ -600,18 +625,6 @@ local function AdaptEffects(settings, family, notes)
             .. " while the Indicator is shown (" .. limits.rules .. ")."
     end
     if #off > 0 then notes[#notes + 1] = ListNames(off) .. " is off (" .. limits.textWhy .. ")." end
-end
-
--- The one read-time rule for While Missing: Animate When never applies, so a
--- saved choice (from a spell past, a copy, or any enable path) is dropped
--- whenever the store is read for the runtime or the config.
-function I.NormalizeEffectsForFamily(group, store)
-    if not (store and I.UsesPresence(group)) then return store end
-    for _, key in ipairs(I.EffectOrder) do
-        local effect = store[key]
-        if type(effect) == "table" then effect.activation = nil end
-    end
-    return store
 end
 
 local function NoticeText(notes)
@@ -765,7 +778,6 @@ function I.OnSourceAdded(group, entry)
                 expected = entry.triggerExpected, state = entry.triggerState}}
         else
             entry.triggerConditions = {{key = "cooldownActive", expected = false}}
-            entry.triggerCondition, entry.triggerExpected = "cooldownActive", false
         end
     end
     return true, notice
@@ -789,13 +801,20 @@ function I.IconSettings(group)
     return icon
 end
 
+-- The chosen icon, while the game can load it. One it cannot load stays
+-- saved and is not used; reads never erase it (rule Q1).
+function I.ChosenIcon(group)
+    local settings = I.Settings(group)
+    local chosen = settings and settings.icon and settings.icon.manualIcon
+    if chosen and Addon.IsValidIndicatorIconTexture(chosen) then return chosen end
+end
+
 -- Just the icon an Icon display draws (a valid chosen icon, else the main
 -- source's), without copying the icon settings: the preview asks per tick.
 function I.ArtworkIcon(group)
-    local settings = I.Settings(group)
-    if not settings then return end
-    local chosen = settings.icon and settings.icon.manualIcon
-    if chosen and Addon.IsValidIndicatorIconTexture(chosen) then return chosen end
+    if not I.Settings(group) then return end
+    local chosen = I.ChosenIcon(group)
+    if chosen then return chosen end
     local source = I.Primary(group)
     return source and SourceIcon(source)
 end
@@ -1276,7 +1295,7 @@ function I.ApplyPresentation(source, destination, appearance, effects)
         -- before the Text recolor (I.Initialize's one-time turn-off).
         target.pandemic.textRecolorReviewed = true
     end
-    I.Initialize(destination)
+    I.Prepare(destination)
     CopyTimerPolicy(marker, target.readouts, I.PandemicMarkerKeys)
     if appearance then NormalizeCountReadouts(destination) end
     return true

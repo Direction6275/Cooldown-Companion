@@ -56,8 +56,12 @@ function Chrome.CreateNudger(parent, buttonSize, nudge, commit)
     nudger:SetScript("OnHide", function(self)
         addon:EndMoverChromeFade(self)
     end)
-    -- A press is committed once, on release or on leaving while held; a hover
-    -- alone commits nothing.
+    -- One nudge contract for every mover: nudge(dx, dy) runs on press, moves
+    -- the frame and writes its spot; commit() runs once per press, on release
+    -- or on leaving while held, and finishes the move. A panel's commit only
+    -- refreshes an open settings window. A Group's and an Independent bar's
+    -- commit is still their save: it works out the position against the
+    -- anchor target, then refreshes. A hover alone commits nothing.
     local pending = false
     local function CommitPending()
         if not pending then return end

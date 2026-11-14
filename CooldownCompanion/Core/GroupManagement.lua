@@ -1303,7 +1303,7 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     end
 
 
-    ST.Indicator.Initialize(db.groups[groupId])
+    ST.Indicator.Prepare(db.groups[groupId])
     self:CreateGroupFrame(groupId)
     if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()

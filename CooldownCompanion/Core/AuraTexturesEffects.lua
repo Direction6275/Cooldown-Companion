@@ -610,45 +610,6 @@ local function StopAllTextureIndicatorEffects(host)
     SetTextureIndicatorBaseVisuals(host)
 end
 
-local function IsIndicatorActivationActive(button, activation, config)
-    if config.enabled ~= true then
-        return false
-    end
-    if config.combatOnly and not InCombatLockdown() then
-        return false
-    end
-
-    if activation == "proc" then
-        return button._procOverlayActive == true
-    end
-
-    local buttonData = button.buttonData
-    if activation == "ready" then
-        if not buttonData or buttonData.isPassive or button._noCooldown then
-            return false
-        end
-        return button._desatCooldownActive == false
-    end
-
-    if activation == "unusable" then
-        if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
-            return false
-        end
-        if buttonData.type == "spell" then
-            return not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
-        end
-        if IsRuntimeItemLike(buttonData) then
-            local itemID = button._resolvedItemId or buttonData.id
-            return not itemID or not C_Item_IsUsableItem(itemID)
-        end
-        return false
-    end
-
-    -- "aura" is a retired value legacy conversion still writes (config shows
-    -- it as 'Aura (Unavailable)'); it never activates.
-    return false
-end
-
 local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
     if not button then
         return false
@@ -772,6 +733,86 @@ local function EvaluateTriggerRowCondition(button, conditionKey, readableOnly)
     return false
 end
 
+-- The entry-level half of EvaluateTriggerRowCondition's nil results: false
+-- when the evaluator can never read this rule on this source, so the rule
+-- fails closed. The Visibility editor marks such a rule Unavailable. Change
+-- the two together. Reads only.
+local function CanReadTriggerRowCondition(buttonData, conditionKey)
+    if not buttonData then
+        return false
+    end
+    if conditionKey == "cooldownActive" or conditionKey == "procActive" then
+        return true
+    end
+    if conditionKey == "rangeActive" or conditionKey == "usable" then
+        if buttonData.isPassive or buttonData.isPassiveCooldown then
+            return false
+        end
+        return buttonData.type == "spell" or IsRuntimeItemLike(buttonData) == true
+    end
+    if conditionKey == "countTextActive" then
+        return CooldownCompanion.HasNonChargeCountTextBehavior ~= nil
+            and CooldownCompanion.HasNonChargeCountTextBehavior(buttonData) == true
+    end
+    -- Without charge behavior the cooldown update clears every charge and
+    -- count field these rules read.
+    local usesCharges = CooldownCompanion.UsesChargeBehavior ~= nil
+        and CooldownCompanion.UsesChargeBehavior(buttonData) == true
+    if conditionKey == "chargesRecharging" then
+        return usesCharges
+    end
+    if conditionKey == "chargeState" then
+        return usesCharges and buttonData.hasCharges == true
+    end
+    if conditionKey == "countState" then
+        return usesCharges and buttonData.hasCharges ~= true
+    end
+    return false
+end
+
+-- Animate When reads the display source. Proc Active and Off Cooldown use
+-- When to Show's checks. Off Cooldown never animates a passive or a spell with
+-- no cooldown. Unusable keeps its own check: an item with no resolved ID
+-- counts as unusable here, where the rule reads nothing.
+local function IsIndicatorActivationActive(button, activation, config)
+    if config.enabled ~= true then
+        return false
+    end
+    if config.combatOnly and not InCombatLockdown() then
+        return false
+    end
+
+    if activation == "proc" then
+        return EvaluateTriggerRowCondition(button, "procActive", true) == true
+    end
+
+    local buttonData = button.buttonData
+    if activation == "ready" then
+        if not buttonData or buttonData.isPassive or button._noCooldown then
+            return false
+        end
+        return EvaluateTriggerRowCondition(button, "cooldownActive", true) == false
+    end
+
+    if activation == "unusable" then
+        if not buttonData or buttonData.isPassive or buttonData.isPassiveCooldown then
+            return false
+        end
+        if buttonData.type == "spell" then
+            return not C_Spell_IsSpellUsable(button._displaySpellId or buttonData.id)
+        end
+        if IsRuntimeItemLike(buttonData) then
+            local itemID = button._resolvedItemId or buttonData.id
+            return not itemID or not C_Item_IsUsableItem(itemID)
+        end
+        return false
+    end
+
+    -- "aura" is a retired value legacy conversion still writes (config shows
+    -- it as 'Aura (Unavailable)'); it never activates.
+    return false
+end
+
 local function DoesIndicatorMatch(frame)
     local group = frame and frame.groupId and ResolveGroup(frame.groupId)
     return ST.Indicator.Match(frame, group)
@@ -788,13 +829,18 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
         return
     end
 
+    -- While Missing and aura lists have no Animate When: every enabled effect
+    -- runs while the Indicator is shown, and Only In Combat still applies. A
+    -- turned-off effect may keep a choice from a spell source; it is never
+    -- read here.
+    local alwaysShown = ST.Indicator.UsesPresence(group)
     local activeEffects = {}
     for key, config in pairs(effects) do
         if config.enabled then
             -- Detached config samples demonstrate enabled effects without live state.
             local active = previewEffects == true
             if not active then
-                local activation = config.activation or "always"
+                local activation = alwaysShown and "always" or config.activation or "always"
                 active = activation == "always" and (not config.combatOnly or InCombatLockdown())
                 if activation ~= "always" then
                     active = IsIndicatorActivationActive(button, activation, config)
@@ -852,3 +898,4 @@ AT.SetTextureIndicatorBaseVisuals = SetTextureIndicatorBaseVisuals
 AT.StopAllTextureIndicatorEffects = StopAllTextureIndicatorEffects
 AT.DoesIndicatorMatch = DoesIndicatorMatch
 AT.EvaluateTriggerRowCondition = EvaluateTriggerRowCondition
+AT.CanReadTriggerRowCondition = CanReadTriggerRowCondition

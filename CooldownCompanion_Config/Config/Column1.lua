@@ -554,11 +554,6 @@ local function TogglePanelAnchorLock(panelId)
         isLocked = not CooldownCompanion:IsCursorAnchorLayoutPreviewGroupActive(panelId)
     end
     CooldownCompanion:SetPanelLocked(panelId, not isLocked)
-    if isLocked then
-        CooldownCompanion:Print((panel.name or "Panel") .. " unlocked. Drag to reposition.")
-    else
-        CooldownCompanion:Print((panel.name or "Panel") .. " locked.")
-    end
     CooldownCompanion:RefreshConfigPanel()
     if isLocked and ST.CollapseConfigForUnlock then
         ST.CollapseConfigForUnlock()

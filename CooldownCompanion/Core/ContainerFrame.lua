@@ -1370,7 +1370,6 @@ function ST.LockContainerFromMover(containerId)
     CooldownCompanion:SetContainerLocked(containerId, true)
     CooldownCompanion:CaptureArrangeContainerRecord(containerId)
     CooldownCompanion:RefreshConfigPanel()
-    CooldownCompanion:Print(container.name .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 

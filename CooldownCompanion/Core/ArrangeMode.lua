@@ -81,6 +81,10 @@ local function ForceCombatMouseLock(frame)
     if frame.SetMouseMotionEnabled and canChangeProtectedState then
         frame:SetMouseMotionEnabled(false)
     end
+    -- The click-through helper did not make this change, so it must not skip
+    -- its next call as "already applied": a panel body comes back through it
+    -- after combat.
+    ST.InvalidateFrameClickThrough(frame)
 end
 
 local function CanSafelyChangeFrameVisibility(frame)
@@ -372,6 +376,8 @@ function CooldownCompanion:CaptureArrangeSnapshot()
     self:CaptureArrangeResourceRecord()
 end
 
+-- Writes the snapshot's values back into the saved settings and re-places the
+-- Group frames. Cancel rebuilds everything else once afterwards.
 local function RestoreArrangeSnapshot(addon, snapshot)
     if not snapshot then
         return
@@ -426,11 +432,11 @@ local function RestoreArrangeSnapshot(addon, snapshot)
         if container then
             RestoreArrangeTable(container, "anchor", record.anchor)
             container.locked = record.locked
-            -- Push the restored anchor back onto the frame directly. The refresh
-            -- pass below only re-anchors a container when normalization changes
-            -- its anchor, and a restored anchor is already normalized, so nothing
-            -- else moves the frame off the position the drag left it at. Panels
-            -- anchor relative to their container, so they follow from here.
+            -- Push the restored anchor back onto the frame directly. Cancel's
+            -- refresh re-places a kept Group frame only while it is marked, so
+            -- nothing else moves the frame off the position the drag left it
+            -- at. Panels anchor relative to their Group, so they follow from
+            -- here.
             local frame = addon.containerFrames and addon.containerFrames[containerId]
             if frame and type(container.anchor) == "table" then
                 addon:AnchorContainerFrame(frame, container.anchor)
@@ -456,15 +462,6 @@ local function RestoreArrangeSnapshot(addon, snapshot)
         record.settings.barWidth = record.barWidth
         record.settings.barHeight = record.barHeight
     end
-
-    addon:UnlockAllFrames()
-    addon:ApplyCastBarSettings()
-    addon:ApplyResourceBars()
-    addon:RefreshAllAuraTextureVisuals()
-    if addon.RefreshConfigPanel then
-        addon:RefreshConfigPanel()
-    end
-    addon:CheckConfigReExpandAfterLock()
 end
 
 function CooldownCompanion:IsArrangeModeActive()
@@ -1395,76 +1392,56 @@ function CooldownCompanion:UpdateContainerDragHandle(containerId, locked)
     end
 end
 
--- opts.keepSavedLocks: the profile was refused, so no lock is saved into it;
--- the session's frames and toolbar still come down.
--- opts.refreshReason: the reason for the RefreshAllGroups below.
-function CooldownCompanion:LockAllFrames(opts)
-    self._arrangePanelSuppressed = nil
-    self._arrangeContainerSuppressed = nil
-    self:ForgetArrangeHidden()
-    if not (opts and opts.keepSavedLocks) then
+-- A lock-all short of its rebuild: the session's suppression maps and eye
+-- flags go, every Group and panel lock is saved (saveLocks false leaves the
+-- saved locks alone), cursor previews end and every mover's chrome comes
+-- down. The caller rebuilds the frames next.
+local function LockAllWithoutRebuild(addon, saveLocks)
+    addon._arrangePanelSuppressed = nil
+    addon._arrangeContainerSuppressed = nil
+    addon:ForgetArrangeHidden()
+    if saveLocks then
         -- Lock every container, including containers hidden for this character.
         -- Write the bulk state directly: SetContainerLocked refreshes that
-        -- container's panels, while the single RefreshAllGroups below reconciles
-        -- the complete runtime once after every lock value is settled.
-        for _, container in pairs(self.db.profile.groupContainers or {}) do
+        -- container's panels, while the caller's single RefreshAllGroups
+        -- reconciles the complete runtime once after every lock value is settled.
+        for _, container in pairs(addon.db.profile.groupContainers or {}) do
             container.locked = true
         end
         -- Also lock any individually-unlocked panels
-        for groupId, group in pairs(self.db.profile.groups) do
+        for groupId, group in pairs(addon.db.profile.groups) do
             if group.locked == false then
                 group.locked = nil
             end
         end
     end
-    if self.ClearCursorAnchorLayoutPreview then
-        self:ClearCursorAnchorLayoutPreview(true)
+    if addon.ClearCursorAnchorLayoutPreview then
+        addon:ClearCursorAnchorLayoutPreview(true)
     end
-    for groupId, frame in pairs(self.groupFrames) do
+    for groupId, frame in pairs(addon.groupFrames) do
         if frame then
-            self:UpdateGroupClickthrough(groupId)
-            if self.SetGroupDragControlsShown then
-                self:SetGroupDragControlsShown(frame, false)
+            addon:UpdateGroupClickthrough(groupId)
+            if addon.SetGroupDragControlsShown then
+                addon:SetGroupDragControlsShown(frame, false)
             elseif frame.dragHandle then
                 frame.dragHandle:Hide()
             end
         end
     end
     -- Lock container frames
-    if self.containerFrames then
-        for containerId in pairs(self.containerFrames) do
-            self:UpdateContainerDragHandle(containerId, true)
+    if addon.containerFrames then
+        for containerId in pairs(addon.containerFrames) do
+            addon:UpdateContainerDragHandle(containerId, true)
         end
     end
-    self:RefreshAllGroups(opts and opts.refreshReason)
-    self:RefreshUnlockToolbar()
 end
 
-function CooldownCompanion:UnlockAllFrames()
-    -- Unlock containers only; individual panels retain their own lock state
-    for groupId, frame in pairs(self.groupFrames) do
-        if frame then
-            self:UpdateGroupClickthrough(groupId)
-            local _, panelUnlocked = self:GetPanelUnlockState(groupId)
-            if panelUnlocked and self.SetGroupDragControlsShown then
-                self:SetGroupDragControlsShown(frame, true)
-            elseif panelUnlocked and frame.dragHandle then
-                frame.dragHandle:Show()
-            end
-            if panelUnlocked then
-                self:ApplyGroupOwnAlpha(frame)
-            end
-        end
-    end
-    -- Unlock container frames
-    if self.containerFrames then
-        for containerId in pairs(self.containerFrames) do
-            local container = self.db.profile.groupContainers[containerId]
-            -- nil means locked; only an explicit false unlocks a container.
-            self:UpdateContainerDragHandle(containerId, not container or container.locked ~= false)
-        end
-    end
-    self:RefreshAllGroups()
+-- opts.keepSavedLocks: the profile was refused, so no lock is saved into it;
+-- the session's frames and toolbar still come down.
+-- opts.refreshReason: the reason for the RefreshAllGroups below.
+function CooldownCompanion:LockAllFrames(opts)
+    LockAllWithoutRebuild(self, not (opts and opts.keepSavedLocks))
+    self:RefreshAllGroups(opts and opts.refreshReason)
     self:RefreshUnlockToolbar()
 end
 
@@ -1519,21 +1496,29 @@ function CooldownCompanion:EnterArrangeMode()
     -- unlock scrolled to the top.
     pill._listScrollOffset = 0
     self:RefreshUnlockToolbar()
-    self:Print("All frames unlocked. Drag to move.")
+    self:Print("All frames unlocked.")
 end
 
+-- Ends the session itself: its Cancel snapshot, selection and suppression
+-- state go and any drag in hand is cancelled. Done and Cancel both start here.
+local function EndArrangeSession(addon)
+    addon._arrangeSnapshot = nil
+    addon._arrangeModeActive = nil
+    addon._arrangeFocusContainerId = nil
+    addon._arrangeSoloContainerId = nil
+    addon._arrangeSelectedPanelId = nil
+    addon._arrangeSectionGroupId = nil
+    addon._arrangeSectionAnchor = nil
+    addon._arrangeTreeRevealEntry = nil
+    addon._arrangePanelSuppressed = nil
+    addon._arrangeContainerSuppressed = nil
+    CancelActiveMoverGestures(addon)
+end
+
+-- opts.silent: no "All frames locked." line. The other options go to
+-- LockAllFrames.
 function CooldownCompanion:ExitArrangeMode(opts)
-    self._arrangeSnapshot = nil
-    self._arrangeModeActive = nil
-    self._arrangeFocusContainerId = nil
-    self._arrangeSoloContainerId = nil
-    self._arrangeSelectedPanelId = nil
-    self._arrangeSectionGroupId = nil
-    self._arrangeSectionAnchor = nil
-    self._arrangeTreeRevealEntry = nil
-    self._arrangePanelSuppressed = nil
-    self._arrangeContainerSuppressed = nil
-    CancelActiveMoverGestures(self)
+    EndArrangeSession(self)
     -- LockAllFrames also tears down cursor previews.
     self:LockAllFrames(opts)
     local saveLocks = not (opts and opts.keepSavedLocks)
@@ -1552,9 +1537,7 @@ function CooldownCompanion:ExitArrangeMode(opts)
     if not (opts and opts.silent) then
         self:Print("All frames locked.")
     end
-    if not (opts and opts.skipConfigReExpand) then
-        self:CheckConfigReExpandAfterLock()
-    end
+    self:CheckConfigReExpandAfterLock()
 end
 
 -- Arrange's Cancel snapshot and unlocks belong to the profile the session
@@ -1587,10 +1570,42 @@ function CooldownCompanion:CancelArrangeMode()
     end
 
     local snapshot = self._arrangeSnapshot
-    self._arrangeSnapshot = nil
-    self:ExitArrangeMode({ silent = true, skipConfigReExpand = true })
-    if snapshot then
-        RestoreArrangeSnapshot(self, snapshot)
+    EndArrangeSession(self)
+    -- Everything is locked first, so a Group, panel or bar the snapshot does
+    -- not know ends locked; the snapshot then puts back what it recorded,
+    -- including what was unlocked before the session.
+    LockAllWithoutRebuild(self, true)
+    local castSettings = self.GetCastBarSettings and self:GetCastBarSettings()
+    if castSettings then
+        castSettings.independentAnchorLocked = true
     end
+    local resourceSettings = self.GetResourceBarSettings and self:GetResourceBarSettings()
+    local resourceLayout = resourceSettings and ST._RB.GetSpecLayoutOrder(resourceSettings)
+    if resourceLayout then
+        resourceLayout.independentAnchorLocked = true
+    end
+    RestoreArrangeSnapshot(self, snapshot)
+
+    -- One rebuild from the restored settings.
+    if self.containerFrames then
+        for containerId in pairs(self.containerFrames) do
+            local container = self.db.profile.groupContainers[containerId]
+            -- nil means locked; only an explicit false unlocks a container.
+            self:UpdateContainerDragHandle(containerId, not container or container.locked ~= false)
+        end
+    end
+    if self._arrangeModePill then
+        self._arrangeModePill:Hide()
+    end
+    self:RefreshAllGroups()
+    self:ApplyCastBarSettings()
+    self:ApplyResourceBars()
+    self:RefreshAllAuraTextureVisuals()
+    -- Anything unlocked before the session brings the unlock window back.
+    self:RefreshUnlockToolbar()
+    if self.RefreshConfigPanel then
+        self:RefreshConfigPanel()
+    end
+    self:CheckConfigReExpandAfterLock()
     self:Print("Unlock cancelled. Unsaved changes reverted.")
 end

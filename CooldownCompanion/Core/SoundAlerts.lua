@@ -317,7 +317,8 @@ end
 function CooldownCompanion:GetConditionsIndicatorSoundAlertConfig(groupOrId, createIfMissing)
     local group = ResolveGroup(groupOrId)
     if not self:IsConditionsIndicatorGroup(group) then return end
-    local settings = ST.Indicator.Initialize(group)
+    local settings = ST.Indicator.Settings(group)
+    if not settings then return end
     if not settings.soundAlerts and createIfMissing then settings.soundAlerts = {} end
     return settings.soundAlerts
 end

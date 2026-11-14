@@ -605,7 +605,6 @@ local function LockAuraIndicatorFromMover(host)
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()
     end
-    CooldownCompanion:Print((group.name or "Indicator") .. " locked.")
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
@@ -1265,7 +1264,11 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         local geometry = self:GetIndicatorTextureRenderGeometry(settings)
         width, height = geometry.boundsWidth, geometry.boundsHeight
     elseif display.displayType == "icon" then
-        width, height = self.GetIndicatorIconDimensions(resolvedIcon or self.NormalizeIndicatorIconSettings(display.icon))
+        if resolvedIcon then
+            width, height = self.GetIndicatorIconDimensions(resolvedIcon)
+        else
+            width, height = self.GetSavedIndicatorIconDimensions(display.icon)
+        end
     else
         width, height = display.text.width or 180, display.text.height or 48
     end

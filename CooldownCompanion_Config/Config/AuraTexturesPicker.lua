@@ -441,11 +441,6 @@ function CooldownCompanion:ApplyIndicatorTextureEntry(settings, entry)
         AT.MIN_TEXTURE_PAIR_SPACING,
         AT.MAX_TEXTURE_PAIR_SPACING
     )
-    settings.point = AT.NormalizeAnchorPoint(settings.point or "CENTER")
-    settings.relativePoint = AT.NormalizeAnchorPoint(settings.relativePoint or "CENTER")
-    settings.relativeTo = type(settings.relativeTo) == "string" and settings.relativeTo ~= "" and settings.relativeTo or AT.UI_PARENT_NAME
-    settings.x = tonumber(settings.x) or 0
-    settings.y = tonumber(settings.y) or 0
 end
 
 function CooldownCompanion:CreateIndicatorTextureSelection(entry, baseSettings)
@@ -453,7 +448,8 @@ function CooldownCompanion:CreateIndicatorTextureSelection(entry, baseSettings)
         return nil
     end
 
-    local base = type(baseSettings) == "table" and NormalizeAuraTextureSettings(baseSettings) or nil
+    -- Read as saved: previewing an entry never writes the Indicator's settings.
+    local base = type(baseSettings) == "table" and baseSettings or nil
     local entryLocationType, entryDefaultPairSpacing
     if entry.locationType ~= nil then
         entryLocationType, entryDefaultPairSpacing = NormalizeTextureLayout(entry.locationType)

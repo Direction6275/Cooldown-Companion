@@ -320,7 +320,10 @@ function CooldownCompanion:SetupAlphaSync(frame, parentFrame)
     frame.alphaSyncFrame:SetScript("OnUpdate", AlphaSyncOnUpdate)
 end
 
-function CooldownCompanion:SaveGroupPosition(groupId)
+-- Saves a panel's spot from where its frame sits, re-places the frame and
+-- refreshes its Group's outline. A nudge press passes deferSettingsRefresh;
+-- its release refreshes an open settings window once.
+function CooldownCompanion:SaveGroupPosition(groupId, deferSettingsRefresh)
     local frame = self.groupFrames[groupId]
     local group = self.db.profile.groups[groupId]
 
@@ -353,7 +356,9 @@ function CooldownCompanion:SaveGroupPosition(groupId)
     ST.SetPanelBasePoint(frame, desiredPoint, relFrame, desiredRelPoint, newX, newY)
 
     UpdateCoordLabel(frame, newX, newY)
-    self:RefreshConfigPanel()
+    if not deferSettingsRefresh then
+        self:RefreshConfigPanel()
+    end
     local containerId = group.parentContainerId
     if containerId and self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(containerId)

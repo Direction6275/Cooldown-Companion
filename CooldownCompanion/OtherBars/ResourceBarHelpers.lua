@@ -2,10 +2,11 @@
     CooldownCompanion - ResourceBarHelpers
     Query/helper functions used by both ResourceBar.lua and
     ResourceBarVisuals.lua at runtime. Reads never write saved data: a spec's
-    layout and display profile are looked up, never created. The Ensure*
-    functions, PrepareSpecResourceLayout and SetBarLane (at a player's drag)
-    are the only writers. The session caches are the player class
-    id and the power-type secrecy memoization.
+    layout and display profile are looked up, never created. The writers
+    are the Ensure* functions, PrepareSpecResourceLayout, SetBarLane (at a
+    player's drag) and the Independent mover (anchor, lock and size at a
+    player's edit). The session caches are the player class id and the
+    power-type secrecy memoization.
 
     All functions are added to ST._RB so consuming files can alias them to
     locals at load time.
@@ -1499,6 +1500,237 @@ local function IsBarsConfigActive()
     end
     local configFrame = CooldownCompanion:GetConfigFrame()
     return configFrame and configFrame.frame and configFrame.frame:IsShown() == true
+end
+
+-- One mover for the Independent Cast Bar and the Independent Resource Bars.
+-- The bar file owns its frame, its placement reader and Ensure writer, and
+-- what locking or unlocking does to the bar; everything the player does to
+-- the mover runs here.
+-- spec:
+--   focusId        "cast" or "resource": unlock-window id, solo/focus id and
+--                  mover-menu kind
+--   title          name-bar text
+--   getFrame()     the mover frame, nil until the bar first builds it
+--   getSettings()  settings, placement (the table holding independentAnchor
+--                  and independentAnchorLocked); either may be nil
+--   ensureConfig(settings, placement)  saves the placement before an edit
+--                  changes it (rule Q1)
+--   refreshState(settings, placement)  the bar's own drag-state update
+--   captureRecord()  re-records this bar in the Arrange snapshot
+--   labelOnHeader  true parents the coordinate label to the name bar
+--   resize         the bar's ST.AttachMoverWidthResize options (sizes, apply,
+--                  isUnlocked, isVertical, isHeightEnabled); one table per
+--                  mover, because the chrome build adds its own fields
+function RB.CreateIndependentMover(spec)
+    local mover = {}
+    local focusId = spec.focusId
+
+    -- Clears the drag before the bar's drag-state update, which calls back
+    -- here when it finds a drag on a locked mover.
+    function mover.Cancel()
+        local frame = spec.getFrame()
+        if not frame then return end
+        if frame._dragInProgress then
+            frame._dragCancelPending = true
+            frame:StopMovingOrSizing()
+            frame._dragInProgress = nil
+            RB.StopIndependentCoordUpdates(frame)
+            CooldownCompanion:EndMoverChromeFade(frame)
+        end
+        spec.refreshState(spec.getSettings())
+    end
+
+    function mover.Save()
+        local frame = spec.getFrame()
+        if not frame then return end
+        local settings, placement = spec.getSettings()
+        if not (settings and placement) then return end
+        spec.ensureConfig(settings, placement)
+        local anchor = placement.independentAnchor
+        local x, y = RB.ComputeIndependentCoordinates(frame, anchor)
+        if x == nil or y == nil then return end
+        anchor.x = x
+        anchor.y = y
+        RB.UpdateIndependentCoordLabel(frame, x, y)
+        if IsBarsConfigActive() and CooldownCompanion.RefreshConfigPanel then
+            CooldownCompanion:RefreshConfigPanel()
+        end
+    end
+
+    local function ApplyCoordinates(frame, x, y)
+        local settings, placement = spec.getSettings()
+        if not (settings and placement) then return end
+        spec.ensureConfig(settings, placement)
+        local anchor = placement.independentAnchor
+        anchor.x = x
+        anchor.y = y
+        local relFrame = UIParent
+        if anchor.relativeTo and anchor.relativeTo ~= "UIParent" then
+            relFrame = CooldownCompanion:GetExternalAnchorFrame(anchor.relativeTo)
+        end
+        frame:ClearAllPoints()
+        frame:SetPoint(anchor.point, relFrame, anchor.relativePoint, x, y)
+        RB.UpdateIndependentCoordLabel(frame, x, y)
+        mover.Save()
+    end
+
+    -- The padlock and its unlock-window row. No chat line.
+    function mover.Lock(frame)
+        frame = frame or spec.getFrame()
+        if not frame then return end
+        local settings, placement = spec.getSettings()
+        if not (settings and placement) then return end
+        -- Locking the soloed mover would strand every other mover solo-hidden;
+        -- release the solo first (mirrors SetContainerLocked).
+        if CooldownCompanion._arrangeSoloContainerId == focusId
+            and CooldownCompanion.SetArrangeSoloContainer then
+            CooldownCompanion:SetArrangeSoloContainer(nil)
+        end
+        placement.independentAnchorLocked = true
+        frame._dragInProgress = nil
+        RB.StopIndependentCoordUpdates(frame)
+        frame:StopMovingOrSizing()
+        mover.Save()
+        CooldownCompanion:EndMoverChromeFade(frame)
+        spec.refreshState(settings, placement)
+        spec.captureRecord()
+        if CooldownCompanion.RefreshUnlockToolbar then
+            CooldownCompanion:RefreshUnlockToolbar()
+        end
+        CooldownCompanion:CheckArrangeModeAutoExit()
+    end
+
+    -- Built once, out of combat. Building saves nothing.
+    function mover.EnsureChrome(frame)
+        if frame._dragHandle or InCombatLockdown() or CooldownCompanion._combatForcedLock then return end
+        -- The Resource Bars wrapper is a 1x1 pin whose outline is its
+        -- _dragSnapRectFrame; the chrome hugs that rect. The Cast Bar proxy
+        -- is its own rect.
+        local rect = frame._dragSnapRectFrame or frame
+        local dragHandle = ST.MoverChrome.CreateHeader(frame, spec.title, function()
+            mover.Lock(frame)
+        end, function() return { kind = focusId, focusId = focusId } end)
+        dragHandle:SetPoint("BOTTOMLEFT", rect, "TOPLEFT", 0, 2)
+        dragHandle:SetPoint("BOTTOMRIGHT", rect, "TOPRIGHT", 0, 2)
+        dragHandle:EnableMouse(false)
+        dragHandle:RegisterForDrag()
+
+        -- Hovering the name bar reveals precise controls. Selection belongs to
+        -- the unlock toolbar; the title bar remains a drag/menu/lock surface.
+        dragHandle:SetScript("OnEnter", function()
+            ST.BeginMoverChromeHoverReveal(frame, function()
+                spec.refreshState(spec.getSettings())
+            end)
+        end)
+
+        -- A press moves the mover and writes its spot; the release saves once.
+        local nudger = ST.MoverChrome.CreateNudger(dragHandle, RB.INDEPENDENT_NUDGE_BTN_SIZE, function(dx, dy)
+            ST.CancelCoordinateEdit(frame._coordLabel)
+            ST.CancelCoordinateEdit(frame._sizeLabel)
+            local settings, placement = spec.getSettings()
+            if not (settings and placement) or placement.independentAnchorLocked then return end
+            frame:AdjustPointsOffset(dx, dy)
+            local _, _, _, x, y = frame:GetPoint()
+            if x and y then
+                spec.ensureConfig(settings, placement)
+                placement.independentAnchor.x = RoundToTenths(x)
+                placement.independentAnchor.y = RoundToTenths(y)
+                RB.UpdateIndependentCoordLabel(frame, x, y)
+            end
+        end, mover.Save)
+        nudger:EnableMouse(false)
+
+        local coordLabel = ST.MoverChrome.CreateLabel(spec.labelOnHeader and dragHandle or frame)
+        coordLabel:SetPoint("TOPLEFT", rect, "BOTTOMLEFT", 0, -2)
+        coordLabel:SetPoint("TOPRIGHT", rect, "BOTTOMRIGHT", 0, -2)
+        ST.CreateEditableCoordLabel(
+            coordLabel,
+            function()
+                local _, placement = spec.getSettings()
+                local anchor = placement and placement.independentAnchor
+                return anchor and anchor.x or 0, anchor and anchor.y or 0
+            end,
+            function(x, y) ApplyCoordinates(frame, x, y) end,
+            function()
+                return frame._dragInProgress == true
+                    or (frame._resizeGrip and frame._resizeGrip._resizeActive == true)
+            end
+        )
+
+        -- Width resize chrome (grip + wheel + typed label). The grip anchors
+        -- to the snap rect when the mover has one.
+        local resize = spec.resize
+        resize.dragHandle = dragHandle
+        resize.coordLabel = coordLabel
+        resize.gripAnchor = frame._dragSnapRectFrame
+        resize.getAnchorPoint = function()
+            local _, placement = spec.getSettings()
+            local anchor = placement and placement.independentAnchor
+            return anchor and anchor.point or "CENTER"
+        end
+        ST.AttachMoverWidthResize(frame, resize)
+
+        dragHandle:RegisterForDrag("LeftButton")
+        dragHandle:SetScript("OnDragStart", function()
+            ST.CancelCoordinateEdit(coordLabel)
+            ST.CancelCoordinateEdit(frame._sizeLabel)
+            local settings, placement = spec.getSettings()
+            if not (settings and placement) or placement.independentAnchorLocked then return end
+            if InCombatLockdown() then return end
+            -- Dragging solos this mover, mirroring container header drags.
+            if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
+                CooldownCompanion:SetArrangeSoloContainer(focusId)
+            end
+            frame._dragCancelPending = nil
+            frame._dragInProgress = true
+            frame:StartMoving()
+            CooldownCompanion:BeginMoverChromeFade(frame)
+            CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
+                return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
+            end)
+            -- A drag is an edit: it saves the anchor its coordinates are read against.
+            spec.ensureConfig(settings, placement)
+            RB.StartIndependentCoordUpdates(frame, placement.independentAnchor)
+        end)
+        dragHandle:SetScript("OnDragStop", function()
+            local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+            frame._dragCancelPending = nil
+            frame._dragInProgress = nil
+            frame:StopMovingOrSizing()
+            ST._GroupFrame.ApplyEndedDragSnapSession(frame, not cancelSave)
+            RB.StopIndependentCoordUpdates(frame)
+            if not cancelSave then
+                mover.Save()
+            end
+            CooldownCompanion:EndMoverChromeFade(frame)
+        end)
+
+        frame._dragHandle = dragHandle
+        frame._nudger = nudger
+        frame._coordLabel = coordLabel
+        local _, placement = spec.getSettings()
+        local anchor = placement and placement.independentAnchor
+        RB.UpdateIndependentCoordLabel(frame, anchor and anchor.x, anchor and anchor.y)
+        CooldownCompanion:ApplyMoverChromeFadeToFrames(dragHandle, coordLabel, nudger, frame._resizeGrip, frame._sizeLabel)
+    end
+
+    -- The shared part of hiding the mover; the bar file then ends its own
+    -- unlock assist. Cancel runs first because it can rebuild and show the
+    -- chrome.
+    function mover.Hide()
+        local frame = spec.getFrame()
+        if not frame then return end
+        mover.Cancel()
+        frame._dragInProgress = nil
+        RB.StopIndependentCoordUpdates(frame)
+        frame:Hide()
+        if frame._dragHandle then frame._dragHandle:Hide() end
+        if frame._nudger then frame._nudger:Hide() end
+        if frame._coordLabel then frame._coordLabel:Hide() end
+        if frame._sizeLabel then frame._sizeLabel:Hide() end
+    end
+
+    return mover
 end
 
 ------------------------------------------------------------------------

@@ -3636,6 +3636,16 @@ local function PruneDisallowedEntrySections(profile)
     end
 end
 
+-- LABELED ENTRY PASS (rule Q1): Indicators are read as saved, so a stopped
+-- panel conversion still leaves each one complete before any frame is built.
+-- The full run prepares them in RunIndicatorMigration. Idempotent and silent.
+local function PrepareIndicators(profile)
+    if type(profile) ~= "table" or type(profile.groups) ~= "table" then return end
+    for _, group in pairs(profile.groups) do
+        if ST.IsIndicatorGroup(group) then ST.Indicator.Prepare(group) end
+    end
+end
+
 -- Consolidated entry point: enforces the 1.15 data cutoff and stamps profiles
 -- that are allowed to continue. Add new post-1.15 migrations here in order.
 function CooldownCompanion:RunAllMigrations()
@@ -3740,6 +3750,7 @@ function CooldownCompanion:RunAllMigrations()
         -- later successful one only adds entries or sets isPassive, so it
         -- never allows a section deleted here.
         PruneDisallowedEntrySections(self.db.profile)
+        PrepareIndicators(self.db.profile)
         return false
     end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end
