@@ -81,6 +81,10 @@ local function ForceCombatMouseLock(frame)
     if frame.SetMouseMotionEnabled and canChangeProtectedState then
         frame:SetMouseMotionEnabled(false)
     end
+    -- The click-through helper did not make this change, so it must not skip
+    -- its next call as "already applied": a panel body comes back through it
+    -- after combat.
+    ST.InvalidateFrameClickThrough(frame)
 end
 
 local function CanSafelyChangeFrameVisibility(frame)

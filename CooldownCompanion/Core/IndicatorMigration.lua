@@ -172,15 +172,17 @@ local function ConvertOne(source, entry, defaults, entryOrigins)
     end
     I.SetEffects(group, effects)
     I.NormalizeSourceEnablement(group)
-    I.Prepare(group)
     return group
 end
 
-function M.ConvertPanel(source, defaults)
+-- forTemplate: the result becomes a Panel Template's captured presentation,
+-- which is never prepared (I.Prepare).
+function M.ConvertPanel(source, defaults, forTemplate)
     if not RETIRED[source.displayMode] then
         local group = CopyTable(source)
         if ST.IsIndicatorGroup(group) then
-            I.Initialize(group); NormalizeSourceOrder(group); I.Effects(group); I.NormalizeSourceEnablement(group)
+            -- Prepare last: it reads the source order these two settle.
+            I.Initialize(group); NormalizeSourceOrder(group); I.NormalizeSourceEnablement(group)
             I.Prepare(group)
             group.indicatorSettings.legacyTextMetrics = nil
         end
@@ -206,6 +208,9 @@ function M.ConvertPanel(source, defaults)
             signal[key] = (signal[key] or 0) + (index - 1) * step * (vertical and -1 or 1)
             group.anchor = CopyTable(signal)
         end
+        -- After the split: its panel anchor is copied from the signal as
+        -- converted, a cursor anchor included, before the signal is normalized.
+        if not forTemplate then I.Prepare(group) end
         result[#result + 1] = group
     end
     return result, entryOrigins
@@ -254,9 +259,10 @@ function M.Apply(profile)
                 profile._indicatorEffectMigrationBackup = profile._indicatorEffectMigrationBackup or {}
                 profile._indicatorEffectMigrationBackup[id] = profile._indicatorEffectMigrationBackup[id] or CopyTable(group)
             end
+            -- Prepare last: it reads the source order these two settle, and
+            -- it runs the effect-store conversion the backup above is for.
             I.Initialize(group)
             NormalizeSourceOrder(group)
-            I.Effects(group)
             I.NormalizeSourceEnablement(group)
             I.Prepare(group)
             group.indicatorSettings.legacyTextMetrics = nil
@@ -275,7 +281,7 @@ function M.ApplyTemplates(store)
         if RETIRED[source.displayMode] and (version == nil or version == 1 or version == 2 or version == 3 or version == 4) then
             store._indicatorMigrationBackup = store._indicatorMigrationBackup or {}
             store._indicatorMigrationBackup[id] = store._indicatorMigrationBackup[id] or CopyTable(source)
-            local converted = M.ConvertPanel(source)[1]
+            local converted = M.ConvertPanel(source, nil, true)[1]
             converted.buttons = {}
             converted.indicatorSettings = I.CapturePresentation(converted)
             local fields = CopyTable(source.capturedFields or {style={},group={},loadConditions={},section={}})
@@ -306,11 +312,15 @@ function M.ConvertImport(data)
     local function Visit(value)
         if type(value) ~= 'table' then return end
         if ST.IsIndicatorGroup(value) then
-            if not value.templateVersion then I.Initialize(value); NormalizeSourceOrder(value) end
-            I.Effects(value)
-            I.NormalizeSourceEnablement(value)
-            -- A Panel Template captures presentation only and is never prepared.
-            if not value.templateVersion then I.Prepare(value) end
+            if value.templateVersion then
+                -- A Panel Template captures presentation only and is never
+                -- prepared: its effect store is converted and nothing else.
+                I.Effects(value)
+                I.NormalizeSourceEnablement(value)
+            else
+                I.Initialize(value); NormalizeSourceOrder(value); I.NormalizeSourceEnablement(value)
+                I.Prepare(value)
+            end
             if value.indicatorSettings then value.indicatorSettings.legacyTextMetrics = nil end
             return
         end

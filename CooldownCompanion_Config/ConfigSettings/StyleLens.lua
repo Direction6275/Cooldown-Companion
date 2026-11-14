@@ -591,7 +591,8 @@ end
 -- { label, apply(write) [, after] } where enabling sets more than one key;
 -- sites declare the plain ones as file-local constants. `enable.run` is the
 -- non-lens seam for a shared enable function that owns its WHOLE sequence,
--- refresh included (the texture indicators' collision handling).
+-- refresh included (the texture indicators' collision handling, and an
+-- Indicator effect's Enable, which must go through its row's SetEnabled).
 --
 -- The enable action is deliberately ONE-WAY (owner ruling 2026-08-31, after
 -- trying every variant in game): the footer may turn a feature ON to start
@@ -603,11 +604,6 @@ local ADVANCED_UNLOCK_REFRESH = {
     -- Resource settings: apply the module, then rebuild.
     resourceBars = function(target)
         ST._CompleteConfigEdit(target, "style-settings")
-    end,
-    -- Indicator effects: restyle the Indicator visuals, then rebuild.
-    auraTextures = function()
-        CooldownCompanion:RefreshAllAuraTextureVisuals()
-        CooldownCompanion:RefreshConfigPanel()
     end,
     -- Cast bar contents: apply the live cast bar, then rebuild.
     castBar = function()

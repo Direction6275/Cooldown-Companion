@@ -707,6 +707,28 @@ function CooldownCompanion.IsValidIndicatorIconTexture(iconTexture)
     return resolvedTexture ~= nil
 end
 
+-- The size keys of an icon settings table, clamped, read without writing:
+-- square, button size, width, height.
+local function ResolveIndicatorIconSize(settings)
+    local buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
+    return settings.maintainAspectRatio ~= false, buttonSize,
+        Clamp(tonumber(settings.iconWidth) or buttonSize, 10, 150),
+        Clamp(tonumber(settings.iconHeight) or buttonSize, 10, 150)
+end
+
+-- An Icon display's width and height from its saved icon settings, without
+-- copying them: what GetIndicatorIconDimensions gives for the normalized copy.
+function CooldownCompanion.GetSavedIndicatorIconDimensions(settings)
+    if type(settings) ~= "table" then
+        return 36, 36
+    end
+    local square, buttonSize, width, height = ResolveIndicatorIconSize(settings)
+    if square then
+        return buttonSize, buttonSize
+    end
+    return width, height
+end
+
 function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     if type(settings) ~= "table" then
         return nil
@@ -715,11 +737,9 @@ function CooldownCompanion.NormalizeIndicatorIconSettings(settings)
     settings.manualIcon = CooldownCompanion.IsValidIndicatorIconTexture(settings.manualIcon)
             and settings.manualIcon
         or nil
-    settings.maintainAspectRatio = settings.maintainAspectRatio ~= false
     settings.iconZoom = Clamp(tonumber(settings.iconZoom) or 0, 0, 50)
-    settings.buttonSize = Clamp(tonumber(settings.buttonSize) or 36, 10, 150)
-    settings.iconWidth = Clamp(tonumber(settings.iconWidth) or settings.buttonSize, 10, 150)
-    settings.iconHeight = Clamp(tonumber(settings.iconHeight) or settings.buttonSize, 10, 150)
+    settings.maintainAspectRatio, settings.buttonSize, settings.iconWidth, settings.iconHeight =
+        ResolveIndicatorIconSize(settings)
     settings.borderSize = Clamp(tonumber(settings.borderSize) or 1, 0, 5)
     settings.borderRenderMode = ST.GetBorderRenderMode(settings)
     settings.borderColor = FillColor(settings.borderColor) or { 0, 0, 0, 1 }

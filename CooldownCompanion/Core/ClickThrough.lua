@@ -110,6 +110,15 @@ function ST.SetFrameClickThrough(frame, disableClicks, disableMotion)
     frame._cdcClickThroughProtectedApplied = not inCombat
 end
 
+-- For code that changes a frame's mouse state outside this helper (combat's
+-- forced lock): the next ST.SetFrameClickThrough call out of combat applies
+-- the full state again instead of trusting what it applied before.
+function ST.InvalidateFrameClickThrough(frame)
+    if frame then
+        frame._cdcClickThroughProtectedApplied = nil
+    end
+end
+
 local function SetChildFramesClickThrough(disableClicks, disableMotion, ...)
     for i = 1, select("#", ...) do
         ST.SetFrameClickThroughRecursive(select(i, ...), disableClicks, disableMotion)
