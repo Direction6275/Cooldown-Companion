@@ -130,7 +130,7 @@ local function BuildRulesCard(preview, model, width)
         local note = AceGUI:Create("Label")
         note:SetFontObject(GameFontHighlight)
         note:SetColor(WARNING[1], WARNING[2], WARNING[3])
-        local replacing = "Search for the new source in the field at the top. It starts with fresh rules; the look is kept."
+        local replacing = "The new source starts with fresh rules; the look is kept."
         if #model.sources > 1 then replacing = replacing .. " Other spell and item sources stay." end
         note:SetText(model.replacing and replacing or "This Indicator is off. These rules apply once it is on.")
         note:SetFullWidth(true)
@@ -250,7 +250,7 @@ function PP.BuildIndicatorPreview(preview, host, panelId, group, readOnly)
     local I = ST.Indicator
     if readOnly or not I.Primary(group) then ReleaseSourceControls(preview) end
     if not I.Primary(group) then
-        PP.SetPreviewMessage(preview, "Add spells, items, or auras in the field at the top.", "Choose a source")
+        PP.SetPreviewMessage(preview, nil, "Choose a source")
         PP.FinalizePreviewState(preview)
         return
     end

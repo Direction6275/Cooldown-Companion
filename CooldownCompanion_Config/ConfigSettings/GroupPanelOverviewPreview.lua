@@ -66,7 +66,6 @@ local EMPTY_STATE_DIVIDER_ALPHA = 0.8
 local EMPTY_STATE_SECTION_GAP = 14
 local EMPTY_STATE_SUBLINE_COLOR = { 0.7, 0.7, 0.7 }
 local EMPTY_STATE_HEADING_TEXT = "Choose your first panel"
-local EMPTY_STATE_SUBLINE_TEXT = "Add a display to this group."
 
 -- Panel-type picker. Every card says what it makes on its own face; ordinary
 -- cards also keep the descriptor's fuller explanation as hover help.
@@ -77,14 +76,11 @@ local CARD_TITLE_COLOR = { 1, 0.82, 0 }
 local CARD_BODY_COLOR = { 0.72, 0.82, 0.92 }
 local CARD_BODY_FONT = "GameFontHighlight"
 
--- Each family explains its behavior once, above its Icons / Bars choices.
+-- Each family is named once, above its Icons / Bars choices.
 local PICKER_FAMILIES = {
-    { key = "aura", label = "Aura Panels",
-        description = "Tracked buffs and debuffs, shown while active." },
-    { key = "totem", label = "Totem Panels",
-        description = "Active totems and summons, added automatically." },
+    { key = "aura", label = "Aura Panels" },
+    { key = "totem", label = "Totem Panels" },
 }
-local FAMILY_COLLAPSE_NOTE = "Inactive auras and empty totem slots collapse."
 
 local LIBRARY_BUTTON_HEIGHT = 26
 local LIBRARY_ICON_ATLAS = "campaign-questlog-lorebook"
@@ -508,10 +504,6 @@ local function EnsureEmptyStateBlock(overview)
     block.heading = NewEmptyStateLine(block, EMPTY_STATE_HEADING_SIZE)
     block.heading:SetText(EMPTY_STATE_HEADING_TEXT)
 
-    block.subline = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE,
-        EMPTY_STATE_SUBLINE_COLOR)
-    block.subline:SetText(EMPTY_STATE_SUBLINE_TEXT)
-
     block.divider = block:CreateTexture(nil, "ARTWORK")
     block.typeDivider = block:CreateTexture(nil, "ARTWORK")
 
@@ -520,15 +512,8 @@ local function EnsureEmptyStateBlock(overview)
         local label = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE)
         label:SetText(family.label)
         label:SetJustifyH("LEFT")
-        local description = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE,
-            EMPTY_STATE_SUBLINE_COLOR)
-        description:SetText(family.description)
-        description:SetJustifyH("LEFT")
-        block.families[family.key] = { label = label, description = description }
+        block.families[family.key] = { label = label }
     end
-    block.familyNote = NewEmptyStateLine(block, EMPTY_STATE_BODY_SIZE,
-        EMPTY_STATE_SUBLINE_COLOR)
-    block.familyNote:SetText(FAMILY_COLLAPSE_NOTE)
 
     return block
 end
@@ -937,30 +922,25 @@ local function PlacePickerTier(overview, block, firstIndex, entries, metrics,
     return (y - top) - CARD_GAP
 end
 
--- Families align with the primary columns. Wrapped descriptions share a
--- measured height within each row, keeping the Icons / Bars buttons aligned.
+-- Families align with the primary columns. Labels share a measured height
+-- within each row, keeping the Icons / Bars buttons aligned.
 local function LayoutPickerFamilies(overview, block, families,
     bandWidth, columns, containerId, top)
     local width = (bandWidth - ((columns - 1) * CARD_GAP)) / columns
     local y = top
     for first = 1, #families, columns do
         local last = math_min(first + columns - 1, #families)
-        local labelHeight, descriptionHeight = 0, 0
+        local labelHeight = 0
         for index = first, last do
             local family = families[index]
             local widgets = block.families[family.key]
             widgets.label:SetWidth(width)
-            widgets.description:SetWidth(width)
             widgets.label:Show()
-            widgets.description:Show()
             labelHeight = math_max(labelHeight, widgets.label:GetStringHeight() or 0)
-            descriptionHeight = math_max(descriptionHeight,
-                widgets.description:GetStringHeight() or 0)
             family.metrics = MeasurePickerTier(overview, block, family.firstIndex,
                 family.entries, FAMILY_CARD_STYLE, width)
         end
-        local buttonsTop = y + labelHeight + CARD_TITLE_BODY_GAP
-            + descriptionHeight + CARD_GAP
+        local buttonsTop = y + labelHeight + CARD_GAP
         local rowHeight = 0
         for index = first, last do
             local family = families[index]
@@ -968,9 +948,6 @@ local function LayoutPickerFamilies(overview, block, families,
             local x = -(bandWidth / 2) + ((index - first) * (width + CARD_GAP))
             widgets.label:ClearAllPoints()
             widgets.label:SetPoint("TOPLEFT", block, "TOP", x, -y)
-            widgets.description:ClearAllPoints()
-            widgets.description:SetPoint("TOPLEFT", block, "TOP", x,
-                -(y + labelHeight + CARD_TITLE_BODY_GAP))
             rowHeight = math_max(rowHeight, PlacePickerTier(overview, block,
                 family.firstIndex, family.entries, family.metrics, FAMILY_CARD_STYLE,
                 containerId, FAMILY_CARD_ACCENT, buttonsTop, x + width / 2))
@@ -1001,8 +978,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
     -- string heights this pass reads should come from a live region.
     block:Show()
 
-    local textWidth = math_max(1,
-        math_min(visibleWidth, EMPTY_STATE_MAX_TEXT_WIDTH))
     for _, label in pairs(block.libraryLabels or {}) do label:Hide() end
     if not block.libraryButton then
         block.libraryButton = CreateLibraryNavigation(overview, block, true)
@@ -1010,15 +985,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
     block.libraryButton.label:SetText(tostring(templateCount))
     block.libraryButton:Show()
     local y = LayoutPickerHeader(block, visibleWidth, block.libraryButton)
-
-    local function PlaceLine(line, gapBefore)
-        y = y + (gapBefore or 0)
-        line:SetWidth(textWidth)
-        line:ClearAllPoints()
-        line:SetPoint("TOP", block, "TOP", 0, -y)
-        line:Show()
-        y = y + math_max(1, line:GetStringHeight() or 0)
-    end
 
     -- Menu order stays independent of the picker's visual families.
     local familyByKey = {}
@@ -1051,7 +1017,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
         local family = familyByKey[definition.key]
         local hasEntries = #family.entries > 0
         block.families[family.key].label:SetShown(hasEntries)
-        block.families[family.key].description:SetShown(hasEntries)
         if hasEntries then
             family.firstIndex = nextCardIndex
             nextCardIndex = nextCardIndex + #family.entries
@@ -1076,9 +1041,6 @@ local function LayoutEmptyStateBlock(overview, containerId, visibleWidth, templa
         y = y + EMPTY_STATE_SECTION_GAP
         y = y + LayoutPickerFamilies(overview, block, families,
             cardBandWidth, primaryMetrics.columns, containerId, y)
-        PlaceLine(block.familyNote, CARD_TIER_GAP)
-    else
-        block.familyNote:Hide()
     end
     -- The reflow path re-runs this pass without a reset, so a card the last
     -- layout used and this one does not must
@@ -1100,14 +1062,11 @@ local function LayoutTemplateLibrary(overview, containerId, width, templatesByMo
     block:SetWidth(width)
     block:Show()
     block.heading:Hide()
-    block.subline:Hide()
     block.divider:Hide()
     block.typeDivider:Hide()
-    block.familyNote:Hide()
     if block.libraryButton then block.libraryButton:Hide() end
     for _, family in pairs(block.families) do
         family.label:Hide()
-        family.description:Hide()
     end
     block.libraryLabels = block.libraryLabels or {}
     for _, label in pairs(block.libraryLabels) do label:Hide() end

@@ -1168,7 +1168,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     -- placeholder - AnchorRowBadge re-points the button.
     local compactTooltip = {
         "Compact Mode",
-        {"Compacts visible buttons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
+        {"Compacts visible icons or bars when hide conditions remove entries, helping centered layouts stay centered.", 1, 1, 1, true},
         {" ", 1, 1, 1},
         {"Auras set to hide |cffffd100While Aura Inactive|r always keep their space reserved. The game hides whether auras are active from addons, so the panel cannot tighten around a hidden aura.", 1, 1, 1, true},
         {" ", 1, 1, 1},
@@ -1176,7 +1176,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
     if compactSuppressed then
         local reasonLabels = {
             frameAnchoring = "Unit Frames",
-            resourceBars = "Resources",
+            resourceBars = "Resource Bars",
             castBar = "Cast Bar",
         }
         local activeLabels = {}
@@ -1191,7 +1191,7 @@ local function BuildCompactModeControls(container, group, tabInfoButtons, opts)
         }
     else
         compactTooltip[#compactTooltip + 1] = {
-            "When Unit Frames, Resources, or the Cast Bar uses this panel as its attached anchor, Compact Mode pauses temporarily so the attached layout keeps a stable footprint. Your preference remains saved.",
+            "When Unit Frames, Resource Bars, or the Cast Bar uses this panel as its attached anchor, Compact Mode pauses temporarily so the attached layout keeps a stable footprint. Your preference remains saved.",
             1, 1, 1, true,
         }
     end
@@ -1502,8 +1502,7 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
         end,
     })
 
-    -- FONT ROW (the Item Settings pilot's rule, stated at that call site):
-    -- the row is created with a label and a widened pullout but NO list and
+    -- FONT ROW: the row is created with a label and a widened pullout but NO list and
     -- NO onChange, then handed to the shared font helpers exactly as a
     -- stock Dropdown would be. CDC-DropdownRow forwards SetList/SetDisabled
     -- to its embedded child and forwards the child's OnOpened with
@@ -1620,6 +1619,11 @@ local function AddDropdownItemTooltips(dropdown, tooltipByValue)
 end
 ST._AddDropdownItemTooltips = AddDropdownItemTooltips
 
+-- Why a row is greyed, as its row tooltip: the row's title, then the reason.
+function ST._LockReasonTooltip(title, reason)
+    return { title, {reason, 1, 1, 1, true} }
+end
+
 -- Row grammar only (RowWidgets.lua); opts.indent makes it a child row. The
 -- pre-redesign full-width stock Dropdown had no call sites left after the
 -- conversion packets.
@@ -1651,8 +1655,9 @@ local function AddBorderRenderModeDropdown(container, tbl, key, refreshFn, disab
         order = modeOrder,
         value = shownMode,
         disabled = controlsDisabled,
-        tooltip = locked and {"Border Thickness Mode",
-            {"Profile One-pixel Borders is on in the settings menu, so this border uses one pixel.", 1, 1, 1, true}} or nil,
+        tooltip = locked and ST._LockReasonTooltip("Border Thickness Mode",
+                "Profile One-pixel Borders is on in the settings menu, so this border uses one pixel.")
+            or (opts and opts.tooltip),
         onChange = ApplyRenderMode,
     })
     AddDropdownItemTooltips(modeRow, BORDER_THICKNESS_MODE_TOOLTIPS)
@@ -1739,14 +1744,14 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         if alphaCollapsed then return end
     end
 
-    if controlsDisabled and opts.disabledText and opts.disabledText ~= "" then
-        local disabledLabel = AceGUI:Create("Label")
-        if ST._ConfigureWrappedHelperLabel then
-            ST._ConfigureWrappedHelperLabel(disabledLabel)
-        end
-        disabledLabel:SetText("|cff888888" .. opts.disabledText .. "|r")
-        disabledLabel:SetFullWidth(true)
-        container:AddChild(disabledLabel)
+    -- Every Alpha row greys with the section and says why on its hover, so
+    -- every row is added through here.
+    local disabledTooltip = controlsDisabled and opts.disabledText and opts.disabledText ~= ""
+        and ST._LockReasonTooltip("Alpha", opts.disabledText) or nil
+    local function AddAlphaRow(add, parent, rowOpts)
+        rowOpts.disabled = controlsDisabled
+        rowOpts.tooltip = disabledTooltip or rowOpts.tooltip
+        return add(parent, rowOpts)
     end
 
     -- LEFT column holds the baseline and the four combat/mount force
@@ -1775,12 +1780,11 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         config.baselineAlpha = committed
     end
 
-    ST._AddSliderRow(leftTarget, {
+    AddAlphaRow(ST._AddSliderRow, leftTarget, {
         label = "Baseline Alpha",
         setting = finderSettings.baseline,
         min = 0, max = 1, step = 0.1,
         value = config.baselineAlpha or 1,
-        disabled = controlsDisabled,
         onChange = ApplyBaselineAlpha,
         onRelease = function(val)
             if controlsDisabled then return end
@@ -1817,11 +1821,10 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local function AddTriStateToggle(parent, label, visibleKey, hiddenKey, setting)
             local val = GetTriState(visibleKey, hiddenKey)
-            local row = ST._AddCheckboxRow(parent, {
+            local row = AddAlphaRow(ST._AddCheckboxRow, parent, {
                 label = TriStateLabel(label, val),
                 tristate = true,
                 value = val,
-                disabled = controlsDisabled,
                 onChange = function(newVal)
                     ApplyTriState(visibleKey, hiddenKey, newVal)
                 end,
@@ -1854,12 +1857,11 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
             -- Child of the two mount toggles above it, so it is indented and
             -- stays in their column.
-            ST._AddCheckboxRow(leftTarget, {
+            AddAlphaRow(ST._AddCheckboxRow, leftTarget, {
                 label = "Include Druid Travel Form (applies to both)",
                 setting = finderSettings.travelForm,
                 indent = true,
                 value = travelVal,
-                disabled = controlsDisabled,
                 onChange = ApplyTravelForm,
             })
         end
@@ -1872,10 +1874,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local targetVal = config.forceAlphaTargetExists or false
         local targetLabel = targetVal and "Target Exists - |cff00ff00Fully Visible|r" or "Target Exists"
-        local targetRow = ST._AddCheckboxRow(rightTarget, {
+        local targetRow = AddAlphaRow(ST._AddCheckboxRow, rightTarget, {
             label = targetLabel,
             value = targetVal,
-            disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaTargetExists", val, true) end,
         })
         if finderSettings.target and ST._BindSettingWidget then
@@ -1883,22 +1884,20 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         end
 
         if targetVal then
-            ST._AddCheckboxRow(rightTarget, {
+            AddAlphaRow(ST._AddCheckboxRow, rightTarget, {
                 label = "Enemy Only",
                 setting = finderSettings.enemy,
                 indent = true,
                 value = config.forceAlphaTargetEnemyOnly or false,
-                disabled = controlsDisabled,
                 onChange = function(val) ApplyForceFlag("forceAlphaTargetEnemyOnly", val, true) end,
             })
         end
 
         local focusVal = config.forceAlphaFocusExists or false
         local focusLabel = focusVal and "Focus Exists - |cff00ff00Fully Visible|r" or "Focus Exists"
-        local focusRow = ST._AddCheckboxRow(rightTarget, {
+        local focusRow = AddAlphaRow(ST._AddCheckboxRow, rightTarget, {
             label = focusLabel,
             value = focusVal,
-            disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaFocusExists", val, true) end,
         })
         if finderSettings.focus and ST._BindSettingWidget then
@@ -1907,10 +1906,9 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
 
         local mouseoverVal = config.forceAlphaMouseover or false
         local mouseoverLabel = mouseoverVal and "Mouseover - |cff00ff00Fully Visible|r" or "Mouseover"
-        local mouseoverRow = ST._AddCheckboxRow(rightTarget, {
+        local mouseoverRow = AddAlphaRow(ST._AddCheckboxRow, rightTarget, {
             label = mouseoverLabel,
             value = mouseoverVal,
-            disabled = controlsDisabled,
             onChange = function(val) ApplyForceFlag("forceAlphaMouseover", val, true) end,
         })
         if finderSettings.mouseover and ST._BindSettingWidget then
@@ -1920,7 +1918,7 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
         -- args below are a placeholder - AnchorRowBadge re-points it.
         ST._AnchorRowBadge(mouseoverRow, CreateInfoButton(mouseoverRow.frame, mouseoverRow.frame, "LEFT", "LEFT", 0, 0, {
             "Mouseover",
-            {"When enabled, mousing over forces full visibility. Like all |cff00ff00Force Visible|r conditions, this overrides |cffff0000Force Hidden|r.", 1, 1, 1, true},
+            {"When enabled, mousing over forces full visibility. Like all |cff00ff00Fully Visible|r conditions, this overrides |cffff0000Fully Hidden|r.", 1, 1, 1, true},
         }, tabInfoBtns))
 
         local function ApplyCustomFade(val)
@@ -1929,23 +1927,21 @@ local function BuildAlphaControls(container, config, refreshFn, collapseKey, opt
             ApplyAlphaSettingChange(true)
         end
 
-        ST._AddCheckboxRow(rightTarget, {
+        AddAlphaRow(ST._AddCheckboxRow, rightTarget, {
             label = "Custom Fade Settings",
             setting = finderSettings.customFade,
             value = config.customFade or false,
-            disabled = controlsDisabled,
             onChange = ApplyCustomFade,
         })
 
         if config.customFade then
         local function AddFadeSlider(label, key, default, setting)
-            ST._AddSliderRow(rightTarget, {
+            AddAlphaRow(ST._AddSliderRow, rightTarget, {
                 label = label,
                 setting = setting,
                 indent = true,
                 min = 0, max = 5, step = 0.1,
                 value = config[key] or default,
-                disabled = controlsDisabled,
                 onRelease = function(val)
                     if controlsDisabled then return end
                     config[key] = val

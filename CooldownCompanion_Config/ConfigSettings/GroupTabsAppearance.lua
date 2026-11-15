@@ -55,9 +55,9 @@ local tabInfoButtons = CS.tabInfoButtons
 local KEYBIND_CUSTOM_LABEL = "Show Keybind/Custom Text"
 local KEYBIND_CUSTOM_TOOLTIP = {
     "Show Keybind/Custom Text",
-    {"Shows detected keybind text on icon buttons by default.", 1, 1, 1, true},
+    {"Shows detected keybind text on icon entries by default.", 1, 1, 1, true},
     " ",
-    {"When enabled for a button, that button's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
+    {"When enabled for an entry, that entry's settings can also provide custom text to replace the detected bind until cleared.", 1, 1, 1, true},
 }
 
 -- The gear sites' "Turn On" enable specs, riding the LAZY unlock specs the
@@ -830,11 +830,12 @@ local function BuildAppearanceTab(container, settingsGroup)
     -- now rather than at Begin.
     iconSec:Mark(iconLeft)
 
-    local squareRow = AddCheckboxRow(iconLeft, {
+    AddCheckboxRow(iconLeft, {
         label = "Square Icons",
         setting = APPEARANCE_FINDER.icons.square,
         value = style.maintainAspectRatio or false,
         disabled = iconSec.disabled or group.masqueEnabled == true,
+        tooltip = ST._MasqueLockTooltip(group.masqueEnabled == true, "Square Icons"),
         onChange = function(val)
             style.maintainAspectRatio = val
             if not val then
@@ -845,30 +846,6 @@ local function BuildAppearanceTab(container, settingsGroup)
             refreshStyleSettings()
         end,
     })
-
-    -- The note belongs to the label, so it hangs off badgeAnchor like a badge
-    -- would. Label + note runs ~230px inside a ~360px cell, so it can reach a
-    -- little past the control column's left edge - harmless here because the
-    -- control is a 24px checkbox pinned to the cell's far right. Do not copy
-    -- this onto a slider row, whose track starts at that same edge.
-    -- Row-owned: the note lives on the row's frame and hides when the row is
-    -- released, so a recycled row never carries it onto another checkbox.
-    if group.masqueEnabled then
-        local masqueLabel = squareRow.frame._cdcMasqueNote
-        if not masqueLabel then
-            masqueLabel = squareRow.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            masqueLabel:SetText("|cff00ff00(Masque skinning is active)|r")
-            squareRow.frame._cdcMasqueNote = masqueLabel
-        end
-        masqueLabel:ClearAllPoints()
-        masqueLabel:SetPoint("LEFT", squareRow.badgeAnchor, "RIGHT", 8, 0)
-        masqueLabel:Show()
-        local prevOnRelease = squareRow.events and squareRow.events.OnRelease
-        squareRow:SetCallback("OnRelease", function(widget, event, ...)
-            if prevOnRelease then prevOnRelease(widget, event, ...) end
-            masqueLabel:Hide()
-        end)
-    end
 
     -- Size sliders — always visible
     if style.maintainAspectRatio then
@@ -921,6 +898,7 @@ local function BuildAppearanceTab(container, settingsGroup)
     local zoomRow = ST._BuildIconZoomControls(iconLeft, zoomSec.tbl, refreshStyle, {
         setting = APPEARANCE_FINDER.icons.zoom,
         disabled = group.masqueEnabled == true or zoomSec.disabled,
+        tooltip = ST._MasqueLockTooltip(group.masqueEnabled == true, "Icon Zoom"),
         previewRefresh = ST._RefreshSelectedButtonsPreview,
     })
     zoomSec:Chrome(zoomRow)
@@ -1243,6 +1221,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                 tbl = cdTextSec.tbl,
                 key = "cooldownFontColor",
                 default = {1, 1, 1, 1},
+                hasAlpha = true,
                 onConfirm = refreshStyle,
             })
 
@@ -1405,6 +1384,7 @@ local function BuildAppearanceTab(container, settingsGroup)
                 tbl = auraTextSec.tbl,
                 key = "auraTextFontColor",
                 default = {0, 0.925, 1, 1},
+                hasAlpha = true,
                 onConfirm = refreshStyle,
             })
 
@@ -1829,6 +1809,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         default = {0, 0, 0, 1},
         hasAlpha = true,
         disabled = borderSec.disabled or group.masqueEnabled == true,
+        tooltip = ST._MasqueLockTooltip(group.masqueEnabled == true, "Border Color"),
         onConfirm = function() return refreshStyle("style", "appearance") end,
     })
     borderSec:DirectColorControl(borderColorRow, "borderColor", group.masqueEnabled == true)
@@ -1837,6 +1818,7 @@ local function BuildAppearanceTab(container, settingsGroup)
         refreshStyleSettings()
     end, group.masqueEnabled or borderSec.disabled, {
         setting = APPEARANCE_FINDER.border.thickness,
+        tooltip = ST._MasqueLockTooltip(group.masqueEnabled == true, "Border Thickness Mode"),
     })
     local borderThicknessLocked = group.masqueEnabled or ST.IsBorderThicknessLocked()
 
@@ -1847,6 +1829,7 @@ local function BuildAppearanceTab(container, settingsGroup)
             min = 0, max = 5, step = 0.1,
             value = borderSec.read.borderSize or ST.DEFAULT_BORDER_SIZE,
             disabled = (borderSec.disabled or borderThicknessLocked) and true or false,
+            tooltip = ST._MasqueLockTooltip(group.masqueEnabled == true, "Border Thickness"),
         })
         -- Not wired at all while the section is inert. The mirror-first path
         -- SNAPSHOTS AND RESTORES its state owner on every drag tick, so wiring
@@ -1960,7 +1943,7 @@ local function BuildAppearanceTab(container, settingsGroup)
             {"Uses the Masque addon to apply custom button skins to this panel. Configure skins via /masque or the Masque config panel.", 1, 1, 1, true},
             " ",
             {"Overridden Settings:", 1, 0.82, 0},
-            {"Border Thickness, Border Size, Border Color, Square Icons (forced on)", 0.7, 0.7, 0.7, true},
+            {"Square Icons (forced on), Icon Zoom (set to 0), Border Color, Border Thickness Mode, Border Thickness, Show Icon Fill Timer", 0.7, 0.7, 0.7, true},
         }, tabInfoButtons))
 
         masqueSec:Finish()

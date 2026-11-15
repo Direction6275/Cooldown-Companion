@@ -277,8 +277,6 @@ end
 
 local AURA_TRACKING_TOOLTIP = {
     "Aura Tracking",
-    {"Blizzard tracks the aura and drives the display; the addon never reads aura state in combat.", 1, 1, 1, true},
-    {" ", 1, 1, 1, true},
     {"Buffs are tracked on you. Group tracking follows only buffs applied by you across you and your group. Helpful buffs can instead be tracked only on your pet, including buffs the pet gains on its own. Your own debuffs are tracked on your target.", 1, 1, 1, true},
     {" ", 1, 1, 1, true},
     {"Whether an entry is a buff or a debuff is detected automatically. If the game's data gets one wrong, set Tracked on yourself.", 1, 1, 1, true},
@@ -566,10 +564,6 @@ local function BuildAuraTrackingSection(scroll, group, buttonData, infoButtons)
         end,
     })
     ST._AddDropdownItemTooltips(scopeRow, ST._AuraScopeTooltips)
-    AnchorRowBadge(scopeRow, CreateInfoButton(scopeRow.frame, scopeRow.frame, "LEFT", "LEFT", 0, 0, {
-        "Tracked on",
-        { "Choose who to track the aura on. Hover a dropdown option for details.", 1, 1, 1, true },
-    }, infoButtons))
 
     -- The head-replacement escape hatch, one shape on every entry kind
     -- (owner ruling 2026-08-28): automatic detection resolves the entry's

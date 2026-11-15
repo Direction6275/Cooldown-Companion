@@ -76,7 +76,7 @@ local SOUND_ALERT_EVENT_LABELS = {
     onAuraRemoved = "Aura Removed",
 }
 local CONDITIONS_INDICATOR_SOUND_EVENT_LABELS = {
-    onShow = "Triggered",
+    onShow = "Indicator Appears",
 }
 
 local SPELL_SOUND_ALERT_EVENTS = {

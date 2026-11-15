@@ -699,7 +699,7 @@ local function OpenResourceBarConflictChooser(force)
     if showChooser then
         return showChooser(classKey, { force = force })
     end
-    CooldownCompanion:Print("Resource Bar conflict chooser is unavailable.")
+    CooldownCompanion:Print("Resource Bars conflict chooser is unavailable.")
     return false
 end
 

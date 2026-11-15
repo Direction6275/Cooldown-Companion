@@ -2194,7 +2194,7 @@ local function ConfigureResourceAttachmentBadge(frame, index, description)
         badge:SetPropagateMouseClicks(true)
         badge:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Resources attached")
+            GameTooltip:AddLine("Resource Bars attached")
             GameTooltip:AddLine(description, 1, 1, 1, true)
             GameTooltip:Show()
         end)
@@ -2209,7 +2209,7 @@ end
 local function SetupPanelResourceIndicator(entry, panelId, rightReserve, resourcePanelId)
     if resourcePanelId ~= panelId then return 0 end
     local badge = ConfigureResourceAttachmentBadge(entry.frame, 1,
-        "Your resource bars are attached to this panel. Select Resources below the preview to edit shared settings and bar order.")
+        "Your resource bars are attached to this panel. Select Resource Bars below the preview to edit shared settings and bar order.")
     badge:SetSize(16, 16)
     badge:ClearAllPoints()
     badge:SetPoint("RIGHT", entry.frame, "RIGHT", -(rightReserve or 4), 0)

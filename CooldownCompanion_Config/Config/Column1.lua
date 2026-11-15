@@ -451,7 +451,7 @@ local function EnsureGenericRenameBadge(entry)
         badge.icon:SetAllPoints()
         badge:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Default name. Click to rename.", 1, 0.82, 0, true)
+            GameTooltip:AddLine("Rename", 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
         badge:SetScript("OnLeave", function()
@@ -747,9 +747,6 @@ local function ShowPanelContextMenu(panelId, containerId)
                 info.notCheckable = true
                 info.hasArrow = true
                 info.menuList = "COPY_PANEL_SETTINGS"
-                info.tooltipTitle = "Copy Panel Settings To..."
-                info.tooltipText = "Pick what to copy, then click the panels it should apply to."
-                info.tooltipOnButton = 1
                 UIDropDownMenu_AddButton(info, level)
             end
 
@@ -1651,7 +1648,11 @@ local function AddNavigatorMessage(title, body)
         header.label:SetNonSpaceWrap(true)
         header.label:SetMaxLines(0)
         CS.col1Scroll:AddChild(header)
+    end
+    -- A title may stand alone.
+    if not body then return end
 
+    if title then
         local descSpacer = AceGUI:Create("SimpleGroup")
         descSpacer:SetFullWidth(true)
         descSpacer:SetHeight(6)
@@ -1902,9 +1903,9 @@ local function RenderExportModeResources(selection, isFirstSection)
         return false
     end
 
-    AddColumn1SectionHeading("Resources", nil, isFirstSection)
+    AddColumn1SectionHeading("Resource Bars", nil, isFirstSection)
     local shell = AddExportModeRowShell()
-    local entry = AcquireExportModeRow("Resources")
+    local entry = AcquireExportModeRow("Resource Bars")
     ApplyConfigRowIcon(entry, 134400, {
         atlas = "ui_adv_health",
         indent = 2,
@@ -1917,8 +1918,8 @@ local function RenderExportModeResources(selection, isFirstSection)
     if selection.resources then
         entry:SetColor(0.4, 0.7, 1.0)
     end
-    SetNavigatorRowTooltip(entry, "Resources",
-        "Your whole Resources setup: resources, styling, and layout order.")
+    SetNavigatorRowTooltip(entry, "Resource Bars",
+        "Your whole Resource Bars setup: resources, styling, and layout order.")
     entry:SetCallback("OnClick", function(_, _, mouseButton)
         if mouseButton ~= "LeftButton" then return end
         selection.resources = not selection.resources
@@ -2057,8 +2058,6 @@ local function RenderImportModeNavigator()
     if CS.col1DestinationBar then
         CS.col1DestinationBar:Hide()
     end
-
-    AddNavigatorMessage(nil, "Paste an import string on the right.")
 
     AddColumn1BottomSpacer()
     PopulateImportModeButtonBar()
@@ -3350,13 +3349,12 @@ local function RefreshColumn1(preserveDrag)
         ClearOtherClassBrowseState()
         TakeCol1FirstRow()
 
-        AddNavigatorMessage("Organize cooldowns with groups.",
-            "For cooldown entries, start with New Group below. Resource Bars and Cast Bar can be used on their own.")
+        AddNavigatorMessage("Organize cooldowns with groups.")
     else
         if searchResults and searchResults.truncated then
             local summary = AceGUI:Create("Label")
             ST._ConfigureWrappedHelperLabel(summary)
-            summary:SetText(("|cff888888Showing %d of %d matching panels and %d of %d matching entries. Keep typing to narrow results.|r"):format(
+            summary:SetText(("|cff888888Showing %d of %d matching panels and %d of %d matching entries.|r"):format(
                 #searchResults.panelResults,
                 searchResults.totalPanelResults or #searchResults.panelResults,
                 searchResults.renderedEntryResults or 0,

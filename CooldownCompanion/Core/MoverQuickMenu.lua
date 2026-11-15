@@ -305,12 +305,6 @@ local function InitializeQuickMenu(record, level, menuList)
     AddMenuButton("Reset Position", function()
         CooldownCompanion:ResetMoverQuickPosition(descriptor)
     end, nil, level)
-    AddMenuButton("Controls & Shortcuts", nil, {
-        disabled = true,
-        tooltipTitle = "Controls & Shortcuts",
-        tooltipText = "Drag to move. Use the arrow controls or coordinate fields for precise placement. Escape cancels an anchor pick; Cancel reverts the unlock session.",
-        tooltipOnButton = true,
-    }, level)
 end
 
 function ST.CreateMoverQuickMenuButton(header, size, getDescriptor, chromeRoot)

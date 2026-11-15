@@ -740,8 +740,6 @@ local function BuildBarAppearanceTab(container, group, style)
     ST._ChainHeadingBadges(iconTintHeading, CreateInfoButton(iconTintHeading.frame,
         iconTintHeading.label, "LEFT", "RIGHT", 4, 0, {
             "Icon Tint",
-            {"Colors the bar's icon.", 1, 1, 1, true},
-            " ",
             {"The cooldown and aura tints take over while their state is active.", 1, 1, 1, true},
         }, tabInfoButtons))
     tintSec:HeadingChrome(iconTintHeading)

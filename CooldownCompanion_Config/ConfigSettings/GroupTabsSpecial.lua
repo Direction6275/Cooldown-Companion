@@ -435,11 +435,11 @@ end
 -- Indicator Effects tab below, so it was converted outright. `container` is
 -- the grid column the row belongs to.
 --
--- Native aura sources draw the same rows without Animate When and Only In
--- Combat: their effects always run while Blizzard shows the aura, since
+-- Native aura sources draw the same rows without Animate When and Show Only
+-- In Combat: their effects always run while Blizzard shows the aura, since
 -- nothing in the aura slot may start or stop once bound, and their edits
--- reach the native kit only through an aura restyle. While Missing keeps Only
--- In Combat (CC draws it) but never Animate When: the runtime runs every
+-- reach the native kit only through an aura restyle. While Missing keeps Show
+-- Only In Combat (CC draws it) but never Animate When: the runtime runs every
 -- enabled effect while the Indicator is shown.
 local function BuildIndicatorEffectSection(container, group, effects, effectKey)
     local config = effects and effects[effectKey]
@@ -449,12 +449,12 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
         return
     end
     local auraSource = ST.Indicator.IsNativeAura(group)
-    -- While Missing and aura lists are drawn by CC: they keep Only In Combat, but Animate When
+    -- While Missing and aura lists are drawn by CC: they keep Show Only In Combat, but Animate When
     -- would follow the aura entry's own spell state, so the row is hidden.
     local missingSource = ST.Indicator.UsesPresence(group)
     -- The one door that turns an effect on. Where Animate When cannot run it
     -- starts as Always: a native aura also runs outside combat, so it drops
-    -- Only In Combat too. Otherwise the effect would keep a rule from a
+    -- Show Only In Combat too. Otherwise the effect would keep a rule from a
     -- condition source that it cannot run and would refuse to copy, with no
     -- visible control to fix it. A turned-off effect keeps its choice.
     local function SetEnabled(value)
@@ -501,7 +501,7 @@ local function BuildIndicatorEffectSection(container, group, effects, effectKey)
             end,
         })
         end -- not missingSource
-        AddCheckboxRow(panel, {label="Only In Combat", setting=finder and finder.combatOnly, value=config.combatOnly == true,
+        AddCheckboxRow(panel, {label="Show Only In Combat", setting=finder and finder.combatOnly, value=config.combatOnly == true,
             onChange=function(value)
                 config.combatOnly=value
                 CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -831,7 +831,7 @@ local function SpecialFinderIndicatorEffectOffered(context, effectKey)
     return effectKey ~= TextOnlyUnavailableEffect(context.group) or SpecialFinderIndicatorDisplayType(context) ~= "text"
 end
 
--- Only In Combat: everything CC draws (not native auras). Animate When also
+-- Show Only In Combat: everything CC draws (not native auras). Animate When also
 -- leaves While Missing, which has no spell state of its own to follow.
 local function SpecialFinderConditionEffect(context)
     return not ST.Indicator.IsNativeAura(context.group)
@@ -907,7 +907,7 @@ if ST._DefineSettingRoute then
         })
         finder.duration = advanced:Setting({ key = "duration", label = def.speedLabel })
         finder.activation = advanced:Setting({key="activation",label="Animate When",applies=SpecialFinderActivationEffect})
-        finder.combatOnly = advanced:Setting({key="combatOnly",label="Only In Combat",applies=SpecialFinderConditionEffect})
+        finder.combatOnly = advanced:Setting({key="combatOnly",label="Show Only In Combat",applies=SpecialFinderConditionEffect})
         if key == "colorShift" then
             finder.shiftColor = advanced:Setting({ key = "color", label = "Shift Color" })
         end

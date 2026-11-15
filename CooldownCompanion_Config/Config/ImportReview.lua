@@ -135,8 +135,8 @@ local function BuildProfileSummaryLines(profile, heading, templateCount)
     local classScoped = {}
     local legacyScoped = {}
     if type(profile) == "table" then
-        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resources" end
-        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "Resources" end
+        if CountPairs(profile.resourceBarsByClass) > 0 then classScoped[#classScoped + 1] = "Resource Bars" end
+        if type(profile.resourceBarsByChar) == "table" then legacyScoped[#legacyScoped + 1] = "Resource Bars" end
         -- Older backups hold these per character; they become shared by class
         -- when restored.
         if CountPairs(profile.castBarByClass) > 0 or type(profile.castBarByChar) == "table" then
@@ -156,10 +156,10 @@ local function BuildProfileSummaryLines(profile, heading, templateCount)
     local conflicts = type(migration) == "table" and migration.conflicts or nil
     local unsafe = type(migration) == "table" and migration.unsafeCharKeys or nil
     if CountPairs(conflicts) > 0 then
-        AddLine(lines, FormatCount("Pending Resource Bar conflicts", CountPairs(conflicts)))
+        AddLine(lines, FormatCount("Pending Resource Bars conflicts", CountPairs(conflicts)))
     end
     if CountPairs(unsafe) > 0 then
-        AddLine(lines, FormatCount("Resource Bar buckets missing class metadata", CountPairs(unsafe)))
+        AddLine(lines, FormatCount("Resource Bars buckets missing class metadata", CountPairs(unsafe)))
     end
     return lines
 end
@@ -351,10 +351,10 @@ local function BuildSetupSummaryLines(data, hasContainers, customBars, resources
 
     if resources then
         local classKey = GetSetupSectionClassKey(resources)
-        AddLine(lines, "Resources setup: " .. tostring(classKey or "Unknown class"))
+        AddLine(lines, "Resource Bars setup: " .. tostring(classKey or "Unknown class"))
         if classKey and CooldownCompanion.IsResourceBarClassConfigured
             and CooldownCompanion:IsResourceBarClassConfigured(classKey) then
-            AddLine(lines, "This replaces your current " .. tostring(classKey) .. " Resources settings.")
+            AddLine(lines, "This replaces your current " .. tostring(classKey) .. " Resource Bars settings.")
         end
         if classKey and playerClassKey and classKey ~= playerClassKey then
             foreignClassKey = classKey
@@ -384,7 +384,7 @@ local function BuildSetupSummaryLines(data, hasContainers, customBars, resources
     if foreignClassKey then
         AddForeignClassNotice(lines, foreignClassKey, playerClassKey, "setup")
         if hasContainers and resources then
-            AddLine(lines, "The Resources anchor does not carry across classes; re-pick it on that character.")
+            AddLine(lines, "The Resource Bars anchor does not carry across classes; re-pick it on that character.")
         end
     end
 

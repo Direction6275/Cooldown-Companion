@@ -964,7 +964,7 @@ local function BuildLayoutTab(container)
 
             CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
                 "Pick Frame",
-                {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this panel to it, or right-click to cancel.", 1, 1, 1, true},
+                {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this Indicator to it, or right-click to cancel.", 1, 1, 1, true},
                 " ",
                 {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
             }, tabInfoButtons)

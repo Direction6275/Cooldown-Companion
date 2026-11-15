@@ -539,8 +539,6 @@ local function RenderExportModeSummary(col3)
         AddSummaryHeading(scroll, "Export")
         AddSummarySpacer(scroll, 6)
         AddSummaryLine(scroll, "Nothing selected yet.")
-        AddSummarySpacer(scroll, 2)
-        AddSummaryLine(scroll, "Check groups, panels, Panel Templates, or Resources in the navigator. Everything you check exports as one string.", 0.7, 0.7, 0.7)
         scroll:DoLayout()
         return
     end
@@ -608,10 +606,9 @@ local function RenderExportModeSummary(col3)
     -- 10px above, so 10px goes below before the section's content.
     local classKey = tostring(GetResourceBarClassKey() or "?")
     if selection.resources then
-        AddSummarySectionHeading(scroll, "Resources  |cff777777(" .. classKey .. ")|r")
+        AddSummarySectionHeading(scroll, "Resource Bars  |cff777777(" .. classKey .. ")|r")
         AddSummarySpacer(scroll, 10)
-        AddSummaryLine(scroll, "Includes all resources, styling, and layout order. Replaces the importer's " .. classKey .. " Resources settings.", 0.7, 0.7, 0.7)
-
+        AddSummaryLine(scroll, "Replaces the importer's " .. classKey .. " Resource Bars settings.", 0.7, 0.7, 0.7)
     end
 
     if selection.castBar then
@@ -626,9 +623,6 @@ local function RenderExportModeSummary(col3)
             AddSummaryLine(scroll, FormatPanelTemplateMenuText(template))
         end
     end
-
-    AddSummarySpacer(scroll, 4)
-    AddSummaryLine(scroll, "Export is at the bottom of the navigator.", 0.7, 0.7, 0.7)
 
     scroll:DoLayout()
 end

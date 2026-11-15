@@ -182,6 +182,20 @@ local function GetPanelTemplateFailureText(reason, details)
 end
 ST._GetPanelTemplateFailureText = GetPanelTemplateFailureText
 
+-- Copy Panel Settings refuses for the reasons a template does, and says so in
+-- the same words where the reason is shared. A template folds a subtype
+-- mismatch into its panel-type reason; copy does the same.
+local PANEL_COPY_FAILURE_TEXT = {
+    mode_mismatch = "Copy Panel Settings requires a matching panel type.",
+    subtype_mismatch = "Copy Panel Settings requires a matching panel type.",
+    invalid_scope = "Those settings do not apply to this panel type.",
+}
+function ST._GetPanelCopyFailureText(reason)
+    return ST.Indicator.EffectFailureText[reason]
+        or PANEL_COPY_FAILURE_TEXT[reason]
+        or PANEL_TEMPLATE_FAILURE_TEXT[reason]
+end
+
 local function GetPanelTemplateApplyTooltipText()
     return "Applies the saved panel settings. Entries and their customizations, eligibility, connections, and position stay unchanged. Aura Only stays off in sections containing non-Aura entries."
 end

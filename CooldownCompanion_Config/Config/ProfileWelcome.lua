@@ -27,7 +27,6 @@ end
 local function LayoutWelcome(pane)
     local width = math.max(120, math.min(560, pane:GetWidth() - 64))
     pane.heading:SetWidth(width)
-    pane.body:SetWidth(width)
     pane.create:SetWidth(math.min(220, width))
     pane.disclosure:SetWidth(math.min(240, width))
     pane.disclosure:SetText(pane.expanded and "Optional Modules  -" or "Optional Modules  +")
@@ -36,7 +35,7 @@ local function LayoutWelcome(pane)
         button:SetWidth(math.min(260, width))
         button.frame:SetShown(pane.expanded == true)
     end
-    local total = pane.heading:GetStringHeight() + 14 + pane.body:GetStringHeight()
+    local total = pane.heading:GetStringHeight()
         + 24 + 30 + 14 + 24 + (pane.expanded and 114 or 0)
     pane.heading:ClearAllPoints()
     pane.heading:SetPoint("TOP", pane, "TOP", 0, -math.max(12, (pane:GetHeight() - total) * 0.5))
@@ -57,18 +56,12 @@ local function CreateWelcome(parent)
     pane.heading = pane:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     pane.heading:SetJustifyH("CENTER")
     pane.heading:SetText("Create your first group")
-    pane.body = pane:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    pane.body:SetJustifyH("CENTER")
-    pane.body:SetSpacing(3)
-    pane.body:SetTextColor(0.7, 0.7, 0.7)
-    pane.body:SetText("Keep related cooldowns and auras together.\nStart with a group, then choose how to display them.")
-    pane.body:SetPoint("TOP", pane.heading, "BOTTOM", 0, -14)
 
     pane.create = AceGUI:Create("Button")
     pane.create:SetText("New Group")
     pane.create:SetHeight(30)
     pane.create.frame:SetParent(pane)
-    pane.create.frame:SetPoint("TOP", pane.body, "BOTTOM", 0, -24)
+    pane.create.frame:SetPoint("TOP", pane.heading, "BOTTOM", 0, -24)
     pane.create:SetCallback("OnClick", ST._CreateConfigGroup)
     pane.create.frame:Show()
 
@@ -91,7 +84,7 @@ local function CreateWelcome(parent)
     for _, definition in ipairs({
         { "resources", "Resource Bars" },
         { "castbar", "Cast Bar" },
-        { "player", "Unit Frame Anchoring" },
+        { "player", "Unit Frames" },
     }) do
         local kind = definition[1]
         local button = AceGUI:Create("Button")

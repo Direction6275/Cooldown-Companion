@@ -100,6 +100,12 @@ local function IsEligibleCopyPanelTarget(panelId)
     return CooldownCompanion:CanCopyPanelSettings(state.sourceGroupId, panelId, state.scope) == true
 end
 
+-- A refused click says why, in the words a refused template uses.
+local function PrintCopyRefusal(reason)
+    local message = ST._GetPanelCopyFailureText(reason)
+    if message then CooldownCompanion:Print(message) end
+end
+
 -- Returns true when the click was consumed by the armed mode. The source
 -- row deliberately returns false: it keeps navigating normally.
 local function HandleCopyPanelSettingsClick(panelId)
@@ -115,15 +121,15 @@ local function HandleCopyPanelSettingsClick(panelId)
     end
     local eligible, reason = CooldownCompanion:CanCopyPanelSettings(state.sourceGroupId, panelId, state.scope)
     if not eligible then
-        local message = ST.Indicator.EffectFailureText[reason]
-        if message then CooldownCompanion:Print(message) end
+        PrintCopyRefusal(reason)
         -- Ineligible panel: stay armed and consume the click, so a stray
         -- click on a wrong-mode panel never navigates away mid-gesture.
         return true
     end
 
-    local ok = CooldownCompanion:CopyPanelSettings(state.sourceGroupId, panelId, state.scope)
+    local ok, failure = CooldownCompanion:CopyPanelSettings(state.sourceGroupId, panelId, state.scope)
     if not ok then
+        PrintCopyRefusal(failure)
         return true
     end
 

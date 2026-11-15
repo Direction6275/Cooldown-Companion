@@ -20,7 +20,6 @@ local UpdateItemChargeMetadata = CooldownCompanion.UpdateItemChargeMetadata
 -- Custom Name, Custom Keybind Text and the Indicator sound surface are
 -- converted; the fallback item rows still draw stock widgets.
 local AddSliderRow = ST._AddSliderRow
-local AddDropdownRow = ST._AddDropdownRow
 local AddSoundPreviewDropdownRow = ST._AddSoundPreviewDropdownRow
 local AddEditBoxRow = ST._AddEditBoxRow
 local AddColorRow = ST._AddColorRow
@@ -30,11 +29,9 @@ local BeginRowGrid = ST._BeginRowGrid
 -- rule fading right.
 local ROW_SECTION = { leftAligned = true }
 
--- Sound option labels read "Category - Name" and LibSharedMedia font names run
--- well past the 140px control column, and a dropdown sizes its menu from the
--- control.
+-- Sound option labels read "Category - Name" and run well past the 140px
+-- control column, and a dropdown sizes its menu from the control.
 local SOUND_PULLOUT_WIDTH = 300
-local FONT_PULLOUT_WIDTH = 300
 
 local RefreshButtonSettingsMultiSelect = ST._RefreshButtonSettingsMultiSelect
 
@@ -287,11 +284,11 @@ local itemSettings = ST._DefineSettingRoute({
     collapseKeys = EntrySettingsCollapseKey("itemsettings"),
     applies = ItemSettingsApply,
 }):Settings({
-    fontSize = { label = "Item Stack Font Size", aliases = { "count size", "stack size" } },
+    fontSize = { label = "Font Size", aliases = { "item stack font size", "count size", "stack size" } },
     font = { label = "Font", aliases = { "item stack font", "typeface" } },
     outline = { label = "Font Outline", aliases = { "item stack outline" } },
     color = { label = "Font Color", aliases = { "item stack color", "count color" } },
-    anchor = { label = "Anchor Point", aliases = { "item stack anchor", "count position" } },
+    anchor = { label = "Anchor", aliases = { "anchor point", "item stack anchor", "count position" } },
     xOffset = { label = "X Offset", aliases = { "horizontal offset", "item stack x" } },
     yOffset = { label = "Y Offset", aliases = { "vertical offset", "item stack y" } },
 })
@@ -346,7 +343,15 @@ local customKeybindSettings = ST._DefineSettingRoute({
 
 -- Row grammar (RowWidgets.lua): one CDC-DropdownRow per alertable event in a
 -- row grid. Expects the tab's ScrollFrame (a "List") directly.
-local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+--
+-- An entry with no sound events adds nothing. leadRow, when given, adds the
+-- row that chooses which events apply (an Indicator's Sound Events), so the
+-- section still draws its heading and that row: the player can switch back.
+local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings, leadRow)
+    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, nil, nil, group)
+    local hasEvents = validEvents ~= nil and next(validEvents) ~= nil
+    if not hasEvents and not leadRow then return end
+
     local soundHeading, soundCollapsed =
         BuildCollapsibleSection(scroll, "Sound Alerts", SoundAlertsCollapseKey(), nil, nil, ROW_SECTION)
 
@@ -356,7 +361,7 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
         "Sound Alerts",
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
-        {"Aura-event alerts use Blizzard's aura-sound API, which supports file-backed sounds only. Cooldown Manager sound-kit choices and Text to Speech are therefore unavailable in these aura-event menus.", 1, 1, 1, true},
+        {"Aura-event alerts can't use Cooldown Manager sound kits or Text to Speech.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Aura sounds stop after 5 seconds. Minimum Gap keeps one from playing again sooner.", 1, 1, 1, true},
     }, infoButtons)
@@ -364,17 +369,9 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
 
     if soundCollapsed then return end
 
-    local validEvents = CooldownCompanion:GetScopedValidSoundAlertEventsForButton(buttonData, nil, nil, group)
-    if not validEvents or not next(validEvents) then
-        -- A transient state of the entry's tracking, not a setting, so it stays
-        -- a full-width wrapped label under the heading rather than a row.
-        local noEvents = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(noEvents)
-        noEvents:SetText("|cff888888No alertable sound events are available for this button under its current entry type, tracking mode, and Blizzard Cooldown Manager mapping.|r")
-        noEvents:SetFullWidth(true)
-        scroll:AddChild(noEvents)
-        return
-    end
+    local soundLeft, soundRight = BeginRowGrid(scroll)
+    if leadRow then leadRow(soundLeft) end
+    if not hasEvents then return end
 
     local soundOptions = CooldownCompanion:GetSoundAlertOptions()
     local soundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
@@ -399,8 +396,6 @@ local function BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButto
             family[#family + 1] = eventKey
         end
     end
-
-    local soundLeft, soundRight = BeginRowGrid(scroll)
 
     local function AddSoundEventRow(column, eventKey)
         local isAuraEvent = CooldownCompanion:IsAuraSoundAlertEvent(eventKey)
@@ -468,7 +463,7 @@ end
 -- Row grammar (RowWidgets.lua): the same shape as the spell section above,
 -- with a single panel-level event instead of a filtered set. One row, so it
 -- takes the left column and the right one stays empty.
-local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings, leadRow)
     if not CooldownCompanion:IsConditionsIndicatorGroup(group) then
         return
     end
@@ -480,7 +475,7 @@ local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonD
     -- restarts after that badge.
     local soundInfoBtn = CreateInfoButton(soundHeading.frame, soundHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Sound Alerts",
-        {"Plays when the panel display appears after all its conditions match.", 1, 1, 1, true},
+        {"Plays when the Indicator appears after all its conditions match.", 1, 1, 1, true},
         {" ", 1, 1, 1, false},
         {"Sound effects use the Master channel and follow Master Volume. Text to Speech uses WoW's selected voice, speech rate, and speech volume.", 1, 1, 1, true},
     }, infoButtons)
@@ -492,6 +487,7 @@ local function BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonD
     local soundOptionOrder = CooldownCompanion:GetSoundAlertOptionOrder(soundOptions)
 
     local soundLeft = BeginRowGrid(scroll)
+    if leadRow then leadRow(soundLeft) end
 
     AddSoundPreviewDropdownRow(soundLeft, {
         setting = (finderSettings or ST._IndicatorSoundSettings).triggered,
@@ -513,11 +509,13 @@ end
 -- panel-level sound section instead, whatever its source (trinket slots
 -- included). Entries that never had a sound surface (equipment slots, and
 -- anything that is not a spell outside conditions Indicators) add nothing
--- rather than a section that only says "not available".
-local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+-- rather than a section that only says "not available". A spell with no
+-- sound events adds nothing either. leadRow(column) is the caller's first row
+-- of the section (an Indicator's Sound Events chooser).
+local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings, leadRow)
     if buttonData.rotationAssistant then return end
     if CooldownCompanion:IsConditionsIndicatorGroup(group) and not ST.Indicator.UsesSourceSounds(group) then
-        BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+        BuildConditionsIndicatorSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings, leadRow)
         return
     end
     if CooldownCompanion.IsEquipmentSlotEntry and CooldownCompanion.IsEquipmentSlotEntry(buttonData) then
@@ -528,7 +526,7 @@ local function BuildEntrySoundAlertsSection(scroll, group, buttonData, infoButto
 
     -- Row grammar: the event rows sit in a BeginRowGrid the section opens on
     -- the scroll itself, so no Flow host is interposed any more.
-    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings)
+    BuildSpellSoundAlertsSection(scroll, group, buttonData, infoButtons, finderSettings, leadRow)
 end
 
 local function BuildItemSettings(scroll, buttonData, infoButtons)
@@ -549,49 +547,11 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     -- the two offsets that only mean anything once the anchor is picked.
     local itemLeft, itemRight = BeginRowGrid(scroll)
 
-    AddSliderRow(itemLeft, {
-        setting = itemSettings.fontSize,
-        min = 8, max = 32, step = 1,
-        value = buttonData.itemCountFontSize or 12,
-        onChange = function(val)
-            ST._PreviewScalarSetting(buttonData, "itemCountFontSize", val, ST._RefreshSelectedButtonsPreview)
-        end,
-        onRelease = function(val)
-            buttonData.itemCountFontSize = val
-            refreshGroup()
-        end,
+    -- Font Size, Font and Font Outline, over itemCountFont*.
+    ST._AddFontControls(itemLeft, buttonData, "itemCount", { size = 12 }, refreshGroup, {
+        settings = { size = itemSettings.fontSize, font = itemSettings.font, outline = itemSettings.outline },
+        previewRefresh = ST._RefreshSelectedButtonsPreview,
     })
-
-    -- FONT ROW PILOT. The row is created with a label and a widened pullout but
-    -- NO list and NO onChange, then handed to the shared font helpers exactly
-    -- as a stock Dropdown would be: CDC-DropdownRow forwards SetList and
-    -- SetDisabled to its embedded child and forwards the child's OnOpened with
-    -- self = the row (aliasing row.pullout), which is everything
-    -- CS.SetupFontDropdown touches. AddDropdownRow registers OnValueChanged
-    -- only when opts.onChange is given, so SetFontDropdownCallback is the one
-    -- registration and the profile-wide font lock still gates every write.
-    -- The value is set AFTER SetupFontDropdown, because SetList rebuilds the
-    -- list the displayed text is read from.
-    local itemFontRow = AddDropdownRow(itemLeft, {
-        setting = itemSettings.font,
-        pulloutWidth = FONT_PULLOUT_WIDTH,
-    })
-    CS.SetupFontDropdown(itemFontRow)
-    itemFontRow:SetValue(buttonData.itemCountFont or "Friz Quadrata TT")
-    CS.SetFontDropdownCallback(itemFontRow, function(widget, event, val)
-        buttonData.itemCountFont = val
-        refreshGroup()
-    end)
-
-    local itemOutlineRow = AddDropdownRow(itemLeft, {
-        setting = itemSettings.outline,
-    })
-    CS.SetupFontOutlineDropdown(itemOutlineRow)
-    itemOutlineRow:SetValue(buttonData.itemCountFontOutline or "OUTLINE")
-    CS.SetFontOutlineDropdownCallback(itemOutlineRow, function(widget, event, val)
-        buttonData.itemCountFontOutline = val
-        refreshGroup()
-    end)
 
     -- Item count font color.
     AddColorRow(itemRight, {
@@ -611,7 +571,6 @@ local function BuildItemSettings(scroll, buttonData, infoButtons)
     local defItemY = 2
 
     AddTextPositionControls(itemRight, buttonData, "itemCountAnchor", "itemCountXOffset", "itemCountYOffset", refreshGroup, {
-        anchorLabel = "Anchor Point",
         defaults = {anchor = defItemAnchor, x = defItemX, y = defItemY, range = 20},
         settings = itemSettings,
     })
@@ -959,7 +918,6 @@ local function BuildItemFallbacksSection(scroll, buttonData, infoButtons)
     -- restarts after that badge.
     local infoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Item Fallbacks",
-        {"Use arrows to set item priority.", 1, 1, 1, true},
         {"If a higher-priority item is unavailable, the next available fallback can appear instead.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
         {"Settings apply to whichever item is currently shown from this priority list.", 1, 1, 1, true},

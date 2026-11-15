@@ -329,7 +329,11 @@ local function Row_OnLeave(frame)
 end
 
 ------------------------------------------------------------------------
--- SCOPE HOVER
+-- CONTROL HOVER
+--
+-- One transparent overlay pinned over a row's CONTROL region. It has two
+-- users: the style lens's scope explanation and scope action (described
+-- first), and a disabled row's own tooltip (DISABLED ROWS, below).
 --
 -- The style lens's scope explanation ("Panel setting / Follows the panel."
 -- and "Not available: <reason>") is deliberately NARROWER than the row: it
@@ -341,7 +345,7 @@ end
 -- The region is "leftmost control -> the control column's right edge, full row
 -- height": every control is pinned to that right edge, so each row type only
 -- has to publish its LEFTMOST control frame as `controlHoverAnchor`. A row
--- type with no control publishes none and gets NO scope hover - CDC-LabelRow
+-- type with no control publishes none and gets NO control hover - CDC-LabelRow
 -- is the only one, and falling back to the whole row is exactly what this
 -- replaced.
 --
@@ -362,23 +366,37 @@ end
 -- caller may attach scopeControlAction to turn that otherwise-dead click into
 -- a scope action; the underlying disabled widget is never re-enabled. Note the
 -- overlay may go up BEFORE the inert sweep runs (several call sites chrome the
--- row, then Finish), which is why nothing here reads self.disabled.
+-- row, then Finish), which is why the scope channel never reads self.disabled.
+--
+-- DISABLED ROWS. Nothing here relies on a disabled stock control reporting
+-- hover: whether one does has not been checked in game, and no stock child
+-- calls Button:SetMotionScriptsWhileDisabled. A disabled row that carries a
+-- tooltip raises the same overlay instead, with or without scope lines, so
+-- the tooltip shows over the control whatever the control does. SetDisabled
+-- and SetRowTooltip both re-evaluate it, so the two may be set in either
+-- order.
 ------------------------------------------------------------------------
-local function ScopeHover_OnEnter(frame)
+local function ControlHover_OnEnter(frame)
     local self = frame.cdcRow
     if not self then return end
     ShowRowTooltip(self, true)
     self:Fire("OnEnter")
 end
 
-local function ScopeHover_OnLeave(frame)
+local function ControlHover_OnLeave(frame)
     local self = frame.cdcRow
     if not self then return end
     GameTooltip:Hide()
     self:Fire("OnLeave")
 end
 
-local function ScopeHover_OnClick(frame, mouseButton)
+-- The overlay takes the press a control would have had, so it clears keyboard
+-- focus itself.
+local function ControlHover_OnMouseDown()
+    AceGUI:ClearFocus()
+end
+
+local function ControlHover_OnClick(frame, mouseButton)
     local self = frame.cdcRow
     local action = self and self.scopeControlAction
     if action then
@@ -389,31 +407,34 @@ end
 -- Park the overlay: no points into a control frame (the borrowed children go
 -- back to a pool shared with every other addon, so a hidden overlay must not
 -- keep an anchor into one), no mouse, no scripts.
-local function ParkScopeHover(self)
-    local hover = self.scopeHover
-    if not hover then return end
+local function ParkControlHover(self)
+    local hover = self.controlHover
+    -- Hidden means already parked: only UpdateControlHover shows it.
+    if not hover or not hover:IsShown() then return end
     hover:Hide()
     hover:ClearAllPoints()
     hover:EnableMouse(false)
     hover:SetScript("OnEnter", nil)
     hover:SetScript("OnLeave", nil)
+    hover:SetScript("OnMouseDown", nil)
     hover:SetScript("OnClick", nil)
 end
 
-local function UpdateScopeHover(self)
+local function UpdateControlHover(self)
     local lines = self.scopeTooltipLines
     local action = self.scopeControlAction
     local anchor = self.controlHoverAnchor
-    if not (anchor and ((lines and lines[1]) or action)) then
-        ParkScopeHover(self)
+    local own = self.disabled and self.tooltipLines
+    if not (anchor and ((lines and lines[1]) or action or (own and own[1]))) then
+        ParkControlHover(self)
         return
     end
 
-    local hover = self.scopeHover
+    local hover = self.controlHover
     if not hover then
         hover = CreateFrame("Button", nil, self.frame)
         hover.cdcRow = self
-        self.scopeHover = hover
+        self.controlHover = hover
     end
 
     hover:ClearAllPoints()
@@ -425,9 +446,10 @@ local function UpdateScopeHover(self)
     -- column (one level over it) and their own regions one over that.
     hover:SetFrameLevel(self.controlColumn:GetFrameLevel() + 10)
     hover:EnableMouse(true)
-    hover:SetScript("OnEnter", ScopeHover_OnEnter)
-    hover:SetScript("OnLeave", ScopeHover_OnLeave)
-    hover:SetScript("OnClick", action and ScopeHover_OnClick or nil)
+    hover:SetScript("OnEnter", ControlHover_OnEnter)
+    hover:SetScript("OnLeave", ControlHover_OnLeave)
+    hover:SetScript("OnMouseDown", ControlHover_OnMouseDown)
+    hover:SetScript("OnClick", action and ControlHover_OnClick or nil)
     hover:Show()
 end
 
@@ -532,24 +554,25 @@ local sharedMethods = {
     -- lines, {text, r, g, b, wrap} tables are colored/wrapping body lines.
     ["SetRowTooltip"] = function(self, lines)
         self.tooltipLines = lines
+        UpdateControlHover(self)
     end,
 
     -- The style lens's channel into the same tooltip, same line shape - but
     -- shown over the CONTROL only, so setting it is also what raises and lowers
-    -- the scope overlay. Set by the scope chrome only, and cleared by it on
+    -- the control overlay. Set by the scope chrome only, and cleared by it on
     -- release; ResetRowBase clears it again on acquire so a pooled row cannot
-    -- wear the last tenant's scope hover.
+    -- wear the last tenant's control hover.
     ["SetScopeTooltip"] = function(self, lines)
         self.scopeTooltipLines = lines
-        UpdateScopeHover(self)
+        UpdateControlHover(self)
     end,
 
-    -- Optional action for an inert control. The scope overlay already owns
+    -- Optional action for an inert control. The control overlay already owns
     -- mouse input over that control; this gives selected call sites a safe
     -- direct-manipulation path without re-enabling the disabled widget below.
     ["SetScopeControlAction"] = function(self, action)
         self.scopeControlAction = type(action) == "function" and action or nil
-        UpdateScopeHover(self)
+        UpdateControlHover(self)
     end,
 
     ["OnWidthSet"] = function(self, width)
@@ -582,7 +605,7 @@ local function ResetRowBase(self)
     self.advancedSetting = false
     self.tooltipLines = nil
     self.scopeControlAction = nil
-    -- Through the setter, not the field: this is also what parks a scope
+    -- Through the setter, not the field: this is also what parks a control
     -- overlay the previous tenant of this pooled row left raised.
     self:SetScopeTooltip(nil)
     self.rangeTooltip = nil
@@ -620,8 +643,7 @@ local function BuildRowBase(widgetType)
 
     -- Zero-size anchor sitting at the end of the label text. Everything that
     -- belongs to the label hangs off it: the gear/info/scope badge chain via
-    -- AnchorRowBadge, and one-off notes like the green "(Masque skinning is
-    -- active)" line. It re-points itself whenever SetLabel or SetIndent runs,
+    -- AnchorRowBadge. It re-points itself whenever SetLabel or SetIndent runs,
     -- so the whole chain follows the text.
     local badgeAnchor = CreateFrame("Frame", nil, frame)
     badgeAnchor:SetSize(1, 1)
@@ -677,7 +699,7 @@ do
 
         ["OnRelease"] = function(self)
             ReleaseOwnedBadges(self)
-            self.tooltipLines = nil
+            self:SetRowTooltip(nil)
             -- ButtonConditions.SetupBatchCheckbox parks the previous batch
             -- value on the row and nothing else clears it, so it would
             -- otherwise survive pooling.
@@ -704,6 +726,7 @@ do
             self.disabled = disabled and true or false
             self.checkBox:SetDisabled(self.disabled)
             ApplyLabelColor(self)
+            UpdateControlHover(self)
         end,
     }
 
@@ -763,7 +786,7 @@ do
         -- helpers in Helpers.lua fall back to those names for widgets that
         -- have no badgeAnchor.
         widget.checkBox = check
-        -- The scope overlay's region: the check art itself, not the 140px
+        -- The control overlay's region: the check art itself, not the 140px
         -- column it is pinned into. Static - this child is never released.
         widget.controlHoverAnchor = check.frame
 
@@ -919,7 +942,7 @@ do
             self.min = nil
             self.max = nil
             self.rangeTooltip = nil
-            self.tooltipLines = nil
+            self:SetRowTooltip(nil)
         end,
 
         ["SetSliderValues"] = function(self, minValue, maxValue, step)
@@ -943,6 +966,7 @@ do
             self.disabled = disabled and true or false
             self.sliderWidget:SetDisabled(self.disabled)
             ApplyLabelColor(self)
+            UpdateControlHover(self)
         end,
     }
 
@@ -1204,7 +1228,7 @@ do
             -- OnAcquire and keeps the same object until release.
             self.pullout = child.pullout
 
-            -- The dropdown fills the column, so its frame IS the scope
+            -- The dropdown fills the column, so its frame IS the control
             -- overlay's region. Borrowed, so it is republished every acquire
             -- and dropped again on release.
             self.controlHoverAnchor = child.frame
@@ -1218,7 +1242,7 @@ do
             self.dropdown = nil
             self.pullout = nil
             self.tooltipLines = nil
-            -- Before the child goes back to the shared pool: parks the scope
+            -- Before the child goes back to the shared pool: parks the control
             -- overlay, which is anchored to the frame being released.
             self:SetScopeTooltip(nil)
             self.controlHoverAnchor = nil
@@ -1269,6 +1293,7 @@ do
             self.disabled = disabled and true or false
             self.dropdown:SetDisabled(self.disabled)
             ApplyLabelColor(self)
+            UpdateControlHover(self)
         end,
     }
 
@@ -1341,7 +1366,7 @@ do
             -- keeps the same object until release.
             self.editbox = child.editbox
 
-            -- The edit box fills the column, so its frame IS the scope
+            -- The edit box fills the column, so its frame IS the control
             -- overlay's region. Stock SetDisabled drops mouse on the inner
             -- EditBox, so a disabled row has no control hover of its own to
             -- fight - and re-enabling it would have handed back a focusable,
@@ -1357,7 +1382,7 @@ do
             self.editBoxWidget = nil
             self.editbox = nil
             self.tooltipLines = nil
-            -- Before the child goes back to the shared pool: parks the scope
+            -- Before the child goes back to the shared pool: parks the control
             -- overlay, which is anchored to the frame being released.
             self:SetScopeTooltip(nil)
             self.controlHoverAnchor = nil
@@ -1396,6 +1421,7 @@ do
             self.disabled = disabled and true or false
             self.editBoxWidget:SetDisabled(self.disabled)
             ApplyLabelColor(self)
+            UpdateControlHover(self)
         end,
     }
 
@@ -1454,13 +1480,14 @@ do
         ["OnRelease"] = function(self)
             ReleaseOwnedBadges(self)
             local child = self.colorPicker
-            -- Before the swatch goes back to the shared pool: parks the scope
-            -- overlay, which is anchored to the swatch.
+            -- Before the swatch goes back to the shared pool: parks the control
+            -- overlay, which is anchored to the swatch. The tooltip goes
+            -- first; a disabled row's tooltip alone keeps the overlay up.
+            self.tooltipLines = nil
             self:SetScopeControlAction(nil)
             self:SetScopeTooltip(nil)
             self.controlHoverAnchor = nil
             self.colorPicker = nil
-            self.tooltipLines = nil
             if child then
                 AceGUI:Release(child)
             end
@@ -1483,6 +1510,7 @@ do
             self.disabled = disabled and true or false
             self.colorPicker:SetDisabled(self.disabled)
             ApplyLabelColor(self)
+            UpdateControlHover(self)
         end,
     }
 
@@ -1519,7 +1547,7 @@ end
 -- container child, so nothing else would ever return it to its pool. OnRelease
 -- releases it.
 --
--- This is the one row type with NO controlHoverAnchor, so it takes no scope
+-- This is the one row type with NO controlHoverAnchor, so it takes no control
 -- overlay: its control column holds either a caller-supplied widget of unknown
 -- anatomy or a status word, neither of which is a control the lens can call
 -- inherited or denied. Nothing chromes a label row through the lens today (the

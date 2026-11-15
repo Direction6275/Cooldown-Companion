@@ -70,7 +70,8 @@ local fields = {
     size = Setting(shape, "size", "Icon Size", IsSquare),
     width = Setting(shape, "width", "Icon Width", IsRectangular),
     height = Setting(shape, "height", "Icon Height", IsRectangular),
-    spacing = Setting(shape, "spacing", "Spacing"),
+    spacing = Setting(shape, "spacing", "Icon Spacing", IsIcons),
+    barSpacing = Setting(shape, "barSpacing", "Bar Spacing", function(c) return not IsIcons(c) end),
     background = Setting(shape, "background", "Background Color", IsIcons),
     border = {
         color = Setting(shape, "borderColor", "Border Color"),
@@ -82,18 +83,19 @@ local fields = {
     },
     length = Setting(bars, "length", "Bar Length"),
     barHeight = Setting(bars, "height", "Bar Height"),
-    vertical = Setting(bars, "vertical", "Vertical Fill"),
-    reverse = Setting(bars, "reverse", "Reverse Fill"),
+    vertical = bars:Setting({key = "vertical", label = "Vertical Bar Fill", aliases = {"vertical fill"}}),
+    reverse = Setting(bars, "reverse", "Reverse Fill Direction"),
     barColor = Setting(bars, "color", "Bar Color"),
     barBg = Setting(bars, "background", "Background Color"),
     texture = Setting(bars, "texture", "Bar Texture"),
     showIcon = Setting(bars, "icon", "Show Icon"),
-    iconReverse = Setting(bars, "iconReverse", "Reverse Icon Position", HasIcon),
+    iconReverse = bars:Setting({key = "iconReverse", label = "Icon on Right Side",
+        aliases = {"reverse icon position"}, applies = HasIcon}),
     iconSizeOverride = Setting(bars, "iconSizeOverride", "Custom Icon Size", HasIcon),
     iconSize = Setting(bars, "iconSize", "Icon Size", function(c) return HasIcon(c) and SelectedGroup(c).style.barIconSizeOverride == true end),
     iconOffset = Setting(bars, "iconOffset", "Icon Offset", HasIcon),
     zoom = Setting(icon, "zoom", "Icon Zoom", HasIcon),
-    tint = Setting(icon, "tint", "Icon Tint", HasIcon),
+    tint = icon:Setting({key = "tint", label = "Base Icon Color", aliases = {"icon tint"}, applies = HasIcon}),
     showDuration = Setting(duration, "show", "Show Duration Text"),
     format = Setting(duration, "format", "Duration Format", HasDuration),
     durationVisibility = {
@@ -148,14 +150,24 @@ local function Toggle(container, setting, style, key, default, rebuild)
         onChange = function(value) style[key] = value; if rebuild then Rebuild() else Refresh() end end })
 end
 
+-- A number row; sizes slide in tenths, like the same rows on other panels.
 local function Number(container, setting, style, key, default, low, high, step)
     return Slider(container, { label = setting.label, setting = setting,
-        min = low, max = high, step = step or 1, value = style[key] or default,
+        min = low, max = high, step = step or 0.1, value = style[key] or default,
         onChange = function(value)
             ST._PreviewScalarSetting(style, key, value, ST._RefreshSelectedButtonsPreview)
         end,
         onRelease = function(value) style[key] = value; Refresh() end,
     })
+end
+
+-- A panel size row. Its range is the one Unlock clamps a Totem Panel to
+-- (ST.TOTEM_PANEL_SIZE_RANGES, GroupFrameShared.lua): each covers both the
+-- ordinary panel's range and the Totem Panel's older, wider one, so no saved
+-- value sits outside its slider.
+local function Size(container, setting, style, key, default, range)
+    local limits = ST.TOTEM_PANEL_SIZE_RANGES[range]
+    return Number(container, setting, style, key, default, limits[1], limits[2])
 end
 
 local function Tint(container, setting, style, key, default)
@@ -187,21 +199,21 @@ function ST._BuildTotemAppearanceTab(container, group)
         if not isBar then
             Toggle(left, fields.square, style, "maintainAspectRatio", false, true)
             if style.maintainAspectRatio then
-                Number(left, fields.size, style, "buttonSize", ST.BUTTON_SIZE, 10, 120)
+                Size(left, fields.size, style, "buttonSize", ST.BUTTON_SIZE, "icon")
             else
-                Number(left, fields.width, style, "iconWidth", style.buttonSize or ST.BUTTON_SIZE, 10, 160)
-                Number(left, fields.height, style, "iconHeight", style.buttonSize or ST.BUTTON_SIZE, 10, 160)
+                Size(left, fields.width, style, "iconWidth", style.buttonSize or ST.BUTTON_SIZE, "icon")
+                Size(left, fields.height, style, "iconHeight", style.buttonSize or ST.BUTTON_SIZE, "icon")
             end
             Tint(right, fields.background, style, "backgroundColor", {0, 0, 0, 0.5})
         end
-        Number(left, fields.spacing, style, "buttonSpacing", ST.BUTTON_SPACING, 0, 30)
+        Number(left, isBar and fields.barSpacing or fields.spacing, style, "buttonSpacing", ST.BUTTON_SPACING, 0, 30)
         ST._BuildBorderControls(right, style, Refresh, { settings = fields.border })
     end
     if isBar then
         left, right = Section(container, "bars", "Bar")
         if left then
-            Number(left, fields.length, style, "barLength", 180, 20, 600)
-            Number(left, fields.barHeight, style, "barHeight", 20, 4, 100)
+            Size(left, fields.length, style, "barLength", 180, "length")
+            Size(left, fields.barHeight, style, "barHeight", 20, "thickness")
             Toggle(left, fields.vertical, style, "barFillVertical", false)
             Toggle(left, fields.reverse, style, "barReverseFill", false)
             Tint(left, fields.barColor, style, "barColor", {0.2, 0.6, 1, 1})
@@ -215,7 +227,7 @@ function ST._BuildTotemAppearanceTab(container, group)
                 Toggle(right, fields.iconReverse, style, "barIconReverse", false)
                 Toggle(right, fields.iconSizeOverride, style, "barIconSizeOverride", false, true)
                 if style.barIconSizeOverride then Number(right, fields.iconSize, style, "barIconSize", 20, 4, 100) end
-                Number(right, fields.iconOffset, style, "barIconOffset", 0, -20, 40)
+                Number(right, fields.iconOffset, style, "barIconOffset", 0, -50, 50)
             end
         end
     end

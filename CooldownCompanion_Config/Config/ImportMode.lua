@@ -619,9 +619,8 @@ local function RenderSetupReview(scroll, mode, review)
     if resources then
         local classKey = ST._GetSetupImportSectionClassKey(resources)
         local keyText = tostring(classKey or "Unknown class")
-        AddSectionHeading(scroll, "Resources  |cff777777(" .. keyText .. ")|r", classKey)
+        AddSectionHeading(scroll, "Resource Bars  |cff777777(" .. keyText .. ")|r", classKey)
         AddSpacer(scroll, 10)
-        AddLine(scroll, "Includes all resources, styling, and layout order.", 0.7, 0.7, 0.7)
 
         -- The one decision on the surface, shown only when there are
         -- settings to lose. Untouched-module users import silently.
@@ -632,7 +631,7 @@ local function RenderSetupReview(scroll, mode, review)
             AddSpacer(scroll, 6)
             local toggle = AceGUI:Create("CheckBox")
             toggle:SetFullWidth(true)
-            toggle:SetLabel("Replace my " .. keyText .. " Resources settings")
+            toggle:SetLabel("Replace my " .. keyText .. " Resource Bars settings")
             toggle:SetValue(not mode.skipResources)
             toggle:SetCallback("OnValueChanged", function(_, _, value)
                 mode.skipResources = value ~= true
@@ -641,7 +640,7 @@ local function RenderSetupReview(scroll, mode, review)
             end)
             scroll:AddChild(toggle)
             if mode.skipResources then
-                AddLine(scroll, "The Resources setup will be skipped. Everything else still imports.", 0.7, 0.7, 0.7)
+                AddLine(scroll, "The Resource Bars setup will be skipped. Everything else still imports.", 0.7, 0.7, 0.7)
             end
         end
 
@@ -903,12 +902,8 @@ RenderImportModeReview = function()
         AddHeading(scroll, "Import")
         AddSpacer(scroll, 6)
         AddLine(scroll, "Nothing pasted yet.")
-        AddSpacer(scroll, 2)
-        AddLine(scroll, "Paste any Cooldown Companion export string above. The summary shows what it contains before anything imports.", 0.7, 0.7, 0.7)
     else
         RenderClassifiedReview(scroll, mode, mode.review)
-        AddSpacer(scroll, 8)
-        AddLine(scroll, "Import is at the bottom of the navigator.", 0.7, 0.7, 0.7)
         AddSpacer(scroll, 6)
         local repaste = AceGUI:Create("Button")
         repaste:SetText("Paste a different string")

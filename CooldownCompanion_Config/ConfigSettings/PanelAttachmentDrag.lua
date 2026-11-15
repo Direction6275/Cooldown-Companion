@@ -244,8 +244,8 @@ function ST._WirePanelAttachmentModule(frame, module, slot, drag)
             GameTooltip:AddLine(compatible and "Click to apply compatible thickness customization."
                 or "This bar supports Bar Thickness customization only.", 1, 1, 1, true)
         end
-        GameTooltip:AddLine(module.kind == "cast" and "Drag to another side. The cast bar stays last."
-            or "Drag to move this Resources block. Resource ordering stays inside the block.", 1, 1, 1, true)
+        GameTooltip:AddLine(module.kind == "cast" and "The cast bar stays last."
+            or "Resource ordering stays inside the block.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     frame:SetScript("OnLeave", function(self)

@@ -1,6 +1,5 @@
 local ADDON_NAME, ST = ...
 local CooldownCompanion = ST.Addon
-local AceGUI = LibStub("AceGUI-3.0")
 local CS = ST._configState
 
 -- Imports from Helpers.lua
@@ -435,11 +434,6 @@ local function BuildCastBarPositioningPanel(container)
     local settings = CooldownCompanion:GetCastBarSettings()
 
     if not settings.enabled then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Cast Bar to configure positioning.")
-        label:SetFullWidth(true)
-        container:AddChild(label)
         return
     end
 
@@ -524,11 +518,6 @@ local function BuildCastBarStylingPanel(container)
     -- module off, styling rows would commit to a bar that immediately
     -- reverts. Same disabled-state surface as the positioning panel.
     if not settings.enabled then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Cast Bar to configure appearance.")
-        label:SetFullWidth(true)
-        container:AddChild(label)
         return
     end
 
