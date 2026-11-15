@@ -298,9 +298,8 @@ end
 -- parks in the second comes last.
 local function AddScopedLoadConditionToggles(container, opts)
     local target = opts.target
-    if not target.loadConditions and not opts.preserveMissing then
-        target.loadConditions = {}
-    end
+    -- Building the rows writes nothing: a target with no saved rules reads as
+    -- its defaults, which is what the runtime does with it.
     local loadConditions = target.loadConditions or {}
     local defaults = opts.defaults
     local inheritedSources = opts.inheritedSources or {}
@@ -332,9 +331,8 @@ local function AddScopedLoadConditionToggles(container, opts)
     local function SetCondition(cond, newVal)
         if not target.loadConditions then
             target.loadConditions = {}
-            loadConditions = target.loadConditions
         end
-        SetLoadConditionValue(loadConditions, cond.key, newVal, defaults, cond.default)
+        SetLoadConditionValue(target.loadConditions, cond.key, newVal, defaults, cond.default)
         if onChanged then onChanged() end
     end
 
@@ -2838,10 +2836,6 @@ local function BuildLoadConditionsTab(container)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
 
-    -- Ensure loadConditions table exists
-    if not group.loadConditions then
-        group.loadConditions = CooldownCompanion:GetDefaultLoadConditions()
-    end
     local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
     local inheritedSpecs, inheritedSpecFilter = CooldownCompanion:GetInheritedEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
@@ -3016,7 +3010,6 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, o
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
         headingText = opts.headingText or "Where To Hide It",
         localCollapsedKey = opts.collapseKey or "loadconditions_entry_local",
-        preserveMissing = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
         infoButtons = infoButtons,
         onChanged = function()

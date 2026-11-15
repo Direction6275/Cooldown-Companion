@@ -852,7 +852,10 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
     effects = activeEffects
     SetTextureIndicatorBaseVisuals(host)
 
+    -- Its own padlock open, as GetPanelUnlockState reads it: the combat lock
+    -- reads locked, so the effects play through a fight.
     local freezeGeometryWhileUnlocked = group.locked == false
+        and not CooldownCompanion._combatForcedLock
         and not CooldownCompanion:IsArrangeContainerSuppressed(group.parentContainerId)
     local bounceAmplitude = math_max(
         6,

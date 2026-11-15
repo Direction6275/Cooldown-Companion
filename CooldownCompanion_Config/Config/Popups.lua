@@ -172,11 +172,20 @@ local function HideResourceBarConflictChooser(markDismissed)
     if chooser.frame then
         chooser.frame:SetScript("OnKeyDown", nil)
         chooser.frame:EnableKeyboard(false)
-        if chooser.frame.SetPropagateKeyboardInput then
-            chooser.frame:SetPropagateKeyboardInput(true)
-        end
     end
     ReturnResourceBarConflictFocus()
+end
+
+-- A real close of the settings window (combat included) takes the chooser
+-- with it. Not a dismissal: the next open offers it again. The Window fires
+-- OnClose on every hide, which marks one, so the mark is taken back here.
+ST._HideResourceBarConflictChooser = function()
+    local chooser = CS.resourceBarConflictChooser
+    if not (chooser and chooser.frame and chooser.frame:IsShown()) then return end
+    HideResourceBarConflictChooser(false)
+    if chooser.classKey and CS.resourceBarConflictChooserDismissed then
+        CS.resourceBarConflictChooserDismissed[chooser.classKey] = nil
+    end
 end
 
 local function ShowResourceBarConflictChooser(classKey, opts)
@@ -325,10 +334,16 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     chooser:AddChild(closeButton)
 
     chooser:SetHeight(math.max(460, 390 + (candidateCount * 38) + (math.max(candidateCount - 1, 0) * 10)))
-    chooser.frame:SetScript("OnKeyDown", function(_, key)
+    -- Only the keys the chooser acts on stop here; every other key reaches the
+    -- game. Keeping a setup deletes the others, so it takes Enter or a click.
+    chooser.frame:SetScript("OnKeyDown", function(self, key)
+        if not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(not (key == "ESCAPE" or key == "ENTER"
+                or key == "DOWN" or key == "TAB" or key == "UP"))
+        end
         if key == "ESCAPE" then
             HideResourceBarConflictChooser(true)
-        elseif key == "ENTER" or key == "SPACE" then
+        elseif key == "ENTER" then
             chooseRow(chooser.selectedIndex or 1)
         elseif key == "DOWN" or key == "TAB" then
             local nextIndex = (chooser.selectedIndex or 1) + 1
@@ -341,9 +356,6 @@ local function ShowResourceBarConflictChooser(classKey, opts)
         end
     end)
     chooser.frame:EnableKeyboard(true)
-    if chooser.frame.SetPropagateKeyboardInput then
-        chooser.frame:SetPropagateKeyboardInput(false)
-    end
     chooser:Show()
     AnchorResourceBarConflictChooser(chooser)
     RaiseResourceBarConflictChooser(chooser)

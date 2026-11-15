@@ -186,11 +186,11 @@ local function EvaluateButtonVisibility(button, buttonData, procOverlayActive)
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_CHARGES)
     end
 
-    -- Check hideWhileZeroStacks (stack-based items)
-    local itemUseCount = hasItemFallbacks
-        and button._resolvedItemAvailableQuantity
-        or button._itemCount
-    if buttonData.type == "item" and buttonData.hideWhileZeroStacks and (itemUseCount or 0) == 0 then
+    -- Check hideWhileZeroStacks (items you hold none of, or with no uses left).
+    -- The resolved quantity, not _itemCount: that is only the count text's
+    -- cache and is never written for an item with charges.
+    if buttonData.type == "item" and buttonData.hideWhileZeroStacks
+            and (button._resolvedItemAvailableQuantity or 0) == 0 then
         hideReasons = bit_bor(hideReasons, HIDE_ZERO_STACKS)
     end
 

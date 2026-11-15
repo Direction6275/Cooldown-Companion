@@ -362,11 +362,9 @@ local function ResolveDesaturationIntent(button, buttonData, style, target)
             target.active = true
             target.reason = "zero-charges"
         end
-        local itemUseCount = CooldownCompanion.HasItemFallbacks(buttonData)
-            and button._resolvedItemAvailableQuantity
-            or button._itemCount
         if not target.active and buttonData.type == "item"
-                and buttonData.desaturateWhileZeroStacks and (itemUseCount or 0) == 0 then
+                and buttonData.desaturateWhileZeroStacks
+                and (button._resolvedItemAvailableQuantity or 0) == 0 then
             target.active = true
             target.reason = "zero-stacks"
         end

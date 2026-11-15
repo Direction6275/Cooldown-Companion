@@ -604,11 +604,16 @@ function CooldownCompanion:OnCombatStart()
     if PlayerSpellsFrame and PlayerSpellsFrame:IsShown() then
         HideUIPanel(PlayerSpellsFrame)
     end
+    -- A frame pick in progress hid the config panel itself; it ends here and
+    -- the panel reopens after combat, as it does when combat closes it.
+    local configState = ST._configState
+    local pickHidConfig = configState and configState.CancelPickFrame
+        and configState.CancelPickFrame()
     -- Hide config panel during combat to avoid protected frame errors
     local configFrame = self:GetConfigFrame()
     local miniFrame = configFrame and configFrame._miniFrame
     if configFrame
-        and (configFrame.frame:IsShown() or (miniFrame and miniFrame:IsShown())) then
+        and (pickHidConfig or configFrame.frame:IsShown() or (miniFrame and miniFrame:IsShown())) then
         self._pendingConfigIntent = {
             action = "toggle",
             entryPoint = "combat reopen",

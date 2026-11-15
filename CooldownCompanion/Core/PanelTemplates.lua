@@ -380,7 +380,7 @@ local function BuildPanelTemplateSnapshot(self, group, mode)
             template.attachedBarLayout[key] = ST._CopyPresetValue((group.attachedBarLayout or {})[key])
         end
     end
-    -- Reuse the hide-rule reader's missing-table versus empty-table semantics.
+    -- Reuse the hide-rule reader: a missing table saves as the defaults.
     ST._CopyPanelVisibility(self, group, template, ST.PANEL_COPY_SCOPES[mode].visibility)
     for key in pairs(fields.group) do template[key] = ST._CopyPresetValue(group[key]) end
     template.inheritPanelAlpha = group.inheritPanelAlpha ~= false

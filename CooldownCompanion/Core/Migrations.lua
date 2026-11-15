@@ -762,11 +762,18 @@ local function BackfillAuraDurationSwipeSettings(profile, savedProfileState)
     if type(profile.groups) == "table" then
         for _, group in pairs(profile.groups) do
             if type(group) == "table" then
+                -- The entry leg is for panels saved before the aura swipe had
+                -- its own keys. Read before the panel's own backfill writes the
+                -- key: on current data an entry with only Cooldown Swipe
+                -- customized takes the panel's aura swipe, and every login and
+                -- import re-runs this pass.
+                local savedBeforeSplit = type(group.style) == "table"
+                    and rawget(group.style, "showAuraDurationSwipe") == nil
                 if BackfillAuraDurationSwipeStyle(group.style, profile.globalStyle) then
                     changed = true
                 end
 
-                if type(group.buttons) == "table" then
+                if savedBeforeSplit and type(group.buttons) == "table" then
                     for _, buttonData in ipairs(group.buttons) do
                         if type(buttonData) == "table" then
                             local overrideSections = buttonData.overrideSections

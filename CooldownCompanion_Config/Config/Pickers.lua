@@ -15,6 +15,7 @@ local pickFrameOverlay = nil
 local pickFrameCallback = nil
 local pickFrameSourceGroupId = nil
 local pickFrameOptions = nil
+local pickFrameHidConfig = false
 
 ------------------------------------------------------------------------
 -- Secret-safe value helpers
@@ -281,7 +282,19 @@ local function FinishPickFrame(name)
     end
 end
 
+-- Combat ends a pick without its callback: every callback reopens the settings
+-- window. Returns true when the pick had hidden that window, so the caller can
+-- queue the usual reopen.
+local function CancelPickFrame()
+    if not (pickFrameOverlay and pickFrameOverlay:IsShown()) then return false end
+    pickFrameCallback = nil
+    FinishPickFrame(nil)
+    return pickFrameHidConfig
+end
+
 local function StartPickFrame(callback, sourceGroupId, options)
+    -- An Unlock menu left open across a pull can still offer the pick.
+    if InCombatLockdown() then return end
     pickFrameCallback = callback
     pickFrameSourceGroupId = sourceGroupId
     pickFrameOptions = options
@@ -452,8 +465,10 @@ local function StartPickFrame(callback, sourceGroupId, options)
     end
 
     -- Hide config panel, show overlay
+    pickFrameHidConfig = false
     if CS.configFrame and IsShownSafe(CS.configFrame.frame) then
         CS.configFrame.frame:Hide()
+        pickFrameHidConfig = true
     end
     pickFrameOverlay.currentName = nil
     pickFrameOverlay.instructions:SetText(
@@ -464,12 +479,13 @@ local function StartPickFrame(callback, sourceGroupId, options)
     pickFrameOverlay.highlight:Hide()
     pickFrameOverlay:Show()
     if pickFrameSourceGroupId then
-        CooldownCompanion:ShowPickModeIndicators(pickFrameSourceGroupId)
+        CooldownCompanion:ShowPickModeIndicators(pickFrameSourceGroupId, GetPickFrameAnchorOptions())
     end
 end
 
 
 CS.StartPickFrame = StartPickFrame
+CS.CancelPickFrame = CancelPickFrame
 
 ------------------------------------------------------------------------
 -- Helper: Check if a spell is in CDM TrackedBuff or TrackedBar categories

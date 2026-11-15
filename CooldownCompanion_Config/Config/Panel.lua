@@ -1138,6 +1138,13 @@ local function CreateConfigPanel()
         if CS.CloseSpellbookPanel then
             CS.CloseSpellbookPanel()
         end
+        if ST._HideResourceBarConflictChooser then
+            ST._HideResourceBarConflictChooser()
+        end
+        -- A drag still in hand (combat closed the window under it) ends here.
+        if ST._CancelDrag then
+            ST._CancelDrag()
+        end
         ClearTransientConfigPreviewState()
         -- Release the panel-preview mirror: stops its conditional ticker
         -- while the config is closed.
