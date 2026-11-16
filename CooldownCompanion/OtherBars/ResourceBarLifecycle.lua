@@ -71,6 +71,12 @@ function RB.CreateResourceBarLifecycleModule(deps)
             lifecycleFrame = CreateFrame("Frame")
             lifecycleFrame:SetScript("OnEvent", function(self, event, ...)
                 if not CooldownCompanion:IsBarsAndFramesRuntimeFeatureEnabled("resourceBars") then return end
+                -- Fires for every group member; only the player's own spec
+                -- concerns these bars (same filter as OnPlayerSpecializationChanged).
+                if event == "PLAYER_SPECIALIZATION_CHANGED" then
+                    local unit = ...
+                    if unit and unit ~= "player" then return end
+                end
                 if event == "UPDATE_SHAPESHIFT_FORM"
                     or event == "ACTIVE_TALENT_GROUP_CHANGED"
                     or event == "PLAYER_SPECIALIZATION_CHANGED" then

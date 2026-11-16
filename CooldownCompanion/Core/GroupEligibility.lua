@@ -1678,9 +1678,11 @@ function CooldownCompanion:IsTalentConditionMet(buttonData)
 
     local needsNormalization = #conditions > 1 or IsLegacyChoiceRowCondition(conditions[1])
     if needsNormalization then
+        -- Read through the normalized list without saving it: the login
+        -- conversion (NormalizeSavedTalentConditions) and the talent picker
+        -- are the writers.
         local normalized, changed = self:NormalizeTalentConditions(conditions)
         if changed then
-            buttonData.talentConditions = normalized
             conditions = normalized
             if not conditions or #conditions == 0 then return true end
         end

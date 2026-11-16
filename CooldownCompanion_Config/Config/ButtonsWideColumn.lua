@@ -630,6 +630,9 @@ local function EnsureSettingsFinder(col3)
     if widget then return widget end
 
     widget = AceGUI:Create("EditBox")
+    -- A search box outlives rebuilds, so focus in it never holds one
+    -- (IsSettingsEditInFlight, Panel.lua).
+    widget:SetUserData("cdcSearchBox", true)
     if widget.editbox.Instructions then widget.editbox.Instructions:Hide() end
     widget:SetLabel("")
     widget:SetText("")
@@ -1909,6 +1912,7 @@ local function EnsureAddBox(col3)
     if addBox then return addBox end
 
     addBox = AceGUI:Create("EditBox")
+    addBox:SetUserData("cdcSearchBox", true)
     if addBox.editbox.Instructions then addBox.editbox.Instructions:Hide() end
     addBox:SetLabel("")
     addBox:SetText("")

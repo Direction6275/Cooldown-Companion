@@ -1527,7 +1527,7 @@ function CooldownCompanion:QueueBuildViewerAuraMap(allowAssociationGate)
         -- The config panel reads the same derived associations the tail feeds,
         -- so it refreshes exactly when the tail runs.
         if self:BuildViewerAuraMap(gated) then
-            self:RefreshConfigPanel()
+            self:QueueConfigStateRefresh()
         end
     end)
 end

@@ -593,6 +593,61 @@ local function IsConfigFrameOpenForRefresh()
         and not CS.talentPickerMode
 end
 
+-- Game events (bags, talents, resting, vehicles, pets) change what the
+-- window shows, never what the player is editing. A rebuild releases every
+-- row, which closes an open colour picker, drops typed text and ends a slider
+-- drag, so these rebuilds merge into one and wait for an edit in flight.
+-- A held mouse button counts only over the window: turning the camera is not
+-- an edit. A slider dragged past the window's edge loses the hold. An open
+-- dropdown menu counts, so the click that ends one edit can open a menu.
+-- Typing counts only as text a rebuild would lose: an AceGUI edit box with
+-- focus whose text differs from what it last committed. The search boxes keep
+-- their text across rebuilds and never hold one. A slider's own value box is
+-- not covered: AceGUI does not report its focus.
+local function IsSettingsEditInFlight()
+    if ColorPickerFrame and ColorPickerFrame:IsShown() then return true end
+    local window = CS.configFrame and CS.configFrame.frame
+    if window and IsMouseButtonDown("LeftButton") and window:IsMouseOver() then return true end
+    local focused = AceGUI.FocusedWidget
+    if not focused then return false end
+    if focused.open and focused.pullout and focused.pullout.frame:IsShown() then return true end
+    if not (focused.type == "EditBox" and focused.editbox) then return false end
+    if focused:GetUserData("cdcSearchBox") then return false end
+    local editbox = focused.editbox
+    if not (editbox:HasFocus() and editbox:IsVisible()) then return false end
+    local text = editbox:GetText()
+    return text ~= "" and text ~= tostring(focused.lasttext or "")
+end
+
+-- Shown only while a rebuild is being held (owner ruling 2026-11-16: check
+-- until the edit ends). A closed window drops the hold; opening it rebuilds.
+local stateRefreshWaiter = CreateFrame("Frame")
+stateRefreshWaiter:Hide()
+stateRefreshWaiter:SetScript("OnUpdate", function(self)
+    if not IsConfigFrameOpenForRefresh() then
+        self:Hide()
+    elseif not IsSettingsEditInFlight() then
+        self:Hide()
+        CooldownCompanion:RefreshConfigPanel()
+    end
+end)
+
+local stateRefreshQueued = false
+function CooldownCompanion:_configQueueStateRefreshImpl()
+    if stateRefreshQueued or stateRefreshWaiter:IsShown() then return end
+    if not IsConfigFrameOpenForRefresh() then return end
+    stateRefreshQueued = true
+    C_Timer.After(0.1, function()
+        stateRefreshQueued = false
+        if not IsConfigFrameOpenForRefresh() then return end
+        if IsSettingsEditInFlight() then
+            stateRefreshWaiter:Show()
+        else
+            self:RefreshConfigPanel()
+        end
+    end)
+end
+
 local function QueueConfigFinderRefresh()
     pendingConfigFinderRefreshToken = pendingConfigFinderRefreshToken + 1
     local token = pendingConfigFinderRefreshToken
@@ -1885,6 +1940,7 @@ local function CreateConfigPanel()
     -- Config finder searches saved groups, panels, and entries without
     -- changing the active selection while the user types.
     local configFinder = AceGUI:Create("EditBox")
+    configFinder:SetUserData("cdcSearchBox", true)
     configFinder:SetLabel("")
     configFinder:SetText(CS.configSearchText or "")
     configFinder:DisableButton(true)
@@ -2488,6 +2544,12 @@ local function RefreshConfigWorkspace(selectionOnly, edit)
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
 
+    -- A held game-event rebuild is owed anyway: this refresh becomes that one
+    -- full rebuild, instead of the two running a frame apart.
+    if stateRefreshWaiter:IsShown() then
+        return CooldownCompanion:_configRefreshPanelImpl(edit)
+    end
+
     if edit and edit.refreshNavigator and ST._RefreshConfigEditNavigator
         and not ST._RefreshConfigEditNavigator(edit.panelId) then
         return CooldownCompanion:_configRefreshPanelImpl(edit)
@@ -2549,6 +2611,8 @@ function CooldownCompanion:_configRefreshPanelImpl(edit)
     if CS.talentPickerMode then return end
     if CS.configRefreshInProgress or CS.advancedSettingsPanelRefreshing then return end
     BeginConfigRefresh()
+    -- This rebuild is the one a held game-event rebuild was waiting for.
+    stateRefreshWaiter:Hide()
     if self._unifiedPanelConversionError and ST._ShowResourceBarConflictChooser then
         ST._ShowResourceBarConflictChooser()
     end

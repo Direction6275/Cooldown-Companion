@@ -12,8 +12,9 @@
     spec; marking another panel replaces the previous holder. The key lives on
     the profile, so it travels with profile export/import and profile copies.
     A deleted panel drops its marks on every spec (delete cascades call
-    ClearExternalAnchorMarksForPanels), and a stale mark left by an import is
-    dropped where it is read.
+    ClearExternalAnchorMarksForPanels). A stale mark left by an import reads
+    as no mark and is dropped by the login and import conversion
+    (PruneExternalAnchorMarks), never by a read.
 
     The frame is unprotected and only ever repositions ITSELF, so every path
     here is combat-safe. It SetAllPoints the marked panel's frame OBJECT
@@ -68,12 +69,24 @@ function CooldownCompanion:GetExternalAnchorPanelId(specId)
     specId = tonumber(specId or self._currentSpecId)
     local store = specId and GetStore(self, false) or nil
     local groupId = store and tonumber(store[specId]) or nil
-    if not groupId then return nil end
-    if not PanelExists(self, groupId) then
-        store[specId] = nil
-        return nil
-    end
+    -- A mark whose panel is gone reads as no mark. Deleting a panel clears its
+    -- marks (ClearExternalAnchorMarksForPanels); a read never does.
+    if not (groupId and PanelExists(self, groupId)) then return nil end
     return groupId
+end
+
+--- Login and import conversion (RunAllMigrations): a mark whose panel is not
+--- in the profile is dropped here, so a read never has to.
+function CooldownCompanion:PruneExternalAnchorMarks(profile)
+    local store = type(profile) == "table" and profile.externalAnchorPanels
+    if type(store) ~= "table" then return end
+    local groups = profile.groups
+    for specId, groupId in pairs(store) do
+        local id = tonumber(groupId)
+        if not (id and type(groups) == "table" and groups[id] ~= nil) then
+            store[specId] = nil
+        end
+    end
 end
 
 --- Mark a panel for the current spec. groupId nil clears the spec's mark.

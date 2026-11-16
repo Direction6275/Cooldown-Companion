@@ -897,7 +897,6 @@ function CooldownCompanion:ApplyIndicatorEffects(host, button, group, effectsAct
 end
 
 AT.LayoutTexturePieces = LayoutTexturePieces
-AT.SetTextureIndicatorBaseVisuals = SetTextureIndicatorBaseVisuals
 AT.StopAllTextureIndicatorEffects = StopAllTextureIndicatorEffects
 AT.DoesIndicatorMatch = DoesIndicatorMatch
 AT.EvaluateTriggerRowCondition = EvaluateTriggerRowCondition

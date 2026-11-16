@@ -114,10 +114,6 @@ local POWER_NAMES = {
     [19] = "Essence",
 }
 
-local POWER_SHORT_NAMES = {
-    [RESOURCE_HEALTH] = "HP",
-}
-
 ------------------------------------------------------------------------
 -- Per-resource default color tables
 ------------------------------------------------------------------------
@@ -502,7 +498,6 @@ ST._RB = {
     -- Power data
     DEFAULT_POWER_COLORS = DEFAULT_POWER_COLORS,
     POWER_NAMES = POWER_NAMES,
-    POWER_SHORT_NAMES = POWER_SHORT_NAMES,
     SEGMENTED_TYPES = SEGMENTED_TYPES,
     POWER_ATLAS_INFO = POWER_ATLAS_INFO,
     HIDE_AT_ZERO_ELIGIBLE = HIDE_AT_ZERO_ELIGIBLE,

@@ -81,6 +81,39 @@ local panelLoadConditionSettings = DefineLoadConditionFinderSettings(
 local entryLoadConditionSettings = DefineLoadConditionFinderSettings(
     "entry.visibility.where", "entry", "loadconditions_entry_local")
 
+-- The two sections below are found as a whole: their rows come and go with
+-- what the object already limits, so a search lands on the heading.
+local panelEligibilitySetting = ST._DefineSettingRoute({
+    idPrefix = "panel.visibility.who", scope = "panel", rowScope = "primary",
+    tab = "loadconditions", tabLabel = "Visibility",
+    section = "who_can_use", sectionLabel = "Who Can Use This",
+    collapseKeys = { "loadconditions_panel_who" },
+}):Setting({key = "who", label = "Who Can Use This",
+    aliases = {"character", "class", "specialization", "hero talent"}})
+
+local entryTalentConditionsSetting = ST._DefineSettingRoute({
+    idPrefix = "entry.visibility.talents", scope = "entry", rowScope = "primary",
+    tab = "loadconditions", tabLabel = "Visibility",
+    section = "talent_conditions", sectionLabel = "Talent Conditions",
+    collapseKeys = function(context)
+        return tostring(context.groupId) .. "_" .. tostring(context.buttonIndex) .. "_talentcondition"
+    end,
+}):Setting({key = "talents", label = "Talent Conditions",
+    aliases = {"talent", "hero talent", "require talent"}})
+
+-- Binds a section heading to its Settings Finder entry. A heading widget is
+-- pooled and does not drop the binding by itself.
+local function BindSettingHeading(heading, setting, text)
+    if not (heading and setting and ST._BindSettingWidget) then return end
+    ST._BindSettingWidget(heading, setting, text)
+    local onRelease = heading.events and heading.events.OnRelease
+    heading:SetCallback("OnRelease", function(widget, event, ...)
+        widget._cdcSettingDescriptor = nil
+        if onRelease then onRelease(widget, event, ...) end
+    end)
+end
+ST._BindSettingHeading = BindSettingHeading
+
 local function HasSavedSourceRestrictions(source)
     return type(source.loadConditions) == "table" and next(source.loadConditions) ~= nil
         or type(source.talentConditions) == "table" and #source.talentConditions > 0
@@ -2624,6 +2657,9 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
         or "Talent Conditions"
     local talentHeading, talentCollapsed = BuildCollapsibleSection(scroll, headingText, talentKey,
         nil, nil, ROW_SECTION)
+    if not sourceIndex then
+        BindSettingHeading(talentHeading, entryTalentConditionsSetting, headingText)
+    end
 
     -- The heading's "?" chains off the end of its label; the fading rule
     -- restarts after that badge.
@@ -2860,8 +2896,9 @@ local function BuildLoadConditionsTab(container)
     -- there is no advanced-panel queue to keep uncollapsed.
     AddFamilyHeading(container, "Load Conditions")
 
-    local _, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This",
+    local whoHeading, whoCollapsed = BuildCollapsibleSection(container, "Who Can Use This",
         "loadconditions_panel_who", nil, nil, ROW_SECTION)
+    BindSettingHeading(whoHeading, panelEligibilitySetting, "Who Can Use This")
 
     if not whoCollapsed then
         local eligibilityOpts = {
@@ -3045,12 +3082,7 @@ local function BuildIndicatorSourceRestrictions(container, group)
         if HasSavedSourceRestrictions(source) then
             if not heading then
                 heading = AddFamilyHeading(container, "Source Restrictions")
-                ST._BindSettingWidget(heading, indicatorSourceRestrictions, "Source Restrictions")
-                local onRelease = heading.events and heading.events.OnRelease
-                heading:SetCallback("OnRelease", function(widget, event, ...)
-                    widget._cdcSettingDescriptor = nil
-                    if onRelease then onRelease(widget, event, ...) end
-                end)
+                BindSettingHeading(heading, indicatorSourceRestrictions, "Source Restrictions")
             end
             if type(source.loadConditions) == "table" and next(source.loadConditions) then
                 BuildEntryLoadConditionsTab(container, source, tabInfoButtons, {

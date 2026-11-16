@@ -721,7 +721,8 @@ local function StyleBarEntry(slot, buttonData, group, effectiveStyle)
     slot.style = style
 
     local width, height = slot:GetSize()
-    BarVisuals.Apply(slot, style, width, height)
+    BarVisuals.Apply(slot, style, width, height,
+        ST.IsAuraPanelGroup(group) or ST.IsNativeFlowAuraEntry(group, buttonData))
     local showIcon = style.showBarIcon ~= false
     local isVertical = style.barFillVertical or false
     if showIcon then

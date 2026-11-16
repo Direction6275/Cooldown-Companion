@@ -20,7 +20,6 @@ local pendingSpellAvailabilityRefreshToken = 0
 -- macros changing many slots simultaneously) into a single rebuild pass,
 -- armed once per burst (pending flag, like UpdateCastBarStackAnchor).
 local pendingSlotChangeRefresh = false
-local pendingSlotChangedSlots = {}
 
 -- A talent save, hero-tree swap or spec swap fires several events in the same
 -- instant (a spec swap: ACTIVE_TALENT_GROUP_CHANGED plus TRAIT_CONFIG_UPDATED
@@ -59,7 +58,7 @@ local function QueueTalentChargeRefresh(addon)
         if InCombatLockdown() then
             -- The former full settle deferred protected panel work as a unit.
             addon:RefreshAllGroups()
-            addon:RefreshConfigPanel()
+            addon:QueueConfigStateRefresh()
             addon:EndPanelAttachmentRefresh(operation)
             return
         end
@@ -72,7 +71,7 @@ local function QueueTalentChargeRefresh(addon)
         addon:RefreshAllGroupsForSpellAvailability({ perGroupRebuild = true })
         addon:EvaluateBarsAndFramesRuntime("talent-charge-settle")
         addon:RequestAuraRebind("talent-charge-settle")
-        addon:RefreshConfigPanel()
+        addon:QueueConfigStateRefresh()
         addon:EndPanelAttachmentRefresh(operation)
     end)
 end
@@ -137,30 +136,14 @@ end
 -- land in it. A shapeshift fires UPDATE_SHAPESHIFT_FORM, UPDATE_BONUS_ACTIONBAR,
 -- ACTIONBAR_PAGE_CHANGED and a slot-0 ACTIONBAR_SLOT_CHANGED together, and the
 -- spell-availability pass adds one more; each used to run the full rebuild
--- synchronously. `slot` narrows the item cache update. nil and 0 (Blizzard's
--- "every slot" payload on a bonus bar swap) both mean a full rebuild.
-local function QueueKeybindStateRefresh(addon, slot)
-    if slot and slot ~= 0 then
-        pendingSlotChangedSlots[slot] = true
-    else
-        pendingSlotChangedSlots._fullRebuild = true
-    end
+-- synchronously. One slot or all of them, the pass is the same full rebuild:
+-- a single slot's item can only be placed by reading every mapped slot.
+local function QueueKeybindStateRefresh(addon)
     if pendingSlotChangeRefresh then return end
     pendingSlotChangeRefresh = true
     C_Timer.After(0, function()
         pendingSlotChangeRefresh = false
-        if pendingSlotChangedSlots._fullRebuild then
-            wipe(pendingSlotChangedSlots)
-            addon:RefreshKeybindState()
-            return
-        end
-        addon:RebuildSlotMapping()
-        for s in pairs(pendingSlotChangedSlots) do
-            addon:UpdateItemSlotCache(s)
-        end
-        wipe(pendingSlotChangedSlots)
-        addon:RebuildAddonSlotBindings()
-        addon:OnKeybindsChanged()
+        addon:RefreshKeybindState()
     end)
 end
 
@@ -202,7 +185,7 @@ function CooldownCompanion:RefreshEquipmentSlotEntries()
             end
         end
     end
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
     self:EndPanelAttachmentRefresh(attachmentOperation, false, "equipment-slots")
 end
 
@@ -266,7 +249,7 @@ function CooldownCompanion:RefreshSpellAvailabilityState(opts)
     if not opts.skipKeybindRefresh then
         QueueKeybindStateRefresh(self)
     end
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 
     if opts.applyResourceBars then
         self:EvaluateBarsAndFramesRuntime("spell-availability-apply")
@@ -449,7 +432,7 @@ end
 function CooldownCompanion:OnBagChanged()
     self:MarkCooldownsDirty("bag-changed")
     self:RefreshChargeFlags("item")
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 function CooldownCompanion:OnTalentsChanged()
@@ -467,7 +450,7 @@ function CooldownCompanion:OnPetChanged()
         end
     end
     self:EndPanelAttachmentRefresh(attachmentOperation, false, "pet-changed")
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 local function ReadSpellChargeMetadata(spellID)
@@ -693,7 +676,7 @@ function CooldownCompanion:OnRestingChanged()
     if isResting == self._isResting then return end
     self._isResting = isResting
     self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "resting-changed" })
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 function CooldownCompanion:OnMountDisplayChanged()
@@ -707,13 +690,13 @@ end
 function CooldownCompanion:OnPetBattleStart()
     self._inPetBattle = true
     self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "pet-battle-start" })
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 function CooldownCompanion:OnPetBattleEnd()
     self._inPetBattle = false
     self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "pet-battle-end" })
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 function CooldownCompanion:OnVehicleUIChanged(event, unit)
@@ -722,7 +705,7 @@ function CooldownCompanion:OnVehicleUIChanged(event, unit)
     self:RefreshAuraIdentityVisibility()
     self:RequestAuraRebind("vehicle-ui")
     self:RefreshAllGroupsVisibilityOnly({ evaluateModules = true, reason = "vehicle-ui-changed" })
-    self:RefreshConfigPanel()
+    self:QueueConfigStateRefresh()
 end
 
 function CooldownCompanion:OnPlayerEnteringWorld(event, isInitialLogin, isReloadingUi)
@@ -771,11 +754,10 @@ function CooldownCompanion:OnBindingsChanged()
     self:OnKeybindsChanged()
 end
 
-function CooldownCompanion:OnActionBarSlotChanged(_, slot)
+function CooldownCompanion:OnActionBarSlotChanged()
     -- Modifier-reactive macros fire this event per affected slot in the same
-    -- frame; the queue collapses them into one pass and treats slot 0 as a
-    -- full rebuild.
-    QueueKeybindStateRefresh(self, slot)
+    -- frame; the queue collapses them into one pass.
+    QueueKeybindStateRefresh(self)
 end
 
 function CooldownCompanion:OnActionBarLayoutChanged(event)
