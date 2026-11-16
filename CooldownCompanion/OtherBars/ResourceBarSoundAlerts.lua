@@ -27,7 +27,7 @@ local function Read(settings, powerType, specID, key, fallback)
     local resource = settings and settings.resources and settings.resources[powerType]
     local value = resource and ST._ResolveSpecOverrideKey(resource, specID, key)
     -- The shared resolver treats a base false as nil; preserve explicit
-    -- false for the opt-out Combat Only setting as well as spec overrides.
+    -- false for the opt-out Only In Combat setting as well as spec overrides.
     if value == nil and type(resource) == "table" then value = resource[key] end
     if value == nil then return fallback end
     return value

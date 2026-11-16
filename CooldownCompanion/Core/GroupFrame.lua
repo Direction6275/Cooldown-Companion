@@ -647,14 +647,15 @@ end
 ------------------------------------------------------------------------
 -- Pick-mode indicators: pulsing green border + name label on eligible groups
 ------------------------------------------------------------------------
-function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
+function CooldownCompanion:ShowPickModeIndicators(sourceGroupId, options)
     if not self._pickIndicators then self._pickIndicators = {} end
     local groups = self.db.profile.groups
     if not groups then return end
+    options = options or self:GetGroupAnchorValidationOptions(sourceGroupId)
 
     -- Helper to create/show an indicator on a frame
-    local function ShowIndicator(key, frame, labelText, sourceId, isCircular)
-        if not frame or not frame:IsShown() or isCircular then return end
+    local function ShowIndicator(key, frame, labelText)
+        if not frame or not frame:IsShown() then return end
         local indicator = self._pickIndicators[key]
         if not indicator then
             indicator = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
@@ -689,30 +690,29 @@ function CooldownCompanion:ShowPickModeIndicators(sourceGroupId)
         indicator.pulseAnim:Play()
     end
 
-    -- Show indicators on group frames
+    -- The picker's own test (Config/Pickers.lua), so a marker never sits on a
+    -- frame the pick would refuse. An Indicator is picked by its display, and
+    -- only in a panels-only pick.
     for groupId, group in pairs(groups) do
-        if groupId ~= sourceGroupId then
-            ShowIndicator(
-                "group:" .. groupId,
-                self.groupFrames[groupId],
-                group.name or ("Panel " .. groupId),
-                sourceGroupId,
-                self:WouldCreateCircularAnchor(sourceGroupId, groupId)
-            )
+        if groupId ~= sourceGroupId
+            and self:ValidateAddonFrameAnchorTarget("CooldownCompanionGroup" .. groupId, options) then
+            local frame = self.groupFrames[groupId]
+            if ST.IsIndicatorGroup(group) then
+                frame = options.requireAddonPanel and self:GetAuraTextureHostForGroupFrame(frame) or nil
+            end
+            ShowIndicator("group:" .. groupId, frame, group.name or ("Panel " .. groupId))
         end
     end
 
-    -- Show indicators on container frames
-    local containers = self.db.profile.groupContainers
-    if containers and self.containerFrames then
-        for containerId, container in pairs(containers) do
-            ShowIndicator(
-                "container:" .. containerId,
-                self.containerFrames[containerId],
-                container.name or ("Group " .. containerId),
-                sourceGroupId,
-                self:WouldCreateCircularAnchor(sourceGroupId, containerId, "container")
-            )
+    -- A Group's own frame is a 1x1 point. It is picked by its unlock outline,
+    -- so that is what gets the marker, and only while the outline is up.
+    if options.requireAddonPanel then return end
+    for containerId, frame in pairs(self.containerFrames or {}) do
+        local container = self.db.profile.groupContainers[containerId]
+        if container and frame.dragHandle
+            and self:ValidateAddonFrameAnchorTarget("CooldownCompanionContainer" .. containerId, options) then
+            ShowIndicator("container:" .. containerId, frame.dragHandle,
+                container.name or ("Group " .. containerId))
         end
     end
 end

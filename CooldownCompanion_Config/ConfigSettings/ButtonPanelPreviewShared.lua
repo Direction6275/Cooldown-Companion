@@ -567,7 +567,6 @@ local function ClearSlotInteraction(slot)
         slot:SetScript("OnLeave", nil)
         slot._cdcSpecialEntryHandlers = nil
     end
-    slot._cdcDraggable, slot._cdcSectionDraggable = false, nil
     slot._cdcEntryIndex, slot._cdcEntryStatus = nil, nil
     slot._cdcSectionAnchor, slot._cdcReorderPausedByFilter = nil, nil
     slot:EnableMouse(false)
@@ -785,7 +784,6 @@ ResetBarSlotWorkspaceState = function(frame)
     frame._cdcBarPreviewScale = nil
     frame._cdcEntryIndex = nil
     frame._cdcEntryStatus = nil
-    frame._cdcDraggable = false
     frame._cdcBaseAlpha = 1
     ApplyBarSlotVisualAlpha(frame, 1)
     if frame.visibilityBadge then frame.visibilityBadge:Hide() end
@@ -851,9 +849,11 @@ local function SetPreviewMessage(preview, message, title, note)
         titleLabel:SetText(title)
         titleLabel:Show()
 
+        -- A title may stand alone: no body, no gap for one.
+        local hasBody = message ~= nil and message ~= ""
         label:SetPoint("TOPLEFT", titleLabel, "BOTTOMLEFT", 0, -8)
         label:SetPoint("TOPRIGHT", titleLabel, "BOTTOMRIGHT", 0, -8)
-        label:Show()
+        label:SetShown(hasBody)
 
         local noteLabel = preview.messageNote
         if note then
@@ -863,9 +863,10 @@ local function SetPreviewMessage(preview, message, title, note)
                 noteLabel:SetWordWrap(true)
                 preview.messageNote = noteLabel
             end
+            local noteAnchor = hasBody and label or titleLabel
             noteLabel:ClearAllPoints()
-            noteLabel:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
-            noteLabel:SetPoint("TOPRIGHT", label, "BOTTOMRIGHT", 0, -8)
+            noteLabel:SetPoint("TOPLEFT", noteAnchor, "BOTTOMLEFT", 0, -8)
+            noteLabel:SetPoint("TOPRIGHT", noteAnchor, "BOTTOMRIGHT", 0, -8)
             noteLabel:SetText(note)
             noteLabel:Show()
         elseif noteLabel then
@@ -876,7 +877,7 @@ local function SetPreviewMessage(preview, message, title, note)
         -- guessing an offset for the rest. This stays balanced when the body
         -- or Aura note wraps at narrower config widths.
         local titleHeight = math_max(1, titleLabel:GetStringHeight() or 0)
-        local belowTitleHeight = 8 + math_max(1, label:GetStringHeight() or 0)
+        local belowTitleHeight = hasBody and (8 + math_max(1, label:GetStringHeight() or 0)) or 0
         if note then
             belowTitleHeight = belowTitleHeight
                 + 8 + math_max(1, noteLabel:GetStringHeight() or 0)

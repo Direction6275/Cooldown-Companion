@@ -422,7 +422,7 @@ local function GetRevertTooltipText(sectionId, buttonData)
     local context = buttonData and buttonData._geometryContext
     if context and not context.owner then
         return "Revert " .. GetOverrideSectionLabel(sectionId) .. " to "
-            .. (context.kind == "resources" and "Resources defaults" or "Cast Bar defaults")
+            .. (context.kind == "resources" and "Resource Bars defaults" or "Cast Bar defaults")
     end
     return "Revert " .. GetOverrideSectionLabel(sectionId) .. " to panel settings"
 end
@@ -1087,7 +1087,7 @@ local function AttachRowScopeChrome(rowWidget, sec)
         -- the same message.
         local context = lens.buttonData and lens.buttonData._geometryContext
         SetRowScopeTooltip(rowWidget, context and not context.owner and {
-            context.kind == "resources" and "Resources default" or "Cast Bar default",
+            context.kind == "resources" and "Resource Bars default" or "Cast Bar default",
             { "Customize to give this bar its own " .. GetOverrideSectionLabel(sectionId):lower() .. ".", 1, 1, 1, true },
         } or ROW_SCOPE_INHERITED_TOOLTIP)
         attached = true

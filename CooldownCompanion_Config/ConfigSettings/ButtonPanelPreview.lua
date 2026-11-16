@@ -26,6 +26,8 @@ local ClearPreviewGhost = PP.ClearPreviewGhost
 local ResetPreviewState = PP.ResetPreviewState
 local HidePreviewMessage = PP.HidePreviewMessage
 local SetPreviewMessage = PP.SetPreviewMessage
+-- One sentence for a panel whose every entry the preview filter hides.
+local ALL_HIDDEN_MESSAGE = "All entries are hidden by the unavailable/disabled preview filter."
 local FinalizePreviewState = PP.FinalizePreviewState
 local IsIconModePanel = PP.IsIconModePanel
 local IsEntrySelected = PP.IsEntrySelected
@@ -241,14 +243,10 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         if readOnly then
             SetPreviewMessage(preview, "Empty Panel")
         elseif ST.IsAuraPanelGroup(group) then
-            SetPreviewMessage(preview,
-                "Search for a spell in the field at the top, enter its ID, or drag it into this preview.",
-                "Add your first aura",
+            SetPreviewMessage(preview, nil, "Add your first aura",
                 "Your first aura sets whether this panel tracks your buffs or your target's debuffs.")
         else
-            SetPreviewMessage(preview,
-                "Search for a spell or item in the field at the top, enter an ID, or drag one into this preview.",
-                "Add your first entry")
+            SetPreviewMessage(preview, nil, "Add your first entry")
         end
         -- The drop ghost may stand in for the first entry here (DropGhost).
         if not readOnly then
@@ -287,8 +285,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
         end
     end
     if count == 0 and #modules == 0 then
-        SetPreviewMessage(preview,
-            "All entries here are unavailable or disabled, so the preview toggle has hidden them.")
+        SetPreviewMessage(preview, ALL_HIDDEN_MESSAGE)
         FinalizePreviewState(preview)
         return
     end
@@ -643,9 +640,7 @@ local function LayoutPreviewEntries(preview, host, panelId, group, options, reus
     content:ClearAllPoints()
     content:SetPoint("CENTER", preview.root, "CENTER", 0, guidanceReserve / 2)
     if guidanceReserve > 0 then
-        SetPreviewMessage(preview, #buttons == 0
-            and "This panel has no entries. Add entries in its settings."
-            or "All entries are hidden by the unavailable/disabled preview filter.")
+        SetPreviewMessage(preview, #buttons == 0 and "This panel has no entries." or ALL_HIDDEN_MESSAGE)
         local label = preview.messageLabel
         label:ClearAllPoints()
         label:SetPoint("BOTTOMLEFT", preview.root, "BOTTOMLEFT", 18, PP.PANEL_PREVIEW_PADDING)
@@ -694,7 +689,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     -- Every Indicator footer row, so none lingers over another panel's preview.
     if preview.indicatorStacks then preview.indicatorStacks.frame:Hide() end
     if preview.indicatorAura then preview.indicatorAura.frame:Hide() end
-    if preview.totemCaption then preview.totemCaption:Hide() end
     ResetPreviewState(preview)
     if ST._ResetPanelModulePreview then ST._ResetPanelModulePreview(preview) end
     HidePreviewMessage(preview)
@@ -723,10 +717,10 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
     if ST.IsTotemPanelGroup(group) then
         local content = preview.content
         local geo = ST.GetTotemPanelGeometry(group, ST.TOTEM_PANEL_PREVIEW_SLOT_COUNT)
-        content:SetScale(GetHostFitScale(host, geo.panelWidth, geo.panelHeight + 24, readOnly))
+        content:SetScale(GetHostFitScale(host, geo.panelWidth, geo.panelHeight, readOnly))
         content:SetSize(geo.panelWidth, geo.panelHeight)
         content:ClearAllPoints()
-        content:SetPoint("CENTER", preview.root, "CENTER", 0, 8)
+        content:SetPoint("CENTER", preview.root, "CENTER", 0, 0)
         content:Show()
         local surface = preview.totemSurface
         if not surface then
@@ -738,16 +732,6 @@ function ST._BuildButtonPanelPreview(host, panelId, options)
         ST.UpdateTotemPanelSurface(surface, group)
         surface:Show()
         preview.barBaseRect = {x = 0, y = 0, width = geo.panelWidth, height = geo.panelHeight}
-        if not readOnly then
-            local caption = preview.totemCaption
-            if not caption then
-                caption = preview.root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-                caption:SetPoint("TOP", content, "BOTTOM", 0, -5)
-                caption:SetText("Sample totems")
-                preview.totemCaption = caption
-            end
-            caption:Show()
-        end
         FinalizePreviewState(preview)
         return
     end

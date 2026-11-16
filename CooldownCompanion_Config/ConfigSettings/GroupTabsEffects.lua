@@ -286,13 +286,6 @@ local function BuildAuraGlowSection(container, group, style, lens)
                 enable = not auraGlowEnabled and TURNON_AURA_GLOW or nil },
         })
     end
-    -- Second badge in the chain: gear, then this, then the scope chrome the lens
-    -- attaches last. The anchor args are a placeholder - AnchorRowBadge
-    -- re-points the button onto the chain's end.
-    AnchorRowBadge(auraEnableCb, CreateInfoButton(auraEnableCb.frame, auraEnableCb.frame, "LEFT", "LEFT", 0, 0, {
-        "Aura Glow",
-        {"Adds a glow to a button while its tracked aura is active.", 1, 1, 1, true},
-    }, tabInfoButtons))
     auraSec:Chrome(auraEnableCb)
 
     auraSec:Finish()
@@ -349,7 +342,7 @@ local function BuildPandemicGlowSection(container, group, style, lens)
     end
     AnchorRowBadge(pandemicCb, CreateInfoButton(pandemicCb.frame, pandemicCb.frame, "LEFT", "LEFT", 0, 0, {
         "Pandemic Effect",
-        {"Glows a button while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
+        {"Glows an entry while its tracked aura is in the refresh window, where recasting adds bonus time.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
         {"Auras that gain no time when refreshed never show it.", 1, 1, 1, true},
         {" ", 1, 1, 1, true},
@@ -449,11 +442,11 @@ local function BuildReadyGlowSection(container, group, style, lens)
     local primeTarget = (lens and lens.mode == "entry") and lens.buttonData or nil
     local function BuildReadyGlowAdvanced(panel)
         AddCheckboxRow(panel, {
-            label = "Only while usable",
+            label = "Only While Usable",
             setting = EFFECTS_FINDER.advanced.ready and EFFECTS_FINDER.advanced.ready.onlyWhileUsable,
             value = readySec.tbl.readyGlowOnlyWhileUsable == true,
             tooltip = {
-                "Only while usable",
+                "Only While Usable",
                 {"Show the ready glow only while Blizzard reports the spell or item as usable.", 1, 1, 1, true},
                 {"Auto-hide timing continues while unusable. Passive cooldown trackers ignore this setting.", 1, 1, 1, true},
             },
@@ -610,7 +603,7 @@ local function BuildKeyPressHighlightSection(container, group, style, lens)
     -- attaches last. The anchor args are a placeholder.
     AnchorRowBadge(kphEnableCb, CreateInfoButton(kphEnableCb.frame, kphEnableCb.frame, "LEFT", "LEFT", 0, 0, {
         "Key Press Highlight",
-        {"Shows a glow overlay on buttons while their action bar keybind is physically held down.", 1, 1, 1, true},
+        {"Shows a glow overlay on entries while their action bar keybind is physically held down.", 1, 1, 1, true},
     }, tabInfoButtons))
     kphSec:Chrome(kphEnableCb)
 
@@ -1740,7 +1733,7 @@ if ST._DefineSettingRoute then
             },
         })
     ready.combatOnly = readyRoute:Setting({ key = "combatOnly", label = "Show Only In Combat" })
-    ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only while usable" })
+    ready.onlyWhileUsable = readyRoute:Setting({ key = "onlyWhileUsable", label = "Only While Usable" })
     ready.cappedCharges = readyRoute:Setting({ key = "cappedCharges", label = "Glow When Charges Are Capped" })
     ready.autoHide = readyRoute:Setting({ key = "autoHide", label = "Auto-Hide After Duration" })
     ready.duration = readyRoute:Setting({

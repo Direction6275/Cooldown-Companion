@@ -655,9 +655,8 @@ local function BuildChrome(host)
 
     chrome.help = ST._CreateInfoButton(host, searchBox.frame, "LEFT", "RIGHT", 4, 0, {
         "Texture Browser",
-        { "Hover a texture to preview it. Click to use it and return to settings. Back to Settings keeps your current texture.", 1, 1, 1, true },
-        { "Click a texture's star to add or remove it from Favorites.", 1, 1, 1, true },
-        { "Search by name or texture identifier. If no textures match, try another search or category.", 1, 1, 1, true },
+        { "Back to Settings keeps your current texture.", 1, 1, 1, true },
+        { "Search by name or texture identifier.", 1, 1, 1, true },
         { "SharedMedia textures come from installed SharedMedia texture collections.", 1, 1, 1, true },
     })
 

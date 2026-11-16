@@ -987,9 +987,6 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
             ("|A:%s:14:14|a Hidden aura still reserves layout space")
                 :format(PANEL_PREVIEW_AURA_SPACE_BADGE_ATLAS),
             1, 0.82, 0.2)
-        GameTooltip:AddLine(
-            "Blizzard does not expose the active aura state to addon layout code, so this reserved space cannot safely collapse.",
-            0.7, 0.7, 0.7, true)
     end
     if visibility and not visibility.exactPreview
         and visibility.underlyingMode == "hidden" then
@@ -1021,13 +1018,6 @@ local function ShowEntrySlotTooltip(slot, panelId, buttonData, status, visibilit
         end
         GameTooltip:AddLine("Right-click to cancel.", 0.75, 0.82, 0.92)
     else
-        if slot._cdcDraggable then
-            GameTooltip:AddLine("Drag to reorder.", 0.75, 0.82, 0.92)
-            if slot._cdcSectionDraggable then
-                GameTooltip:AddLine("Drag past the row to place it in a section.",
-                    0.75, 0.82, 0.92)
-            end
-        end
         -- WireEntryInteraction opens the entry context menu on every display
         -- mode, and that menu holds destructive actions, so every mode
         -- advertises it.
@@ -1196,8 +1186,6 @@ local function WireEntryInteraction(slot, panelId, index, buttonData, status, la
     context.panelId, context.index, context.buttonData = panelId, index, buttonData
     context.status, context.layoutDrag, context.visibility = status, layoutDrag, visibility
     slot:EnableMouse(true)
-    slot._cdcDraggable = layoutDrag ~= nil
-    slot._cdcSectionDraggable = (layoutDrag and layoutDrag.sectionDrag) and true or nil
     slot._cdcEntryIndex, slot._cdcEntryStatus = index, status
     if not slot._cdcEntryHandlersInstalled then
         slot:SetScript("OnMouseDown", EntryOnMouseDown)

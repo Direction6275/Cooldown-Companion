@@ -1091,7 +1091,7 @@ local function GetEditingHeaderPath()
             local resourceName = powerNames and powerNames[tonumber(CS.selectedResourcePowerType)]
             return BARS_HOME_LABEL, resourceName or "Resource"
         end
-        return nil, "Resources"
+        return nil, BARS_HOME_LABEL
     end
     local group = db and CS.selectedGroup and db.groups[CS.selectedGroup]
     if not group then return nil, nil end
@@ -1255,7 +1255,7 @@ local function UpdateEditingHeader(col3)
         currentText = contextName
     elseif CS.barsEntrySelected and parent == BARS_HOME_LABEL then
         segments[1] = { label = parent,
-            tooltip = "Back to Resources", onClick = BreadcrumbToResourcesHome }
+            tooltip = "Back to Resource Bars", onClick = BreadcrumbToResourcesHome }
         currentText = leaf
     elseif parent and not CS.barsEntrySelected then
         -- Panel scope in the buttons workspace: the group is the one
@@ -2087,7 +2087,7 @@ local function UpdateEditingContext(col3)
                     or "Resource"
                 kindText = "Resource"
             elseif CS.unifiedBarKind == "stack" then
-                name = "Resources"
+                name = BARS_HOME_LABEL
             elseif CS.unifiedBarKind == "player" or CS.unifiedBarKind == "target" then
                 name = "Unit Frames"
             elseif CS.unifiedBarKind == "cast" then

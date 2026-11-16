@@ -1368,22 +1368,13 @@ local function GetAutocompleteAddGroup(dropdown)
     end
 end
 
-local function GetAutocompleteAddPresentation(dropdown, group)
-    if ST.PanelSupportsAttachedBars(group) then
-        return GetAddPresentation(dropdown._addTargetPanelId)
-    end
-    return group.displayMode or "icons"
-end
-
 local function LayoutAutocompleteAddFooter(footer)
     if not footer:IsShown() then return end
     -- Reserve the controls first. The remaining lane owns the hint at every
-    -- width, including when the same popup is resized or reused for one type.
+    -- width, including when the same popup is resized.
     local controlsWidth = footer.label:GetUnboundedStringWidth()
     for _, button in ipairs(footer.buttons) do
-        if button:IsShown() then
-            controlsWidth = controlsWidth + AUTOCOMPLETE_ADD_BUTTON_GAP + button:GetWidth()
-        end
+        controlsWidth = controlsWidth + AUTOCOMPLETE_ADD_BUTTON_GAP + button:GetWidth()
     end
     local available = math.max(0, math.floor(footer:GetWidth() - controlsWidth
         - AUTOCOMPLETE_ADD_FOOTER_PADDING * 2 - 8))
@@ -1391,10 +1382,7 @@ local function LayoutAutocompleteAddFooter(footer)
     hint:SetWidth(available)
     local tab = ST._GetClassColoredText("Tab")
     local enter = ST._GetClassColoredText("Enter")
-    local choices = footer.buttons[2]:IsShown()
-        and { tab .. ": switch   " .. enter .. ": add", tab .. ": switch", tab }
-        or { enter .. ": add", enter }
-    for _, text in ipairs(choices) do
+    for _, text in ipairs({ tab .. ": switch   " .. enter .. ": add", tab .. ": switch", tab }) do
         hint:SetText(text)
         if math.ceil(hint:GetUnboundedStringWidth()) <= available then
             hint:Show()
@@ -1407,19 +1395,18 @@ end
 local function UpdateAutocompleteAddFooter(dropdown)
     local footer = dropdown.addFooter
     local group = GetAutocompleteAddGroup(dropdown)
-    footer:SetShown(group ~= nil)
-    if not group then return end
-    local mixed = ST.PanelSupportsAttachedBars(group)
-    local presentation = GetAutocompleteAddPresentation(dropdown, group)
+    -- "Add as" is a choice only where a panel takes both icons and bars.
+    local mixed = group ~= nil and ST.PanelSupportsAttachedBars(group)
+    footer:SetShown(mixed)
+    if not mixed then return end
+    local presentation = GetAddPresentation(dropdown._addTargetPanelId)
     local color = footer.accentColor
     for index, button in ipairs(footer.buttons) do
-        button.presentation = mixed and (index == 1 and "icons" or "bars") or presentation
-        button.label:SetText(AUTOCOMPLETE_ADD_LABELS[button.presentation] or "Entry")
+        button.presentation = index == 1 and "icons" or "bars"
+        button.label:SetText(AUTOCOMPLETE_ADD_LABELS[button.presentation])
         local selected = button.presentation == presentation
         button.label:SetTextColor(selected and color.r or 0.85, selected and color.g or 0.85, selected and color.b or 0.85)
-        button.selection:SetShown(mixed and selected)
-        button:EnableMouse(mixed)
-        button:SetShown(index == 1 or mixed)
+        button.selection:SetShown(selected)
     end
     LayoutAutocompleteAddFooter(footer)
 end
@@ -1789,7 +1776,7 @@ local function ShowAutocompleteResults(results, anchorWidget, onSelect, options)
     dropdown._userNavigated = nil
     dropdown._numResults = numResults
     dropdown:SetHeight((numResults * AUTOCOMPLETE_ROW_HEIGHT) + 2
-        + (addGroup and AUTOCOMPLETE_ADD_FOOTER_HEIGHT or 0))
+        + (addGroup and ST.PanelSupportsAttachedBars(addGroup) and AUTOCOMPLETE_ADD_FOOTER_HEIGHT or 0))
 
     for i = 1, AUTOCOMPLETE_MAX_ROWS do
         local row = dropdown.rows[i]
@@ -1836,7 +1823,7 @@ local function HandleAutocompleteKeyDown(key, input)
     if key == "TAB" then
         local group = GetAutocompleteAddGroup(autocompleteDropdown)
         if group and ST.PanelSupportsAttachedBars(group) then
-            local presentation = GetAutocompleteAddPresentation(autocompleteDropdown, group) == "bars"
+            local presentation = GetAddPresentation(autocompleteDropdown._addTargetPanelId) == "bars"
                 and "icons" or "bars"
             return SetAutocompleteAddPresentation(autocompleteDropdown, presentation)
         end

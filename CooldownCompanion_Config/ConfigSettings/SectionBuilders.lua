@@ -1006,6 +1006,13 @@ local function BuildBorderControls(container, styleTable, refreshCallback, opts)
     return colorRow
 end
 
+-- Why a row Masque owns is greyed, said on the row's hover in the same words
+-- on every such row. nil when the row is not locked by Masque.
+function ST._MasqueLockTooltip(locked, title)
+    if not locked then return nil end
+    return ST._LockReasonTooltip(title, "Unavailable while Masque skinning is enabled for this panel.")
+end
+
 -- Row grammar only: one slider row. WeakAuras-style zoom: crops the icon
 -- artwork toward its center without changing the frame's size.
 -- Mirror-first when opts.previewRefresh is given: drag ticks save the value
@@ -1022,6 +1029,7 @@ local function BuildIconZoomControls(container, styleTable, refreshCallback, opt
         setting = opts and opts.setting,
         indent = opts and opts.indent,
         disabled = locked,
+        tooltip = opts and opts.tooltip,
         min = 0, max = 50, step = 1,
         value = styleTable.iconZoom or 0,
         onChange = function(val)
@@ -1436,10 +1444,7 @@ local function BuildIconFillTimerControls(container, styleTable, refreshCallback
         value = styleTable.iconFillEnabled == true,
         disabled = disabledByMasque,
         indent = opts.indent,
-        tooltip = disabledByMasque and {
-            "Icon Fill Timer",
-            {"Unavailable while Masque skinning is enabled for this panel.", 1, 1, 1, true},
-        } or nil,
+        tooltip = ST._MasqueLockTooltip(disabledByMasque, "Icon Fill Timer"),
         onChange = ApplyIconFillEnabled,
     })
 
@@ -2466,10 +2471,6 @@ local function BuildMissingAuraIndicatorControls(container, group, lens, opts)
             Refresh()
         end,
     })
-    if enabled and lens and lens.mode == "entry" and lens.buttonData
-        and lens.buttonData.hideWhileAuraNotActive == true then
-        AddLabelRow(container, { label = "Inactive Reminder", controlText = "Hidden by Show While Active" })
-    end
     local function BuildAdvanced(panel)
         local style = sec.tbl
         local hasHarmful, hasHelpful = false, false

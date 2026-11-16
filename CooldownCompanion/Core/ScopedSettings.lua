@@ -1757,9 +1757,9 @@ local function FormatResourceBarConflictExportMessage(summaries)
         parts[#parts + 1] = summary.classKey .. " (" .. candidateText .. ")"
     end
 
-    return "Resolve pending Resource Bar conflicts before exporting. Affected classes: "
+    return "Resolve pending Resource Bars conflicts before exporting. Affected classes: "
         .. concat(parts, "; ")
-        .. ". Open Resource Bar settings on the affected class and choose the setup to keep."
+        .. ". Open Resource Bars settings on the affected class and choose the setup to keep."
 end
 
 local function PrepareFallbackResourceBarSettings(addon, classKey)
@@ -1962,7 +1962,7 @@ function CooldownCompanion:RunScopedBarClassScopeMigration()
 
     if hadCharacterRecords and not rawget(profile, SCOPED_BAR_NOTICE_KEY) then
         profile[SCOPED_BAR_NOTICE_KEY] = true
-        self:Print("Cast Bar and Unit Frames are now shared by every character of a class, like Resources.")
+        self:Print("Cast Bar and Unit Frames are now shared by every character of a class, like Resource Bars.")
     end
 end
 

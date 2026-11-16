@@ -103,7 +103,7 @@ function ST._BuildUnifiedPanelArrangement(container, group, buildGrid)
                 tooltip = key == "gap" and { "Distance from Panel",
                     { "Distance from the selected panel region to the first bar or block on each side.", 1, 1, 1, true } }
                     or { "Stack Spacing",
-                        { "Space between attached bars, including Resources and the cast bar.", 1, 1, 1, true } },
+                        { "Space between attached bars, including Resource Bars and the cast bar.", 1, 1, 1, true } },
                 -- Preview while dragging, save once on release, like every
                 -- other slider.
                 -- The preview draws from a copy, so a drag that never commits

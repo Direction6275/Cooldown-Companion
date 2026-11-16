@@ -372,6 +372,16 @@ local PANEL_SIZE_RANGES = {
     section = { 10, 150 },
 }
 
+-- A Totem Panel's sizes run wider. Its sliders (TotemPanelTabs.lua) read
+-- these, so a grip, wheel or typed size clamps to what the slider shows
+-- instead of pulling a saved value in.
+local TOTEM_PANEL_SIZE_RANGES = {
+    icon = { 10, 160 },
+    length = { 10, 600 },
+    thickness = { 4, 100 },
+}
+ST.TOTEM_PANEL_SIZE_RANGES = TOTEM_PANEL_SIZE_RANGES
+
 -- Per kind: first key, its range, second key, its range.
 local PANEL_SIZE_FIELDS = {
     bar = { "barLength", "length", "barHeight", "thickness" },
@@ -387,10 +397,10 @@ local SECTION_SIZE_FIELDS = {
 }
 
 -- Rounds to whole numbers (grip, wheel) or tenths (typed input, section
--- grabber), then clamps to the named range. A missing value reads as the
--- range's minimum.
-function ST.ClampPanelSize(range, value, whole)
-    local limits = PANEL_SIZE_RANGES[range]
+-- grabber), then clamps to the named range, a Totem Panel's when totem is
+-- set. A missing value reads as the range's minimum.
+function ST.ClampPanelSize(range, value, whole, totem)
+    local limits = totem and TOTEM_PANEL_SIZE_RANGES[range] or PANEL_SIZE_RANGES[range]
     value = tonumber(value) or limits[1]
     if whole then
         value = math_floor(value + 0.5)
@@ -463,8 +473,9 @@ function ST.WritePanelSize(groupId, primary, secondary, whole, baseOnly, sizingG
             fields, target = SECTION_SIZE_FIELDS[kind], section
         end
     end
-    local first = ST.ClampPanelSize(fields[2], primary, whole)
-    local second = fields[3] and ST.ClampPanelSize(fields[4], secondary, whole)
+    local totem = ST.IsTotemPanelGroup(owner or sizingGroup)
+    local first = ST.ClampPanelSize(fields[2], primary, whole, totem)
+    local second = fields[3] and ST.ClampPanelSize(fields[4], secondary, whole, totem)
     if target[fields[1]] == first and (not fields[3] or target[fields[3]] == second) then
         return false
     end

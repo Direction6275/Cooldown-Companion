@@ -1138,6 +1138,13 @@ local function CreateConfigPanel()
         if CS.CloseSpellbookPanel then
             CS.CloseSpellbookPanel()
         end
+        if ST._HideResourceBarConflictChooser then
+            ST._HideResourceBarConflictChooser()
+        end
+        -- A drag still in hand (combat closed the window under it) ends here.
+        if ST._CancelDrag then
+            ST._CancelDrag()
+        end
         ClearTransientConfigPreviewState()
         -- Release the panel-preview mirror: stops its conditional ticker
         -- while the config is closed.
@@ -1337,7 +1344,7 @@ local function CreateConfigPanel()
         if CS.exportMode then
             GameTooltip:AddLine("Leave export mode.", 1, 1, 1, true)
         else
-            GameTooltip:AddLine("Pick groups, panels, and Resources to share as one string.", 1, 1, 1, true)
+            GameTooltip:AddLine("Pick groups, panels, and Resource Bars to share as one string.", 1, 1, 1, true)
         end
         GameTooltip:Show()
     end)
@@ -1993,19 +2000,11 @@ local function CreateConfigPanel()
                 GameTooltip:AddLine("Select a single panel to configure it here instead.", 1, 1, 1, true)
             else
                 GameTooltip:AddLine("Settings")
-                GameTooltip:AddLine("Settings for the selected group, panel, or entry, alongside its live preview.", 1, 1, 1, true)
+                GameTooltip:AddLine("Settings for the selected group, panel, or entry.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Panel settings apply to every button in the panel. Selecting an entry shows that entry's effective settings and customizations immediately.", 1, 1, 1, true)
+                GameTooltip:AddLine("Panel settings apply to every entry in the panel.", 1, 1, 1, true)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Use the panel name in the Editing path to return to the whole panel. The settings view keeps your place where the same section exists.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("With a button selected, each section shows whose settings you are looking at.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Use Customize on a section to give that button its own settings there. Revert hands them back to the panel.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("The Customizations section in the Settings tab lists everything that button customizes, each with its own Revert.", 1, 1, 1, true)
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("The Visibility tab shows the selected button's conditions. Deselect to see the panel's own.", 1, 1, 1, true)
+                GameTooltip:AddLine("Customize on a section gives the selected entry its own settings there. Revert hands them back to the panel.", 1, 1, 1, true)
             end
         end
         GameTooltip:Show()

@@ -45,7 +45,7 @@ local HasLegacySeed = ST.HasLegacySeed
 local function ReportParkedResources(profile, context, report)
     for _, owner in ipairs(Keys(profile.resourceBarsByChar)) do
         if IsParkedResourceOwner(context, owner) then
-            report.notices[#report.notices + 1] = "Resources for " .. tostring(owner)
+            report.notices[#report.notices + 1] = "Resource Bars for " .. tostring(owner)
                 .. " were kept unchanged until their character class is known."
         end
     end
@@ -488,7 +488,7 @@ local function ResourceBlocks(settings, spec, report, classKey)
         if saved then block.region = saved.anchorRegion == "main" and "main" or "outer" end
         layout.resourceBlocks[side] = { anchorRegion = block.region == "main" and "main" or "panel" }
         for _, slot in ipairs(block.slots) do slot.anchorRegion = layout.resourceBlocks[side].anchorRegion end
-        if block.conflict then report.notices[#report.notices + 1] = "Resources on " .. side .. " were grouped at the first resource's attachment region." end
+        if block.conflict then report.notices[#report.notices + 1] = "Resource Bars on " .. side .. " were grouped at the first resource's attachment region." end
     end
     return blocks
 end
@@ -1176,7 +1176,7 @@ local function BuildConversion(source, context)
     local conflicts = profile.resourceBarMigration and profile.resourceBarMigration.conflicts
     for classKey in pairs(type(conflicts) == "table" and conflicts or {}) do
         if ST.GetResourceBarConflictForProfile(profile, classKey) then
-            return nil, "Resolve the existing Resources class conflict for " .. tostring(classKey) .. " before converting Custom Bars."
+            return nil, "Resolve the existing Resource Bars class conflict for " .. tostring(classKey) .. " before converting Custom Bars."
         end
     end
     profile.resourceBarsByClass = profile.resourceBarsByClass or {}
@@ -1190,7 +1190,7 @@ local function BuildConversion(source, context)
             local existing = profile.resourceBarsByClass[class]
             if existing and ST._NormalizeResourceSettingsForPanelConversion then ST._NormalizeResourceSettingsForPanelConversion(existing, class) end
             if existing and Fingerprint(existing) ~= Fingerprint(settings) then
-                return nil, "Resources settings conflict for " .. class .. "; source data was kept."
+                return nil, "Resource Bars settings conflict for " .. class .. "; source data was kept."
             end
             profile.resourceBarsByClass[class] = settings
             profile.resourceBarsByChar[owner] = nil
@@ -1199,12 +1199,12 @@ local function BuildConversion(source, context)
     local seed = profile.legacyResourceBarsSeed or profile.resourceBars
     if type(seed) == "table" and (next(seed.customBars or {}) or next(seed.customAuraBars or {})) then
         local class = context.defaultClass
-        if not class then return nil, "The legacy Resources export has no source class information." end
+        if not class then return nil, "The legacy Resource Bars export has no source class information." end
         if ST._NormalizeResourceSettingsForPanelConversion then ST._NormalizeResourceSettingsForPanelConversion(seed, class) end
         local existing = profile.resourceBarsByClass[class]
         if existing and ST._NormalizeResourceSettingsForPanelConversion then ST._NormalizeResourceSettingsForPanelConversion(existing, class) end
         if existing and Fingerprint(existing) ~= Fingerprint(seed) then
-            return nil, "The legacy Resources seed conflicts with " .. class .. "; source data was kept."
+            return nil, "The legacy Resource Bars seed conflicts with " .. class .. "; source data was kept."
         end
         profile.resourceBarsByClass[class] = Copy(seed)
         -- This seed has been adopted. Retaining an unconverted copy would
@@ -1305,7 +1305,7 @@ local function BuildConversion(source, context)
                 -- stacks would overlap at the old anchor after conversion.
                 local layout = Layout(settings, spec)
                 layout.attachment = { mode = "panel", panelId = destination }
-                report.notices[#report.notices + 1] = "Resources now attach to the replacement Bars panel at the former independent stack's position."
+                report.notices[#report.notices + 1] = "Resource Bars now attach to the replacement Bars panel at the former independent stack's position."
             end
             StripLegacyStore(settings)
         end
@@ -1344,7 +1344,7 @@ local function BuildConversion(source, context)
     StripLegacyStore(profile.resourceBars)
     StripLegacyStore(profile.legacyResourceBarsSeed)
     if report.regrouped > 0 then
-        report.notices[#report.notices + 1] = report.regrouped .. " formerly interleaved bars now follow their Resources block."
+        report.notices[#report.notices + 1] = report.regrouped .. " formerly interleaved bars now follow their Resource Bars block."
     end
     local geometryOK, geometryError = NormalizeGeometry(profile, context, report)
     if not geometryOK then return nil, geometryError end
@@ -1573,7 +1573,7 @@ function Migration.ConvertImport(data, context)
     local resources = data.resources
     if resources and resources.settings then
         local class = Class(resources)
-        if not class then return nil, "The Resources import has no class information." end
+        if not class then return nil, "The Resource Bars import has no class information." end
         profile.resourceBarsByClass[class] = Copy(resources.settings)
         context.classSpecs[class] = context.classSpecs[class] or (ST._GetResourceBarClassSpecInfo and ST._GetResourceBarClassSpecInfo(class))
         -- A saved attachment into this same packet establishes the source
@@ -1619,7 +1619,7 @@ function Migration.ConvertImport(data, context)
             -- Setup exports historically included these same definitions
             -- twice. A genuinely conflicting copy must not silently win.
             if existing and Fingerprint(existing) ~= Fingerprint(incoming) then
-                return nil, "Resources and Custom Bars contain conflicting definitions for " .. tostring(id) .. "."
+                return nil, "Resource Bars and Custom Bars contain conflicting definitions for " .. tostring(id) .. "."
             end
             if not existing then
                 store.entries[id] = incoming

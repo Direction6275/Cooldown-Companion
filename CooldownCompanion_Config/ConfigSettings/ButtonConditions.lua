@@ -298,9 +298,8 @@ end
 -- parks in the second comes last.
 local function AddScopedLoadConditionToggles(container, opts)
     local target = opts.target
-    if not target.loadConditions and not opts.preserveMissing then
-        target.loadConditions = {}
-    end
+    -- Building the rows writes nothing: a target with no saved rules reads as
+    -- its defaults, which is what the runtime does with it.
     local loadConditions = target.loadConditions or {}
     local defaults = opts.defaults
     local inheritedSources = opts.inheritedSources or {}
@@ -332,9 +331,8 @@ local function AddScopedLoadConditionToggles(container, opts)
     local function SetCondition(cond, newVal)
         if not target.loadConditions then
             target.loadConditions = {}
-            loadConditions = target.loadConditions
         end
-        SetLoadConditionValue(loadConditions, cond.key, newVal, defaults, cond.default)
+        SetLoadConditionValue(target.loadConditions, cond.key, newVal, defaults, cond.default)
         if onChanged then onChanged() end
     end
 
@@ -601,9 +599,10 @@ local function GetEligibilitySubjectPluralLabel(subjectLabel)
     return (subjectLabel or "selection") .. "s"
 end
 
-local function BuildCharacterEligibilityTooltip(subjectLabel)
+-- parentLimits adds the line saying a parent's eligibility narrows the list.
+local function BuildCharacterEligibilityTooltip(subjectLabel, parentLimits)
     local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
-    return {
+    local lines = {
         "Character",
         {"Choose which characters can use this " .. subjectLabel .. ".", 1, 1, 1, true},
         " ",
@@ -611,11 +610,16 @@ local function BuildCharacterEligibilityTooltip(subjectLabel)
         " ",
         {"Class-scoped " .. subjectPluralLabel .. " only show same-class characters.", 1, 1, 1, true},
     }
+    if parentLimits then
+        lines[#lines + 1] = " "
+        lines[#lines + 1] = {"Parent eligibility limits which characters can be picked here.", 1, 1, 1, true}
+    end
+    return lines
 end
 
-local function BuildClassEligibilityTooltip(subjectLabel)
+local function BuildClassEligibilityTooltip(subjectLabel, parentLimits)
     local subjectPluralLabel = GetEligibilitySubjectPluralLabel(subjectLabel)
-    return {
+    local lines = {
         "Class",
         {"Global " .. subjectPluralLabel .. " can be limited to selected classes.", 1, 1, 1, true},
         " ",
@@ -623,6 +627,11 @@ local function BuildClassEligibilityTooltip(subjectLabel)
         " ",
         {"Pick a class first to add its specializations.", 1, 1, 1, true},
     }
+    if parentLimits then
+        lines[#lines + 1] = " "
+        lines[#lines + 1] = {"Parent eligibility limits which classes can be picked here.", 1, 1, 1, true}
+    end
+    return lines
 end
 
 local function BuildSpecializationEligibilityTooltip(subjectLabel)
@@ -834,14 +843,6 @@ local function AddCharacterEligibilityControls(container, opts)
     local choices = BuildCharacterChoices(target, inheritedMap, scopeClassChoice and scopeClassChoice.key or nil, opts.ownerCharKey)
     if #choices == 0 then return end
 
-    if inheritedRestricted then
-        local inheritedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(inheritedLabel)
-        inheritedLabel:SetText("|cff888888Parent eligibility limits which characters can be picked here.|r")
-        inheritedLabel:SetFullWidth(true)
-        container:AddChild(inheritedLabel)
-    end
-
     local localMap = target.loadConditions and target.loadConditions.characterAllowlist
     local selectedByKey = {}
     local dropdownValues = {}
@@ -878,7 +879,7 @@ local function AddCharacterEligibilityControls(container, opts)
             end
         end or nil,
     })
-    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel))
+    AddDropdownInfoButton(picker, BuildCharacterEligibilityTooltip(subjectLabel, inheritedRestricted))
 
     local rows = {}
     AddActiveCharacterEligibilityRows(rows, opts, choices, localMap, inheritedMap, inheritedRestricted)
@@ -1189,14 +1190,6 @@ local function AddClassSpecEligibilityControls(container, opts)
     })
 
     if allowClassEligibility then
-        if inheritedClassRestricted then
-            local inheritedLabel = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(inheritedLabel)
-            inheritedLabel:SetText("|cff888888Parent eligibility limits which classes can be picked here.|r")
-            inheritedLabel:SetFullWidth(true)
-            container:AddChild(inheritedLabel)
-        end
-
         local classValues = {}
         local classOrder = {}
         local classSortLabels = {}
@@ -1225,7 +1218,7 @@ local function AddClassSpecEligibilityControls(container, opts)
                 if opts.onChanged then opts.onChanged() end
             end or nil,
         })
-        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel))
+        AddDropdownInfoButton(classPicker, BuildClassEligibilityTooltip(subjectLabel, inheritedClassRestricted))
         AddEligibilitySelectedRows(container, selectedClassRows)
     end
 
@@ -1294,12 +1287,6 @@ local function AddClassSpecEligibilityControls(container, opts)
             end or nil,
         })
         AddDropdownInfoButton(heroPicker, BuildHeroTalentEligibilityTooltip(subjectLabel))
-    elseif opts.disableHeroTalents and type(heroTalentsSource) == "table" and next(heroTalentsSource) then
-        local inheritedLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(inheritedLabel)
-        inheritedLabel:SetText("|cff888888Hero talent eligibility is inherited here.|r")
-        inheritedLabel:SetFullWidth(true)
-        container:AddChild(inheritedLabel)
     end
     AddEligibilitySelectedRows(container, selectedHeroRows)
 
@@ -1914,8 +1901,8 @@ end
 -- so what those two do is stated once here and appended to each row's own
 -- tooltip rather than repeated inside the builder. `lines` is the row's own
 -- body.
-local VISIBILITY_DIM_TOOLTIP_LINE = {"Dim shows the button dimmed and keeps its layout position.", 1, 1, 1, true}
-local VISIBILITY_HIDE_TOOLTIP_LINE = {"Hide removes the button entirely.", 1, 1, 1, true}
+local VISIBILITY_DIM_TOOLTIP_LINE = {"Dim shows the entry dimmed and keeps its layout position.", 1, 1, 1, true}
+local VISIBILITY_HIDE_TOOLTIP_LINE = {"Hide removes the entry entirely.", 1, 1, 1, true}
 local VISIBILITY_TOOLTIP_SPACER = { " ", 1, 1, 1, true }
 local function BuildVisibilityModeTooltip(title, lines)
     local tooltip = { title }
@@ -2431,7 +2418,7 @@ local function BuildShowHideRulesSection(scroll, buttonData, infoButtons, batchC
         dimKey = "useBaselineAlphaFallbackUnusable",
         title = "While Unusable",
         tooltipLines = {
-            {"Uses the same logic as Unusable Visual. Hide removes the button instead of changing the icon.", 1, 1, 1, true},
+            {"Uses the same logic as Unusable Visual. Hide removes the entry instead of changing the icon.", 1, 1, 1, true},
         },
     })
     end -- not allNeverUnusable
@@ -2642,7 +2629,7 @@ local function BuildEntryTalentConditionsSection(scroll, buttonData, infoButtons
     -- restarts after that badge.
     local talentInfoBtn = CreateInfoButton(talentHeading.frame, talentHeading.label, "LEFT", "RIGHT", 4, 0, {
         "Talent Conditions",
-        {"Show or hide this button based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
+        {"Show or hide this entry based on which talents you have selected. If you add multiple conditions, all of them must pass.", 1, 1, 1, true},
     }, infoButtons)
     AnchorLeftAlignedHeadingRule(talentHeading, talentInfoBtn)
 
@@ -2849,10 +2836,6 @@ local function BuildLoadConditionsTab(container)
     local group = CooldownCompanion.db.profile.groups[groupId]
     if not group then return end
 
-    -- Ensure loadConditions table exists
-    if not group.loadConditions then
-        group.loadConditions = CooldownCompanion:GetDefaultLoadConditions()
-    end
     local effectiveSpecs = CooldownCompanion:GetEffectiveSpecs(group)
     local inheritedSpecs, inheritedSpecFilter = CooldownCompanion:GetInheritedEffectiveSpecs(group)
     local effectiveHeroTalents, inheritedHeroFilter = CooldownCompanion:GetEffectiveHeroTalents(group)
@@ -2938,7 +2921,8 @@ local function BuildLoadConditionsTab(container)
         and group.inheritPanelAlpha ~= false
 
     -- A panel whose alpha is owned elsewhere (Group Alpha, or an anchor it
-    -- inherits from) shows the section disabled with the reason.
+    -- inherits from) shows the section disabled, with the reason on each
+    -- greyed row's hover.
     local alphaControlsDisabled, alphaDisabledText = false, nil
     if CooldownCompanion.GetPanelContainerAlphaSource
         and CooldownCompanion:GetPanelContainerAlphaSource(groupId) then
@@ -2946,7 +2930,7 @@ local function BuildLoadConditionsTab(container)
         alphaDisabledText = "Group Alpha is enabled. This panel uses the group's Alpha settings."
     elseif inheritsAnchorAlpha then
         alphaControlsDisabled = true
-        -- The source row sits directly above, so neither line has to say
+        -- The source row leads the section, so neither line has to say
         -- where the choice is made any more. The panel case keeps its
         -- pointer to the OTHER panel, which is elsewhere either way; an
         -- external frame has no Alpha settings of ours to send anyone to.
@@ -3026,7 +3010,6 @@ local function BuildEntryLoadConditionsTab(container, buttonData, infoButtons, o
         inheritedSources = CooldownCompanion:GetLoadConditionSourcesForGroup(group),
         headingText = opts.headingText or "Where To Hide It",
         localCollapsedKey = opts.collapseKey or "loadconditions_entry_local",
-        preserveMissing = true,
         infoTooltipLines = BuildWhereToHideTooltip("entry", false, true),
         infoButtons = infoButtons,
         onChanged = function()

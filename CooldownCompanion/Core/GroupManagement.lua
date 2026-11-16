@@ -405,8 +405,8 @@ function CooldownCompanion:CanCopyPanelSettings(sourceGroupId, targetGroupId, sc
 end
 
 -- Only the panel's own hide rules move: retain every eligibility field and
--- never flatten inherited Group rules. A missing table means no local rules;
--- a present table defaults Pet Battle and Vehicle / Override UI to hidden.
+-- never flatten inherited Group rules. A missing table reads as the defaults,
+-- which hide in Pet Battle and Vehicle / Override UI.
 local function CopyPanelVisibility(self, source, target, scopeData)
     local defaults = self:GetDefaultLoadConditions()
     local sourceConditions = source.loadConditions
@@ -416,16 +416,14 @@ local function CopyPanelVisibility(self, source, target, scopeData)
         target.loadConditions = targetConditions
     end
     for _, option in ipairs(ST.LOAD_CONDITION_OPTIONS) do
-        local value = false
+        local value
         if type(sourceConditions) == "table" then
             value = sourceConditions[option.key]
-            if value == nil then
-                value = defaults[option.key]
-                if value == nil then value = option.default or false end
-            end
         end
-        -- Explicit booleans also preserve the missing-source-table meaning
-        -- when the target needs a table to retain its eligibility restrictions.
+        if value == nil then
+            value = defaults[option.key]
+            if value == nil then value = option.default or false end
+        end
         targetConditions[option.key] = value == true
     end
     for _, key in ipairs(scopeData.groupKeys) do
@@ -879,6 +877,19 @@ function CooldownCompanion:GetPanelCount(containerId)
     return count
 end
 
+-- The order that lists a panel after every panel already in the Group. Not
+-- the panel count: a delete leaves gaps and conversions write fractions.
+local function GetNextPanelOrder(self, containerId, excludeGroupId)
+    local highest = 0
+    for groupId, group in pairs(self.db.profile.groups) do
+        if group.parentContainerId == containerId and groupId ~= excludeGroupId then
+            local order = tonumber(group.order) or 0
+            if order > highest then highest = order end
+        end
+    end
+    return math_floor(highest) + 1
+end
+
 ------------------------------------------------------------------------
 -- Container CRUD
 ------------------------------------------------------------------------
@@ -1234,14 +1245,13 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     local groupId = db.nextGroupId
     db.nextGroupId = groupId + 1
 
-    local panelOrder = self:GetPanelCount(containerId) + 1
     local containerFrameName = "CooldownCompanionContainer" .. containerId
 
     db.groups[groupId] = {
-        name = "Panel " .. panelOrder,
+        name = "Panel " .. (self:GetPanelCount(containerId) + 1),
         baseRowAnchorVersion = 1,
         parentContainerId = containerId,
-        order = panelOrder,
+        order = GetNextPanelOrder(self, containerId),
         anchor = {
             point = "CENTER",
             relativeTo = containerFrameName,
@@ -1349,7 +1359,7 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
 
     local newPanel = CopyTable(sourcePanel)
     newPanel.name = sourcePanel.name .. " (Copy)"
-    newPanel.order = self:GetPanelCount(containerId) + 1
+    newPanel.order = GetNextPanelOrder(self, containerId)
     newPanel.cdmPanelSource = nil
     ResetCopiedIndicatorAnchor(newPanel, db.groups, groupId, containerId, containerId)
     NormalizeCopiedEntityForContainerScope(self, newPanel, container)
@@ -1399,8 +1409,8 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     RetargetMovedPanelAnchor(group.anchor, sourceFrameName, containerFrameName)
     RetargetMovedPanelAnchor(CooldownCompanion:GetIndicatorAnchorSettings(group), sourceFrameName, containerFrameName)
 
-    -- Put at end of target's panel list (GetPanelCount already sees the moved panel)
-    group.order = self:GetPanelCount(targetContainerId)
+    -- Put at end of target's panel list
+    group.order = GetNextPanelOrder(self, targetContainerId, groupId)
 
     -- Force alpha re-evaluation with new container context
     if self.alphaState then

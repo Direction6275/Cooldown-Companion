@@ -2196,7 +2196,7 @@ function ST._BuildLayoutOrderPanel(container)
         FinishPreviewWithMessage(preview,
             workspaceKind == "resources" and "Enable Resource Bars below to start."
                 or workspaceKind == "castbar" and "Enable Cast Bar below to start."
-                or "Enable Unit Frame Anchoring below to start.")
+                or "Enable Unit Frames below to start.")
         return
     end
 
@@ -2232,7 +2232,7 @@ function ST._BuildLayoutOrderPanel(container)
     if #slots == 0 then
         FinishPreviewWithMessage(preview, resourceBarsEnabled
             and "No active resources to order. Enable a resource first."
-            or "No active bars to order. Enable Resources or the cast bar first.")
+            or "No active bars to order. Enable Resource Bars or the cast bar first.")
         return
     end
 

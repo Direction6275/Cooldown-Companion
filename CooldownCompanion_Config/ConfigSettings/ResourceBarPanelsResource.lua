@@ -977,6 +977,7 @@ local function BuildResourceBarAnchoringPanel(container)
     end, "rb_alpha", {
         isGlobal = group and group.isGlobal,
         disabled = inheritsPanelAlpha,
+        disabledText = "Resource Bars use the attached panel's Alpha settings. Turn on Customize Resource Opacity to set their own.",
         -- Attached resources follow the panel's alpha until customized, so the
         -- switch leads the rows it unlocks.
         leadingRows = not isIndependentStack and function(left)
@@ -1014,11 +1015,6 @@ local function BuildResourceBarPositioningPanel(container)
     local layout = CooldownCompanion:GetSpecLayoutOrder()
 
     if not settings.enabled then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Resource Bars to configure positioning.")
-        label:SetFullWidth(true)
-        container:AddChild(label)
         return
     end
 
@@ -1199,7 +1195,7 @@ ST._BuildBarHeightControls = function(container, settings, layout)
     AddMirrorFirstSliderRow(container, { label = "Default Bar Thickness",
         setting = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.bar and RESOURCE_FINDER.primary.bar.thickness,
         value = ST.ResolveResourceBarGeometry(settings, layout).thickness, min = 4, max = 100, step = 0.1,
-        tooltip = { "Default thickness for this independent Resources stack. Individual thickness customizations override it." },
+        tooltip = { "Default thickness for this independent Resource Bars stack. Individual thickness customizations override it." },
         set = function(value) layout[field] = value end, stateOwner = layout, stateKeys = field,
         apply = function() context:Refresh() end,
     })
@@ -1594,7 +1590,6 @@ local function AddThresholdTickEntryEditor(panel, options)
         if thresholdTickEditorErrors[errorKey] then
             AddThresholdTickHelperLabel(panel, "|cffff7777" .. thresholdTickEditorErrors[errorKey] .. "|r")
         end
-        AddThresholdTickHelperLabel(panel, "|cff888888Enter a valid value to unlock color settings for this row.|r")
     end
 
     -- Same compact shape the Remove/Cancel buttons above take, so the section's
@@ -1623,10 +1618,6 @@ local function AddThresholdTickEntryEditor(panel, options)
     end)
     addRow:AddChild(addBtn)
     panel:AddChild(addRow)
-
-    if rowCount >= MAX_RESOURCE_THRESHOLD_TICK_ENTRIES then
-        AddThresholdTickHelperLabel(panel, "|cff888888Maximum of 3 entries configured.|r")
-    end
 end
 
 ------------------------------------------------------------------------
@@ -1698,7 +1689,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
 
     local sectionInfoBtn = CreateInfoButton(heading.frame, heading.label, "LEFT", "RIGHT", 4, 0, {
         "Aura Tracking",
-        {"One aura per resource and specialization. Blizzard shows and hides the visuals with the aura itself, so they keep working in combat, where the addon cannot read aura state.", 1, 1, 1, true},
+        {"One aura per resource and specialization.", 1, 1, 1, true},
         " ",
         {"Buffs can only be tracked on yourself, and your own debuffs only on your target. The tracked unit is set automatically from the aura.", 1, 1, 1, true},
     }, heading)
@@ -1902,7 +1893,7 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
             -- runtime can draw them.
             if RB.IsContinuousResourceShape(settings, powerType, specID) then
                 local fillOn = RB.IsResourceOverlayFillEnabled(entry)
-                local fillRow = AddCheckboxRow(panel, {
+                AddCheckboxRow(panel, {
                     label = "Recolor Fill",
                     setting = finderAura and finderAura.recolor,
                     indent = false,
@@ -1916,13 +1907,6 @@ local function BuildResourceAuraOverlaySection(container, settings, powerType, s
                         refresh()
                     end,
                 })
-                -- Anchor args are a placeholder - AnchorRowBadge re-points the button
-                -- onto the end of the row's label.
-                AnchorRowBadge(fillRow, CreateInfoButton(fillRow.frame, fillRow.frame, "LEFT", "LEFT", 0, 0, {
-                    "Recolor Fill",
-                    {"Changes the bar's fill to this color while the aura is active.", 1, 1, 1, true},
-                }, fillRow))
-
                 if fillOn then
                     AddColorRow(panel, {
                         label = "Fill Color",
@@ -2140,7 +2124,7 @@ function RBP.BuildResourceSoundRows(container, settings, powerType, specID)
         end,
     })
     AddCheckboxRow(right, {
-        label = "Combat Only", setting = finder.combatOnly, value = config.combatOnly,
+        label = "Only In Combat", setting = finder.combatOnly, value = config.combatOnly,
         onChange = function(value) Write("resourceSoundCombatOnly", value == true) end,
     })
 end
@@ -2153,11 +2137,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
     local settings = CooldownCompanion:GetResourceBarSettings()
 
     if not settings.enabled then
-        local label = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(label)
-        label:SetText("Enable Resource Bars to configure styling.")
-        label:SetFullWidth(true)
-        container:AddChild(label)
         return
     end
 
@@ -2372,12 +2351,6 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
         local health = settings.resources and settings.resources[healthResourceID]
         if health and health.enabled == true then
             HealthResource.BuildColorControls(container, settings, applyBars)
-        else
-            local label = AceGUI:Create("Label")
-            ST._ConfigureWrappedHelperLabel(label)
-            label:SetText("Enable Health to configure health colors.")
-            label:SetFullWidth(true)
-            container:AddChild(label)
         end
     end
 
@@ -2441,7 +2414,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             defaultColor = DEFAULT_SEG_THRESHOLD_COLOR,
                             hasAlpha = false,
                             addText = "Add Threshold Color",
-                            emptyText = "|cff888888No threshold colors configured. Add a value to make this enabled threshold setting active.|r",
+                            emptyText = "|cff888888No threshold colors.|r",
                             invalidText = "Enter a threshold value from 1 to 99.",
                             duplicateText = "A threshold color already uses that value.",
                             clampValue = ClampSegmentedThresholdValue,
@@ -2563,9 +2536,7 @@ local function BuildResourceBarStylingPanel(container, sectionMode, opts)
                             defaultColor = DEFAULT_CONTINUOUS_TICK_COLOR,
                             hasAlpha = true,
                             addText = "Add Tick Marker",
-                            emptyText = tickMode == "absolute"
-                                and "|cff888888No absolute tick markers configured. Add a value to make this enabled tick setting active in Absolute Value mode.|r"
-                                or "|cff888888No percent tick markers configured. Add a value to make this enabled tick setting active in Percent mode.|r",
+                            emptyText = "|cff888888No tick markers.|r",
                             invalidText = tickMode == "absolute" and "Enter a tick value of 0 or higher." or "Enter a tick percent from 0 to 100.",
                             duplicateText = "A tick marker already uses that value.",
                             clampValue = tickMode == "absolute" and ClampContinuousTickAbsoluteValue or ClampContinuousTickPercentValue,
@@ -3447,7 +3418,7 @@ if ST._DefineSettingRoute then
                     enabled = { label = "Enable Sound Alert" },
                     trigger = { label = "Trigger", applies = SoundEnabled },
                     sound = { label = "Sound", applies = SoundEnabled },
-                    combatOnly = { label = "Combat Only", applies = SoundEnabled },
+                    combatOnly = { label = "Only In Combat", aliases = { "combat only" }, applies = SoundEnabled },
                     amount = { label = "Amount", applies = function(context)
                         return SoundEnabled(context) and RESOURCE_FINDER.ReadResourceValue(context,
                             capturedPowerType, "resourceSoundTrigger", "maximum") == "amount"

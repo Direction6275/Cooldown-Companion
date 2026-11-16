@@ -70,23 +70,24 @@ if ST._DefineSettingRoute then
         tab = "settings",
         tabLabel = "Settings",
         section = "anchoring",
-        sectionLabel = "Unit Frame Anchoring",
+        sectionLabel = "Unit Frames",
         collapseKeys = { "unitframe_player_anchoring" },
         rowScope = "detail",
     })
     FRAME_ANCHORING_FINDER.player.anchoring = playerAnchoring:Settings({
-        enabled = { label = "Enable Unit Frame Anchoring" },
+        enabled = { label = "Enable Unit Frames", aliases = { "enable unit frame anchoring", "frame anchoring" } },
         mode = { label = "Anchoring Mode", applies = FrameAnchoringFinderEnabled,
             section = "player", sectionLabel = "Player Frame", collapseKeys = { "unitframe_player_position" } },
         panel = { label = "Anchor Panel",
             section = "player", sectionLabel = "Player Frame", collapseKeys = { "unitframe_player_position" }, applies = function()
             return FrameAnchoringFinderEnabled() and CooldownCompanion:GetModuleAttachment("player").mode == "panel"
         end },
-        unitFrames = { label = "Unit Frames", applies = FrameAnchoringFinderEnabled },
-        mirrorTarget = { label = "Mirror player position", aliases = { "Mirror target position" },
+        unitFrames = { label = "Unit Frame Addon", aliases = { "unit frames" }, applies = FrameAnchoringFinderEnabled },
+        mirrorTarget = { label = "Mirror Player Position", aliases = { "Mirror target position" },
             section = "target", sectionLabel = "Target Frame", collapseKeys = { "unitframe_target_position" },
             applies = FrameAnchoringFinderEnabled },
-        inheritAlpha = { label = "Inherit group alpha", applies = FrameAnchoringFinderEnabled },
+        inheritAlpha = { label = "Inherit Panel Alpha", aliases = { "inherit group alpha" },
+            applies = FrameAnchoringFinderEnabled },
         playerFrameName = { label = "Player Frame Name", aliases = { "custom player frame" }, applies = PlayerFrameFinderCustom },
         targetFrameName = { label = "Target Frame Name", aliases = { "custom target frame" }, applies = PlayerFrameFinderCustom },
     })
@@ -261,7 +262,7 @@ local function BuildFrameAnchoringPanel(container)
     -- over the first caret has nowhere to belong. Disabling the module ends
     -- the section after one row and builds nothing below it, exactly as the
     -- pre-row panel returned early after the same checkbox.
-    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Unit Frame Anchoring",
+    local _, anchoringCollapsed = BuildCollapsibleSection(container, "Unit Frames",
         "unitframe_player_anchoring", nil, nil, ROW_SECTION)
 
     if not anchoringCollapsed then
@@ -270,7 +271,7 @@ local function BuildFrameAnchoringPanel(container)
         local generalLeft, generalRight = BeginRowGrid(container)
 
         local enableRow = AddCheckboxRow(generalLeft, {
-            label = "Enable Unit Frame Anchoring",
+            label = "Enable Unit Frames",
             setting = FRAME_ANCHORING_FINDER.player.anchoring
                 and FRAME_ANCHORING_FINDER.player.anchoring.enabled,
             value = settings.enabled,
@@ -281,7 +282,7 @@ local function BuildFrameAnchoringPanel(container)
             end,
         })
 
-        CreateCharacterCopyButton(enableRow, "frameAnchoring", "Unit Frame Anchoring", function()
+        CreateCharacterCopyButton(enableRow, "frameAnchoring", "Unit Frames", function()
             CooldownCompanion:EvaluateFrameAnchoring()
             CooldownCompanion:RefreshConfigPanel()
         end)
@@ -290,7 +291,7 @@ local function BuildFrameAnchoringPanel(container)
             -- Unit-frame addon names run past the control column, so the menu
             -- is widened - a 140px control would otherwise open a 140px menu.
             AddDropdownRow(generalLeft, {
-                label = "Unit Frames",
+                label = "Unit Frame Addon",
                 setting = FRAME_ANCHORING_FINDER.player.anchoring
                     and FRAME_ANCHORING_FINDER.player.anchoring.unitFrames,
                 pulloutWidth = UNIT_FRAME_PULLOUT_WIDTH,
@@ -305,7 +306,7 @@ local function BuildFrameAnchoringPanel(container)
             })
 
             AddCheckboxRow(generalRight, {
-                label = "Inherit group alpha",
+                label = "Inherit Panel Alpha",
                 setting = FRAME_ANCHORING_FINDER.player.anchoring
                     and FRAME_ANCHORING_FINDER.player.anchoring.inheritAlpha,
                 value = settings.inheritAlpha,
@@ -358,7 +359,7 @@ local function BuildFrameAnchoringPanel(container)
     local anchorLeft, anchorRight = BeginRowGrid(container)
     ST._BuildModuleAnchoringControls(anchorLeft, "target", FRAME_ANCHORING_FINDER.target.anchoring)
     AddCheckboxRow(anchorRight, {
-        label = "Mirror player position",
+        label = "Mirror Player Position",
         setting = FRAME_ANCHORING_FINDER.player.anchoring
             and FRAME_ANCHORING_FINDER.player.anchoring.mirrorTarget,
         value = settings.mirroring,
@@ -370,11 +371,6 @@ local function BuildFrameAnchoringPanel(container)
     })
 
     if settings.mirroring then
-        local infoLabel = AceGUI:Create("Label")
-        ST._ConfigureWrappedHelperLabel(infoLabel)
-        infoLabel:SetText("Target position is mirrored from player settings around its selected panel.")
-        infoLabel:SetFullWidth(true)
-        container:AddChild(infoLabel)
         return
     end
 

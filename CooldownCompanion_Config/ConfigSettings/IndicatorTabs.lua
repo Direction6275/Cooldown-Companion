@@ -117,7 +117,7 @@ local soundRoute = ST._DefineSettingRoute({
 })
 local soundDefinitions = {
     sourceSounds={label="Sound Events",applies=Applies(function(g) return not I.IsAura(g) and I.Primary(g).type == "spell" end)},
-    triggered={label="Triggered",aliases={"on show","sound"},
+    triggered={label="Sound",aliases={"indicator appears","triggered","on show"},
     applies=Applies(function(g) return not I.UsesSourceSounds(g) end)}}
 for key, label in pairs({available="Available",availableWithCharges="Available / Charge Gained",
     onCooldown="On Cooldown",chargeGained="Charge Gained",onAuraApplied="Aura Applied",
@@ -595,7 +595,7 @@ local function AddAuraWhen(column, group, entry, changed)
                     " ",
                     {"In that window it shows the aura's live display, timer included. Only auras with that window use it; leave it off for others.", 1, 1, 1, true},
                     " ",
-                    {"Effects set to Only In Combat play on the missing look only.", 1, 1, 1, true}},
+                    {"Effects set to Show Only In Combat play on the missing look only.", 1, 1, 1, true}},
                 onChange=function(value)
                     entry.showWhileAuraPandemic = value or nil
                     changed(true)
@@ -1060,12 +1060,17 @@ function ST._BuildIndicatorTab(container, group, tab)
         -- that would start or stop effects on their own.
         ST._BuildIndicatorEffectsTab(container,group)
         if I.ShowsLiveDisplay(group) then BuildPandemic(container,group,changed) end
+        -- A spell source chooses whose sounds play; the chooser is the first
+        -- row of the Sound Alerts section, so it collapses with it.
+        local soundChooser
         if not I.IsAura(group) and I.Primary(group).type == "spell" then
-            Dropdown(container,{setting=ST._IndicatorSoundSettings.sourceSounds,
-                list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},
-                value=I.UsesSourceSounds(group) and "source" or "indicator",
-                onChange=function(value) I.Settings(group).sourceSounds=value == "source"; changed(true) end})
+            soundChooser = function(column)
+                Dropdown(column,{setting=ST._IndicatorSoundSettings.sourceSounds,
+                    list={source="Source Cooldown",indicator="Indicator Appears"},order={"indicator","source"},
+                    value=I.UsesSourceSounds(group) and "source" or "indicator",
+                    onChange=function(value) I.Settings(group).sourceSounds=value == "source"; changed(true) end})
+            end
         end
-        ST._BuildEntrySoundAlertsSection(container,group,I.Primary(group),CS.tabInfoButtons,ST._IndicatorSoundSettings)
+        ST._BuildEntrySoundAlertsSection(container,group,I.Primary(group),CS.tabInfoButtons,ST._IndicatorSoundSettings,soundChooser)
     end
 end

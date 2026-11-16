@@ -1564,10 +1564,11 @@ end
 -- CC writes. A missing aura cannot pause it: that is Blizzard's secret.
 -- While the panel is unlocked it holds full size, as the CC-side path does
 -- (freezeGeometryWhileUnlocked), so arranging stays steady; read per tick so
--- a lock toggle needs no rebind.
+-- a lock toggle needs no rebind. The combat lock reads locked there and here.
 local function OnSlotShrinkUpdate(layer, elapsed)
     local group = layer._ccShrinkGroup
-    if group.locked == false and not CooldownCompanion:IsArrangeContainerSuppressed(group.parentContainerId) then
+    if group.locked == false and not CooldownCompanion._combatForcedLock
+        and not CooldownCompanion:IsArrangeContainerSuppressed(group.parentContainerId) then
         if layer._ccShrinkTime ~= 0 then
             layer._ccShrinkTime = 0
             layer:SetScale(1)

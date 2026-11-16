@@ -96,7 +96,7 @@ local function GetPanelWorkspaceChips(rendered)
     end
     local _, resourcePanel = GetPlacement("resources")
     if resourcePanel == panelId then
-        AddItem("Resources", "resources", CS.unifiedBarKind == "stack")
+        AddItem("Resource Bars", "resources", CS.unifiedBarKind == "stack")
     end
     local _, castPanel = GetPlacement("castbar")
     if castPanel == panelId then AddItem("Cast Bar", "castbar", CS.unifiedBarKind == "cast", "cast") end

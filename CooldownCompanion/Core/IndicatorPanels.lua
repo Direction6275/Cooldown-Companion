@@ -173,7 +173,7 @@ function I.AuraListProblem(group)
 end
 
 -- Which effect rules apply: native auras run Always only; presence-drawn
--- auras may add Only In Combat (CC draws them, but nothing they would animate
+-- auras may add Show Only In Combat (CC draws them, but nothing they would animate
 -- on is the aura's own state); spell and item sources also get Animate When.
 function I.EffectFamily(group)
     if I.IsNativeAura(group) then return "aura" end
@@ -299,8 +299,8 @@ end
 I.EffectOrder = {"pulse", "colorShift", "shrinkExpand", "bounce"}
 I.EffectFailureText = {
     indicator_effects_legacy = "This older Indicator template does not identify its active effects. Update it from the original panel before applying it.",
-    indicator_effects_conditions = "Aura Indicators can't use Animate When or Only In Combat. Set each effect to Always with Only In Combat off first.",
-    indicator_effects_missing = "Indicators that show While Missing or check several auras can't use Animate When. Set each effect to Always first.",
+    indicator_effects_conditions = "Aura Indicators can't use Animate When or Show Only In Combat. Set each effect to Indicator Is Shown with Show Only In Combat off first.",
+    indicator_effects_missing = "Indicators that show While Missing or check several auras can't use Animate When. Set each effect to Indicator Is Shown first.",
     indicator_aura_group = "Group tracking works with a single aura per Indicator.",
     indicator_aura_change = "This Indicator checks several auras, so it can only change to another aura. Remove the other auras first to use a spell or item.",
     indicator_effects_text = "This effect cannot run with the destination's Text Only display. Choose Icon or Texture, or turn off the effect first.",
@@ -349,7 +349,7 @@ end
 -- Empty panels defer capability checks until their first source is known.
 -- Display switching still retains dormant effects, as the editor advertises;
 -- transfers must not introduce an effect that the destination cannot render.
--- Aura effects run together, but only as Always and never Only In Combat:
+-- Aura effects run together, but only as Always and never Show Only In Combat:
 -- nothing in the aura slot may start or stop once it is bound.
 function I.CheckEffects(effects, tracking, displayType)
     if not tracking then return true end
@@ -421,7 +421,7 @@ function I.NativeEffects(group)
 end
 
 -- The pandemic window's native display plays the While Missing look's
--- enabled effects too, except Only In Combat ones: a native slot can't follow
+-- enabled effects too, except Show Only In Combat ones: a native slot can't follow
 -- combat, so those stay on the missing look only.
 function I.PandemicTwinEffects(group)
     if not I.AlsoDuringPandemic(group) then return end
@@ -586,12 +586,12 @@ end
 
 -- What each effect family can't run, for adapting effects when the display
 -- source or the aura's When changes (adapt rather than refuse). Native auras:
--- no Animate When or Only In Combat, and Text Only has no Color Shift. While
+-- no Animate When or Show Only In Combat, and Text Only has no Color Shift. While
 -- Missing: no Animate When (it would follow the aura entry's own spell
 -- state), and Text Only can't Shrink / Expand. Spell and item: Text Only
 -- can't Shrink / Expand.
 local FAMILY_LIMITS = {
-    aura = {rules = "auras can't use Animate When or Only In Combat", dropCombat = true,
+    aura = {rules = "auras can't use Animate When or Show Only In Combat", dropCombat = true,
         textOff = "colorShift", textWhy = "Text Only auras can't use it"},
     missing = {rules = "While Missing and several auras can't use Animate When",
         textOff = "shrinkExpand", textWhy = "Text Only can't use it here"},

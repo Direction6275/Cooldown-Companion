@@ -115,9 +115,9 @@ local function CollectBarsEnableItems()
         and CooldownCompanion:GetFrameAnchoringSettings()
     if (not kind or kind == "player" or kind == "target") and not (frameSettings and frameSettings.enabled == true) then
         items[#items + 1] = {
-            label = "Enable Unit Frame Anchoring",
+            label = "Enable Unit Frames",
             tooltip = "Unit Frames",
-            tooltipLine = "Turn frame anchoring on and open the player frame's settings.",
+            tooltipLine = "Turn them on and open the player frame's settings.",
             onClick = EnableFrameAnchoringModule,
         }
     end
@@ -186,7 +186,7 @@ local function SetBarsOffCanvasChips(col3)
     if CS.barWorkspaceKind == "resources" then
         table.insert(items, 1, {
             key = "resources",
-            label = "Resources",
+            label = "Resource Bars",
             selected = not CS.selectedResourcePowerType,
             onClick = function()
                 ST._OpenBarWorkspace("resources")
@@ -224,7 +224,7 @@ local BAR_WORKSPACE_INTROS = {
         title = "Unit Frames",
         body = "Keep Blizzard's player and target frames positioned alongside your panels."
             .. "\n\nAdjust their placement together with the rest of your setup.",
-        buttonText = "Enable Unit Frame Anchoring",
+        buttonText = "Enable Unit Frames",
         onEnable = EnableFrameAnchoringModule,
     },
 }

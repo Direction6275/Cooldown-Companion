@@ -172,11 +172,20 @@ local function HideResourceBarConflictChooser(markDismissed)
     if chooser.frame then
         chooser.frame:SetScript("OnKeyDown", nil)
         chooser.frame:EnableKeyboard(false)
-        if chooser.frame.SetPropagateKeyboardInput then
-            chooser.frame:SetPropagateKeyboardInput(true)
-        end
     end
     ReturnResourceBarConflictFocus()
+end
+
+-- A real close of the settings window (combat included) takes the chooser
+-- with it. Not a dismissal: the next open offers it again. The Window fires
+-- OnClose on every hide, which marks one, so the mark is taken back here.
+ST._HideResourceBarConflictChooser = function()
+    local chooser = CS.resourceBarConflictChooser
+    if not (chooser and chooser.frame and chooser.frame:IsShown()) then return end
+    HideResourceBarConflictChooser(false)
+    if chooser.classKey and CS.resourceBarConflictChooserDismissed then
+        CS.resourceBarConflictChooserDismissed[chooser.classKey] = nil
+    end
 end
 
 local function ShowResourceBarConflictChooser(classKey, opts)
@@ -191,7 +200,7 @@ local function ShowResourceBarConflictChooser(classKey, opts)
         return false
     end
     if not AceGUI then
-        CooldownCompanion:Print("Resource Bar conflict chooser is unavailable.")
+        CooldownCompanion:Print("Resource Bars conflict chooser is unavailable.")
         return false
     end
 
@@ -236,14 +245,14 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     local candidateCount = #candidateCharKeys + (type(existingClassSettings) == "table" and 1 or 0)
 
     AddResourceBarConflictText(chooser,
-        "Choose the Resource Bar setup to |cffffd100KEEP|r for " .. tostring(classKey) .. ".",
+        "Choose the Resource Bars setup to |cffffd100KEEP|r for " .. tostring(classKey) .. ".",
         GameFontHighlight)
     AddResourceBarConflictSpacer(chooser, 14)
 
     local bullets = {
-        "The Resource settings from the setup you KEEP will be saved for the whole class.",
+        "The Resource Bars settings from the setup you KEEP will be saved for the whole class.",
         "Legacy Custom Bars from every listed same-class setup will be kept and converted into panel entries.",
-        "The other listed character Resource settings will be removed.",
+        "The other listed character Resource Bars settings will be removed.",
         "Going forward, every character of this class will use the saved setup.",
         "Per-spec layouts and resource overrides still work inside that class setup.",
     }
@@ -275,7 +284,7 @@ local function ShowResourceBarConflictChooser(classKey, opts)
         local options = row.keepExistingClassStore and { keepExistingClassStore = true } or nil
         local ok, reason = CooldownCompanion:ResolveResourceBarConflict(classKey, row.sourceCharKey, options)
         if not ok then
-            CooldownCompanion:Print("Resource Bar resolution failed: " .. tostring(reason or "unknown error"))
+            CooldownCompanion:Print("Resource Bars resolution failed: " .. tostring(reason or "unknown error"))
             return
         end
         HideResourceBarConflictChooser(false)
@@ -325,10 +334,16 @@ local function ShowResourceBarConflictChooser(classKey, opts)
     chooser:AddChild(closeButton)
 
     chooser:SetHeight(math.max(460, 390 + (candidateCount * 38) + (math.max(candidateCount - 1, 0) * 10)))
-    chooser.frame:SetScript("OnKeyDown", function(_, key)
+    -- Only the keys the chooser acts on stop here; every other key reaches the
+    -- game. Keeping a setup deletes the others, so it takes Enter or a click.
+    chooser.frame:SetScript("OnKeyDown", function(self, key)
+        if not InCombatLockdown() then
+            self:SetPropagateKeyboardInput(not (key == "ESCAPE" or key == "ENTER"
+                or key == "DOWN" or key == "TAB" or key == "UP"))
+        end
         if key == "ESCAPE" then
             HideResourceBarConflictChooser(true)
-        elseif key == "ENTER" or key == "SPACE" then
+        elseif key == "ENTER" then
             chooseRow(chooser.selectedIndex or 1)
         elseif key == "DOWN" or key == "TAB" then
             local nextIndex = (chooser.selectedIndex or 1) + 1
@@ -341,9 +356,6 @@ local function ShowResourceBarConflictChooser(classKey, opts)
         end
     end)
     chooser.frame:EnableKeyboard(true)
-    if chooser.frame.SetPropagateKeyboardInput then
-        chooser.frame:SetPropagateKeyboardInput(false)
-    end
     chooser:Show()
     AnchorResourceBarConflictChooser(chooser)
     RaiseResourceBarConflictChooser(chooser)
@@ -609,7 +621,7 @@ StaticPopupDialogs["CDC_DELETE_PANEL_TEMPLATE"] = {
 }
 
 StaticPopupDialogs["CDC_DELETE_BUTTON"] = {
-    text = "Delete '%s'?",
+    text = "Delete entry '%s'?",
     button1 = "Delete",
     button2 = "Cancel",
     OnAccept = function(self, data)
@@ -1657,7 +1669,7 @@ local function BlockImportForResourceBarConflict(classKey)
         return false
     end
 
-    local message = "Resolve the pending Resource Bar conflict"
+    local message = "Resolve the pending Resource Bars conflict"
         .. (classKey and (" for " .. tostring(classKey)) or "")
         .. " before importing. Choose the setup to keep, then import again."
     CooldownCompanion:Print(message)
@@ -1744,7 +1756,7 @@ local function ApplySetupImportData(data, existingPanelIds)
 
     local resourcesClassKey = resourcesSection and GetSetupSectionClassKey(resourcesSection) or nil
     if resourcesSection and not resourcesClassKey then
-        CooldownCompanion:Print("Import failed: the Resources setup does not name its class.")
+        CooldownCompanion:Print("Import failed: the Resource Bars setup does not name its class.")
         return false
     end
     local castBarClassKey = castBarSection and GetSetupSectionClassKey(castBarSection) or nil
@@ -1816,7 +1828,7 @@ local function ApplySetupImportData(data, existingPanelIds)
             and CooldownCompanion:ReplaceResourceBarClassSettings(resourcesClassKey, settings)
         if replaced then
             applied = true
-            CooldownCompanion:Print("Imported Resources setup for " .. tostring(resourcesClassKey) .. ".")
+            CooldownCompanion:Print("Imported Resource Bars setup for " .. tostring(resourcesClassKey) .. ".")
         else
             failed = true
         end
@@ -1936,7 +1948,7 @@ local function AcceptResourceSpecCopy(self, data)
 end
 
 StaticPopupDialogs["CDC_CONFIRM_RESOURCE_SPEC_COPY"] = {
-    text = "Copy Resource Bar settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings are not copied.",
+    text = "Copy Resource Bars settings from %s?\n\nThis copies Appearance, Layout, resource colors, and Resource Settings into the current spec. If that spec is using defaults, those default values are copied. Health settings are not copied.",
     button1 = "Copy",
     button2 = "Cancel",
     OnAccept = AcceptResourceSpecCopy,

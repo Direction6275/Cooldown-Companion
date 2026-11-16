@@ -1348,15 +1348,25 @@ function CooldownCompanion:GetCurrentEligibilityIdentity()
     }
 end
 
+-- A panel or Group that saved no hide rules still takes its scope's defaults:
+-- hidden in pet battles and vehicles, as its Visibility tab shows it (owner
+-- ruling 2026-11-15). An entry's defaults hide nowhere, so one with no rules
+-- adds no source. The stand-in table is shared and never written.
+local NO_LOAD_CONDITIONS = {}
+
 local function AddLoadConditionSource(sources, label, entity, defaults, allowClassEligibility)
-    if type(entity) == "table" and type(entity.loadConditions) == "table" then
-        sources[#sources + 1] = {
-            label = label,
-            loadConditions = entity.loadConditions,
-            defaults = defaults,
-            allowClassEligibility = allowClassEligibility == true,
-        }
+    if type(entity) ~= "table" then return end
+    local loadConditions = entity.loadConditions
+    if type(loadConditions) ~= "table" then
+        if defaults ~= LOAD_CONDITION_DEFAULTS then return end
+        loadConditions = NO_LOAD_CONDITIONS
     end
+    sources[#sources + 1] = {
+        label = label,
+        loadConditions = loadConditions,
+        defaults = defaults,
+        allowClassEligibility = allowClassEligibility == true,
+    }
 end
 
 local function HasEligibilityAllowlist(loadConditions, allowClassEligibility)

@@ -1876,7 +1876,6 @@ local function EnsureBar(host, surface)
         local route = bar._gearRoute
         if IsRoutePanelOpen(route) then
             GameTooltip:AddLine("Go to settings")
-            GameTooltip:AddLine("Show the settings for this preview.", 0.7, 0.7, 0.7)
         else
             local control = bar._selected
             local sectionScope = control
@@ -1893,7 +1892,6 @@ local function EnsureBar(host, surface)
                     0.7, 0.7, 0.7, true)
             else
                 GameTooltip:AddLine("Open settings")
-                GameTooltip:AddLine("Go to the settings for this preview.", 0.7, 0.7, 0.7)
             end
         end
         GameTooltip:Show()
@@ -1956,10 +1954,8 @@ local function EnsureBar(host, surface)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         if IsSpellbookWindowShown() then
             GameTooltip:AddLine("Close spellbook")
-            GameTooltip:AddLine("Close the spell list beside the config.", 0.7, 0.7, 0.7)
         else
             GameTooltip:AddLine("Open spellbook")
-            GameTooltip:AddLine("Drag a spell from the list onto a panel to add it.", 0.7, 0.7, 0.7)
         end
         GameTooltip:Show()
     end)
