@@ -576,6 +576,25 @@ local function ClearInvalidStrataOrderFromStyle(style)
     end
 end
 
+-- Talent conditions saved before the picker normalized them (duplicate
+-- nodes, "Choice row" placeholders, mixed spec scopes) are rewritten once
+-- here, so the runtime check only ever reads them.
+local function NormalizeSavedTalentConditions(self, profile)
+    if type(profile) ~= "table" or type(profile.groups) ~= "table" then return end
+    for _, group in pairs(profile.groups) do
+        if type(group) == "table" and type(group.buttons) == "table" then
+            for _, buttonData in ipairs(group.buttons) do
+                if type(buttonData) == "table" and type(buttonData.talentConditions) == "table" then
+                    local normalized, changed = self:NormalizeTalentConditions(buttonData.talentConditions)
+                    if changed then
+                        buttonData.talentConditions = normalized
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function NormalizePassiveCooldownButtons(profile)
     if type(profile) ~= "table" or type(profile.groups) ~= "table" then
         return false
@@ -3707,6 +3726,7 @@ function CooldownCompanion:RunAllMigrations()
         self:Print("Updated for 12.1: " .. table.concat(parts, "; ") .. ".")
     end
     NormalizePassiveCooldownButtons(self.db and self.db.profile)
+    NormalizeSavedTalentConditions(self, self.db and self.db.profile)
     BackfillUnusableVisualOverrideModes(self.db and self.db.profile)
     BackfillAuraDurationSwipeSettings(self.db and self.db.profile, checkpointState and checkpointState.auraDurationSwipe)
     -- After both backfills: the aura swipe one leaves fill-offs for the swipe
@@ -3784,6 +3804,8 @@ function CooldownCompanion:RunAllMigrations()
     if self.NormalizePanelAlphaInheritance then
         self:NormalizePanelAlphaInheritance(self.db and self.db.profile)
     end
+    -- Panels are final here: marks for panels that never arrived go.
+    self:PruneExternalAnchorMarks(self.db and self.db.profile)
     -- Account-wide panel templates, last: a profile-shaped store the style
     -- passes above walk as-is. Reached on the supported profile-change path
     -- too, which is harmless (every pass is idempotent and sentinel-gated);

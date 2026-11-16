@@ -225,7 +225,6 @@ local DURATION_FORMAT_SET = {
     [DURATION_FORMAT_DECIMAL_UNDER_60] = true,
 }
 
-CooldownCompanion.DURATION_FORMAT_CLOCK = DURATION_FORMAT_CLOCK
 
 local secondsFormatterCache = {}
 local durationTextFormatterCache = {}

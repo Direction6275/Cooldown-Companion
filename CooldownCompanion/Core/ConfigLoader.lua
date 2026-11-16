@@ -203,6 +203,14 @@ function CooldownCompanion:RefreshConfigPanel()
     end
 end
 
+-- For game events: what the window shows changed, not what the player is
+-- editing. One rebuild per burst, held while an edit is in flight.
+function CooldownCompanion:QueueConfigStateRefresh()
+    if self._configQueueStateRefreshImpl then
+        return self:_configQueueStateRefreshImpl()
+    end
+end
+
 function CooldownCompanion:GetConfigFrame()
     return GetConfigFrameIfLoaded(self)
 end

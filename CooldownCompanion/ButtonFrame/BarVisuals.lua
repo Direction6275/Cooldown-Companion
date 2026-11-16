@@ -12,7 +12,10 @@ local DEFAULT_BAR_COLOR = { 0.2, 0.6, 1.0, 1.0 }
 local DEFAULT_BACKGROUND = { 0.1, 0.1, 0.1, 0.8 }
 local DEFAULT_BORDER = { 0, 0, 0, 1 }
 
-local function Apply(host, style, width, height)
+-- nativeFlow: a preview of a bar Blizzard's aura container lays out. Its icon
+-- square takes the live cell's clamps, so an Icon Offset below 0 or an icon
+-- longer than the cell draws here the way it does in game.
+local function Apply(host, style, width, height, nativeFlow)
     local borderSize = style.borderSize or ST.DEFAULT_BORDER_SIZE
     local borderMode = ST.GetBorderRenderMode(style)
     local inset = ST.GetEffectiveBorderLayoutSize(host, borderSize, borderMode)
@@ -21,6 +24,10 @@ local function Apply(host, style, width, height)
     local iconReverse = showIcon and (style.barIconReverse or false)
     local iconSize = (style.barIconSizeOverride and style.barIconSize) or style.barHeight or 20
     local iconOffset = showIcon and (style.barIconOffset or 0) or 0
+    if showIcon and nativeFlow then
+        local _, size, offset = ST._GetAuraPanelBarIconGeometry(style, true, vertical, width, height)
+        iconSize, iconOffset = size, offset
+    end
     local iconArea = showIcon and (iconSize + iconOffset) or 0
 
     if showIcon then

@@ -132,6 +132,12 @@ local function BuildRows(column, group, id)
     local iconSizeOverride = id == "barIconAppearance" and read.barIconSizeOverride
     local borderStyle = id == "borderSettings" and read.barBorderStyle
     local crisp = id == "borderSettings" and ST.GetDrawnBorderRenderMode(read) == ST.BORDER_RENDER_MODE_CRISP
+    -- Blizzard lays out these bars and their icon cannot overlap the fill, so
+    -- Icon Offset starts at 0 (owner ruling 2026-11-16). A saved value below
+    -- 0 already draws as 0 and stays saved until the slider is moved.
+    local nativeFlowIcon = id == "barIconAppearance" and not kind and (ST.IsAuraPanelGroup(group)
+        or lens and lens.mode == "entry" and lens.buttonData
+            and ST.IsNativeFlowAuraEntry(group, lens.buttonData))
     for _, field in ipairs(fields[id]) do
         local key, label, widget = unpack(field)
         local setting = finder[scope][key]
@@ -159,8 +165,9 @@ local function BuildRows(column, group, id)
             row = ST._AddCheckboxRow(column, { label=label, setting=setting, value=sec.read[key] == true,
                 disabled=sec.disabled, onChange=function(value) set(key,value) end })
         elseif widget == "size" and not key:match("FontSize$") then
-            row = ST._AddSliderRow(column, { label=label, setting=setting, min=field[4], max=field[5], step=0.1,
-                value=sec.read[key] or ST.ATTACHED_BAR_DEFAULTS[key] or 0,
+            local min = key == "barIconOffset" and nativeFlowIcon and 0 or field[4]
+            row = ST._AddSliderRow(column, { label=label, setting=setting, min=min, max=field[5], step=0.1,
+                value=math.max(min, sec.read[key] or ST.ATTACHED_BAR_DEFAULTS[key] or 0),
                 disabled=sec.disabled or key == "borderSize" and ST.IsBorderThicknessLocked()
                     or key == "barClassTextureBrightness" and textureLocked,
                 onChange=function(value)

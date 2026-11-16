@@ -504,6 +504,12 @@ local function IsDescriptorApplicable(descriptor, context)
     return true
 end
 
+-- A catalog mistake found while a page is being drawn is reported, never
+-- thrown: the page still builds, and the report still reaches the error log.
+local function ReportCatalogFault(message)
+    geterrorhandler()("Cooldown Companion Settings Finder: " .. message)
+end
+
 local function FindIndistinguishableResult(applicableDescriptors)
     local displaySignatures = {}
     for _, descriptor in ipairs(applicableDescriptors or {}) do
@@ -550,7 +556,7 @@ local function PrepareSettingsFinderContext(context, validationErrors)
         local displayError = FindIndistinguishableResult(applicable)
         if displayError then
             if validationErrors then validationErrors[#validationErrors + 1] = displayError
-            else error("Cooldown Companion Settings Finder: " .. displayError) end
+            else ReportCatalogFault(displayError) end
         end
         context._settingsFinderApplicability = seen
         context._settingsFinderApplicableDescriptors = applicable
@@ -587,7 +593,7 @@ local function PrepareSettingsFinderContext(context, validationErrors)
             validationErrors[#validationErrors + 1] = displayError
             return context
         end
-        error("Cooldown Companion Settings Finder: " .. displayError)
+        ReportCatalogFault(displayError)
     end
     context._settingsFinderApplicability = cached
     context._settingsFinderApplicableDescriptors = applicableDescriptors
@@ -718,7 +724,7 @@ local function BindSettingWidget(widget, descriptor, renderedLabel)
     end
     descriptor = PresentationDescriptor(descriptor, ST._GetSettingsWidgetContext and ST._GetSettingsWidgetContext(widget))
     if renderedLabel ~= nil and renderedLabel ~= descriptor.label then
-        error("Cooldown Companion Settings Finder: widget label mismatch for "
+        ReportCatalogFault("widget label mismatch for "
             .. descriptor.id .. " (expected '" .. descriptor.label
             .. "', got '" .. tostring(renderedLabel) .. "')")
     end

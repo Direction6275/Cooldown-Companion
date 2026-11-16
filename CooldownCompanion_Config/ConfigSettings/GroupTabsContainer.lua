@@ -128,6 +128,18 @@ if ST._DefineSettingRoute then
         fadeOut = { label = "Fade Out Duration (seconds)", applies = ContainerFinderCustomFade },
     })
 
+    CONTAINER_FINDER.who = ST._DefineSettingRoute({
+        idPrefix = "group.visibility.who",
+        scope = "group",
+        tab = "loadconditions",
+        tabLabel = "Visibility",
+        section = "who_can_use",
+        sectionLabel = "Who Can Use This",
+        collapseKeys = { "container_loadconditions_who" },
+        rowScope = "primary",
+    }):Setting({ key = "who", label = "Who Can Use This",
+        aliases = { "character", "class", "specialization", "hero talent" } })
+
     local whereRoute = ST._DefineSettingRoute({
         idPrefix = "group.visibility.where",
         scope = "group",
@@ -363,8 +375,9 @@ local function BuildContainerLoadConditionsTab(scroll, containerId)
     -- so there is never an inherited summary to lead with. Row grammar
     -- throughout, and nothing here carries a gear, so there is no
     -- advanced-panel queue to keep uncollapsed.
-    local _, whoCollapsed = BuildCollapsibleSection(scroll, "Who Can Use This",
+    local whoHeading, whoCollapsed = BuildCollapsibleSection(scroll, "Who Can Use This",
         "container_loadconditions_who", nil, nil, ROW_SECTION)
+    ST._BindSettingHeading(whoHeading, CONTAINER_FINDER.who, "Who Can Use This")
 
     if not whoCollapsed then
         local eligibilityOpts = {

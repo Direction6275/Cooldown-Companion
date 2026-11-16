@@ -389,19 +389,6 @@ function CooldownCompanion:RebuildItemSlotCache()
     CacheAddonBarItemSlots(self._itemSlotCache)
 end
 
--- Update item slot cache for a single changed slot.
-function CooldownCompanion:UpdateItemSlotCache(slot)
-    -- Remove old entry pointing to this slot
-    for itemId, cachedSlot in pairs(self._itemSlotCache) do
-        if cachedSlot == slot then
-            self._itemSlotCache[itemId] = nil
-            break
-        end
-    end
-    -- Add new entry if slot now has an item
-    CacheItemSlot(self._itemSlotCache, slot)
-end
-
 -- Resolve the action bar slot from a button frame, or nil.
 local function GetFrameActionSlot(frame)
     local action = frame.action

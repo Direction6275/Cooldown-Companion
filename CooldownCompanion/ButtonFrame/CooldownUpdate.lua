@@ -388,13 +388,7 @@ end
 
 local IsReadyGlowMaxChargeEligible = ST._IsReadyGlowMaxChargeEligible
 
-local function IsReadyGlowAtMaxCharges(button, buttonData)
-    if not (button and IsReadyGlowMaxChargeEligible(buttonData)) then
-        return false
-    end
-
-    return button._chargeState == CHARGE_STATE_FULL
-end
+local IsReadyGlowAtMaxCharges = ST._IsReadyGlowAtMaxCharges
 
 function CooldownCompanion:RefreshResolvedItemKeybindState(button, buttonData)
     if button.keybindText then

@@ -506,7 +506,6 @@ AT.CopyColor = CopyColor
 AT.Clamp = Clamp
 AT.NormalizeBlendMode = NormalizeBlendMode
 AT.IsRuntimeItemLike = IsRuntimeItemLike
-AT.NormalizeTextureIndicatorEffect = NormalizeTextureIndicatorEffect
 AT.NormalizeAnchorPoint = NormalizeAnchorPoint
 AT.NormalizeTextureLayout = NormalizeTextureLayout
 AT.GetStretchMultiplier = GetStretchMultiplier

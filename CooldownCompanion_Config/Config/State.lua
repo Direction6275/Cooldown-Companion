@@ -1998,6 +1998,8 @@ local function ApplyConfigRowLayout(entry)
     end
 end
 
+local CleanRecycledEntry
+
 local function EnsureConfigRowHandlers(entry)
     if not entry._cdcConfigRowWidthHandlerInstalled then
         entry._cdcConfigRowOriginalOnWidthSet = entry.OnWidthSet
@@ -2014,11 +2016,9 @@ local function EnsureConfigRowHandlers(entry)
         entry._cdcConfigRowOriginalOnRelease = entry.OnRelease
         entry.OnRelease = function(self)
             local originalOnRelease = self._cdcConfigRowOriginalOnRelease
-            if self.frame._cdcDisabledModuleSelection then
-                self.frame._cdcDisabledModuleSelection:Hide()
-            end
-            self.frame:SetAlpha(1)
-            ClearConfigRowLayout(self, true)
+            -- The widget returns to a pool every AceGUI addon draws from, so
+            -- it leaves without our click scripts, badges or tints.
+            CleanRecycledEntry(self)
             if originalOnRelease then
                 originalOnRelease(self)
             end
@@ -2027,7 +2027,7 @@ local function EnsureConfigRowHandlers(entry)
     end
 end
 
-local function CleanRecycledEntry(entry)
+function CleanRecycledEntry(entry)
     if entry.frame._cdcDisabledModuleSelection then entry.frame._cdcDisabledModuleSelection:Hide() end
     if entry.frame._cdcBadges then
         for _, b in ipairs(entry.frame._cdcBadges) do b:Hide() end

@@ -619,10 +619,6 @@ function CooldownCompanion:GetPanelContainerAlphaSource(groupOrId)
     return GetPanelContainerAlphaSource(self, groupOrId)
 end
 
-function CooldownCompanion:DoesAnchorTargetReachCursorRoot(relativeTo, profile)
-    return AnchorTargetsCursorRoot(profile or GetProfile(self), relativeTo)
-end
-
 function CooldownCompanion:ParseAddonAnchorFrameName(frameName)
     return ParseAddonAnchorFrameName(frameName)
 end

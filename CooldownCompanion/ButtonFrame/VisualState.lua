@@ -137,6 +137,7 @@ local function IsReadyGlowAtMaxCharges(button, buttonData)
 
     return button._chargeState == CHARGE_STATE_FULL
 end
+ST._IsReadyGlowAtMaxCharges = IsReadyGlowAtMaxCharges
 
 local function GetResolverCombatState(options)
     if options and options.inCombat ~= nil then

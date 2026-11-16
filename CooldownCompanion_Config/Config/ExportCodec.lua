@@ -1386,6 +1386,10 @@ local function DecodeSharedPayload(text)
     elseif UNSUPPORTED_COMPACT_FORMATS[formatVersion] then
         data[COMPACT_FORMAT_KEY] = nil
         data._cdcUnsupportedCompactFormat = formatVersion
+    elseif formatVersion ~= nil then
+        -- A format this build has never heard of is a newer one. Reading it
+        -- as uncompacted would import a setup with its defaults missing.
+        return false, nil, "This string was made by a newer version of Cooldown Companion. Update the addon, then import it again."
     else
         data = NormalizeTextureLibraryPayload(data)
     end

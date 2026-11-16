@@ -274,14 +274,7 @@ end
 
 local function Section(container, text, key, setting)
     local heading, collapsed = ST._BuildCollapsibleSection(container, text, key, nil, nil, ROW_SECTION)
-    if setting and ST._BindSettingWidget then
-        ST._BindSettingWidget(heading,setting,text)
-        local onRelease = heading.events and heading.events.OnRelease
-        heading:SetCallback("OnRelease",function(widget,event,...)
-            widget._cdcSettingDescriptor=nil
-            if onRelease then onRelease(widget,event,...) end
-        end)
-    end
+    ST._BindSettingHeading(heading, setting, text)
     return heading, collapsed
 end
 

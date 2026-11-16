@@ -349,7 +349,6 @@ end
 function Addon:PopulateTotemPanel(groupId)
     local frame, group = self.groupFrames[groupId], self.db.profile.groups[groupId]
     if not (frame and ST.IsTotemPanelGroup(group)) then return end
-    self:EnforceTotemPanelInvariants(group)
     local surface = frame._totemPanelSurface
     if not surface then
         surface = ST.CreateTotemPanelSurface(frame, groupId, false)
