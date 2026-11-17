@@ -8,7 +8,6 @@ local tonumber = tonumber
 local BuildCollapsibleSection = ST._BuildCollapsibleSection
 local CreateInfoButton = ST._CreateInfoButton
 local AddAnchorDropdown = ST._AddAnchorDropdown
-local AddOffsetSliders = ST._AddOffsetSliders
 local GetCompactGrowthDirectionLabels = ST._GetCompactGrowthDirectionLabels
 local NormalizeCompactGrowthDirection = ST.NormalizeCompactGrowthDirection
 local BuildCompactModeControls = ST._BuildCompactModeControls
@@ -65,77 +64,45 @@ local LAYOUT_FINDER = { sections = {}, layers = {} }
 local PRIMARY_LAYOUT_SCOPE = "panel"
 
 -- Shared decisions take the caller's actual editing group and target memory.
--- Indicator settings preparation and all saved/UI-state writes stay outside.
-local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, settings)
+-- All saved and UI-state writes stay outside.
+local function ResolveLayoutAnchorState(group, preferredTargetMode)
     local isPanel = group.parentContainerId ~= nil
     local anchor = group.anchor or {}
-    local panelContainerFrame, currentAnchor, currentAnchorGroupId, isCursorAnchor, canUseCursorAnchor, targetMode
+    local panelContainerFrame, currentAnchor, currentAnchorGroupId, isCursorAnchor, targetMode
+    local inferredFrame = false
 
-    if ST.IsIndicatorGroup(group) then
-        settings = settings or {}
-        currentAnchor = type(settings.relativeTo) == "string" and settings.relativeTo ~= ""
-            and settings.relativeTo or "UIParent"
-        isCursorAnchor = CooldownCompanion.IsCursorAnchor
-            and CooldownCompanion:IsCursorAnchor(anchor) or false
-        canUseCursorAnchor = CooldownCompanion:CanGroupUseCursorAnchor(group)
-        if isCursorAnchor and not canUseCursorAnchor then
-            isCursorAnchor = false
-        end
-        local anchorKind
-        anchorKind, currentAnchorGroupId = CooldownCompanion:ParseAddonAnchorFrameName(currentAnchor)
-        local currentAnchorIsPanel = anchorKind == "group"
-            and isPanel
-            and CooldownCompanion.IsPanelAnchoredToPanel
-            and CooldownCompanion:IsPanelAnchoredToPanel(groupId)
-            or false
-        if not currentAnchorIsPanel then currentAnchorGroupId = nil end
+    panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
+    currentAnchor = anchor.relativeTo
+    isCursorAnchor = isPanel
+        and CooldownCompanion.IsCursorAnchor
+        and CooldownCompanion:IsCursorAnchor(anchor)
+        or false
+    currentAnchorGroupId = type(currentAnchor) == "string"
+        and currentAnchor:match("^CooldownCompanionGroup(%d+)$") or nil
 
-        -- Its own Group's frame is the "Group" target, as the screen is for
-        -- an Indicator outside a Group.
-        local ownFrame = isPanel and ("CooldownCompanionContainer" .. tostring(group.parentContainerId)) or nil
-        if isCursorAnchor then
-            targetMode = "cursor"
-        elseif currentAnchorIsPanel then
-            targetMode = "panel"
-        elseif currentAnchor ~= "UIParent" and currentAnchor ~= ownFrame then
-            targetMode = "frame"
-        elseif ownFrame and currentAnchor == "UIParent" then
-            -- Saved on the screen while inside a Group: a Frame target with no
-            -- frame named, so "Group" stays a choice that re-attaches it.
-            targetMode = "frame"
-        elseif preferredTargetMode == "panel" and isPanel then
-            targetMode = "panel"
-        elseif preferredTargetMode == "frame" then
-            targetMode = "frame"
-        else
-            targetMode = "group"
-        end
+    if isCursorAnchor then
+        targetMode = "cursor"
+    elseif currentAnchorGroupId and isPanel then
+        targetMode = "panel"
+    elseif isPanel and currentAnchor == "UIParent" and ST.IsIndicatorGroup(group)
+        and preferredTargetMode ~= "panel" then
+        -- An Indicator saved on the screen while inside a Group (owner
+        -- ruling R8-fallback): a Frame target with no frame named, so
+        -- "Group" stays a choice that re-attaches it. Inferred from the
+        -- saved position, so it is not remembered as the player's choice.
+        targetMode = "frame"
+        inferredFrame = true
+    elseif currentAnchor == nil or currentAnchor == "UIParent"
+        or (isPanel and currentAnchor == panelContainerFrame) then
+        targetMode = "group"
     else
-        panelContainerFrame = isPanel and ("CooldownCompanionContainer" .. group.parentContainerId) or nil
-        currentAnchor = anchor.relativeTo
-        isCursorAnchor = isPanel
-            and CooldownCompanion.IsCursorAnchor
-            and CooldownCompanion:IsCursorAnchor(anchor)
-            or false
-        currentAnchorGroupId = type(currentAnchor) == "string"
-            and currentAnchor:match("^CooldownCompanionGroup(%d+)$") or nil
+        targetMode = "frame"
+    end
 
-        if isCursorAnchor then
-            targetMode = "cursor"
-        elseif currentAnchorGroupId and isPanel then
-            targetMode = "panel"
-        elseif currentAnchor == nil or currentAnchor == "UIParent"
-            or (isPanel and currentAnchor == panelContainerFrame) then
-            targetMode = "group"
-        else
-            targetMode = "frame"
-        end
-
-        if (targetMode == "group" or targetMode == "cursor")
-            and (preferredTargetMode == "frame"
-                or (isPanel and preferredTargetMode == "panel")) then
-            targetMode = preferredTargetMode
-        end
+    if (targetMode == "group" or targetMode == "cursor")
+        and (preferredTargetMode == "frame"
+            or (isPanel and preferredTargetMode == "panel")) then
+        targetMode = preferredTargetMode
     end
 
     return {
@@ -145,7 +112,7 @@ local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, set
         currentAnchor = currentAnchor,
         currentAnchorGroupId = currentAnchorGroupId,
         isCursorAnchor = isCursorAnchor,
-        canUseCursorAnchor = canUseCursorAnchor,
+        inferredFrame = inferredFrame,
     }
 end
 
@@ -228,9 +195,8 @@ local function GetLayoutFinderState(context)
     local owner = group._attachedBarOwner or group
     local displayMode = group.displayMode or "icons"
     local isIndicator = displayMode == "indicator"
-    local anchorState = ResolveLayoutAnchorState(group, groupId,
-        CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId],
-        isIndicator and CooldownCompanion:GetIndicatorAnchorSettings(group) or nil)
+    local anchorState = ResolveLayoutAnchorState(group,
+        CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId])
     local targetMode = anchorState.targetMode
     local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
     local state = ResolveLayoutArrangementState(group, buttonCount)
@@ -246,13 +212,8 @@ local function GetLayoutFinderState(context)
         and not ST.IsTotemPanelGroup(group)
 
     state.panelPoint = targetMode == "cursor"
-    state.anchorPoint = not isIndicator and targetMode ~= "cursor"
-    state.displayPoint = isIndicator and targetMode ~= "cursor"
-    -- "Group" names the parent container when there is one, else the screen.
-    local targetsScreen = targetMode == "group" and not group.parentContainerId
-    state.targetPoint = isIndicator and targetMode ~= "cursor" and not targetsScreen
-    state.screenPoint = isIndicator and targetsScreen
-    state.relativePoint = not isIndicator and targetMode ~= "cursor"
+    state.anchorPoint = targetMode ~= "cursor"
+    state.relativePoint = targetMode ~= "cursor"
     state.xOffset = true
     state.yOffset = true
 
@@ -341,21 +302,18 @@ if ST._DefineSettingRoute then
     })
     LAYOUT_FINDER.position = position:Settings({
         panelPoint = { label = "Panel Point", aliases = { "anchor point" }, applies = LayoutFinderFlag("panelPoint") },
-        anchorPoint = {
-            label = "Anchor Point",
-            aliases = { "panel point" },
-            applies = LayoutFinderFlag("anchorPoint"),
-        },
         -- An Indicator's points carry the panel names (owner ruling
         -- 2026-10-27); the older words stay searchable.
-        displayPoint = {
+        anchorPoint = {
             label = "Anchor Point",
-            aliases = { "display point", "trigger point" },
-            applies = LayoutFinderFlag("displayPoint"),
+            aliases = { "panel point", "display point", "trigger point" },
+            applies = LayoutFinderFlag("anchorPoint"),
         },
-        targetPoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("targetPoint") },
-        screenPoint = { label = "Relative Point", aliases = { "screen point" }, applies = LayoutFinderFlag("screenPoint") },
-        relativePoint = { label = "Relative Point", aliases = { "target point" }, applies = LayoutFinderFlag("relativePoint") },
+        relativePoint = {
+            label = "Relative Point",
+            aliases = { "target point", "screen point" },
+            applies = LayoutFinderFlag("relativePoint"),
+        },
         xOffset = { label = "X Offset", aliases = { "horizontal position" }, applies = LayoutFinderFlag("xOffset") },
         yOffset = { label = "Y Offset", aliases = { "vertical position" }, applies = LayoutFinderFlag("yOffset") },
     })
@@ -463,7 +421,7 @@ end
 
 local tabInfoButtons = CS.tabInfoButtons
 
--- Early returns in here (missing group, and the Indicator settings guard) land
+-- Early returns in here (a missing group) land
 -- on the dispatch-level gear build pass's sweep (RunAdvancedGearBuildPass,
 -- AdvancedSettingsPanel.lua).
 local function BuildGridArrangement(container, group, layoutCount)
@@ -685,8 +643,8 @@ local function BuildGridArrangement(container, group, layoutCount)
     end
 end
 
--- The whole panel's draw layer. Ordinary panels show it in their Strata
--- section and Indicators in theirs; onChanged applies the new layer.
+-- The whole panel's draw layer, in the Strata section; onChanged applies the
+-- new layer.
 local function AddFrameStrataRow(parent, group, infoButtons, onChanged)
     local frameStrataRow = AddDropdownRow(parent, {
         label = "Frame Strata",
@@ -730,404 +688,25 @@ local function BuildLayoutTab(container)
     local style = group.style
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
 
-    if ST.IsIndicatorGroup(group) then
-        -- The Indicator's one saved position: its group.anchor.
-        local settings = CooldownCompanion:GetIndicatorAnchorSettings(group)
-        if not settings then
-            return
-        end
-        local textureGroupId = CS.selectedGroup
-        local anchorLabel = "Anchor Point"
-        local defaultFrame = group.parentContainerId and ("CooldownCompanionContainer" .. group.parentContainerId) or "UIParent"
-        local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
-            and CooldownCompanion:GetCursorAnchorTargetName()
-            or ST.CURSOR_ANCHOR_TARGET
-            or "CooldownCompanionCursor"
-        CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
-        local anchorState = ResolveLayoutAnchorState(group, textureGroupId,
-            CS.layoutAnchorTargetMode[textureGroupId], settings)
-        local isPanel, isCursorAnchor = anchorState.isPanel, anchorState.isCursorAnchor
-        local canUseCursorAnchor = anchorState.canUseCursorAnchor
-        local currentAnchorGroupId, targetMode = anchorState.currentAnchorGroupId, anchorState.targetMode
-        -- No target named: the centre of its Group, or of the screen outside
-        -- one. Read fresh, since SetGroupAnchor replaces the anchor table.
-        local function ResetIndicatorPosition(relativeTo, point, relativePoint, x, y)
-            local anchor = CooldownCompanion:GetIndicatorAnchorSettings(group)
-            if not anchor then return end
-            anchor.point = point or "CENTER"
-            anchor.relativeTo = relativeTo or defaultFrame
-            anchor.relativePoint = relativePoint or "CENTER"
-            anchor.x = x or 0
-            anchor.y = y or 0
-            -- The panel frame is the display's box: place it where this says.
-            CooldownCompanion:ReanchorGroupFrame(textureGroupId)
-        end
-        local function GetIndicatorAnchorValidationOptions()
-            return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
-        end
-        local function SetIndicatorPanelAnchorTarget(targetGroupId)
-            local targetFrameName = "CooldownCompanionGroup" .. tostring(targetGroupId)
-            local options = GetIndicatorAnchorValidationOptions()
-            local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
-            if not ok then
-                CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
-                return false
-            end
-            ResetIndicatorPosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
-            group.inheritPanelAlpha = group.inheritPanelAlpha ~= false
-            return true
-        end
-        local function SetIndicatorFrameAnchorTarget(targetFrameName)
-            if type(targetFrameName) ~= "string" or targetFrameName == "" then
-                ResetIndicatorPosition()
-                return true
-            end
-            local target = _G[targetFrameName]
-            if not target or type(target) ~= "table" or not target.GetObjectType then
-                CooldownCompanion:Print("Frame not found: " .. targetFrameName)
-                return false
-            end
-            local options = GetIndicatorAnchorValidationOptions()
-            local ok = CooldownCompanion:ValidateAddonFrameAnchorTarget(targetFrameName, options)
-            if not ok then
-                CooldownCompanion:PrintInvalidAnchorTargetReason(targetFrameName, options)
-                return false
-            end
-            ResetIndicatorPosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
-            return true
-        end
-        -- The panel frame is the display's box: re-place it from the saved
-        -- position, then repaint.
-        local function RefreshTextureVisual()
-            CooldownCompanion:ReanchorGroupFrame(textureGroupId)
-            CooldownCompanion:RefreshAllAuraTextureVisuals()
-        end
-
-        local function RefreshCursorAnchor()
-            if CooldownCompanion.ClearCursorAnchorLayoutPreviewOffset then
-                CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(textureGroupId)
-            end
-            RefreshTextureVisual()
-        end
-
-        -- ============================================================
-        -- The row grammar (RowWidgets.lua). Same shapes as the panel half
-        -- below - the rules are stated once in the recipe comment atop
-        -- BuildAppearanceTab's icons path (GroupTabsAppearance.lua) and this
-        -- half conforms to them.
-        --
-        -- An Indicator anchors ONE display rather than a panel of
-        -- entries, so it has no Arrangement and no per-icon strata; the three
-        -- sections it does share (Anchor, Position, Alpha) reuse the same
-        -- collapse keys, because they are the same sections on the same tab.
-        -- ============================================================
-        local anchorTargetList = isPanel
-            and {
-                group = "Group",
-                panel = "Panel",
-                frame = "Frame",
-                cursor = "Cursor",
-            }
-            or {
-                group = group.parentContainerId and "Group" or "Screen",
-                frame = "Frame",
-            }
-        local anchorTargetOrder = isPanel
-            and (canUseCursorAnchor and { "group", "panel", "frame", "cursor" } or { "group", "panel", "frame" })
-            or { "group", "frame" }
-        if not canUseCursorAnchor then
-            anchorTargetList.cursor = nil
-        end
-
-        -- ============================================================
-        -- Position (what this Indicator hangs off, and where it sits there)
-        -- ============================================================
-        -- One section: the target and the points/offsets answer the same
-        -- question. It keeps the "layout_anchor" key the mover menu opens.
-        local _, anchorCollapsed = BuildCollapsibleSection(container, "Position", "layout_anchor", nil, nil, ROW_SECTION)
-
-        if not anchorCollapsed then
-        -- LEFT column: the target itself, and nothing else here - the one
-        -- setting that used to fill the right column (where this panel's alpha
-        -- comes from) now leads the Visibility tab's Alpha section, with the
-        -- rows it gates. The right column stays empty, as it does elsewhere on
-        -- this tab.
-        local anchorLeft = BeginRowGrid(container)
-
-        AddDropdownRow(anchorLeft, {
-            label = "Anchor Target",
-            setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.target,
-            list = anchorTargetList,
-            order = anchorTargetOrder,
-            value = targetMode,
-            onChange = function(val, widget)
-                if val == targetMode then return end
-                if val == "cursor" then
-                    if not canUseCursorAnchor then
-                        widget:SetValue("group")
-                        return
-                    end
-                    if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
-                        CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                        CooldownCompanion:RefreshConfigPanel()
-                    else
-                        widget:SetValue(targetMode)
-                    end
-                elseif val == "group" then
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                    CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true)
-                    ResetIndicatorPosition()
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif val == "panel" then
-                    if isCursorAnchor and not CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true) then
-                        widget:SetValue(targetMode)
-                        return
-                    end
-                    ResetIndicatorPosition()
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = "panel"
-                    CooldownCompanion:RefreshConfigPanel()
-                elseif val == "frame" then
-                    if isCursorAnchor and not CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true) then
-                        widget:SetValue(targetMode)
-                        return
-                    end
-                    ResetIndicatorPosition()
-                    CS.layoutAnchorTargetMode[CS.selectedGroup] = "frame"
-                    CooldownCompanion:RefreshConfigPanel()
-                end
-            end,
-        })
-
-        if targetMode == "panel" then
-            local panelAnchorRow = AddDropdownRow(anchorLeft, {
-                label = "Anchor to Panel",
-                setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.panel,
-                pulloutWidth = WIDE_PULLOUT_WIDTH,
-                onChange = function(val, widget)
-                    if not val or val == "" then return end
-                    local targetGroupId = tonumber(val)
-                    if targetGroupId and SetIndicatorPanelAnchorTarget(targetGroupId) then
-                        CooldownCompanion:RefreshAllAuraTextureVisuals()
-                        CooldownCompanion:RefreshConfigPanel()
-                    else
-                        widget:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
-                    end
-                end,
-            })
-            -- The populator writes the stock Dropdown's own `list` table
-            -- directly (container headers plus indented panel entries), so it
-            -- takes the embedded child rather than the row wrapper.
-            CooldownCompanion:PopulatePanelAnchorTargetDropdown(panelAnchorRow.dropdown, textureGroupId)
-            panelAnchorRow:SetValue(currentAnchorGroupId and tostring(currentAnchorGroupId) or nil)
-        end
-
-        if targetMode == "frame" then
-            -- A frame name needs the whole 140px control column to stay
-            -- readable, so Pick does not share it: the editbox row takes a
-            -- grid of its own and Pick sits at the head of that grid's right
-            -- column.
-            local frameLeft, frameRight = BeginRowGrid(container)
-
-            local frameAnchorText = settings.relativeTo
-            if frameAnchorText == "UIParent" or frameAnchorText == defaultFrame or currentAnchorGroupId then
-                frameAnchorText = ""
-            end
-
-            local anchorRow = AddEditBoxRow(frameLeft, {
-                label = "Anchor to Frame",
-                setting = LAYOUT_FINDER.anchor and LAYOUT_FINDER.anchor.frame,
-                value = frameAnchorText,
-                onEnterPressed = function(text, widget)
-                    if SetIndicatorFrameAnchorTarget(text) then
-                        CooldownCompanion:RefreshAllAuraTextureVisuals()
-                        CooldownCompanion:RefreshConfigPanel()
-                    else
-                        widget:SetText(frameAnchorText)
-                    end
-                end,
-            })
-            if anchorRow.editbox.Instructions then anchorRow.editbox.Instructions:Hide() end
-
-            -- Exactly one grammar row tall so the button's centre lands on the
-            -- editbox's: Flow insets its single row by 3px and the button is
-            -- 24 tall, so 3 + 24 + 3 fills the 30px band. noAutoHeight keeps
-            -- Flow's own 27px report from shrinking it back.
-            local pickRow = AceGUI:Create("SimpleGroup")
-            pickRow:SetFullWidth(true)
-            pickRow:SetLayout("Flow")
-            pickRow:SetHeight(ST._RowGrammar and ST._RowGrammar.ROW_HEIGHT or 30)
-            pickRow.noAutoHeight = true
-
-            local pickBtn = AceGUI:Create("Button")
-            pickBtn:SetText("Pick")
-            pickBtn:SetAutoWidth(true)
-            pickBtn:SetCallback("OnClick", function()
-                local grp = CS.selectedGroup
-                CS.StartPickFrame(function(name)
-                    if CS.configFrame then
-                        CS.configFrame.frame:Show()
-                    end
-                    if name then
-                        SetIndicatorFrameAnchorTarget(name)
-                    end
-                    CooldownCompanion:RefreshAllAuraTextureVisuals()
-                    CooldownCompanion:RefreshConfigPanel()
-                end, grp)
-            end)
-            pickRow:AddChild(pickBtn)
-
-            CreateInfoButton(pickBtn.frame, pickBtn.frame, "LEFT", "RIGHT", 2, 0, {
-                "Pick Frame",
-                {"Hides the config panel and highlights frames under your cursor. Left-click a frame to anchor this Indicator to it, or right-click to cancel.", 1, 1, 1, true},
-                " ",
-                {"You can also type a frame name directly into the editbox.", 1, 1, 1, true},
-            }, tabInfoButtons)
-
-            -- Added last so the List-layout column measures a populated row.
-            frameRight:AddChild(pickRow)
-        end
-        end -- not anchorCollapsed
-
-        -- Points and offsets, under the same heading as the target above.
-        -- Cursor anchoring pins the relative point; it is a stored setting,
-        -- not a rendered control, so it is written whether or not the section
-        -- is expanded.
-        if targetMode == "cursor" then
-            group.anchor.relativePoint = "CENTER"
-        end
-
-        local positionCollapsed = anchorCollapsed
-
-        if not positionCollapsed then
-        -- LEFT column: the points that have to be read together (mine, then
-        -- the target's). RIGHT column: the offset pair applied on top of them,
-        -- then the Reset. Cursor mode has no relative point.
-        local positionLeft, positionRight = BeginRowGrid(container)
-
-        if targetMode == "cursor" then
-            AddAnchorDropdown(positionLeft, group.anchor, "point", "BOTTOMLEFT",
-                RefreshCursorAnchor, "Panel Point", {
-                    setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.panelPoint,
-                })
-            AddOffsetSliders(positionRight, group.anchor, "x", "y", {
-                x = 16,
-                y = 16,
-                range = 2000,
-                step = 0.1,
-            }, RefreshCursorAnchor, {
-                settings = LAYOUT_FINDER.position and {
-                    x = LAYOUT_FINDER.position.xOffset,
-                    y = LAYOUT_FINDER.position.yOffset,
-                },
-                previewRefresh = function()
-                    if CooldownCompanion.SetCursorAnchorLayoutPreviewOffset then
-                        CooldownCompanion:SetCursorAnchorLayoutPreviewOffset(
-                            textureGroupId,
-                            group.anchor.x or 0,
-                            group.anchor.y or 0
-                        )
-                    end
-                end,
-            })
-
-            -- Destructive, and it replaces the whole anchor - the Panel Point
-            -- and both offsets - so it goes last, under Y Offset.
-            local resetBtn = AceGUI:Create("Button")
-            resetBtn:SetText("Reset Cursor Offset")
-            resetBtn:SetAutoWidth(true)
-            resetBtn:SetCallback("OnClick", function()
-                group.anchor = CooldownCompanion.GetDefaultCursorPanelAnchor
-                    and CooldownCompanion:GetDefaultCursorPanelAnchor()
-                    or {
-                        point = "BOTTOMLEFT",
-                        relativeTo = cursorAnchorTarget,
-                        relativePoint = "CENTER",
-                        x = 16,
-                        y = 16,
-                    }
-                RefreshCursorAnchor()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            positionRight:AddChild(resetBtn)
-        else
-            AddAnchorDropdown(positionLeft, settings, "point", "CENTER",
-                RefreshTextureVisual, anchorLabel, {
-                    setting = LAYOUT_FINDER.position and LAYOUT_FINDER.position.displayPoint,
-                })
-            -- "Group" is the screen only for an Indicator outside a group.
-            local targetsScreen = targetMode == "group" and not group.parentContainerId
-            AddAnchorDropdown(positionLeft, settings, "relativePoint", "CENTER",
-                RefreshTextureVisual,
-                "Relative Point",
-                {
-                    setting = LAYOUT_FINDER.position and (targetsScreen
-                        and LAYOUT_FINDER.position.screenPoint
-                        or LAYOUT_FINDER.position.targetPoint),
-                })
-            AddOffsetSliders(positionRight, settings, "x", "y", {
-                x = 0,
-                y = 0,
-                range = 2000,
-                step = 0.1,
-            }, RefreshTextureVisual, {
-                settings = LAYOUT_FINDER.position and {
-                    x = LAYOUT_FINDER.position.xOffset,
-                    y = LAYOUT_FINDER.position.yOffset,
-                },
-            })
-
-            -- The Reset goes last, after the offsets it zeroes.
-            local resetBtn = AceGUI:Create("Button")
-            resetBtn:SetText("Reset Position")
-            resetBtn:SetAutoWidth(true)
-            resetBtn:SetCallback("OnClick", function()
-                local target = CooldownCompanion:GetIndicatorAnchorSettings(group)
-                target = target and target.relativeTo
-                if (targetMode == "panel" or targetMode == "frame")
-                    and target and target ~= "UIParent" and target ~= defaultFrame then
-                    ResetIndicatorPosition(target, "TOPLEFT", "BOTTOMLEFT", 0, -5)
-                else
-                    ResetIndicatorPosition()
-                end
-                CooldownCompanion:RefreshAllAuraTextureVisuals()
-                CooldownCompanion:RefreshConfigPanel()
-            end)
-            positionRight:AddChild(resetBtn)
-        end
-        end -- not positionCollapsed
-
-        -- The same layer choice panels have, so an Indicator can draw above
-        -- a High panel; the display host copies it on refresh.
-        local _, strataCollapsed = BuildCollapsibleSection(container, "Strata", "layout_strata", nil, nil, ROW_SECTION)
-        if not strataCollapsed then
-            AddFrameStrataRow(BeginRowGrid(container), group, CS.tabInfoButtons, function()
-                CooldownCompanion:RefreshGroupFrame(textureGroupId)
-                CooldownCompanion:RefreshAllAuraTextureVisuals()
-            end)
-        end
-
-        if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-            OpenOrRebindIndicatorTexturePicker(group, CooldownCompanion:GetIndicatorTextureSettings(group), false)
-        end
-        CooldownCompanion:RefreshAllAuraTextureVisuals()
-        return
-    end
+    local isIndicator = ST.IsIndicatorGroup(group)
 
     -- Layout is the one panel tab the entry lens never touches: every edit
     -- here lands on the whole panel while any selected entry stays selected
     -- above, and this line is the only thing on the surface that says so.
-    -- Below the Indicator return on purpose: an Indicator's sibling
-    -- tabs never lens either, so there the strip is uniform and the note
-    -- would be the odd one out instead of Layout.
-    AddLensPanelScopeNote(container, ResolveStyleLens(group), true)
+    -- Not on an Indicator: its sibling tabs never lens either, so there the
+    -- strip is uniform and the note would be the odd one out instead of
+    -- Layout.
+    if not isIndicator then
+        AddLensPanelScopeNote(container, ResolveStyleLens(group), true)
+    end
 
     CS.layoutAnchorTargetMode = CS.layoutAnchorTargetMode or {}
-    local anchorState = ResolveLayoutAnchorState(group, CS.selectedGroup,
+    local anchorState = ResolveLayoutAnchorState(group,
         CS.layoutAnchorTargetMode[CS.selectedGroup])
     local isPanel, panelContainerFrame = anchorState.isPanel, anchorState.panelContainerFrame
     local currentAnchor, currentAnchorGroupId = anchorState.currentAnchor, anchorState.currentAnchorGroupId
     local isCursorAnchor, targetMode = anchorState.isCursorAnchor, anchorState.targetMode
-    CS.layoutAnchorTargetMode[CS.selectedGroup] = targetMode
+    CS.layoutAnchorTargetMode[CS.selectedGroup] = not anchorState.inferredFrame and targetMode or nil
     local cursorAnchorTarget = CooldownCompanion.GetCursorAnchorTargetName
         and CooldownCompanion:GetCursorAnchorTargetName()
         or ST.CURSOR_ANCHOR_TARGET
@@ -1144,9 +723,9 @@ local function BuildLayoutTab(container)
     -- facts. (Alpha is a panel fact too, but it reads as visibility
     -- behavior, so it lives on the Visibility tab.)
     -- Only the Arrangement section and the icons-only strata block
-    -- below vary, and each of those names its own mode gate. (Indicators
-    -- returned far above - they anchor a single display rather than a panel
-    -- of entries.)
+    -- below vary, and each of those names its own mode gate. (An Indicator
+    -- is a single display rather than a panel of entries, so it has
+    -- neither.)
     -- ================================================================
     local iconAnchorTargetList = isPanel
         and {
@@ -1354,12 +933,9 @@ local function BuildLayoutTab(container)
     end -- not anchorCollapsed
 
     -- Points and offsets, under the same heading as the target above.
-    -- Cursor anchoring pins the relative point; it is a stored setting,
-    -- not a rendered control, so it is written whether or not the section
-    -- is expanded.
-    if targetMode == "cursor" then
-        group.anchor.relativePoint = "CENTER"
-    end
+    -- Cursor anchoring pins the relative point: SetGroupAnchor and the
+    -- cursor mover write it, so there is no row for it and nothing to write
+    -- here.
 
     local function refreshGroupAnchor()
         CooldownCompanion:ReanchorGroupFrame(CS.selectedGroup)
@@ -1429,12 +1005,29 @@ local function BuildLayoutTab(container)
         group.anchor.y = val
     end, CommitGroupOffset, targetMode == "cursor" and PreviewCursorOffset or false,
         group.anchor, "y")
+
+    -- An Indicator keeps the Reset button its Layout tab has always had; it
+    -- is the mover menu's own reset, which every panel has there.
+    if isIndicator then
+        local resetBtn = AceGUI:Create("Button")
+        resetBtn:SetText(targetMode == "cursor" and "Reset Cursor Offset" or "Reset Position")
+        resetBtn:SetAutoWidth(true)
+        resetBtn:SetCallback("OnClick", function()
+            if CooldownCompanion.ClearCursorAnchorLayoutPreviewOffset then
+                CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(CS.selectedGroup)
+            end
+            CooldownCompanion:ResetMoverQuickPosition({ kind = "panel", id = CS.selectedGroup })
+        end)
+        positionRight:AddChild(resetBtn)
+    end
     end -- not positionCollapsed
 
     -- ============================================================
     -- Arrangement (how the entries sit relative to each other)
     -- ============================================================
-    if not ST._BuildUnifiedPanelArrangement(container, group, BuildGridArrangement) then
+    if isIndicator then
+        -- One display: nothing to arrange.
+    elseif not ST._BuildUnifiedPanelArrangement(container, group, BuildGridArrangement) then
         local _, arrangementCollapsed = BuildCollapsibleSection(container, "Arrangement", "layout_arrangement", nil, nil, ROW_SECTION)
         if not arrangementCollapsed then
             BuildGridArrangement(container, group, layoutCount)
@@ -1733,6 +1326,10 @@ local function BuildLayoutTab(container)
     end
     end -- not strataCollapsed
 
+    -- An open texture picker follows the Indicator across tabs.
+    if isIndicator and CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
+        OpenOrRebindIndicatorTexturePicker(group, CooldownCompanion:GetIndicatorTextureSettings(group), false)
+    end
 end
 
 ST._BuildLayoutTab = BuildLayoutTab

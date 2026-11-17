@@ -2843,13 +2843,8 @@ ResolvePanelAlphaAnchorSourceMode = function(groupId, group)
     end
     if not group.parentContainerId then return nil end
 
-    local anchorSettings = CooldownCompanion.GetIndicatorAnchorSettings
-        and CooldownCompanion:GetIndicatorAnchorSettings(group)
-    local relativeTo = anchorSettings and anchorSettings.relativeTo
-    if not relativeTo then
-        local anchor = group.anchor
-        relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
-    end
+    local anchor = group.anchor
+    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
     if type(relativeTo) == "string" and relativeTo ~= "" and relativeTo ~= "UIParent"
         and CooldownCompanion:ParseAddonAnchorFrameName(relativeTo) == nil then
         local target = _G[relativeTo]
