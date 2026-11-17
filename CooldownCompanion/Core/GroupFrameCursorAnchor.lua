@@ -473,6 +473,13 @@ local function ApplyPanelCoordinates(frame, groupId, x, y)
     end
 end
 
+-- A parked cursor panel drags against the dummy cursor: no snapping.
+local CURSOR_PANEL_DRAG = {
+    beginSnap = false,
+    startUpdates = StartGroupCoordinateDragUpdates,
+    stopUpdates = StopCoordinateDragUpdates,
+}
+
 local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (frame and group and IsCursorAnchor(group.anchor)) then
@@ -489,37 +496,28 @@ local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     if preview then
         preview.draggedGroupId = groupId
     end
-    frame._dragCancelPending = nil
-    frame._dragInProgress = true
     CancelCoordinateEdit(frame.coordLabel)
-    frame:StartMoving()
-    self:BeginMoverChromeFade(frame)
-    StartGroupCoordinateDragUpdates(frame)
+    GF.BeginMoverDrag(frame, CURSOR_PANEL_DRAG)
     return true
 end
 
-local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cancelSave)
+-- forceCancel: the drag ends without saving, whatever the frame says.
+local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, forceCancel)
     local preview = self._cursorAnchorLayoutPreview
     if preview and GroupIdsEqual(preview.draggedGroupId, groupId) then
         preview.draggedGroupId = nil
     end
+    local save = false
     if frame then
-        frame._dragCancelPending = nil
-        frame._dragInProgress = nil
-        StopCoordinateDragUpdates(frame)
-        if not (InCombatLockdown() and frame.IsProtected and frame:IsProtected()) then
-            frame:StopMovingOrSizing()
-        end
+        save = GF.FinishMoverDrag(frame, forceCancel)
+    else
+        -- The frame is gone; whatever fade its drag began ends with it.
+        self:EndMoverChromeFade()
     end
-    if cancelSave then
-        self:UpdateCursorAnchoredFrames()
-        self:EndMoverChromeFade(frame)
-        return true
-    end
-    if not SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId) then
+    -- A cancelled or unsaved drag goes back to the saved offset.
+    if not (save and SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)) then
         self:UpdateCursorAnchoredFrames()
     end
-    self:EndMoverChromeFade(frame)
     return true
 end
 

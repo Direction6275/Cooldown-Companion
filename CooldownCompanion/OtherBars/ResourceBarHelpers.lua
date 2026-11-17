@@ -1529,13 +1529,7 @@ function RB.CreateIndependentMover(spec)
     function mover.Cancel()
         local frame = spec.getFrame()
         if not frame then return end
-        if frame._dragInProgress then
-            frame._dragCancelPending = true
-            frame:StopMovingOrSizing()
-            frame._dragInProgress = nil
-            RB.StopIndependentCoordUpdates(frame)
-            CooldownCompanion:EndMoverChromeFade(frame)
-        end
+        ST._GroupFrame.CancelMoverDrag(frame)
         spec.refreshState(spec.getSettings())
     end
 
@@ -1669,6 +1663,23 @@ function RB.CreateIndependentMover(spec)
         end
         ST.AttachMoverWidthResize(frame, resize)
 
+        -- The shared drag lifecycle (GroupFrameMovers.lua), with this bar's
+        -- snap rect and coordinate ticker.
+        local dragOpts = {
+            beginSnap = function(dragFrame)
+                CooldownCompanion:BeginDragSnapSession(dragFrame, function(candidateFrame)
+                    return candidateFrame == dragFrame or candidateFrame == dragFrame._dragSnapRectFrame
+                end)
+            end,
+            startUpdates = function(dragFrame)
+                -- A drag is an edit: it saves the anchor its coordinates are read against.
+                local settings, placement = spec.getSettings()
+                spec.ensureConfig(settings, placement)
+                RB.StartIndependentCoordUpdates(dragFrame, placement.independentAnchor)
+            end,
+            stopUpdates = RB.StopIndependentCoordUpdates,
+        }
+
         dragHandle:RegisterForDrag("LeftButton")
         dragHandle:SetScript("OnDragStart", function()
             ST.CancelCoordinateEdit(coordLabel)
@@ -1680,28 +1691,12 @@ function RB.CreateIndependentMover(spec)
             if CooldownCompanion._arrangeModeActive and CooldownCompanion.SetArrangeSoloContainer then
                 CooldownCompanion:SetArrangeSoloContainer(focusId)
             end
-            frame._dragCancelPending = nil
-            frame._dragInProgress = true
-            frame:StartMoving()
-            CooldownCompanion:BeginMoverChromeFade(frame)
-            CooldownCompanion:BeginDragSnapSession(frame, function(candidateFrame)
-                return candidateFrame == frame or candidateFrame == frame._dragSnapRectFrame
-            end)
-            -- A drag is an edit: it saves the anchor its coordinates are read against.
-            spec.ensureConfig(settings, placement)
-            RB.StartIndependentCoordUpdates(frame, placement.independentAnchor)
+            ST._GroupFrame.BeginMoverDrag(frame, dragOpts)
         end)
         dragHandle:SetScript("OnDragStop", function()
-            local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-            frame._dragCancelPending = nil
-            frame._dragInProgress = nil
-            frame:StopMovingOrSizing()
-            ST._GroupFrame.ApplyEndedDragSnapSession(frame, not cancelSave)
-            RB.StopIndependentCoordUpdates(frame)
-            if not cancelSave then
+            if ST._GroupFrame.FinishMoverDrag(frame) then
                 mover.Save()
             end
-            CooldownCompanion:EndMoverChromeFade(frame)
         end)
 
         frame._dragHandle = dragHandle

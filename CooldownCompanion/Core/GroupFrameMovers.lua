@@ -32,6 +32,10 @@ local GetPanelResizeFixedPoint = GF.GetPanelResizeFixedPoint
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
 local ApplySectionSelectionTint = GF.ApplySectionSelectionTint
 
+-- GroupFrameDragSnap.lua
+local BeginSelfExcludedDragSnapSession = GF.BeginSelfExcludedDragSnapSession
+local ApplyEndedDragSnapSession = GF.ApplyEndedDragSnapSession
+
 local moverChromeFadeState = {
     active = false,
     activeMover = nil,
@@ -205,6 +209,86 @@ end
 -- Bar / Resource Bars kit wheel (EditableCoordLabel.lua).
 function CooldownCompanion:MarkMoverWheelSizeChanged()
     moverChromeFadeState.wheelSizeChanged = true
+end
+
+------------------------------------------------------------------------
+-- One drag lifecycle for every mover: a panel (from its body, its title bar
+-- or its Group's outline), a Group, a parked cursor panel, the Cast Bar and
+-- the Resource Bars. The caller decides whether a drag may start and what a
+-- release saves; the order of the steps in between is here. The options a
+-- drag began with stay on the frame until it ends, so its finish and its
+-- cancel use the same ones.
+--   opts.beginSnap(frame)    starts the snap session. nil snaps against
+--                            everything but the frame itself; false is a
+--                            mover that does not snap (a parked cursor panel).
+--   opts.startUpdates(frame) / opts.stopUpdates(frame)
+--                            the mover's own coordinate ticker. Each keeps
+--                            its own because the ticker also decides whether
+--                            it or the snap session updates the snap every
+--                            frame (frame._coordinateSnapUpdatesPerFrame).
+------------------------------------------------------------------------
+local function BeginMoverDrag(frame, opts)
+    frame._moverDragOpts = opts
+    frame._dragCancelPending = nil
+    frame._dragInProgress = true
+    frame:StartMoving()
+    CooldownCompanion:BeginMoverChromeFade(frame)
+    local beginSnap = opts.beginSnap
+    if beginSnap == nil then
+        BeginSelfExcludedDragSnapSession(frame)
+    elseif beginSnap then
+        beginSnap(frame)
+    end
+    if opts.startUpdates then
+        opts.startUpdates(frame)
+    end
+end
+
+-- The release. True when it is to be saved; false when the drag was
+-- cancelled (CancelMoverDrag, or forceCancel) or combat has locked the
+-- movers. The frame is left where the snap put it; the caller saves it or
+-- places it back. A release with no drag begun (the mover refused it, or it
+-- was cancelled first) has no options left and only tidies up.
+local function FinishMoverDrag(frame, forceCancel)
+    local opts = frame._moverDragOpts
+    frame._moverDragOpts = nil
+    local save = not (forceCancel or frame._dragCancelPending == true
+        or CooldownCompanion._combatForcedLock)
+    frame._dragCancelPending = nil
+    frame._dragInProgress = nil
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    if not (opts and opts.beginSnap == false) then
+        ApplyEndedDragSnapSession(frame, save)
+    end
+    if opts and opts.stopUpdates then
+        opts.stopUpdates(frame)
+    end
+    CooldownCompanion:EndMoverChromeFade(frame)
+    return save
+end
+
+-- Stops a drag in hand without saving it, its ticker and its chrome fade
+-- included. The mouse is still down: the release that follows reaches
+-- FinishMoverDrag and reads as cancelled. True when a drag was in hand.
+local function CancelMoverDrag(frame)
+    if not (frame and frame._dragInProgress) then
+        return false
+    end
+    local opts = frame._moverDragOpts
+    frame._moverDragOpts = nil
+    frame._dragCancelPending = true
+    if not (InCombatLockdown() and frame:IsProtected()) then
+        frame:StopMovingOrSizing()
+    end
+    CooldownCompanion:EndDragSnapSession(frame, false)
+    frame._dragInProgress = nil
+    if opts and opts.stopUpdates then
+        opts.stopUpdates(frame)
+    end
+    CooldownCompanion:EndMoverChromeFade(frame)
+    return true
 end
 
 -- 16 fits the corner-bracket glyph at the size it reads well (12px art +
@@ -978,6 +1062,9 @@ end
 
 -- Private helpers consumed by later GroupFrame files.
 GF.UpdateResizedPanelContainerWrapper = UpdateResizedPanelContainerWrapper
+GF.BeginMoverDrag = BeginMoverDrag
+GF.FinishMoverDrag = FinishMoverDrag
+GF.CancelMoverDrag = CancelMoverDrag
 GF.SyncGroupControlLevels = SyncGroupControlLevels
 GF.AnchorMoverChromeEdges = AnchorMoverChromeEdges
 GF.CreateNudger = CreateNudger

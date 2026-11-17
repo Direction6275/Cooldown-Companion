@@ -41,9 +41,8 @@ local UpdateGroupDragCoordinate = GF.UpdateGroupDragCoordinate
 -- GroupFrameMovers.lua
 local SyncGroupControlLevels = GF.SyncGroupControlLevels
 
--- GroupFrameDragSnap.lua
-local BeginSelfExcludedDragSnapSession = GF.BeginSelfExcludedDragSnapSession
-local ApplyEndedDragSnapSession = GF.ApplyEndedDragSnapSession
+local BeginMoverDrag = GF.BeginMoverDrag
+local FinishMoverDrag = GF.FinishMoverDrag
 
 ------------------------------------------------------------------------
 -- Container Frames (invisible anchor frames for the Group → Panel hierarchy)
@@ -752,6 +751,36 @@ function CooldownCompanion:ActivateArrangeSection(groupId, anchor, toggle)
     return true
 end
 
+-- A panel dragged inside its Group's unlock outline, from the outline's
+-- member overlay here or from the panel's own body (GroupFrame.lua): the
+-- outline follows it while it moves.
+local function StartPanelMemberDragUpdates(groupFrame)
+    local group = CooldownCompanion.db.profile.groups[groupFrame.groupId]
+    if group and group.parentContainerId then
+        CooldownCompanion:StartContainerMemberPreviewTracking(group.parentContainerId, groupFrame.groupId)
+    end
+end
+
+-- Every panel drag ends here: its own coordinate ticker, and the outline
+-- tracking when that was following this panel.
+local function StopPanelDragUpdates(groupFrame)
+    StopCoordinateDragUpdates(groupFrame)
+    local group = CooldownCompanion.db.profile.groups[groupFrame.groupId]
+    local containerId = group and group.parentContainerId
+    local containerFrame = containerId and CooldownCompanion.containerFrames
+        and CooldownCompanion.containerFrames[containerId]
+    if containerFrame and containerFrame._containerDraggingGroupId == groupFrame.groupId then
+        CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
+    end
+end
+
+local PANEL_MEMBER_DRAG = {
+    startUpdates = StartPanelMemberDragUpdates,
+    stopUpdates = StopPanelDragUpdates,
+}
+GF.PANEL_MEMBER_DRAG = PANEL_MEMBER_DRAG
+GF.StopPanelDragUpdates = StopPanelDragUpdates
+
 function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if self._combatForcedLock or not (containerId and group and group.parentContainerId == containerId) then
@@ -764,19 +793,13 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     if IsCursorAnchor(group.anchor) then
         return false
     end
-    self:StartContainerMemberPreviewTracking(containerId, groupId)
 
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
     if not groupFrame or (InCombatLockdown() and groupFrame:IsProtected()) then
-        self:StopContainerMemberPreviewTracking(containerId)
         return false
     end
 
-    groupFrame._dragCancelPending = nil
-    groupFrame._dragInProgress = true
-    groupFrame:StartMoving()
-    self:BeginMoverChromeFade(groupFrame)
-    BeginSelfExcludedDragSnapSession(groupFrame)
+    BeginMoverDrag(groupFrame, PANEL_MEMBER_DRAG)
     return true
 end
 
@@ -788,20 +811,13 @@ function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
     end
 
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
-    local cancelSave = (groupFrame and groupFrame._dragCancelPending == true) or self._combatForcedLock
-    if groupFrame and not (InCombatLockdown() and groupFrame:IsProtected()) then
-        groupFrame:StopMovingOrSizing()
-    end
-    if groupFrame then
-        ApplyEndedDragSnapSession(groupFrame, not cancelSave)
-        groupFrame._dragCancelPending = nil
-        groupFrame._dragInProgress = nil
-    end
-    self:StopContainerMemberPreviewTracking(containerId)
-    if cancelSave then
+    if not groupFrame then
+        self:StopContainerMemberPreviewTracking(containerId)
         return
     end
-    self:SaveGroupPosition(groupId)
+    if FinishMoverDrag(groupFrame) then
+        self:SaveGroupPosition(groupId)
+    end
 end
 
 local function UpdateContainerWrapperLevels(frame)
@@ -1295,6 +1311,15 @@ function ST.LockContainerFromMover(containerId)
     CooldownCompanion:CheckArrangeModeAutoExit()
 end
 
+-- A Group's drag snaps against everything but itself and its own panels.
+local CONTAINER_DRAG = {
+    beginSnap = BeginContainerDragSnapSession,
+    startUpdates = function(frame)
+        StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
+    end,
+    stopUpdates = StopCoordinateDragUpdates,
+}
+
 local function BeginContainerDrag(frame, dragRegion)
     CancelCoordinateEdit(frame.coordLabel)
     local c = CooldownCompanion.db.profile.groupContainers[frame.containerId]
@@ -1302,12 +1327,7 @@ local function BeginContainerDrag(frame, dragRegion)
         if dragRegion then dragRegion._suppressClick = true end
         CooldownCompanion:SelectContainerWrapper(frame.containerId)
         if dragRegion then CooldownCompanion:SetArrangeSoloContainer(frame.containerId) end
-        frame._dragCancelPending = nil
-        frame._dragInProgress = true
-        frame:StartMoving()
-        CooldownCompanion:BeginMoverChromeFade(frame)
-        BeginContainerDragSnapSession(frame)
-        StartCoordinateDragUpdates(frame, UpdateContainerDragCoordinate)
+        BeginMoverDrag(frame, CONTAINER_DRAG)
     end
 end
 
@@ -1316,20 +1336,9 @@ local function FinishContainerDrag(frame, dragRegion)
         -- Preserve suppression through this release, never the next click.
         C_Timer.After(0, function() dragRegion._suppressClick = nil end)
     end
-    local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-    frame._dragCancelPending = nil
-    frame._dragInProgress = nil
-    if not (InCombatLockdown() and frame:IsProtected()) then
-        frame:StopMovingOrSizing()
+    if FinishMoverDrag(frame) then
+        CooldownCompanion:SaveContainerPosition(frame.containerId)
     end
-    ApplyEndedDragSnapSession(frame, not cancelSave)
-    StopCoordinateDragUpdates(frame)
-    if cancelSave then
-        CooldownCompanion:EndMoverChromeFade(frame)
-        return
-    end
-    CooldownCompanion:SaveContainerPosition(frame.containerId)
-    CooldownCompanion:EndMoverChromeFade(frame)
 end
 
 EnsureContainerMoverChrome = function(frame)

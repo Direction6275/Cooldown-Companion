@@ -1073,21 +1073,6 @@ function CooldownCompanion:RefreshArrangePillList()
     end
 end
 
-local function CancelActiveMoverDrag(addon, frame, activeField)
-    if not (frame and frame[activeField]) then
-        return
-    end
-
-    frame._dragCancelPending = true
-    if not (InCombatLockdown() and frame:IsProtected()) then
-        frame:StopMovingOrSizing()
-    end
-    if addon.EndDragSnapSession then
-        addon:EndDragSnapSession(frame, false)
-    end
-    frame[activeField] = nil
-end
-
 local function CancelActiveMoverGestures(addon)
     if addon.ResetMoverChromeFade then
         addon:ResetMoverChromeFade()
@@ -1099,12 +1084,14 @@ local function CancelActiveMoverGestures(addon)
         addon:CancelIndependentResourceStackDrag()
     end
 
+    -- One cancel for every mover (GroupFrameMovers.lua).
+    local CancelMoverDrag = ST._GroupFrame.CancelMoverDrag
     for _, frame in pairs(addon.groupFrames or {}) do
-        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+        CancelMoverDrag(frame)
     end
 
     for _, frame in pairs(addon.containerFrames or {}) do
-        CancelActiveMoverDrag(addon, frame, "_dragInProgress")
+        CancelMoverDrag(frame)
     end
 end
 
