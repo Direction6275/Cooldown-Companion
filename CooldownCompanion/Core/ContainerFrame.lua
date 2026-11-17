@@ -1355,7 +1355,6 @@ function ST.LockContainerFromMover(containerId)
         CooldownCompanion._arrangeFocusContainerId = nil
     end
     CooldownCompanion:SetContainerLocked(containerId, true)
-    CooldownCompanion:CaptureArrangeContainerRecord(containerId)
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:CheckArrangeModeAutoExit()
 end

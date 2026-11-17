@@ -495,6 +495,7 @@ local function BuildCastBarPositioningPanel(container)
             return settings.independentAnchor
         end,
         owner = settings,
+        moverId = "cast",
         widthLabel = "Cast Bar Width",
         widthValue = ST._RB.ClampIndependentDimension(settings.independentWidth, 200, 20),
         finder = {

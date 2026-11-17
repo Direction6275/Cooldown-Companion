@@ -1130,6 +1130,7 @@ local function BuildResourceBarPositioningPanel(container)
                     return layout.independentAnchor
                 end,
                 owner = layout,
+                moverId = "resource",
                 widthLabel = "Bar Width",
                 widthValue = RB.ClampIndependentDimension(layout.independentWidth or settings.independentWidth, 200),
                 finder = RESOURCE_FINDER.primary and RESOURCE_FINDER.primary.anchor,

@@ -1516,7 +1516,6 @@ end
 --   ensureConfig(settings, placement)  saves the placement before an edit
 --                  changes it (rule Q1)
 --   refreshState(settings, placement)  the bar's own drag-state update
---   captureRecord()  re-records this bar in the Arrange snapshot
 --   labelOnHeader  true parents the coordinate label to the name bar
 --   resize         the bar's ST.AttachMoverWidthResize options (sizes, apply,
 --                  isUnlocked, isVertical, isHeightEnabled); one table per
@@ -1593,7 +1592,7 @@ function RB.CreateIndependentMover(spec)
         mover.Save()
         CooldownCompanion:EndMoverChromeFade(frame)
         spec.refreshState(settings, placement)
-        spec.captureRecord()
+        CooldownCompanion:RecordArrangeLock(spec.focusId)
         if CooldownCompanion.RefreshUnlockToolbar then
             CooldownCompanion:RefreshUnlockToolbar()
         end

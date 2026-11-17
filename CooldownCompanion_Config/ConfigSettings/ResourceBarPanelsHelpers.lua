@@ -601,6 +601,7 @@ end
 --   opts.ensureAnchor() creates the saved anchor and returns it; only an
 --                    edit calls it (rule Q1)
 --   opts.owner       carries independentAnchorLocked and independentWidth
+--   opts.moverId     "cast" or "resource", for the unlock window's Cancel
 --   opts.widthLabel, opts.widthValue
 --   opts.finder      Settings Finder settings: frame, unlock, point,
 --                    relativePoint, width, x, y
@@ -644,7 +645,13 @@ local function BuildIndependentAnchorRows(container, opts)
         setting = finder.unlock,
         value = not owner.independentAnchorLocked,
         onChange = function(val)
+            if val then
+                CooldownCompanion:RecordArrangeUnlock(opts.moverId)
+            end
             owner.independentAnchorLocked = not val
+            if not val then
+                CooldownCompanion:RecordArrangeLock(opts.moverId)
+            end
             apply()
             if not val then
                 CooldownCompanion:CheckArrangeModeAutoExit()

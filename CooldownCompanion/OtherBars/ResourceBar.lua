@@ -163,7 +163,13 @@ function CooldownCompanion:SetIndependentResourceStackLocked(locked)
     if not settings then return end
     local placementSettings = GetSpecLayoutOrder(settings)
     if not placementSettings then return end
+    if locked ~= true then
+        self:RecordArrangeUnlock("resource")
+    end
     placementSettings.independentAnchorLocked = locked == true
+    if locked == true then
+        self:RecordArrangeLock("resource")
+    end
     self:ApplyResourceBars()
     if self.RefreshUnlockToolbar then
         self:RefreshUnlockToolbar()
@@ -237,7 +243,6 @@ local stackMover = RB.CreateIndependentMover({
     end,
     ensureConfig = EnsureIndependentStackConfig,
     refreshState = function(settings, placement) UpdateIndependentStackDragState(settings, placement) end,
-    captureRecord = function() CooldownCompanion:CaptureArrangeResourceRecord() end,
     -- Writes go to the per-spec layout table, mirroring the config slider.
     resize = {
         getWidth = function()
