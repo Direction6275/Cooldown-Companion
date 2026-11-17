@@ -1314,9 +1314,6 @@ local function ApplyContainerCoordinates(frame, containerId, x, y)
     container.anchor.relativeTo = "UIParent"
     container.anchor.relativePoint = "CENTER"
     CooldownCompanion:AnchorContainerFrame(frame, container.anchor)
-    if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
-        CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, x - oldX, y - oldY)
-    end
     UpdateCoordLabel(frame, x, y)
     if CooldownCompanion.RefreshContainerWrapper then
         CooldownCompanion:RefreshContainerWrapper(containerId)
@@ -1340,13 +1337,6 @@ local function CreateContainerNudger(frame, containerId)
             local _, _, _, x, y = cFrame:GetPoint()
             container.anchor.x = math_floor(x * 10 + 0.5) / 10
             container.anchor.y = math_floor(y * 10 + 0.5) / 10
-            if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
-                CooldownCompanion:SyncGroupedIndicatorPreviewSettings(
-                    containerId,
-                    container.anchor.x - oldX,
-                    container.anchor.y - oldY
-                )
-            end
             UpdateCoordLabel(cFrame, x, y)
         end
     end, function() CooldownCompanion:SaveContainerPosition(containerId) end)
@@ -1361,9 +1351,6 @@ function ST.LockContainerFromMover(containerId)
         return
     end
 
-    if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
-        CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId)
-    end
     if CooldownCompanion._arrangeFocusContainerId == containerId then
         CooldownCompanion._arrangeFocusContainerId = nil
     end
@@ -1616,9 +1603,6 @@ function CooldownCompanion:SaveContainerPosition(containerId)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", newX, newY)
 
-    if self.SyncGroupedIndicatorPreviewSettings then
-        self:SyncGroupedIndicatorPreviewSettings(containerId, newX - oldX, newY - oldY)
-    end
     UpdateCoordLabel(frame, newX, newY)
     if self.RefreshContainerWrapper then
         self:RefreshContainerWrapper(containerId)

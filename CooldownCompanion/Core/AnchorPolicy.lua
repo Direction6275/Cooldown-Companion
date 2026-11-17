@@ -170,8 +170,10 @@ local function IndicatorAnchorOf(group)
     if type(group) ~= "table" then
         return nil
     end
-    if ST.IsIndicatorGroup(group) then
-        return group.indicatorSettings and group.indicatorSettings.signal
+    -- One saved position: an Indicator's spot is its group.anchor, like a
+    -- panel's (IndicatorMigration.ConvertPositions moved it there).
+    if ST.IsIndicatorGroup(group) and type(group.anchor) == "table" then
+        return group.anchor
     end
     return nil
 end
@@ -186,11 +188,6 @@ local function GetActivePanelAnchorRelativeTo(group)
     end
 
     return relativeTo
-end
-
-local function GetPanelShellAnchorRelativeTo(group)
-    local anchor = group and group.anchor
-    return type(anchor) == "table" and anchor.relativeTo or anchor
 end
 
 local function GetAddonAnchorGroupId(frameName)
@@ -247,12 +244,10 @@ local function GetPanelContainerAlphaSource(self, groupOrId)
         return containerId, container
     end
 
-    local indicatorAnchor = IndicatorAnchorOf(group)
-    if type(indicatorAnchor) == "table" and (relativeTo == "UIParent" or relativeTo == "") then
-        kind, id = ParseAddonAnchorFrameName(GetPanelShellAnchorRelativeTo(group))
-        if kind == "container" and id == containerId then
-            return containerId, container
-        end
+    -- An Indicator saved on the screen while inside the Group still takes
+    -- Group Alpha, as it did when its Group membership was a second anchor.
+    if ST.IsIndicatorGroup(group) and (relativeTo == "UIParent" or relativeTo == "") then
+        return containerId, container
     end
     return nil
 end
@@ -354,27 +349,12 @@ local function ResetExternalAnchor(anchor)
     anchor.y = 0
 end
 
-local function ResetIndicatorAnchor(anchor)
-    anchor.point = "CENTER"
-    anchor.relativeTo = "UIParent"
-    anchor.relativePoint = "CENTER"
-    anchor.x = 0
-    anchor.y = 0
-end
-
 local function SanitizeExternalAnchor(anchor, targetIsCursorRoot)
     if type(anchor) ~= "table" then
         return
     end
     if targetIsCursorRoot(anchor.relativeTo) then
         ResetExternalAnchor(anchor)
-    end
-end
-
-local function SanitizeIndicatorAnchor(group, targetIsCursorRoot)
-    local anchor = IndicatorAnchorOf(group)
-    if type(anchor) == "table" and targetIsCursorRoot(anchor.relativeTo) then
-        ResetIndicatorAnchor(anchor)
     end
 end
 
@@ -892,7 +872,6 @@ function CooldownCompanion:SanitizeCursorAnchorPolicy(profile)
                     group.anchor = BuildRootAnchor("UIParent")
                 end
             end
-            SanitizeIndicatorAnchor(group, targetIsCursorRoot)
         end
     end
 

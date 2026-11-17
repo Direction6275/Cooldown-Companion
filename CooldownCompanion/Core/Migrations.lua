@@ -3778,6 +3778,9 @@ function CooldownCompanion:RunAllMigrations()
         -- never allows a section deleted here.
         PruneDisallowedEntrySections(self.db.profile)
         PrepareIndicators(self.db.profile)
+        -- The display reads group.anchor only, so the position move cannot
+        -- wait for a later successful run.
+        ST.IndicatorMigration.ConvertPositions(self.db.profile)
         return false
     end
     if ST.MigrateSharedBarStyle then ST.MigrateSharedBarStyle(self.db.profile) end

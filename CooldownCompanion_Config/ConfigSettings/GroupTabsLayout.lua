@@ -90,11 +90,18 @@ local function ResolveLayoutAnchorState(group, groupId, preferredTargetMode, set
             or false
         if not currentAnchorIsPanel then currentAnchorGroupId = nil end
 
+        -- Its own Group's frame is the "Group" target, as the screen is for
+        -- an Indicator outside a Group.
+        local ownFrame = isPanel and ("CooldownCompanionContainer" .. tostring(group.parentContainerId)) or nil
         if isCursorAnchor then
             targetMode = "cursor"
         elseif currentAnchorIsPanel then
             targetMode = "panel"
-        elseif currentAnchor ~= "UIParent" then
+        elseif currentAnchor ~= "UIParent" and currentAnchor ~= ownFrame then
+            targetMode = "frame"
+        elseif ownFrame and currentAnchor == "UIParent" then
+            -- Saved on the screen while inside a Group: a Frame target with no
+            -- frame named, so "Group" stays a choice that re-attaches it.
             targetMode = "frame"
         elseif preferredTargetMode == "panel" and isPanel then
             targetMode = "panel"
@@ -223,7 +230,7 @@ local function GetLayoutFinderState(context)
     local isIndicator = displayMode == "indicator"
     local anchorState = ResolveLayoutAnchorState(group, groupId,
         CS.layoutAnchorTargetMode and CS.layoutAnchorTargetMode[groupId],
-        isIndicator and CooldownCompanion:GetIndicatorTextureSettings(group) or nil)
+        isIndicator and CooldownCompanion:GetIndicatorAnchorSettings(group) or nil)
     local targetMode = anchorState.targetMode
     local buttonCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #(group.buttons or {})
     local state = ResolveLayoutArrangementState(group, buttonCount)
@@ -724,7 +731,8 @@ local function BuildLayoutTab(container)
     local layoutCount = ST.IsTotemPanelGroup(group) and GetNumTotemSlots() or #group.buttons
 
     if ST.IsIndicatorGroup(group) then
-        local settings = CooldownCompanion:GetIndicatorTextureSettings(group)
+        -- The Indicator's one saved position: its group.anchor.
+        local settings = CooldownCompanion:GetIndicatorAnchorSettings(group)
         if not settings then
             return
         end
@@ -741,12 +749,16 @@ local function BuildLayoutTab(container)
         local isPanel, isCursorAnchor = anchorState.isPanel, anchorState.isCursorAnchor
         local canUseCursorAnchor = anchorState.canUseCursorAnchor
         local currentAnchorGroupId, targetMode = anchorState.currentAnchorGroupId, anchorState.targetMode
+        -- No target named: the centre of its Group, or of the screen outside
+        -- one. Read fresh, since SetGroupAnchor replaces the anchor table.
         local function ResetIndicatorPosition(relativeTo, point, relativePoint, x, y)
-            settings.point = point or "CENTER"
-            settings.relativeTo = relativeTo or "UIParent"
-            settings.relativePoint = relativePoint or "CENTER"
-            settings.x = x or 0
-            settings.y = y or 0
+            local anchor = CooldownCompanion:GetIndicatorAnchorSettings(group)
+            if not anchor then return end
+            anchor.point = point or "CENTER"
+            anchor.relativeTo = relativeTo or defaultFrame
+            anchor.relativePoint = relativePoint or "CENTER"
+            anchor.x = x or 0
+            anchor.y = y or 0
         end
         local function GetIndicatorAnchorValidationOptions()
             return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
@@ -856,15 +868,14 @@ local function BuildLayoutTab(container)
                     end
                     if CooldownCompanion:SetGroupAnchor(CS.selectedGroup, cursorAnchorTarget) then
                         CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                        ResetIndicatorPosition()
                         CooldownCompanion:RefreshConfigPanel()
                     else
                         widget:SetValue(targetMode)
                     end
                 elseif val == "group" then
                     CS.layoutAnchorTargetMode[CS.selectedGroup] = nil
-                    ResetIndicatorPosition()
                     CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true)
+                    ResetIndicatorPosition()
                     CooldownCompanion:RefreshConfigPanel()
                 elseif val == "panel" then
                     if isCursorAnchor and not CooldownCompanion:SetGroupAnchor(CS.selectedGroup, defaultFrame, true) then
@@ -917,7 +928,9 @@ local function BuildLayoutTab(container)
             local frameLeft, frameRight = BeginRowGrid(container)
 
             local frameAnchorText = settings.relativeTo
-            if frameAnchorText == "UIParent" or currentAnchorGroupId then frameAnchorText = "" end
+            if frameAnchorText == "UIParent" or frameAnchorText == defaultFrame or currentAnchorGroupId then
+                frameAnchorText = ""
+            end
 
             local anchorRow = AddEditBoxRow(frameLeft, {
                 label = "Anchor to Frame",
@@ -1067,8 +1080,11 @@ local function BuildLayoutTab(container)
             resetBtn:SetText("Reset Position")
             resetBtn:SetAutoWidth(true)
             resetBtn:SetCallback("OnClick", function()
-                if (targetMode == "panel" or targetMode == "frame") and settings.relativeTo ~= "UIParent" then
-                    ResetIndicatorPosition(settings.relativeTo, "TOPLEFT", "BOTTOMLEFT", 0, -5)
+                local target = CooldownCompanion:GetIndicatorAnchorSettings(group)
+                target = target and target.relativeTo
+                if (targetMode == "panel" or targetMode == "frame")
+                    and target and target ~= "UIParent" and target ~= defaultFrame then
+                    ResetIndicatorPosition(target, "TOPLEFT", "BOTTOMLEFT", 0, -5)
                 else
                     ResetIndicatorPosition()
                 end
@@ -1090,7 +1106,7 @@ local function BuildLayoutTab(container)
         end
 
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
-            OpenOrRebindIndicatorTexturePicker(group, settings, false)
+            OpenOrRebindIndicatorTexturePicker(group, CooldownCompanion:GetIndicatorTextureSettings(group), false)
         end
         RefreshTextureVisual()
         return

@@ -149,15 +149,6 @@ local ARRANGE_SECTION_GEOMETRY_KEYS = {
     "iconWidth",
     "iconHeight",
 }
-local ARRANGE_INDICATOR_POSITION_KEYS = {
-    "point",
-    "relativePoint",
-    "relativeTo",
-    "x",
-    "y",
-    "buttonSize",
-}
-
 local function CopyArrangeTable(source)
     if type(source) ~= "table" then
         return nil
@@ -248,32 +239,8 @@ function CooldownCompanion:CaptureArrangePanelRecord(groupId)
         barSize = ST.PanelSupportsAttachedBars(group)
             and CaptureArrangeFields(group.attachedBarStyle or {}, ARRANGE_ATTACHED_BAR_SIZE_KEYS) or nil,
         sections = sections,
-        signal = CaptureArrangeFields(
-            group.indicatorSettings and group.indicatorSettings.signal,
-            ARRANGE_INDICATOR_POSITION_KEYS
-        ),
-        -- How far its Group's moves had carried this Indicator when this
-        -- record was taken (a padlock re-captures it mid-arrange).
-        signalDrift = CopyArrangeTable(snapshot.indicatorDrift[groupId]),
         locked = group.locked,
     }
-end
-
--- A Group move shifts its member Indicators' saved UIParent position too.
--- Cancel restores the Group, so it also takes that shift back out of any
--- Indicator record re-captured after it.
-function CooldownCompanion:NoteArrangeIndicatorDrift(groupId, deltaX, deltaY)
-    local snapshot = self._arrangeSnapshot
-    if not (snapshot and groupId) then
-        return
-    end
-    local drift = snapshot.indicatorDrift[groupId]
-    if not drift then
-        drift = { x = 0, y = 0 }
-        snapshot.indicatorDrift[groupId] = drift
-    end
-    drift.x = drift.x + (tonumber(deltaX) or 0)
-    drift.y = drift.y + (tonumber(deltaY) or 0)
 end
 
 -- The Group's own rollback record. Entry capture writes it alone, since every
@@ -298,11 +265,8 @@ function CooldownCompanion:CaptureArrangeContainerRecord(containerId)
     end
 
     WriteArrangeContainerRecord(snapshot, containerId, container)
-    -- The Group's current position is now the committed one, so the drift
-    -- its moves gave the members is part of what Cancel keeps.
     for groupId, group in pairs(self.db.profile.groups) do
         if group.parentContainerId == containerId then
-            snapshot.indicatorDrift[groupId] = nil
             self:CaptureArrangePanelRecord(groupId)
         end
     end
@@ -363,7 +327,6 @@ function CooldownCompanion:CaptureArrangeSnapshot()
     self._arrangeSnapshot = {
         panels = {},
         containers = {},
-        indicatorDrift = {},
     }
 
     for groupId in pairs(self.db.profile.groups) do
@@ -406,21 +369,6 @@ local function RestoreArrangeSnapshot(addon, snapshot)
                         and section == sectionRecord.ref and sectionRecord.fields then
                         RestoreArrangeFields(section, sectionRecord.fields, ARRANGE_SECTION_GEOMETRY_KEYS)
                     end
-                end
-            end
-            if record.signal then
-                group.indicatorSettings = type(group.indicatorSettings) == "table" and group.indicatorSettings or {}
-                group.indicatorSettings.signal = type(group.indicatorSettings.signal) == "table"
-                    and group.indicatorSettings.signal
-                    or {}
-                local signal = group.indicatorSettings.signal
-                RestoreArrangeFields(signal, record.signal, ARRANGE_INDICATOR_POSITION_KEYS)
-                local drift = record.signalDrift
-                if drift and type(signal.x) == "number" and type(signal.y) == "number" then
-                    -- Saved Indicator coordinates are tenths; keep float
-                    -- residue out of the restored values.
-                    signal.x = math.floor((signal.x - drift.x) * 10 + 0.5) / 10
-                    signal.y = math.floor((signal.y - drift.y) * 10 + 0.5) / 10
                 end
             end
             group.locked = record.locked

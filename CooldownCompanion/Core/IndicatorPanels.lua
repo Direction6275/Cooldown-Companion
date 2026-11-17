@@ -462,10 +462,8 @@ function I.Initialize(group)
     settings.version = settings.version or 1
     settings.tracking = settings.tracking or "conditions"
     settings.displayType = settings.displayType or "icon"
-    settings.signal = settings.signal or {
-        blendMode = "BLEND", point = "CENTER", relativePoint = "CENTER",
-        relativeTo = "UIParent", x = 0, y = 0, locationType = "CENTER",
-    }
+    -- Look only. The spot is group.anchor (IndicatorMigration.ConvertPositions).
+    settings.signal = settings.signal or { blendMode = "BLEND", locationType = "CENTER" }
     settings.icon = settings.icon or {
         maintainAspectRatio = true, buttonSize = 36, iconWidth = 36, iconHeight = 36,
         iconZoom = 0, borderSize = 1, borderColor = {0, 0, 0, 1},
@@ -819,7 +817,7 @@ function I.ArtworkIcon(group)
     return source and SourceIcon(source)
 end
 
--- A render description only. Saved placement always belongs to signal.
+-- A render description only. Saved placement is the panel's group.anchor.
 function I.NativeSettings(group, resolvedIcon)
     local settings = I.Settings(group)
     if not settings then return end

@@ -561,7 +561,8 @@ function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, delet
     for groupId, group in pairs(profile.groups or {}) do
         if not deletedGroupIds[groupId] and type(group) == "table" then
             local released = false
-            if type(group.anchor) == "table"
+            -- An Indicator's display is measured off its own box, below.
+            if not ST.IsIndicatorGroup(group) and type(group.anchor) == "table"
                 and NamesDeletedTarget(group.anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
                 ReleasePanelAnchor(self, groupId, group)
                 released = true
@@ -578,6 +579,21 @@ function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, delet
                     if px and ux then
                         settings.relativeTo, settings.relativePoint = "UIParent", "CENTER"
                         settings.x, settings.y = ST.RoundToTenths(px - ux), ST.RoundToTenths(py - uy)
+                        -- Inside a Group saved on the screen's centre, the
+                        -- same spot as an offset from the Group, so it keeps
+                        -- following the Group.
+                        local containerId = group.parentContainerId
+                        local container = containerId and profile.groupContainers
+                            and profile.groupContainers[containerId]
+                        local groupAnchor = container and container.anchor
+                        if type(groupAnchor) == "table"
+                            and (groupAnchor.point or "CENTER") == "CENTER"
+                            and (groupAnchor.relativePoint or "CENTER") == "CENTER"
+                            and (groupAnchor.relativeTo == nil or groupAnchor.relativeTo == "UIParent") then
+                            settings.relativeTo = "CooldownCompanionContainer" .. tostring(containerId)
+                            settings.x = ST.RoundToTenths(settings.x - (tonumber(groupAnchor.x) or 0))
+                            settings.y = ST.RoundToTenths(settings.y - (tonumber(groupAnchor.y) or 0))
+                        end
                     else
                         ResetIndicatorPanelAnchor(group)
                     end

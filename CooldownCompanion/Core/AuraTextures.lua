@@ -507,6 +507,7 @@ AT.Clamp = Clamp
 AT.NormalizeBlendMode = NormalizeBlendMode
 AT.IsRuntimeItemLike = IsRuntimeItemLike
 AT.NormalizeAnchorPoint = NormalizeAnchorPoint
+AT.NormalizeIndicatorAnchorRelativeTo = NormalizeIndicatorAnchorRelativeTo
 AT.NormalizeTextureLayout = NormalizeTextureLayout
 AT.GetStretchMultiplier = GetStretchMultiplier
 AT.RotateOffset = RotateOffset
@@ -562,17 +563,12 @@ local function NormalizeAuraTextureSettings(settings)
     settings.rotation = Clamp(tonumber(settings.rotation) or 0, MIN_TEXTURE_ROTATION, MAX_TEXTURE_ROTATION)
     settings.stretchX = Clamp(tonumber(settings.stretchX) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
     settings.stretchY = Clamp(tonumber(settings.stretchY) or 0, MIN_TEXTURE_STRETCH, MAX_TEXTURE_STRETCH)
-    settings.point = NormalizeAnchorPoint(settings.point or settings.anchor)
-    settings.relativePoint = NormalizeAnchorPoint(settings.relativePoint)
-    settings.relativeTo = NormalizeIndicatorAnchorRelativeTo(settings.relativeTo)
-    settings.x = tonumber(settings.x or settings.xOffset) or 0
-    settings.y = tonumber(settings.y or settings.yOffset) or 0
-    settings.anchor = nil
+    -- No position here: an Indicator's spot is group.anchor, moved there once
+    -- by IndicatorMigration.ConvertPositions, which also reads the old
+    -- spellings this pass used to fold.
     settings.mediaType = settings.sourceType == SHARED_MEDIA_SOURCE_TYPE
         and NormalizeSharedMediaType(settings.mediaType)
         or nil
-    settings.xOffset = nil
-    settings.yOffset = nil
     settings.color = FillColor(settings.color) or { 1, 1, 1, 1 }
     local normalizedLocationType, defaultPairSpacing = NormalizeTextureLayout(settings.locationType)
     settings.locationType = normalizedLocationType

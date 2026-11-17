@@ -185,9 +185,6 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
                 point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = 0,
             }
             self:AnchorContainerFrame(frame, container.anchor)
-            if self.SyncGroupedIndicatorPreviewSettings then
-                self:SyncGroupedIndicatorPreviewSettings(descriptor.id, -oldX, -oldY)
-            end
             self:RefreshContainerWrapper(descriptor.id)
             self:RefreshConfigPanel()
         end
