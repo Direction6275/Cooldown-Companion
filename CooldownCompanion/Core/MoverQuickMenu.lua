@@ -46,51 +46,6 @@ if hooksecurefunc and CloseDropDownMenus then
     hooksecurefunc("CloseDropDownMenus", CloseQuickMenuPin)
 end
 
-local function RefreshIndicatorAnchor(groupId, group)
-    CooldownCompanion:RebuildPanelAlphaDependencyTargets()
-    -- RefreshGroupFrame also refreshes the parent Group's wrapper.
-    CooldownCompanion:RefreshGroupFrame(groupId)
-    CooldownCompanion:RefreshConfigPanel()
-end
-
-local function SetIndicatorAnchor(groupId, group, target)
-    if target == CooldownCompanion:GetCursorAnchorTargetName() then
-        return CooldownCompanion:SetGroupAnchor(groupId, target)
-    end
-    if CooldownCompanion:IsGroupCursorAnchored(group) then
-        local owner = group.parentContainerId
-            and ("CooldownCompanionContainer" .. tostring(group.parentContainerId))
-            or "UIParent"
-        if not CooldownCompanion:SetGroupAnchor(groupId, owner, true) then
-            return false
-        end
-    end
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(group)
-    if type(settings) ~= "table" then return false end
-    local options = CooldownCompanion:GetGroupAnchorValidationOptions(groupId)
-    if not CooldownCompanion:ValidateAddonFrameAnchorTarget(target, options) then
-        CooldownCompanion:PrintInvalidAnchorTargetReason(target, options)
-        return false
-    end
-    local ownerTarget = group.parentContainerId
-        and ("CooldownCompanionContainer" .. tostring(group.parentContainerId))
-    if target == ownerTarget then
-        settings.point, settings.relativeTo, settings.relativePoint = "CENTER", target, "CENTER"
-        settings.x, settings.y = 0, 0
-    elseif not target or target == "" or target == "UIParent" then
-        settings.point, settings.relativeTo, settings.relativePoint = "CENTER", "UIParent", "CENTER"
-        settings.x, settings.y = 0, 0
-    elseif _G[target] then
-        settings.point, settings.relativeTo, settings.relativePoint = "TOPLEFT", target, "BOTTOMLEFT"
-        settings.x, settings.y = 0, -5
-    else
-        CooldownCompanion:Print("Frame '" .. tostring(target) .. "' not found.")
-        return false
-    end
-    RefreshIndicatorAnchor(groupId, group)
-    return true
-end
-
 local function GetExternalAnchor(descriptor)
     if descriptor.kind == "cast" then
         local settings = CooldownCompanion:GetCastBarSettings()
@@ -141,14 +96,9 @@ end
 function CooldownCompanion:ApplyMoverQuickAnchor(descriptor, target)
     if not descriptor then return false end
     if descriptor.kind == "panel" then
-        local group = self.db.profile.groups[descriptor.id]
-        if not group then return false end
-        local applied
-        if ST.IsIndicatorGroup(group) then
-            applied = SetIndicatorAnchor(descriptor.id, group, target)
-        else
-            applied = self:SetGroupAnchor(descriptor.id, target)
-        end
+        local applied = self:SetGroupAnchor(descriptor.id, target)
+        -- The Layout tab shows the target and offsets this just replaced.
+        if applied then self:RefreshConfigPanel() end
         return applied
     elseif descriptor.kind == "cast" or descriptor.kind == "resource" then
         return ApplyExternalAnchor(descriptor, target)
@@ -161,11 +111,9 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
     if descriptor.kind == "panel" then
         local group = self.db.profile.groups[descriptor.id]
         if not group then return end
+        local applied
         if self:IsGroupCursorAnchored(group) then
-            self:SetGroupAnchor(descriptor.id, self:GetCursorAnchorTargetName())
-        elseif ST.IsIndicatorGroup(group) then
-            local settings = self:GetIndicatorAnchorSettings(group)
-            SetIndicatorAnchor(descriptor.id, group, settings and settings.relativeTo or "UIParent")
+            applied = self:SetGroupAnchor(descriptor.id, self:GetCursorAnchorTargetName())
         else
             local target = type(group.anchor) == "table" and group.anchor.relativeTo
             if not target then
@@ -173,8 +121,10 @@ function CooldownCompanion:ResetMoverQuickPosition(descriptor)
                     and ("CooldownCompanionContainer" .. tostring(group.parentContainerId))
                     or "UIParent"
             end
-            self:SetGroupAnchor(descriptor.id, target, target == "UIParent")
+            applied = self:SetGroupAnchor(descriptor.id, target, target == "UIParent")
         end
+        -- The Layout tab shows the offsets this just replaced.
+        if applied then self:RefreshConfigPanel() end
     elseif descriptor.kind == "container" then
         local container = self.db.profile.groupContainers[descriptor.id]
         local frame = self.containerFrames and self.containerFrames[descriptor.id]

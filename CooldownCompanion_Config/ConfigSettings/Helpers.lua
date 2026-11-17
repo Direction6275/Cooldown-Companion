@@ -1540,53 +1540,6 @@ local function AddFontControls(container, tbl, prefix, defaults, refreshFn, opts
     end)
 end
 
--- Create X Offset + Y Offset slider pair.
--- defaults: {x, y, range (default 20), step (default 0.1)}
---
--- Row grammar only (RowWidgets.lua); opts.indent makes them child rows. Same
--- call-time row-builder read as AddFontControls above, and for the same
--- load-order reason. The pre-redesign full-width stock pair had no call sites
--- left after the conversion packets.
-local function AddOffsetSliders(container, tbl, xKey, yKey, defaults, refreshFn, opts)
-    local range = defaults.range or 20
-    local step = defaults.step or 0.1
-    local indent = opts and opts.indent
-    local settings = opts and opts.settings or nil
-    local previewRefresh = (opts and opts.previewRefresh) or RefreshSelectedButtonsPreview
-
-    local xRow = ST._AddSliderRow(container, {
-        label = "X Offset",
-        setting = settings and settings.x,
-        indent = indent,
-        min = -range, max = range, step = step,
-        value = tbl[xKey] or defaults.x or 0,
-        onChange = function(val)
-            PreviewScalarSetting(tbl, xKey, val, previewRefresh)
-        end,
-        onRelease = function(val)
-            tbl[xKey] = val
-            refreshFn()
-        end,
-    })
-
-    local yRow = ST._AddSliderRow(container, {
-        label = "Y Offset",
-        setting = settings and settings.y,
-        indent = indent,
-        min = -range, max = range, step = step,
-        value = tbl[yKey] or defaults.y or 0,
-        onChange = function(val)
-            PreviewScalarSetting(tbl, yKey, val, previewRefresh)
-        end,
-        onRelease = function(val)
-            tbl[yKey] = val
-            refreshFn()
-        end,
-    })
-
-    return xRow, yRow
-end
-
 local BORDER_THICKNESS_MODE_TOOLTIPS = {
     [ST.BORDER_RENDER_MODE_CUSTOM] = {
         "Custom",
@@ -1960,7 +1913,6 @@ ST._BuildAlphaControls = BuildAlphaControls
 ST._BuildIndependentAnchorTargetRow = BuildIndependentAnchorTargetRow
 
 ST._AddFontControls = AddFontControls
-ST._AddOffsetSliders = AddOffsetSliders
 ST._AddBorderRenderModeDropdown = AddBorderRenderModeDropdown
 
 -- Private helpers consumed by later Helpers files.

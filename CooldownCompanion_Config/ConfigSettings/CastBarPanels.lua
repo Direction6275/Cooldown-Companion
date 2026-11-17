@@ -847,9 +847,8 @@ local function BuildCastBarStylingPanel(container)
         end,
     })
 
-    -- Single rail. The two offsets are hand-written rather than routed through
-    -- AddOffsetSliders: that helper takes ONE symmetric range, and this pair is
-    -- deliberately +/-50 across and only +/-20 up the bar.
+    -- Single rail. The two offsets are hand-written: this pair is deliberately
+    -- +/-50 across and only +/-20 up the bar.
     local function BuildCastTimeAdvanced(panel)
         -- Both offsets place the countdown on the canvas facsimile too.
         AddMirrorFirstSliderRow(panel, {

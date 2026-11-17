@@ -42,16 +42,26 @@ local BuildRootAnchor = ST._BuildRootAnchor
 local GetCursorAnchorLayoutPreviewPosition = GF.GetCursorAnchorLayoutPreviewPosition
 local ApplyCursorAnchorPosition = GF.ApplyCursorAnchorPosition
 
--- Re-place a panel from its saved position after an edit. A parked frame is
--- marked instead, and the layout ticker places it once it is live again.
-function CooldownCompanion:ReanchorGroupFrame(groupId)
-    local group = self.db.profile.groups[groupId]
-    if not group then return end
+-- Places a panel from its saved position. A parked frame is marked instead,
+-- and is placed when it is live again (RecoverDormantFrame).
+local function PlaceGroupFrame(self, groupId, group)
     local frame = self.groupFrames[groupId]
     if frame then
         self:AnchorGroupFrame(frame, group.anchor)
     elseif self._dormantFrames and self._dormantFrames[groupId] then
         self._dormantFrames[groupId]._anchorDirty = true
+    end
+end
+
+-- One edit to one panel's position: place it, and its Group's unlock outline
+-- with it. FinishGroupAnchorChange only places; what follows is its
+-- caller's.
+function CooldownCompanion:ReanchorGroupFrame(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+    PlaceGroupFrame(self, groupId, group)
+    if group.parentContainerId and self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(group.parentContainerId)
     end
 end
 
@@ -611,8 +621,14 @@ local function RebindAuraHoverOnCursorChange(self, groupId, group, wasCursorAnch
     end
 end
 
+-- frame is the panel's frame, or nil for a panel that is not loaded right
+-- now: it still takes the change, and is placed when it loads.
 local function FinishGroupAnchorChange(self, groupId, frame, group, wasCursorAnchored)
-    self:AnchorGroupFrame(frame, group.anchor)
+    if frame then
+        self:AnchorGroupFrame(frame, group.anchor)
+    else
+        PlaceGroupFrame(self, groupId, group)
+    end
     self:RebuildPanelAlphaDependencyTargets()
     RefreshGroupAnchorInteractionState(self, groupId, frame, group)
     self:RefreshCursorAnchorTicker()
@@ -653,11 +669,26 @@ end
 -- offset finishes with the exact sequence a container re-anchor runs here.
 ST._FinishGroupAnchorChange = FinishGroupAnchorChange
 
+local ApplyGroupAnchor
+
+-- Sets what a panel is attached to. True when the change was saved; its
+-- Group's unlock outline follows.
 function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
+    local applied = ApplyGroupAnchor(self, groupId, targetFrameName, forceCenter)
+    local group = applied and self.db.profile.groups[groupId]
+    if group and group.parentContainerId and self.RefreshContainerWrapper then
+        self:RefreshContainerWrapper(group.parentContainerId)
+    end
+    return applied
+end
+
+ApplyGroupAnchor = function(self, groupId, targetFrameName, forceCenter)
     local group = self.db.profile.groups[groupId]
+    -- nil for a panel that is not loaded right now (load conditions, another
+    -- spec): the new target is saved and the panel is placed when it loads.
     local frame = self.groupFrames[groupId]
 
-    if not group or not frame then return false end
+    if not group then return false end
     local wasCursorAnchored = IsCursorAnchor(group.anchor)
 
     -- Block self-anchoring
@@ -721,9 +752,17 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
                 y = 0,
             }
         end
-        -- If not forceCenter, keep current anchor settings (just relativeTo changes)
+        -- If not forceCenter, keep current anchor settings (just relativeTo changes).
+        -- The player's choice is what saves a position a panel never had.
+        if type(group.anchor) ~= "table" then
+            group.anchor = BuildRootAnchor("UIParent")
+        end
         group.anchor.relativeTo = "UIParent"
-        self:AnchorGroupFrame(frame, group.anchor, forceCenter)
+        if frame then
+            self:AnchorGroupFrame(frame, group.anchor, forceCenter)
+        else
+            PlaceGroupFrame(self, groupId, group)
+        end
         self:RebuildPanelAlphaDependencyTargets()
         RefreshGroupAnchorInteractionState(self, groupId, frame, group)
         RebindAuraHoverOnCursorChange(self, groupId, group, wasCursorAnchored, false)
@@ -734,13 +773,15 @@ function CooldownCompanion:SetGroupAnchor(groupId, targetFrameName, forceCenter)
         return true
     end
 
+    -- A panel or Group of this addon was validated by name above and may not
+    -- be built on this character or spec; any other frame has to exist.
     local targetFrame = _G[targetFrameName]
-    if not targetFrame then
+    local targetKind = ParseAddonAnchorFrameName(targetFrameName)
+    if not targetFrame and not targetKind then
         self:Print("Frame '" .. targetFrameName .. "' not found.")
         return false
     end
 
-    local targetKind = ParseAddonAnchorFrameName(targetFrameName)
     if not targetKind then
         local unsafe, reason = WouldFrameDependencyCreateCircularAnchor(self, groupId, "group", targetFrame)
         if unsafe then

@@ -166,28 +166,9 @@ local function ParseAddonAnchorFrameName(frameName)
     return nil
 end
 
-local function IndicatorAnchorOf(group)
-    if type(group) ~= "table" then
-        return nil
-    end
-    -- One saved position: an Indicator's spot is its group.anchor, like a
-    -- panel's (IndicatorMigration.ConvertPositions moved it there).
-    if ST.IsIndicatorGroup(group) and type(group.anchor) == "table" then
-        return group.anchor
-    end
-    return nil
-end
-
 local function GetActivePanelAnchorRelativeTo(group)
     local anchor = group and group.anchor
-    local relativeTo = type(anchor) == "table" and anchor.relativeTo or anchor
-    if relativeTo == CURSOR_ANCHOR_TARGET then return relativeTo end
-    local indicatorAnchor = IndicatorAnchorOf(group)
-    if type(indicatorAnchor) == "table" and type(indicatorAnchor.relativeTo) == "string" then
-        return indicatorAnchor.relativeTo
-    end
-
-    return relativeTo
+    return type(anchor) == "table" and anchor.relativeTo or anchor
 end
 
 local function GetAddonAnchorGroupId(frameName)
@@ -476,14 +457,6 @@ local function AddFrameAnchoringDependents(dependents, settings, targetFrameName
     AddFrameNameDependent(dependents, settings.customTargetFrame, targetFrameName, name .. " Target")
 end
 
-local function AddIndicatorDependents(dependents, group, targetFrameName, name)
-    local settings = IndicatorAnchorOf(group)
-    if type(settings) ~= "table" then
-        return
-    end
-    AddAnchorDependent(dependents, settings, targetFrameName, name)
-end
-
 function CooldownCompanion:GetCursorAnchorTargetName()
     return CURSOR_ANCHOR_TARGET
 end
@@ -502,10 +475,6 @@ end
 function CooldownCompanion:IsGroupCursorAnchored(groupOrId)
     local group = GetGroup(self, groupOrId)
     return self:IsCursorAnchor(group and group.anchor)
-end
-
-function CooldownCompanion:GetIndicatorAnchorSettings(groupOrId)
-    return IndicatorAnchorOf(GetGroup(self, groupOrId))
 end
 
 function CooldownCompanion:GetActivePanelAnchorRelativeTo(groupOrId)
@@ -695,15 +664,6 @@ function CooldownCompanion:GetExternalAnchorDependents(groupId, profile)
     ForEachExternalAnchorSettings(profile, EXTERNAL_ANCHOR_STORES.frameAnchoring, function(settings, name)
         AddFrameAnchoringDependents(dependents, settings, targetFrameName, name)
     end, true)
-
-    for id, group in pairs(profile.groups or {}) do
-        if type(group) == "table" then
-            local name = group.name or ("Panel " .. tostring(id))
-            if ST.IsIndicatorGroup(group) then
-                AddIndicatorDependents(dependents, group, targetFrameName, name .. " Indicator")
-            end
-        end
-    end
 
     return dependents
 end
