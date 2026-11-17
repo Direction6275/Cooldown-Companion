@@ -120,6 +120,14 @@ local function GroupFrameRendersVisibleSnapTarget(frame, groupId)
         return false
     end
 
+    -- An Indicator's sources stay hidden; its display is what shows.
+    local group = CooldownCompanion.db.profile.groups[groupId]
+    if ST.IsIndicatorGroup(group) then
+        local driver = ST.Indicator.RuntimeSource(frame, group)
+        local host = driver and driver.auraTextureHost
+        return host ~= nil and host:IsShown()
+    end
+
     for _, button in ipairs(frame.buttons or {}) do
         local isShown = button:IsShown()
         -- Shell alpha 0 = the button renders nothing CC-side (icon hidden,
@@ -251,18 +259,8 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
                 or nil
             local cid = group and group.parentContainerId
             if cid and cid ~= frame.containerId then
-                -- Indicators live on their display host, not the group
-                -- frame; both contribute so Indicator-only groups get a
-                -- center and mixed groups get the true midpoint.
-                if not ST.IsIndicatorGroup(group)
-                    and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
+                if GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
                     AccumulateGroupUnion(cid, candidateFrame)
-                end
-                local textureHost = self.GetAuraTextureHostForGroupFrame
-                    and self:GetAuraTextureHostForGroupFrame(candidateFrame)
-                    or nil
-                if textureHost and textureHost:IsVisible() then
-                    AccumulateGroupUnion(cid, textureHost)
                 end
             end
         end
@@ -276,17 +274,9 @@ function CooldownCompanion:BeginDragSnapSession(frame, excludeFn)
     end
 
     for groupId, candidateFrame in pairs(self.groupFrames or {}) do
-        local group = self.db and self.db.profile and self.db.profile.groups
-            and self.db.profile.groups[groupId]
-            or nil
-        if not (group and ST.IsIndicatorGroup(group))
-            and GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
+        if GroupFrameRendersVisibleSnapTarget(candidateFrame, groupId) then
             AddDragSnapCandidate(session, candidateFrame, groupId, excludeFn)
         end
-        local textureHost = self.GetAuraTextureHostForGroupFrame
-            and self:GetAuraTextureHostForGroupFrame(candidateFrame)
-            or nil
-        AddDragSnapCandidate(session, textureHost, groupId, excludeFn)
     end
 
     local castBarMover = self.GetIndependentCastBarSnapFrame and self:GetIndependentCastBarSnapFrame() or nil

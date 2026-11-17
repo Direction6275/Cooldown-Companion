@@ -1101,9 +1101,6 @@ local function CancelActiveMoverGestures(addon)
 
     for _, frame in pairs(addon.groupFrames or {}) do
         CancelActiveMoverDrag(addon, frame, "_dragInProgress")
-        for _, button in ipairs(frame.buttons or {}) do
-            CancelActiveMoverDrag(addon, button and button.auraTextureHost, "_isDragging")
-        end
     end
 
     for _, frame in pairs(addon.containerFrames or {}) do
@@ -1194,20 +1191,6 @@ function CooldownCompanion:BeginCombatForcedLock()
             if CooldownCompanion:IsAuraShellEntry(buttonData) then
                 ST._ApplyShellVisualsForButton(button, buttonData)
             end
-            local host = button and button.auraTextureHost or nil
-            if host then
-                host._dragEnabled = false
-                ForceCombatMouseLock(host)
-                SuppressFrameVisibilityForCombat(host.dragHandle)
-                SuppressFrameVisibilityForCombat(host.coordLabel)
-                SuppressFrameVisibilityForCombat(host.nudger)
-                if host.auraTextureOutlineFill then
-                    host.auraTextureOutlineFill:Hide()
-                end
-                for _, edge in ipairs(host.auraTextureOutlineEdges or {}) do
-                    edge:Hide()
-                end
-            end
             if not active and self.HideAuraTextureVisual then
                 self:HideAuraTextureVisual(button)
             end
@@ -1262,12 +1245,6 @@ function CooldownCompanion:EndCombatForcedLock()
         -- drag controls up, or any member of an active container preview.
         ST.SetSectionMoverOverlaysShown(self, frame, group,
             handleShown or containerPreviewActive)
-        for _, button in ipairs(frame.buttons or {}) do
-            local host = button and button.auraTextureHost or nil
-            RestoreFrameVisibilityAfterCombat(host and host.dragHandle or nil)
-            RestoreFrameVisibilityAfterCombat(host and host.coordLabel or nil)
-            RestoreFrameVisibilityAfterCombat(host and host.nudger or nil)
-        end
     end
 
     for _, frame in pairs(self.containerFrames or {}) do

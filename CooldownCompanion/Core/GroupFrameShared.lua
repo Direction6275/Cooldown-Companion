@@ -868,6 +868,8 @@ end
 -- else nil (the panel's own anchor point). SizeGroupFrame pins it and the
 -- resize grip measures its travel from it, so the two cannot disagree.
 local function GetPanelResizeFixedPoint(groupId, group, style, orientation)
+    -- An Indicator's box grows around its own anchor point.
+    if ST.IsIndicatorGroup(group) then return nil end
     local fixedPoint
     if not ST.IsAuraPanelGroup(group) then
         fixedPoint = ST.GetCenteredGrowthEdge(style.growthOrigin, orientation)

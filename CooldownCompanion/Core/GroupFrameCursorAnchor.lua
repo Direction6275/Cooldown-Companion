@@ -89,10 +89,9 @@ end
 -- correction dx/dy, recomputed every tick, so a reflow that shifts the base
 -- row under a still mouse still re-places. Every other writer calls
 -- ST.InvalidateCursorPlacement (PanelSections.lua): ST.SetPanelBasePoint and
--- ST.UpdatePanelBaseAnchor's AdjustPointsOffset, the Indicator host's raw point
--- writers and the cursor label writers that show the saved rather than the
--- staged offset (AuraTexturesDisplay.lua and
--- SetCursorAnchorLayoutPreviewGroupState), and the ticker itself while a panel
+-- ST.UpdatePanelBaseAnchor's AdjustPointsOffset, the cursor label writers that
+-- show the saved rather than the staged offset
+-- (SetCursorAnchorLayoutPreviewGroupState), and the ticker itself while a panel
 -- is being dragged. A raw SetPoint or ClearAllPoints added anywhere else on a
 -- cursor frame must call it too, or the panel stays put until the mouse (or,
 -- while parked, the dummy cursor) moves. Every other caller places
@@ -141,14 +140,6 @@ local function ApplyCursorAnchorPosition(self, frame, anchor, cursorX, cursorY, 
     frame._cursorPlacedOffX, frame._cursorPlacedOffY = x, y
     frame._cursorPlacedDX, frame._cursorPlacedDY = dx, dy
     return true
-end
-
-local function GetCursorAnchoredIndicatorHost(frame, group)
-    if not (frame and ST.IsIndicatorGroup(group)) then
-        return nil
-    end
-
-    return CooldownCompanion:GetAuraTextureHostForGroupFrame(frame)
 end
 
 local function GetCursorAnchorLayoutPreviewPosition(self, groupId)
@@ -234,7 +225,6 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
     end
 
     local selected = active and IsCursorAnchorLayoutPreviewSelected(self, groupId)
-    local isIndicator = ST.IsIndicatorGroup(group)
 
     -- Parking changes no refresh-owned state, so the marks follow here too: a
     -- padlocked cursor panel leaves its ghost look as it leaves the preview.
@@ -267,15 +257,8 @@ local function SetCursorAnchorLayoutPreviewGroupState(self, groupId, active)
         self:UpdateGroupLayout(groupId)
     end
 
-    self:SetGroupDragControlsShown(frame, selected and not isIndicator)
-    if isIndicator then
-        -- Indicators edit through their HOST: it carries the mover
-        -- chrome and the click/drag selection route while parked.
-        local host = GetCursorAnchoredIndicatorHost(frame, group)
-        if host and self.RefreshCursorAnchoredHostControls then
-            self:RefreshCursorAnchoredHostControls(host, groupId, group, active == true, selected == true)
-        end
-    elseif selected then
+    self:SetGroupDragControlsShown(frame, selected)
+    if selected then
         UpdateCoordLabel(frame, group.anchor.x or CURSOR_ANCHOR_X, group.anchor.y or CURSOR_ANCHOR_Y)
         -- The label now shows the saved offset; the ticker repaints a staged one.
         ST.InvalidateCursorPlacement(frame)
@@ -396,12 +379,9 @@ end
 local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
     local frame = self.groupFrames and self.groupFrames[groupId] or nil
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    -- An Indicator's visible body is its host, so a host drag must be
-    -- measured against the host; the alpha-0 group frame never moved.
-    local host = GetCursorAnchoredIndicatorHost(frame, group)
     local newX, newY, cursorX, cursorY, point = ComputeCursorAnchorLayoutPreviewPanelCoordinates(
         self,
-        host or frame,
+        frame,
         groupId,
         group
     )
@@ -418,9 +398,6 @@ local function SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId)
 
     -- Also updates the coordinate label from the anchor just saved.
     ApplyCursorAnchorPosition(self, frame, group.anchor, cursorX, cursorY)
-    if host and self.RefreshCursorAnchoredHostControls then
-        self:RefreshCursorAnchoredHostControls(host, groupId, group, true, true)
-    end
     self:RefreshConfigPanel()
     self:UpdateCursorAnchoredFrames()
     return true
@@ -501,9 +478,6 @@ local function BeginCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId)
     if not (frame and group and IsCursorAnchor(group.anchor)) then
         return false
     end
-    if ST.IsIndicatorGroup(group) then
-        return false
-    end
     if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
         return false
     end
@@ -549,43 +523,6 @@ local function EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, cance
     return true
 end
 
--- Host-drag entry points for parked Indicator displays. The drag mechanics live with the host in AuraTexturesDisplay;
--- these own the preview bookkeeping and the cursor-anchor save, mirroring
--- the ordinary panel drag pair above.
-function CooldownCompanion:BeginCursorAnchorLayoutPreviewHostDrag(host, groupId)
-    local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
-    if not (host and group and IsCursorAnchor(group.anchor)) then
-        return false
-    end
-    if not IsCursorAnchorLayoutPreviewSelected(self, groupId) then
-        return false
-    end
-    if self._combatForcedLock or (InCombatLockdown() and host.IsProtected and host:IsProtected()) then
-        return false
-    end
-
-    local preview = self._cursorAnchorLayoutPreview
-    if preview then
-        preview.draggedGroupId = groupId
-    end
-    return true
-end
-
-function CooldownCompanion:EndCursorAnchorLayoutPreviewHostDrag(groupId, cancelSave)
-    local preview = self._cursorAnchorLayoutPreview
-    if preview and GroupIdsEqual(preview.draggedGroupId, groupId) then
-        preview.draggedGroupId = nil
-    end
-    if cancelSave then
-        self:UpdateCursorAnchoredFrames()
-        return true
-    end
-    if not SaveCursorAnchorLayoutPreviewPanelPosition(self, groupId) then
-        self:UpdateCursorAnchoredFrames()
-    end
-    return true
-end
-
 -- Eligibility can disappear during a drag, after the runtime frame was moved
 -- to the dormant cache. Cancel that gesture without saving its partial offset.
 function CooldownCompanion:CancelCursorAnchorLayoutPreviewDrag()
@@ -594,20 +531,7 @@ function CooldownCompanion:CancelCursorAnchorLayoutPreviewDrag()
     if groupId == nil then return end
     local frame = self.groupFrames and self.groupFrames[groupId]
         or self._dormantFrames and self._dormantFrames[groupId]
-    local host = self:GetAuraTextureHostForGroupFrame(frame)
-    if host and host._cursorAnchorDrag then
-        host._cursorAnchorDrag = nil
-        host._isDragging = nil
-        host._arrangePanelSurfaceDrag = nil
-        host._dragCancelPending = true
-        if not (InCombatLockdown() and host:IsProtected()) then
-            host:StopMovingOrSizing()
-        end
-        self:EndCursorAnchorLayoutPreviewHostDrag(groupId, true)
-        self:EndMoverChromeFade(host)
-    else
-        EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, true)
-    end
+    EndCursorAnchorLayoutPreviewPanelDrag(self, frame, groupId, true)
 end
 
 local function ResetCursorAnchorLayoutPreviewPosition(self)
@@ -1074,18 +998,12 @@ function CooldownCompanion:UpdateCursorAnchoredFrames(useCandidateList)
                 -- drag ends (drop, cancel, combat lock), the first tick after
                 -- it places the panel again.
                 ST.InvalidateCursorPlacement(frame)
-                local host = GetCursorAnchoredIndicatorHost(frame, group)
-                if host then ST.InvalidateCursorPlacement(host) end
             elseif frame and frame:IsShown() then
                 local previewX, previewY = GetCursorAnchorLayoutPreviewPosition(self, groupId)
                 local anchorX = previewX or cursorX
                 local anchorY = previewY or cursorY
                 local anchor = GetCursorAnchorLayoutPreviewAnchor(self, groupId, group.anchor)
                 ApplyCursorAnchorPosition(self, frame, anchor, anchorX, anchorY, useCandidateList)
-                local host = GetCursorAnchoredIndicatorHost(frame, group)
-                if host and host:IsShown() then
-                    ApplyCursorAnchorPosition(self, host, anchor, anchorX, anchorY, useCandidateList)
-                end
             end
         end
     end

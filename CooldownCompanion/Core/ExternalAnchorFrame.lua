@@ -122,8 +122,7 @@ local function ResolveTargetFrame(self)
     if not frame and self._dormantFrames then
         frame = self._dormantFrames[groupId]
     end
-    -- An Indicator hands out its visible box, the same frame the bars use.
-    return self:GetExternalAnchorTargetFrame(frame)
+    return frame
 end
 
 --- Point the stable frame at the marked panel's current frame object (an

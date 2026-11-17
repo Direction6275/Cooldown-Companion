@@ -168,14 +168,13 @@ function GF.EnsureMoverChrome(frame)
             focusId = current and current.parentContainerId,
         }
     end)
-    frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-    frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2)
     frame.nudger = CreateNudger(frame, groupId)
 
     -- Coordinate label (parented to dragHandle so it hides when locked)
     frame.coordLabel = ST.MoverChrome.CreateLabel(frame.dragHandle)
-    frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -2)
-    frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -2)
+    -- The header on the frame's top edge, the coordinates on its bottom.
+    frame._ccChromeTopInset, frame._ccChromeBottomInset = nil, nil
+    GF.AnchorMoverChromeEdges(frame, group)
     CreateEditableCoordLabel(
         frame.coordLabel,
         function()
@@ -293,11 +292,11 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     -- One lock answer for chrome, mouse and fade (GroupFrameShared.lua).
     local _, ownUnlocked = GetPanelUnlockState(groupId, group)
 
-    -- Make it movable when unlocked. Indicators drag their display host
-    -- directly instead of using the standard panel drag handle.
-    local isIndicator = ST.IsIndicatorGroup(group)
+    -- Make it movable when unlocked. An Indicator's box is kept on the
+    -- screen, as its display always was.
     frame:SetMovable(true)
-    frame:EnableMouse(ownUnlocked and not isIndicator)
+    frame:SetClampedToScreen(ST.IsIndicatorGroup(group))
+    frame:EnableMouse(ownUnlocked)
     frame:RegisterForDrag("LeftButton")
 
     local isCursorAnchored = IsCursorAnchor(group.anchor)
@@ -307,7 +306,7 @@ function CooldownCompanion:CreateGroupFrame(groupId)
     local hasDragEntry = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
-    self:SetGroupDragControlsShown(frame, ownUnlocked and hasDragEntry and not isIndicator and not isCursorAnchored)
+    self:SetGroupDragControlsShown(frame, ownUnlocked and hasDragEntry and not isCursorAnchored)
 
     -- Drag scripts (check lock state at drag time)
     frame:SetScript("OnDragStart", function(self) BeginPanelDrag(self, true) end)
@@ -426,6 +425,8 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
                 frame:SetFixedFrameStrata(false)
             end
             frame._strataDirty = nil
+            -- A panel can change kind between refreshes.
+            frame:SetClampedToScreen(ST.IsIndicatorGroup(group))
         end
 
         self:AnchorGroupFrame(frame, group.anchor)
@@ -465,7 +466,6 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     local hasButtons = ST.IsAuraPanelGroup(group)
         or ST.IsTotemPanelGroup(group)
         or #group.buttons > 0
-    local isIndicator = ST.IsIndicatorGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
@@ -482,7 +482,6 @@ function GF.RefreshGroupFrameRuntime(self, groupId)
     self:SetGroupDragControlsShown(
         frame,
         hasButtons
-            and not isIndicator
             and (
                 isCursorLayoutPreviewSelected
                 or (
@@ -564,7 +563,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     local _, ownUnlocked = GetPanelUnlockState(groupId, group)
     local isLocked = not ownUnlocked
-    local isIndicator = ST.IsIndicatorGroup(group)
     local isCursorAnchored = IsCursorAnchor(group.anchor)
     local isCursorLayoutPreviewSelected = isCursorAnchored
         and IsCursorAnchorLayoutPreviewSelected(self, groupId)
@@ -590,7 +588,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
 
     SyncGroupControlLevels(
         frame,
-        (isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)) and not isIndicator
+        isCursorLayoutPreviewSelected or (isSelectedInContainer and not isCursorAnchored)
     )
     if resizeWheelEnabled then
         frame:EnableMouseWheel(true)
@@ -600,7 +598,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
         frame:SetScript("OnMouseWheel", nil)
     end
 
-    if isCursorLayoutPreviewSelected and not isIndicator then
+    if isCursorLayoutPreviewSelected then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
         -- Clickthrough transitions wipe OnMouseUp; restore the selection
@@ -612,7 +610,6 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     -- A parked-but-unselected cursor panel stays clickable in arrange so a
     -- click or drag can select it; its chrome stays down until then.
     if isCursorAnchored
-        and not isIndicator
         and IsCursorAnchorLayoutPreviewGroupActive(self, groupId) then
         SetFrameClickThrough(frame, false, false)
         frame:RegisterForDrag("LeftButton")
@@ -632,10 +629,7 @@ function CooldownCompanion:UpdateGroupClickthrough(groupId)
     end
 
     -- When locked: group container is always fully non-interactive
-    -- Indicators also keep the backing group frame non-interactive while
-    -- unlocked, because dragging and hovering are handled by the separate
-    -- visible display host instead of the hidden 1x1 anchor frame.
-    if isLocked or isIndicator or isCursorAnchored then
+    if isLocked or isCursorAnchored then
         SetFrameClickThrough(frame, true, true)
     else
         SetFrameClickThrough(frame, false, false)
@@ -691,15 +685,11 @@ function CooldownCompanion:ShowPickModeIndicators(sourceGroupId, options)
     end
 
     -- The picker's own test (Config/Pickers.lua), so a marker never sits on a
-    -- frame the pick would refuse. An Indicator is picked by its display, and
-    -- only in a panels-only pick.
+    -- frame the pick would refuse.
     for groupId, group in pairs(groups) do
         if groupId ~= sourceGroupId
             and self:ValidateAddonFrameAnchorTarget("CooldownCompanionGroup" .. groupId, options) then
             local frame = self.groupFrames[groupId]
-            if ST.IsIndicatorGroup(group) then
-                frame = options.requireAddonPanel and self:GetAuraTextureHostForGroupFrame(frame) or nil
-            end
             ShowIndicator("group:" .. groupId, frame, group.name or ("Panel " .. groupId))
         end
     end
