@@ -165,7 +165,7 @@ local function EnsureContainerMemberOverlay(frame, index)
         local previousHoveredGroupId = containerFrame._containerHoveredGroupId
         if previousHoveredGroupId ~= self.groupId then
             containerFrame._containerHoveredGroupId = self.groupId
-            CooldownCompanion:RefreshContainerWrapperHover(self.containerId, previousHoveredGroupId)
+            CooldownCompanion:RefreshContainerWrapperHover(self.containerId)
             if CooldownCompanion.RefreshArrangeTreeHover then
                 CooldownCompanion:RefreshArrangeTreeHover()
             end
@@ -182,7 +182,7 @@ local function EnsureContainerMemberOverlay(frame, index)
         end
         if containerFrame._containerHoveredGroupId == self.groupId then
             containerFrame._containerHoveredGroupId = nil
-            CooldownCompanion:RefreshContainerWrapperHover(self.containerId, self.groupId)
+            CooldownCompanion:RefreshContainerWrapperHover(self.containerId)
             if CooldownCompanion.RefreshArrangeTreeHover then
                 CooldownCompanion:RefreshArrangeTreeHover()
             end
@@ -264,11 +264,6 @@ function CooldownCompanion:IsContainerPanelSelected(containerId, groupId)
     return groupId ~= nil and self:GetContainerSelectedGroupId(containerId) == groupId
 end
 
-function CooldownCompanion:IsContainerPanelHovered(containerId, groupId)
-    local frame = self.containerFrames and self.containerFrames[containerId]
-    return groupId ~= nil and frame and frame._containerHoveredGroupId == groupId or false
-end
-
 function CooldownCompanion:StartContainerMemberPreviewTracking(containerId, groupId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then
@@ -318,12 +313,6 @@ function CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
         groupFrame._coordDragAnchorState = nil
         groupFrame._coordDragReferenceReady = nil
     end
-    local textureHost = groupFrame and self.GetAuraTextureHostForGroupFrame
-        and self:GetAuraTextureHostForGroupFrame(groupFrame)
-        or nil
-    if textureHost then
-        self:EndDragSnapSession(textureHost, false)
-    end
     local tracker = frame._containerMemberDragTracker
     if tracker then
         tracker._elapsed = 0
@@ -331,9 +320,6 @@ function CooldownCompanion:StopContainerMemberPreviewTracking(containerId)
     end
     if groupFrame then
         self:EndMoverChromeFade(groupFrame)
-    end
-    if textureHost then
-        self:EndMoverChromeFade(textureHost)
     end
 end
 
@@ -345,7 +331,6 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     end
 
     local selectedGroupId = frame._containerSelectedGroupId
-    local hoveredGroupId = frame._containerHoveredGroupId
     frame._containerSelectedGroupId = nil
     frame._containerHoveredGroupId = nil
     -- The hover repaint reads these as "the wrapper is painted".
@@ -374,27 +359,17 @@ function CooldownCompanion:ClearContainerUnlockState(containerId)
     self:StopContainerMemberPreviewTracking(containerId)
     HideContainerMemberOverlays(frame)
 
-    -- Only the selected panel can have container-owned drag controls showing,
-    -- while a hovered Indicator can own an outline. Clear that chrome
-    -- directly instead of rebuilding every runtime panel in the container.
+    -- Only the selected panel can have container-owned drag controls
+    -- showing. Clear that chrome directly instead of rebuilding every runtime
+    -- panel in the container.
     local group = selectedGroupId and self.db.profile.groups[selectedGroupId] or nil
     local groupFrame = selectedGroupId and self.groupFrames and self.groupFrames[selectedGroupId] or nil
-    local isIndicator = group and ST.IsIndicatorGroup(group)
-    if groupFrame and not isIndicator then
+    if groupFrame then
         if not (self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)) then
             SyncGroupControlLevels(groupFrame, false)
             self:SetGroupDragControlsShown(groupFrame, false)
         end
         self:UpdateGroupClickthrough(selectedGroupId)
-    elseif isIndicator and self.UpdateGroupedIndicatorPreviewSelection then
-        self:UpdateGroupedIndicatorPreviewSelection(selectedGroupId)
-    end
-
-    if hoveredGroupId ~= selectedGroupId and self.UpdateGroupedIndicatorPreviewSelection then
-        local hoveredGroup = hoveredGroupId and self.db.profile.groups[hoveredGroupId] or nil
-        if hoveredGroup and ST.IsIndicatorGroup(hoveredGroup) then
-            self:UpdateGroupedIndicatorPreviewSelection(hoveredGroupId)
-        end
     end
 end
 
@@ -791,14 +766,6 @@ function CooldownCompanion:StartContainerPreviewMemberDrag(containerId, groupId)
     end
     self:StartContainerMemberPreviewTracking(containerId, groupId)
 
-    if ST.IsIndicatorGroup(group) then
-        if self.StartGroupedIndicatorPreviewHostDrag and self:StartGroupedIndicatorPreviewHostDrag(groupId, containerId) then
-            return true
-        end
-        self:StopContainerMemberPreviewTracking(containerId)
-        return false
-    end
-
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
     if not groupFrame or (InCombatLockdown() and groupFrame:IsProtected()) then
         self:StopContainerMemberPreviewTracking(containerId)
@@ -816,14 +783,6 @@ end
 function CooldownCompanion:StopContainerPreviewMemberDrag(containerId, groupId)
     local group = self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId]
     if not (containerId and group and group.parentContainerId == containerId) then
-        self:StopContainerMemberPreviewTracking(containerId)
-        return
-    end
-
-    if ST.IsIndicatorGroup(group) then
-        if self.StopGroupedIndicatorPreviewHostDrag then
-            self:StopGroupedIndicatorPreviewHostDrag(groupId, containerId)
-        end
         self:StopContainerMemberPreviewTracking(containerId)
         return
     end
@@ -893,16 +852,7 @@ end
 
 local function GetContainerMemberDisplayFrame(self, groupId, group)
     local groupFrame = self.groupFrames and self.groupFrames[groupId]
-    local isIndicator = ST.IsIndicatorGroup(group)
-
-    if isIndicator then
-        local host = self:GetAuraTextureHostForGroupFrame(groupFrame)
-        if host and host:IsShown() then
-            return host
-        end
-    end
-
-    if not isIndicator and groupFrame and groupFrame:IsShown() then
+    if groupFrame and groupFrame:IsShown() then
         return groupFrame
     end
 
@@ -1013,7 +963,7 @@ local EnsureContainerMoverChrome
 -- The hover-dependent half of one member's paint: its tint and name label.
 local function PaintContainerMemberHover(frame, overlay, labelIndex, rect, hovered, minLeft, minBottom, padding)
     local fillAlpha = 0
-    if hovered and not ST.IsIndicatorGroup(rect.group) then
+    if hovered then
         fillAlpha = CONTAINER_MOVER_COLORS.memberHoverAlpha
     end
     overlay:SetBackdropColor(
@@ -1191,10 +1141,9 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
         local groupId = panelInfo.groupId
         local groupFrame = self.groupFrames and self.groupFrames[groupId] or nil
         local isSelected = selectedGroupId == groupId and previewedGroupIds[groupId]
-        local isIndicator = ST.IsIndicatorGroup(group)
         local isCursorAnchored = group and IsCursorAnchor(group.anchor)
 
-        if groupFrame and not isIndicator then
+        if groupFrame then
             -- Cursor-anchored panels are owned by the cursor positioning
             -- preview, not the container mover: leave their chrome alone.
             if not isCursorAnchored then
@@ -1204,8 +1153,6 @@ function CooldownCompanion:RefreshContainerWrapper(containerId)
                 end
             end
             self:UpdateGroupClickthrough(groupId)
-        elseif isIndicator and self.UpdateGroupedIndicatorPreviewSelection then
-            self:UpdateGroupedIndicatorPreviewSelection(groupId)
         end
     end
 
@@ -1216,7 +1163,7 @@ end
 -- container's own tools are revealed. Membership and panel controls stay as
 -- the last full refresh left them, so repaint from its cached rects instead of
 -- rebuilding the wrapper on every pointer crossing.
-function CooldownCompanion:RefreshContainerWrapperHover(containerId, previousHoveredGroupId)
+function CooldownCompanion:RefreshContainerWrapperHover(containerId)
     local frame = self.containerFrames and self.containerFrames[containerId]
     local previewRects = frame and frame.dragHandle and frame._containerWrapperPreviewRects
     if not previewRects or self._combatForcedLock or InCombatLockdown() then
@@ -1254,17 +1201,6 @@ function CooldownCompanion:RefreshContainerWrapperHover(containerId, previousHov
     end
     if not hoveredPreviewed then
         frame._containerHoveredGroupId = nil
-        hoveredGroupId = nil
-    end
-
-    -- A hovered Indicator shows its outline on its own display host.
-    if self.UpdateGroupedIndicatorPreviewSelection then
-        if previousHoveredGroupId and previousHoveredGroupId ~= hoveredGroupId then
-            self:UpdateGroupedIndicatorPreviewSelection(previousHoveredGroupId)
-        end
-        if hoveredGroupId then
-            self:UpdateGroupedIndicatorPreviewSelection(hoveredGroupId)
-        end
     end
 end
 

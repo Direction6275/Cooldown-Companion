@@ -759,6 +759,8 @@ local function BuildLayoutTab(container)
             anchor.relativePoint = relativePoint or "CENTER"
             anchor.x = x or 0
             anchor.y = y or 0
+            -- The panel frame is the display's box: place it where this says.
+            CooldownCompanion:ReanchorGroupFrame(textureGroupId)
         end
         local function GetIndicatorAnchorValidationOptions()
             return CooldownCompanion:GetGroupAnchorValidationOptions(textureGroupId)
@@ -794,17 +796,16 @@ local function BuildLayoutTab(container)
             ResetIndicatorPosition(targetFrameName, "TOPLEFT", "BOTTOMLEFT", 0, -5)
             return true
         end
+        -- The panel frame is the display's box: re-place it from the saved
+        -- position, then repaint.
         local function RefreshTextureVisual()
+            CooldownCompanion:ReanchorGroupFrame(textureGroupId)
             CooldownCompanion:RefreshAllAuraTextureVisuals()
         end
 
         local function RefreshCursorAnchor()
             if CooldownCompanion.ClearCursorAnchorLayoutPreviewOffset then
                 CooldownCompanion:ClearCursorAnchorLayoutPreviewOffset(textureGroupId)
-            end
-            local frame = CooldownCompanion.groupFrames[textureGroupId]
-            if frame then
-                CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
             end
             RefreshTextureVisual()
         end
@@ -1108,7 +1109,7 @@ local function BuildLayoutTab(container)
         if CS.IsAuraTexturePickerOpen and CS.IsAuraTexturePickerOpen() then
             OpenOrRebindIndicatorTexturePicker(group, CooldownCompanion:GetIndicatorTextureSettings(group), false)
         end
-        RefreshTextureVisual()
+        CooldownCompanion:RefreshAllAuraTextureVisuals()
         return
     end
 
@@ -1361,10 +1362,7 @@ local function BuildLayoutTab(container)
     end
 
     local function refreshGroupAnchor()
-        local frame = CooldownCompanion.groupFrames[CS.selectedGroup]
-        if frame then
-            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-        end
+        CooldownCompanion:ReanchorGroupFrame(CS.selectedGroup)
     end
 
     local positionCollapsed = anchorCollapsed

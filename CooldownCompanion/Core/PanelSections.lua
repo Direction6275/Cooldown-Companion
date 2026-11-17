@@ -892,8 +892,8 @@ end
 --- section, so a unit frame or another panel anchored to the frame would be
 --- shoved around every time a section appeared on one side. The BASE ROW is
 --- the anchoring body; an owner who wants a different spot uses the anchoring
---- module's own offsets. Indicators expose their stable saved display bounds;
---- other unsectioned panels and non-panel frames come straight back out.
+--- module's own offsets. Unsectioned panels and non-panel frames come
+--- straight back out.
 ---
 --- Attached bars choose per destination: Main Icons uses this body; Entire
 --- Panel uses the frame's union. When a side has no configured section, its
@@ -904,7 +904,6 @@ end
 --- sectioned-state flip rather than trust a stored target.
 function ST.GetPanelAnchorBodyFrame(frame)
     if type(frame) ~= "table" then return frame end
-    if frame._indicatorAnchorBodyActive then return frame._indicatorAnchorBody end
     if frame._sectionLayout and frame._sectionBaseAnchor then
         return frame._sectionBaseAnchor
     end
@@ -1619,6 +1618,9 @@ function ST.UpdatePanelBaseAnchor(frame, group, layout, fixedPoint, newWidth, ne
     if frame._deferPanelBaseAnchor then return end
     local anchor = group.anchor
     if not anchor then return end
+    -- An Indicator has no base cluster and no fixed corner, so there is
+    -- nothing to convert, compensate or record for it.
+    if ST.IsIndicatorGroup(group) then return anchor.x, anchor.y end
     local point = frame._panelBasePoint or anchor.point or "CENTER"
     local dx, dy = ST.GetPanelBasePointOffset(frame, point)
     local migrationX, migrationY = 0, 0

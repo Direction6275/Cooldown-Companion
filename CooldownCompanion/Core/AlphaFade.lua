@@ -259,11 +259,6 @@ local function GetGroupAlphaFrame(self, groupId)
 end
 
 local function IsGroupAlphaMouseOver(frame, group)
-    if ST.IsIndicatorGroup(group) then
-        -- The panel's bookkeeping frame is 1x1. Preserve the standalone
-        -- display's hover footprint without giving that display alpha ownership.
-        frame = CooldownCompanion:GetAuraTextureHostForGroupFrame(frame)
-    end
     return frame and frame:IsShown() and frame:IsMouseOver() or false
 end
 

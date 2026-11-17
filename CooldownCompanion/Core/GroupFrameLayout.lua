@@ -53,7 +53,8 @@ local function GetButtonDimensions(group)
     local isIndicator = ST.IsIndicatorGroup(group)
     local w, h
     if isIndicator then
-        w, h = 1, 1
+        -- The frame is the display's box; the hidden sources stack on it.
+        w, h = CooldownCompanion:GetIndicatorBoxSize(group)
     elseif isBarMode then
         w, h = ST.GetBarGridCellDimensions(group)
     elseif style.maintainAspectRatio then
@@ -667,6 +668,10 @@ local function SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
     if group.parentContainerId and not self:IsGroupCompactLayoutActive(groupId, group) and frame.layoutButtonCount then
         numButtons = math_max(numButtons, frame.layoutButtonCount)
     end
+    -- An Indicator is one box however many hidden sources stack on it.
+    if ST.IsIndicatorGroup(group) then
+        numButtons = math_min(numButtons, 1)
+    end
 
     local targetWidth, targetHeight
 
@@ -717,6 +722,10 @@ local function SizeGroupFrame(self, groupId, frame, owner, group, geometryKind,
     end
 
     frame:SetSize(targetWidth, targetHeight)
+    -- The box an Indicator's frame was sized for (SyncIndicatorFrameSize).
+    if ST.IsIndicatorGroup(group) then
+        frame._indicatorBoxWidth, frame._indicatorBoxHeight = buttonWidth, buttonHeight
+    end
 
     -- Centered growth pins the edge midpoint so the panel's primary-axis
     -- center holds still as the frame resizes (it wins over compact mode's

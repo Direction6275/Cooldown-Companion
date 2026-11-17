@@ -381,7 +381,8 @@ end
 
 function CooldownCompanion:IsGroupCompactLayoutActive(groupId, group)
     group = group or (self.db and self.db.profile and self.db.profile.groups and self.db.profile.groups[groupId])
-    if ST.IsTotemPanelGroup(group) then return false end
+    -- A Totem Panel's slots are fixed, and an Indicator is one box.
+    if ST.IsTotemPanelGroup(group) or ST.IsIndicatorGroup(group) then return false end
     if not group or group.compactLayout ~= true then return false end
     return self:GetGroupCompactLayoutSuppressionReasons(groupId) == nil
 end
@@ -1158,13 +1159,13 @@ function CooldownCompanion:RecoverDormantFrame(groupId)
         self:DeleteMasqueGroup(groupId)
     end
 
-    -- Restore alpha ownership from the current connection.
-    if ST.IsIndicatorGroup(group) then
-        -- A dormant Indicator can be retargeted without rebuilding its source.
-        -- Resolve its current display connection before restoring alpha sync.
+    -- A frame marked while it was parked (ReanchorGroupFrame, or a combat
+    -- deferral) is placed now, which also restores its alpha connection.
+    -- Otherwise only the alpha connection is restored; a protected frame in
+    -- combat stays marked for the layout ticker.
+    if frame._anchorDirty and group and not (InCombatLockdown() and frame:IsProtected()) then
         self:AnchorGroupFrame(frame, group.anchor)
     elseif frame.anchoredToParent and not frame._anchorDirty then
-        -- Pending anchors are corrected by the layout ticker before syncing.
         self:SetupAlphaSync(frame, frame.anchoredToParent)
     end
 

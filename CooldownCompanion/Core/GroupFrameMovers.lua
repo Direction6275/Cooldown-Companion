@@ -71,11 +71,6 @@ function CooldownCompanion:ApplyMoverChromeFadeState()
         self:ApplyMoverChromeFadeToFrames(
             frame.dragHandle, frame.coordLabel, frame.nudger, frame.resizeGrip, frame.sizeLabel
         )
-        if CooldownCompanion.GetAuraTextureMoverChromeForGroupFrame then
-            self:ApplyMoverChromeFadeToFrames(
-                CooldownCompanion:GetAuraTextureMoverChromeForGroupFrame(frame)
-            )
-        end
     end
 
     for _, frame in pairs(CooldownCompanion.containerFrames or {}) do
@@ -138,15 +133,10 @@ function CooldownCompanion:EndMoverChromeFadeIfOwnedByContainer(containerId)
         if group.parentContainerId == containerId then
             local groupFrame = self.groupFrames and self.groupFrames[groupId]
             if groupFrame and groupFrame._containerUnlockPreviewActive == true then
-                local textureHost = self.GetAuraTextureHostForGroupFrame
-                    and self:GetAuraTextureHostForGroupFrame(groupFrame)
-                    or nil
                 if activeMover == groupFrame
                     or activeMover == groupFrame.nudger
                     or activeMover == groupFrame.resizeGrip
-                    or activeMover._resizeFrame == groupFrame
-                    or activeMover == textureHost
-                    or (textureHost and activeMover == textureHost.nudger) then
+                    or activeMover._resizeFrame == groupFrame then
                     self:EndMoverChromeFade(activeMover)
                     return
                 end
@@ -741,7 +731,20 @@ local function SyncGroupControlLevels(frame, raiseAboveWrapper)
     end
 
     local strata = raiseAboveWrapper and "FULLSCREEN_DIALOG" or frame:GetFrameStrata()
-    local baseLevel = raiseAboveWrapper and 90 or ((frame:GetFrameLevel() or 1) + 5)
+    local frameLevel = frame:GetFrameLevel() or 1
+    local lift = 5
+    -- An Indicator's display draws well above its hidden sources, so it
+    -- covers panels it overlaps; its chrome sits above that display's whole
+    -- subtree (artwork, tints and readouts reach its level + 7). Read from
+    -- where the display will be drawn, not where it was last drawn: a refresh
+    -- shows the chrome before it renders the display.
+    local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
+    if ST.IsIndicatorGroup(group) then
+        local driver = ST.Indicator.RuntimeSource(frame, group)
+        lift = math_max(lift,
+            driver and (CooldownCompanion.GetIndicatorHostLevel(driver) - frameLevel + 8) or 30)
+    end
+    local baseLevel = raiseAboveWrapper and 90 or (frameLevel + lift)
 
     -- Explicit ordering against the section overlays, which join this band
     -- at baseLevel + 3 (ST.UpdateSectionMoverOverlays): every interactive
@@ -820,6 +823,29 @@ local function EnableChromeMouse(region)
     end
 end
 
+-- The header sits on the frame's top edge and the coordinates on its bottom.
+-- A Text Indicator with no background shows only its text, so both hug the
+-- text instead (Indicator.TextContentInsets). Only the chrome moves: clicks,
+-- snapping and anchoring keep the box. The one writer of these points:
+-- EnsureMoverChrome places new chrome through it, and it re-anchors only when
+-- the insets change.
+local function AnchorMoverChromeEdges(frame, group)
+    if not (frame.dragHandle and frame.coordLabel) then return end
+    local topInset, bottomInset
+    if ST.IsIndicatorGroup(group) then topInset, bottomInset = ST.Indicator.TextContentInsets(group) end
+    topInset, bottomInset = topInset or 0, bottomInset or 0
+    if frame._ccChromeTopInset == topInset and frame._ccChromeBottomInset == bottomInset then
+        return
+    end
+    frame._ccChromeTopInset, frame._ccChromeBottomInset = topInset, bottomInset
+    frame.dragHandle:ClearAllPoints()
+    frame.dragHandle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2 - topInset)
+    frame.dragHandle:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 2 - topInset)
+    frame.coordLabel:ClearAllPoints()
+    frame.coordLabel:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, bottomInset - 2)
+    frame.coordLabel:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, bottomInset - 2)
+end
+
 -- The one owner of a panel's mover chrome: what is shown, and the drag
 -- handle's and nudger's mouse input. shown is forced false in combat.
 function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
@@ -830,6 +856,7 @@ function CooldownCompanion:SetGroupDragControlsShown(frame, shown)
     shown = not not shown and not InCombatLockdown() and not CooldownCompanion._combatForcedLock
     if shown then GF.EnsureMoverChrome(frame) end
     local group = frame.groupId and CooldownCompanion.db.profile.groups[frame.groupId]
+    if shown then AnchorMoverChromeEdges(frame, group) end
     local containerPreviewActive = frame.groupId and GetContainerPreviewSelectionState(frame.groupId) or false
     if frame.dragHandle then
         frame.dragHandle:SetIgnoreParentAlpha(shown and frame._unlockGhost == true)
@@ -933,12 +960,6 @@ function CooldownCompanion:RefreshIndependentPanelMoverChrome(groupId)
         and (self._arrangeSoloContainerId == nil
             or self._arrangeSelectedPanelId == groupId)
         or false
-    if ST.IsIndicatorGroup(group) then
-        if self.SetIndependentIndicatorMoverShown then
-            self:SetIndependentIndicatorMoverShown(groupId, shown)
-        end
-        return
-    end
 
     local frame = self.groupFrames and self.groupFrames[groupId]
     if frame then
@@ -958,6 +979,7 @@ end
 -- Private helpers consumed by later GroupFrame files.
 GF.UpdateResizedPanelContainerWrapper = UpdateResizedPanelContainerWrapper
 GF.SyncGroupControlLevels = SyncGroupControlLevels
+GF.AnchorMoverChromeEdges = AnchorMoverChromeEdges
 GF.CreateNudger = CreateNudger
 GF.RefreshConfigPanelIfShown = RefreshConfigPanelIfShown
 GF.CanUsePanelResizeInteractions = CanUsePanelResizeInteractions

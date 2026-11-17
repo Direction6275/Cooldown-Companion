@@ -37,28 +37,23 @@ local WouldFrameDependencyCreateCircularAnchor = GF.WouldFrameDependencyCreateCi
 local GetAnchorOffset = ST._GetPanelAnchorOffset
 -- AnchorPolicy.lua
 local BuildRootAnchor = ST._BuildRootAnchor
--- GroupManagement.lua
-local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
-
--- Indicator geometry and alpha have the same active connection. The panel
--- frame owns natural alpha even when no source/display host exists.
-function CooldownCompanion:RefreshIndicatorAnchorAlpha(frame, group, force)
-    local relativeTo = self:GetActivePanelAnchorRelativeTo(group)
-    local kind = self:ParseAddonAnchorFrameName(relativeTo)
-    local target
-    if group.inheritPanelAlpha ~= false and relativeTo and relativeTo ~= "UIParent"
-        and not IsCursorAnchor(relativeTo) and (kind == "group" or kind == nil) then
-        target = self:ResolveAddonFrameAnchorTarget(frame.groupId, "group", relativeTo)
-    end
-    if not force and frame._indicatorAlphaOwned and frame.anchoredToParent == target then return end
-    frame._indicatorAlphaOwned = true
-    frame.anchoredToParent = target
-    self:SetupAlphaSync(frame, target)
-end
 
 -- GroupFrameCursorAnchor.lua
 local GetCursorAnchorLayoutPreviewPosition = GF.GetCursorAnchorLayoutPreviewPosition
 local ApplyCursorAnchorPosition = GF.ApplyCursorAnchorPosition
+
+-- Re-place a panel from its saved position after an edit. A parked frame is
+-- marked instead, and the layout ticker places it once it is live again.
+function CooldownCompanion:ReanchorGroupFrame(groupId)
+    local group = self.db.profile.groups[groupId]
+    if not group then return end
+    local frame = self.groupFrames[groupId]
+    if frame then
+        self:AnchorGroupFrame(frame, group.anchor)
+    elseif self._dormantFrames and self._dormantFrames[groupId] then
+        self._dormantFrames[groupId]._anchorDirty = true
+    end
+end
 
 function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
     -- Deferred during combat — ClearAllPoints/SetPoint are protected.
@@ -67,24 +62,10 @@ function CooldownCompanion:AnchorGroupFrame(frame, anchor, forceCenter)
         return
     end
 
-    local group = self.db.profile.groups[frame.groupId]
-    if ST.IsIndicatorGroup(group) then
-        local body, deferred = self:UpdateIndicatorAnchorBody(frame, group)
-        if deferred then return end
-        frame._anchorDirty = nil
-        frame:ClearAllPoints()
-        ST.SetPanelBasePoint(frame, "CENTER", body, "CENTER", 0, 0)
-        self:RefreshIndicatorAnchorAlpha(frame, group, true)
-        if IsCursorAnchor(anchor) then
-            self:RefreshCursorAnchorTicker()
-        end
-        return
-    else
-        local bodyRetired = frame._indicatorAnchorBodyActive
-        frame._indicatorAnchorBodyActive = nil
-        frame._indicatorAlphaOwned = nil
-        -- No longer an Indicator: outside anchors return to the panel frame.
-        if bodyRetired then self:OnIndicatorAnchorBodyChanged(frame) end
+    -- No saved position (malformed data): the centre of its Group, or of the
+    -- screen, read without saving. A move saves one (SaveGroupPosition).
+    if type(anchor) ~= "table" and not IsCursorAnchor(anchor) then
+        anchor = BuildRootAnchor(GetPanelContainerFrameName(frame.groupId) or "UIParent")
     end
 
     if IsCursorAnchor(anchor) then
@@ -331,6 +312,10 @@ function CooldownCompanion:SaveGroupPosition(groupId, deferSettingsRefresh)
     if IsCursorAnchor(group.anchor) then
         return
     end
+    -- The player's move is what saves a position a panel never had.
+    if type(group.anchor) ~= "table" then
+        group.anchor = BuildRootAnchor(GetPanelContainerFrameName(groupId) or "UIParent")
+    end
 
     local previousRelativeTo = group.anchor.relativeTo
     local newX, newY, relativeTo, relFrame, desiredPoint, desiredRelPoint, anchorState = ComputeGroupFrameCoordinates(
@@ -435,14 +420,6 @@ function CooldownCompanion:ReanchorPanelSectionDependents(groupId)
             end
         end
     end
-
-    -- Indicators place a HOST frame, not the panel frame, and keep their
-    -- anchor in their own display settings rather than group.anchor,
-    -- so neither pass above sees them. Their one re-anchor path is the display
-    -- refresh.
-    if self.ReanchorIndicatorDependents then
-        self:ReanchorIndicatorDependents(targetFrameName)
-    end
 end
 
 function CooldownCompanion:GetDirectAnchorDependents(groupId, panelOnly)
@@ -517,8 +494,8 @@ end
 -- measures a drag (point and relativePoint kept). A panel never built here
 -- (its Group is hidden from this character) is placed from the same live
 -- geometry its anchor resolves against, so it keeps its spot for the
--- character who sees it. An Indicator's shell anchor, and anything still
--- unmeasurable, take the Group's own CENTER 0,0.
+-- character who sees it. Anything still unmeasurable takes the Group's own
+-- CENTER 0,0.
 local function ReleasePanelAnchor(self, groupId, group)
     local targetName = GetPanelContainerFrameName(groupId) or "UIParent"
     local targetFrame = targetName == "UIParent" and UIParent
@@ -526,9 +503,7 @@ local function ReleasePanelAnchor(self, groupId, group)
     local frame = (self.groupFrames and self.groupFrames[groupId])
         or (self._dormantFrames and self._dormantFrames[groupId])
     local x, y
-    if ST.IsIndicatorGroup(group) then
-        -- The shell follows its display; nothing to keep.
-    elseif frame and targetFrame and ST.GetPanelAnchorBodyFrame(frame):GetCenter() and targetFrame:GetCenter() then
+    if frame and targetFrame and ST.GetPanelAnchorBodyFrame(frame):GetCenter() and targetFrame:GetCenter() then
         x, y = ComputeGroupFrameCoordinates(self, frame, groupId, group, true, targetName, targetFrame, "ok")
     elseif not frame and group.parentContainerId then
         local px, py = GetAnchoredPointOnScreen(group.anchor)
@@ -548,8 +523,8 @@ local function ReleasePanelAnchor(self, groupId, group)
 end
 
 --- Run before panels or Groups are deleted: everything anchored to them keeps
---- its spot on screen. A panel goes on its own Group; a Group and an
---- Indicator's display go on the screen. Choose Panel attachments and the Cast
+--- its spot on screen. A panel goes on its own Group; a Group goes on the
+--- screen. Choose Panel attachments and the Cast
 --- Bar, Resources and Unit Frame anchors keep their own fallbacks.
 function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, deletedContainerIds)
     local profile = self.db and self.db.profile
@@ -560,54 +535,14 @@ function CooldownCompanion:ReleaseDeletedAnchorDependents(deletedGroupIds, delet
 
     for groupId, group in pairs(profile.groups or {}) do
         if not deletedGroupIds[groupId] and type(group) == "table" then
-            local released = false
-            -- An Indicator's display is measured off its own box, below.
-            if not ST.IsIndicatorGroup(group) and type(group.anchor) == "table"
+            if type(group.anchor) == "table"
                 and NamesDeletedTarget(group.anchor.relativeTo, deletedGroupIds, deletedContainerIds) then
                 ReleasePanelAnchor(self, groupId, group)
-                released = true
-            end
-            local settings = self:GetIndicatorAnchorSettings(group)
-            if type(settings) == "table"
-                and NamesDeletedTarget(settings.relativeTo, deletedGroupIds, deletedContainerIds) then
-                if not self:SaveIndicatorScreenPosition(groupId, group) then
-                    local px, py
-                    if not self:IsGroupCursorAnchored(group) then
-                        px, py = GetAnchoredPointOnScreen(settings)
-                    end
-                    local ux, uy = UIParent:GetCenter()
-                    if px and ux then
-                        settings.relativeTo, settings.relativePoint = "UIParent", "CENTER"
-                        settings.x, settings.y = ST.RoundToTenths(px - ux), ST.RoundToTenths(py - uy)
-                        -- Inside a Group saved on the screen's centre, the
-                        -- same spot as an offset from the Group, so it keeps
-                        -- following the Group.
-                        local containerId = group.parentContainerId
-                        local container = containerId and profile.groupContainers
-                            and profile.groupContainers[containerId]
-                        local groupAnchor = container and container.anchor
-                        if type(groupAnchor) == "table"
-                            and (groupAnchor.point or "CENTER") == "CENTER"
-                            and (groupAnchor.relativePoint or "CENTER") == "CENTER"
-                            and (groupAnchor.relativeTo == nil or groupAnchor.relativeTo == "UIParent") then
-                            settings.relativeTo = "CooldownCompanionContainer" .. tostring(containerId)
-                            settings.x = ST.RoundToTenths(settings.x - (tonumber(groupAnchor.x) or 0))
-                            settings.y = ST.RoundToTenths(settings.y - (tonumber(groupAnchor.y) or 0))
-                        end
-                    else
-                        ResetIndicatorPanelAnchor(group)
-                    end
-                end
-                released = true
-            end
-            if released then
                 -- The Layout tab shows the new target, not a remembered Panel mode.
                 if layoutModes then layoutModes[groupId] = nil end
                 local frame = self.groupFrames and self.groupFrames[groupId]
                 if frame then
                     self:AnchorGroupFrame(frame, group.anchor)
-                    local driver = ST.IsIndicatorGroup(group) and ST.Indicator.RuntimeSource(frame, group)
-                    if driver then self:UpdateAuraTextureVisual(driver) end
                 end
             end
         end

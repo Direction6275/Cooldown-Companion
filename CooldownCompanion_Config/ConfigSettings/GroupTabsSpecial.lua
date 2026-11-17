@@ -213,6 +213,8 @@ local function RefreshIndicatorDisplay(groupId)
     local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
     local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
     if button then
+        -- The frame is the display's box, also while the display is hidden.
+        CooldownCompanion:SyncIndicatorFrameSize(groupId)
         CooldownCompanion:UpdateAuraTextureVisual(button)
     else
         CooldownCompanion:RefreshAllAuraTextureVisuals()
@@ -605,6 +607,7 @@ local function BuildIndicatorTextureAppearance(container, group)
         local groupFrame = CooldownCompanion.groupFrames and CooldownCompanion.groupFrames[groupId]
         local button = groupFrame and groupFrame.buttons and groupFrame.buttons[1] or nil
         if button then
+            CooldownCompanion:SyncIndicatorFrameSize(groupId)
             CooldownCompanion:UpdateAuraTextureVisual(button)
         else
             CooldownCompanion:RefreshAllAuraTextureVisuals()

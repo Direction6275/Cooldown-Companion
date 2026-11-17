@@ -1013,21 +1013,6 @@ local function ParseIndicatorAddonAnchorTarget(relativeTo)
     return nil
 end
 
-local function ResetIndicatorPanelAnchor(panel)
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
-    if type(settings) ~= "table" then
-        return
-    end
-    -- The centre of its Group, or of the screen outside one.
-    settings.point = "CENTER"
-    settings.relativeTo = panel.parentContainerId
-        and ("CooldownCompanionContainer" .. tostring(panel.parentContainerId)) or "UIParent"
-    settings.relativePoint = "CENTER"
-    settings.x = 0
-    settings.y = 0
-end
-ST._ResetIndicatorPanelAnchor = ResetIndicatorPanelAnchor
-
 -- Both panel anchor stores use the same IDs, but retain their own fallback
 -- when an addon target is outside the copy. Cursor anchors belong to panels.
 -- keepOutsidePanels: a chain to an existing panel outside the copy stays on

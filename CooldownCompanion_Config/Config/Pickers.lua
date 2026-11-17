@@ -155,55 +155,6 @@ local function IsAddonFrame(name)
     return false
 end
 
--- Indicators render through an unnamed host under
--- UIParent. Walk back to that host and return the owning logical panel name so
--- panel-only picking can use the same saved anchor identity as ordinary panels
--- while highlighting the body the player actually clicked.
-local function ResolveOwnedAddonPanel(frame)
-    if not (pickFrameOptions and pickFrameOptions.requireAddonPanel) then
-        return nil, nil
-    end
-    while frame do
-        if frame.IsForbidden and frame:IsForbidden() then
-            return nil, nil
-        end
-        local owner = frame._ownerButton
-        local groupId = owner and owner._groupId or nil
-        if groupId then
-            local name = "CooldownCompanionGroup" .. tostring(groupId)
-            if _G[name] and not IsAddonFrame(name) and IsRectMeasurementSafe(frame) then
-                return frame, name
-            end
-        end
-        frame = frame:GetParent()
-    end
-    return nil, nil
-end
-
-local function FindIndicatorHostAtPoint(x, y)
-    if not (pickFrameOptions and pickFrameOptions.requireAddonPanel) then
-        return nil, nil
-    end
-    local bestFrame, bestName, bestArea
-    for groupId, groupFrame in pairs(CooldownCompanion.groupFrames or {}) do
-        local host = CooldownCompanion:GetAuraTextureHostForGroupFrame(groupFrame)
-        if host and IsVisibleSafe(host) then
-            local left, bottom, width, height = GetAccessibleRect(host)
-            if left and width and width > 0 and height > 0
-                and x >= left and x <= left + width
-                and y >= bottom and y <= bottom + height then
-                local name = "CooldownCompanionGroup" .. tostring(groupId)
-                local area = width * height
-                if _G[name] and not IsAddonFrame(name)
-                    and (not bestArea or area < bestArea) then
-                    bestFrame, bestName, bestArea = host, name, area
-                end
-            end
-        end
-    end
-    return bestFrame, bestName
-end
-
 local function ResolveNamedMeasurableFrame(frame)
     while frame do
         if frame.IsForbidden and frame:IsForbidden() then
@@ -345,18 +296,13 @@ local function StartPickFrame(callback, sourceGroupId, options)
             local scale = UIParent:GetEffectiveScale()
             cx, cy = cx / scale, cy / scale
 
-            local resolvedFrame, name = FindIndicatorHostAtPoint(cx, cy)
-            local resolvedOwnedPanel = name ~= nil
+            local resolvedFrame, name
 
             -- Try GetMouseFoci first
             local foci = GetMouseFoci()
             local focus = foci and foci[1]
-            if not name and focus and focus ~= WorldFrame then
-                resolvedFrame, name = ResolveOwnedAddonPanel(focus)
-                resolvedOwnedPanel = name ~= nil
-                if not name then
-                    resolvedFrame, name = ResolveNamedMeasurableFrame(focus)
-                end
+            if focus and focus ~= WorldFrame then
+                resolvedFrame, name = ResolveNamedMeasurableFrame(focus)
                 if not name then
                     resolvedFrame, name = ResolveNamedFrame(focus)
                 end
@@ -370,9 +316,12 @@ local function StartPickFrame(callback, sourceGroupId, options)
                     scanElapsed = 0
                     local scanFrame, scanName, scanArea = FindDeepestNamedChild(UIParent, cx, cy)
                     if scanFrame and scanName and not IsAddonFrame(scanName) then
-                        -- Reject screen-sized containers (e.g. ElvUIParent)
+                        -- Reject screen-sized containers (e.g. ElvUIParent). A
+                        -- CC panel is the thing asked for at any size: an
+                        -- Indicator's box can cover the screen.
                         local uiW, uiH = UIParent:GetSize()
-                        if scanArea <= uiW * uiH * 0.25 then
+                        if scanArea <= uiW * uiH * 0.25
+                            or CooldownCompanion:ParseAddonAnchorFrameName(scanName) == "group" then
                             resolvedFrame, name = scanFrame, scanName
                         end
                     end
@@ -380,16 +329,13 @@ local function StartPickFrame(callback, sourceGroupId, options)
                     -- Between throttle ticks, reuse last result
                     resolvedFrame = self.lastResolvedFrame
                     name = self.currentName
-                    resolvedOwnedPanel = self.lastResolvedOwnedPanel == true
                 end
             else
                 scanElapsed = 0
                 -- GetMouseFoci found a named frame; try to find a deeper child
-                if not resolvedOwnedPanel then
-                    local deepFrame, deepName = FindDeepestNamedChild(resolvedFrame, cx, cy)
-                    if deepFrame then
-                        resolvedFrame, name = deepFrame, deepName
-                    end
+                local deepFrame, deepName = FindDeepestNamedChild(resolvedFrame, cx, cy)
+                if deepFrame then
+                    resolvedFrame, name = deepFrame, deepName
                 end
             end
 
@@ -398,13 +344,11 @@ local function StartPickFrame(callback, sourceGroupId, options)
                 self.highlight:Hide()
                 self.currentName = nil
                 self.lastResolvedFrame = nil
-                self.lastResolvedOwnedPanel = nil
                 return
             end
 
             self.currentName = name
             self.lastResolvedFrame = resolvedFrame
-            self.lastResolvedOwnedPanel = resolvedOwnedPanel and true or nil
 
             local displayName = name
             local gidStr = name:match("^CooldownCompanionGroup(%d+)$")

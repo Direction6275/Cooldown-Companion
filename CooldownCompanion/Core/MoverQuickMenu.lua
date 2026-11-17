@@ -492,13 +492,12 @@ end
 function CooldownCompanion:SetArrangeTreePanelHover(containerId, groupId, hovered)
     local frame = self.containerFrames and self.containerFrames[containerId]
     if not frame then return end
-    local previousHoveredGroupId = frame._containerHoveredGroupId
     if hovered then
         frame._containerHoveredGroupId = groupId
     else
         frame._containerHoveredGroupId = frame._containerSelectedGroupId
     end
-    self:RefreshContainerWrapperHover(containerId, previousHoveredGroupId)
+    self:RefreshContainerWrapperHover(containerId)
 end
 
 local IsTreeEntrySelected

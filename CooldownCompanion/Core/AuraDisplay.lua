@@ -2465,8 +2465,8 @@ local function EnsureAuraLayer(button)
     return layer
 end
 
--- Aura Indicators' source buttons are intentionally alpha-zero 1x1 identity
--- shells, so their production AuraContainer mounts under the existing movable
+-- Aura Indicators' source buttons are intentionally alpha-zero identity
+-- shells, so their production AuraContainer mounts under the existing
 -- Indicator host (a child of the Indicator's panel frame) instead. The host and root are permanent once a
 -- slot exists; only the safe root's alpha is used to suppress it for previews.
 local function EnsureAuraIndicatorLayer(button)

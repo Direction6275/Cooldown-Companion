@@ -2996,17 +2996,11 @@ local function BuildLoadConditionsTab(container)
                 value = group.inheritPanelAlpha == false and "custom" or "inherit",
                 onChange = function(val)
                     group.inheritPanelAlpha = val ~= "custom"
-                    if ST.IsIndicatorGroup(group) then
-                        -- An Indicator's alpha rides its display visuals,
-                        -- not a group frame shell.
-                        CooldownCompanion:RefreshAllAuraTextureVisuals()
-                    else
-                        local frame = CooldownCompanion.groupFrames[groupId]
-                        if frame then
-                            CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
-                        end
-                        CooldownCompanion:RebuildPanelAlphaDependencyTargets()
+                    local frame = CooldownCompanion.groupFrames[groupId]
+                    if frame then
+                        CooldownCompanion:AnchorGroupFrame(frame, group.anchor)
                     end
+                    CooldownCompanion:RebuildPanelAlphaDependencyTargets()
                     CooldownCompanion:RefreshConfigPanel()
                 end,
             })
