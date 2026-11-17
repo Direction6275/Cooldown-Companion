@@ -706,7 +706,6 @@ function ST.LockPanelFromMover(groupId)
         CooldownCompanion:ClearArrangeMoverSelection()
     end
     CooldownCompanion:SetPanelLocked(groupId, true)
-    CooldownCompanion:CaptureArrangePanelRecord(groupId)
     CooldownCompanion:RefreshConfigPanel()
     CooldownCompanion:CheckArrangeModeAutoExit()
 end

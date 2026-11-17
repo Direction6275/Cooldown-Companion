@@ -92,7 +92,13 @@ end
 function CooldownCompanion:SetIndependentCastBarLocked(locked)
     local settings = GetCastBarSettings()
     if not settings then return end
+    if locked ~= true then
+        self:RecordArrangeUnlock("cast")
+    end
     settings.independentAnchorLocked = locked == true
+    if locked == true then
+        self:RecordArrangeLock("cast")
+    end
     self:ApplyCastBarSettings()
     if self.RefreshUnlockToolbar then
         self:RefreshUnlockToolbar()
@@ -152,7 +158,6 @@ local castMover = RB.CreateIndependentMover({
     end,
     ensureConfig = EnsureIndependentCastBarConfig,
     refreshState = function(settings) UpdateIndependentCastBarDragState(settings) end,
-    captureRecord = function() CooldownCompanion:CaptureArrangeCastBarRecord() end,
     -- Width is read from and written to settings.independentWidth only; the
     -- bar frame itself is never measured (see the FRAME RULES header).
     resize = {

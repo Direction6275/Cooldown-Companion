@@ -1684,13 +1684,13 @@ local function CreateConfigPanel()
     -- ESC handler for mini frame
     miniFrame:EnableKeyboard(true)
     miniFrame:SetScript("OnKeyDown", function(self, key)
-        -- While arranging, Escape belongs to the arrange pill: it cancels the
-        -- session, which locks everything and re-expands this config. Closing
-        -- here would consume the press and leave nothing to expand. Standing
-        -- down means the first Escape restores the window and a second one
-        -- closes it.
-        local arranging = CooldownCompanion.IsArrangeModeActive
-            and CooldownCompanion:IsArrangeModeActive()
+        -- While an unlock can be cancelled, Escape belongs to the unlock
+        -- window: it cancels, which locks everything and re-expands this
+        -- config. Closing here would consume the press and leave nothing to
+        -- expand. Standing down means the first Escape restores the window
+        -- and a second one closes it.
+        local arranging = CooldownCompanion.CanCancelUnlock
+            and CooldownCompanion:CanCancelUnlock()
         if key == "ESCAPE"
             and CooldownCompanion.db.profile.escClosesConfig
             and not arranging then
@@ -2496,6 +2496,13 @@ local function CreateConfigPanel()
 
     CS.configFrame = frame
     return frame
+end
+
+-- True while the settings window is open in full, not minimized.
+function ST.IsConfigWindowExpanded()
+    local frame = CS.configFrame
+    return frame ~= nil and frame.frame ~= nil and frame.frame:IsShown() == true
+        and not (frame._miniFrame and frame._miniFrame:IsShown())
 end
 
 function ST.CollapseConfigForUnlock()

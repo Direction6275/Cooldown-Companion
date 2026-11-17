@@ -593,7 +593,6 @@ local function LockAuraIndicatorFromMover(host)
         CooldownCompanion:ClearArrangeMoverSelection()
     end
     CooldownCompanion:SetPanelLocked(owner._groupId, true)
-    CooldownCompanion:CaptureArrangePanelRecord(owner._groupId)
     CooldownCompanion:RefreshAllAuraTextureVisuals()
     if ST._configState and ST._configState.configFrame and ST._configState.configFrame.frame and ST._configState.configFrame.frame:IsShown() then
         CooldownCompanion:RefreshConfigPanel()

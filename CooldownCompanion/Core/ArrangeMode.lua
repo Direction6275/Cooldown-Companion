@@ -293,19 +293,26 @@ function CooldownCompanion:CaptureArrangeCastBarRecord()
     }
 end
 
+-- The current spec's resource layout: the table the stack's placement and
+-- lock are saved on.
+local function GetArrangeResourcePlacement()
+    local resourceBar = ST._RB
+    local settings = resourceBar
+        and resourceBar.GetResourceBarSettings
+        and resourceBar.GetResourceBarSettings()
+    return settings
+        and resourceBar.GetSpecLayoutOrder
+        and resourceBar.GetSpecLayoutOrder(settings)
+        or nil
+end
+
 function CooldownCompanion:CaptureArrangeResourceRecord()
     local snapshot = self._arrangeSnapshot
     if not snapshot then
         return
     end
 
-    local resourceBar = ST._RB
-    local settings = resourceBar
-        and resourceBar.GetResourceBarSettings
-        and resourceBar.GetResourceBarSettings()
-    local placementSettings = settings
-        and resourceBar.GetSpecLayoutOrder
-        and resourceBar.GetSpecLayoutOrder(settings)
+    local placementSettings = GetArrangeResourcePlacement()
     if not placementSettings then
         snapshot.resource = nil
         return
@@ -323,7 +330,43 @@ function CooldownCompanion:CaptureArrangeResourceRecord()
     }
 end
 
+-- Outside Arrange the snapshot holds only what was unlocked one at a time,
+-- and lives while anything it recorded is still saved unlocked. The saved
+-- flag decides, not the unlock window: another spec or combat hides a mover
+-- without locking it.
+local function DropIdleArrangeSnapshot(addon)
+    local snapshot = addon._arrangeSnapshot
+    if not snapshot or addon._arrangeModeActive then
+        return
+    end
+    local profile = addon.db.profile
+    local containers = profile.groupContainers or {}
+    for containerId in pairs(snapshot.containers) do
+        local container = containers[containerId]
+        if container and container.locked == false then
+            return
+        end
+    end
+    for groupId in pairs(snapshot.panels) do
+        local group = profile.groups[groupId]
+        if group and group.locked == false then
+            return
+        end
+    end
+    if snapshot.castBar and snapshot.castBar.settings.independentAnchorLocked == false then
+        return
+    end
+    if snapshot.resource and snapshot.resource.settings.independentAnchorLocked == false then
+        return
+    end
+    addon._arrangeSnapshot = nil
+end
+
 function CooldownCompanion:CaptureArrangeSnapshot()
+    -- Records taken by single unlocks before Arrange started hold the older
+    -- state, so they stay.
+    DropIdleArrangeSnapshot(self)
+    local prior = self._arrangeSnapshot
     self._arrangeSnapshot = {
         panels = {},
         containers = {},
@@ -337,6 +380,89 @@ function CooldownCompanion:CaptureArrangeSnapshot()
     end
     self:CaptureArrangeCastBarRecord()
     self:CaptureArrangeResourceRecord()
+    if prior then
+        local snapshot = self._arrangeSnapshot
+        for groupId, record in pairs(prior.panels) do
+            snapshot.panels[groupId] = record
+        end
+        for containerId, record in pairs(prior.containers) do
+            snapshot.containers[containerId] = record
+        end
+        snapshot.castBar = prior.castBar or snapshot.castBar
+        snapshot.resource = prior.resource or snapshot.resource
+    end
+end
+
+-- Every unlock comes through here before its lock flag flips, so Cancel can
+-- put the item back. kind is "container" or "panel" with its id, or "cast" /
+-- "resource". An item already recorded keeps its older record.
+function CooldownCompanion:RecordArrangeUnlock(kind, id)
+    DropIdleArrangeSnapshot(self)
+    local snapshot = self._arrangeSnapshot
+    if not snapshot then
+        snapshot = { panels = {}, containers = {} }
+        self._arrangeSnapshot = snapshot
+    end
+    if kind == "container" then
+        local container = self.db.profile.groupContainers[id]
+        if container and snapshot.containers[id] == nil then
+            WriteArrangeContainerRecord(snapshot, id, container)
+            for groupId, group in pairs(self.db.profile.groups) do
+                if group.parentContainerId == id and snapshot.panels[groupId] == nil then
+                    self:CaptureArrangePanelRecord(groupId)
+                end
+            end
+        end
+    elseif kind == "panel" then
+        if snapshot.panels[id] == nil then
+            self:CaptureArrangePanelRecord(id)
+        end
+    elseif kind == "cast" then
+        if snapshot.castBar == nil then
+            self:CaptureArrangeCastBarRecord()
+        end
+    elseif kind == "resource" then
+        -- Each spec has its own layout; a record of another spec's is not
+        -- this one's.
+        local record = snapshot.resource
+        if record == nil or record.settings ~= GetArrangeResourcePlacement() then
+            self:CaptureArrangeResourceRecord()
+        end
+    end
+end
+
+-- Every lock comes through here after its lock flag flips: where the item is
+-- now is what Cancel keeps.
+function CooldownCompanion:RecordArrangeLock(kind, id)
+    DropIdleArrangeSnapshot(self)
+    if not self._arrangeSnapshot then
+        return
+    end
+    if kind == "container" then
+        self:CaptureArrangeContainerRecord(id)
+    elseif kind == "panel" then
+        self:CaptureArrangePanelRecord(id)
+    elseif kind == "cast" then
+        self:CaptureArrangeCastBarRecord()
+    elseif kind == "resource" then
+        self:CaptureArrangeResourceRecord()
+    end
+end
+
+-- Cancel exists whenever there is something to put back.
+function CooldownCompanion:CanCancelUnlock()
+    return self._arrangeSnapshot ~= nil
+end
+
+-- Escape cancels too, except for a single unlock made with the settings
+-- window open in full (a bar's Unlock Placement): there Escape stays the
+-- window's.
+function CooldownCompanion:DoesEscapeCancelUnlock()
+    if not self:CanCancelUnlock() then
+        return false
+    end
+    return self:IsArrangeModeActive()
+        or not (ST.IsConfigWindowExpanded and ST.IsConfigWindowExpanded())
 end
 
 -- Writes the snapshot's values back into the saved settings and re-places the
@@ -742,7 +868,7 @@ local function GetArrangeModePill(addon)
         tooltip:AddLine("Use mover controls for precise placement.", 1, 1, 1, true)
         tooltip:AddLine("Click a group or panel row to work on it alone; click it again to show all movers.", 1, 1, 1, true)
         tooltip:AddLine("Click an eye to hide a group or panel while unlocked.", 1, 1, 1, true)
-        if CooldownCompanion:IsArrangeModeActive() then
+        if CooldownCompanion:CanCancelUnlock() then
             tooltip:AddLine("Done, a padlock, or /cdc lock saves. Esc or Cancel reverts.", 1, 1, 1, true)
         else
             tooltip:AddLine("Done or /cdc lock locks all shown movers. A padlock locks only its panel, group, or bar.", 1, 1, 1, true)
@@ -820,7 +946,7 @@ local function GetArrangeModePill(addon)
     end)
     pill:EnableKeyboard(true)
     pill:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" and CooldownCompanion:IsArrangeModeActive() then
+        if key == "ESCAPE" and CooldownCompanion:DoesEscapeCancelUnlock() then
             if not InCombatLockdown() then
                 self:SetPropagateKeyboardInput(false)
             end
@@ -850,7 +976,7 @@ end
 
 -- The unlock toolbar is the shared control surface for every unlocked mover,
 -- whether it came from the global arrange action or an individual lock toggle.
--- Only global arrange owns a rollback snapshot, so Cancel is exclusive to it.
+-- Cancel shows whenever a rollback snapshot exists (CanCancelUnlock).
 function CooldownCompanion:RefreshUnlockToolbar()
     if not self:IsUnlockToolbarActive() then
         if not self:IsArrangeModeActive() then
@@ -880,7 +1006,7 @@ function CooldownCompanion:RefreshUnlockToolbar()
 
     local pill = GetArrangeModePill(self)
     if pill._cancelButton then
-        pill._cancelButton:SetShown(self:IsArrangeModeActive())
+        pill._cancelButton:SetShown(self:CanCancelUnlock())
     end
     if not pill:IsShown() then
         pill:Show()
@@ -1233,6 +1359,8 @@ function CooldownCompanion:SetContainerLocked(containerId, locked, opts)
     end
     if locked then
         ClearArrangeHiddenForContainer(self, containerId)
+    else
+        self:RecordArrangeUnlock("container", containerId)
     end
     container.locked = locked
     self:UpdateContainerDragHandle(containerId, locked)
@@ -1242,6 +1370,9 @@ function CooldownCompanion:SetContainerLocked(containerId, locked, opts)
         and self._cursorAnchorLayoutPreview
         and self.ShowCursorAnchorLayoutPreview then
         self:RefreshCursorAnchorLayoutPreview()
+    end
+    if locked then
+        self:RecordArrangeLock("container", containerId)
     end
     if not (opts and opts.deferToolbar) then
         self:RefreshUnlockToolbar()
@@ -1263,6 +1394,7 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
         -- Locked panels go back to normal play, so the eye lets go too.
         SetArrangeHiddenFlag(self, "_arrangeHiddenPanels", panelId, false)
     else
+        self:RecordArrangeUnlock("panel", panelId)
         group.locked = false
     end
     -- Suppression can rebuild the cursor preview. Keep a sibling's selection
@@ -1286,6 +1418,7 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
     -- evaluate an arrange exit once per panel and could exit partway through.
     if locked then
         self:CheckConfigReExpandAfterLock()
+        self:RecordArrangeLock("panel", panelId)
     end
     -- Once the last panel mover in an unlocked group is padlocked, the group
     -- wrapper has nothing left to operate on. Lock it too instead of leaving
@@ -1295,7 +1428,6 @@ function CooldownCompanion:SetPanelLocked(panelId, locked)
         and self:IsContainerUnlockPreviewActive(containerId)
         and not self:ContainerHasArrangeEligiblePanel(containerId) then
         self:SetContainerLocked(containerId, true)
-        self:CaptureArrangeContainerRecord(containerId)
         return
     end
     self:RefreshUnlockToolbar()
@@ -1502,6 +1634,8 @@ end
 -- RefreshAllGroups.
 function CooldownCompanion:EndArrangeForReplacedProfile(opts)
     if not self:IsArrangeModeActive() then
+        -- Single-unlock records name the old profile's Groups and panels.
+        self._arrangeSnapshot = nil
         return false
     end
     self:ExitArrangeMode(opts)
@@ -1509,7 +1643,7 @@ function CooldownCompanion:EndArrangeForReplacedProfile(opts)
 end
 
 function CooldownCompanion:CancelArrangeMode()
-    if not self._arrangeModeActive then
+    if not self._arrangeSnapshot then
         return
     end
     if InCombatLockdown() or self._combatForcedLock then
