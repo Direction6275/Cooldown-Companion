@@ -100,21 +100,6 @@ local function GetGroupedPreviewContainerFrame(group, groupId)
     return CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[group.parentContainerId] or nil
 end
 
-local function GetIndicatorScreenAnchorPoint(settings)
-    local point = settings and settings.point or "CENTER"
-    local relativePoint = settings and settings.relativePoint or "CENTER"
-    local x = tonumber(settings and settings.x) or 0
-    local y = tonumber(settings and settings.y) or 0
-    local uiCenterX, uiCenterY = UIParent:GetCenter()
-    local uiWidth, uiHeight = UIParent:GetSize()
-    if not (uiCenterX and uiCenterY and uiWidth and uiHeight) then
-        return nil, nil, point, relativePoint
-    end
-
-    local relOffsetX, relOffsetY = GetAnchorOffset(relativePoint, uiWidth, uiHeight)
-    return uiCenterX + relOffsetX + x, uiCenterY + relOffsetY + y, point, relativePoint
-end
-
 local function GetTextureHostDisplayCoords(host, point, relativePoint)
     if not (host and host.GetCenter and host.GetSize) then
         return nil, nil, nil, nil
@@ -212,6 +197,24 @@ end
 --- is glued to. The alpha-inheritance lookup deliberately does NOT come through
 --- here; identity stays on the real panel frame.
 local function GetIndicatorResolvedAnchorFrame(group, settings, groupId)
+    -- Its own Group, with the Group itself saved on the screen: no chain from
+    -- here can loop back or reach the cursor, so the answer is the one the
+    -- validation below would give. Nearly every Indicator takes this path on
+    -- every update, and the validation builds tables each time.
+    local containerId = group and group.parentContainerId
+    local ownTarget = containerId and type(settings) == "table" and settings.relativeTo
+    if type(ownTarget) == "string" then
+        local containerFrame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
+        if containerFrame and containerFrame:GetName() == ownTarget then
+            local containers = CooldownCompanion.db.profile.groupContainers
+            local container = containers and containers[containerId]
+            local anchor = container and container.anchor
+            if type(anchor) == "table" and (anchor.relativeTo == nil or anchor.relativeTo == UI_PARENT_NAME) then
+                return ST.GetPanelAnchorBodyFrame(containerFrame), ownTarget
+            end
+        end
+    end
+
     local frame, name = GetIndicatorPanelAnchorFrame(group, settings, groupId)
     if not frame then
         frame, name = GetIndicatorFrameAnchorFrame(group, settings, groupId)
@@ -222,45 +225,46 @@ local function GetIndicatorResolvedAnchorFrame(group, settings, groupId)
     return ST.GetPanelAnchorBodyFrame(frame), name
 end
 
-local function SaveGroupedIndicatorPreviewSettings(host, group, settings, groupId)
-    local containerFrame = GetGroupedPreviewContainerFrame(group, groupId)
-    if not (host and containerFrame and settings and host.GetPoint and host.GetCenter and host.GetSize) then
+-- A display dragged off its target, inside a Group, saves as an offset from
+-- its Group's frame, so it keeps following the Group the way a panel does.
+-- Measured from the live frames, never from saved numbers. False outside a
+-- Group or before the frames can be measured.
+local function MeasureGroupRelativeIndicatorOffset(host, group, anchorPoint)
+    local containerId = group and group.parentContainerId
+    local containerFrame = containerId and CooldownCompanion.containerFrames
+        and CooldownCompanion.containerFrames[containerId]
+    if not (host and containerFrame and host.GetCenter and host.GetSize) then
+        return nil
+    end
+    local x, y, point = GetTextureHostDisplayCoords(host, anchorPoint or "CENTER", "CENTER")
+    local containerX, containerY = containerFrame:GetCenter()
+    local uiX, uiY = UIParent:GetCenter()
+    if not (x and y and containerX and containerY and uiX and uiY) then
+        return nil
+    end
+    return math_floor(((x - (containerX - uiX)) * 10) + 0.5) / 10,
+        math_floor(((y - (containerY - uiY)) * 10) + 0.5) / 10,
+        point, containerFrame:GetName()
+end
+
+local function SaveGroupRelativeIndicatorPosition(host, group, settings)
+    if not settings then return false end
+    local x, y, point, relativeTo = MeasureGroupRelativeIndicatorOffset(host, group, settings.point)
+    if x == nil then
         return false
     end
-    if HasIndicatorAnchorTarget(settings) then
-        return false
-    end
-
-    local point = settings.point or host:GetPoint(1)
-
-    if not host._wrapperManaged then
-        local _, relativeFrame = host:GetPoint(1)
-        if relativeFrame ~= containerFrame then
-            return false
-        end
-    end
-
-    local x, y, normalizedPoint, normalizedRelativePoint = GetTextureHostDisplayCoords(
-        host,
-        point or settings.point or "CENTER",
-        settings.relativePoint or "CENTER"
-    )
-    if x == nil or y == nil then
-        return false
-    end
-
-    settings.point = normalizedPoint
-    settings.relativePoint = normalizedRelativePoint
-    settings.relativeTo = UI_PARENT_NAME
+    settings.point = point
+    settings.relativePoint = "CENTER"
+    settings.relativeTo = relativeTo
     settings.x = x
     settings.y = y
     return true
 end
 
 -- Deleting the panel or Group an Indicator display hangs off leaves the box
--- where it is: its current screen spot, measured as the grouped drag save
--- measures, saved as a Group-mode display. False when the box was never
--- placed or the panel follows the cursor.
+-- where it is: its current spot, measured as the drag save measures, saved
+-- against its own Group (or the screen outside one). False when the box was
+-- never placed or the panel follows the cursor.
 function CooldownCompanion:SaveIndicatorScreenPosition(groupId, group)
     local settings = self:GetIndicatorAnchorSettings(group)
     local frame = (self.groupFrames and self.groupFrames[groupId])
@@ -268,6 +272,9 @@ function CooldownCompanion:SaveIndicatorScreenPosition(groupId, group)
     local body = frame and frame._indicatorAnchorBodyActive and frame._indicatorAnchorBody
     if type(settings) ~= "table" or not body or self:IsGroupCursorAnchored(group) then
         return false
+    end
+    if SaveGroupRelativeIndicatorPosition(body, group, settings) then
+        return true
     end
     local x, y, point, relativePoint = GetTextureHostDisplayCoords(body, settings.point, "CENTER")
     if x == nil or y == nil then
@@ -284,8 +291,7 @@ end
 local function GetTextureHostPositionContext(host)
     local owner = host and host._ownerButton
     local group = owner and owner._groupId and ResolveGroup(owner._groupId)
-    local settings = ST.Indicator.Settings(group)
-    return owner, group, settings and settings.signal
+    return owner, group, group and CooldownCompanion:GetIndicatorAnchorSettings(group)
 end
 
 local function ApplyTextureHostCoordinates(host, x, y)
@@ -340,16 +346,15 @@ local function SaveTextureHostPosition(host)
     end
 
     local previousRelativeTo = settings.relativeTo
-    if not SaveGroupedIndicatorPreviewSettings(host, group, settings, owner and owner._groupId) then
-        local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
+    local point, relativeFrame, relPoint, x, y = host:GetPoint(1)
+    local targetFrame, targetName = GetIndicatorResolvedAnchorFrame(group, settings, owner and owner._groupId)
+    local onTarget = targetFrame ~= nil and relativeFrame == targetFrame
+    -- Still on its target (a nudge): the offsets are the host's own. Dragged
+    -- off it: an offset from its Group, or a screen spot outside one.
+    if onTarget or not SaveGroupRelativeIndicatorPosition(host, group, settings) then
         settings.point = NormalizeAnchorPoint(point)
         settings.relativePoint = NormalizeAnchorPoint(relPoint)
-        local targetFrame, targetName = GetIndicatorResolvedAnchorFrame(group, settings, owner and owner._groupId)
-        if targetFrame and relativeFrame == targetFrame then
-            settings.relativeTo = targetName
-        else
-            settings.relativeTo = UI_PARENT_NAME
-        end
+        settings.relativeTo = onTarget and targetName or UI_PARENT_NAME
         settings.x = math_floor(((x or 0) * 10) + 0.5) / 10
         settings.y = math_floor(((y or 0) * 10) + 0.5) / 10
     end
@@ -558,23 +563,11 @@ local function EnsureAuraTextureNudger(host)
         local point, _, relativePoint, x, y = host:GetPoint()
         local owner = host._ownerButton
         local group = owner and owner._groupId and ResolveGroup(owner._groupId) or nil
-        local settings = group and CooldownCompanion:GetIndicatorTextureSettings(group)
-        local displayX, displayY
-        if settings and group and group.parentContainerId
-            and not HasIndicatorAnchorTarget(settings)
-            and CooldownCompanion.IsContainerUnlockPreviewActive
-            and CooldownCompanion:IsContainerUnlockPreviewActive(group.parentContainerId)
-        then
-            displayX, displayY = GetTextureHostDisplayCoords(
-                host,
-                settings.point or point or "CENTER",
-                settings.relativePoint or "CENTER"
-            )
-        end
-        if displayX == nil or displayY == nil then
-            displayX = math_floor((x or 0) * 10 + 0.5) / 10
-            displayY = math_floor((y or 0) * 10 + 0.5) / 10
-        end
+        local settings = group and CooldownCompanion:GetIndicatorAnchorSettings(group)
+        -- The host sits on what its saved position names, so its own offsets
+        -- are the saved ones.
+        local displayX = math_floor((x or 0) * 10 + 0.5) / 10
+        local displayY = math_floor((y or 0) * 10 + 0.5) / 10
         if settings then
             settings.x = displayX
             settings.y = displayY
@@ -1194,13 +1187,15 @@ function CooldownCompanion:PrepareManagedAuraTextureDisplay(host, driverButton, 
     return true
 end
 
-local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId, groupedPreviewFrame)
+-- Read-only stand-in for an Indicator with no saved position table.
+local DEFAULT_INDICATOR_POSITION = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0 }
+
+local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId)
     if not host._isDragging then
         local isCursorAnchored = self.IsGroupCursorAnchored and self:IsGroupCursorAnchored(group)
         if isCursorAnchored and self.AnchorFrameToCursor then
             self:AnchorFrameToCursor(host, group.anchor)
         else
-            local currentPoint, currentRelativeFrame, _, currentX, currentY = host:GetPoint(1)
             host:ClearAllPoints()
             ST.InvalidateCursorPlacement(host)
             local anchorTargetFrame = GetIndicatorResolvedAnchorFrame(group, sharedSettings, groupId)
@@ -1212,27 +1207,12 @@ local function PlaceIndicatorDisplay(self, host, group, sharedSettings, groupId,
                     sharedSettings.x or 0,
                     sharedSettings.y or -5
                 )
-            elseif HasIndicatorAnchorTarget(sharedSettings) then
-                host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
-            elseif groupedPreviewFrame then
-                local preserveRelativeOffset = host._wrapperManaged
-                    and currentRelativeFrame == groupedPreviewFrame
-                    and currentX ~= nil
-                    and currentY ~= nil
-                    and groupedPreviewFrame._dragInProgress == true
-                if preserveRelativeOffset then
-                    host:SetPoint(currentPoint or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", currentX, currentY)
-                else
-                    local screenAnchorX, screenAnchorY, point = GetIndicatorScreenAnchorPoint(sharedSettings)
-                    local containerX, containerY = groupedPreviewFrame:GetCenter()
-                    if screenAnchorX and screenAnchorY and containerX and containerY then
-                        host:SetPoint(point or sharedSettings.point or "CENTER", groupedPreviewFrame, "CENTER", screenAnchorX - containerX, screenAnchorY - containerY)
-                    else
-                        host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
-                    end
-                end
             else
-                host:SetPoint(sharedSettings.point, UIParent, sharedSettings.relativePoint, sharedSettings.x, sharedSettings.y)
+                -- A screen spot, or a target that is not there right now. A
+                -- display in a Group is anchored to the Group's frame by its
+                -- saved position, so a Group drag needs nothing here.
+                host:SetPoint(sharedSettings.point or "CENTER", UIParent,
+                    sharedSettings.relativePoint or "CENTER", sharedSettings.x or 0, sharedSettings.y or 0)
             end
         end
     end
@@ -1279,9 +1259,8 @@ function CooldownCompanion:UpdateIndicatorAnchorBody(frame, group, dragHost, res
         body:SetPoint("CENTER", dragHost, "CENTER", 0, 0)
         ST.InvalidateCursorPlacement(body)
     else
-        local previewFrame = GetGroupedPreviewContainerFrame(group, frame.groupId)
-        body._wrapperManaged = previewFrame ~= nil
-        PlaceIndicatorDisplay(self, body, group, settings, frame.groupId, previewFrame)
+        PlaceIndicatorDisplay(self, body, group,
+            self:GetIndicatorAnchorSettings(group) or DEFAULT_INDICATOR_POSITION, frame.groupId)
     end
     self:RefreshIndicatorAnchorAlpha(frame, group)
     -- Outside anchors follow the box from now on (GetExternalAnchorTargetFrame).
@@ -1292,15 +1271,9 @@ end
 function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, group, settings, displayType, visibilityState)
     -- This is the only path that shows the host, so it clears the teardown latch.
     host._indicatorTeardownFor = nil
-    local sharedSettings = CooldownCompanion:GetIndicatorAnchorSettings(group) or {
-        point = "CENTER",
-        relativePoint = "CENTER",
-        x = 0,
-        y = 0,
-    }
+    local sharedSettings = CooldownCompanion:GetIndicatorAnchorSettings(group) or DEFAULT_INDICATOR_POSITION
 
-    PlaceIndicatorDisplay(self, host, group, sharedSettings, driverButton and driverButton._groupId,
-        visibilityState and visibilityState.groupedPreviewFrame)
+    PlaceIndicatorDisplay(self, host, group, sharedSettings, driverButton and driverButton._groupId)
     host:Show()
 
     local honorSourceVisibility = ST.Indicator.Settings(group).sourceVisibility ~= false
@@ -1367,6 +1340,10 @@ function CooldownCompanion:FinalizeIndicatorDisplay(host, frame, driverButton, g
             UpdateTextureHostCoordLabel(host, (anchor and tonumber(anchor.x)) or 0, (anchor and tonumber(anchor.y)) or 0)
             -- The cursor ticker repaints a staged offset.
             ST.InvalidateCursorPlacement(host)
+        elseif host._isDragging and MeasureGroupRelativeIndicatorOffset(host, group, sharedSettings.point) then
+            -- Mid-drag in a Group: the numbers a release would save.
+            local liveX, liveY = MeasureGroupRelativeIndicatorOffset(host, group, sharedSettings.point)
+            UpdateTextureHostCoordLabel(host, liveX, liveY)
         elseif visibilityState.isGroupedPreview and not HasIndicatorAnchorTarget(sharedSettings) then
             local displayX, displayY = GetTextureHostDisplayCoords(
                 host,
@@ -1541,73 +1518,9 @@ function CooldownCompanion:StopGroupedIndicatorPreviewHostDrag(groupId, containe
     FinishTextureHostDrag(host)
 end
 
-local function RoundGroupedIndicatorOffset(value)
-    return math_floor(((tonumber(value) or 0) * 10) + 0.5) / 10
-end
-
-local function ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
-    if not settings then
-        return false
-    end
-    if deltaX == nil and deltaY == nil then
-        return false
-    end
-
-    settings.x = RoundGroupedIndicatorOffset((tonumber(settings.x) or 0) + (tonumber(deltaX) or 0))
-    settings.y = RoundGroupedIndicatorOffset((tonumber(settings.y) or 0) + (tonumber(deltaY) or 0))
-    return true
-end
-
-function CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, deltaX, deltaY)
-    if not (containerId and self.GetPanels) then
-        return
-    end
-
-    local panels = self:GetPanels(containerId)
-    for _, panelInfo in ipairs(panels) do
-        local group = panelInfo.group
-        if group and ST.IsIndicatorGroup(group) then
-            local groupFrame = self.groupFrames and self.groupFrames[panelInfo.groupId] or nil
-            local driverButton = ST.Indicator.RuntimeSource(groupFrame, group)
-            local host = driverButton and driverButton.auraTextureHost or nil
-            local settings = self:GetIndicatorTextureSettings(group)
-
-            local didSync = false
-            local beforeX = settings and tonumber(settings.x) or 0
-            local beforeY = settings and tonumber(settings.y) or 0
-            local hasIndicatorAnchorTarget = HasIndicatorAnchorTarget(settings)
-            if host
-                and settings
-                and not hasIndicatorAnchorTarget
-                and self.IsGroupVisibleInUnlockPreview
-                and self:IsGroupVisibleInUnlockPreview(panelInfo.groupId, {
-                    group = group,
-                    groupFrame = groupFrame,
-                    checkCharVisibility = true,
-                })
-                and SaveGroupedIndicatorPreviewSettings(host, group, settings, panelInfo.groupId)
-            then
-                didSync = true
-                UpdateTextureHostCoordLabel(host, settings.x, settings.y)
-            end
-            if not didSync
-                and not hasIndicatorAnchorTarget
-                and ApplyGroupedIndicatorSettingsDelta(settings, deltaX, deltaY)
-            then
-                didSync = true
-                if host and host.coordLabel and host:IsShown() then
-                    UpdateTextureHostCoordLabel(host, settings.x, settings.y)
-                end
-            end
-            -- The shift actually saved (rounded, or measured off the host),
-            -- not the raw delta, so Cancel can take exactly that back out.
-            if didSync and self.NoteArrangeIndicatorDrift then
-                self:NoteArrangeIndicatorDrift(panelInfo.groupId,
-                    (tonumber(settings.x) or 0) - beforeX, (tonumber(settings.y) or 0) - beforeY)
-            end
-        end
-    end
-end
+-- A Group move needs no per-Indicator bookkeeping: a display in a Group is
+-- saved as an offset from the Group's frame and rides it, and one saved on
+-- the screen stays where it is (owner ruling R8-fallback).
 
 function CooldownCompanion:UpdateAuraTextureVisual(button)
     if not button then

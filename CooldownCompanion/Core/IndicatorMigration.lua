@@ -347,13 +347,101 @@ function M.ConvertImport(data)
     return candidate
 end
 
+-- ONE SAVED POSITION (owner ruling R8). An Indicator used to keep its spot in
+-- indicatorSettings.signal, beside a group.anchor that only a cursor anchor
+-- used. This moves the spot into group.anchor, where every panel keeps its
+-- own, once per Indicator.
+--
+-- The gate is in the data (indicatorSettings.version), never a profile stamp:
+-- imports clear stamps and re-run passes. An Indicator below the version whose
+-- signal holds no position key has nothing to move (a copy or template apply
+-- can rewrite the settings table), so it is only marked.
+--
+-- A display placed from the centre of the screen, inside a Group that itself
+-- sits on the centre of the screen, becomes an offset from its Group: the
+-- same spot, now following the Group like a panel. Every other screen
+-- placement stays on the screen (R8-fallback) and no longer follows a Group
+-- drag. The pass reads saved numbers only, never the screen size.
+local POSITION_VERSION = 2
+local POSITION_KEYS = {'point', 'relativePoint', 'relativeTo', 'x', 'y',
+    'anchor', 'xOffset', 'yOffset', 'baseWidth', 'baseHeight'}
+
+local function IsScreenCentreAnchor(anchor)
+    return type(anchor) == 'table'
+        and (anchor.point or 'CENTER') == 'CENTER'
+        and (anchor.relativePoint or 'CENTER') == 'CENTER'
+        and (anchor.relativeTo == nil or anchor.relativeTo == 'UIParent')
+end
+
+function M.ConvertPositions(profile)
+    if type(profile) ~= 'table' or type(profile.groups) ~= 'table' then return 0 end
+    local AT, RoundToTenths = ST._AT, ST.RoundToTenths
+    local converted = 0
+    for id, group in pairs(profile.groups) do
+        local settings = ST.IsIndicatorGroup(group) and group.indicatorSettings
+        if type(settings) == 'table' and (tonumber(settings.version) or 1) < POSITION_VERSION then
+            local signal = type(settings.signal) == 'table' and settings.signal or nil
+            local hasPosition = false
+            for _, key in ipairs(POSITION_KEYS) do
+                if signal and signal[key] ~= nil then hasPosition = true; break end
+            end
+            if hasPosition then
+                profile._indicatorPositionBackup = profile._indicatorPositionBackup or {}
+                if not profile._indicatorPositionBackup[id] then
+                    local old = {}
+                    for _, key in ipairs(POSITION_KEYS) do old[key] = signal[key] end
+                    profile._indicatorPositionBackup[id] = {anchor = CopyValue(group.anchor), signal = old}
+                end
+                -- A cursor anchor already lives in group.anchor and wins.
+                if not Addon:IsCursorAnchor(group.anchor) then
+                    local point = AT.NormalizeAnchorPoint(signal.point or signal.anchor)
+                    local relativePoint = AT.NormalizeAnchorPoint(signal.relativePoint)
+                    local relativeTo = AT.NormalizeIndicatorAnchorRelativeTo(signal.relativeTo)
+                    local x = tonumber(signal.x or signal.xOffset) or 0
+                    local y = tonumber(signal.y or signal.yOffset) or 0
+                    local containerId = group.parentContainerId
+                    local container = containerId and type(profile.groupContainers) == 'table'
+                        and profile.groupContainers[containerId]
+                    if relativeTo == 'UIParent' and relativePoint == 'CENTER'
+                        and type(container) == 'table' and IsScreenCentreAnchor(container.anchor) then
+                        relativeTo = 'CooldownCompanionContainer' .. tostring(containerId)
+                        x = x - (tonumber(container.anchor.x) or 0)
+                        y = y - (tonumber(container.anchor.y) or 0)
+                    end
+                    group.anchor = {
+                        point = point, relativeTo = relativeTo, relativePoint = relativePoint,
+                        x = RoundToTenths(x), y = RoundToTenths(y),
+                    }
+                end
+                for _, key in ipairs(POSITION_KEYS) do signal[key] = nil end
+                converted = converted + 1
+            end
+            -- Every Indicator leaves with a position table the mover and the
+            -- Layout tab can edit: the centre of its Group, or of the screen.
+            if type(group.anchor) ~= 'table' and not Addon:IsCursorAnchor(group.anchor) then
+                group.anchor = {
+                    point = 'CENTER', relativePoint = 'CENTER', x = 0, y = 0,
+                    relativeTo = group.parentContainerId
+                        and ('CooldownCompanionContainer' .. tostring(group.parentContainerId)) or 'UIParent',
+                }
+            end
+            settings.version = POSITION_VERSION
+        end
+    end
+    return converted
+end
+
 function Addon:RunIndicatorMigration()
     local profile = self.db and self.db.profile
     if not profile then return end
     local report = M.Apply(profile)
+    report.repositioned = M.ConvertPositions(profile)
     if report.converted > 0 then
         self:Print(('Indicators: converted %d panels; created %d additional displays. Text formatting and split layouts were simplified; originals are backed up.')
             :format(report.converted, report.created))
+    end
+    if report.repositioned > 0 then
+        self:Print(('Indicators: %d saved positions updated; the old ones are backed up.'):format(report.repositioned))
     end
     return report
 end

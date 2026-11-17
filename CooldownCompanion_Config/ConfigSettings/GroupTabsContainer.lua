@@ -244,15 +244,6 @@ local function BuildContainerGeneralTab(scroll, containerId)
                 CooldownCompanion:AnchorContainerFrame(containerFrame, container.anchor)
             end
 
-            if CooldownCompanion.SyncGroupedIndicatorPreviewSettings then
-                local deltaX, deltaY = 0, 0
-                if axis == "x" then
-                    deltaX = value - oldValue
-                else
-                    deltaY = value - oldValue
-                end
-                CooldownCompanion:SyncGroupedIndicatorPreviewSettings(containerId, deltaX, deltaY)
-            end
 
             if containerFrame and CooldownCompanion.RefreshContainerWrapper then
                 CooldownCompanion:RefreshContainerWrapper(containerId)

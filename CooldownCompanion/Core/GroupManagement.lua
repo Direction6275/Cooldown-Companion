@@ -1013,19 +1013,15 @@ local function ParseIndicatorAddonAnchorTarget(relativeTo)
     return nil
 end
 
-local function GetIndicatorPanelAnchorTarget(panel)
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
-    local relativeTo = type(settings) == "table" and settings.relativeTo or nil
-    return settings, type(relativeTo) == "string" and relativeTo or nil
-end
-
 local function ResetIndicatorPanelAnchor(panel)
     local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
     if type(settings) ~= "table" then
         return
     end
+    -- The centre of its Group, or of the screen outside one.
     settings.point = "CENTER"
-    settings.relativeTo = "UIParent"
+    settings.relativeTo = panel.parentContainerId
+        and ("CooldownCompanionContainer" .. tostring(panel.parentContainerId)) or "UIParent"
     settings.relativePoint = "CENTER"
     settings.x = 0
     settings.y = 0
@@ -1065,40 +1061,6 @@ local function RemapDuplicatedAnchor(settings, groupIdMap, containerIdMap, allow
         return false
     end
     return true
-end
-
-local function ResetCopiedIndicatorAnchor(panel, groups, sourceGroupId, sourceContainerId, targetContainerId)
-    local settings, relativeTo = GetIndicatorPanelAnchorTarget(panel)
-    if not settings or not relativeTo or relativeTo == "UIParent" then
-        return
-    end
-
-    local targetKind, targetId = ParseIndicatorAddonAnchorTarget(relativeTo)
-    if not targetKind then
-        if relativeTo:find("^CooldownCompanion") then
-            ResetIndicatorPanelAnchor(panel)
-        end
-        return
-    end
-
-    if targetKind == "container" then
-        if targetId ~= targetContainerId then
-            ResetIndicatorPanelAnchor(panel)
-        end
-        return
-    end
-
-    if targetKind ~= "group" then
-        ResetIndicatorPanelAnchor(panel)
-        return
-    end
-
-    local targetGroup = groups and groups[targetId] or nil
-    if targetId == sourceGroupId
-        or not targetGroup
-        or targetGroup.parentContainerId ~= targetContainerId then
-        ResetIndicatorPanelAnchor(panel)
-    end
 end
 
 local function DuplicateContainerRecords(self, containerId, groupIdMap, containerIdMap, newGroupIds)
@@ -1170,9 +1132,6 @@ local function DuplicateContainerSet(self, containerIds, skipFinalize)
                 relativeTo = "CooldownCompanionContainer" .. panel.parentContainerId,
                 x = anchor and anchor.x or 0, y = anchor and anchor.y or 0,
             }
-        end
-        if not RemapDuplicatedAnchor(CooldownCompanion:GetIndicatorAnchorSettings(panel), groupIdMap, containerIdMap) then
-            ResetIndicatorPanelAnchor(panel)
         end
     end
     for _, containerId in ipairs(newContainerIds) do
@@ -1313,7 +1272,9 @@ function CooldownCompanion:CreatePanel(containerId, displayMode)
     end
 
 
-    ST.Indicator.Prepare(db.groups[groupId])
+    local indicatorSettings = ST.Indicator.Prepare(db.groups[groupId])
+    -- Born with one position (IndicatorMigration.ConvertPositions).
+    if indicatorSettings then indicatorSettings.version = 2 end
     self:CreateGroupFrame(groupId)
     if self.RefreshStableExternalAnchorCompactSuppression then
         self:RefreshStableExternalAnchorCompactSuppression()
@@ -1361,7 +1322,6 @@ function CooldownCompanion:DuplicatePanel(containerId, groupId)
     newPanel.name = sourcePanel.name .. " (Copy)"
     newPanel.order = GetNextPanelOrder(self, containerId)
     newPanel.cdmPanelSource = nil
-    ResetCopiedIndicatorAnchor(newPanel, db.groups, groupId, containerId, containerId)
     NormalizeCopiedEntityForContainerScope(self, newPanel, container)
 
     db.groups[newGroupId] = newPanel
@@ -1403,11 +1363,10 @@ function CooldownCompanion:MovePanel(groupId, targetContainerId)
     group.parentContainerId = targetContainerId
 
     -- Only the owning Group changes. Explicit targets and relative placement
-    -- belong to the panel, including an Indicator's separate display.
+    -- belong to the panel, so it carries its offset into the new Group.
     local sourceFrameName = "CooldownCompanionContainer" .. sourceContainerId
     local containerFrameName = "CooldownCompanionContainer" .. targetContainerId
     RetargetMovedPanelAnchor(group.anchor, sourceFrameName, containerFrameName)
-    RetargetMovedPanelAnchor(CooldownCompanion:GetIndicatorAnchorSettings(group), sourceFrameName, containerFrameName)
 
     -- Put at end of target's panel list
     group.order = GetNextPanelOrder(self, targetContainerId, groupId)

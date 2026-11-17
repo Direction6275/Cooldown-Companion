@@ -1086,7 +1086,6 @@ ST._EncodeExportData = EncodeExportData
 ST._BuildSetupExportPayload = BuildSetupExportPayload
 
 local BuildRootAnchor = ST._BuildRootAnchor
-local ResetIndicatorPanelAnchor = ST._ResetIndicatorPanelAnchor
 
 local function AnchorImportedContainerFrame(containerId, anchor)
     local frame = CooldownCompanion.containerFrames and CooldownCompanion.containerFrames[containerId]
@@ -1314,11 +1313,24 @@ local function PrintImportSanitizerNotes(importState)
     end
 end
 
+-- LEGACY STRINGS ONLY. An Indicator from before it kept one position still
+-- carries a second one in its signal, naming ids from the string. It is
+-- remapped here, in place, and the conversion that follows every import
+-- (IndicatorMigration.ConvertPositions) then moves it into panel.anchor. A
+-- current Indicator has nothing here: its spot is panel.anchor, remapped by
+-- RemapImportedPanelAnchors like any panel's.
 local function RemapImportedIndicatorAnchor(panel, newGroupId, importState)
-    local settings = CooldownCompanion:GetIndicatorAnchorSettings(panel)
+    local indicatorSettings = ST.IsIndicatorGroup(panel) and panel.indicatorSettings
+    local settings = type(indicatorSettings) == "table"
+        and (tonumber(indicatorSettings.version) or 1) < 2
+        and indicatorSettings.signal
     local relativeTo = type(settings) == "table" and settings.relativeTo or nil
     if not relativeTo or relativeTo == "UIParent" then
         return
+    end
+    local function ResetIndicatorPanelAnchor()
+        settings.point, settings.relativeTo, settings.relativePoint = "CENTER", "UIParent", "CENTER"
+        settings.x, settings.y = 0, 0
     end
     if type(relativeTo) ~= "string" then
         ResetIndicatorPanelAnchor(panel)
