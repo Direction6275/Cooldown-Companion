@@ -174,6 +174,9 @@ function CooldownCompanion:ClearUnsupportedProfileRuntime()
     if self.RevertCastBar then
         self:RevertCastBar()
     end
+    if self.RevertFrameAnchoring then
+        self:RevertFrameAnchoring()
+    end
 end
 
 -- Automatic anchoring's Group-level opt-in. Global Groups start opted out,

@@ -8,7 +8,6 @@ local CooldownCompanion = ST.Addon
 local pairs = pairs
 local tostring = tostring
 local type = type
-local next = next
 
 local CONFIG_ADDON_NAME = ADDON_NAME .. "_Config"
 local SETTINGS_CATEGORY_NAME = "Cooldown Companion"
@@ -340,13 +339,17 @@ function CooldownCompanion:SetupConfig()
     self.db.RegisterCallback(self, "OnProfileShutdown", function()
         CooldownCompanion:EndArrangeForReplacedProfile()
     end)
-    self.db.RegisterCallback(self, "OnProfileChanged", function(db, profileName)
+    -- A function callback gets the event name first.
+    self.db.RegisterCallback(self, "OnProfileChanged", function(_, db, profileName)
+        -- Before the reset: anything there that reads db.profile fills this
+        -- profile with defaults, and defaults look like saved data.
+        local savedProfiles = db.sv.profiles
+        local hasSavedData = CooldownCompanion:LooksLikeSavedProfile(savedProfiles and savedProfiles[profileName])
         ResetLoadedConfigForProfileChange(CooldownCompanion)
         -- Rename and Duplicate copy into this new profile next, and
         -- OnProfileCopied migrates and refreshes it.
         if CooldownCompanion._profileCopyFollows then return end
-        local rawProfile = db and db.sv and type(db.sv.profiles) == "table" and db.sv.profiles[profileName]
-        if type(rawProfile) ~= "table" or next(rawProfile) == nil then
+        if not hasSavedData then
             CooldownCompanion._allowMissingMigrationCheckpointOnce = true
         end
         CooldownCompanion:RunProfileMigrationAndRefresh("profile-changed", PROFILE_REPLACED_REFRESH)

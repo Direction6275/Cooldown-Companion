@@ -1055,6 +1055,12 @@ function CooldownCompanion:InspectSavedProfileCheckpoint(savedVariables, default
     return state
 end
 
+-- Takes the raw saved table, before AceDB adds defaults. This is login's test
+-- too, so a profile gets the same answer from login and the profile dropdown.
+function CooldownCompanion:LooksLikeSavedProfile(rawProfile)
+    return LooksLikeProfilePayload(rawProfile)
+end
+
 function CooldownCompanion:IsUnsupportedLegacyProfile(profile, allowMissingCheckpoint)
     if type(profile) ~= "table" then return false end
 
