@@ -87,23 +87,21 @@ end
 -- Disarm contract (EnsureAlphaDriverArmed / EvaluateAlphaDriverNeedsWork): the
 -- 30 Hz driver may stop only while every live alpha config has SETTLED
 -- (currentAlpha == desiredAlpha, no fade running, no hover grace left) AND every
--- condition it reads arrives as an event that re-arms the driver. These two
--- force conditions are polled, not evented, so one live config using either of
--- them keeps the driver running for the session:
+-- condition it reads arrives as an event that re-arms the driver. This one
+-- force condition is polled, not evented, so one live config using it keeps
+-- the driver running for the session:
 --   forceAlphaMouseover        geometric IsMouseOver, deliberately frame-polled
 --                              so it still works on click-through panels
---   forceAlphaTargetEnemyOnly  a hostility flip on a RETAINED target fires no
---                              event this addon listens to
 -- Every other condition input owes a re-arm hook: combat edges (OnCombatStart /
 -- OnCombatEnd), mount and Soar (InvalidateMountAlphaCache), target existence
--- (OnTargetChanged), focus existence (OnFocusChanged and
+-- (OnTargetChanged), target hostility on a RETAINED target
+-- (OnTargetHostilityChanged), focus existence (OnFocusChanged and
 -- OnFocusExistenceFallback), druid travel form (UPDATE_SHAPESHIFT_FORM), the
 -- cursor-anchor layout preview, and the config / lock / panel-lifecycle paths
 -- that already call RefreshAlphaUpdateDriver. A NEW force condition must either
 -- bring its event hook or be listed above.
 local function AlphaConfigNeedsDriverPolling(config)
     return config.forceAlphaMouseover == true
-        or (config.forceAlphaTargetExists == true and config.forceAlphaTargetEnemyOnly == true)
 end
 
 -- Exact, no epsilon: UpdateFadedAlpha snaps currentAlpha onto desiredAlpha and
@@ -667,6 +665,21 @@ function CooldownCompanion:OnFocusExistenceFallback()
     end
 end
 
+-- Hostility re-arm hook for the Enemy Only target condition: a target the
+-- player keeps can turn attackable or stop being attackable (duel, PvP flag,
+-- mind control) with no PLAYER_TARGET_CHANGED. UNIT_FACTION and UNIT_FLAGS, for
+-- the player and the target, are what Blizzard re-checks that relationship on
+-- (TargetFrame's UNIT_FACTION branch; Blizzard_AuraContainerUtil
+-- AppendCandidateFilterUnitEvents). UNIT_FLAGS also moves on combat flags, so
+-- this wakes the driver only when the reading differs from what the last alpha
+-- pass read, as the focus fallback above does.
+function CooldownCompanion:OnTargetHostilityChanged()
+    local hasEnemyTarget = UnitExists("target") and UnitCanAttack("player", "target") and true or false
+    if hasEnemyTarget ~= self._alphaPassHasEnemyTarget then
+        self:EnsureAlphaDriverArmed()
+    end
+end
+
 -- Shared force-condition evaluation: returns forceFull (bool), forceHidden (bool), baselineAlpha (number).
 -- Used by UpdateGroupAlpha, UpdateContainerAlpha and UpdateModuleAlpha.
 local function EvaluateDesiredAlpha(config, inCombat, hasTarget, hasEnemyTarget, hasFocus, regularMounted, dragonridingMounted, inTravelForm)
@@ -1116,6 +1129,8 @@ function CooldownCompanion:AlphaUpdateOnUpdate(dt)
     local inCombat = InCombatLockdown()
     local hasTarget = UnitExists("target")
     local hasEnemyTarget = hasTarget and UnitCanAttack("player", "target") and true or false
+    -- What OnTargetHostilityChanged compares against while the driver sleeps.
+    self._alphaPassHasEnemyTarget = hasEnemyTarget
     local hasFocus = UnitExists("focus")
     -- What OnFocusExistenceFallback compares against while the driver sleeps.
     self._alphaPassHasFocus = hasFocus

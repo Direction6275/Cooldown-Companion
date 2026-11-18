@@ -1536,29 +1536,167 @@ RelayoutBars = function()
 end
 
 ------------------------------------------------------------------------
--- OnUpdate handler (30 Hz)
+-- OnUpdate handler: the resource tick, event-triggered, 30 Hz at most
+--
+-- A tick re-reads every bar and hands the values to the widgets. It used to
+-- run 30 times a second no matter what. Now it runs only when something asks
+-- for it, in and out of combat:
+--   * A change event arrived since the last tick. Most power values, and
+--     health, are secret to addons at all times, not only in combat
+--     (SecretWhenUnitPowerRestricted has no combat clause), so a tick can hand
+--     them to a bar but can never compare them: the events are the only
+--     evidence that they changed. They are the events Blizzard's Personal
+--     Resource Display draws the same bars from, and from nothing else:
+--     UNIT_POWER_FREQUENT for power, UNIT_HEALTH and the prediction events for
+--     health, UNIT_AURA for the aura-stack resources, RUNE_POWER_UPDATE.
+--   * The last tick made a readable write: a bar value or range that got past
+--     its setter's memo and was not secret (ST._statusBarWrites less
+--     ST._statusBarSecretWrites). Motion no event announces keeps itself
+--     going this way: a recharging rune, a filling essence, a soul shard
+--     fragment. The first tick that writes nothing readable ends it.
+--   * A second has passed with neither: the backstop. It repaints every bar,
+--     so a change nothing announced shows within a second. Where the value is
+--     readable that is also counted (stats.misses, and per resource).
+--   * rest.CanSleep refuses: the config window, arrange and unlock, a stagger
+--     bar (no change event; AlternatePowerBarBase polls it), or a health bar
+--     whose low-health alert could be pulsing. Those tick 30 times a second,
+--     as before.
+--
+-- However many events arrive, ticks stay 1/30 s apart: an event only marks the
+-- next slot as owed. GetResourceBarRuntimeState reports the counts.
 ------------------------------------------------------------------------
 
-local elapsed_acc = 0
+local rest = {
+    asleep = false,     -- no tick is owed until an event or the backstop
+    acc = 0,            -- time since the last tick
+    listening = false,
+    CHECK_INTERVAL = 1, -- seconds between backstop ticks
+    stats = { ticks = 0, checks = 0, misses = 0, missesByResource = {} },
+    UNIT_EVENTS = {
+        "UNIT_POWER_FREQUENT", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
+        "UNIT_DISPLAYPOWER", "UNIT_POWER_POINT_CHARGE",
+        "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_MAX_HEALTH_MODIFIERS_CHANGED",
+        "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED",
+        "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
+        "UNIT_AURA",
+    },
+    EVENTS = {
+        "RUNE_POWER_UPDATE", "UPDATE_SHAPESHIFT_FORM",
+        "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+        "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST",
+        "ADDON_RESTRICTION_STATE_CHANGED", "PLAYER_ENTERING_WORLD",
+    },
+}
+
+-- Hot in combat (UNIT_POWER_FREQUENT can fire several times a frame): it only
+-- marks the next tick slot as owed.
+function rest.OnEvent()
+    rest.asleep = false
+end
+
+-- Every apply: it can change anything the tick paints.
+function RB.StartResourceTick()
+    local frame = rest.frame
+    if not frame then
+        frame = CreateFrame("Frame")
+        frame:SetScript("OnEvent", rest.OnEvent)
+        rest.frame = frame
+    end
+    if not rest.listening then
+        rest.listening = true
+        for _, event in ipairs(rest.UNIT_EVENTS) do
+            frame:RegisterUnitEvent(event, "player")
+        end
+        for _, event in ipairs(rest.EVENTS) do
+            frame:RegisterEvent(event)
+        end
+    end
+    rest.asleep = false
+end
+
+-- Every revert.
+function RB.StopResourceTick()
+    if rest.frame then
+        rest.frame:UnregisterAllEvents()
+    end
+    rest.listening = false
+    rest.asleep = false
+end
+
+-- What a tick cannot see for itself. Fails awake: the config window, arrange
+-- and unlock (their canvases and drags repaint the bars), a stagger bar (no
+-- change event), and a health bar whose low-health alert could be pulsing.
+function rest.CanSleep()
+    if isUnlockAssistActive or CooldownCompanion._arrangeModeActive then return false end
+    local configFrame = CooldownCompanion:GetConfigFrame()
+    if configFrame then
+        local miniFrame = configFrame._miniFrame
+        if (configFrame.frame and configFrame.frame:IsShown())
+            or (miniFrame and miniFrame:IsShown()) then
+            return false
+        end
+    end
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local frame = barInfo.frame
+        if frame and frame:IsShown() then
+            local barType = barInfo.barType
+            if barType == "stagger_continuous" then return false end
+            if barType == "health_continuous" and not HealthBar.CanRest(frame) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+function rest.NoteMiss(resource)
+    local byResource = rest.stats.missesByResource
+    byResource[resource] = (byResource[resource] or 0) + 1
+end
+
+-- moved: this tick made a readable write, or asked for a rebuild.
+-- resting: nothing had asked for this tick, so it was the backstop.
+function rest.AfterTick(moved, resting)
+    if moved then
+        -- It may still be moving (a recharge), so the next slot is owed too.
+        if resting then
+            rest.stats.misses = rest.stats.misses + 1
+        end
+        rest.asleep = false
+        return
+    end
+    -- A sound alert waiting for its faded or hidden bar to be seen again
+    -- (ResourceSounds.EndSample): nothing announces that, so keep sampling.
+    rest.asleep = not RB.ResourceSounds.awaitingSight and rest.CanSleep()
+end
 
 local function OnUpdate(self, elapsed)
-    elapsed_acc = elapsed_acc + elapsed
-    if elapsed_acc < UPDATE_INTERVAL then return end
-    elapsed_acc = 0
+    -- Time since the last tick, counted through rest as well, so an event
+    -- that ends a rest never lands a tick sooner than 1/30 s after the last.
+    rest.acc = rest.acc + elapsed
+    if rest.acc < (rest.asleep and rest.CHECK_INTERVAL or UPDATE_INTERVAL) then return end
+    rest.acc = 0
 
     local settings = GetResourceBarSettings()
+    local resting = rest.asleep
+    local moved = false
+    local stats = rest.stats
+    stats.ticks = stats.ticks + 1
+    if resting then
+        stats.checks = stats.checks + 1
+    end
 
-    -- The Devourer pair swaps on the Void Metamorphosis transition, which
-    -- no event this module listens to announces — the module is a poller,
-    -- so the flip is polled too. One presence-only aura read per tick, and
-    -- only while a suppressible member is actually enabled in this spec's
-    -- list, so no other spec pays anything for it.
+    -- The Devourer pair swaps on the Void Metamorphosis transition. One
+    -- presence-only aura read per tick, and only while a suppressible member
+    -- is actually enabled in this spec's list, so no other spec pays anything
+    -- for it. The player's UNIT_AURA is what asks for the tick.
     if stackSwapState.watch then
         local inMeta = RB.IsInVoidMetamorphosis()
         if inMeta ~= stackSwapState.inMeta then
             stackSwapState.inMeta = inMeta
             stackSwapState.reapply = true
             stackSwapState.refreshCanvas = true
+            if resting then rest.NoteMiss("metamorphosis") end
         end
     end
 
@@ -1566,9 +1704,20 @@ local function OnUpdate(self, elapsed)
     for _, barInfo in ipairs(resourceBarFrames) do
         RB.ResourceSounds.BeginSample(barInfo.frame, barInfo.powerType)
         if barInfo.frame and barInfo.frame:IsShown() then
+            local writes, secretWrites = ST._statusBarWrites, ST._statusBarSecretWrites
             ResourceBars.Update(barInfo, settings)
+            -- More writes than secret writes: a readable value or range moved.
+            if ST._statusBarWrites - writes > ST._statusBarSecretWrites - secretWrites then
+                moved = true
+                if resting then rest.NoteMiss(barInfo.powerType) end
+            end
         end
         RB.ResourceSounds.EndSample(barInfo.frame, barInfo.powerType)
+    end
+
+    -- Read before the rebuild below, which clears the flag.
+    if stackSwapState.reapply then
+        moved = true
     end
 
     -- Re-materialization runs after the loop, never inside it:
@@ -1585,6 +1734,8 @@ local function OnUpdate(self, elapsed)
         CooldownCompanion:ApplyResourceBars()
         stackSwapState.RefreshCanvasAfterFlip()
     end
+
+    rest.AfterTick(moved, resting)
 end
 
 -- An open Resources config canvas draws whichever half of the pair is live,
@@ -2237,6 +2388,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         onUpdateFrame = CreateFrame("Frame")
     end
     onUpdateFrame:SetScript("OnUpdate", OnUpdate)
+    RB.StartResourceTick()
     -- Real bars are up, so the module's own tick polls the flip again: the
     -- empty-list stand-in has no reason to exist.
     stackSwapState.SetWatcher(false)
@@ -2372,6 +2524,7 @@ function CooldownCompanion:RevertResourceBars()
     if onUpdateFrame then
         onUpdateFrame:SetScript("OnUpdate", nil)
     end
+    RB.StopResourceTick()
 
     -- Stop events
     DisableEventFrame()
@@ -2458,6 +2611,8 @@ function CooldownCompanion:GetResourceBarRuntimeState()
     return {
         applied = isApplied == true,
         onUpdateActive = onUpdateFrame and onUpdateFrame:GetScript("OnUpdate") ~= nil or false,
+        resting = rest.asleep == true,
+        restStats = rest.stats,
         alphaSyncActive = alphaSyncFrame and alphaSyncFrame:GetScript("OnUpdate") ~= nil or false,
         lifecycleEventsActive = lifecycleDebug.lifecycleEventsActive == true,
         updateEventsActive = lifecycleDebug.updateEventsActive == true,

@@ -208,6 +208,8 @@ function CooldownCompanion:OnEnable()
                 self:OnUnitAura(event, ...)
             elseif event == "UNIT_PET" then
                 self:OnPetChanged(event, ...)
+            elseif event == "UNIT_FACTION" or event == "UNIT_FLAGS" then
+                self:OnTargetHostilityChanged()
             end
         end)
     end
@@ -224,6 +226,10 @@ function CooldownCompanion:OnEnable()
     -- filtered registration must live on this frame because AceEvent owners have
     -- no RegisterUnitEvent (same reason as the UNIT_TARGET frame below).
     self._unitEventFrame:RegisterUnitEvent("UNIT_PET", "player")
+    -- A kept target changing sides wakes the alpha driver for the Enemy Only
+    -- target condition (OnTargetHostilityChanged).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_FACTION", "player", "target")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_FLAGS", "player", "target")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")

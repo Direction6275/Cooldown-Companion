@@ -97,6 +97,7 @@ function Sounds.BeginTick(settings)
     tickCombat = InCombatLockdown()
     tickAllowed = settings and settings.enabled and not addon._arrangeModeActive
         and not addon:IsResourceBarUnlockAssistActive()
+    Sounds.awaitingSight = false
 end
 
 function Sounds.BeginSample(holder, powerType)
@@ -132,8 +133,16 @@ function Sounds.EndSample(holder, powerType)
     end
     local visible = holder and holder:IsVisible()
     local alpha = holder and holder:GetEffectiveAlpha()
-    local allowed = tickAllowed and visible and IsNumber(alpha) and alpha > 0
-        and (not config.combatOnly or tickCombat)
+    local sighted = visible and IsNumber(alpha) and alpha > 0
+    local wanted = tickAllowed and (not config.combatOnly or tickCombat)
+    -- An alert held back only because its bar cannot be seen. A crossing needs
+    -- one sample in sight BEFORE it to play, and nothing announces a fade or a
+    -- show, so the event-triggered tick (ResourceBar.lua) keeps running until
+    -- this bar has been sampled in sight.
+    if wanted and not sighted then
+        Sounds.awaitingSight = true
+    end
+    local allowed = wanted and sighted
     local play, threshold = Sounds.Step(state, config, observedValue, observedMax,
         allowed, tickSettings)
     if play then

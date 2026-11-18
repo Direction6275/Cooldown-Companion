@@ -108,6 +108,15 @@ local STATUS_BAR_MOTION_TIMER = "timer"
 local STATUS_BAR_MOTION_SMOOTH_VALUE = "smoothValue"
 local STATUS_BAR_MOTION_IMMEDIATE_VALUE = "immediateValue"
 
+-- Counts the range and value writes that got past a setter's memo below and
+-- reached the widget, and how many of those carried a secret value. A secret
+-- never matches a memo, so it is written every time whether or not it moved;
+-- the difference between the two counts is the writes that are known changes.
+-- A caller samples both around its own update (the resource bar rest check,
+-- OtherBars/ResourceBar.lua).
+ST._statusBarWrites = 0
+ST._statusBarSecretWrites = 0
+
 -- Motion and range are separate records: the range record mirrors the widget's
 -- SetMinMaxValues state, which no motion call writes (SetValue/SetToTargetValue/
 -- SetTimerDuration take no range arguments), so clearing motion must not
@@ -143,6 +152,10 @@ function ST.SetStatusBarRange(statusBar, minValue, maxValue, interpolation)
         statusBar._cdcStatusBarRangeMin = minValue
         statusBar._cdcStatusBarRangeMax = maxValue
         statusBar._cdcStatusBarRangeInterpolation = interpolation
+    end
+    ST._statusBarWrites = ST._statusBarWrites + 1
+    if rangeIsSecret then
+        ST._statusBarSecretWrites = ST._statusBarSecretWrites + 1
     end
 
     if interpolation ~= nil then
@@ -183,6 +196,10 @@ function ST.SetStatusBarImmediateValue(statusBar, value)
     else
         statusBar._cdcStatusBarMotionValue = value
     end
+    ST._statusBarWrites = ST._statusBarWrites + 1
+    if valueIsSecret then
+        ST._statusBarSecretWrites = ST._statusBarSecretWrites + 1
+    end
 
     statusBar:SetValue(value)
     if statusBar.SetToTargetValue then
@@ -209,6 +226,10 @@ function ST.SetStatusBarSmoothValue(statusBar, value)
         statusBar._cdcStatusBarMotionValue = nil
     else
         statusBar._cdcStatusBarMotionValue = value
+    end
+    ST._statusBarWrites = ST._statusBarWrites + 1
+    if valueIsSecret then
+        ST._statusBarSecretWrites = ST._statusBarSecretWrites + 1
     end
 
     local interpolation = ST.STATUS_BAR_INTERPOLATION_SMOOTH
@@ -253,6 +274,7 @@ function ST.SetStatusBarTimerDuration(statusBar, durationObj, direction, interpo
     statusBar._cdcStatusBarMotionDirection = direction
     statusBar._cdcStatusBarMotionInterpolation = interpolation
     statusBar._cdcStatusBarMotionValue = nil
+    ST._statusBarWrites = ST._statusBarWrites + 1
 
     statusBar:SetTimerDuration(durationObj, interpolation, direction)
     return true
