@@ -711,7 +711,7 @@ function CooldownCompanion:ApplyFrameAnchoring(opts)
     end
 
     local settings = GetFrameAnchoringSettings()
-    if not settings or not settings.enabled then
+    if self._unsupportedLegacyProfile or not settings or not settings.enabled then
         self:RevertFrameAnchoring()
         return
     end
