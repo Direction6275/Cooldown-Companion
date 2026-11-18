@@ -1932,6 +1932,10 @@ local function BuildAppearanceTab(container, settingsGroup)
             disabled = masqueSec.disabled,
             onChange = function(val)
                 CooldownCompanion:ToggleGroupMasque(CS.selectedGroup, val)
+                -- The toggle saves square icons and no zoom, and hands the
+                -- regions to or back from Masque; the buttons are rebuilt to
+                -- match, as its other callers do.
+                CooldownCompanion:RefreshGroupFrame(CS.selectedGroup)
                 CooldownCompanion:RefreshConfigPanel()
             end,
         })

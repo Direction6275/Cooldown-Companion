@@ -1253,6 +1253,19 @@ function CooldownCompanion:NormalizeEligibilityForCharacterScope(entity, opts)
     return changed
 end
 
+-- A panel and its entries. An entry carries its own lists only from the old
+-- Custom Bar conversion or an import, and no settings row shows them, so a
+-- panel that changes class has to have them cleaned here.
+function CooldownCompanion:NormalizePanelEligibilityForCharacterScope(group, opts)
+    local changed = self:NormalizeEligibilityForCharacterScope(group, opts)
+    if type(group) == "table" and type(group.buttons) == "table" then
+        for _, buttonData in ipairs(group.buttons) do
+            changed = self:NormalizeEligibilityForCharacterScope(buttonData, opts) or changed
+        end
+    end
+    return changed
+end
+
 function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(containerId, opts)
     local db = self.db and self.db.profile
     if not (db and db.groupContainers) then return false end
@@ -1263,7 +1276,7 @@ function CooldownCompanion:NormalizeContainerEligibilityForCharacterScope(contai
     local changed = self:NormalizeEligibilityForCharacterScope(container, opts)
     for _, group in pairs(db.groups or {}) do
         if type(group) == "table" and group.parentContainerId == containerId then
-            changed = self:NormalizeEligibilityForCharacterScope(group, opts) or changed
+            changed = self:NormalizePanelEligibilityForCharacterScope(group, opts) or changed
         end
     end
     return changed

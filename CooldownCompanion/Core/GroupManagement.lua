@@ -82,16 +82,10 @@ local function NormalizeCopiedEntityForContainerScope(self, entity, container)
     if type(entity) ~= "table" or not container or container.isGlobal == true then
         return
     end
-    if self.NormalizeEligibilityForCharacterScope then
-        local opts = {
+    if self.NormalizePanelEligibilityForCharacterScope then
+        self:NormalizePanelEligibilityForCharacterScope(entity, {
             ownerCharKey = container.createdBy or (self.db and self.db.keys and self.db.keys.char),
-        }
-        self:NormalizeEligibilityForCharacterScope(entity, opts)
-        if type(entity.buttons) == "table" then
-            for _, button in ipairs(entity.buttons) do
-                self:NormalizeEligibilityForCharacterScope(button, opts)
-            end
-        end
+        })
     end
 end
 
