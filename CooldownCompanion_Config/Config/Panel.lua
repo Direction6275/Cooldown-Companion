@@ -1222,6 +1222,10 @@ local function CreateConfigPanel()
         if CancelFirstIconPanelTutorial then
             CancelFirstIconPanelTutorial(isCollapsing and "config_collapsed" or "config_hidden")
         end
+        -- A spell or item still on the cursor has no Navigator row to land on.
+        if CS._UpdatePanelDropScan then
+            CS._UpdatePanelDropScan()
+        end
         -- The minimized config deliberately preserves the editing widgets,
         -- but Finder query/results are visibility-scoped and must not return
         -- when the workspace expands again.
@@ -2280,7 +2284,8 @@ local function CreateConfigPanel()
         local targets = CS._panelDropTargets
         if ST._IsPanelCursorDropPayload(cursorType)
             and targets and #targets > 0
-            and col1.frame:IsShown()
+            -- IsVisible: the column stays shown inside a hidden window.
+            and col1.frame:IsVisible()
             and not (IsConfigFinderActive and IsConfigFinderActive())
             and not CS.otherClassLibraryActive then
             -- Each row lights up only if its panel would take this payload

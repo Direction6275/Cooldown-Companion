@@ -3057,13 +3057,25 @@ local function FindContainerId(db, container)
     return nil
 end
 
+-- A panel or any of its entries: the move cleans both
+-- (NormalizePanelEligibilityForCharacterScope).
+local function PanelHasForeignEligibility(group, ...)
+    if EntityHasForeignEligibility(group, ...) then return true end
+    if type(group.buttons) == "table" then
+        for _, buttonData in ipairs(group.buttons) do
+            if EntityHasForeignEligibility(buttonData, ...) then return true end
+        end
+    end
+    return false
+end
+
 local function ContainerPanelsHaveForeignEligibility(containerId, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
     local db = CooldownCompanion.db and CooldownCompanion.db.profile
     if not (db and db.groups and containerId) then return false end
     for _, group in pairs(db.groups) do
         if type(group) == "table"
             and group.parentContainerId == containerId
-            and EntityHasForeignEligibility(group, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
+            and PanelHasForeignEligibility(group, playerSpecIds, playerClassKey, playerCharKey, playerHeroTalentIds, hasHeroTalentData)
         then
             return true
         end
