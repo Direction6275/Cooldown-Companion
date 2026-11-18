@@ -27,7 +27,6 @@ local CURSOR_ANCHOR_X = GF.CURSOR_ANCHOR_X
 local CURSOR_ANCHOR_Y = GF.CURSOR_ANCHOR_Y
 local UpdateCoordLabel = GF.UpdateCoordLabel
 local GetContainerPreviewSelectionState = GF.GetContainerPreviewSelectionState
-local StopCoordinateDragUpdates = GF.StopCoordinateDragUpdates
 local ApplyGroupOwnAlpha = GF.ApplyGroupOwnAlpha
 local SetPanelPreviewMarks = GF.SetPanelPreviewMarks
 local SetPanelGhostMark = GF.SetPanelGhostMark
@@ -47,9 +46,17 @@ local BeginCursorAnchorLayoutPreviewPanelDrag = GF.BeginCursorAnchorLayoutPrevie
 local StartGroupCoordinateDragUpdates = GF.StartGroupCoordinateDragUpdates
 local EndCursorAnchorLayoutPreviewPanelDrag = GF.EndCursorAnchorLayoutPreviewPanelDrag
 
--- GroupFrameDragSnap.lua
-local BeginSelfExcludedDragSnapSession = GF.BeginSelfExcludedDragSnapSession
-local ApplyEndedDragSnapSession = GF.ApplyEndedDragSnapSession
+local BeginMoverDrag = GF.BeginMoverDrag
+local FinishMoverDrag = GF.FinishMoverDrag
+
+-- ContainerFrame.lua
+local PANEL_MEMBER_DRAG = GF.PANEL_MEMBER_DRAG
+
+-- A panel dragged on its own: its coordinates follow it.
+local PANEL_DRAG = {
+    startUpdates = StartGroupCoordinateDragUpdates,
+    stopUpdates = GF.StopPanelDragUpdates,
+}
 
 -- GroupFrameButtonPool.lua
 local ForEachGroupButtonFrame = GF.ForEachGroupButtonFrame
@@ -68,7 +75,7 @@ local function BeginPanelDrag(frame, surfaceDrag)
     CancelCoordinateEdit(frame.coordLabel)
     CancelCoordinateEdit(frame.sizeLabel)
     local _, ownUnlocked = GetPanelUnlockState(frame.groupId)
-    local previewActive, selectedInContainer, containerId = GetContainerPreviewSelectionState(frame.groupId)
+    local previewActive, selectedInContainer = GetContainerPreviewSelectionState(frame.groupId)
     local dragGroup = CooldownCompanion.db.profile.groups[frame.groupId]
     if dragGroup and IsCursorAnchor(dragGroup.anchor) then
         -- A drag on a parked-but-unselected panel selects it first.
@@ -85,14 +92,7 @@ local function BeginPanelDrag(frame, surfaceDrag)
         if not selectedInContainer then
             return
         end
-        if containerId and CooldownCompanion.StartContainerMemberPreviewTracking then
-            CooldownCompanion:StartContainerMemberPreviewTracking(containerId, frame.groupId)
-        end
-        frame._dragCancelPending = nil
-        frame._dragInProgress = true
-        frame:StartMoving()
-        CooldownCompanion:BeginMoverChromeFade(frame)
-        BeginSelfExcludedDragSnapSession(frame)
+        BeginMoverDrag(frame, PANEL_MEMBER_DRAG)
     elseif ownUnlocked then
         if dragGroup and dragGroup.parentContainerId
             and not CooldownCompanion:ActivateArrangePanel(
@@ -103,51 +103,26 @@ local function BeginPanelDrag(frame, surfaceDrag)
             return
         end
         frame._arrangePanelSurfaceDrag = surfaceDrag and true or nil
-        frame._dragCancelPending = nil
-        frame._dragInProgress = true
-        frame:StartMoving()
-        CooldownCompanion:BeginMoverChromeFade(frame)
-        BeginSelfExcludedDragSnapSession(frame)
-        StartGroupCoordinateDragUpdates(frame)
+        BeginMoverDrag(frame, PANEL_DRAG)
     end
 end
 
 local function FinishPanelDrag(frame)
     local dragGroup = CooldownCompanion.db.profile.groups[frame.groupId]
-    if dragGroup and IsCursorAnchor(dragGroup.anchor) then
-        local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
-        if frame._arrangePanelSurfaceDrag then
-            -- A body-drag release also fires the body's OnMouseUp; a title
-            -- drag does not consume the next deliberate body click.
-            frame._arrangeSelectClickSuppressed = true
-        end
-        frame._arrangePanelSurfaceDrag = nil
-        EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, frame.groupId, cancelSave)
-        return
-    end
-
-    local _, selectedInContainer, containerId = GetContainerPreviewSelectionState(frame.groupId)
-    local cancelSave = frame._dragCancelPending == true or CooldownCompanion._combatForcedLock
+    -- A body-drag release also fires the body's OnMouseUp; a title drag
+    -- does not consume the next deliberate body click.
     if frame._arrangePanelSurfaceDrag then
         frame._arrangeSelectClickSuppressed = true
     end
     frame._arrangePanelSurfaceDrag = nil
-    frame._dragCancelPending = nil
-    frame._dragInProgress = nil
-    if not (InCombatLockdown() and frame:IsProtected()) then
-        frame:StopMovingOrSizing()
-    end
-    ApplyEndedDragSnapSession(frame, not cancelSave)
-    StopCoordinateDragUpdates(frame)
-    if selectedInContainer and containerId and CooldownCompanion.StopContainerMemberPreviewTracking then
-        CooldownCompanion:StopContainerMemberPreviewTracking(containerId, frame.groupId)
-    end
-    if cancelSave then
-        CooldownCompanion:EndMoverChromeFade(frame)
+    if dragGroup and IsCursorAnchor(dragGroup.anchor) then
+        EndCursorAnchorLayoutPreviewPanelDrag(CooldownCompanion, frame, frame.groupId)
         return
     end
-    CooldownCompanion:SaveGroupPosition(frame.groupId)
-    CooldownCompanion:EndMoverChromeFade(frame)
+
+    if FinishMoverDrag(frame) then
+        CooldownCompanion:SaveGroupPosition(frame.groupId)
+    end
 end
 
 -- Controls outlive individual reveals; callbacks resolve the current profile.
