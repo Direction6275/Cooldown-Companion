@@ -130,6 +130,7 @@ function CooldownCompanion:EnsureRuntimeInitialized()
     self.alphaState = self.alphaState or {}
 
     if not self.updateTicker then
+        local hostilityTicks = 0
         self.updateTicker = C_Timer.NewTicker(0.1, function()
             -- Read assisted combat recommended spell (plain table field, no API
             -- call). A skipped tick doesn't walk, so a changed recommendation
@@ -146,6 +147,18 @@ function CooldownCompanion:EnsureRuntimeInitialized()
             self:TickCooldownRefresh()
             self:UpdateAllGroupLayouts()
             self:ClearCooldownsDirty()
+
+            -- Once a second: the safety net under the Enemy Only target
+            -- condition. UNIT_FACTION and UNIT_FLAGS announce a kept target
+            -- changing sides (OnTargetHostilityChanged); this re-reads it in
+            -- case a change arrives by neither, so that fade is never wrong
+            -- for longer than a second. Two reads, and it wakes the alpha
+            -- driver only when the answer differs from the last alpha pass.
+            hostilityTicks = hostilityTicks + 1
+            if hostilityTicks >= 10 then
+                hostilityTicks = 0
+                self:OnTargetHostilityChanged()
+            end
         end)
     end
 

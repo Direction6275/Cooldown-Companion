@@ -672,7 +672,9 @@ end
 -- (TargetFrame's UNIT_FACTION branch; Blizzard_AuraContainerUtil
 -- AppendCandidateFilterUnitEvents). UNIT_FLAGS also moves on combat flags, so
 -- this wakes the driver only when the reading differs from what the last alpha
--- pass read, as the focus fallback above does.
+-- pass read, as the focus fallback above does. The runtime ticker also calls it
+-- once a second (Lifecycle.lua), so a change neither event announced is put
+-- right within a second.
 function CooldownCompanion:OnTargetHostilityChanged()
     local hasEnemyTarget = UnitExists("target") and UnitCanAttack("player", "target") and true or false
     if hasEnemyTarget ~= self._alphaPassHasEnemyTarget then
