@@ -844,6 +844,27 @@ function HealthBar.Update(bar, settings)
 
 end
 
+-- Whether the resource tick may stop while this bar is up (the rest check in
+-- ResourceBar.lua). Everything else here repaints only when a value moves, but
+-- the low-health alert pulses on the tick's own clock, so the tick has to keep
+-- running wherever the alert could be showing: health that cannot be read, or
+-- health at or under the point where the alert's curve stops being transparent.
+function HealthBar.CanRest(bar)
+    local config = bar._ccHealthConfig
+    if config and not HealthBar.IsEffectOn(config, "showLowHealthAlert") then
+        return true
+    end
+    local health, maxHealth = UnitHealth("player"), UnitHealthMax("player")
+    if issecretvalue and (issecretvalue(health) or issecretvalue(maxHealth)) then
+        return false
+    end
+    if type(health) ~= "number" or type(maxHealth) ~= "number" or maxHealth <= 0 then
+        return false
+    end
+    return health / maxHealth
+        > HealthBar.GetLowHealthAlertThreshold() + HEALTH_EFFECTS.lowHealthAlertThresholdFade
+end
+
 -- The six Health text formats, for the live bar and its config preview. The
 -- values go straight to SetFormattedText and AbbreviateNumbers, which accept
 -- secret values; the caller works out `percent` only for a format that shows

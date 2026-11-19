@@ -869,7 +869,10 @@ local function UpdateSegmentedBar(holder, powerType, settings)
             end
         end
         segmentedUpdateScratch.FinishText(holder, displayCurrent, max, false)
-        return
+        -- Below its maximum an essence is always refilling, and nothing
+        -- announces the progress in between, so say so: the resource tick
+        -- keeps running until the last one is whole (ResourceBars.Update).
+        return not isMax
     end
 
     -- Combo Points: color changes at max, charged coloring for Rogues
@@ -1313,6 +1316,8 @@ end
 ------------------------------------------------------------------------
 local RelayoutBars
 
+-- Returns true while the bar is filling by the clock with nothing to announce
+-- its progress (an essence recharging), so the resource tick must not rest.
 function ResourceBars.Update(barInfo, settings)
     local frame, powerType, barType = barInfo.frame, barInfo.powerType, barInfo.barType
     if barType == "continuous" then
@@ -1320,7 +1325,7 @@ function ResourceBars.Update(barInfo, settings)
     elseif barType == "health_continuous" then
         HealthBar.Update(frame, settings)
     elseif barType == "segmented" then
-        UpdateSegmentedBar(frame, powerType, settings)
+        return UpdateSegmentedBar(frame, powerType, settings)
     elseif barType == "mw_segmented" or barType == "mw_segments" or barType == "mw_continuous" then
         UpdateMaelstromWeaponBar(frame, settings, barType)
     elseif barType == "stackaura_segments" or barType == "stackaura_continuous" then
@@ -1536,29 +1541,251 @@ RelayoutBars = function()
 end
 
 ------------------------------------------------------------------------
--- OnUpdate handler (30 Hz)
+-- OnUpdate handler: the resource tick, event-triggered, 30 Hz at most
+--
+-- A tick re-reads every bar and hands the values to the widgets. It used to
+-- run 30 times a second no matter what. Now it runs only when something asks
+-- for it, in and out of combat:
+--   * A change event arrived since the last tick. Most power values, and
+--     health, are secret to addons at all times, not only in combat
+--     (SecretWhenUnitPowerRestricted has no combat clause), so a tick can hand
+--     them to a bar but can never compare them: the events are the only
+--     evidence that they changed. They are the events Blizzard's Personal
+--     Resource Display draws the same bars from: UNIT_POWER_FREQUENT for
+--     power, UNIT_HEALTH and the prediction events for health, UNIT_AURA for
+--     the aura-stack resources, RUNE_POWER_UPDATE. Each family of unit events
+--     is registered only while a bar that reads it is up (rest.SyncEvents).
+--   * The last tick made a readable write: a bar value or range that got past
+--     its setter's memo and was not secret (ST._statusBarWrites less
+--     ST._statusBarSecretWrites). A recharging rune keeps itself going this
+--     way, its fill being worked out from the clock on every tick.
+--   * A bar said it is still filling (ResourceBars.Update's return): an
+--     essence below its maximum, whose progress nothing announces and whose
+--     reading is not known to move on every tick.
+--   * A second has passed with none of those: the backstop. It repaints every
+--     bar, so a change nothing announced shows within a second. Where the
+--     value is readable that is also counted (stats.misses, which is the sum
+--     of missesByResource).
+--   * rest.CanSleep refuses: the config window, arrange and unlock (each
+--     wakes a resting tick as it starts, WakeResourceBarTick), a stagger bar
+--     or a power bar for a type that is not the player's displayed one (no
+--     known change event; AlternatePowerBarBase polls both), or a health bar
+--     whose low-health alert could be pulsing. Those tick 30 times a second,
+--     as before.
+--
+-- However many events arrive, ticks stay 1/30 s apart: an event only marks the
+-- next slot as owed. GetResourceBarRuntimeState reports the counts.
 ------------------------------------------------------------------------
 
-local elapsed_acc = 0
+local rest = {
+    asleep = false,     -- no tick is owed until an event or the backstop
+    acc = 0,            -- time since the last tick
+    sightAcc = 0,       -- time since the last look for an unseen alert bar
+    listening = false,
+    CHECK_INTERVAL = 1, -- seconds between backstop ticks
+    stats = { ticks = 0, checks = 0, misses = 0, missesByResource = {} },
+    -- The player's unit events, by what reads them. A family is registered
+    -- only while a bar that reads it is up, so a spec with no health bar is
+    -- not woken by every hit it takes, nor one with no aura-stack bar by every
+    -- buff that changes.
+    FAMILIES = {
+        power = {
+            "UNIT_POWER_FREQUENT", "UNIT_POWER_UPDATE", "UNIT_MAXPOWER",
+            "UNIT_DISPLAYPOWER", "UNIT_POWER_POINT_CHARGE",
+        },
+        health = {
+            "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_MAX_HEALTH_MODIFIERS_CHANGED",
+            "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED",
+            "UNIT_HEAL_ABSORB_AMOUNT_CHANGED",
+        },
+        aura = { "UNIT_AURA" },
+    },
+    -- Which family each bar type reads. Stagger has none: it never rests.
+    FAMILY_OF = {
+        continuous = "power", segmented = "power",
+        health_continuous = "health",
+        mw_segmented = "aura", mw_segments = "aura", mw_continuous = "aura",
+        stackaura_segments = "aura", stackaura_continuous = "aura",
+    },
+    registered = {},    -- family -> true while its events are registered
+    wanted = {},        -- scratch for SyncEvents
+    EVENTS = {
+        "RUNE_POWER_UPDATE", "UPDATE_SHAPESHIFT_FORM",
+        "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+        "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST",
+        "ADDON_RESTRICTION_STATE_CHANGED", "PLAYER_ENTERING_WORLD",
+    },
+}
+
+-- Hot in combat (UNIT_POWER_FREQUENT can fire several times a frame): it only
+-- marks the next tick slot as owed.
+function rest.OnEvent()
+    rest.asleep = false
+end
+
+-- Registers exactly the unit-event families the active bars read.
+function rest.SyncEvents()
+    local frame, wanted = rest.frame, rest.wanted
+    wipe(wanted)
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local barType = barInfo.barType
+        local family = rest.FAMILY_OF[barType]
+        if family then
+            wanted[family] = true
+        elseif barType ~= "stagger_continuous" then
+            -- A bar type this table does not know: listen to everything.
+            for name in pairs(rest.FAMILIES) do
+                wanted[name] = true
+            end
+        end
+    end
+    -- The Devourer pair's swap is read from an aura, whichever half is up.
+    if stackSwapState.watch then
+        wanted.aura = true
+    end
+    for name, events in pairs(rest.FAMILIES) do
+        local want = wanted[name] == true
+        if (rest.registered[name] == true) ~= want then
+            rest.registered[name] = want
+            for _, event in ipairs(events) do
+                if want then
+                    frame:RegisterUnitEvent(event, "player")
+                else
+                    frame:UnregisterEvent(event)
+                end
+            end
+        end
+    end
+end
+
+-- Every apply: it can change anything the tick paints, and which bars are up.
+function RB.StartResourceTick()
+    local frame = rest.frame
+    if not frame then
+        frame = CreateFrame("Frame")
+        frame:SetScript("OnEvent", rest.OnEvent)
+        rest.frame = frame
+    end
+    if not rest.listening then
+        rest.listening = true
+        for _, event in ipairs(rest.EVENTS) do
+            frame:RegisterEvent(event)
+        end
+    end
+    rest.SyncEvents()
+    rest.asleep = false
+end
+
+-- Every revert.
+function RB.StopResourceTick()
+    if rest.frame then
+        rest.frame:UnregisterAllEvents()
+    end
+    rest.listening = false
+    wipe(rest.registered)
+    rest.asleep = false
+end
+
+-- The start of something rest.CanSleep keeps the tick awake for, which a
+-- resting tick would not notice until its next backstop: the config window
+-- opening, arrange mode, an unlock.
+function CooldownCompanion:WakeResourceBarTick()
+    rest.asleep = false
+end
+
+-- What a tick cannot see for itself. Fails awake: the config window, arrange
+-- and unlock (their canvases and drags repaint the bars), a stagger bar (no
+-- change event), a power bar for a type that is not the player's displayed
+-- one, and a health bar whose low-health alert could be pulsing.
+function rest.CanSleep()
+    if isUnlockAssistActive or CooldownCompanion._arrangeModeActive then return false end
+    local configFrame = CooldownCompanion:GetConfigFrame()
+    if configFrame then
+        local miniFrame = configFrame._miniFrame
+        if (configFrame.frame and configFrame.frame:IsShown())
+            or (miniFrame and miniFrame:IsShown()) then
+            return false
+        end
+    end
+    -- May return nothing; nil matches no bar, so that fails awake too.
+    local displayedPowerType = UnitPowerType("player")
+    for _, barInfo in ipairs(resourceBarFrames) do
+        local frame = barInfo.frame
+        if frame and frame:IsShown() then
+            local barType = barInfo.barType
+            if barType == "stagger_continuous" then return false end
+            -- A secondary power (mana in Cat Form, say): Blizzard's own bar
+            -- for one reads it every frame (AlternatePowerBar sets
+            -- frequentUpdates) where its primary bar draws from
+            -- UNIT_POWER_FREQUENT, so no event is known to announce it.
+            if barType == "continuous" and barInfo.powerType ~= displayedPowerType then
+                return false
+            end
+            if barType == "health_continuous" and not HealthBar.CanRest(frame) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- A backstop tick found a readable change that no event had announced.
+function rest.NoteMiss(resource)
+    local stats = rest.stats
+    stats.misses = stats.misses + 1
+    stats.missesByResource[resource] = (stats.missesByResource[resource] or 0) + 1
+end
+
+-- busy: this tick made a readable write, asked for a rebuild, or a bar said it
+-- is still filling. It may still be moving, so the next slot is owed too.
+function rest.AfterTick(busy)
+    rest.asleep = not busy and rest.CanSleep()
+end
 
 local function OnUpdate(self, elapsed)
-    elapsed_acc = elapsed_acc + elapsed
-    if elapsed_acc < UPDATE_INTERVAL then return end
-    elapsed_acc = 0
+    -- Time since the last tick, counted through rest as well, so an event
+    -- that ends a rest never lands a tick sooner than 1/30 s after the last.
+    rest.acc = rest.acc + elapsed
+
+    -- A sound alert held back because its bar could not be seen
+    -- (ResourceSounds.EndSample) needs one sample in sight before a crossing
+    -- can play, and nothing announces a fade or a show. While resting, look
+    -- for that bar 30 times a second (two reads per held alert) and tick as
+    -- soon as it is back, rather than run the whole tick to find out.
+    if rest.asleep and RB.ResourceSounds.awaitingSight then
+        rest.sightAcc = rest.sightAcc + elapsed
+        if rest.sightAcc >= UPDATE_INTERVAL then
+            rest.sightAcc = 0
+            if RB.ResourceSounds.AwaitedBarInSight() then
+                rest.asleep = false
+            end
+        end
+    end
+
+    if rest.acc < (rest.asleep and rest.CHECK_INTERVAL or UPDATE_INTERVAL) then return end
+    rest.acc = 0
 
     local settings = GetResourceBarSettings()
+    -- resting: nothing had asked for this tick, so it is the backstop.
+    local resting = rest.asleep
+    local busy = false
+    local stats = rest.stats
+    stats.ticks = stats.ticks + 1
+    if resting then
+        stats.checks = stats.checks + 1
+    end
 
-    -- The Devourer pair swaps on the Void Metamorphosis transition, which
-    -- no event this module listens to announces — the module is a poller,
-    -- so the flip is polled too. One presence-only aura read per tick, and
-    -- only while a suppressible member is actually enabled in this spec's
-    -- list, so no other spec pays anything for it.
+    -- The Devourer pair swaps on the Void Metamorphosis transition. One
+    -- presence-only aura read per tick, and only while a suppressible member
+    -- is actually enabled in this spec's list, so no other spec pays anything
+    -- for it. The player's UNIT_AURA is what asks for the tick.
     if stackSwapState.watch then
         local inMeta = RB.IsInVoidMetamorphosis()
         if inMeta ~= stackSwapState.inMeta then
             stackSwapState.inMeta = inMeta
             stackSwapState.reapply = true
             stackSwapState.refreshCanvas = true
+            if resting then rest.NoteMiss("metamorphosis") end
         end
     end
 
@@ -1566,9 +1793,23 @@ local function OnUpdate(self, elapsed)
     for _, barInfo in ipairs(resourceBarFrames) do
         RB.ResourceSounds.BeginSample(barInfo.frame, barInfo.powerType)
         if barInfo.frame and barInfo.frame:IsShown() then
-            ResourceBars.Update(barInfo, settings)
+            local writes, secretWrites = ST._statusBarWrites, ST._statusBarSecretWrites
+            if ResourceBars.Update(barInfo, settings) then
+                busy = true
+            end
+            -- More writes than secret writes: a readable value or range moved.
+            if ST._statusBarWrites - writes > ST._statusBarSecretWrites - secretWrites then
+                busy = true
+                if resting then rest.NoteMiss(barInfo.powerType) end
+            end
         end
         RB.ResourceSounds.EndSample(barInfo.frame, barInfo.powerType)
+    end
+
+    -- Read before the rebuild below, which clears the flag. A rebuild is not a
+    -- missed change: a stack maximum can simply resolve late.
+    if stackSwapState.reapply then
+        busy = true
     end
 
     -- Re-materialization runs after the loop, never inside it:
@@ -1585,6 +1826,8 @@ local function OnUpdate(self, elapsed)
         CooldownCompanion:ApplyResourceBars()
         stackSwapState.RefreshCanvasAfterFlip()
     end
+
+    rest.AfterTick(busy)
 end
 
 -- An open Resources config canvas draws whichever half of the pair is live,
@@ -2237,6 +2480,7 @@ function CooldownCompanion:ApplyResourceBars(opts)
         onUpdateFrame = CreateFrame("Frame")
     end
     onUpdateFrame:SetScript("OnUpdate", OnUpdate)
+    RB.StartResourceTick()
     -- Real bars are up, so the module's own tick polls the flip again: the
     -- empty-list stand-in has no reason to exist.
     stackSwapState.SetWatcher(false)
@@ -2372,6 +2616,7 @@ function CooldownCompanion:RevertResourceBars()
     if onUpdateFrame then
         onUpdateFrame:SetScript("OnUpdate", nil)
     end
+    RB.StopResourceTick()
 
     -- Stop events
     DisableEventFrame()
@@ -2458,6 +2703,8 @@ function CooldownCompanion:GetResourceBarRuntimeState()
     return {
         applied = isApplied == true,
         onUpdateActive = onUpdateFrame and onUpdateFrame:GetScript("OnUpdate") ~= nil or false,
+        resting = rest.asleep == true,
+        restStats = rest.stats,
         alphaSyncActive = alphaSyncFrame and alphaSyncFrame:GetScript("OnUpdate") ~= nil or false,
         lifecycleEventsActive = lifecycleDebug.lifecycleEventsActive == true,
         updateEventsActive = lifecycleDebug.updateEventsActive == true,
@@ -2561,6 +2808,7 @@ RB.CreateResourceBarPreviewModule({
     end,
     SetUnlockAssistActive = function(value)
         isUnlockAssistActive = value == true
+        CooldownCompanion:WakeResourceBarTick()
     end,
     GetMWMaxStacks = function()
         return mwMaxStacks

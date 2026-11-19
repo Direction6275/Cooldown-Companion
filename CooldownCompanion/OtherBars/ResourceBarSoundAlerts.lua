@@ -21,6 +21,26 @@ function Sounds.IsAmount(value)
     return IsNumber(value) and value >= 1 and value == math.floor(value)
 end
 
+-- A bar the player can actually see: shown, and not faded out. An alpha that
+-- cannot be read counts as unseen.
+local function InSight(holder)
+    if not (holder and holder:IsVisible()) then return false end
+    local alpha = holder:GetEffectiveAlpha()
+    return IsNumber(alpha) and alpha > 0
+end
+
+-- The bars whose wanted alert the last tick held back for being out of sight.
+local unseen = {}
+
+-- Whether one of them is back in sight. The resting resource tick asks this
+-- between ticks (ResourceBar.lua) and runs as soon as the answer is yes.
+function Sounds.AwaitedBarInSight()
+    for index = 1, #unseen do
+        if InSight(unseen[index]) then return true end
+    end
+    return false
+end
+
 -- Reuse the caller's config table; actual resource identity owns these keys,
 -- including each half of the Devourer pair (not its canonical placement id).
 local function Read(settings, powerType, specID, key, fallback)
@@ -97,6 +117,8 @@ function Sounds.BeginTick(settings)
     tickCombat = InCombatLockdown()
     tickAllowed = settings and settings.enabled and not addon._arrangeModeActive
         and not addon:IsResourceBarUnlockAssistActive()
+    Sounds.awaitingSight = false
+    wipe(unseen)
 end
 
 function Sounds.BeginSample(holder, powerType)
@@ -130,10 +152,17 @@ function Sounds.EndSample(holder, powerType)
         state.initialized = false
         return
     end
-    local visible = holder and holder:IsVisible()
-    local alpha = holder and holder:GetEffectiveAlpha()
-    local allowed = tickAllowed and visible and IsNumber(alpha) and alpha > 0
-        and (not config.combatOnly or tickCombat)
+    local sighted = InSight(holder)
+    local wanted = tickAllowed and (not config.combatOnly or tickCombat)
+    -- An alert held back only because its bar cannot be seen. A crossing needs
+    -- one sample in sight BEFORE it to play, and nothing announces a fade or a
+    -- show, so the resting tick (ResourceBar.lua) watches for this bar and runs
+    -- as soon as it is back in sight.
+    if wanted and not sighted then
+        Sounds.awaitingSight = true
+        unseen[#unseen + 1] = holder
+    end
+    local allowed = wanted and sighted
     local play, threshold = Sounds.Step(state, config, observedValue, observedMax,
         allowed, tickSettings)
     if play then

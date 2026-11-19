@@ -130,6 +130,7 @@ function CooldownCompanion:EnsureRuntimeInitialized()
     self.alphaState = self.alphaState or {}
 
     if not self.updateTicker then
+        local hostilityTicks = 0
         self.updateTicker = C_Timer.NewTicker(0.1, function()
             -- Read assisted combat recommended spell (plain table field, no API
             -- call). A skipped tick doesn't walk, so a changed recommendation
@@ -146,6 +147,18 @@ function CooldownCompanion:EnsureRuntimeInitialized()
             self:TickCooldownRefresh()
             self:UpdateAllGroupLayouts()
             self:ClearCooldownsDirty()
+
+            -- Once a second: the safety net under the Enemy Only target
+            -- condition. UNIT_FACTION and UNIT_FLAGS announce a kept target
+            -- changing sides (OnTargetHostilityChanged); this re-reads it in
+            -- case a change arrives by neither, so that fade is never wrong
+            -- for longer than a second. Two reads, and it wakes the alpha
+            -- driver only when the answer differs from the last alpha pass.
+            hostilityTicks = hostilityTicks + 1
+            if hostilityTicks >= 10 then
+                hostilityTicks = 0
+                self:OnTargetHostilityChanged()
+            end
         end)
     end
 
@@ -208,6 +221,8 @@ function CooldownCompanion:OnEnable()
                 self:OnUnitAura(event, ...)
             elseif event == "UNIT_PET" then
                 self:OnPetChanged(event, ...)
+            elseif event == "UNIT_FACTION" or event == "UNIT_FLAGS" then
+                self:OnTargetHostilityChanged()
             end
         end)
     end
@@ -224,6 +239,10 @@ function CooldownCompanion:OnEnable()
     -- filtered registration must live on this frame because AceEvent owners have
     -- no RegisterUnitEvent (same reason as the UNIT_TARGET frame below).
     self._unitEventFrame:RegisterUnitEvent("UNIT_PET", "player")
+    -- A kept target changing sides wakes the alpha driver for the Enemy Only
+    -- target condition (OnTargetHostilityChanged).
+    self._unitEventFrame:RegisterUnitEvent("UNIT_FACTION", "player", "target")
+    self._unitEventFrame:RegisterUnitEvent("UNIT_FLAGS", "player", "target")
 
     -- Combat events
     self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStart")
