@@ -1834,6 +1834,10 @@ local function CreateConfigPanel()
     end
     FitConfigWindowToScreen()
     content:HookScript("OnShow", FitConfigWindowToScreen)
+    -- Resting resource bars go back to their full rate under the open window.
+    content:HookScript("OnShow", function()
+        CooldownCompanion:WakeResourceBarTick()
+    end)
     local screenWatch = CreateFrame("Frame")
     screenWatch:RegisterEvent("UI_SCALE_CHANGED")
     screenWatch:RegisterEvent("DISPLAY_SIZE_CHANGED")

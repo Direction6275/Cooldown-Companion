@@ -1566,8 +1566,10 @@ end
 --     bar, so a change nothing announced shows within a second. Where the
 --     value is readable that is also counted (stats.misses, which is the sum
 --     of missesByResource).
---   * rest.CanSleep refuses: the config window, arrange and unlock, a stagger
---     bar (no change event; AlternatePowerBarBase polls it), or a health bar
+--   * rest.CanSleep refuses: the config window, arrange and unlock (each
+--     wakes a resting tick as it starts, WakeResourceBarTick), a stagger bar
+--     or a power bar for a type that is not the player's displayed one (no
+--     known change event; AlternatePowerBarBase polls both), or a health bar
 --     whose low-health alert could be pulsing. Those tick 30 times a second,
 --     as before.
 --
@@ -1684,9 +1686,17 @@ function RB.StopResourceTick()
     rest.asleep = false
 end
 
+-- The start of something rest.CanSleep keeps the tick awake for, which a
+-- resting tick would not notice until its next backstop: the config window
+-- opening, arrange mode, an unlock.
+function CooldownCompanion:WakeResourceBarTick()
+    rest.asleep = false
+end
+
 -- What a tick cannot see for itself. Fails awake: the config window, arrange
 -- and unlock (their canvases and drags repaint the bars), a stagger bar (no
--- change event), and a health bar whose low-health alert could be pulsing.
+-- change event), a power bar for a type that is not the player's displayed
+-- one, and a health bar whose low-health alert could be pulsing.
 function rest.CanSleep()
     if isUnlockAssistActive or CooldownCompanion._arrangeModeActive then return false end
     local configFrame = CooldownCompanion:GetConfigFrame()
@@ -1697,11 +1707,20 @@ function rest.CanSleep()
             return false
         end
     end
+    -- May return nothing; nil matches no bar, so that fails awake too.
+    local displayedPowerType = UnitPowerType("player")
     for _, barInfo in ipairs(resourceBarFrames) do
         local frame = barInfo.frame
         if frame and frame:IsShown() then
             local barType = barInfo.barType
             if barType == "stagger_continuous" then return false end
+            -- A secondary power (mana in Cat Form, say): Blizzard's own bar
+            -- for one reads it every frame (AlternatePowerBar sets
+            -- frequentUpdates) where its primary bar draws from
+            -- UNIT_POWER_FREQUENT, so no event is known to announce it.
+            if barType == "continuous" and barInfo.powerType ~= displayedPowerType then
+                return false
+            end
             if barType == "health_continuous" and not HealthBar.CanRest(frame) then
                 return false
             end
@@ -2789,6 +2808,7 @@ RB.CreateResourceBarPreviewModule({
     end,
     SetUnlockAssistActive = function(value)
         isUnlockAssistActive = value == true
+        CooldownCompanion:WakeResourceBarTick()
     end,
     GetMWMaxStacks = function()
         return mwMaxStacks

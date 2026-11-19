@@ -1500,6 +1500,7 @@ function CooldownCompanion:EnterArrangeMode()
 
     self:CaptureArrangeSnapshot()
     self._arrangeModeActive = true
+    self:WakeResourceBarTick()
     self._arrangeFocusContainerId = nil
     self._arrangeSoloContainerId = nil
     self._arrangeSelectedPanelId = nil
