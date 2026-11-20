@@ -7,6 +7,7 @@ local ADDON_NAME, ST = ...
 
 ST._changelogData = {
     order = {
+        "2.12",
         "2.11",
         "2.10",
         "2.9",
@@ -49,6 +50,41 @@ ST._changelogData = {
         "1.15",
     },
     entries = {
+        ["2.12"] = {
+            markdown = [[
+## New Features
+
+- **Cast Bar and Unit Frames shared by class:** Like Resource Bars, every character of a class now uses the same Cast Bar and Unit Frames setup. Your first login converts once and tells you in chat. The copy button on those pages can bring back any character's old one.
+- **More to export:** Panel Templates and the Cast Bar can go into a setup string, and profile backups carry your templates. Importing skips templates you already have.
+- **More glow styles:** Proc Glow and Ready Glow offer every style the aura glow has. The old Pixel Glow is now called Pixel Dashes and looks the same.
+- **Cancel a single unlock:** Unlocking one Group, one panel, the Cast Bar or the Resource Bars now shows Cancel, and Esc cancels too.
+
+## Polish | QoL
+
+- **Indicators move like panels:** Unlocked Indicators have the same title bar, arrows and coordinates as panels, stay attached when dragged, and can be picked as an anchor target. They also get a Frame Strata setting. Nothing moves when you update.
+- **Padlocking while arranging:** A padlocked panel stays on screen as it looks in normal play, with its attached bars in place. It used to vanish for the session.
+- **Greyed settings say why:** Hover a greyed row to see the reason.
+- **Settings window:** An edit in progress is no longer thrown away when the game changes something behind the window. Aura Panels, Totem Panels, Indicators and Groups reopen on the tab you last used, and double-clicking any spellbook row adds it to the selected panel.
+- **Simpler names, less text:** The Indicators tab on panels is now Effects, each setting has one name everywhere, and many hint lines are gone. Search still finds the old names.
+
+## Bug Fixes
+
+- **Pet battles and vehicles:** Panels and Groups now hide there by default, as the Visibility tab always showed. Before, they stayed visible until that tab had been opened once.
+- **Resource Bars fading:** Resource Bars no longer stay faded after they stop following a panel's opacity.
+- **Profiles:** Switching, copying or restoring a profile puts every Group at that profile's saved spot without a /reload. Profiles last saved before 1.15 are refused from the profile dropdown, the same as at login.
+- **Deleting and moving:** Deleting a panel or Group keeps whatever was attached to it where it was on screen, and moving a Group's last panel away no longer deletes the Group.
+- **Settings saving on open:** Opening a settings page no longer saves anything by itself. Opening a resource's Text section used to stop later shared changes from reaching that spec.
+- **Masque:** Turning Masque on no longer strips bars of their background and border, and the checkbox restyles the panel right away.
+- **Keybinds on addon bars:** Items that live only on an addon's action bar keep their keybind text and press highlight after a reload, form change or rebind.
+- **Cooldown Manager setup:** Tracked Bars are built as bars again, and running setup twice no longer adds a second copy.
+- **Items with several uses:** They count as ready when their own timer ends, and are no longer hidden or greyed by At Zero Stacks while you still hold them.
+- **Import:** A share string from a newer addon version is refused with "update the addon", and importing no longer asks to replace Resource Bars for a class that never changed them.
+
+## Performance
+
+- **Even lighter at rest:** Resource Bars and the Enemy Only target fade now wait for something to change before updating. Cancelling an unlock is also quicker.
+]],
+        },
         ["2.11"] = {
             markdown = [[
 **Restart the game after updating.** A /reload is not enough for this version.
